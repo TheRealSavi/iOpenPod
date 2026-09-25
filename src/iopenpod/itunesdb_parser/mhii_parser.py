@@ -24,7 +24,11 @@ def parse_artist_item(
 ) -> ParseResult:
     """Parse an MHII (Artist Item) chunk and its MHOD children."""
     mhii = idb.read_fields(data, offset, "mhii", header_length)
-    mhii["children"], _ = parse_children(
+    mhii["children"], child_end = parse_children(
         data, offset + header_length, mhii["child_count"],
     )
-    return {"next_offset": offset + chunk_length, "data": mhii}
+    return {
+        "next_offset": offset + chunk_length,
+        "data": mhii,
+        "_body_end": child_end,
+    }

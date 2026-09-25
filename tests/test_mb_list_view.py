@@ -11,7 +11,7 @@ from uuid import uuid4
 import pytest
 from PIL import Image
 from PyQt6.QtCore import QEvent, QPoint, Qt
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtGui import QColor, QKeyEvent, QPixmap
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QSplitter, QTableWidget, QTableWidgetItem, QTreeWidget
 
@@ -22,9 +22,9 @@ from iopenpod.gui.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get
 from iopenpod.gui.styles import (
     BROWSER_SEARCH_CONTROL_SIZE,
     BROWSER_SEARCH_FIELD_WIDTH,
-    Colors,
     Metrics,
     browser_search_field_css,
+    paint_css,
 )
 from iopenpod.gui.widgets.MBListView import (
     _OPEN_TRACK_SHORTCUT,
@@ -39,14 +39,20 @@ from iopenpod.gui.widgets.MBListView import (
     chapter_summary_from_data,
     podcast_conversion_changes_for_track,
 )
+from iopenpod.gui.widgets.trackContextMenu import (
+    ChapteredAlbumMenuAction,
+    build_track_context_menu,
+)
 from iopenpod.gui.widgets.trackEditorDialog import (
     TrackEditorDialog,
+    TrackFieldSpec,
     _ArtworkPreviewPanel,
     _ChapterTimelineEditor,
     _format_datetime_value,
     _parse_datetime_text,
     _SquareCropCanvas,
     _subgroup_for_key,
+    _TrackFieldRow,
 )
 from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar
 from iopenpod.infrastructure import settings_persistence
@@ -441,6 +447,8 @@ def test_tracklist_search_section_sits_above_table(qtbot) -> None:
     assert view._search_field.size().width() == BROWSER_SEARCH_FIELD_WIDTH
     assert view._search_field.size().height() == BROWSER_SEARCH_CONTROL_SIZE
     assert view._search_field.styleSheet() == browser_search_field_css()
+    assert paint_css("surface.default") in view._search_bar.styleSheet()
+    assert paint_css("border.subtle") in view._search_bar.styleSheet()
     search_layout = view._search_bar.layout()
     assert search_layout is not None
     assert search_layout.indexOf(view._search_field) == 1
@@ -505,6 +513,17 @@ def test_tracklist_search_matches_hidden_and_formatted_metadata(qtbot) -> None:
     view._search_field.clear()
     qtbot.waitUntil(lambda: view.table.rowCount() == len(tracks), timeout=2000)
     assert view.tracks == tracks
+
+
+def test_tracklist_search_matches_symbol_variants(qtbot) -> None:
+    view = _mount_list(qtbot)
+    track: dict[str, object] = {"Title": "Don’t Stop"}
+    _load_content(qtbot, view, tracks=[track], media_type_filter=0x01)
+
+    view.setSearchQuery("don't")
+
+    qtbot.waitUntil(lambda: not view._search_timer.isActive(), timeout=2000)
+    assert view.tracks == [track]
 
 
 def test_title_bar_search_filters_embedded_track_list(qtbot) -> None:
@@ -582,6 +601,39 @@ def test_tracklist_population_does_not_decode_shared_artwork_on_ui_thread(
     assert art_item is not None
     assert art_item.data(Qt.ItemDataRole.UserRole + 2) == 1
     assert art_item.icon().isNull()
+
+
+def test_tracklist_artwork_is_centered_in_its_column(qtbot) -> None:
+    """Artwork is optically centered rather than offset by cell text padding."""
+    view = _mount_list(qtbot, show_art_override=True)
+    thumbnail = QPixmap(32, 32)
+    thumbnail.fill(QColor("#ff00ff"))
+    view._art_cache[1] = thumbnail
+
+    _load_content(
+        qtbot,
+        view,
+        tracks=[_many_tracks_with_art(1)[0]],
+        media_type_filter=None,
+    )
+    qtbot.wait(20)
+
+    item = _table_item(view.table, 0, 0)
+    cell_rect = view.table.visualItemRect(item)
+    viewport = view.table.viewport()
+    assert viewport is not None
+    image = viewport.grab().toImage()
+    thumbnail_xs = [
+        x
+        for y in range(image.height())
+        for x in range(image.width())
+        if image.pixelColor(x, y).name() == "#ff00ff"
+    ]
+
+    assert thumbnail_xs
+    scale = image.devicePixelRatio()
+    cell_center = (cell_rect.left() + cell_rect.right()) * scale
+    assert abs(min(thumbnail_xs) + max(thumbnail_xs) - cell_center) <= 1
 
 
 def _drag_header_section(
@@ -1363,6 +1415,73 @@ def test_convert_to_podcast_action_disables_ready_podcasts(qtbot) -> None:
     assert not act.isEnabled()
 
 
+def test_album_group_menu_differs_from_track_menu_only_by_conversion_action(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    tracks = [
+        {"db_track_id": 1, "Title": "One"},
+        {"db_track_id": 2, "Title": "Two"},
+    ]
+
+    track_menu = build_track_context_menu(view, view, tracks)
+    album_menu = build_track_context_menu(
+        view,
+        view,
+        tracks,
+        chaptered_album_action=ChapteredAlbumMenuAction(
+            items=({"category": "Albums", "track_count": 2},),
+            requested=lambda _items: None,
+        ),
+    )
+
+    track_actions = [
+        action.text() for action in track_menu.actions() if not action.isSeparator()
+    ]
+    album_actions = [
+        action.text() for action in album_menu.actions() if not action.isSeparator()
+    ]
+    conversion_label = "Convert to a single chaptered track"
+    conversion_index = album_actions.index(conversion_label)
+
+    assert (
+        album_actions[:conversion_index] + album_actions[conversion_index + 1 :]
+        == track_actions
+    )
+
+
+def test_shared_menu_actions_use_explicit_group_track_selection(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    group_tracks = [
+        {"db_track_id": 1, "Title": "One", "rating": 0},
+        {"db_track_id": 2, "Title": "Two", "rating": 20},
+    ]
+    removed: list[list[dict]] = []
+    view.remove_from_ipod_requested.connect(removed.append)
+
+    menu = build_track_context_menu(view, view, group_tracks)
+    rating_menu = next(
+        action.menu()
+        for action in menu.actions()
+        if action.menu() is not None and action.text() == "Rating"
+    )
+    assert rating_menu is not None
+    five_stars = next(
+        action for action in rating_menu.actions() if action.text().strip() == "★★★★★"
+    )
+    remove_action = next(
+        action
+        for action in menu.actions()
+        if action.text() == "Remove 2 Tracks from iPod"
+    )
+
+    five_stars.trigger()
+    remove_action.trigger()
+
+    assert cache.updated[-1] == (group_tracks, {"rating": 100})
+    assert removed == [group_tracks]
+
+
 def test_rating_context_menu_shows_mixed_selection_header(qtbot) -> None:
     cache = _LibraryCache()
     view = _mount_list(qtbot, library_cache=cache)
@@ -1427,6 +1546,8 @@ def test_volume_context_menu_uses_slider_widget(qtbot) -> None:
     assert slider.maximum() == 255
     assert slider.value() == 64
     assert value_label.text() == "+25%"
+    assert paint_css("control.primary.fill") in widget.styleSheet()
+    assert paint_css("focus.border") in widget.styleSheet()
 
     slider.setValue(128)
 
@@ -1957,8 +2078,8 @@ def test_chapter_table_editor_is_opaque_and_selects_current_text(qtbot) -> None:
     qtbot.waitUntil(lambda: timeline._table.findChild(QLineEdit) is not None, timeout=1000)
     editor = timeline._table.findChild(QLineEdit)
     assert editor is not None
-    assert f"background-color: {Colors.DROPDOWN_BG}" in editor.styleSheet()
-    assert Colors.SURFACE_ALT not in editor.styleSheet()
+    assert f"background-color: {paint_css('menu.background')}" in editor.styleSheet()
+    assert paint_css("surface.inset") not in editor.styleSheet()
     qtbot.waitUntil(lambda: editor.selectedText() == "Intro", timeout=1000)
 
 
@@ -2207,3 +2328,18 @@ def test_track_editor_dialog_filter_restores_hidden_sections(qtbot) -> None:
     assert not title_row.isHidden()
     assert not comment_row.isHidden()
     assert not comment_panel.isHidden()
+
+
+def test_track_editor_field_search_matches_symbol_variants(qtbot) -> None:
+    row = _TrackFieldRow(
+        TrackFieldSpec(
+            key="artist_credit",
+            label="Artist Credit",
+            group="Metadata",
+            help_text="The artist’s displayed credit",
+        ),
+        "",
+    )
+    qtbot.addWidget(row)
+
+    assert row.matches("artist's")

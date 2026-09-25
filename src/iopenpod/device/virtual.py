@@ -19,7 +19,12 @@ from .bootstrap import _seed_ipod_layout, ensure_device_itunes_database
 from .capabilities import capabilities_for_family_gen
 from .checksum import CHECKSUM_MHBD_SCHEME, ChecksumType
 from .info import DeviceInfo, resolve_itdb_path
-from .models import IPOD_MODELS, SERIAL_LAST3_TO_MODEL, USB_PID_TO_MODEL
+from .models import (
+    IPOD_MODELS,
+    IPOD_RECOVERY_USB_PIDS,
+    SERIAL_SUFFIX_TO_MODEL,
+    USB_PID_TO_MODEL,
+)
 
 VIRTUAL_IPOD_INFO_FILENAME = "iPodInfo.json"
 _SCHEMA_VERSION = 1
@@ -129,7 +134,8 @@ def create_virtual_ipod(
         "usb_pid": _usb_pid_for_identity(family, generation),
         "usb_serial": firewire_guid,
         "connected_bus": "USB",
-        "volume_format": "FAT32",
+        "reported_volume_format": "FAT32",
+        "filesystem_type": "fat32",
         "scsi_vendor": "Apple",
         "scsi_product": "iPod",
         "scsi_revision": _default_firmware(family, generation),
@@ -205,7 +211,8 @@ def load_virtual_ipod_info(
         "board",
         "product_type",
         "connected_bus",
-        "volume_format",
+        "reported_volume_format",
+        "filesystem_type",
         "scsi_vendor",
         "scsi_product",
         "scsi_revision",
@@ -214,6 +221,13 @@ def load_virtual_ipod_info(
         if value not in (None, ""):
             setattr(info, field, str(value))
             info._field_sources[field] = VIRTUAL_IPOD_INFO_FILENAME
+
+    # Schema v1 used the ambiguous name ``volume_format`` for this
+    # SysInfoExtended hint. Keep old virtual devices readable without
+    # conflating it with the host-observed filesystem type.
+    if not info.reported_volume_format and payload.get("volume_format"):
+        info.reported_volume_format = str(payload["volume_format"])
+        info._field_sources["reported_volume_format"] = VIRTUAL_IPOD_INFO_FILENAME
 
     for field in (
         "family_id",
@@ -230,6 +244,8 @@ def load_virtual_ipod_info(
             value = _coerce_int(raw_value)
             setattr(info, field, value)
             info._field_sources[field] = VIRTUAL_IPOD_INFO_FILENAME
+
+    _populate_virtual_volume_identity(info, root)
 
     for field in (
         "uses_sqlite_db",
@@ -289,9 +305,28 @@ def load_virtual_ipod_info(
     return info
 
 
+def _populate_virtual_volume_identity(info: DeviceInfo, root: Path) -> None:
+    """Attach the selected virtual root's queue key when host probing is weak."""
+    try:
+        from .filesystem_profile import inspect_filesystem_profile
+        from .virtual_identity import virtual_ipod_profile
+        from .write_readiness import volume_lock_key
+
+        profile = virtual_ipod_profile(inspect_filesystem_profile(root), root)
+    except OSError:
+        return
+    if profile.identity.is_complete:
+        info.volume_identity_key = volume_lock_key(profile)
+        info._field_sources["volume_identity_key"] = VIRTUAL_IPOD_INFO_FILENAME
+
+
 def _serial_suffix_by_model() -> dict[str, str]:
     suffix_by_model: dict[str, str] = {}
-    for suffix, model_number in sorted(SERIAL_LAST3_TO_MODEL.items()):
+    ordered_suffixes = sorted(
+        SERIAL_SUFFIX_TO_MODEL.items(),
+        key=lambda item: (-len(item[0]), item[0]),
+    )
+    for suffix, model_number in ordered_suffixes:
         suffix_by_model.setdefault(model_number, suffix)
     return suffix_by_model
 
@@ -396,7 +431,7 @@ def _usb_pid_for_identity(family: str, generation: str) -> int:
     normal_pids = {
         pid: identity
         for pid, identity in USB_PID_TO_MODEL.items()
-        if not (0x1240 <= pid <= 0x1255)
+        if pid not in IPOD_RECOVERY_USB_PIDS
     }
     for pid, (pid_family, pid_generation) in normal_pids.items():
         if pid_family == family and pid_generation == generation:

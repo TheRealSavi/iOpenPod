@@ -1,0 +1,14 @@
+{
+  "name": "Catppuccin Macchiato",
+  "type": "dark",
+  "colors": {
+    "accent": "#8aadf4", "accent_light": "#b7bdf8",
+    "background": "#24273a", "background_alt": "#1e2030",
+    "surface": "#282b3f", "surface_alt": "#363a4f", "surface_raised": "#494d64", "surface_hover": "#5b6078", "surface_active": "#53586f",
+    "menu_background": "#363a4f", "dialog_background": "#1e2030", "tooltip_background": "#363a4f",
+    "text_primary": "#cad3f5", "text_secondary": "#b8c0e0", "text_tertiary": "#a5adcb", "text_disabled": "#6e738d",
+    "border": "#41455b", "border_subtle": "#363a4f", "gridline": "#363a4f", "danger": "#ed8796", "success": "#a6da95", "warning": "#eed49f", "info": "#91d7e3", "star": "#eed49f",
+    "sync_cyan": "#8bd5ca", "sync_purple": "#c6a0f6", "sync_magenta": "#f5bde6", "sync_orange": "#f5a97f", "sync_freed": "#8bd5ca",
+    "playlist_smart": "#c6a0f6", "playlist_podcast": "#a6da95", "playlist_master": "#5b6078", "playlist_regular": "#8aadf4"
+  }
+}

@@ -123,7 +123,14 @@ def build_filtered_sync_plan(
         _integrity_removals=(
             original_plan._integrity_removals if original_plan else []
         ),
+        _mapping_requires_persistence=(
+            original_plan._mapping_requires_persistence if original_plan else False
+        ),
+        _refreshed_podcast_feeds=(
+            original_plan._refreshed_podcast_feeds if original_plan else None
+        ),
         mapping=original_plan.mapping if original_plan else None,
+        integrity_report=original_plan.integrity_report if original_plan else None,
         storage=StorageSummary(
             bytes_to_add=bytes_to_add,
             bytes_to_remove=bytes_to_remove,
@@ -133,6 +140,9 @@ def build_filtered_sync_plan(
         playlists_to_edit=playlists_to_edit,
         playlists_to_remove=playlists_to_remove,
         photo_plan=selected_photo_plan if original_plan else None,
+        rockbox_metadata_pass=(
+            original_plan.rockbox_metadata_pass if original_plan else False
+        ),
     )
 
 

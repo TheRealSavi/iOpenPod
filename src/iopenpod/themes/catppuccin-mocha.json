@@ -1,0 +1,14 @@
+{
+  "name": "Catppuccin Mocha",
+  "type": "dark",
+  "colors": {
+    "accent": "#89b4fa", "accent_light": "#b4befe",
+    "background": "#1e1e2e", "background_alt": "#181825",
+    "surface": "#222333", "surface_alt": "#313244", "surface_raised": "#45475a", "surface_hover": "#585b70", "surface_active": "#505367",
+    "menu_background": "#313244", "dialog_background": "#181825", "tooltip_background": "#313244",
+    "text_primary": "#cdd6f4", "text_secondary": "#bac2de", "text_tertiary": "#a6adc8", "text_disabled": "#6c7086",
+    "border": "#3d3e51", "border_subtle": "#313244", "gridline": "#313244", "danger": "#f38ba8", "success": "#a6e3a1", "warning": "#f9e2af", "info": "#89dceb", "star": "#f9e2af",
+    "sync_cyan": "#94e2d5", "sync_purple": "#cba6f7", "sync_magenta": "#f5c2e7", "sync_orange": "#fab387", "sync_freed": "#94e2d5",
+    "playlist_smart": "#cba6f7", "playlist_podcast": "#a6e3a1", "playlist_master": "#585b70", "playlist_regular": "#89b4fa"
+  }
+}

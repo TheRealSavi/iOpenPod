@@ -23,8 +23,25 @@ _FILETYPE_MAP: list[tuple[str, str]] = [
     ("AAC", "m4a"), ("M4A", "m4a"), ("Lossless", "m4a"),
     ("Protected", "m4p"), ("Audiobook", "m4b"),
     ("WAV", "wav"), ("AIFF", "aiff"),
-    ("M4V", "m4v"), ("MP4", "mp4"),
+    ("M4V", "m4v"), ("MP4", "mp4"), ("MOV", "m4v"),
 ]
+
+
+def ipod_filetype_for_extension(extension: str) -> str:
+    """Return the iTunesDB filetype for an on-device filename extension.
+
+    iTunesDB has no ``MOV`` code.  QuickTime movies are video payloads, so
+    they use the established ``M4V`` type instead of falling through to the
+    writer's MP3 default.
+    """
+    ext = extension.casefold().lstrip(".")
+    if ext in {"m4a", "aac", "alac"}:
+        return "m4a"
+    if ext in {"m4v", "mov"}:
+        return "m4v"
+    if ext in {"mp3", "mp4", "wav"}:
+        return ext
+    return ext or "mp3"
 
 
 def track_dict_to_info(t: dict) -> TrackInfo:
@@ -64,7 +81,9 @@ def track_dict_to_info(t: dict) -> TrackInfo:
         # play_count_1 is the cumulative count (already includes any
         # Play Counts deltas folded into the DB or merged at load time).
         play_count=t.get("play_count_1", 0),
-        play_count_2=t.get("play_count_2", t.get("recent_playcount", 0)),
+        # The durable pending-scrobble queue is independent of the current
+        # physical Play Counts-file delta.
+        play_count_2=t.get("play_count_2", 0),
         skip_count=t.get("skip_count", 0),
         volume=t.get("volume", 0),
         start_time=t.get("start_time", 0),
@@ -156,13 +175,8 @@ def pc_track_to_info(
                             recalculating from pc_track.video_kind. Used for
                             UPDATE operations to preserve the original type.
     """
-    ext = Path(ipod_location.replace(":", "/")).suffix.lower().lstrip(".")
-    if ext in ("m4a", "aac", "alac"):
-        filetype = "m4a"
-    elif ext == "mp3":
-        filetype = "mp3"
-    else:
-        filetype = ext
+    ext = Path(ipod_location.replace(":", "/")).suffix.lower()
+    filetype = ipod_filetype_for_extension(ext)
 
     # Rating: PCTrack already stores 0-100 (stars × 20), same as iPod
     rating = pc_track.rating or 0
@@ -406,6 +420,7 @@ def trackinfo_to_eval_dict(t: TrackInfo) -> dict:
         "Sort Artist": t.sort_artist or "",
         "Sort Album Artist": t.sort_album_artist or "",
         "Sort Composer": t.sort_composer or "",
+        "Sort Show": t.sort_show or "",
         "Grouping": t.grouping or "",
         # Integer fields
         "bitrate": t.bitrate,
@@ -421,12 +436,20 @@ def trackinfo_to_eval_dict(t: TrackInfo) -> dict:
         "skip_count": t.skip_count,
         # Date fields (Unix timestamps)
         "date_added": t.date_added,
+        "last_modified": t.last_modified,
         "last_played": t.last_played,
         "last_skipped": t.last_skipped,
         # Boolean fields
         "compilation_flag": 1 if t.compilation_flag else 0,
+        "has_artwork": bool(t.artwork_count or t.mhii_link),
+        "artwork_count": t.artwork_count,
+        "artwork_id_ref": t.mhii_link,
+        "purchased_flag": t.purchased_aac_flag,
         # Binary AND fields
         "media_type": t.media_type,
+        # Tracks being evaluated are local to this iPod. The iPod's Location
+        # rule uses bit 0 for "on this computer".
+        "location_kind": 1,
         # Checked flag (0=checked, 1=unchecked in iPod convention)
         "checked_flag": t.checked_flag,
         # Video fields for smart playlist evaluation

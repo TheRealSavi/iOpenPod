@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import html
 import logging
-import os
 import re
 import time
 from collections.abc import Callable
@@ -62,6 +61,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -73,19 +73,23 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from iopenpod.infrastructure.theme_renderer import render_content_hero_paints
+
+from ..artwork_rendering import dominant_artwork_color_from_pixmap
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..hidpi import scale_pixmap_for_display
 from ..styles import (
     FONT_FAMILY,
     LABEL_SECONDARY,
-    Colors,
     Metrics,
     accent_btn_css,
     btn_css,
     combo_css,
     context_menu_css,
+    current_theme,
     make_label,
     make_separator,
+    paint_css,
     progress_bar_css,
     sidebar_item_view_css,
     spin_css,
@@ -278,14 +282,14 @@ def _load_artwork_bytes(source: str) -> bytes | None:
 
 def _status_accent(status: str) -> str:
     if status == "On iPod":
-        return Colors.SUCCESS
+        return paint_css("status.success.text")
     if status == "Downloaded":
-        return Colors.ACCENT
+        return paint_css("control.primary.fill")
     if status == "Listened":
-        return Colors.WARNING
+        return paint_css("status.warning.text")
     if "Downloading" in status:
-        return Colors.WARNING
-    return Colors.TEXT_TERTIARY
+        return paint_css("status.warning.text")
+    return paint_css("text.tertiary")
 
 
 def _is_state_status(status: str) -> bool:
@@ -405,8 +409,8 @@ class _PodcastEpisodeCard(QFrame):
         self._art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._art_label.setStyleSheet(f"""
             QLabel#podcastEpisodeArtwork {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('surface.default')};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: 7px;
             }}
         """)
@@ -416,7 +420,7 @@ class _PodcastEpisodeCard(QFrame):
             "",
             size=Metrics.FONT_SM,
             weight=QFont.Weight.DemiBold,
-            style=f"color: {Colors.ACCENT_LIGHT};",
+            style=f"color: {paint_css('control.primary.hover_fill')};",
         )
         self._podcast_label.setParent(self)
         self._podcast_label.setObjectName("podcastEpisodePodcast")
@@ -480,16 +484,16 @@ class _PodcastEpisodeCard(QFrame):
         self._add_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
         self._add_btn.setStyleSheet(
             btn_css(
-                bg=Colors.ACCENT_DIM,
-                bg_hover=Colors.ACCENT_HOVER,
-                bg_press=Colors.ACCENT_PRESS,
-                fg=Colors.TEXT_ON_ACCENT,
-                border=f"1px solid {Colors.ACCENT_BORDER}",
+                bg=paint_css("control.primary.fill"),
+                bg_hover=paint_css("control.primary.hover_fill"),
+                bg_press=paint_css("control.primary.pressed_fill"),
+                fg=paint_css("control.primary.text"),
+                border=f"1px solid {paint_css('control.primary.fill')}",
                 padding="3px 9px",
                 radius=Metrics.BORDER_RADIUS_SM,
             )
         )
-        add_icon = glyph_icon("plus", 13, Colors.TEXT_ON_ACCENT)
+        add_icon = glyph_icon("plus", 13, paint_css("control.primary.text"))
         if add_icon:
             self._add_btn.setIcon(add_icon)
             self._add_btn.setIconSize(QSize(13, 13))
@@ -516,15 +520,15 @@ class _PodcastEpisodeCard(QFrame):
         self._remove_btn.setStyleSheet(
             btn_css(
                 bg="transparent",
-                bg_hover=Colors.DANGER_DIM,
-                bg_press=Colors.DANGER_HOVER,
-                fg=Colors.DANGER,
-                border=f"1px solid {Colors.DANGER_BORDER}",
+                bg_hover=paint_css("status.danger.subtle_fill"),
+                bg_press=paint_css("status.danger.hover_fill"),
+                fg=paint_css("status.danger.text"),
+                border=f"1px solid {paint_css('status.danger.border')}",
                 padding="3px 9px",
                 radius=Metrics.BORDER_RADIUS_SM,
             )
         )
-        remove_icon = glyph_icon("minus", 13, Colors.DANGER)
+        remove_icon = glyph_icon("minus", 13, paint_css("status.danger.text"))
         if remove_icon:
             self._remove_btn.setIcon(remove_icon)
             self._remove_btn.setIconSize(QSize(13, 13))
@@ -793,8 +797,8 @@ class _PodcastEpisodeCard(QFrame):
         self._description_label.setGeometry(left, desc_y, width, desc_h)
 
     def _apply_style(self) -> None:
-        bg = Colors.ACCENT_MUTED if self._selected else Colors.SURFACE_RAISED
-        border = Colors.ACCENT_BORDER if self._selected else Colors.BORDER_SUBTLE
+        bg = paint_css("podcast.episode.selected_fill") if self._selected else paint_css("podcast.episode.fill")
+        border = paint_css("podcast.episode.selected_border") if self._selected else paint_css("podcast.episode.border")
         self.setStyleSheet(f"""
             QFrame#podcastEpisodeCard {{
                 background: {bg};
@@ -808,7 +812,7 @@ class _PodcastEpisodeCard(QFrame):
         self._status_label.setStyleSheet(f"""
             QLabel {{
                 color: {accent};
-                background: {Colors.SURFACE};
+                background: {paint_css('podcast.episode.status_fill')};
                 border: 1px solid {accent};
                 border-radius: 7px;
                 padding: 2px 8px;
@@ -1316,6 +1320,14 @@ class PodcastBrowser(QFrame):
         self._episode_dicts: list[dict] = []
         self._artwork_inflight: dict[str, list[Callable[[str, QPixmap], None]]] = {}
         self._episode_state_retry: Callable[[], None] | None = None
+        self._status_clear_text = ""
+        self._status_clear_timer = QTimer(self)
+        self._status_clear_timer.setSingleShot(True)
+        self._status_clear_timer.timeout.connect(self._clear_status_timeout)
+        self._action_status_clear_text = ""
+        self._action_status_clear_timer = QTimer(self)
+        self._action_status_clear_timer.setSingleShot(True)
+        self._action_status_clear_timer.timeout.connect(self._clear_action_timeout)
 
         self._build_ui()
 
@@ -1353,11 +1365,35 @@ class PodcastBrowser(QFrame):
 
         from iopenpod.podcasts.subscription_store import SubscriptionStore
         settings = self._settings_service.get_effective_settings()
+        session = self._device_sessions.current_session()
+        storage = session.storage
         self._store = SubscriptionStore(
             ipod_path,
             download_cache_dir=settings.transcode_cache_dir,
+            reported_volume_format=(
+                storage.reported_volume_format if storage is not None else ""
+            ),
+            expected_volume_identity_key=(
+                storage.volume_identity_key if storage is not None else ""
+            ),
         )
-        self._store.load()
+        try:
+            self._store.load()
+        except Exception as exc:
+            log.exception("Could not safely load podcast subscriptions")
+            self._store = None
+            self._feed_list.clear()
+            self._episode_list.set_rows([], _PODCAST_EPISODE_COLUMNS)
+            self._stack.setCurrentIndex(0)
+            self._set_status("Podcast data could not be loaded safely")
+            QMessageBox.critical(
+                self,
+                "Podcast Data Not Loaded",
+                "iOpenPod could not safely read the podcast subscriptions on "
+                f"this iPod and left them unchanged.\n\n{exc}\n\nReconnect and "
+                "reload the iPod before making podcast changes.",
+            )
+            return
 
         # Apply any deferred reconciliation captured before the Podcasts
         # view/store was initialized (e.g. app.py data-ready timing).
@@ -1396,13 +1432,39 @@ class PodcastBrowser(QFrame):
         self._status_label.setText("")
         self._stack.setCurrentIndex(0)
 
+    def _persist_subscription_change(
+        self,
+        action: str,
+        operation: Callable[[], object],
+    ) -> bool:
+        """Run one device-store mutation and alert instead of masking refusal."""
+        try:
+            operation()
+            return True
+        except Exception as exc:
+            log.exception("Could not %s", action)
+            if self._store is not None:
+                try:
+                    self._store.load()
+                except Exception:
+                    log.exception("Could not reload podcast subscriptions after failure")
+            QMessageBox.critical(
+                self,
+                "Podcast Changes Not Saved",
+                f"iOpenPod stopped before it could {action}.\n\n{exc}\n\n"
+                "Reconnect and reload the iPod before trying again.",
+            )
+            self._set_status("Podcast changes were not saved")
+            return False
+
     def reconcile_ipod_statuses(self, ipod_tracks: list[dict] | None = None) -> None:
         """Reconcile stored episode state with the current iPod track list.
 
         This keeps "Downloaded" / "On iPod" statuses accurate even when
         feeds are loaded after iTunesDB parsing or tracks were removed.
         """
-        if not self._store:
+        store = self._store
+        if store is None:
             # Store tracks for later reconciliation when set_device() creates
             # the SubscriptionStore after the Podcasts tab is opened.
             if ipod_tracks is not None:
@@ -1417,7 +1479,7 @@ class PodcastBrowser(QFrame):
 
         from iopenpod.podcasts.podcast_sync import PodcastTrackMatcher
 
-        feeds = self._store.get_feeds()
+        feeds = store.get_feeds()
         matcher = PodcastTrackMatcher(ipod_tracks)
         changed_feeds: list = []
 
@@ -1426,10 +1488,14 @@ class PodcastBrowser(QFrame):
                 changed_feeds.append(feed)
 
         if changed_feeds:
-            self._store.update_feeds(changed_feeds)
+            if not self._persist_subscription_change(
+                "update podcast status",
+                lambda: store.update_feeds(changed_feeds),
+            ):
+                return
 
         if self._selected_feed:
-            refreshed = self._store.get_feed(self._selected_feed.feed_url)
+            refreshed = store.get_feed(self._selected_feed.feed_url)
             if refreshed:
                 self._selected_feed = refreshed
         if self._showing_combined_feed:
@@ -1469,7 +1535,7 @@ class PodcastBrowser(QFrame):
         self._add_btn = QPushButton("Add Podcast")
         self._add_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._add_btn.setStyleSheet(chrome_action_btn_css())
-        _add_ic = glyph_icon("plus", (14), Colors.TEXT_PRIMARY)
+        _add_ic = glyph_icon("plus", (14), paint_css("text.primary"))
         if _add_ic:
             self._add_btn.setIcon(_add_ic)
             self._add_btn.setIconSize(QSize((14), (14)))
@@ -1479,7 +1545,7 @@ class PodcastBrowser(QFrame):
         self._refresh_btn = QPushButton("Refresh All")
         self._refresh_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._refresh_btn.setStyleSheet(chrome_action_btn_css())
-        _refresh_ic = glyph_icon("refresh", (14), Colors.TEXT_PRIMARY)
+        _refresh_ic = glyph_icon("refresh", (14), paint_css("text.primary"))
         if _refresh_ic:
             self._refresh_btn.setIcon(_refresh_ic)
             self._refresh_btn.setIconSize(QSize((14), (14)))
@@ -1489,7 +1555,7 @@ class PodcastBrowser(QFrame):
         self._sync_btn = QPushButton("Sync Podcasts")
         self._sync_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._sync_btn.setStyleSheet(chrome_action_btn_css())
-        _sync_ic = glyph_icon("refresh", (14), Colors.TEXT_PRIMARY)
+        _sync_ic = glyph_icon("refresh", (14), paint_css("text.primary"))
         if _sync_ic:
             self._sync_btn.setIcon(_sync_ic)
             self._sync_btn.setIconSize(QSize((14), (14)))
@@ -1521,14 +1587,14 @@ class PodcastBrowser(QFrame):
         layout.addStretch()
 
         icon_lbl = QLabel()
-        _px = glyph_pixmap("broadcast", Metrics.FONT_ICON_XL, Colors.TEXT_TERTIARY)
+        _px = glyph_pixmap("broadcast", Metrics.FONT_ICON_XL, paint_css("text.tertiary"))
         if _px:
             icon_lbl.setPixmap(_px)
         else:
             icon_lbl.setText("◎")
             icon_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        icon_lbl.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         layout.addWidget(icon_lbl)
 
         layout.addSpacing(12)
@@ -1560,7 +1626,7 @@ class PodcastBrowser(QFrame):
         cta_btn.setStyleSheet(accent_btn_css())
         cta_btn.setFixedHeight(38)
         cta_btn.setFixedWidth(240)
-        _cta_ic = glyph_icon("plus", (16), Colors.TEXT_ON_ACCENT)
+        _cta_ic = glyph_icon("plus", (16), paint_css("control.primary.text"))
         if _cta_ic:
             cta_btn.setIcon(_cta_ic)
             cta_btn.setIconSize(QSize((16), (16)))
@@ -1622,8 +1688,8 @@ class PodcastBrowser(QFrame):
         self._feed_header.setMaximumHeight(375)
         self._feed_header.setStyleSheet(f"""
             QFrame#heroHeader {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('canvas.default')};
+                border-bottom: 1px solid {paint_css('border.subtle')};
             }}
         """)
 
@@ -1643,9 +1709,9 @@ class PodcastBrowser(QFrame):
         self._feed_art.setFixedSize(art_size, art_size)
         self._feed_art.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._feed_art.setStyleSheet(f"""
-            background: {Colors.SURFACE};
+            background: {paint_css('surface.default')};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid {Colors.BORDER_SUBTLE};
+            border: 1px solid {paint_css('border.subtle')};
         """)
         self._set_feed_art_placeholder()
         body_lay.addWidget(self._feed_art, 0, Qt.AlignmentFlag.AlignTop)
@@ -1686,11 +1752,11 @@ class PodcastBrowser(QFrame):
         stats_row = QHBoxLayout()
         stats_row.setSpacing(12)
         self._feed_stat_episodes = make_label("", size=Metrics.FONT_SM,
-                                              style=f"color: {Colors.TEXT_SECONDARY};")
+                                              style=f"color: {paint_css('text.secondary')};")
         self._feed_stat_downloaded = make_label("", size=Metrics.FONT_SM,
-                                                style=f"color: {Colors.ACCENT};")
+                                                style=f"color: {paint_css('control.primary.fill')};")
         self._feed_stat_on_ipod = make_label("", size=Metrics.FONT_SM,
-                                             style=f"color: {Colors.SUCCESS};")
+                                             style=f"color: {paint_css('status.success.text')};")
         # hidden ghost label kept for _show_episodes compat
         self._feed_stat_extra = make_label("", size=Metrics.FONT_SM)
         self._feed_stat_extra.hide()
@@ -1715,7 +1781,7 @@ class PodcastBrowser(QFrame):
         hdr_layout.addWidget(make_separator())
 
         _lbl_css = (
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
         )
         _combo_style = combo_css()
         _spin_style = spin_css(padding="2px 6px", font_size=Metrics.FONT_SM)
@@ -1802,7 +1868,7 @@ class PodcastBrowser(QFrame):
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setStyleSheet(
-            progress_bar_css(height=3, radius=1, bg=Colors.SURFACE)
+            progress_bar_css(height=3, radius=1, bg=paint_css("surface.default"))
         )
         self._progress_bar.hide()
         layout.addWidget(self._progress_bar)
@@ -1811,8 +1877,8 @@ class PodcastBrowser(QFrame):
         self._status_toast = QFrame()
         self._status_toast.setFixedHeight(32)
         self._status_toast.setStyleSheet(
-            f"background: {Colors.SURFACE_RAISED};"
-            f" border-top: 1px solid {Colors.BORDER_SUBTLE};"
+            f"background: {paint_css('surface.raised')};"
+            f" border-top: 1px solid {paint_css('border.subtle')};"
         )
         toast_lay = QHBoxLayout(self._status_toast)
         toast_lay.setContentsMargins(12, 0, 12, 0)
@@ -2281,13 +2347,13 @@ class PodcastBrowser(QFrame):
             STATUS_ON_IPOD,
         )
         if ep.status == STATUS_ON_IPOD:
-            return ("On iPod", _QC(Colors.SUCCESS))
+            return ("On iPod", _QC(paint_css("status.success.text")))
         if ep.status == STATUS_DOWNLOADED:
-            return ("Downloaded", _QC(Colors.ACCENT))
+            return ("Downloaded", _QC(paint_css("control.primary.fill")))
         if ep.status == STATUS_DOWNLOADING:
-            return ("Downloading…", _QC(Colors.WARNING))
+            return ("Downloading…", _QC(paint_css("status.warning.text")))
         if _episode_is_listened(ep):
-            return ("Listened", _QC(Colors.WARNING))
+            return ("Listened", _QC(paint_css("status.warning.text")))
         if ep.size_bytes and ep.size_bytes > 0:
             return (format_size(ep.size_bytes), None)
         return ("", None)
@@ -2322,7 +2388,6 @@ class PodcastBrowser(QFrame):
             )
 
         from iopenpod.application.runtime import ThreadPoolSingleton, Worker
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
 
         store = self._store
@@ -2333,7 +2398,7 @@ class PodcastBrowser(QFrame):
             for feed in feeds:
                 try:
                     refreshed = fetch_feed(feed.feed_url, existing=feed)
-                    cache_feed_artwork(refreshed, store.podcast_dir)
+                    store.cache_feed_artwork(refreshed)
                     refreshed_feeds.append(refreshed)
                 except Exception as exc:
                     log.warning("Background refresh failed for %s: %s", feed.title, exc)
@@ -2364,7 +2429,6 @@ class PodcastBrowser(QFrame):
         self._episode_state_retry = self._on_refresh_all
 
         from iopenpod.application.runtime import ThreadPoolSingleton, Worker
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
 
         store = self._store
@@ -2375,7 +2439,7 @@ class PodcastBrowser(QFrame):
             for feed in feeds:
                 try:
                     refreshed = fetch_feed(feed.feed_url, existing=feed)
-                    cache_feed_artwork(refreshed, store.podcast_dir)
+                    store.cache_feed_artwork(refreshed)
                     refreshed_feeds.append(refreshed)
                 except Exception as exc:
                     log.warning("Failed to refresh %s: %s", feed.title, exc)
@@ -2474,7 +2538,6 @@ class PodcastBrowser(QFrame):
         self._episode_state_retry = self._on_sync_podcasts
 
         from iopenpod.application.runtime import ThreadPoolSingleton, Worker
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
 
         store = self._store
@@ -2485,7 +2548,7 @@ class PodcastBrowser(QFrame):
             for feed in feeds:
                 try:
                     refreshed_feed = fetch_feed(feed.feed_url, existing=feed)
-                    cache_feed_artwork(refreshed_feed, store.podcast_dir)
+                    store.cache_feed_artwork(refreshed_feed)
                     refreshed.append(refreshed_feed)
                 except Exception as exc:
                     log.warning("Failed to refresh %s: %s", feed.title, exc)
@@ -2591,7 +2654,6 @@ class PodcastBrowser(QFrame):
         ThreadPoolSingleton.get_instance().start(worker)
 
     def _fetch_subscribed_feed(self, feed_url: str, artwork_url: str = ""):
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
         from iopenpod.podcasts.models import normalize_artwork_url
 
@@ -2600,9 +2662,8 @@ class PodcastBrowser(QFrame):
         if fallback_url and not feed.artwork_url:
             feed.artwork_url = fallback_url
         if self._store:
-            cache_feed_artwork(
+            self._store.cache_feed_artwork(
                 feed,
-                self._store.podcast_dir,
                 fallback_urls=[fallback_url] if fallback_url else [],
             )
         return feed
@@ -2611,16 +2672,20 @@ class PodcastBrowser(QFrame):
         if not self._store or not artwork_url:
             return ""
 
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.models import PodcastFeed
 
         feed = PodcastFeed(feed_url=feed_url, artwork_url=artwork_url)
-        return cache_feed_artwork(feed, self._store.podcast_dir)
+        return self._store.cache_feed_artwork(feed)
 
     def _on_feed_fetched(self, feed) -> None:
-        if not self._store:
+        store = self._store
+        if store is None:
             return
-        self._store.add_feed(feed)
+        if not self._persist_subscription_change(
+            "save the podcast subscription",
+            lambda: store.add_feed(feed),
+        ):
+            return
         self._mark_feed_refreshed(feed.feed_url)
         self._set_status(f"Subscribed to {feed.title}")
         self._showing_combined_feed = False
@@ -2633,7 +2698,7 @@ class PodcastBrowser(QFrame):
                 self._feed_list.setCurrentRow(i)
                 break
 
-        self._selected_feed = self._store.get_feed(feed.feed_url) or feed
+        self._selected_feed = store.get_feed(feed.feed_url) or feed
         self._show_episodes(self._selected_feed)
 
     def _on_subscribe_error(self, error_tuple) -> None:
@@ -2646,9 +2711,14 @@ class PodcastBrowser(QFrame):
         self._set_status("Could not add podcast")
 
     def _unsubscribe_feed(self, feed) -> None:
-        if not self._store:
+        store = self._store
+        if store is None:
             return
-        self._store.remove_feed(feed.feed_url)
+        if not self._persist_subscription_change(
+            "remove the podcast subscription",
+            lambda: store.remove_feed(feed.feed_url),
+        ):
+            return
         self._set_status(f"Unsubscribed from {feed.title}")
         self._selected_feed = None
         self._showing_combined_feed = False
@@ -2664,13 +2734,12 @@ class PodcastBrowser(QFrame):
         self._episode_state_retry = lambda feed=feed: self._refresh_single_feed(feed)
 
         from iopenpod.application.runtime import ThreadPoolSingleton, Worker
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
 
         def _do():
             refreshed = fetch_feed(feed.feed_url, existing=feed)
             if self._store:
-                cache_feed_artwork(refreshed, self._store.podcast_dir)
+                self._store.cache_feed_artwork(refreshed)
             return refreshed
 
         worker = Worker(_do)
@@ -2679,9 +2748,14 @@ class PodcastBrowser(QFrame):
         ThreadPoolSingleton.get_instance().start(worker)
 
     def _on_single_feed_refreshed(self, feed) -> None:
-        if not self._store:
+        store = self._store
+        if store is None:
             return
-        self._store.update_feed(feed)
+        if not self._persist_subscription_change(
+            "save the refreshed podcast",
+            lambda: store.update_feed(feed),
+        ):
+            return
         self._mark_feed_refreshed(feed.feed_url)
         self._set_status(f"Refreshed {feed.title}")
         was_combined = self._showing_combined_feed
@@ -2754,8 +2828,13 @@ class PodcastBrowser(QFrame):
             )
             return
 
-        if self._store and changed_feeds:
-            self._store.update_feeds(list(changed_feeds.values()))
+        store = self._store
+        if store is not None and changed_feeds:
+            if not self._persist_subscription_change(
+                "save listened status",
+                lambda: store.update_feeds(list(changed_feeds.values())),
+            ):
+                return
 
         if self._showing_combined_feed:
             self._show_combined_feed()
@@ -2882,13 +2961,23 @@ class PodcastBrowser(QFrame):
         from iopenpod.podcasts.models import STATUS_NOT_DOWNLOADED
 
         removed = 0
+        failures: list[tuple[object, Exception]] = []
         changed_feeds: dict[str, PodcastFeed] = {}
+        store = self._store
         for _row, ep, feed in episode_refs:
-            if ep.downloaded_path and os.path.exists(ep.downloaded_path):
+            downloaded_path = ep.downloaded_path
+            if downloaded_path:
                 try:
-                    os.remove(ep.downloaded_path)
-                except OSError as exc:
-                    log.warning("Could not delete %s: %s", ep.downloaded_path, exc)
+                    if store is None:
+                        raise RuntimeError("Podcast download storage is unavailable")
+                    store.remove_episode_download(downloaded_path)
+                except Exception as exc:
+                    log.warning(
+                        "Could not safely remove podcast download %r: %s",
+                        downloaded_path,
+                        exc,
+                    )
+                    failures.append((downloaded_path, exc))
                     continue
             ep.downloaded_path = ""
             ep.status = STATUS_NOT_DOWNLOADED
@@ -2899,15 +2988,45 @@ class PodcastBrowser(QFrame):
                 )
             removed += 1
 
-        if self._store and changed_feeds:
-            self._store.update_feeds(list(changed_feeds.values()))
+        if store is not None and changed_feeds:
+            if not self._persist_subscription_change(
+                "save downloaded episode status",
+                lambda: store.update_feeds(list(changed_feeds.values())),
+            ):
+                return
 
         if self._showing_combined_feed:
             self._show_combined_feed()
         else:
             self._show_episodes(self._selected_feed)
         self._refresh_feed_list()
-        self._set_action_status(f"Removed {removed} download{'s' if removed != 1 else ''}")
+        if failures:
+            failed_count = len(failures)
+            title = "Download Not Removed" if failed_count == 1 else "Downloads Not Removed"
+            first_error = failures[0][1]
+            QMessageBox.warning(
+                self,
+                title,
+                "iOpenPod left "
+                f"{failed_count} episode download"
+                f"{'s' if failed_count != 1 else ''} and their saved state "
+                "unchanged because the stored path was unsafe or the file "
+                f"could not be removed.\n\n{first_error}",
+            )
+            if removed:
+                self._set_action_status(
+                    f"Removed {removed}; {failed_count} not removed"
+                )
+            else:
+                verb = "was" if failed_count == 1 else "were"
+                self._set_action_status(
+                    f"{failed_count} download{'s' if failed_count != 1 else ''} "
+                    f"{verb} not removed"
+                )
+            return
+        self._set_action_status(
+            f"Removed {removed} download{'s' if removed != 1 else ''}"
+        )
 
     def _remove_from_ipod(self, episodes: list) -> None:
         """Build a sync plan to remove episodes from the iPod."""
@@ -3056,7 +3175,8 @@ class PodcastBrowser(QFrame):
 
     def _on_feed_setting_changed(self, *_args) -> None:
         """Write current setting controls back to the selected feed."""
-        if not self._store or not self._selected_feed:
+        store = self._store
+        if store is None or not self._selected_feed:
             return
 
         feed = self._selected_feed
@@ -3089,7 +3209,10 @@ class PodcastBrowser(QFrame):
             self._feed_clear_method.currentText(), "remove",
         )
 
-        self._store.update_feed(feed)
+        self._persist_subscription_change(
+            "save podcast sync settings",
+            lambda: store.update_feed(feed),
+        )
 
     def _set_feed_art_placeholder(self) -> None:
         """Set a crisp HiDPI-safe placeholder icon in the feed artwork slot."""
@@ -3103,12 +3226,12 @@ class PodcastBrowser(QFrame):
 
     def _artwork_placeholder_pixmap(self, size: int) -> QPixmap | None:
         """Create the gray square placeholder used when artwork is missing."""
-        glyph = glyph_pixmap("broadcast", max(16, int(size * 0.52)), Colors.TEXT_TERTIARY)
+        glyph = glyph_pixmap("broadcast", max(16, int(size * 0.52)), paint_css("text.tertiary"))
         if glyph is None:
             return None
 
         px = QPixmap(size, size)
-        px.fill(QColor(Colors.SURFACE_ALT))
+        px.fill(QColor(paint_css("surface.inset")))
         painter = QPainter(px)
         try:
             x = (size - glyph.width()) // 2
@@ -3118,103 +3241,51 @@ class PodcastBrowser(QFrame):
             painter.end()
         return px
 
-    def _apply_hero_color_from_pixmap(self, pixmap: QPixmap) -> None:
-        """Extract average color from pixmap using Qt only (no PIL, no encode)."""
-        try:
-            # Scale to a tiny thumbnail with Qt — fast nearest-neighbor
-            small = pixmap.scaled(
-                20, 20,
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.FastTransformation,
-            )
-            img = small.toImage().convertToFormat(QImage.Format.Format_RGB888)
-            ptr = img.bits()
-            if ptr is None:
-                return
-            raw = bytes(ptr.asarray(img.width() * img.height() * 3))
-            n = img.width() * img.height()
-            if n == 0:
-                return
-            r = sum(raw[0::3]) // n
-            g = sum(raw[1::3]) // n
-            b = sum(raw[2::3]) // n
-            self._apply_feed_hero_color(r, g, b)
-        except Exception:
-            pass
-
     def _apply_hero_color_for_source(self, source: str, pixmap: QPixmap) -> None:
         cached = _artwork_color_cache.get(source)
         if cached is not None:
             self._apply_feed_hero_color(*cached)
             return
-        try:
-            small = pixmap.scaled(
-                20,
-                20,
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.FastTransformation,
-            )
-            img = small.toImage().convertToFormat(QImage.Format.Format_RGB888)
-            ptr = img.bits()
-            if ptr is None:
-                return
-            raw = bytes(ptr.asarray(img.width() * img.height() * 3))
-            n = img.width() * img.height()
-            if n == 0:
-                return
-            color = (
-                sum(raw[0::3]) // n,
-                sum(raw[1::3]) // n,
-                sum(raw[2::3]) // n,
-            )
-            _artwork_color_cache[source] = color
-            self._apply_feed_hero_color(*color)
-        except Exception:
-            pass
+        color = dominant_artwork_color_from_pixmap(pixmap)
+        if color is None:
+            return
+        _artwork_color_cache[source] = color
+        self._apply_feed_hero_color(*color)
 
     def _apply_feed_hero_color(self, r: int, g: int, b: int) -> None:
         """Tint the hero header with the artwork's dominant color."""
-        if Colors._active_mode == "light":
-            glass_bg = "rgba(0, 0, 0, 20)"
-            glass_hover = "rgba(0, 0, 0, 28)"
-            glass_press = "rgba(0, 0, 0, 14)"
-            glass_border = "rgba(0, 0, 0, 24)"
-        else:
-            glass_bg = "rgba(255, 255, 255, 18)"
-            glass_hover = "rgba(255, 255, 255, 35)"
-            glass_press = "rgba(255, 255, 255, 12)"
-            glass_border = "rgba(255, 255, 255, 15)"
+        hero_paints = render_content_hero_paints(current_theme(), (r, g, b))
 
         self._feed_header.setStyleSheet(f"""
             QFrame#heroHeader {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba({r}, {g}, {b}, 80),
-                    stop:1 {Colors.BG_DARK}
+                    stop:0 {hero_paints.header_tint.css},
+                    stop:1 {paint_css('canvas.default')}
                 );
-                border-bottom: 1px solid rgba({r}, {g}, {b}, 40);
+                border-bottom: 1px solid {hero_paints.header_border.css};
             }}
         """)
         self._feed_art.setStyleSheet(f"""
-            background: rgba({r}, {g}, {b}, 30);
+            background: {hero_paints.art_fill.css};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid rgba({r}, {g}, {b}, 50);
+            border: 1px solid {hero_paints.art_border.css};
         """)
         self._feed_title_label.setStyleSheet(
-            "color: " + Colors.TEXT_PRIMARY + "; background: transparent;")
+            "color: " + paint_css("text.primary") + "; background: transparent;")
         self._feed_author_label.setStyleSheet(
-            "color: " + Colors.TEXT_SECONDARY + "; background: transparent;")
+            "color: " + paint_css("text.secondary") + "; background: transparent;")
         self._feed_description_label.setStyleSheet(
-            "color: " + Colors.TEXT_SECONDARY + "; background: transparent;")
+            "color: " + paint_css("text.secondary") + "; background: transparent;")
         self._feed_detail_label.setStyleSheet(
-            "color: " + Colors.TEXT_TERTIARY + "; background: transparent;")
+            "color: " + paint_css("text.tertiary") + "; background: transparent;")
 
         _glass_css = btn_css(
-            bg=glass_bg,
-            bg_hover=glass_hover,
-            bg_press=glass_press,
-            fg=Colors.TEXT_PRIMARY,
-            border=f"1px solid {glass_border}",
+            bg=hero_paints.action_fill.css,
+            bg_hover=hero_paints.action_hover.css,
+            bg_press=hero_paints.action_pressed.css,
+            fg=paint_css("text.primary"),
+            border=f"1px solid {hero_paints.action_border.css}",
             padding="5px 12px",
             radius=Metrics.BORDER_RADIUS_SM,
         )
@@ -3225,26 +3296,26 @@ class PodcastBrowser(QFrame):
         """Reset the hero to the default (no artwork tint) style."""
         self._feed_header.setStyleSheet(f"""
             QFrame#heroHeader {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('canvas.default')};
+                border-bottom: 1px solid {paint_css('border.subtle')};
             }}
         """)
         self._feed_art.setStyleSheet(f"""
-            background: {Colors.SURFACE};
+            background: {paint_css('surface.default')};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid {Colors.BORDER_SUBTLE};
+            border: 1px solid {paint_css('border.subtle')};
         """)
         # Labels and buttons may not exist yet during initial construction
         if not hasattr(self, '_feed_title_label'):
             return
         self._feed_title_label.setStyleSheet(
-            "color: " + Colors.TEXT_PRIMARY + "; background: transparent;")
+            "color: " + paint_css("text.primary") + "; background: transparent;")
         self._feed_author_label.setStyleSheet(
-            "color: " + Colors.TEXT_SECONDARY + "; background: transparent;")
+            "color: " + paint_css("text.secondary") + "; background: transparent;")
         self._feed_description_label.setStyleSheet(
-            "color: " + Colors.TEXT_SECONDARY + "; background: transparent;")
+            "color: " + paint_css("text.secondary") + "; background: transparent;")
         self._feed_detail_label.setStyleSheet(
-            "color: " + Colors.TEXT_TERTIARY + "; background: transparent;")
+            "color: " + paint_css("text.tertiary") + "; background: transparent;")
         _default_css = btn_css(padding="5px 12px", radius=Metrics.BORDER_RADIUS_SM)
         for btn in self._hero_btns:
             btn.setStyleSheet(_default_css)
@@ -3370,8 +3441,13 @@ class PodcastBrowser(QFrame):
     def _set_status(self, text: str, timeout_ms: int = 5000) -> None:
         """Set toolbar status text with auto-clear."""
         self._status_label.setText(text)
+        self._status_clear_timer.stop()
+        self._status_clear_text = text
         if timeout_ms > 0 and text:
-            QTimer.singleShot(timeout_ms, lambda: self._clear_status_if(text))
+            self._status_clear_timer.start(timeout_ms)
+
+    def _clear_status_timeout(self) -> None:
+        self._clear_status_if(self._status_clear_text)
 
     def _clear_status_if(self, expected: str) -> None:
         """Clear status only if it still shows the expected message."""
@@ -3381,12 +3457,17 @@ class PodcastBrowser(QFrame):
     def _set_action_status(self, text: str, timeout_ms: int = 5000) -> None:
         """Show the status toast with *text*, auto-hiding after *timeout_ms*."""
         self._action_status.setText(text)
+        self._action_status_clear_timer.stop()
+        self._action_status_clear_text = text
         if text:
             self._status_toast.show()
         else:
             self._status_toast.hide()
         if timeout_ms > 0 and text:
-            QTimer.singleShot(timeout_ms, lambda: self._clear_action_if(text))
+            self._action_status_clear_timer.start(timeout_ms)
+
+    def _clear_action_timeout(self) -> None:
+        self._clear_action_if(self._action_status_clear_text)
 
     def _clear_action_if(self, expected: str) -> None:
         if self._action_status.text() == expected:

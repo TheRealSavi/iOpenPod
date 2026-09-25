@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import struct
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,6 +32,7 @@ class StorageBreakdownNode:
     bytes_used: int
     detail: str = ""
     kind: str = ""
+    mhod_type: int | None = None
     children: tuple[StorageBreakdownNode, ...] = ()
 
     def find(self, label: str) -> StorageBreakdownNode | None:
@@ -64,6 +66,23 @@ class DatabaseStorageReport:
         return None
 
 
+@dataclass(frozen=True)
+class DatabaseStorageFieldValue:
+    """One stored text value and its payload size in bytes."""
+
+    value: str
+    byte_count: int
+
+
+@dataclass(frozen=True)
+class DatabaseStorageFieldInspection:
+    """All occurrences of a truncatable field in one database source."""
+
+    mhod_type: int
+    values: tuple[DatabaseStorageFieldValue, ...] = ()
+    note: str = ""
+
+
 @dataclass(slots=True)
 class _ChunkRecord:
     chunk_type: str
@@ -77,6 +96,7 @@ class _ChunkRecord:
 
 @dataclass(slots=True)
 class _DataObjectAccumulator:
+    mhod_type: int | None = None
     bytes_used: int = 0
     count: int = 0
     payload_bytes: int = 0
@@ -91,6 +111,198 @@ class _ContainerAccumulator:
     count: int = 0
     data_objects: dict[str, _DataObjectAccumulator] = field(default_factory=dict)
     children: dict[str, _ContainerAccumulator] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TruncatableMhodField:
+    """A non-essential track text field that can be safely shortened."""
+
+    attribute: str
+    encoding: str
+
+
+_TRUNCATABLE_MHOD_FIELDS: dict[int, TruncatableMhodField] = {
+    7: TruncatableMhodField("eq_setting", "utf-16-le"),
+    8: TruncatableMhodField("comment", "utf-16-le"),
+    10: TruncatableMhodField("lyrics", "utf-16-le"),
+    13: TruncatableMhodField("grouping", "utf-16-le"),
+    14: TruncatableMhodField("description", "utf-16-le"),
+    18: TruncatableMhodField("subtitle", "utf-16-le"),
+    20: TruncatableMhodField("episode_id", "utf-16-le"),
+    21: TruncatableMhodField("network_name", "utf-16-le"),
+    24: TruncatableMhodField("keywords", "utf-16-le"),
+    25: TruncatableMhodField("show_locale", "utf-16-le"),
+}
+
+
+def is_truncatable_mhod_type(mhod_type: int | None) -> bool:
+    """Return whether the MHOD type is exposed as a storage-saving control."""
+
+    return mhod_type in _TRUNCATABLE_MHOD_FIELDS
+
+
+def analyze_database_field_values(
+    database_path: str | Path | None,
+    mhod_type: int,
+    *,
+    ipod_root: str | Path | None = None,
+    uses_sqlite_db: bool = False,
+) -> DatabaseStorageFieldInspection:
+    """Return every stored value for one field from an on-device database."""
+
+    if not is_truncatable_mhod_type(mhod_type):
+        raise ValueError(f"MHOD type {mhod_type} cannot be inspected")
+    if uses_sqlite_db:
+        return _analyze_sqlite_field_values(database_path, ipod_root, mhod_type)
+
+    path = Path(database_path) if database_path else None
+    if path is None:
+        return DatabaseStorageFieldInspection(
+            mhod_type,
+            note="No iTunesDB path available.",
+        )
+    try:
+        return analyze_database_field_values_bytes(path.read_bytes(), mhod_type)
+    except OSError as exc:
+        return DatabaseStorageFieldInspection(mhod_type, note=str(exc))
+
+
+def analyze_database_field_values_bytes(
+    data: bytes,
+    mhod_type: int,
+) -> DatabaseStorageFieldInspection:
+    """Return every stored value for one field from an in-memory iTunesDB."""
+
+    if not is_truncatable_mhod_type(mhod_type):
+        raise ValueError(f"MHOD type {mhod_type} cannot be inspected")
+
+    from iopenpod.itunesdb_parser.parser import decompress_itunescdb
+
+    try:
+        logical = bytes(decompress_itunescdb(data))
+        root, _next_offset = _walk_chunk(logical, 0, len(logical))
+    except Exception as exc:
+        return DatabaseStorageFieldInspection(
+            mhod_type,
+            note=f"Could not inspect database values: {exc}",
+        )
+    if root is None:
+        return DatabaseStorageFieldInspection(
+            mhod_type,
+            note="Could not read chunk headers.",
+        )
+
+    values: list[DatabaseStorageFieldValue] = []
+    _collect_mhod_field_values(logical, root, mhod_type, values)
+    return DatabaseStorageFieldInspection(mhod_type, tuple(values))
+
+
+def _collect_mhod_field_values(
+    data: bytes,
+    record: _ChunkRecord,
+    mhod_type: int,
+    values: list[DatabaseStorageFieldValue],
+) -> None:
+    if record.chunk_type == "mhod" and record.mhod_type == mhod_type:
+        value = _decode_mhod_field_value(data, record)
+        if value is not None:
+            values.append(value)
+    for child in record.children:
+        _collect_mhod_field_values(data, child, mhod_type, values)
+
+
+def _decode_mhod_field_value(
+    data: bytes,
+    record: _ChunkRecord,
+) -> DatabaseStorageFieldValue | None:
+    if record.mhod_type is None:
+        return None
+    field = _TRUNCATABLE_MHOD_FIELDS.get(record.mhod_type)
+    if field is None:
+        return None
+
+    payload_start = record.offset + record.header_length
+    payload_end = record.offset + record.total_length
+    if payload_start > len(data) or payload_start > payload_end:
+        return None
+
+    if record.mhod_type in {15, 16}:
+        payload = data[payload_start : min(payload_end, len(data))]
+        encoding = "utf-8"
+    else:
+        payload_start = record.offset + 0x28
+        declared_length = _u32_at(data, record.offset + 0x1C, default=0)
+        payload_end = min(payload_end, payload_start + declared_length, len(data))
+        if payload_start > payload_end:
+            return None
+        payload = data[payload_start:payload_end]
+        encoding = "utf-8" if _u32_at(data, record.offset + 0x18) == 2 else "utf-16-le"
+
+    return DatabaseStorageFieldValue(
+        payload.decode(encoding, errors="replace").rstrip("\x00"),
+        len(payload),
+    )
+
+
+def truncate_track_mhod_values(
+    tracks: Iterable[object],
+    mhod_type: int,
+    max_bytes: int,
+) -> int:
+    """Shorten one optional track field to a byte limit without splitting text.
+
+    A zero-byte limit removes the field entirely.  Lyrics also clear their
+    header flag so the rewritten database has neither a lyrics MHOD nor a
+    stale ``lyrics_flag``.
+    """
+
+    field = _TRUNCATABLE_MHOD_FIELDS.get(mhod_type)
+    if field is None:
+        raise ValueError(f"MHOD type {mhod_type} cannot be truncated")
+
+    limit = max(0, int(max_bytes))
+    changed = 0
+    for track in tracks:
+        value = getattr(track, field.attribute, None)
+        if not value:
+            if mhod_type == 10 and getattr(track, "has_lyrics", False):
+                _set_track_attribute(track, "has_lyrics", False)
+                changed += 1
+            continue
+
+        text = str(value)
+        shortened = _truncate_text_to_bytes(text, limit, field.encoding)
+        if shortened == text:
+            continue
+        setattr(track, field.attribute, shortened or None)
+        if mhod_type == 10:
+            _set_track_attribute(track, "has_lyrics", bool(shortened))
+        changed += 1
+    return changed
+
+
+def _truncate_text_to_bytes(text: str, max_bytes: int, encoding: str) -> str:
+    """Return the longest encodable prefix whose payload fits ``max_bytes``."""
+
+    if max_bytes <= 0:
+        return ""
+    encoded = text.encode(encoding)
+    if len(encoded) <= max_bytes:
+        return text
+
+    candidate = encoded[:max_bytes]
+    while candidate:
+        try:
+            return candidate.decode(encoding)
+        except UnicodeDecodeError:
+            candidate = candidate[:-1]
+    return ""
+
+
+def _set_track_attribute(track: object, attribute: str, value: object) -> None:
+    """Set a mutable TrackInfo-like attribute without constraining callers."""
+
+    setattr(track, attribute, value)
 
 
 def analyze_database_storage(
@@ -109,6 +321,36 @@ def analyze_database_storage(
     if uses_sqlite_db:
         return _analyze_sqlite_storage(database_path, ipod_root)
     return _analyze_classic_storage(database_path)
+
+
+def analyze_database_storage_bytes(
+    data: bytes,
+    *,
+    database_path: str = "Proposed iTunesDB",
+) -> DatabaseStorageReport:
+    """Build a classic iTunesDB report from an in-memory proposed database."""
+
+    from iopenpod.itunesdb_parser.parser import decompress_itunescdb
+
+    try:
+        logical = bytes(decompress_itunescdb(data))
+    except Exception as exc:
+        return DatabaseStorageReport(
+            mode="classic",
+            physical_bytes=len(data),
+            logical_bytes=0,
+            database_path=database_path,
+            note=f"Could not inspect proposed database: {exc}",
+        )
+
+    root = _build_classic_root(logical, physical_bytes=len(data))
+    return DatabaseStorageReport(
+        mode="classic",
+        physical_bytes=len(data),
+        logical_bytes=len(logical),
+        database_path=database_path,
+        roots=(root,) if root is not None else (),
+    )
 
 
 def _analyze_classic_storage(
@@ -134,17 +376,7 @@ def _analyze_classic_storage(
             note=str(exc),
         )
 
-    from iopenpod.itunesdb_parser.parser import decompress_itunescdb
-
-    logical = bytes(decompress_itunescdb(raw))
-    root = _build_classic_root(logical, physical_bytes=len(raw))
-    return DatabaseStorageReport(
-        mode="classic",
-        physical_bytes=len(raw),
-        logical_bytes=len(logical),
-        database_path=str(path),
-        roots=(root,) if root is not None else (),
-    )
+    return analyze_database_storage_bytes(raw, database_path=str(path))
 
 
 def _build_classic_root(
@@ -194,7 +426,7 @@ def _accumulate_container(
             label = _mhod_label(child.mhod_type)
             stats = accumulator.data_objects.setdefault(
                 label,
-                _DataObjectAccumulator(),
+                _DataObjectAccumulator(mhod_type=child.mhod_type),
             )
             stats.bytes_used += max(0, child.total_length)
             stats.count += 1
@@ -226,13 +458,9 @@ def _container_node(
             )
         )
 
-    data_object_total = sum(
-        stats.bytes_used for stats in accumulator.data_objects.values()
-    )
+    data_object_total = sum(stats.bytes_used for stats in accumulator.data_objects.values())
     if accumulator.data_objects:
-        data_object_count = sum(
-            stats.count for stats in accumulator.data_objects.values()
-        )
+        data_object_count = sum(stats.count for stats in accumulator.data_objects.values())
         children.append(
             StorageBreakdownNode(
                 "Data objects",
@@ -252,11 +480,7 @@ def _container_node(
     ]
     children.extend(child_nodes)
 
-    accounted = (
-        accumulator.header_bytes
-        + data_object_total
-        + sum(child.bytes_used for child in accumulator.children.values())
-    )
+    accounted = accumulator.header_bytes + data_object_total + sum(child.bytes_used for child in accumulator.children.values())
     if accumulator.bytes_used > accounted:
         children.append(
             StorageBreakdownNode(
@@ -285,6 +509,7 @@ def _data_object_nodes(
             stats.bytes_used,
             detail=_mhod_detail(stats.count, stats.payload_bytes),
             kind="mhod",
+            mhod_type=stats.mhod_type,
         )
         for label, stats in sorted(
             data_objects.items(),
@@ -301,7 +526,7 @@ def _walk_chunk(
     if offset + _MIN_CHUNK_HEADER > len(data) or offset >= boundary:
         return None, offset
 
-    chunk_type = data[offset:offset + 4].decode("ascii", errors="replace")
+    chunk_type = data[offset : offset + 4].decode("ascii", errors="replace")
     header_length = _u32_at(data, offset + 4, default=0)
     word3 = _u32_at(data, offset + 8, default=0)
     if header_length < _MIN_CHUNK_HEADER:
@@ -339,11 +564,7 @@ def _walk_chunk(
         max_length = max(header_length, child_offset - offset)
 
     mhod_type = _u32_at(data, offset + 0x0C) if chunk_type == "mhod" else None
-    string_payload_bytes = (
-        _mhod_string_payload_bytes(data, offset, max_length, mhod_type)
-        if chunk_type == "mhod"
-        else 0
-    )
+    string_payload_bytes = _mhod_string_payload_bytes(data, offset, max_length, mhod_type) if chunk_type == "mhod" else 0
     record = _ChunkRecord(
         chunk_type=chunk_type,
         offset=offset,
@@ -486,15 +707,58 @@ def _find_itlp_dir(
     return None
 
 
+def _analyze_sqlite_field_values(
+    database_path: str | Path | None,
+    ipod_root: str | Path | None,
+    mhod_type: int,
+) -> DatabaseStorageFieldInspection:
+    if mhod_type != 10:
+        return DatabaseStorageFieldInspection(
+            mhod_type,
+            note="This field is not stored in the SQLite iPod database.",
+        )
+
+    itlp_dir = _find_itlp_dir(
+        Path(database_path) if database_path else None,
+        ipod_root,
+    )
+    if itlp_dir is None:
+        return DatabaseStorageFieldInspection(
+            mhod_type,
+            note="No iTunes Library.itlp directory found.",
+        )
+
+    values: list[DatabaseStorageFieldValue] = []
+    try:
+        for path in itlp_dir.glob("*.itdb"):
+            with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+                if not _sqlite_has_lyrics_table(conn):
+                    continue
+                rows = conn.execute("SELECT lyrics FROM lyrics WHERE lyrics IS NOT NULL").fetchall()
+                values.extend(
+                    DatabaseStorageFieldValue(
+                        str(value),
+                        len(str(value).encode("utf-8")),
+                    )
+                    for (value,) in rows
+                    if str(value)
+                )
+    except sqlite3.Error as exc:
+        return DatabaseStorageFieldInspection(mhod_type, tuple(values), str(exc))
+
+    return DatabaseStorageFieldInspection(mhod_type, tuple(values))
+
+
+def _sqlite_has_lyrics_table(conn: sqlite3.Connection) -> bool:
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'lyrics'").fetchone()
+    return row is not None
+
+
 def _sqlite_file_nodes(itlp_dir: Path) -> tuple[StorageBreakdownNode, ...]:
     paths = {path.name: path for path in itlp_dir.iterdir() if path.is_file()}
     ordered_names = [name for name in _SQLITE_DATABASE_ORDER if name in paths]
     ordered_names.extend(sorted(set(paths) - set(ordered_names)))
-    nodes = [
-        _sqlite_file_node(paths[name])
-        for name in ordered_names
-        if paths[name].suffix == ".itdb" or name.endswith(".itdb.cbk")
-    ]
+    nodes = [_sqlite_file_node(paths[name]) for name in ordered_names if paths[name].suffix == ".itdb" or name.endswith(".itdb.cbk")]
     return tuple(sorted(nodes, key=lambda node: (-node.bytes_used, node.label.lower())))
 
 
@@ -546,6 +810,7 @@ def _sqlite_object_nodes(path: Path) -> tuple[StorageBreakdownNode, ...]:
                     page_bytes.get(label, 0),
                     detail=detail,
                     kind=kind,
+                    mhod_type=10 if label.casefold() == "lyrics" else None,
                 )
             )
         return tuple(sorted(nodes, key=lambda node: (-node.bytes_used, node.label.lower())))
@@ -554,18 +819,12 @@ def _sqlite_object_nodes(path: Path) -> tuple[StorageBreakdownNode, ...]:
 
 
 def _sqlite_table_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master "
-        "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
-        "ORDER BY name"
-    ).fetchall()
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
     counts: dict[str, int] = {}
     for (table_name,) in rows:
         try:
             quoted = '"' + str(table_name).replace('"', '""') + '"'
-            counts[str(table_name)] = int(
-                conn.execute(f"SELECT COUNT(*) FROM {quoted}").fetchone()[0]
-            )
+            counts[str(table_name)] = int(conn.execute(f"SELECT COUNT(*) FROM {quoted}").fetchone()[0])
         except sqlite3.Error:
             counts[str(table_name)] = 0
     return counts
@@ -573,9 +832,7 @@ def _sqlite_table_counts(conn: sqlite3.Connection) -> dict[str, int]:
 
 def _sqlite_dbstat_bytes(conn: sqlite3.Connection) -> dict[str, int]:
     try:
-        rows = conn.execute(
-            "SELECT name, SUM(pgsize) FROM dbstat GROUP BY name"
-        ).fetchall()
+        rows = conn.execute("SELECT name, SUM(pgsize) FROM dbstat GROUP BY name").fetchall()
     except sqlite3.Error:
         return {}
     return {str(name): int(size or 0) for name, size in rows}

@@ -36,6 +36,8 @@ def test_progress_stage_registry_covers_known_executor_stages() -> None:
         "scrobble_listenbrainz",
         "scrobble_lastfm",
         "playlists",
+        "lyrics_metadata",
+        "rockbox_metadata",
         "write_database",
         "quick_write",
         "assemble_commit",
@@ -60,6 +62,8 @@ def test_progress_stage_registry_classifies_current_pipeline() -> None:
     assert classify_execution_stage_value("add") == "execute_files"
     assert classify_execution_stage_value("playlists") == "assemble_commit"
     assert classify_execution_stage_value("scrobble_lastfm") == "assemble_commit"
+    assert classify_execution_stage_value("lyrics_metadata") == "assemble_commit"
+    assert classify_execution_stage_value("rockbox_metadata") == "assemble_commit"
     assert classify_execution_stage_value("photo_write") == "commit"
     assert classify_execution_stage_value("backpatch") == "post_commit"
     assert classify_execution_stage_value("unknown") == "execute_files"

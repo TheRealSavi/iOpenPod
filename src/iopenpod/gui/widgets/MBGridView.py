@@ -1,4 +1,3 @@
-import difflib
 import logging
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
@@ -8,10 +7,12 @@ from PIL import Image
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
+from iopenpod.search import SearchText, matches_search_words, prepare_search_text
+
 from ..artwork_rendering import virtual_artwork_payload
 from .gridItem import GridItem as MusicBrowserGridItem
 from .gridItem import GridItemModel
-from .pooledGrid import PooledGridView
+from .pooledGrid import SectionedPooledGridView
 
 if TYPE_CHECKING:
     from iopenpod.application.services import DeviceSessionService, LibraryCacheLike, SettingsService
@@ -31,23 +32,6 @@ class _ArtCacheUnset:
 _ART_CACHE_UNSET = _ArtCacheUnset()
 
 
-def _token_matches(token: str, corpus_words: tuple[str, ...]) -> bool:
-    """Return True if *token* matches any word in *corpus_words*."""
-    for word in corpus_words:
-        if token in word:
-            return True
-
-    if len(token) >= _FUZZY_MIN_LEN:
-        for word in corpus_words:
-            if len(word) >= _FUZZY_MIN_LEN:
-                ratio = difflib.SequenceMatcher(
-                    None, token, word, autojunk=False
-                ).ratio()
-                if ratio >= _FUZZY_THRESHOLD:
-                    return True
-    return False
-
-
 log = logging.getLogger(__name__)
 
 
@@ -62,7 +46,7 @@ class GridRecord:
     payload: dict[str, Any]
     artwork_id: int | None
     artwork_key: Hashable | None
-    search_words: tuple[str, ...]
+    search_words: tuple[SearchText, ...]
 
 
 @dataclass(frozen=True)
@@ -77,7 +61,7 @@ class ArtworkResult:
 CachedArtworkLookup = ArtworkResult | None | _ArtCacheUnset
 
 
-class MusicBrowserGrid(PooledGridView):
+class MusicBrowserGrid(SectionedPooledGridView):
     """Grid view that displays albums, artists, or genres as clickable items."""
 
     item_selected = pyqtSignal(dict)
@@ -91,8 +75,9 @@ class MusicBrowserGrid(PooledGridView):
         library_cache: "LibraryCacheLike | None" = None,
         settings_service: "SettingsService | None" = None,
         multi_select_enabled: bool = False,
+        section_titles: Sequence[str] = (),
     ):
-        super().__init__()
+        super().__init__(section_titles=section_titles)
         self._device_sessions = device_sessions
         self._library_cache = library_cache
         self._settings_service = settings_service
@@ -232,7 +217,7 @@ class MusicBrowserGrid(PooledGridView):
         for field in ("title", "artist"):
             value = payload.get(field)
             if value:
-                parts.append(str(value).lower())
+                parts.append(str(value))
         year = payload.get("year")
         if year:
             parts.append(str(year))
@@ -245,7 +230,9 @@ class MusicBrowserGrid(PooledGridView):
             payload=payload,
             artwork_id=artwork_id,
             artwork_key=artwork_key,
-            search_words=tuple(" ".join(parts).split()),
+            search_words=tuple(
+                prepare_search_text(word) for word in " ".join(parts).split()
+            ),
         )
 
     def _set_source_items(
@@ -266,10 +253,14 @@ class MusicBrowserGrid(PooledGridView):
         records = self._records
 
         if self._search_query:
-            tokens = self._search_query.lower().split()
             filtered: list[GridRecord] = []
             for record in records:
-                if all(_token_matches(token, record.search_words) for token in tokens):
+                if matches_search_words(
+                    self._search_query,
+                    record.search_words,
+                    fuzzy_min_length=_FUZZY_MIN_LEN,
+                    fuzzy_threshold=_FUZZY_THRESHOLD,
+                ):
                     filtered.append(record)
             records = filtered
 
@@ -285,7 +276,7 @@ class MusicBrowserGrid(PooledGridView):
             reverse=self._sort_reverse,
         )
         selection_changed = self._prune_item_selection_to(self._visible_records)
-        self._set_viewport_records(
+        self.setSectionRecords(
             self._visible_records,
             reset_scroll=reset_scroll,
             preserve_selection=False,
@@ -293,6 +284,13 @@ class MusicBrowserGrid(PooledGridView):
         )
         if selection_changed:
             self.item_selection_changed.emit(self.selectedItemData())
+
+    def _on_section_records_changed(self, records: Sequence[Any]) -> None:
+        self._visible_records = [
+            record
+            for record in records
+            if isinstance(record, GridRecord)
+        ]
 
     def selectedItemData(self) -> list[dict[str, Any]]:
         """Return selected item payloads in the current visible grid order."""

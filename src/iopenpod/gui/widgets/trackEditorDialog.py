@@ -15,7 +15,6 @@ from dateutil.parser import ParserError
 from PIL import Image, ImageOps, UnidentifiedImageError
 from PyQt6.QtCore import QAbstractItemModel, QModelIndex, QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
-    QColor,
     QFont,
     QMouseEvent,
     QPainter,
@@ -58,11 +57,11 @@ from PyQt6.QtWidgets import (
 
 from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_MAP
 from iopenpod.itunesdb_shared.mhit_defs import MHIT_FIELDS
+from iopenpod.search import matches_search
 
 from ..imgMaker import TrackArtworkPreview, get_track_artwork_previews
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
     accent_btn_css,
@@ -70,6 +69,8 @@ from ..styles import (
     chip_btn_css,
     input_css,
     make_scroll_area,
+    paint_css,
+    paint_qcolor,
     panel_css,
     sidebar_item_view_css,
 )
@@ -584,7 +585,7 @@ _LABEL_OVERRIDES = {
     "mpeg_audio_type": "MPEG Audio Type",
     "app_rating": "Application Rating",
     "play_count_1": "Play Count",
-    "play_count_2": "Play Count Delta",
+    "play_count_2": "Unscrobbled Plays",
     "skip_count": "Skip Count",
     "eq_setting": "Equalizer",
     "date_added_to_itunes": "iTunes Date Added",
@@ -664,7 +665,7 @@ _FIELD_HELP = {
     "last_skipped": "Last skip time. Stored as a Unix timestamp and shown here as local date/time.",
     "date_added_to_itunes": "Original iTunes add date. Stored as a Unix timestamp and shown here as local date/time.",
     "play_count_1": "Main play count stored in iTunesDB after Play Counts deltas are merged.",
-    "play_count_2": "Transient iPod play delta slot used for scrobbling; cleared after sync.",
+    "play_count_2": "iPod plays waiting to be scrobbled. New device deltas accumulate here and the count clears after a scrobbler succeeds.",
     "app_rating": "Application-computed/backup rating slot used by libgpod conventions.",
     "store_track_id": "iTunes Store content identifier preserved from the database.",
     "store_encoder_version": "iTunes Store encoder/version metadata preserved from the database.",
@@ -678,7 +679,7 @@ _READ_ONLY_REASON_BY_KEY = {
     "Location": "the database path must match the actual file on the iPod",
     "filetype": "changing the codec marker without changing the file can make the track unplayable",
     "visible": "the writer currently always emits visible tracks",
-    "play_count_2": "this slot is transient and cleared after play-count sync",
+    "play_count_2": "this is iOpenPod's pending-scrobble queue and is managed automatically",
     "has_artwork": "it is derived from ArtworkDB entries",
 }
 
@@ -996,15 +997,15 @@ class _ChapterCellDelegate(QStyledItemDelegate):
         editor.setStyleSheet(
             f"""
             QLineEdit {{
-                background-color: {Colors.DROPDOWN_BG};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER_FOCUS};
+                background-color: {paint_css("menu.background")};
+                color: {paint_css("text.primary")};
+                border: 1px solid {paint_css("focus.border")};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 0 6px;
                 font-family: {FONT_FAMILY};
                 font-size: {Metrics.FONT_SM}pt;
-                selection-background-color: {Colors.ACCENT};
-                selection-color: {Colors.TEXT_ON_ACCENT};
+                selection-background-color: {paint_css("control.primary.fill")};
+                selection-color: {paint_css("control.primary.text")};
             }}
             """
         )
@@ -1070,7 +1071,7 @@ class _ChapterTimelineEditor(QFrame):
         toolbar.setSpacing(8)
         self._summary = QLabel("")
         self._summary.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self._summary.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        self._summary.setStyleSheet(f"color: {paint_css('text.secondary')};")
         toolbar.addWidget(self._summary)
         toolbar.addStretch()
 
@@ -1097,7 +1098,7 @@ class _ChapterTimelineEditor(QFrame):
         self._time_hint.setObjectName("chapterTimeHint")
         self._time_hint.setWordWrap(True)
         self._time_hint.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
-        self._time_hint.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
+        self._time_hint.setStyleSheet(f"color: {paint_css('text.tertiary')};")
         layout.addWidget(self._time_hint)
 
         self._table = QTableWidget(0, 2)
@@ -1133,12 +1134,12 @@ class _ChapterTimelineEditor(QFrame):
         self._table.setStyleSheet(
             f"""
             QTableWidget {{
-                background: {Colors.SURFACE_ALT};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("surface.inset")};
+                color: {paint_css("text.primary")};
+                border: 1px solid {paint_css("border.subtle")};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                selection-background-color: {Colors.ACCENT_MUTED};
-                selection-color: {Colors.TEXT_PRIMARY};
+                selection-background-color: {paint_css("editor.table.selection_fill")};
+                selection-color: {paint_css("text.primary")};
                 font-family: {FONT_FAMILY};
                 font-size: {Metrics.FONT_SM}pt;
             }}
@@ -1146,14 +1147,14 @@ class _ChapterTimelineEditor(QFrame):
                 padding: 7px 8px;
             }}
             QTableWidget::item:selected {{
-                background: {Colors.ACCENT_MUTED};
-                color: {Colors.TEXT_PRIMARY};
+                background: {paint_css("editor.table.selection_fill")};
+                color: {paint_css("text.primary")};
             }}
             QHeaderView::section {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_SECONDARY};
+                background: {paint_css("surface.raised")};
+                color: {paint_css("text.secondary")};
                 border: none;
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                border-bottom: 1px solid {paint_css("border.subtle")};
                 padding: 7px 8px;
                 font-family: {FONT_FAMILY};
                 font-size: {Metrics.FONT_XS}pt;
@@ -1370,7 +1371,7 @@ class _TrackFieldRow(QFrame):
         header.setSpacing(8)
         label = QLabel(spec.label)
         label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        label.setStyleSheet(f"color: {paint_css('text.primary')};")
         if spec.help_text:
             label.setToolTip(spec.help_text)
         header.addWidget(label)
@@ -1383,10 +1384,10 @@ class _TrackFieldRow(QFrame):
             read_only.setStyleSheet(
                 f"""
                 QLabel#readOnlyPill {{
-                    background: {Colors.SURFACE_ALT};
-                    border: 1px solid {Colors.BORDER_SUBTLE};
+                    background: {paint_css("surface.inset")};
+                    border: 1px solid {paint_css("border.subtle")};
                     border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                    color: {Colors.TEXT_TERTIARY};
+                    color: {paint_css("text.tertiary")};
                     padding: 2px 7px;
                     font-family: {FONT_FAMILY};
                     font-size: {Metrics.FONT_XS}pt;
@@ -1405,16 +1406,16 @@ class _TrackFieldRow(QFrame):
             f"""
             QPushButton#fieldResetButton {{
                 background: transparent;
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                border: 1px solid {paint_css("border.subtle")};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_SECONDARY};
+                color: {paint_css("text.secondary")};
                 padding: 2px 8px;
                 font-family: {FONT_FAMILY};
                 font-size: {Metrics.FONT_SM}pt;
             }}
             QPushButton#fieldResetButton:hover {{
-                border-color: {Colors.BORDER_FOCUS};
-                color: {Colors.TEXT_PRIMARY};
+                border-color: {paint_css("focus.border")};
+                color: {paint_css("text.primary")};
             }}
             """
         )
@@ -1432,8 +1433,8 @@ class _TrackFieldRow(QFrame):
         haystack = (
             f"{self.spec.label} {self.spec.key} {self.spec.group} "
             f"{self.spec.help_text}"
-        ).lower()
-        return query.lower() in haystack
+        )
+        return matches_search(query, haystack)
 
     def is_modified(self) -> bool:
         return self._modified
@@ -1495,27 +1496,27 @@ class _TrackFieldRow(QFrame):
     def _field_css(self) -> str:
         return f"""
             QLineEdit, QPlainTextEdit, QComboBox {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("surface.inset")};
+                border: 1px solid {paint_css("border.subtle")};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_PRIMARY};
+                color: {paint_css("text.primary")};
                 padding: 7px 9px;
                 font-family: {FONT_FAMILY};
                 font-size: {Metrics.FONT_SM}pt;
             }}
             QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{
-                border-color: {Colors.BORDER_FOCUS};
+                border-color: {paint_css("focus.border")};
             }}
             QLineEdit:read-only, QPlainTextEdit[readOnly="true"], QComboBox:disabled {{
-                background: {Colors.SURFACE};
-                color: {Colors.TEXT_SECONDARY};
-                border-color: {Colors.BORDER_SUBTLE};
+                background: {paint_css("surface.default")};
+                color: {paint_css("text.secondary")};
+                border-color: {paint_css("border.subtle")};
             }}
             QComboBox QAbstractItemView {{
-                background: {Colors.DROPDOWN_BG};
-                color: {Colors.TEXT_PRIMARY};
-                selection-background-color: {Colors.ACCENT};
-                selection-color: {Colors.TEXT_ON_ACCENT};
+                background: {paint_css("menu.background")};
+                color: {paint_css("text.primary")};
+                selection-background-color: {paint_css("control.primary.fill")};
+                selection-color: {paint_css("control.primary.text")};
             }}
         """
 
@@ -1786,7 +1787,7 @@ class _SquareCropCanvas(QWidget):
         super().paintEvent(a0)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        painter.fillRect(self.rect(), QColor(18, 20, 24))
+        painter.fillRect(self.rect(), paint_qcolor("canvas.inset"))
 
         if not self._view_initialized:
             self.reset_view()
@@ -1795,7 +1796,7 @@ class _SquareCropCanvas(QWidget):
         painter.drawPixmap(image_rect, self._pixmap, QRectF(self._pixmap.rect()))
 
         crop = self._crop_rect()
-        overlay = QColor(0, 0, 0, 150)
+        overlay = paint_qcolor("effect.artwork.crop_mask")
         painter.fillRect(QRectF(0, 0, self.width(), crop.top()), overlay)
         painter.fillRect(
             QRectF(0, crop.bottom(), self.width(), self.height() - crop.bottom()),
@@ -1807,7 +1808,7 @@ class _SquareCropCanvas(QWidget):
             overlay,
         )
 
-        grid_pen = QPen(QColor(255, 255, 255, 95))
+        grid_pen = QPen(paint_qcolor("effect.artwork.crop_grid"))
         grid_pen.setWidth(1)
         painter.setPen(grid_pen)
         third = crop.width() / 3.0
@@ -1817,7 +1818,7 @@ class _SquareCropCanvas(QWidget):
             painter.drawLine(x, int(crop.top()), x, int(crop.bottom()))
             painter.drawLine(int(crop.left()), y, int(crop.right()), y)
 
-        border_pen = QPen(QColor(255, 255, 255, 235))
+        border_pen = QPen(paint_qcolor("effect.artwork.crop_border"))
         border_pen.setWidth(2)
         painter.setPen(border_pen)
         painter.drawRect(crop)
@@ -1940,22 +1941,22 @@ class _ArtworkCropDialog(QDialog):
         self.setStyleSheet(
             f"""
             QDialog {{
-                background: {Colors.DIALOG_BG};
+                background: {paint_css("modal.background")};
             }}
             QLabel {{
-                color: {Colors.TEXT_SECONDARY};
+                color: {paint_css("text.secondary")};
                 font-family: {FONT_FAMILY};
                 font-size: {Metrics.FONT_SM}pt;
             }}
             QSlider::groove:horizontal {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("surface.inset")};
+                border: 1px solid {paint_css("border.subtle")};
                 height: 6px;
                 border-radius: 3px;
             }}
             QSlider::handle:horizontal {{
-                background: {Colors.ACCENT};
-                border: 1px solid {Colors.ACCENT_BORDER};
+                background: {paint_css("control.primary.fill")};
+                border: 1px solid {paint_css("data.accent.border")};
                 width: 16px;
                 height: 16px;
                 margin: -6px 0;
@@ -2048,17 +2049,17 @@ class _ArtworkPreviewPanel(QFrame):
         self.setStyleSheet(
             panel_css(
                 "artworkPreviewRail",
-                bg=Colors.SURFACE_ALT,
+                bg=paint_css("surface.inset"),
                 radius=Metrics.BORDER_RADIUS_SM,
             )
             + panel_css(
                 "artworkMetadataPanel",
-                bg=Colors.SURFACE_ALT,
+                bg=paint_css("surface.inset"),
                 radius=Metrics.BORDER_RADIUS_SM,
             )
             + f"""
             QLabel#artworkInspectorLabel {{
-                color: {Colors.TEXT_TERTIARY};
+                color: {paint_css("text.tertiary")};
                 background: transparent;
                 text-transform: uppercase;
             }}
@@ -2075,7 +2076,7 @@ class _ArtworkPreviewPanel(QFrame):
 
         self._title_label = QLabel("Assigned Artwork")
         self._title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
-        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        self._title_label.setStyleSheet(f"color: {paint_css('text.primary')};")
         header.addWidget(self._title_label)
         header.addStretch()
 
@@ -2117,10 +2118,10 @@ class _ArtworkPreviewPanel(QFrame):
         self._image_label.setStyleSheet(
             f"""
             QLabel {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("surface.default")};
+                border: 1px solid {paint_css("border.subtle")};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_TERTIARY};
+                color: {paint_css("text.tertiary")};
                 padding: 8px;
             }}
             """
@@ -2133,9 +2134,9 @@ class _ArtworkPreviewPanel(QFrame):
         self._meta_label.setStyleSheet(
             f"""
             QLabel {{
-                color: {Colors.TEXT_SECONDARY};
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                color: {paint_css("text.secondary")};
+                background: {paint_css("surface.default")};
+                border: 1px solid {paint_css("border.subtle")};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 6px 7px;
             }}
@@ -2179,9 +2180,9 @@ class _ArtworkPreviewPanel(QFrame):
         self._metadata_tree.setStyleSheet(
             f"""
             QTreeWidget {{
-                background: {Colors.SURFACE};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("surface.default")};
+                color: {paint_css("text.primary")};
+                border: 1px solid {paint_css("border.subtle")};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 3px;
             }}
@@ -2189,14 +2190,14 @@ class _ArtworkPreviewPanel(QFrame):
                 padding: 2px 2px;
             }}
             QTreeWidget::item:selected {{
-                background: {Colors.SURFACE_ACTIVE};
-                color: {Colors.TEXT_PRIMARY};
+                background: {paint_css("table.row.selected_fill")};
+                color: {paint_css("text.primary")};
             }}
             QHeaderView::section {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_SECONDARY};
+                background: {paint_css("surface.raised")};
+                color: {paint_css("text.secondary")};
                 border: none;
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                border-bottom: 1px solid {paint_css("border.subtle")};
                 padding: 6px;
                 font-weight: 600;
             }}
@@ -2594,7 +2595,7 @@ class TrackEditorDialog(QDialog):
         self.setStyleSheet(
             f"""
             QDialog {{
-                background: {Colors.DIALOG_BG};
+                background: {paint_css("modal.background")};
             }}
             QFrame#trackFieldRow {{
                 background: transparent;
@@ -2602,13 +2603,19 @@ class TrackEditorDialog(QDialog):
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
             }}
             QFrame#trackFieldRow[modified="true"] {{
-                background: {Colors.ACCENT_MUTED};
-                border: 1px solid {Colors.ACCENT_BORDER};
+                background: {paint_css("editor.field.modified_fill")};
+                border: 1px solid {paint_css("editor.field.modified_border")};
+            }}
+            QWidget#editorContent,
+            QWidget#editorPage,
+            QWidget#editorBody {{
+                background: {paint_css("modal.background")};
             }}
             """
             + sidebar_item_view_css("QListWidget#sectionNav", background="transparent")
             + panel_css("editorHeader", radius=Metrics.BORDER_RADIUS_SM)
             + panel_css("sectionPanel", radius=Metrics.BORDER_RADIUS_SM)
+            + panel_css("editorPageHeader", radius=Metrics.BORDER_RADIUS_SM)
         )
 
         self._build_ui()
@@ -2651,12 +2658,12 @@ class TrackEditorDialog(QDialog):
 
         title = QLabel(self.windowTitle())
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(f"color: {paint_css('text.primary')};")
         title_wrap.addWidget(title)
 
         subtitle = QLabel(_selection_summary(self._tracks))
         subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        subtitle.setStyleSheet(f"color: {paint_css('text.secondary')};")
         title_wrap.addWidget(subtitle)
 
         header_layout.addLayout(title_wrap, 1)
@@ -2678,15 +2685,21 @@ class TrackEditorDialog(QDialog):
         self._nav = QListWidget()
         self._nav.setObjectName("sectionNav")
         self._nav.setFixedWidth(178)
+        self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._nav.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._nav.setFont(QFont(FONT_FAMILY, Metrics.FONT_SIDEBAR))
         self._nav.setSpacing(0)
         self._nav.setItemDelegate(_NoFocusItemDelegate(self._nav))
         self._nav.currentRowChanged.connect(self._on_nav_changed)
         content.addWidget(self._nav)
 
+        content_widget = QWidget()
+        content_widget.setObjectName("editorContent")
+        content_widget.setLayout(content)
+
         self._stack = QStackedWidget()
         content.addWidget(self._stack, 1)
-        outer.addLayout(content, 1)
+        outer.addWidget(content_widget, 1)
 
         grouped: dict[str, list[TrackFieldSpec]] = {}
         for spec in build_track_field_specs(self._tracks):
@@ -2703,7 +2716,7 @@ class TrackEditorDialog(QDialog):
         button_row.setSpacing(8)
         self._change_label = QLabel("No changes")
         self._change_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self._change_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        self._change_label.setStyleSheet(f"color: {paint_css('text.secondary')};")
         button_row.addWidget(self._change_label)
 
         self._reset_all_btn = QPushButton("Reset Changes")
@@ -2728,26 +2741,28 @@ class TrackEditorDialog(QDialog):
 
     def _add_group_page(self, group: str, specs: list[TrackFieldSpec]) -> None:
         page = QWidget()
+        page.setObjectName("editorPage")
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
 
         body = QWidget()
+        body.setObjectName("editorBody")
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(12)
 
         page_header = QFrame()
-        page_header.setObjectName("sectionPanel")
+        page_header.setObjectName("editorPageHeader")
         page_header_layout = QVBoxLayout(page_header)
         page_header_layout.setContentsMargins(14, 12, 14, 12)
         page_header_layout.setSpacing(3)
         heading = QLabel(_GROUP_TITLES.get(group, group))
         heading.setFont(QFont(FONT_FAMILY, Metrics.FONT_XL, QFont.Weight.Bold))
-        heading.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        heading.setStyleSheet(f"color: {paint_css('text.primary')};")
         page_header_layout.addWidget(heading)
         description = QLabel(_GROUP_DESCRIPTIONS.get(group, ""))
         description.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        description.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        description.setStyleSheet(f"color: {paint_css('text.secondary')};")
         page_header_layout.addWidget(description)
         body_layout.addWidget(page_header)
 
@@ -2779,7 +2794,7 @@ class TrackEditorDialog(QDialog):
 
             section_title = QLabel(_SUBGROUP_TITLES.get(subgroup, _humanize_key(subgroup)))
             section_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
-            section_title.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+            section_title.setStyleSheet(f"color: {paint_css('text.secondary')};")
             panel_layout.addWidget(section_title)
 
             grid = QGridLayout()

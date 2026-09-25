@@ -37,6 +37,7 @@ _SYNC_PLAN_COUNT_FIELDS: Final[tuple[str, ...]] = (
 _SYNC_PLAN_FIRST_VALUE_FIELDS: Final[tuple[str, ...]] = (
     "mapping",
     "integrity_report",
+    "_refreshed_podcast_feeds",
 )
 
 _SYNC_PLAN_MERGED_FIELDS: Final[frozenset[str]] = frozenset(
@@ -49,6 +50,7 @@ _SYNC_PLAN_MERGED_FIELDS: Final[frozenset[str]] = frozenset(
         "storage",
         "photo_plan",
         "removals_pre_checked",
+        "_mapping_requires_persistence",
     )
 )
 
@@ -116,6 +118,10 @@ def merge_additional_sync_plan(
     )
     base_plan.removals_pre_checked = (
         base_plan.removals_pre_checked or incoming_plan.removals_pre_checked
+    )
+    base_plan._mapping_requires_persistence = (
+        base_plan._mapping_requires_persistence
+        or incoming_plan._mapping_requires_persistence
     )
     return base_plan
 

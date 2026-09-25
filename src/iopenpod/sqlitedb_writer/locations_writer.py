@@ -96,14 +96,12 @@ CREATE TABLE IF NOT EXISTS location (
 def write_locations_itdb(
     path: str,
     tracks: list[TrackInfo],
-    tz_offset: int = 0,
 ) -> None:
     """Write Locations.itdb SQLite database.
 
     Args:
         path: Output file path.
         tracks: List of TrackInfo objects (with db_track_id and location set).
-        tz_offset: Timezone offset in seconds (positive = east of UTC).
     """
     conn, cur = open_db(path)
 
@@ -125,7 +123,7 @@ def write_locations_itdb(
 
         # date_created: Core Data timestamp of when the file was added
         date_added = track.date_added or now
-        date_cd = unix_to_coredata(date_added, tz_offset)
+        date_cd = unix_to_coredata(date_added)
 
         cur.execute(
             """INSERT INTO location (

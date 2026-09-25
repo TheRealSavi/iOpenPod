@@ -1,6 +1,12 @@
 from PIL import Image
+from PyQt6.QtGui import QImage, QPixmap
 
-from iopenpod.gui.artwork_rendering import enhance_artwork_image, nested_artwork_radius
+from iopenpod.gui.artwork_rendering import (
+    dominant_artwork_color_from_pixmap,
+    enhance_artwork_image,
+    nested_artwork_radius,
+)
+from iopenpod.gui.imgMaker import getDominantColor
 
 
 def test_nested_artwork_radius_preserves_parent_shape_language() -> None:
@@ -23,3 +29,19 @@ def test_enhance_artwork_image_can_be_disabled() -> None:
     enhanced = enhance_artwork_image(image, enabled=False)
 
     assert enhanced is image
+
+
+def test_pixmap_dominant_color_uses_the_shared_artwork_algorithm(qtbot) -> None:
+    image = Image.new("RGBA", (20, 20), "#1e66f5")
+    for x in range(4):
+        for y in range(image.height):
+            image.putpixel((x, y), (208, 15, 57, 255))
+    qimage = QImage(
+        image.tobytes("raw", "RGBA"),
+        image.width,
+        image.height,
+        QImage.Format.Format_RGBA8888,
+    ).copy()
+    pixmap = QPixmap.fromImage(qimage)
+
+    assert dominant_artwork_color_from_pixmap(pixmap) == getDominantColor(image)

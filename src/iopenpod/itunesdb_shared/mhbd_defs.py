@@ -26,6 +26,8 @@ MHBD_FIELDS: list[FieldDef] = [
     _u32("child_count", 0x14, section_type=_S),
     _u64("db_id", 0x18, section_type=_S, required=True),
     _u16("platform", 0x20, section_type=_S, default=2),
+    # Classic 6.5G snapshot (2026-08-04): value 611 (0x0263). One database
+    # cannot establish its meaning; preserve it exactly when round-tripping.
     _u16("unk0x22", 0x22, section_type=_S, default=0),
     _u64("db_id_2", 0x24, section_type=_S),
     _u32("unk0x2c", 0x2C, section_type=_S),
@@ -33,7 +35,9 @@ MHBD_FIELDS: list[FieldDef] = [
     _raw("unk0x32", 0x32, 20, section_type=_S),
     _raw("language", 0x46, 2, section_type=_S, default=b"en"),
     _u64("db_persistent_id", 0x48, section_type=_S),
+    # Classic 6.5G snapshot (2026-08-04): value 111 (0x6F); semantics unknown.
     _u32("unk0x50", 0x50, section_type=_S, default=1),
+    # Classic 6.5G snapshot (2026-08-04): value 255 (0xFF); semantics unknown.
     _u32("unk0x54", 0x54, section_type=_S, default=15),
     _raw("hash58", 0x58, 20, section_type=_S),
     _i32("timezone_offset", 0x6C, section_type=_S),
@@ -42,7 +46,12 @@ MHBD_FIELDS: list[FieldDef] = [
     # Extended fields — only in newer database headers.
     _u16("audio_language", 0xA0, section_type=_S, min_header_length=0xA2),
     _u16("subtitle_language", 0xA2, section_type=_S, min_header_length=0xA4),
+    # Classic 6.5G snapshot (2026-08-04): value 25; semantics unknown.
     _u16("unk0xa4", 0xA4, section_type=_S, min_header_length=0xA6),
+    # Classic 6.5G snapshot (2026-08-04): value 10; semantics unknown.
     _u16("unk0xa6", 0xA6, section_type=_S, min_header_length=0xA8),
     _u16("cdb_flag", 0xA8, section_type=_S, min_header_length=0xAA),
+    # Reserved HASHAB region. Classic 6.5G sample is all zero here while its
+    # HASH58 and HASH72 regions are both populated; preserve for other models.
+    _raw("hashab", 0xAB, 57, section_type=_S, min_header_length=0xE4),
 ]

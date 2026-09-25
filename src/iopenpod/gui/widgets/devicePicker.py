@@ -30,20 +30,24 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from iopenpod.application.device_identity import linux_identity_setup_guidance
 from iopenpod.application.jobs import DeviceScanWorker
-from iopenpod.device import has_exact_model_number
+from iopenpod.device import has_safe_device_profile
 
-from ..device_warnings import show_unidentified_ipod_warning
+from ..device_warnings import (
+    claim_unidentified_ipod_auto_prompt,
+    show_unidentified_ipod_warning,
+)
 from ..ipod_images import get_ipod_image
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Metrics,
     accent_btn_css,
     button_css,
     combo_css,
     input_css,
     make_scroll_area,
+    paint_css,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,7 +75,7 @@ class VirtualIPodDialog(QDialog):
 
         title = QLabel("Create Virtual iPod")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XL, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(f"color: {paint_css('text.primary')};")
         layout.addWidget(title)
 
         self._model_combo = QComboBox()
@@ -79,7 +83,7 @@ class VirtualIPodDialog(QDialog):
         self._model_combo.setStyleSheet(combo_css(padding="7px 10px"))
         model_label = QLabel("iPod Model")
         model_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        model_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        model_label.setStyleSheet(f"color: {paint_css('text.secondary')};")
         layout.addWidget(model_label)
         layout.addWidget(self._model_combo)
 
@@ -101,7 +105,7 @@ class VirtualIPodDialog(QDialog):
 
         directory_label = QLabel("Directory")
         directory_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        directory_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        directory_label.setStyleSheet(f"color: {paint_css('text.secondary')};")
         layout.addWidget(directory_label)
         layout.addLayout(directory_row)
 
@@ -296,7 +300,9 @@ class DeviceCard(QFrame):
             ipod_name_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.Bold))
             ipod_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             ipod_name_label.setWordWrap(True)
-            ipod_name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+            ipod_name_label.setStyleSheet(
+                f"color: {paint_css('text.primary')}; background: transparent; border: none;"
+            )
             layout.addWidget(ipod_name_label)
 
         # Model name
@@ -306,16 +312,20 @@ class DeviceCard(QFrame):
         name_label.setFont(QFont(FONT_FAMILY, name_font_size, name_font_weight))
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_label.setWordWrap(True)
-        name_color = Colors.TEXT_SECONDARY if ipod.ipod_name else Colors.TEXT_PRIMARY
+        name_color = (
+            paint_css("text.secondary")
+            if ipod.ipod_name
+            else paint_css("text.primary")
+        )
         name_label.setStyleSheet(f"color: {name_color}; background: transparent; border: none;")
         layout.addWidget(name_label)
 
-        if not has_exact_model_number(ipod):
+        if not has_safe_device_profile(ipod):
             warning_label = QLabel("Identification failed")
             warning_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
             warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             warning_label.setStyleSheet(
-                f"color: {Colors.WARNING}; background: transparent; border: none;"
+                f"color: {paint_css('status.warning.text')}; background: transparent; border: none;"
             )
             layout.addWidget(warning_label)
 
@@ -323,25 +333,24 @@ class DeviceCard(QFrame):
         if self._selected:
             self.setStyleSheet(f"""
                 DeviceCard {{
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                        stop:0 {Colors.ACCENT_BORDER}, stop:1 {Colors.ACCENT_DARK});
-                    border: 2px solid {Colors.ACCENT};
+                    background: {paint_css('device.picker.selected_fill')};
+                    border: 2px solid {paint_css('device.picker.selected_border')};
                     border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 }}
             """)
         elif hovered:
             self.setStyleSheet(f"""
                 DeviceCard {{
-                    background: {Colors.SURFACE_HOVER};
-                    border: 1px solid {Colors.BORDER};
+                    background: {paint_css('surface.hover')};
+                    border: 1px solid {paint_css('border.default')};
                     border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 }}
             """)
         else:
             self.setStyleSheet(f"""
                 DeviceCard {{
-                    background: {Colors.SURFACE_ALT};
-                    border: 1px solid {Colors.BORDER_SUBTLE};
+                    background: {paint_css('surface.inset')};
+                    border: 1px solid {paint_css('border.subtle')};
                     border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 }}
             """)
@@ -360,17 +369,27 @@ class DeviceCard(QFrame):
         super().leaveEvent(a0)
 
     def mousePressEvent(self, a0):
+        # A click receiver can open a modal warning dialog.  Its nested event
+        # loop may process a rescan that removes this card, so finish Qt's
+        # base handling before emitting the application-level signal.
+        super().mousePressEvent(a0)
         if a0 and a0.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.ipod)
-        super().mousePressEvent(a0)
 
     def mouseDoubleClickEvent(self, a0):
+        # QFrame's default double-click handling can re-enter
+        # mousePressEvent().  Handle the event here instead, because a click
+        # receiver can synchronously delete this card during a rescan.
+        dialog = self.window()
         if a0 and a0.button() == Qt.MouseButton.LeftButton:
+            ipod = self.ipod
+            clicked = self.clicked
+            a0.accept()
+            clicked.emit(ipod)
             # Double-click = select + accept
-            self.clicked.emit(self.ipod)
-            dialog = self.window()
             if isinstance(dialog, DevicePickerDialog):
                 dialog.accept()
+            return
         super().mouseDoubleClickEvent(a0)
 
 
@@ -416,12 +435,12 @@ class DevicePickerDialog(QDialog):
         # Title
         title = QLabel("Select your iPod")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(f"color: {paint_css('text.primary')};")
         layout.addWidget(title)
 
         subtitle = QLabel("Scanning for connected iPods...")
         subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        subtitle.setStyleSheet(f"color: {paint_css('text.secondary')};")
         self._subtitle = subtitle
         layout.addWidget(subtitle)
 
@@ -443,7 +462,7 @@ class DevicePickerDialog(QDialog):
             "You can also use the button below to select a folder manually."
         )
         self._no_devices_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._no_devices_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
+        self._no_devices_label.setStyleSheet(f"color: {paint_css('text.tertiary')};")
         self._no_devices_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._no_devices_label.setWordWrap(True)
         self._no_devices_label.hide()
@@ -452,7 +471,7 @@ class DevicePickerDialog(QDialog):
         # Separator
         sep = QFrame()
         sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {Colors.BORDER_SUBTLE};")
+        sep.setStyleSheet(f"background: {paint_css('border.subtle')};")
         layout.addWidget(sep)
 
         # Bottom buttons
@@ -543,11 +562,30 @@ class DevicePickerDialog(QDialog):
                 self._cards.append(card)
 
             # If only one iPod found, auto-select it
-            if len(ipods) == 1 and has_exact_model_number(ipods[0]):
+            if len(ipods) == 1 and has_safe_device_profile(ipods[0]):
                 self._on_card_clicked(ipods[0])
+            self._offer_linux_identity_setup(ipods)
         else:
             self._subtitle.setText("No iPods found")
             self._no_devices_label.show()
+
+    def _offer_linux_identity_setup(self, ipods: list[Any]) -> None:
+        """Prompt once for a Linux iPod whose product serial is unavailable."""
+
+        if not sys.platform.startswith("linux"):
+            return
+
+        for ipod in ipods:
+            if linux_identity_setup_guidance(ipod, platform=sys.platform) is None:
+                continue
+            if not claim_unidentified_ipod_auto_prompt(ipod):
+                continue
+            show_unidentified_ipod_warning(
+                self,
+                ipod,
+                after_close=self._start_scan,
+            )
+            return
 
     def _on_scan_error(self, error_msg: str, worker=None) -> None:
         """Surface scan failures without leaving the dialog stuck as busy."""
@@ -603,7 +641,7 @@ class DevicePickerDialog(QDialog):
 
     def _on_card_clicked(self, ipod: Any):
         """Handle a device card being clicked."""
-        if not has_exact_model_number(ipod):
+        if not has_safe_device_profile(ipod):
             self.selected_path = ""
             self.selected_ipod = None
             for card in self._cards:
@@ -624,8 +662,8 @@ class DevicePickerDialog(QDialog):
         self._select_btn.setText(f"Select ({ipod.mount_name})")
 
     def accept(self) -> None:
-        """Accept only a scanned device with a model number or a manual path."""
-        if self.selected_ipod is not None and not has_exact_model_number(
+        """Accept only a scanned device with a safe profile or a manual path."""
+        if self.selected_ipod is not None and not has_safe_device_profile(
             self.selected_ipod
         ):
             show_unidentified_ipod_warning(self, self.selected_ipod)

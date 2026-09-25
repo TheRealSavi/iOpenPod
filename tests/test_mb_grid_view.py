@@ -8,9 +8,11 @@ from PyQt6.QtGui import QContextMenuEvent
 from PyQt6.QtWidgets import QApplication, QScrollArea, QScrollBar
 
 import iopenpod.gui.imgMaker as img_maker
-from iopenpod.gui.styles import Colors
+from iopenpod.gui import styles
+from iopenpod.gui.styles import apply_theme, current_theme
 from iopenpod.gui.widgets.MBGridView import ArtworkResult, MusicBrowserGrid
 from iopenpod.gui.widgets.MBGridViewItem import GridItemRenderState, MusicBrowserGridItem
+from iopenpod.infrastructure.theme_renderer import Color
 
 
 def _build_items(
@@ -85,34 +87,50 @@ def _compact_css(widget: MusicBrowserGridItem) -> str:
     return "".join(widget.styleSheet().split())
 
 
-def test_grid_item_keeps_existing_artwork_tint_in_dark_theme(qtbot, monkeypatch):
-    monkeypatch.setattr(Colors, "_active_mode", "dark")
-    item = MusicBrowserGridItem()
-    qtbot.addWidget(item)
+def test_grid_item_keeps_existing_artwork_tint_in_dark_theme(qtbot):
+    theme_snapshot = current_theme()
+    apply_theme("dark", "off", "blue")
+    try:
+        item = MusicBrowserGridItem()
+        qtbot.addWidget(item)
+        item._apply_color_theme(
+            GridItemRenderState(display_dominant_color=(86, 112, 144))
+        )
 
-    item._apply_color_theme(
-        GridItemRenderState(display_dominant_color=(86, 112, 144))
-    )
+        css = _compact_css(item)
+        backdrop = current_theme().paint("grid.card.fill").color
+        normal = Color(86, 112, 144, 30).composite_over(backdrop).css
+        hover = Color(86, 112, 144, 55).composite_over(backdrop).css
 
-    css = _compact_css(item)
-    assert "background-color:rgba(86,112,144,30);" in css
-    assert "border:none;" in css
-    assert "background-color:rgba(86,112,144,55);" in css
+        assert f"background-color:{normal};" in css
+        assert "border:none;" in css
+        assert f"background-color:{hover};" in css
+        assert "rgba(" not in css
+    finally:
+        styles._THEME_RUNTIME.replace(theme_snapshot)
 
 
-def test_grid_item_uses_stronger_artwork_tint_in_light_theme(qtbot, monkeypatch):
-    monkeypatch.setattr(Colors, "_active_mode", "light")
-    item = MusicBrowserGridItem()
-    qtbot.addWidget(item)
+def test_grid_item_uses_stronger_artwork_tint_in_light_theme(qtbot):
+    theme_snapshot = current_theme()
+    apply_theme("light", "off", "blue")
+    try:
+        item = MusicBrowserGridItem()
+        qtbot.addWidget(item)
+        item._apply_color_theme(
+            GridItemRenderState(display_dominant_color=(86, 112, 144))
+        )
 
-    item._apply_color_theme(
-        GridItemRenderState(display_dominant_color=(86, 112, 144))
-    )
+        css = _compact_css(item)
+        backdrop = current_theme().paint("grid.card.fill").color
+        normal = Color(86, 112, 144, 48).composite_over(backdrop).css
+        hover = Color(86, 112, 144, 82).composite_over(backdrop).css
 
-    css = _compact_css(item)
-    assert "background-color:rgba(86,112,144,48);" in css
-    assert "border:none;" in css
-    assert "background-color:rgba(86,112,144,82);" in css
+        assert f"background-color:{normal};" in css
+        assert "border:none;" in css
+        assert f"background-color:{hover};" in css
+        assert "rgba(" not in css
+    finally:
+        styles._THEME_RUNTIME.replace(theme_snapshot)
 
 
 def _art_result(rgb: tuple[int, int, int]) -> tuple[int, int, bytes, tuple[int, int, int], dict]:
@@ -360,6 +378,20 @@ def test_stale_art_results_are_ignored_after_dataset_switch(qtbot, monkeypatch):
         lambda: _grid_items(grid)[0].item_data.get("dominant_color") == (4, 5, 6),
         timeout=2000,
     )
+
+
+def test_grid_search_matches_symbol_variants(qtbot):
+    _scroll, grid = _mount_grid(qtbot)
+    item = {
+        "title": "I’m",
+        "artist": "Artist",
+        "category": "Albums",
+    }
+    grid.populateGrid([item])
+
+    grid.setSearchFilter("i'm")
+
+    assert [record.source for record in grid._visible_records] == [item]
 
 
 def test_search_requeues_artwork_after_pending_request_is_invalidated(qtbot, monkeypatch):

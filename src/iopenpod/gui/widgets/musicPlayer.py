@@ -1,15 +1,27 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QEvent, QPoint, QRect, QSignalBlocker, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import (
+    QEvent,
+    QPoint,
+    QPointF,
+    QRect,
+    QRectF,
+    QSignalBlocker,
+    QSize,
+    Qt,
+    pyqtSignal,
+)
 from PyQt6.QtGui import (
     QColor,
     QCursor,
     QFont,
     QFontMetrics,
     QImage,
+    QLinearGradient,
     QMouseEvent,
     QPainter,
     QPixmap,
+    QRadialGradient,
 )
 from PyQt6.QtWidgets import (
     QFrame,
@@ -31,28 +43,43 @@ from ..glyphs import glyph_icon, glyph_pixmap
 from ..hidpi import effective_device_pixel_ratio, logical_to_physical
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Metrics,
+    current_theme,
 )
 from .formatters import format_duration_mmss
 
-_CLASSIC_REFERENCE_COLORS = {
-    "bar_top": "#f6f7f8",
-    "bar_mid": "#dfe2e5",
-    "bar_bottom": "#bcc2c8",
-    "panel_top": "#eef1f4",
-    "panel_mid": "#cfd5dc",
-    "panel_bottom": "#aeb8c1",
-    "panel_border": "#77838e",
-    "panel_highlight": "#ffffff",
-    "text": "#1f2328",
-    "text_secondary": "#38424a",
-    "text_tertiary": "#56616a",
-    "icon": "#51565b",
-    "icon_disabled": "#9da3a8",
-    "groove": "#a8adb2",
-    "groove_fill": "#79838c",
-    "handle": "#f7f8f9",
+_PLAYER_PAINT_NAMES = {
+    "accent": "player.accent",
+    "art_bg": "player.art.fill",
+    "art_border": "player.art.border",
+    "bar_top": "player.chrome.top",
+    "bar_mid": "player.chrome.middle",
+    "bar_bottom": "player.chrome.bottom",
+    "border": "player.slider.border",
+    "border_subtle": "player.slider.disabled_fill",
+    "disabled": "player.icon.disabled",
+    "groove_top": "player.slider.groove.top",
+    "groove_mid": "player.slider.groove.middle",
+    "groove_bottom": "player.slider.groove.bottom",
+    "groove_fill_top": "player.slider.fill.top",
+    "groove_fill_bottom": "player.slider.fill.bottom",
+    "handle_top": "player.slider.handle.top",
+    "handle_mid": "player.slider.handle.middle",
+    "handle_bottom": "player.slider.handle.bottom",
+    "hover": "player.control.hover_fill",
+    "icon": "player.icon",
+    "icon_disabled": "player.icon.disabled",
+    "inactive_star": "player.star.inactive",
+    "panel_top": "player.surface.top",
+    "panel_mid": "player.surface.middle",
+    "panel_bottom": "player.surface.bottom",
+    "panel_border": "player.surface.border",
+    "panel_highlight": "player.surface.highlight",
+    "pressed": "player.control.pressed_fill",
+    "star": "player.star.active",
+    "text": "player.text",
+    "text_secondary": "player.text.secondary",
+    "text_tertiary": "player.text.tertiary",
 }
 
 
@@ -110,7 +137,7 @@ def _paint_color(value: str, fallback: str = "#888888") -> QColor:
         return color
     if value.startswith("rgba"):
         try:
-            raw_parts = value[value.index("(") + 1:value.rindex(")")].split(",")
+            raw_parts = value[value.index("(") + 1 : value.rindex(")")].split(",")
             r, g, b = (int(raw_parts[index].strip()) for index in range(3))
             alpha_raw = float(raw_parts[3].strip()) if len(raw_parts) > 3 else 255.0
             alpha = int(alpha_raw * 255) if alpha_raw <= 1 else int(alpha_raw)
@@ -120,125 +147,11 @@ def _paint_color(value: str, fallback: str = "#888888") -> QColor:
     return QColor(fallback)
 
 
-def _css_color(color: QColor) -> str:
-    if color.alpha() >= 255:
-        return color.name(QColor.NameFormat.HexRgb)
-    return f"rgba({color.red()},{color.green()},{color.blue()},{color.alpha()})"
-
-
-def _composite_color(foreground: str, background: str) -> str:
-    fg = _paint_color(foreground)
-    bg = _paint_color(background)
-    alpha = fg.alphaF()
-    inv_alpha = 1.0 - alpha
-    return _css_color(
-        QColor(
-            round(fg.red() * alpha + bg.red() * inv_alpha),
-            round(fg.green() * alpha + bg.green() * inv_alpha),
-            round(fg.blue() * alpha + bg.blue() * inv_alpha),
-        )
-    )
-
-
-def _mix_color(first: str, second: str, amount: float) -> str:
-    amount = max(0.0, min(1.0, float(amount)))
-    first_color = _paint_color(first)
-    second_color = _paint_color(second)
-    keep = 1.0 - amount
-    return _css_color(
-        QColor(
-            round(first_color.red() * keep + second_color.red() * amount),
-            round(first_color.green() * keep + second_color.green() * amount),
-            round(first_color.blue() * keep + second_color.blue() * amount),
-            round(first_color.alpha() * keep + second_color.alpha() * amount),
-        )
-    )
-
-
-def _theme_surface(color: str, background: str) -> str:
-    return _composite_color(color, background) if "rgba" in color else color
-
-
 def _player_theme_colors() -> dict[str, str]:
-    dark = getattr(Colors, "_active_mode", "dark") == "dark"
-    base = _theme_surface(Colors.DIALOG_BG, Colors.BG_DARK)
-    bg = _theme_surface(Colors.BG_DARK, base)
-    mid = _theme_surface(Colors.BG_MID, base)
-    surface = _theme_surface(Colors.SURFACE, base)
-    surface_alt = _theme_surface(Colors.SURFACE_ALT, base)
-    raised = _theme_surface(Colors.SURFACE_RAISED, base)
-    hover = _theme_surface(Colors.SURFACE_HOVER, base)
-    active = _theme_surface(Colors.SURFACE_ACTIVE, base)
-    border = _theme_surface(Colors.BORDER, base)
-    border_subtle = _theme_surface(Colors.BORDER_SUBTLE, base)
-    text = _theme_surface(Colors.TEXT_PRIMARY, base)
-    text_secondary = _theme_surface(Colors.TEXT_SECONDARY, base)
-    text_tertiary = _theme_surface(Colors.TEXT_TERTIARY, base)
-    disabled = _theme_surface(Colors.TEXT_DISABLED, base)
-    accent = _theme_surface(Colors.ACCENT, base)
+    """Expose the renderer-owned player paint catalog to Qt stylesheets."""
 
-    if dark:
-        bar_top = _mix_color(base, "#ffffff", 0.10)
-        bar_mid = _mix_color(_mix_color(base, mid, 0.50), "#ffffff", 0.05)
-        bar_bottom = _mix_color(mid, "#000000", 0.14)
-        panel_top = _mix_color(raised, "#ffffff", 0.10)
-        panel_mid = _mix_color(surface_alt, "#ffffff", 0.04)
-        panel_bottom = _mix_color(surface, "#000000", 0.16)
-        panel_highlight = _mix_color(panel_top, "#ffffff", 0.28)
-        groove_top = _mix_color(surface_alt, "#000000", 0.32)
-        groove_mid = _mix_color(raised, "#ffffff", 0.04)
-        groove_bottom = _mix_color(raised, "#ffffff", 0.12)
-        handle_top = _mix_color(panel_top, text, 0.36)
-        handle_mid = _mix_color(panel_mid, text, 0.24)
-        handle_bottom = _mix_color(panel_bottom, "#000000", 0.12)
-    else:
-        bar_top = _mix_color(base, "#ffffff", 0.58)
-        bar_mid = _mix_color(_mix_color(base, mid, 0.40), "#000000", 0.04)
-        bar_bottom = _mix_color(mid, "#000000", 0.12)
-        panel_top = _mix_color(raised, "#ffffff", 0.38)
-        panel_mid = _mix_color(surface_alt, "#000000", 0.03)
-        panel_bottom = _mix_color(surface, "#000000", 0.12)
-        panel_highlight = _mix_color(panel_top, "#ffffff", 0.55)
-        groove_top = _mix_color(surface_alt, "#000000", 0.22)
-        groove_mid = _mix_color(raised, "#000000", 0.06)
-        groove_bottom = _mix_color(raised, "#ffffff", 0.34)
-        handle_top = _mix_color(panel_top, "#ffffff", 0.58)
-        handle_mid = _mix_color(panel_mid, "#ffffff", 0.28)
-        handle_bottom = _mix_color(panel_bottom, "#000000", 0.16)
-
-    return {
-        "accent": accent,
-        "art_bg": _mix_color(panel_mid, bg, 0.08),
-        "art_border": _mix_color(border, text_tertiary, 0.18),
-        "bar_top": bar_top,
-        "bar_mid": bar_mid,
-        "bar_bottom": bar_bottom,
-        "border": border,
-        "border_subtle": border_subtle,
-        "disabled": disabled,
-        "groove_top": groove_top,
-        "groove_mid": groove_mid,
-        "groove_bottom": groove_bottom,
-        "groove_fill_top": _mix_color(accent, text, 0.10 if dark else 0.04),
-        "groove_fill_bottom": _mix_color(accent, "#000000", 0.18 if dark else 0.08),
-        "handle_top": handle_top,
-        "handle_mid": handle_mid,
-        "handle_bottom": handle_bottom,
-        "hover": hover,
-        "icon": text_secondary,
-        "icon_disabled": disabled,
-        "inactive_star": _mix_color(text_tertiary, base, 0.45),
-        "panel_top": panel_top,
-        "panel_mid": panel_mid,
-        "panel_bottom": panel_bottom,
-        "panel_border": _mix_color(border, text_tertiary, 0.22),
-        "panel_highlight": panel_highlight,
-        "pressed": active,
-        "star": _theme_surface(Colors.STAR, base),
-        "text": text,
-        "text_secondary": text_secondary,
-        "text_tertiary": text_tertiary,
-    }
+    theme = current_theme()
+    return {name: theme.paint(paint_name).css for name, paint_name in _PLAYER_PAINT_NAMES.items()}
 
 
 class _PlayerTextLabel(QLabel):
@@ -391,6 +304,113 @@ class RatingStars(QWidget):
         self.setToolTip(f"Rate {stars} star{'s' if stars != 1 else ''}")
 
 
+class _PlayerSlider(QSlider):
+    """Player slider with a consistently rounded handle on every Qt platform."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._player_colors: dict[str, str] = {}
+        self._handle_size = 12
+        self._groove_height = 4
+        self.setMouseTracking(True)
+        # The platform style still owns keyboard and mouse interaction. Painting
+        # the player-specific chrome ourselves avoids the occasional native
+        # rectangular fallback for QSlider stylesheet subcontrols on macOS.
+        self.setStyleSheet("QSlider { background: transparent; border: none; }")
+
+    def setPlayerAppearance(
+        self,
+        *,
+        handle_size: int,
+        groove_height: int,
+        colors: dict[str, str],
+    ) -> None:
+        self._handle_size = max(1, handle_size)
+        self._groove_height = max(1, groove_height)
+        self._player_colors = colors
+        self.update()
+
+    def _handle_rect(self) -> QRectF:
+        """Return the visible gently-oval handle bounds in widget coordinates."""
+
+        width = max(1.0, min(float(self._handle_size), float(self.width())))
+        height = max(1.0, min(round(width * 0.82), self.height() - 2))
+        radius = width / 2
+        span = max(0.0, float(self.width()) - width)
+        value_range = self.maximum() - self.minimum()
+        fraction = (self.sliderPosition() - self.minimum()) / value_range if value_range > 0 else 0.0
+        if self.invertedAppearance():
+            fraction = 1.0 - fraction
+        center = QPointF(radius + span * fraction, self.height() / 2)
+        return QRectF(center.x() - radius, center.y() - height / 2, width, height)
+
+    def paintEvent(self, ev) -> None:
+        if not self._player_colors:
+            super().paintEvent(ev)
+            return
+
+        colors = self._player_colors
+        handle = self._handle_rect()
+        groove_height = min(float(self._groove_height), max(1.0, float(self.height() - 2)))
+        groove = QRectF(
+            handle.width() / 2,
+            (self.height() - groove_height) / 2,
+            max(1.0, float(self.width()) - handle.width()),
+            groove_height,
+        )
+        fill = QRectF(
+            groove.left(),
+            groove.top(),
+            max(0.0, handle.center().x() - groove.left()),
+            groove.height(),
+        )
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        radius = groove.height() / 2
+
+        if self.isEnabled():
+            groove_gradient = QLinearGradient(groove.topLeft(), groove.bottomLeft())
+            groove_gradient.setColorAt(0, _paint_color(colors["groove_top"]))
+            groove_gradient.setColorAt(0.5, _paint_color(colors["groove_mid"]))
+            groove_gradient.setColorAt(1, _paint_color(colors["groove_bottom"]))
+            painter.setBrush(groove_gradient)
+            painter.setPen(_paint_color(colors["border"]))
+        else:
+            painter.setBrush(_paint_color(colors["border_subtle"]))
+            painter.setPen(_paint_color(colors["border"]))
+        painter.drawRoundedRect(groove, radius, radius)
+
+        if fill.width() > 0:
+            if self.isEnabled():
+                fill_gradient = QLinearGradient(fill.topLeft(), fill.bottomLeft())
+                fill_gradient.setColorAt(0, _paint_color(colors["groove_fill_top"]))
+                fill_gradient.setColorAt(1, _paint_color(colors["groove_fill_bottom"]))
+                painter.setBrush(fill_gradient)
+            else:
+                painter.setBrush(_paint_color(colors["border"]))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(fill, radius, radius)
+
+        handle_center = handle.center()
+        if self.isEnabled():
+            handle_gradient = QRadialGradient(
+                handle_center - QPointF(handle.width() * 0.15, handle.height() * 0.2),
+                handle.width() * 0.85,
+            )
+            handle_gradient.setColorAt(0, _paint_color(colors["handle_top"]))
+            handle_gradient.setColorAt(0.45, _paint_color(colors["handle_mid"]))
+            handle_gradient.setColorAt(1, _paint_color(colors["handle_bottom"]))
+            painter.setBrush(handle_gradient)
+            border_color = colors["accent"] if self.underMouse() or self.isSliderDown() else colors["border"]
+        else:
+            painter.setBrush(_paint_color(colors["disabled"]))
+            border_color = colors["border"]
+        painter.setPen(_paint_color(border_color))
+        painter.drawEllipse(handle)
+        painter.end()
+
+
 class MusicPlayerBar(QFrame):
     """Dockable player chrome for local iPod track playback."""
 
@@ -464,7 +484,7 @@ class MusicPlayerBar(QFrame):
         self.current_time_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
         self.current_time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        self.progress_slider = QSlider(Qt.Orientation.Horizontal)
+        self.progress_slider = _PlayerSlider()
         self.progress_slider.setRange(0, 0)
         self.progress_slider.setSingleStep(1000)
         self.progress_slider.setPageStep(10_000)
@@ -514,7 +534,7 @@ class MusicPlayerBar(QFrame):
         self.volume_icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.volume_icon_label.setVisible(False)
 
-        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider = _PlayerSlider()
         self.volume_slider.setObjectName("playerVolumeSlider")
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(100)
@@ -600,24 +620,16 @@ class MusicPlayerBar(QFrame):
         geometry = self._refresh_scaled_geometry()
         height = geometry["bar_height"]
         surface_height = geometry["surface_height"]
-        border_top = (
-            "none"
-            if self._dock_position == PLAYER_POSITION_TOP
-            else f"1px solid {colors['panel_border']}"
-        )
-        border_bottom = (
-            f"1px solid {colors['panel_border']}"
-            if self._dock_position == PLAYER_POSITION_TOP
-            else "none"
-        )
+        border_top = "none" if self._dock_position == PLAYER_POSITION_TOP else f"1px solid {colors['panel_border']}"
+        border_bottom = f"1px solid {colors['panel_border']}" if self._dock_position == PLAYER_POSITION_TOP else "none"
         self.setFixedHeight(height)
         self.surface.setFixedHeight(surface_height)
         self.setStyleSheet(f"""
             QFrame#MusicPlayerBar {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {colors['bar_top']},
-                    stop:0.48 {colors['bar_mid']},
-                    stop:1 {colors['bar_bottom']});
+                    stop:0 {colors["bar_top"]},
+                    stop:0.48 {colors["bar_mid"]},
+                    stop:1 {colors["bar_bottom"]});
                 border-top: {border_top};
                 border-left: none;
                 border-right: none;
@@ -625,11 +637,11 @@ class MusicPlayerBar(QFrame):
             }}
             QFrame#MusicPlayerSurface {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {colors['panel_top']},
-                    stop:0.5 {colors['panel_mid']},
-                    stop:1 {colors['panel_bottom']});
-                border: 1px solid {colors['panel_border']};
-                border-top-color: {colors['panel_highlight']};
+                    stop:0 {colors["panel_top"]},
+                    stop:0.5 {colors["panel_mid"]},
+                    stop:1 {colors["panel_bottom"]});
+                border: 1px solid {colors["panel_border"]};
+                border-top-color: {colors["panel_highlight"]};
                 border-radius: 5px;
             }}
             QWidget#MusicPlayerLeftChrome,
@@ -641,8 +653,8 @@ class MusicPlayerBar(QFrame):
         """)
         self.art_label.setStyleSheet(f"""
             QLabel {{
-                background: {colors['art_bg']};
-                border: 1px solid {colors['art_border']};
+                background: {colors["art_bg"]};
+                border: 1px solid {colors["art_border"]};
                 border-radius: 2px;
             }}
         """)
@@ -662,7 +674,7 @@ class MusicPlayerBar(QFrame):
         """)
         self.queue_label.setStyleSheet(f"""
             QLabel {{
-                color: {colors['text_tertiary']};
+                color: {colors["text_tertiary"]};
                 background: transparent;
                 border: none;
             }}
@@ -678,19 +690,15 @@ class MusicPlayerBar(QFrame):
             colors["inactive_star"],
             colors["disabled"],
         )
-        self.progress_slider.setStyleSheet(
-            self._themed_slider_css(
-                handle_size=geometry["slider_handle"],
-                groove_height=geometry["slider_groove"],
-                colors=colors,
-            )
+        self.progress_slider.setPlayerAppearance(
+            handle_size=geometry["slider_handle"],
+            groove_height=geometry["slider_groove"],
+            colors=colors,
         )
-        self.volume_slider.setStyleSheet(
-            self._themed_slider_css(
-                handle_size=geometry["volume_handle"],
-                groove_height=geometry["volume_groove"],
-                colors=colors,
-            )
+        self.volume_slider.setPlayerAppearance(
+            handle_size=geometry["volume_handle"],
+            groove_height=geometry["volume_groove"],
+            colors=colors,
         )
         self.volume_label.setStyleSheet(label_css)
         volume_pixmap = glyph_pixmap(
@@ -940,9 +948,7 @@ class MusicPlayerBar(QFrame):
         colors = self._player_colors
         button.setFixedSize(size, size)
         button.setToolTip(tooltip)
-        button.setStyleSheet(
-            self._accent_button_css(size, colors) if accent else self._icon_button_css(size, colors)
-        )
+        button.setStyleSheet(self._accent_button_css(size, colors) if accent else self._icon_button_css(size, colors))
         icon_size = max(14, min(30 if accent else 28, size - 10))
         icon = glyph_icon(
             icon_name,
@@ -1024,13 +1030,7 @@ class MusicPlayerBar(QFrame):
 
         rating_height = self.rating_control.height()
         utility_h = queue_button_size + rating_height + self._utility_layout.spacing()
-        text_h = (
-            title_h
-            + detail_h
-            + slider_h
-            + self._text_layout.spacing() * 2
-            + 2
-        )
+        text_h = title_h + detail_h + slider_h + self._text_layout.spacing() * 2 + 2
         self._text_layout.invalidate()
         self._utility_layout.invalidate()
         self._surface_layout.invalidate()
@@ -1044,12 +1044,7 @@ class MusicPlayerBar(QFrame):
         )
         bar_height = max(44, surface_height + self._BAR_MARGIN_Y * 2)
 
-        controls_width = (
-            transport_button_size
-            + play_button_size
-            + transport_button_size
-            + control_spacing * 2
-        )
+        controls_width = transport_button_size + play_button_size + transport_button_size + control_spacing * 2
         left_width = controls_width + left_group_spacing + volume_slider_w
         self.left_chrome.setFixedWidth(left_width)
         self.left_chrome.setFixedHeight(surface_height)
@@ -1116,78 +1111,18 @@ class MusicPlayerBar(QFrame):
                 max-height: {size}px;
             }}
             QPushButton:hover {{
-                background: {colors['hover']};
+                background: {colors["hover"]};
             }}
             QPushButton:pressed {{
-                background: {colors['pressed']};
+                background: {colors["pressed"]};
                 padding-top: 1px;
             }}
             QPushButton:disabled {{
                 background: transparent;
-                color: {colors['disabled']};
+                color: {colors["disabled"]};
             }}
         """
 
     @staticmethod
     def _accent_button_css(size: int, colors: dict[str, str]) -> str:
         return MusicPlayerBar._icon_button_css(size, colors)
-
-    @staticmethod
-    def _themed_slider_css(
-        *,
-        handle_size: int = 12,
-        groove_height: int = 4,
-        colors: dict[str, str],
-    ) -> str:
-        handle_margin = -max(1, (handle_size - groove_height) // 2)
-        handle_radius = max(1, handle_size // 2)
-        handle_geometry = f"""
-                width: {handle_size}px;
-                height: {handle_size}px;
-                margin: {handle_margin}px 0;
-                border-radius: {handle_radius}px;
-        """
-        return f"""
-            QSlider::groove:horizontal {{
-                height: {groove_height}px;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {colors['groove_top']},
-                    stop:0.5 {colors['groove_mid']},
-                    stop:1 {colors['groove_bottom']});
-                border: 1px solid {colors['border']};
-                border-radius: {max(1, groove_height // 2)}px;
-            }}
-            QSlider::sub-page:horizontal {{
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {colors['groove_fill_top']},
-                    stop:1 {colors['groove_fill_bottom']});
-                border-radius: {max(1, groove_height // 2)}px;
-            }}
-            QSlider::handle:horizontal {{
-                {handle_geometry}
-                background: qradialgradient(cx:0.35, cy:0.25, radius:0.85,
-                    stop:0 {colors['handle_top']},
-                    stop:0.45 {colors['handle_mid']},
-                    stop:1 {colors['handle_bottom']});
-                border: 1px solid {colors['border']};
-            }}
-            QSlider::handle:horizontal:hover {{
-                {handle_geometry}
-                border-color: {colors['accent']};
-            }}
-            QSlider::handle:horizontal:pressed {{
-                {handle_geometry}
-                border-color: {colors['accent']};
-            }}
-            QSlider::groove:horizontal:disabled {{
-                background: {colors['border_subtle']};
-            }}
-            QSlider::sub-page:horizontal:disabled {{
-                background: {colors['border']};
-            }}
-            QSlider::handle:horizontal:disabled {{
-                {handle_geometry}
-                background: {colors['disabled']};
-                border-color: {colors['border']};
-            }}
-        """

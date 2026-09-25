@@ -193,10 +193,10 @@ def run_pyqt_app(context: AppContext | None = None) -> None:
     from iopenpod.gui.fonts import load_bundled_fonts
     from iopenpod.gui.styles import (
         FONT_FAMILY,
-        Colors,
         DarkScrollbarStyle,
         Metrics,
         app_stylesheet,
+        apply_theme_selection,
         build_palette,
         resolve_accent_color,
     )
@@ -210,7 +210,7 @@ def run_pyqt_app(context: AppContext | None = None) -> None:
     app.setStyle(DarkScrollbarStyle("Fusion"))
 
     settings_snapshot = context.settings.get_effective_snapshot()
-    Colors.apply_theme_selection(
+    apply_theme_selection(
         settings_snapshot.theme_mode,
         settings_snapshot.light_theme,
         settings_snapshot.dark_theme,

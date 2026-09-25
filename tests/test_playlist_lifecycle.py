@@ -37,3 +37,21 @@ def test_playlist_edit_payload_preserves_origin_flags_and_items() -> None:
     assert edited["playlist_settings"] == {"opaque": True}
     assert edited["playlist_description"] == "after"
     assert edited["Album"] == "after"
+
+
+def test_playlist_edit_payload_canonicalizes_folder_kind_and_parent_fields() -> None:
+    payload = playlist_edit_payload(
+        None,
+        {
+            "Title": "New Folder Child",
+            "is_folder": True,
+            "parent_folder_playlist_id": 0x1234,
+        },
+    )
+
+    assert payload["playlist_kind_flags"] == 0x0100
+    assert payload["podcast_flag"] == 0x0100
+    assert payload["is_folder"] is True
+    assert payload["is_podcast"] is False
+    assert payload["parent_folder_playlist_id"] == 0x1234
+    assert payload["unk0x30_playlist_ref"] == 0x1234

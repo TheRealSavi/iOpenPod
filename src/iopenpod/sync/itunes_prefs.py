@@ -26,11 +26,25 @@ Binary format (frpd):
 """
 
 import logging
-import os
 import plistlib
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_written_file,
+    open_unique_sibling_temp,
+)
+from iopenpod.device.path_safety import resolve_device_path
+from iopenpod.device.write_guard import DeviceWriteGuard, DeviceWriteSafetyError
+from iopenpod.device.write_readiness import (
+    inspect_device_write_readiness,
+    revalidate_device_write_readiness,
+    volume_lock_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -432,6 +446,9 @@ def protect_from_itunes(
     track_count: int = 0,
     total_music_bytes: int = 0,
     total_music_seconds: int = 0,
+    before_device_mutation: Callable[[], None] | None = None,
+    reported_volume_format: str = "",
+    expected_volume_identity_key: str = "",
     **category_totals,
 ) -> ITunesPrefs:
     """
@@ -457,7 +474,47 @@ def protect_from_itunes(
         The updated ITunesPrefs.
     """
     ipod_path = Path(ipod_path)
-    itunes_dir = ipod_path / "iPod_Control" / "iTunes"
+    if before_device_mutation is None:
+        profile = inspect_device_write_readiness(
+            ipod_path,
+            reported_volume_format=reported_volume_format,
+        )
+        current_key = volume_lock_key(profile)
+        if (
+            expected_volume_identity_key
+            and current_key != expected_volume_identity_key
+        ):
+            raise DeviceWriteSafetyError(
+                "A different volume is mounted at the selected iPod path. "
+                "iOpenPod stopped before updating iTunes preferences."
+            )
+        with DeviceWriteGuard(ipod_path, volume_key=current_key):
+            profile = revalidate_device_write_readiness(
+                profile,
+                probe_case_sensitivity=True,
+            )
+
+            def _revalidate() -> None:
+                nonlocal profile
+                profile = revalidate_device_write_readiness(profile)
+
+            return protect_from_itunes(
+                ipod_path,
+                track_count=track_count,
+                total_music_bytes=total_music_bytes,
+                total_music_seconds=total_music_seconds,
+                before_device_mutation=_revalidate,
+                reported_volume_format=reported_volume_format,
+                expected_volume_identity_key=expected_volume_identity_key,
+                **category_totals,
+            )
+
+    itunes_subtree = Path("iPod_Control") / "iTunes"
+    itunes_dir = resolve_device_path(
+        ipod_path,
+        itunes_subtree,
+        allowed_subtree=itunes_subtree,
+    )
     binary_path = itunes_dir / "iTunesPrefs"
     plist_path = itunes_dir / "iTunesPrefs.plist"
 
@@ -519,18 +576,31 @@ def protect_from_itunes(
     prefs.sync_history = [SyncHistoryEntry(_username, _hostname)]
 
     # Write binary atomically
+    tmp: Path | None = None
     try:
-        itunes_dir.mkdir(parents=True, exist_ok=True)
-        tmp = binary_path.with_suffix(".tmp")
-        tmp.write_bytes(buf)
-        os.replace(str(tmp), str(binary_path))
+        if not itunes_dir.is_dir():
+            before_device_mutation()
+            itunes_dir.mkdir(parents=True, exist_ok=True)
+        before_device_mutation()
+        tmp, temp_file = open_unique_sibling_temp(binary_path, mode="wb")
+        with temp_file as f:
+            f.write(buf)
+            flush_written_file(f)
+        before_device_mutation()
+        durable_replace(tmp, binary_path)
         logger.info(
             "iTunesPrefs: wrote protective settings "
             "(manual sync, no auto-open, library_id=%s)",
             library_id.hex(),
         )
-    except Exception as e:
-        logger.error("Failed to write iTunesPrefs: %s", e)
+    except Exception:
+        if tmp is not None:
+            try:
+                before_device_mutation()
+                durable_unlink(tmp, missing_ok=True)
+            except Exception as cleanup_exc:
+                logger.warning("Could not safely remove iTunesPrefs temp: %s", cleanup_exc)
+        raise
 
     # ── Update plist ────────────────────────────────────────────────────
     plist_data = prefs._raw_plist if prefs._raw_plist else {}
@@ -567,14 +637,27 @@ def protect_from_itunes(
             plist_data[key] = []
 
     # Write plist atomically
+    tmp = None
     try:
-        tmp = plist_path.with_suffix(".tmp")
-        with open(tmp, "wb") as f:
+        before_device_mutation()
+        tmp, temp_file = open_unique_sibling_temp(plist_path, mode="wb")
+        with temp_file as f:
             plistlib.dump(plist_data, f, fmt=plistlib.FMT_XML)
-        os.replace(str(tmp), str(plist_path))
+            flush_written_file(f)
+        before_device_mutation()
+        durable_replace(tmp, plist_path)
         logger.info("iTunesPrefs.plist: updated with %d tracks, device totals refreshed", track_count)
-    except Exception as e:
-        logger.error("Failed to write iTunesPrefs.plist: %s", e)
+    except Exception:
+        if tmp is not None:
+            try:
+                before_device_mutation()
+                durable_unlink(tmp, missing_ok=True)
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Could not safely remove iTunesPrefs.plist temp: %s",
+                    cleanup_exc,
+                )
+        raise
 
     prefs._raw_binary = buf
     prefs._raw_plist = plist_data

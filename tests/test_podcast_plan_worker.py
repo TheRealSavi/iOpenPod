@@ -35,7 +35,8 @@ def test_build_podcast_plan_refreshes_feeds_before_building_plan() -> None:
     )
 
     assert plan.to_add == []
-    assert store.updated_feeds == [refreshed]
+    assert store.updated_feeds is None
+    assert plan._refreshed_podcast_feeds == [refreshed]
     assert seen["fetch"] == (original.feed_url, original)
     assert seen["build"] == ([refreshed], ipod_tracks, store)
 
@@ -61,7 +62,8 @@ def test_build_podcast_plan_falls_back_to_existing_feed_on_refresh_failure() -> 
     )
 
     assert plan.to_add == ["episode"]
-    assert store.updated_feeds == [original]
+    assert store.updated_feeds is None
+    assert plan._refreshed_podcast_feeds == [original]
     assert seen["build"] == ([original], [], store)
 
 

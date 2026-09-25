@@ -64,7 +64,6 @@ def write_dynamic_itdb(
     path: str,
     tracks: list[TrackInfo],
     playlist_pids: list[int] | None = None,
-    tz_offset: int = 0,
 ) -> None:
     """Write Dynamic.itdb SQLite database.
 
@@ -74,7 +73,6 @@ def write_dynamic_itdb(
         playlist_pids: All playlist PIDs (master + user + smart), as returned
                        by ``write_library_itdb()``.  One ``container_ui`` row
                        is written per PID.
-        tz_offset: Timezone offset in seconds.
     """
     conn, cur = open_db(path)
 
@@ -84,8 +82,8 @@ def write_dynamic_itdb(
     for track in tracks:
         has_been_played = 1 if track.play_count > 0 else 0
 
-        date_played = unix_to_coredata(track.last_played or 0, tz_offset)
-        date_skipped = unix_to_coredata(track.last_skipped or 0, tz_offset)
+        date_played = unix_to_coredata(track.last_played or 0)
+        date_skipped = unix_to_coredata(track.last_skipped or 0)
 
         cur.execute(
             """INSERT INTO item_stats (

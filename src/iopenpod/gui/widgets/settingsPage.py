@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QProgressDialog,
     QPushButton,
     QScrollArea,
@@ -46,12 +47,13 @@ from iopenpod.infrastructure.settings_schema import (
     normalize_grid_item_size,
     normalize_player_position,
 )
+from iopenpod.infrastructure.theme_catalog import load_theme_catalog
 
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
+    apply_theme_selection,
     back_btn_css,
     button_css,
     combo_css,
@@ -60,6 +62,7 @@ from ..styles import (
     input_css,
     link_btn_css,
     make_scroll_area,
+    paint_css,
     panel_css,
     resolve_accent_color,
     sidebar_panel_css,
@@ -92,6 +95,21 @@ _GRID_ITEM_SIZE_DISPLAY = {
 _GRID_ITEM_SIZE_BY_TEXT = {
     text: size for size, text in _GRID_ITEM_SIZE_DISPLAY.items()
 }
+_ACCENT_COLOR_DISPLAY = {
+    "blue": "Theme Default",
+    "match-ipod": "Match iPod",
+    "preset-blue": "Blue",
+    "red": "Red",
+    "orange": "Orange",
+    "gold": "Gold",
+    "green": "Green",
+    "teal": "Teal",
+    "purple": "Purple",
+    "pink": "Pink",
+}
+_ACCENT_COLOR_BY_TEXT = {
+    text: color for color, text in _ACCENT_COLOR_DISPLAY.items()
+}
 
 
 # ── Reusable row widgets ────────────────────────────────────────────────────
@@ -103,9 +121,9 @@ class SettingRow(QFrame):
         super().__init__()
         self.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.SURFACE};
+                background: {paint_css('surface.default')};
                 border: none;
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                border-bottom: 1px solid {paint_css('border.subtle')};
                 border-radius: 0px;
             }}
         """)
@@ -120,13 +138,13 @@ class SettingRow(QFrame):
 
         self.title_label = QLabel(title)
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
-        self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+        self.title_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent; border: none;")
         text_layout.addWidget(self.title_label)
 
         if description:
             self.desc_label = QLabel(description)
             self.desc_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-            self.desc_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
+            self.desc_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent; border: none;")
             self.desc_label.setWordWrap(True)
             text_layout.addWidget(self.desc_label)
 
@@ -144,7 +162,7 @@ class SettingRow(QFrame):
             self._override_label = QLabel("Overridden by device settings")
             self._override_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             self._override_label.setStyleSheet(
-                f"color: {Colors.WARNING}; background: transparent; border: none;"
+                f"color: {paint_css('status.warning.text')}; background: transparent; border: none;"
             )
             self._text_layout.addWidget(self._override_label)
         self._override_label.setVisible(visible)
@@ -169,20 +187,20 @@ class ToggleRow(SettingRow):
                 width: {(38)}px;
                 height: {(20)}px;
                 border-radius: {(10)}px;
-                background: {Colors.SURFACE_ACTIVE};
-                border: 1px solid {Colors.BORDER};
+                background: {paint_css('control.secondary.pressed_fill')};
+                border: 1px solid {paint_css('border.default')};
             }}
             QCheckBox::indicator:hover {{
-                background: {Colors.SURFACE_HOVER};
-                border: 1px solid {Colors.BORDER_FOCUS};
+                background: {paint_css('control.secondary.hover_fill')};
+                border: 1px solid {paint_css('focus.border')};
             }}
             QCheckBox::indicator:checked {{
-                background: {Colors.ACCENT};
-                border: 1px solid {Colors.ACCENT};
+                background: {paint_css('control.primary.fill')};
+                border: 1px solid {paint_css('control.primary.fill')};
             }}
             QCheckBox::indicator:checked:hover {{
-                background: {Colors.ACCENT_HOVER};
-                border: 1px solid {Colors.ACCENT_LIGHT};
+                background: {paint_css('control.primary.hover_fill')};
+                border: 1px solid {paint_css('control.primary.hover_fill')};
             }}
         """)
         self.checkbox.toggled.connect(self.changed.emit)
@@ -555,7 +573,7 @@ class FolderRow(SettingRow):
 
         self.path_label = QLabel(self._truncate(path) if path else "Not set")
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.path_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
@@ -643,7 +661,7 @@ class ResettableFolderRow(SettingRow):
         self.path_label = QLabel(self._truncate(path) if path else default_label)
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.path_label.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
         )
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(
@@ -761,7 +779,7 @@ class FileRow(SettingRow):
 
         self.path_label = QLabel(self._truncate(path) if path else "Auto-detect")
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.path_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
@@ -849,7 +867,7 @@ class ToolRow(SettingRow):
 
         self.status_label = QLabel("Checking…")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         right_layout.addWidget(self.status_label)
 
         self.download_btn = QPushButton("Download")
@@ -870,11 +888,11 @@ class ToolRow(SettingRow):
         if found:
             display = path if len(path) <= 40 else "…" + path[-38:]
             self.status_label.setText(f"✓ {display}")
-            self.status_label.setStyleSheet(f"color: {Colors.SUCCESS}; background: transparent; border: none;")
+            self.status_label.setStyleSheet(f"color: {paint_css('status.success.text')}; background: transparent; border: none;")
             self.download_btn.hide()
         else:
             self.status_label.setText("Not found")
-            self.status_label.setStyleSheet(f"color: {Colors.WARNING}; background: transparent; border: none;")
+            self.status_label.setStyleSheet(f"color: {paint_css('status.warning.text')}; background: transparent; border: none;")
             self.download_btn.show()
 
     def set_downloading(self):
@@ -882,7 +900,7 @@ class ToolRow(SettingRow):
         self.download_btn.setEnabled(False)
         self.download_btn.setText("Downloading…")
         self.status_label.setText("Downloading…")
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
 
     def set_lossy_encoder_statuses(self, statuses: dict[str, bool]):
         """Update lossy encoder pills (AAC + MP3) for FFmpeg rows."""
@@ -893,9 +911,9 @@ class ToolRow(SettingRow):
                 pill.setStyleSheet(
                     f"""
                     QLabel {{
-                        color: {Colors.SUCCESS};
-                        background: {Colors.SUCCESS_DIM};
-                        border: 1px solid {Colors.SUCCESS_BORDER};
+                        color: {paint_css('status.success.text')};
+                        background: {paint_css('status.success.subtle_fill')};
+                        border: 1px solid {paint_css('status.success.border')};
                         border-radius: {Metrics.BORDER_RADIUS_SM}px;
                         padding: 2px 8px;
                     }}
@@ -905,9 +923,9 @@ class ToolRow(SettingRow):
                 pill.setStyleSheet(
                     f"""
                     QLabel {{
-                        color: {Colors.TEXT_TERTIARY};
-                        background: {Colors.SURFACE_ALT};
-                        border: 1px solid {Colors.BORDER_SUBTLE};
+                        color: {paint_css('text.tertiary')};
+                        background: {paint_css('surface.inset')};
+                        border: 1px solid {paint_css('border.subtle')};
                         border-radius: {Metrics.BORDER_RADIUS_SM}px;
                         padding: 2px 8px;
                     }}
@@ -941,7 +959,7 @@ class _TokenRow(SettingRow):
         self.status_label = QLabel("")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.status_label.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
         )
         right_layout.addWidget(self.status_label)
 
@@ -978,7 +996,7 @@ class _TokenRow(SettingRow):
         """Show connected state with username."""
         self.status_label.setText(f"✓ Connected as {username}")
         self.status_label.setStyleSheet(
-            f"color: {Colors.SUCCESS}; background: transparent; border: none;"
+            f"color: {paint_css('status.success.text')}; background: transparent; border: none;"
         )
         self.token_input.hide()
         self.save_btn.hide()
@@ -997,7 +1015,7 @@ class _TokenRow(SettingRow):
         """Show an error after validation fails."""
         self.status_label.setText(f"✗ {message}")
         self.status_label.setStyleSheet(
-            f"color: {Colors.WARNING}; background: transparent; border: none;"
+            f"color: {paint_css('status.warning.text')}; background: transparent; border: none;"
         )
 
     def _on_save(self):
@@ -1070,7 +1088,7 @@ class _LastFmAuthRow(SettingRow):
 
         self.status_label = QLabel("")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         right_layout.addWidget(self.status_label)
 
@@ -1129,7 +1147,7 @@ class _LastFmAuthRow(SettingRow):
 
     def set_connected(self, username: str):
         self.status_label.setText(f"✓ Connected as {username}")
-        self.status_label.setStyleSheet(f"color: {Colors.SUCCESS}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('status.success.text')}; background: transparent; border: none;")
         self.inputs_widget.hide()
         self.connect_btn.hide()
         self.cancel_btn.hide()
@@ -1138,7 +1156,7 @@ class _LastFmAuthRow(SettingRow):
 
     def set_disconnected(self, api_key: str = "", api_secret: str = ""):
         self.status_label.setText("")
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         if api_key:
             self.api_key_input.setText(api_key)
         if api_secret:
@@ -1155,7 +1173,7 @@ class _LastFmAuthRow(SettingRow):
 
     def set_error(self, message: str):
         self.status_label.setText(f"✗ {message}")
-        self.status_label.setStyleSheet(f"color: {Colors.WARNING}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('status.warning.text')}; background: transparent; border: none;")
 
     def _start_auth_flow(self):
         api_key = self.api_key_input.text().strip()
@@ -1166,7 +1184,7 @@ class _LastFmAuthRow(SettingRow):
             return
 
         self.status_label.setText("Fetching token...")
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         self.api_key_input.setEnabled(False)
         self.api_secret_input.setEnabled(False)
         self.connect_btn.hide()
@@ -1203,7 +1221,7 @@ class _LastFmAuthRow(SettingRow):
         QDesktopServices.openUrl(QUrl(auth_url))
 
         self.status_label.setText("Waiting for browser approval...")
-        self.status_label.setStyleSheet(f"color: {Colors.ACCENT}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('control.primary.fill')}; background: transparent; border: none;")
         self._is_polling = False
         self._polling_timer.start()
 
@@ -1301,7 +1319,7 @@ class _LastFmAuthRow(SettingRow):
         self._polling_timer.stop()
         self._is_polling = False
         self.status_label.setText("Canceled")
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent; border: none;")
         self.cancel_btn.hide()
         self.connect_btn.show()
         self.api_key_input.setEnabled(True)
@@ -1384,7 +1402,7 @@ class _SettingsCard(QFrame):
         self.setObjectName("settingsCard")
         self.setStyleSheet(panel_css(
             "settingsCard",
-            bg=Colors.SURFACE_ALT,
+            bg=paint_css("surface.inset"),
             radius=Metrics.BORDER_RADIUS_LG,
         ))
         lay = QVBoxLayout(self)
@@ -1400,7 +1418,7 @@ class _SettingsCard(QFrame):
                 sep = QFrame()
                 sep.setFixedHeight(1)
                 sep.setStyleSheet(
-                    f"background: {Colors.BORDER_SUBTLE}; border: none;"
+                    f"background: {paint_css('border.subtle')}; border: none;"
                 )
                 lay.addWidget(sep)
 
@@ -1513,7 +1531,7 @@ class SettingsPage(QWidget):
         title = QLabel("Settings")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO, QFont.Weight.Bold))
         title.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
         )
         layout.addWidget(title)
         layout.addSpacing(8)
@@ -1547,7 +1565,7 @@ class SettingsPage(QWidget):
         frame.setFixedHeight(40)
         frame.setStyleSheet(panel_css(
             "settingsScopeSwitch",
-            bg=Colors.SURFACE_ALT,
+            bg=paint_css("surface.inset"),
             radius=Metrics.BORDER_RADIUS_SM,
         ))
         lay = QHBoxLayout(frame)
@@ -1618,7 +1636,7 @@ class SettingsPage(QWidget):
             QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold)
         )
         title_label.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
         )
         layout.addWidget(title_label)
         layout.addSpacing(20)
@@ -1628,7 +1646,7 @@ class SettingsPage(QWidget):
                 lbl = QLabel(item.upper())
                 lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
                 lbl.setStyleSheet(
-                    f"color: {Colors.TEXT_TERTIARY}; background: transparent;"
+                    f"color: {paint_css('text.tertiary')}; background: transparent;"
                     f" border: none; padding-left: {(4)}px;"
                 )
                 self._section_labels[(title, item)] = lbl
@@ -1667,18 +1685,14 @@ class SettingsPage(QWidget):
         self.light_theme_combo = ComboRow(
             "Light Theme",
             "Choose the palette to use whenever Light appearance is active.",
-            options=["Light", "Catppuccin Latte"],
-            current="Light",
+            options=[],
         )
         self.dark_theme_combo = ComboRow(
             "Dark Theme",
             "Choose the palette to use whenever Dark appearance is active.",
-            options=[
-                "Dark", "Catppuccin Mocha", "Catppuccin Macchiato",
-                "Catppuccin Frappé",
-            ],
-            current="Dark",
+            options=[],
         )
+        self._refresh_theme_options()
 
         self.high_contrast = ComboRow(
             "Increased Contrast",
@@ -1711,14 +1725,10 @@ class SettingsPage(QWidget):
 
         self.accent_color = ComboRow(
             "Accent Color",
-            "Customize the accent color used throughout the interface. "
+            "Theme Default uses the accent from the selected theme. "
             "Match iPod uses the body color of your connected iPod.",
-            options=[
-                "Blue (Default)", "Match iPod",
-                "Red", "Orange", "Gold", "Green",
-                "Teal", "Purple", "Pink",
-            ],
-            current="Blue (Default)",
+            options=list(_ACCENT_COLOR_DISPLAY.values()),
+            current=_ACCENT_COLOR_DISPLAY["blue"],
         )
 
         self.show_art = ToggleRow(
@@ -1843,6 +1853,13 @@ class SettingsPage(QWidget):
             "successful sync.",
             checked=False,
         )
+        self.rockbox_metadata_support = ToggleRow(
+            "Rockbox Metadata Support",
+            "Write the final iTunes database metadata and cover artwork into "
+            "every supported song file on the iPod during each sync. This is "
+            "needed by Rockbox, which reads file tags instead of iTunesDB.",
+            checked=False,
+        )
         self.rotate_tall_photos = ToggleRow(
             "Rotate Tall Photos on Device",
             "For portrait-heavy photos, rotate the device viewing caches "
@@ -1868,6 +1885,7 @@ class SettingsPage(QWidget):
             self.write_back,
             self.compute_sound_check,
             self.normalize_tags_after_sync,
+            self.rockbox_metadata_support,
             self.rotate_tall_photos,
             self.fit_photo_thumbnails,
             self.rating_strategy,
@@ -2240,7 +2258,7 @@ class SettingsPage(QWidget):
             "Oldest backups are automatically removed when the limit "
             "is exceeded.",
             options=["5", "10", "20", "Unlimited"],
-            current="10",
+            current="Unlimited",
         )
 
         self._backups_card = _SettingsCard(
@@ -2296,42 +2314,7 @@ class SettingsPage(QWidget):
             label.setVisible(visible)
 
     def _set_device_rows_enabled(self, enabled: bool) -> None:
-        rows = [
-            self.accent_color,
-            self.show_art,
-            self.write_back,
-            self.compute_sound_check,
-            self.normalize_tags_after_sync,
-            self.rotate_tall_photos,
-            self.fit_photo_thumbnails,
-            self.rating_strategy,
-            self.lossy_encoder,
-            self.lossy_quality,
-            self.bitrate_mode,
-            self.music_lossy_cbr_bitrate,
-            self.vbr_level,
-            self.spoken_lossy_cbr_bitrate,
-            self.prefer_lossy,
-            self.convert_wav_to_alac,
-            self.mono_for_spoken,
-            self.smart_quality_by_type,
-            self.normalize_sample_rate,
-            self.aac_cutoff,
-            self.fdk_afterburner,
-            self.aac_tns,
-            self.aac_pns,
-            self.aac_ms_stereo,
-            self.aac_intensity_stereo,
-            self.video_crf,
-            self.video_preset,
-            self.sync_workers,
-            self.device_write_workers,
-            self.scrobble_on_sync,
-            self.listenbrainz_token_row,
-            self.lastfm_auth_row,
-            self.backup_before_sync,
-        ]
-        for row in rows:
+        for row in self._device_overridable_rows():
             row.setEnabled(enabled)
 
     def _device_overridable_rows(self) -> list:
@@ -2339,10 +2322,12 @@ class SettingsPage(QWidget):
             self.accent_color, self.show_art, self.write_back,
             self.compute_sound_check, self.rotate_tall_photos,
             self.normalize_tags_after_sync,
+            self.rockbox_metadata_support,
             self.fit_photo_thumbnails, self.rating_strategy,
             self.lossy_encoder, self.lossy_quality, self.bitrate_mode,
             self.music_lossy_cbr_bitrate, self.vbr_level,
             self.spoken_lossy_cbr_bitrate, self.prefer_lossy,
+            self.always_encode_lossy,
             self.convert_wav_to_alac,
             self.mono_for_spoken, self.smart_quality_by_type,
             self.normalize_sample_rate, self.aac_cutoff,
@@ -2415,6 +2400,36 @@ class SettingsPage(QWidget):
 
         self._update_override_warnings()
 
+    def _refresh_theme_options(
+        self,
+        selected_light: str = "light",
+        selected_dark: str = "dark",
+    ) -> None:
+        """Populate appearance controls from the file-backed theme catalog."""
+
+        catalog = load_theme_catalog()
+        self._set_theme_options(
+            self.light_theme_combo,
+            catalog.available("light"),
+            selected_light,
+        )
+        self._set_theme_options(
+            self.dark_theme_combo,
+            catalog.available("dark"),
+            selected_dark,
+        )
+
+    @staticmethod
+    def _set_theme_options(row: ComboRow, themes: tuple, selected_id: str) -> None:
+        combo = row.combo
+        previous = combo.blockSignals(True)
+        combo.clear()
+        for theme in themes:
+            combo.addItem(theme.name, theme.id)
+        index = combo.findData(selected_id)
+        combo.setCurrentIndex(index if index >= 0 else 0)
+        combo.blockSignals(previous)
+
     # ── Settings I/O ────────────────────────────────────────────────────────
 
     def load_from_settings(self):
@@ -2446,6 +2461,9 @@ class SettingsPage(QWidget):
         self.compute_sound_check.value = s.compute_sound_check
         self.normalize_tags_after_sync.value = bool(
             getattr(s, "normalize_tags_after_sync", False)
+        )
+        self.rockbox_metadata_support.value = bool(
+            getattr(s, "rockbox_metadata_support", False)
         )
         self.rotate_tall_photos.value = s.rotate_tall_photos_for_device
         self.fit_photo_thumbnails.value = s.fit_photo_thumbnails
@@ -2505,21 +2523,11 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.theme_mode_combo.combo.setCurrentIndex(idx)
 
-        theme_display = {
-            "dark": "Dark", "light": "Light",
-            "catppuccin-mocha": "Catppuccin Mocha",
-            "catppuccin-macchiato": "Catppuccin Macchiato",
-            "catppuccin-frappe": "Catppuccin Frappé",
-            "catppuccin-latte": "Catppuccin Latte",
-        }
-        idx = self.light_theme_combo.combo.findText(
-            theme_display.get(s.light_theme, "Light")
-        )
+        self._refresh_theme_options(s.light_theme, s.dark_theme)
+        idx = self.light_theme_combo.combo.findData(s.light_theme)
         if idx >= 0:
             self.light_theme_combo.combo.setCurrentIndex(idx)
-        idx = self.dark_theme_combo.combo.findText(
-            theme_display.get(s.dark_theme, "Dark")
-        )
+        idx = self.dark_theme_combo.combo.findData(s.dark_theme)
         if idx >= 0:
             self.dark_theme_combo.combo.setCurrentIndex(idx)
 
@@ -2531,13 +2539,10 @@ class SettingsPage(QWidget):
             self.high_contrast.combo.setCurrentIndex(idx)
 
         # Accent color
-        accent_display = {
-            "blue": "Blue (Default)", "match-ipod": "Match iPod",
-            "red": "Red", "orange": "Orange", "gold": "Gold",
-            "green": "Green", "teal": "Teal", "purple": "Purple",
-            "pink": "Pink",
-        }
-        ac_text = accent_display.get(s.accent_color, "Blue (Default)")
+        ac_text = _ACCENT_COLOR_DISPLAY.get(
+            s.accent_color,
+            _ACCENT_COLOR_DISPLAY["blue"],
+        )
         idx = self.accent_color.combo.findText(ac_text)
         if idx >= 0:
             self.accent_color.combo.setCurrentIndex(idx)
@@ -2587,7 +2592,7 @@ class SettingsPage(QWidget):
 
         # Max backups → combo text
         max_map = {0: "Unlimited", 5: "5", 10: "10", 20: "20"}
-        mb_text = max_map.get(s.max_backups, "10")
+        mb_text = max_map.get(s.max_backups, "Unlimited")
         idx = self.max_backups.combo.findText(mb_text)
         if idx >= 0:
             self.max_backups.combo.setCurrentIndex(idx)
@@ -2690,6 +2695,7 @@ class SettingsPage(QWidget):
             self.write_back.changed.connect(self._save)
             self.compute_sound_check.changed.connect(self._save)
             self.normalize_tags_after_sync.changed.connect(self._save)
+            self.rockbox_metadata_support.changed.connect(self._save)
             self.rotate_tall_photos.changed.connect(self._save)
             self.fit_photo_thumbnails.changed.connect(self._save)
             self.rating_strategy.changed.connect(self._save)
@@ -2913,6 +2919,7 @@ class SettingsPage(QWidget):
         s.write_back_to_pc = self.write_back.value
         s.compute_sound_check = self.compute_sound_check.value
         s.normalize_tags_after_sync = self.normalize_tags_after_sync.value
+        s.rockbox_metadata_support = self.rockbox_metadata_support.value
         s.rotate_tall_photos_for_device = self.rotate_tall_photos.value
         s.fit_photo_thumbnails = self.fit_photo_thumbnails.value
 
@@ -2957,28 +2964,15 @@ class SettingsPage(QWidget):
             s.theme_mode = {
                 "Light": "light", "Dark": "dark", "Auto": "auto",
             }.get(self.theme_mode_combo.value, "dark")
-            theme_keys = {
-                "Dark": "dark", "Light": "light",
-                "Catppuccin Mocha": "catppuccin-mocha",
-                "Catppuccin Macchiato": "catppuccin-macchiato",
-                "Catppuccin Frappé": "catppuccin-frappe",
-                "Catppuccin Latte": "catppuccin-latte",
-            }
-            s.light_theme = theme_keys.get(self.light_theme_combo.value, "light")
-            s.dark_theme = theme_keys.get(self.dark_theme_combo.value, "dark")
+            s.light_theme = self.light_theme_combo.combo.currentData() or "light"
+            s.dark_theme = self.dark_theme_combo.combo.currentData() or "dark"
 
             # High contrast
             hc_keys = {"Off": "off", "On": "on", "System": "system"}
             s.high_contrast = hc_keys.get(self.high_contrast.value, "off")
 
         # Accent color
-        accent_keys = {
-            "Blue (Default)": "blue", "Match iPod": "match-ipod",
-            "Red": "red", "Orange": "orange", "Gold": "gold",
-            "Green": "green", "Teal": "teal", "Purple": "purple",
-            "Pink": "pink",
-        }
-        s.accent_color = accent_keys.get(self.accent_color.value, "blue")
+        s.accent_color = _ACCENT_COLOR_BY_TEXT.get(self.accent_color.value, "blue")
 
         if include_global_only:
             s.transcode_cache_dir = self.transcode_cache_dir.value
@@ -3072,7 +3066,7 @@ class SettingsPage(QWidget):
             accent_hex = resolve_accent_color(
                 s.accent_color, self._current_ipod_image(),
             )
-            Colors.apply_theme_selection(
+            apply_theme_selection(
                 s.theme_mode, s.light_theme, s.dark_theme, s.high_contrast, accent_hex
             )
             Metrics.apply_font_scale(s.font_scale)
@@ -3098,13 +3092,50 @@ class SettingsPage(QWidget):
         )
 
         root, key = ctx
-        self._settings_service.reset_device_settings_to_global(
-            root,
-            key,
-            use_global_settings=self.use_global_settings.value,
-        )
+        try:
+            self._settings_service.reset_device_settings_to_global(
+                root,
+                key,
+                use_global_settings=self.use_global_settings.value,
+            )
+        except Exception as exc:
+            self._show_device_settings_write_error(exc)
+            return
         self.load_from_settings()
         self._apply_theme_change_if_needed(theme_before)
+
+    def _show_device_settings_write_error(self, exc: Exception) -> None:
+        """Explain a refused device-settings write and restore the saved values."""
+
+        QMessageBox.critical(
+            self,
+            "Device Settings Not Saved",
+            "iOpenPod stopped before writing settings to the selected iPod.\n\n"
+            f"{exc}\n\nReconnect and reload the iPod before trying again.",
+        )
+        self.load_from_settings()
+
+    def _save_device_settings_with_alert(
+        self,
+        root: str,
+        settings,
+        *,
+        use_global_settings: bool,
+        device_key: str,
+    ) -> bool:
+        """Persist device settings, returning false after a user-visible refusal."""
+
+        try:
+            self._settings_service.save_device_settings(
+                root,
+                settings,
+                use_global_settings=use_global_settings,
+                device_key=device_key,
+            )
+        except Exception as exc:
+            self._show_device_settings_write_error(exc)
+            return False
+        return True
 
     def _save(self, *_args):
         """Read controls back into the active settings scope and persist."""
@@ -3136,12 +3167,13 @@ class SettingsPage(QWidget):
             state = self._settings_service.get_device_settings_for_edit(root, key)
             s = state.settings
             self._read_controls_into_settings(s, include_global_only=False)
-            self._settings_service.save_device_settings(
+            if not self._save_device_settings_with_alert(
                 root,
                 s,
                 use_global_settings=self.use_global_settings.value,
                 device_key=key,
-            )
+            ):
+                return
             effective_after = self._settings_service.get_effective_settings()
             self._apply_scope_visibility()
             self._apply_theme_change_if_needed(theme_before)
@@ -3448,7 +3480,7 @@ class SettingsPage(QWidget):
         root: str | None = None,
         key: str | None = None,
         use_global: bool | None = None,
-    ) -> None:
+    ) -> bool:
         if scope is None:
             ctx = self._current_device_context() if self._settings_scope == "device" else None
             if ctx:
@@ -3462,18 +3494,18 @@ class SettingsPage(QWidget):
             s = state.settings
             s.listenbrainz_token = token
             s.listenbrainz_username = username
-            self._settings_service.save_device_settings(
+            return self._save_device_settings_with_alert(
                 root,
                 s,
                 use_global_settings=self.use_global_settings.value if use_global is None else use_global,
                 device_key=key,
             )
-            return
 
         s = self._settings_service.get_global_settings()
         s.listenbrainz_token = token
         s.listenbrainz_username = username
         self._settings_service.save_global_settings(s)
+        return True
 
     def _on_listenbrainz_token_changed(self, token: str):
         """Handle ListenBrainz token save/clear."""
@@ -3531,14 +3563,15 @@ class SettingsPage(QWidget):
             self.listenbrainz_token_row.set_error("Invalid token")
             return
 
-        self._save_listenbrainz_credentials(
+        if not self._save_listenbrainz_credentials(
             token,
             username,
             scope=scope,
             root=root,
             key=key,
             use_global=use_global,
-        )
+        ):
+            return
 
         self.listenbrainz_token_row.set_connected(username)
 
@@ -3678,7 +3711,7 @@ class SettingsPage(QWidget):
         root: str | None = None,
         key: str | None = None,
         use_global: bool | None = None,
-    ) -> None:
+    ) -> bool:
         if scope is None:
             ctx = self._current_device_context() if self._settings_scope == "device" else None
             if ctx:
@@ -3694,13 +3727,12 @@ class SettingsPage(QWidget):
             s.lastfm_api_secret = api_secret
             s.lastfm_session_key = session_key
             s.lastfm_username = username
-            self._settings_service.save_device_settings(
+            return self._save_device_settings_with_alert(
                 root,
                 s,
                 use_global_settings=self.use_global_settings.value if use_global is None else use_global,
                 device_key=key,
             )
-            return
 
         s = self._settings_service.get_global_settings()
         s.lastfm_api_key = api_key
@@ -3708,13 +3740,15 @@ class SettingsPage(QWidget):
         s.lastfm_session_key = session_key
         s.lastfm_username = username
         self._settings_service.save_global_settings(s)
+        return True
 
     def _on_lastfm_credentials_changed(self, api_key: str, api_secret: str, session_key: str, username: str):
         """Handle Last.fm credentials save/clear."""
         # If session_key is empty, the user clicked "Disconnect"
         if not session_key:
             # We still save the API key & secret so they don't have to type them again later
-            self._save_lastfm_credentials(api_key, api_secret, "", "")
+            if not self._save_lastfm_credentials(api_key, api_secret, "", ""):
+                return
             self.lastfm_auth_row.set_disconnected(api_key, api_secret)
             return
 
@@ -3729,7 +3763,7 @@ class SettingsPage(QWidget):
             use_global = False
 
         # Save the successfully fetched session key and username
-        self._save_lastfm_credentials(
+        if not self._save_lastfm_credentials(
             api_key,
             api_secret,
             session_key,
@@ -3738,5 +3772,6 @@ class SettingsPage(QWidget):
             root=root,
             key=key,
             use_global=use_global,
-        )
+        ):
+            return
         self.lastfm_auth_row.set_connected(username)

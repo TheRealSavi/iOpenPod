@@ -9,7 +9,12 @@ from typing import Any
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal, pyqtSlot
 
 from .jobs import AutoRestoreDeviceWorker, QuickWriteWorker
-from .services import DeviceManagerLike, LibraryCacheLike, is_device_info_like
+from .services import (
+    DeviceManagerLike,
+    DeviceStorageSnapshot,
+    LibraryCacheLike,
+    is_device_info_like,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +84,11 @@ class StartupDeviceRestoreController(QObject):
                 path,
             )
             return
-        from iopenpod.device import has_exact_model_number
+        from iopenpod.device import has_safe_device_profile
 
-        if not has_exact_model_number(ipod):
+        if not has_safe_device_profile(ipod):
             logger.warning(
-                "Fast resume rejected unidentified iPod at '%s': no model number",
+                "Fast resume rejected unidentified iPod at '%s': no safe profile",
                 path,
             )
             self.identification_rejected.emit(path, ipod)
@@ -243,7 +248,7 @@ class QuickWriteController(QObject):
         ):
             return
 
-        logger.info(
+        logger.debug(
             "Quick write: %d track edit(s), %d artwork edit(s), %d playlist edit(s)",
             len(edits),
             len(artwork_edits),
@@ -253,10 +258,20 @@ class QuickWriteController(QObject):
         self._active_write_has_track_edits = bool(edits or artwork_edits)
         self._active_write_has_playlists = bool(user_playlists)
 
-        worker = QuickWriteWorker(
-            ipod_path=ipod_path,
-            cache=self._library_cache,
+        device_storage = DeviceStorageSnapshot.from_device_info(
+            getattr(self._device_manager, "discovered_ipod", None)
         )
+        if device_storage is None:
+            worker = QuickWriteWorker(
+                ipod_path=ipod_path,
+                cache=self._library_cache,
+            )
+        else:
+            worker = QuickWriteWorker(
+                ipod_path=ipod_path,
+                cache=self._library_cache,
+                device_storage=device_storage,
+            )
         self._force_snapshot_write = False
         self._quick_worker = worker
         worker.completed.connect(self._on_quick_write_done)
@@ -313,7 +328,7 @@ class QuickWriteController(QObject):
             self._quick_worker.deleteLater()
             self._quick_worker = None
         if result.success:
-            logger.info("Quick write completed successfully")
+            logger.debug("Quick write completed successfully")
             if getattr(result, "newer_changes_pending", False):
                 self._force_snapshot_write = True
                 self.save_status_changed.emit("saving")

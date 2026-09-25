@@ -13,8 +13,9 @@ determines whether the new or existing value is more trustworthy.
 Source reliability (most → least)::
 
     Sure (live hardware):
-        scsi_vpd / windows_scsi / linux_scsi / usb_vendor > vpd > iokit > ioctl
-            > device_tree / ioreg / sysfs > wmi
+        scsi_vpd / windows_scsi / linux_scsi / sysfs_vpd /
+            udev_scsi_id / usb_vendor > vpd > iokit > ioctl
+            > device_tree / ioreg / sysfs / udev > wmi
     Guesses (files / lookups / derivations):
         sysinfo_extended > sysinfo > itunes > serial_lookup
             > usb_pid > hashing > unknown
@@ -27,12 +28,21 @@ import json
 import logging
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+from .metadata_write import (
+    DeviceMetadataWriteSession,
+    guarded_device_metadata_session,
+)
+from .write_guard import DeviceBusyError
 
 if TYPE_CHECKING:
     from .info import DeviceInfo
 
 logger = logging.getLogger(__name__)
+
+_DEVICE_SUBTREE = Path("iPod_Control") / "Device"
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -44,6 +54,8 @@ _SOURCE_ORDER: list[str] = [
     "scsi_vpd",             # Live SCSI INQUIRY VPD plist
     "windows_scsi",         # Windows SCSI pass-through VPD
     "linux_scsi",           # Linux SG_IO SCSI pass-through VPD
+    "sysfs_vpd",            # Kernel-cached Linux SCSI VPD page
+    "udev_scsi_id",         # Root-time udev scsi_id page 0x80 probe
     "usb_vendor",           # Live Apple USB vendor-control plist
     "vpd",                  # SCSI Vital Product Data — gold standard
     "iokit",                # macOS IOKit SCSI (effectively VPD, no unmount)
@@ -51,10 +63,11 @@ _SOURCE_ORDER: list[str] = [
     "device_tree",          # Windows PnP device tree (live hardware)
     "ioreg",                # macOS ioreg (live hardware)
     "sysfs",                # Linux sysfs (live hardware)
+    "udev",                 # Linux udev USB properties
     "wmi",                  # Windows WMI (live hardware query)
     # ── Guesses: lookups, derivations, files ────────────────────────
     "itunes",               # Pre-existing value assumed to be from iTunes
-    "serial_lookup",        # Derived from serial last-3 chars
+    "serial_lookup",        # Derived from a published serial suffix
     "usb_pid",              # Coarse USB PID mapping
     "disk_size",            # Live disk-size based capacity estimate
     "model_table",          # Deterministic inference from known model tuples
@@ -90,7 +103,7 @@ SYSINFO_FIELDS: list[tuple[str, str]] = [
     ("UpdaterFamilyID", "updater_family_id"),
     # ── Derived / resolved by iOpenPod for full device granularity ────
     # These are deterministically derived from model_number (via
-    # IPOD_MODELS or serial-last-3 lookup), but caching them in SysInfo
+    # IPOD_MODELS or serial-suffix lookup), but caching them in SysInfo
     # avoids re-derivation and lets the authority system track provenance.
     ("ModelFamily", "model_family"),
     ("Generation", "generation"),
@@ -119,7 +132,7 @@ _DERIVED_SYSINFO_KEYS: frozenset[str] = frozenset({
 # provenance, the expensive hardware and VPD probes are skipped.
 #
 # Only the essential identification trio is included:
-#   - Serial number (needed for serial-last-3 exact model resolution)
+#   - Serial number (needed for serial-suffix exact model resolution)
 #   - FireWire GUID (needed for database signing)
 #   - Model number (needed for family/gen/capacity/color derivation)
 #
@@ -162,12 +175,14 @@ def check_authority_coverage(
     """
     authority = read_authority(ipod_path)
     fields = authority.get("fields", {})
-    if not fields:
+    if not isinstance(fields, dict) or not fields:
         return False, {}
 
     # Tamper detection — if SysInfo/SysInfoExtended were modified externally
     # (by iTunes or another tool), we can't trust the cached provenance.
     stored_hashes = authority.get("file_hashes", {})
+    if not isinstance(stored_hashes, dict):
+        return False, {}
     if stored_hashes:
         tampered = False
         for label, path in [
@@ -189,6 +204,7 @@ def check_authority_coverage(
 
     field_sources: dict[str, str] = {}
     all_tracked = True
+    current_sysinfo = _read_sysinfo_raw(ipod_path)
     for sysinfo_key, device_field in SYSINFO_FIELDS:
         entry = fields.get(sysinfo_key)
         if entry is None:
@@ -198,7 +214,24 @@ def check_authority_coverage(
             if sysinfo_key in _CORE_FIELDS:
                 all_tracked = False
             continue
-        source = entry.get("source", "unknown")
+        if not isinstance(entry, dict):
+            logger.info(
+                "Authority coverage: invalid entry for %s; treating cache "
+                "provenance as unavailable",
+                sysinfo_key,
+            )
+            return False, {}
+        if sysinfo_key in _CORE_FIELDS:
+            current_value = current_sysinfo.get(sysinfo_key, "")
+            expected_value = str(entry.get("value", "") or "")
+            if not current_value or not expected_value:
+                all_tracked = False
+            elif _normalise_sysinfo_value(
+                sysinfo_key,
+                current_value,
+            ) != _normalise_sysinfo_value(sysinfo_key, expected_value):
+                all_tracked = False
+        source = str(entry.get("source", "unknown") or "unknown")
         field_sources[device_field] = source
 
     return all_tracked, field_sources
@@ -305,16 +338,17 @@ def read_authority(ipod_path: str) -> dict:
     return {}
 
 
-def _write_authority(ipod_path: str, authority: dict) -> None:
-    path = _authority_path(ipod_path)
-    device_dir = os.path.dirname(path)
-    os.makedirs(device_dir, exist_ok=True)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(authority, f, indent=2, ensure_ascii=False)
-        logger.debug("Wrote authority file to %s", path)
-    except Exception as exc:
-        logger.warning("Failed to write authority file: %s", exc)
+def _write_authority(
+    ipod_path: str,
+    authority: dict,
+    session: DeviceMetadataWriteSession,
+) -> None:
+    path = session.write_text_atomic(
+        _DEVICE_SUBTREE / AUTHORITY_FILENAME,
+        json.dumps(authority, indent=2, ensure_ascii=False),
+        allowed_subtree=_DEVICE_SUBTREE,
+    )
+    logger.debug("Wrote authority file to %s", path)
 
 
 def _read_sysinfo_raw(ipod_path: str) -> dict[str, str]:
@@ -334,18 +368,19 @@ def _read_sysinfo_raw(ipod_path: str) -> dict[str, str]:
     return result
 
 
-def _write_sysinfo_file(ipod_path: str, fields: dict[str, str]) -> None:
+def _write_sysinfo_file(
+    ipod_path: str,
+    fields: dict[str, str],
+    session: DeviceMetadataWriteSession,
+) -> None:
     """Write all fields to the SysInfo file."""
-    path = _sysinfo_path(ipod_path)
-    device_dir = os.path.dirname(path)
-    os.makedirs(device_dir, exist_ok=True)
     lines = [f"{k}: {v}" for k, v in fields.items() if v]
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-        logger.info("Wrote SysInfo (%d fields) to %s", len(lines), path)
-    except Exception as exc:
-        logger.warning("Failed to write SysInfo: %s", exc)
+    path = session.write_text_atomic(
+        _DEVICE_SUBTREE / "SysInfo",
+        "\n".join(lines) + "\n",
+        allowed_subtree=_DEVICE_SUBTREE,
+    )
+    logger.debug("Wrote SysInfo (%d fields) to %s", len(lines), path)
 
 
 def _normalise_sysinfo_extended(raw_xml: bytes | str) -> bytes:
@@ -383,6 +418,7 @@ def cache_sysinfo_extended(
     *,
     source: str = "unknown",
     metadata: dict | None = None,
+    expected_volume_identity_key: str = "",
 ) -> bool:
     """Cache a live SysInfoExtended payload and refresh authority hashes."""
     if not ipod_path or not raw_xml:
@@ -396,13 +432,45 @@ def cache_sysinfo_extended(
     if not data:
         return False
 
-    path = _sysinfo_extended_path(ipod_path)
     try:
-        with open(path, "wb") as f:
-            f.write(data)
-    except Exception as exc:
-        logger.warning("Failed to cache SysInfoExtended: %s", exc)
+        with guarded_device_metadata_session(
+            ipod_path,
+            expected_volume_identity_key=expected_volume_identity_key,
+        ) as session:
+            return _cache_sysinfo_extended_guarded(
+                ipod_path,
+                data,
+                source=source,
+                metadata=metadata,
+                session=session,
+            )
+    except DeviceBusyError as exc:
+        logger.debug(
+            "Deferred SysInfoExtended cache because another iOpenPod writer "
+            "is active: %s",
+            exc,
+        )
         return False
+    except Exception as exc:
+        logger.warning("Failed to safely cache SysInfoExtended: %s", exc)
+        return False
+
+
+def _cache_sysinfo_extended_guarded(
+    ipod_path: str,
+    data: bytes,
+    *,
+    source: str,
+    metadata: dict | None,
+    session: DeviceMetadataWriteSession,
+) -> bool:
+    """Install one live SysInfoExtended payload inside a guarded session."""
+
+    path = session.write_bytes_atomic(
+        _DEVICE_SUBTREE / "SysInfoExtended",
+        data,
+        allowed_subtree=_DEVICE_SUBTREE,
+    )
 
     authority = read_authority(ipod_path)
     now = datetime.now(UTC).isoformat()
@@ -421,7 +489,7 @@ def cache_sysinfo_extended(
     authority["version"] = 1
     authority["last_updated"] = now
     _store_file_hashes(ipod_path, authority)
-    _write_authority(ipod_path, authority)
+    _write_authority(ipod_path, authority, session)
     logger.debug(
         "Cached SysInfoExtended (%d bytes, source=%s) to %s",
         len(data),
@@ -532,6 +600,31 @@ def update_sysinfo(info: DeviceInfo) -> None:
     """
     if not info.path:
         return
+    if not str(getattr(info, "model_number", "") or "").strip():
+        logger.info(
+            "Skipping SysInfo authority update for unidentified iPod at %s: "
+            "exact model number is unavailable",
+            info.path,
+        )
+        return
+
+    with guarded_device_metadata_session(
+        info.path,
+        reported_volume_format=str(
+            getattr(info, "reported_volume_format", "") or ""
+        ),
+        expected_volume_identity_key=str(
+            getattr(info, "volume_identity_key", "") or ""
+        ),
+    ) as session:
+        _update_sysinfo_guarded(info, session)
+
+
+def _update_sysinfo_guarded(
+    info: DeviceInfo,
+    session: DeviceMetadataWriteSession,
+) -> None:
+    """Reconcile and persist SysInfo while one exact-volume guard is held."""
 
     ipod_path = info.path
     device_dir = os.path.join(ipod_path, "iPod_Control", "Device")
@@ -659,7 +752,7 @@ def update_sysinfo(info: DeviceInfo) -> None:
 
     # ── Persist ───────────────────────────────────────────────────────
     if sysinfo_changed:
-        _write_sysinfo_file(ipod_path, updated_sysinfo)
+        _write_sysinfo_file(ipod_path, updated_sysinfo, session)
 
     # Always ensure the authority dict is well-formed before writing.
     authority["version"] = 1
@@ -668,4 +761,4 @@ def update_sysinfo(info: DeviceInfo) -> None:
 
     # Always refresh file hashes so the next run can detect tampering.
     _store_file_hashes(ipod_path, authority)
-    _write_authority(ipod_path, authority)
+    _write_authority(ipod_path, authority, session)

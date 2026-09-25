@@ -93,7 +93,9 @@ class EngineOptions:
     lastfm_api_secret: str = ""
     lastfm_session_key: str = ""
     lastfm_username: str = ""
+    rockbox_metadata_support: bool = False
     sync_until_full: bool = False
+    scrobble_only: bool = False
     transaction_policy: EngineTransactionPolicy = EngineTransactionPolicy.USER_CHOICE
 
 
@@ -116,6 +118,8 @@ class EngineRequest:
     options: EngineOptions = field(default_factory=EngineOptions)
     device_info: Any = None
     device_capabilities: Any = None
+    device_storage: Any = None
+    expected_database_generation: Any = None
     progress_callback: EngineProgressCallback | None = None
     is_cancelled: Callable[[], bool] | None = None
     is_scrobble_cancelled: Callable[[], bool] | None = None

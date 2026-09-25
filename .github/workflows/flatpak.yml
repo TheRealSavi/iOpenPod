@@ -103,6 +103,18 @@ jobs:
           manifest-path: flatpak/io.github.therealsavi.iOpenPod.yml
           cache-key: flatpak-builder-${{ github.sha }}
 
+      - name: Smoke-test Flatpak resource
+        run: |
+          sudo flatpak install --system --noninteractive -y \
+            ./iOpenPod-Linux.flatpak
+          flatpak run io.github.therealsavi.iOpenPod \
+            --print-linux-udev-rule > flatpak-rule.txt
+          grep -q ID_IOPENPOD_PRODUCT_SERIAL flatpak-rule.txt
+          if grep -q 'TAG+="uaccess"\|MODE=' flatpak-rule.txt; then
+            echo "Flatpak rule grants raw-device access" >&2
+            exit 1
+          fi
+
       # ── Checksum ──────────────────────────────────────────────────────
       - name: Generate SHA-256 checksum
         run: |

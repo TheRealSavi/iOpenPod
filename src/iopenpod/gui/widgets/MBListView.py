@@ -28,6 +28,9 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMenu,
     QSlider,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -35,7 +38,6 @@ from PyQt6.QtWidgets import (
     QWidgetAction,
 )
 
-from iopenpod.application.runtime import display_playlists_from_rows
 from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_AUDIO,
     MEDIA_TYPE_AUDIO_VIDEO,
@@ -44,6 +46,11 @@ from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_VIDEO_MASK,
     MEDIA_TYPE_VIDEO_PODCAST,
 )
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    is_playlist_folder,
+    is_podcast_playlist,
+)
+from iopenpod.search import SearchText, matches_search, prepare_search_text
 
 from ..artwork_rendering import (
     enhance_artwork_image,
@@ -57,14 +64,19 @@ from ..styles import (
     BROWSER_SEARCH_CONTROL_SIZE,
     BROWSER_SEARCH_FIELD_WIDTH,
     FONT_FAMILY,
-    Colors,
     Metrics,
     browser_search_field_css,
     context_menu_css,
+    paint_css,
     table_css,
 )
 from ..system_open import open_files_with_app_picker, open_files_with_default_app
 from .formatters import format_duration_mmss, format_size
+from .trackContextMenu import (
+    _is_display_merged_playlist,
+    _is_ipod_category_playlist,
+    show_track_context_menu,
+)
 
 log = logging.getLogger(__name__)
 
@@ -378,24 +390,6 @@ def _track_is_podcast_ready(track: dict) -> bool:
     )
 
 
-def _is_ipod_category_playlist(playlist: dict | None) -> bool:
-    if not playlist:
-        return False
-    dataset_type = _playlist_dataset_type(playlist)
-    if dataset_type:
-        return dataset_type == 5
-    return bool(playlist.get("_source") == "category" and dataset_type in (0, 5))
-
-
-def _playlist_dataset_type(playlist: dict | None) -> int:
-    if not playlist:
-        return 0
-    try:
-        return int(playlist.get("_mhsd_dataset_type", 0) or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
 def _mhsd5_type_value(playlist: dict | None) -> int:
     if not playlist:
         return 0
@@ -403,10 +397,6 @@ def _mhsd5_type_value(playlist: dict | None) -> int:
         return int(playlist.get("mhsd5_type", 0) or 0)
     except (TypeError, ValueError):
         return 0
-
-
-def _is_display_merged_playlist(playlist: dict | None) -> bool:
-    return bool(playlist and playlist.get("_mhsd_display_merged"))
 
 
 # =============================================================================
@@ -437,7 +427,7 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "length": ("Time", format_duration),
     "rating": ("Rating", format_rating),
     "play_count_1": ("Plays", None),
-    "play_count_2": ("Plays (iPod)", None),
+    "play_count_2": ("Unscrobbled Plays", None),
     "skip_count": ("Skips", None),
     "last_played": ("Last Played", format_date),
     "last_skipped": ("Last Skipped", format_date),
@@ -698,6 +688,52 @@ class _SortableItem(QTableWidgetItem):
         return (self.text() or "") < (other.text() or "")
 
 
+class _ArtworkItemDelegate(QStyledItemDelegate):
+    """Paint artwork icons centered without changing ordinary cell rendering."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._is_artwork_column = False
+
+    def set_artwork_column_visible(self, visible: bool) -> None:
+        self._is_artwork_column = visible
+
+    def paint(self, painter: QPainter, option, index) -> None:  # type: ignore[override]
+        if not self._is_artwork_column:
+            super().paint(painter, option, index)
+            return
+
+        item_option = QStyleOptionViewItem(option)
+        self.initStyleOption(item_option, index)
+        icon = item_option.icon
+        if icon.isNull():
+            super().paint(painter, option, index)
+            return
+        pixmap = icon.pixmap(item_option.decorationSize)
+        if pixmap.isNull():
+            super().paint(painter, option, index)
+            return
+
+        item_option.icon = QIcon()
+        item_option.features &= ~QStyleOptionViewItem.ViewItemFeature.HasDecoration
+        style = item_option.widget.style() if item_option.widget else QApplication.style()
+        if style is None:
+            super().paint(painter, option, index)
+            return
+        style.drawControl(
+            QStyle.ControlElement.CE_ItemViewItem,
+            item_option,
+            painter,
+            item_option.widget,
+        )
+        size = pixmap.deviceIndependentSize().toSize()
+        painter.drawPixmap(
+            item_option.rect.x() + (item_option.rect.width() - size.width()) // 2,
+            item_option.rect.y() + (item_option.rect.height() - size.height()) // 2,
+            pixmap,
+        )
+
+
 # =============================================================================
 # _DragProgressWidget — floating overlay showing per-track prep progress
 # =============================================================================
@@ -753,16 +789,16 @@ class _DragProgressWidget(QWidget):
     def _apply_style(self) -> None:
         self._container.setStyleSheet(f"""
             QFrame#dpWrap {{
-                background: {Colors.SURFACE_RAISED};
-                border: 1px solid {Colors.BORDER};
+                background: {paint_css('surface.raised')};
+                border: 1px solid {paint_css('border.default')};
                 border-radius: 8px;
             }}
             QLabel {{
-                color: {Colors.TEXT_PRIMARY};
+                color: {paint_css('text.primary')};
                 background: transparent;
             }}
             QFrame[frameShape="4"] {{
-                color: {Colors.BORDER_SUBTLE};
+                color: {paint_css('border.subtle')};
                 background: transparent;
             }}
         """)
@@ -771,12 +807,12 @@ class _DragProgressWidget(QWidget):
         if 0 <= idx < len(self._rows):
             lbl = self._rows[idx]
             lbl.setText(lbl.text().replace("  ○  ", "  ✓  "))
-            lbl.setStyleSheet(f"color: {Colors.ACCENT_LIGHT}; background: transparent;")
+            lbl.setStyleSheet(f"color: {paint_css('control.primary.hover_fill')}; background: transparent;")
             self._done += 1
             if self._done == len(self._rows):
                 self._header.setText("Starting drag…")
                 self._header.setStyleSheet(
-                    f"color: {Colors.ACCENT_LIGHT}; background: transparent;"
+                    f"color: {paint_css('control.primary.hover_fill')}; background: transparent;"
                 )
 
 
@@ -913,7 +949,7 @@ class MusicBrowserList(QFrame):
         # latter defines the current list scope; search narrows that scope.
         self._search_query = ""
         self._search_scope_tracks: list[dict] = []
-        self._search_text_cache: dict[int, tuple[dict, str]] = {}
+        self._search_text_cache: dict[int, tuple[dict, SearchText]] = {}
         self._pending_search_selection: set[tuple[str, object]] = set()
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -929,13 +965,15 @@ class MusicBrowserList(QFrame):
         self.table = QTableWidget()
         self._layout.addWidget(self.table)
         self._setup_table()
+        self._artwork_delegate = _ArtworkItemDelegate(self.table)
+        self.table.setItemDelegateForColumn(0, self._artwork_delegate)
 
         # Status bar (track count)
         self._status_label = QLabel()
         self._status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self._status_label.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; padding: 3px 8px;"
-            f" border-top: 1px solid {Colors.BORDER_SUBTLE};"
+            f"color: {paint_css('text.secondary')}; padding: 3px 8px;"
+            f" border-top: 1px solid {paint_css('border.subtle')};"
             " background: transparent;"
         )
         self._layout.addWidget(self._status_label)
@@ -1025,9 +1063,9 @@ class MusicBrowserList(QFrame):
         bar.setFixedHeight(46)
         bar.setStyleSheet(
             f"QFrame#trackListSearchBar {{"
-            f"background:{Colors.SURFACE};"
+            f"background:{paint_css('surface.default')};"
             f"border:none;"
-            f"border-bottom:1px solid {Colors.BORDER_SUBTLE};"
+            f"border-bottom:1px solid {paint_css('border.subtle')};"
             f"}}"
         )
 
@@ -1053,7 +1091,7 @@ class MusicBrowserList(QFrame):
             BROWSER_SEARCH_CONTROL_SIZE,
         )
         self._search_field.setStyleSheet(browser_search_field_css())
-        search_icon = glyph_icon("search", 16, Colors.TEXT_TERTIARY)
+        search_icon = glyph_icon("search", 16, paint_css("text.tertiary"))
         if search_icon is not None:
             self._search_field.addAction(
                 search_icon,
@@ -1084,16 +1122,19 @@ class MusicBrowserList(QFrame):
         self._tracks = self._tracks_matching_search(tracks)
 
     def _tracks_matching_search(self, tracks: list[dict]) -> list[dict]:
-        terms = tuple(term for term in self._search_query.casefold().split() if term)
-        if not terms:
+        if not self._search_query.strip():
             return tracks
         return [
             track
             for track in tracks
-            if all(term in self._track_search_text(track) for term in terms)
+            if matches_search(
+                self._search_query,
+                self._track_search_text(track),
+                match_all_terms=True,
+            )
         ]
 
-    def _track_search_text(self, track: dict) -> str:
+    def _track_search_text(self, track: dict) -> SearchText:
         cache_key = id(track)
         cached = self._search_text_cache.get(cache_key)
         if cached is not None and cached[0] is track:
@@ -1117,7 +1158,7 @@ class MusicBrowserList(QFrame):
             if display_text and display_text != raw_text:
                 values.append(display_text)
 
-        searchable = "\n".join(values).casefold()
+        searchable = prepare_search_text("\n".join(values))
         self._search_text_cache[cache_key] = (track, searchable)
         return searchable
 
@@ -1184,13 +1225,15 @@ class MusicBrowserList(QFrame):
         pl = self._current_playlist
         if pl.get("master_flag"):
             return False
+        if is_playlist_folder(pl):
+            return False
         if (
             pl.get("smart_playlist_data")
             or _is_ipod_category_playlist(pl)
             or pl.get("_source") == "smart"
         ):
             return False
-        if pl.get("podcast_flag", 0) == 1 and not _is_display_merged_playlist(pl):
+        if is_podcast_playlist(pl) and not _is_display_merged_playlist(pl):
             return False
         # Only allow manual reorder when sort_order is Manual (1) or Default (0)
         sort_order = pl.get("sort_order", 0)
@@ -1463,9 +1506,6 @@ class MusicBrowserList(QFrame):
             track_id_index: Mapping of trackID -> full track dict.
             playlist: The playlist dict (stored for context menu actions).
         """
-        self._current_filter = {"type": "playlist"}
-        self._is_playlist_mode = True
-        self._current_playlist = playlist
         # Resolve trackIDs to track dicts, preserving playlist order
         tracks: list[dict] = []
         for tid in track_ids:
@@ -1480,6 +1520,31 @@ class MusicBrowserList(QFrame):
                 from iopenpod.sync._playlist_builder import sort_tracks_by_order
                 tracks = sort_tracks_by_order(tracks, sort_order)
 
+        self._show_playlist_tracks(tracks, playlist, filter_type="playlist")
+
+    def showComputedPlaylist(
+        self,
+        tracks: list[dict],
+        playlist: dict | None = None,
+    ) -> None:
+        """Show an already evaluated and sorted transient playlist result.
+
+        The expensive matching and sorting work is expected to be complete.
+        Table rows are still populated incrementally by ``_populate_table``.
+        """
+        self._show_playlist_tracks(tracks, playlist, filter_type="playlist_preview")
+
+    def _show_playlist_tracks(
+        self,
+        tracks: list[dict],
+        playlist: dict | None,
+        *,
+        filter_type: str,
+    ) -> None:
+        self._current_filter = {"type": filter_type}
+        self._is_playlist_mode = True
+        self._current_playlist = playlist
+        self._search_text_cache.clear()
         self._set_track_scope(tracks)
         self._setup_columns()
         self._populate_table()
@@ -1829,6 +1894,7 @@ class MusicBrowserList(QFrame):
                 )
             else:
                 self._show_art = self._show_art_override
+            self._artwork_delegate.set_artwork_column_visible(self._show_art)
 
             # Capture state for this load
             load_id = self._load_id
@@ -1971,7 +2037,7 @@ class MusicBrowserList(QFrame):
                 item.setData(Qt.ItemDataRole.UserRole, numeric)
 
             if key == "rating" and display:
-                item.setForeground(_named_qcolor(Colors.STAR))
+                item.setForeground(_named_qcolor(paint_css("data.rating.text")))
             if key == "explicit_flag":
                 self._apply_explicit_cell_visuals(item, raw_value)
             if key in NUMERIC_COLUMNS:
@@ -2498,10 +2564,10 @@ class MusicBrowserList(QFrame):
 
         if flag == 1:
             svg_name = "advisory-explicit"
-            svg_color = Colors.DANGER
+            svg_color = paint_css("status.danger.text")
         else:
             svg_name = "advisory-clean"
-            svg_color = Colors.SUCCESS
+            svg_color = paint_css("status.success.text")
 
         svg_icon = glyph_icon(svg_name, size, color=svg_color)
         if svg_icon is not None:
@@ -2509,12 +2575,14 @@ class MusicBrowserList(QFrame):
             return svg_icon
 
         if flag == 1:
-            bg = _named_qcolor(Colors.DANGER)
-            border = _named_qcolor(Colors.DANGER_BORDER)
+            bg = _named_qcolor(paint_css("status.danger.text"))
+            border = _named_qcolor(paint_css("status.danger.badge_border"))
+            text = _named_qcolor(paint_css("status.danger.on_fill_text"))
             glyph = "E"
         else:
-            bg = _named_qcolor(Colors.SUCCESS)
-            border = _named_qcolor(Colors.SUCCESS_BORDER)
+            bg = _named_qcolor(paint_css("status.success.text"))
+            border = _named_qcolor(paint_css("status.success.badge_border"))
+            text = _named_qcolor(paint_css("status.success.on_fill_text"))
             glyph = "C"
 
         px = QPixmap(size, size)
@@ -2530,7 +2598,7 @@ class MusicBrowserList(QFrame):
 
         font = QFont(FONT_FAMILY, max(7, size - 6), QFont.Weight.Bold)
         painter.setFont(font)
-        painter.setPen(_named_qcolor(Colors.TEXT_ON_ACCENT))
+        painter.setPen(text)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, glyph)
         painter.end()
 
@@ -2548,7 +2616,7 @@ class MusicBrowserList(QFrame):
             icon = self._advisory_badge_icon(1)
             if icon is not None:
                 cell.setIcon(icon)
-            cell.setForeground(_named_qcolor(Colors.DANGER))
+            cell.setForeground(_named_qcolor(paint_css("status.danger.text")))
             cell.setToolTip("Content Advisory: Explicit")
             return
 
@@ -2556,11 +2624,11 @@ class MusicBrowserList(QFrame):
             icon = self._advisory_badge_icon(2)
             if icon is not None:
                 cell.setIcon(icon)
-            cell.setForeground(_named_qcolor(Colors.SUCCESS))
+            cell.setForeground(_named_qcolor(paint_css("status.success.text")))
             cell.setToolTip("Content Advisory: Clean")
             return
 
-        cell.setForeground(_named_qcolor(Colors.TEXT_TERTIARY))
+        cell.setForeground(_named_qcolor(paint_css("text.tertiary")))
 
     def _update_status(self) -> None:
         """Update the status label with track count info."""
@@ -3141,6 +3209,18 @@ class MusicBrowserList(QFrame):
                 tracks.append(self._tracks[orig_idx])
         return tracks
 
+    def _resolve_track_selection(
+        self,
+        selected: list[dict] | None,
+    ) -> list[dict]:
+        """Return an explicit track snapshot or the current table selection."""
+
+        return (
+            list(selected)
+            if selected is not None
+            else self._get_selected_tracks()
+        )
+
     def _resolved_track_file_paths(self, tracks: list[dict]) -> list[str]:
         """Resolve selected iPod track database locations to existing files."""
         if not tracks:
@@ -3331,152 +3411,20 @@ class MusicBrowserList(QFrame):
         if not selected:
             return
 
-        menu = QMenu(self)
-        menu_style = context_menu_css()
-        menu.setStyleSheet(menu_style)
-
-        cache = self._library_cache
-
-        # ── Edit metadata ──
-        if self._can_edit_selected_tracks(selected):
-            edit_act = menu.addAction(f"{self._edit_action_label(selected)}\t{_CTRL}+E")
-            if edit_act:
-                icon = glyph_icon("edit", 14, Colors.TEXT_PRIMARY)
-                if icon is not None:
-                    edit_act.setIcon(icon)
-                edit_act.triggered.connect(
-                    lambda _=False, sel=list(selected): self._edit_tracks(sel)
-                )
-            self._add_convert_to_podcast_action(menu, selected)
-            menu.addSeparator()
-
-        if len(selected) == 1 and chapter_count_from_data(selected[0].get("chapter_data")) >= 2:
-            split_act = menu.addAction("Split chapters into individual tracks")
-            if split_act:
-                icon = glyph_icon("chaptered-track", 14, Colors.TEXT_PRIMARY)
-                if icon is not None:
-                    split_act.setIcon(icon)
-                split_act.triggered.connect(
-                    lambda _=False, sel=list(selected): self.split_chapters_requested.emit(sel)
-                )
-            menu.addSeparator()
-
-        # ── "Add to Playlist >" cascade ──
-        if cache is not None and cache.is_ready():
-            playlists = display_playlists_from_rows(cache.get_playlists())
-
-            # Filter to editable regular playlists. Display-merged type 2/3 rows
-            # are valid edit targets; cache saves fan out to each physical row.
-            regular = [
-                pl for pl in playlists
-                if not pl.get("master_flag")
-                and not pl.get("smart_playlist_data")
-                and not _is_ipod_category_playlist(pl)
-                and pl.get("_source") not in ("smart", "category")
-                and (
-                    pl.get("podcast_flag", 0) != 1
-                    or _is_display_merged_playlist(pl)
-                )
-            ]
-
-            add_menu = menu.addMenu("Add to Playlist")
-            if add_menu:
-                add_menu.setStyleSheet(menu_style)
-
-                new_playlist_act = add_menu.addAction("New Playlist")
-                if new_playlist_act:
-                    icon = glyph_icon("plus", 14, Colors.TEXT_PRIMARY)
-                    if icon is not None:
-                        new_playlist_act.setIcon(icon)
-                    new_playlist_act.triggered.connect(self._create_new_playlist_from_selected)
-
-                if regular:
-                    add_menu.addSeparator()
-                    for pl in regular:
-                        title = pl.get("Title", "Untitled")
-                        act = add_menu.addAction(title)
-                        if act:
-                            act.triggered.connect(
-                                lambda _=False, p=pl: self._add_selected_to_playlist(p)
-                            )
-
-        # ── "Remove from Playlist" (only for editable regular playlists) ──
-        if (self._is_playlist_mode and self._current_playlist
-                and not self._current_playlist.get("master_flag")
-                and not self._current_playlist.get("smart_playlist_data")  # was smartPlaylistData
-                and not _is_ipod_category_playlist(self._current_playlist)
-                and self._current_playlist.get("_source") not in (
-                    "smart",
-                    "category",
-                )
-                and (
-                    self._current_playlist.get("podcast_flag", 0) != 1
-                    or _is_display_merged_playlist(self._current_playlist)
-                )):
-            menu.addSeparator()
-            n = len(selected)
-            label = f"Remove {n} Track{'s' if n != 1 else ''} from Playlist"
-            remove_act = menu.addAction(label)
-            if remove_act:
-                remove_act.triggered.connect(self._remove_selected_from_playlist)
-
-        # ── "Remove from iPod" ──
-        menu.addSeparator()
-        n_sel = len(selected)
-        remove_ipod_label = f"Remove {n_sel} Track{'s' if n_sel != 1 else ''} from iPod"
-        remove_ipod_act = menu.addAction(remove_ipod_label)
-        if remove_ipod_act:
-            icon = glyph_icon("minus", 14, Colors.TEXT_PRIMARY)
-            if icon is not None:
-                remove_ipod_act.setIcon(icon)
-            remove_ipod_act.triggered.connect(
-                lambda _=False, sel=selected: self.remove_from_ipod_requested.emit(sel)
-            )
-
-        # ── "Move Up / Move Down" (reorderable playlists only) ──
-        if self._is_reorderable_playlist():
-            selected_rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
-            menu.addSeparator()
-            up_act = menu.addAction(f"Move Up\t{_CTRL}+\u2191")
-            if up_act:
-                up_act.setEnabled(bool(selected_rows) and selected_rows[0] > 0)
-                up_act.triggered.connect(lambda: self._move_selected_rows(-1))
-            down_act = menu.addAction(f"Move Down\t{_CTRL}+\u2193")
-            if down_act:
-                down_act.setEnabled(bool(selected_rows) and selected_rows[-1] < self.table.rowCount() - 1)
-                down_act.triggered.connect(lambda: self._move_selected_rows(1))
-
-        # ── Track Flags ──
-        menu.addSeparator()
-        if cache is not None:
-            self._build_flag_menu(menu, menu_style, selected, cache)
-
-        # ── Content Advisory (rtng / explicit flag) ──
-        self._build_content_advisory_menu(menu, menu_style, selected)
-
-        # ── Rating ──
-        if cache is not None:
-            self._build_rating_menu(menu, menu_style, selected, cache)
-
-        # ── Volume Adjustment ──
-        self._build_volume_menu(menu, menu_style, selected)
-
-        # ── Open Track File ──
-        menu.addSeparator()
-        self._add_open_file_actions(menu, selected)
-
-        # ── Copy ──
-        menu.addSeparator()
-        copy_text_act = menu.addAction(f"Copy as Text\t{_CTRL}+C")
-        if copy_text_act:
-            copy_text_act.triggered.connect(self._copy_selection)
-        copy_files_act = menu.addAction(f"Copy as File(s)\t{_CTRL}+{_ALT}+C")
-        if copy_files_act:
-            copy_files_act.triggered.connect(self._copy_files_to_clipboard)
-
         vp = self.table.viewport()
         global_pos = vp.mapToGlobal(pos) if vp else QCursor.pos()
-        menu.exec(global_pos)
+        show_track_context_menu(
+            self,
+            self,
+            selected,
+            global_pos,
+        )
+
+    def _request_split_chapters(self, selected: list[dict]) -> None:
+        self.split_chapters_requested.emit(list(selected))
+
+    def _request_remove_from_ipod(self, selected: list[dict]) -> None:
+        self.remove_from_ipod_requested.emit(list(selected))
 
     def _add_open_file_actions(self, menu: QMenu, selected: list[dict]) -> None:
         paths = self._resolved_track_file_paths(selected)
@@ -3490,7 +3438,7 @@ class MusicBrowserList(QFrame):
             open_label = f"Open {len(selected)} Track Files"
         open_act = menu.addAction(f"{open_label}\t{_OPEN_TRACK_SHORTCUT}")
         if open_act:
-            icon = glyph_icon("music", 14, Colors.TEXT_PRIMARY)
+            icon = glyph_icon("music", 14, paint_css("text.primary"))
             if icon is not None:
                 open_act.setIcon(icon)
             open_act.setEnabled(bool(paths))
@@ -3505,7 +3453,7 @@ class MusicBrowserList(QFrame):
 
         open_with_act = menu.addAction(f"Open With...\t{_OPEN_WITH_TRACK_SHORTCUT}")
         if open_with_act:
-            icon = glyph_icon("folder", 14, Colors.TEXT_PRIMARY)
+            icon = glyph_icon("folder", 14, paint_css("text.primary"))
             if icon is not None:
                 open_with_act.setIcon(icon)
             can_open_with = len(selected) == 1 and n_paths == 1
@@ -3552,7 +3500,7 @@ class MusicBrowserList(QFrame):
         if act is None:
             return None
 
-        icon = glyph_icon("broadcast", 14, Colors.TEXT_PRIMARY)
+        icon = glyph_icon("broadcast", 14, paint_css("text.primary"))
         if icon is not None:
             act.setIcon(icon)
 
@@ -3628,7 +3576,7 @@ class MusicBrowserList(QFrame):
             act = menu.addAction(f"{prefix}{label}")
             if act:
                 act.triggered.connect(
-                    lambda _=False, k=key, v=new_val: self._set_track_flag(k, v)
+                    lambda _=False, k=key, v=new_val, sel=list(selected): self._set_track_flag(k, v, sel)
                 )
 
         # ── Inverted iTunes checkbox flag: checked_flag (0=checked, 1=unchecked) ──
@@ -3646,7 +3594,7 @@ class MusicBrowserList(QFrame):
         act = menu.addAction(f"{prefix}Checked")
         if act:
             act.triggered.connect(
-                lambda _=False, v=new_val: self._set_track_flag("checked_flag", v)
+                lambda _=False, v=new_val, sel=list(selected): self._set_track_flag("checked_flag", v, sel)
             )
 
     def _build_rating_menu(self, menu: QMenu, style: str, selected: list[dict], cache) -> None:
@@ -3679,7 +3627,7 @@ class MusicBrowserList(QFrame):
             act = rating_menu.addAction(f"{prefix}{label}")
             if act:
                 act.triggered.connect(
-                    lambda _=False, v=value: self._set_track_flag("rating", v)
+                    lambda _=False, v=value, sel=list(selected): self._set_track_flag("rating", v, sel)
                 )
 
     def _build_content_advisory_menu(self, menu: QMenu, style: str, selected: list[dict]) -> None:
@@ -3718,7 +3666,7 @@ class MusicBrowserList(QFrame):
                 if icon is not None:
                     act.setIcon(icon)
                 act.triggered.connect(
-                    lambda _=False, v=value: self._set_track_flag("explicit_flag", v)
+                    lambda _=False, v=value, sel=list(selected): self._set_track_flag("explicit_flag", v, sel)
                 )
 
     def _build_volume_menu(self, menu: QMenu, style: str, selected: list[dict]) -> None:
@@ -3771,40 +3719,40 @@ class MusicBrowserList(QFrame):
         widget.setStyleSheet(
             f"""
             QWidget#volumeAdjustmentWidget {{
-                background: {Colors.SURFACE};
-                color: {Colors.TEXT_PRIMARY};
+                background: {paint_css('surface.default')};
+                color: {paint_css('text.primary')};
             }}
             QLabel {{
-                color: {Colors.TEXT_SECONDARY};
+                color: {paint_css('text.secondary')};
                 background: transparent;
                 font-family: {FONT_FAMILY};
                 font-size: {Metrics.FONT_XS}pt;
             }}
             QLabel#volumeAdjustmentValueLabel {{
-                color: {Colors.TEXT_PRIMARY};
+                color: {paint_css('text.primary')};
                 font-size: {Metrics.FONT_SM}pt;
                 font-weight: 600;
             }}
             QSlider::groove:horizontal {{
                 height: 4px;
                 border-radius: 2px;
-                background: {Colors.BORDER};
+                background: {paint_css('border.default')};
             }}
             QSlider::sub-page:horizontal {{
                 border-radius: 2px;
-                background: {Colors.ACCENT};
+                background: {paint_css('control.primary.fill')};
             }}
             QSlider::handle:horizontal {{
                 width: 14px;
                 height: 14px;
                 margin: -5px 0;
                 border-radius: 7px;
-                background: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
+                background: {paint_css('control.secondary.fill')};
+                border: 1px solid {paint_css('border.default')};
             }}
             QSlider::handle:horizontal:hover {{
-                background: {Colors.TEXT_ON_ACCENT};
-                border-color: {Colors.ACCENT_BORDER};
+                background: {paint_css('control.secondary.hover_fill')};
+                border-color: {paint_css('focus.border')};
             }}
             """
         )
@@ -3883,9 +3831,14 @@ class MusicBrowserList(QFrame):
         slider.sliderReleased.connect(lambda: commit_value(slider.value()))
         return widget
 
-    def _set_track_flag(self, key: str, value: int) -> None:
+    def _set_track_flag(
+        self,
+        key: str,
+        value: int,
+        selected: list[dict] | None = None,
+    ) -> None:
         """Apply a flag/field change to all selected tracks via the cache."""
-        selected = self._get_selected_tracks()
+        selected = self._resolve_track_selection(selected)
         if not selected:
             return
 
@@ -3899,7 +3852,7 @@ class MusicBrowserList(QFrame):
 
     def _edit_tracks(self, selected: list[dict] | None = None) -> None:
         """Open the multi-track metadata editor for the current selection."""
-        selected = selected or self._get_selected_tracks()
+        selected = self._resolve_track_selection(selected)
         if not self._can_edit_selected_tracks(selected):
             return
 
@@ -4012,9 +3965,13 @@ class MusicBrowserList(QFrame):
                     if key == "explicit_flag":
                         self._apply_explicit_cell_visuals(cell, raw)
 
-    def _add_selected_to_playlist(self, playlist: dict) -> None:
+    def _add_selected_to_playlist(
+        self,
+        playlist: dict,
+        selected: list[dict] | None = None,
+    ) -> None:
         """Add all selected tracks to the given playlist and save it."""
-        selected = self._get_selected_tracks()
+        selected = self._resolve_track_selection(selected)
         if not selected:
             return
 
@@ -4052,9 +4009,12 @@ class MusicBrowserList(QFrame):
         log.info("Added %d track(s) to playlist '%s' (id=0x%X)",
                  added, title, playlist.get("playlist_id", 0))
 
-    def _create_new_playlist_from_selected(self) -> None:
+    def _create_new_playlist_from_selected(
+        self,
+        selected: list[dict] | None = None,
+    ) -> None:
         """Create a new regular playlist from the current selection."""
-        selected = self._get_selected_tracks()
+        selected = self._resolve_track_selection(selected)
         if not selected:
             return
 
@@ -4076,13 +4036,16 @@ class MusicBrowserList(QFrame):
             playlist.get("playlist_id", 0),
         )
 
-    def _remove_selected_from_playlist(self) -> None:
+    def _remove_selected_from_playlist(
+        self,
+        selected: list[dict] | None = None,
+    ) -> None:
         """Remove selected tracks from the current playlist and save it."""
         playlist = self._current_playlist
         if not playlist:
             return
 
-        selected = self._get_selected_tracks()
+        selected = self._resolve_track_selection(selected)
         if not selected:
             return
 
@@ -4128,7 +4091,10 @@ class MusicBrowserList(QFrame):
     # Ctrl+Alt+C — Copy selected tracks as files into the clipboard
     # -------------------------------------------------------------------------
 
-    def _copy_files_to_clipboard(self) -> None:
+    def _copy_files_to_clipboard(
+        self,
+        selected: list[dict] | None = None,
+    ) -> None:
         """Prepare selected tracks as files and place them on the clipboard.
 
         Uses the same background-thread + progress-widget flow as Alt+drag.
@@ -4144,7 +4110,7 @@ class MusicBrowserList(QFrame):
         if self._clip_prep_thread is not None:
             return  # already preparing
 
-        tracks = self._get_selected_tracks()
+        tracks = self._resolve_track_selection(selected)
         if not tracks:
             return
 
@@ -4264,10 +4230,12 @@ class MusicBrowserList(QFrame):
         except ValueError:
             pass
 
-    def _copy_selection(self) -> None:
-        """Copy selected rows as tab-separated text to clipboard."""
+    def _copy_selection(self, selected: list[dict] | None = None) -> None:
+        """Copy an explicit track selection as tab-separated display text."""
         selected_rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
-        if not selected_rows:
+        table_tracks = self._get_selected_tracks()
+        tracks = self._resolve_track_selection(selected)
+        if not tracks:
             return
 
         header = self.table.horizontalHeader()
@@ -4289,13 +4257,34 @@ class MusicBrowserList(QFrame):
             headers.append(h_item.text() if h_item else "")
         lines = ["\t".join(headers)]
 
-        # Data lines
-        for row in selected_rows:
-            cells = []
-            for logical in vis_cols:
-                item = self.table.item(row, logical)
-                cells.append(item.text() if item else "")
-            lines.append("\t".join(cells))
+        same_as_table_selection = (
+            bool(selected_rows)
+            and [id(track) for track in tracks]
+            == [id(track) for track in table_tracks]
+        )
+        if same_as_table_selection:
+            for row in selected_rows:
+                cells = []
+                for logical in vis_cols:
+                    item = self.table.item(row, logical)
+                    cells.append(item.text() if item else "")
+                lines.append("\t".join(cells))
+        else:
+            for track in tracks:
+                cells = []
+                for logical in vis_cols:
+                    key = self._col_key_for_logical(logical)
+                    raw_value = (
+                        _track_column_raw_value(track, key)
+                        if key is not None
+                        else ""
+                    )
+                    cells.append(
+                        self._format_value(key, raw_value)
+                        if key is not None
+                        else ""
+                    )
+                lines.append("\t".join(cells))
 
         clipboard = QApplication.clipboard()
         if clipboard:

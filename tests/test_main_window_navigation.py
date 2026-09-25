@@ -6,21 +6,95 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from iopenpod.application.database_storage import DatabaseStorageReport
+from iopenpod.application.device_access import DeviceWriteAccessResult
 from iopenpod.application.jobs import SyncToolAvailability
 from iopenpod.application.sync_session import (
     SyncExecutionIntent,
     SyncPlanningIntent,
     SyncSessionMissingTools,
 )
+from iopenpod.device.recovery import LinuxMountDetails
+from iopenpod.gui import app as app_module
 from iopenpod.gui.app import (
     MainWindow,
     _database_file_size_bytes,
+    _device_write_access_failure_message,
     _library_load_failure_message,
     _sync_execute_failure_message,
+    _sync_plan_removes_track,
 )
 from iopenpod.gui.internal_drag import IOP_EXPORT_DRAG_MIME
 from iopenpod.infrastructure.settings_schema import AppSettings
-from iopenpod.sync.contracts import SyncPlan
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+
+
+def test_sync_plan_removes_track_matches_current_db_id() -> None:
+    item = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        db_track_id=42,
+        ipod_track={"db_track_id": 42},
+    )
+    plan = SimpleNamespace(to_remove=[item])
+
+    assert _sync_plan_removes_track(plan, {"db_track_id": 42})
+    assert not _sync_plan_removes_track(plan, {"db_track_id": 43})
+
+
+def test_execute_sync_plan_stops_playback_before_removing_current_track(
+    monkeypatch,
+) -> None:
+    plan = SyncPlan()
+    plan.to_remove.append(
+        SyncItem(
+            action=SyncAction.REMOVE_FROM_IPOD,
+            db_track_id=42,
+            ipod_track={"db_track_id": 42},
+        )
+    )
+    events: list[str] = []
+
+    class _FakeSyncReview:
+        _skip_presync_backup = False
+
+        def get_selected_playlist_changes(self) -> dict:
+            return {}
+
+        def get_selected_photo_plan(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "iopenpod.gui.app.build_filtered_sync_plan",
+        lambda original_plan, _selected_items, **_kwargs: original_plan,
+    )
+    window = SimpleNamespace(
+        device_manager=SimpleNamespace(device_path="/media/IPOD"),
+        _plan=plan,
+        syncReview=_FakeSyncReview(),
+        _playback_index=0,
+        _playback_tracks=[{"db_track_id": 42}],
+        _stopPlayback=lambda: events.append("stop"),
+        _confirm_sync_until_full_if_needed=lambda _plan, _path: False,
+        settings_service=_FakeSettingsService(),
+        device_session_service=SimpleNamespace(current_session=lambda: SimpleNamespace(identity={}, capabilities={})),
+        _sync_session=SimpleNamespace(start_execution=lambda _intent: events.append("execute")),
+    )
+
+    MainWindow.executeSyncPlan(cast(Any, window), selected_items=[])
+
+    assert events == ["stop", "execute"]
+
+
+def test_scrobble_now_requests_scrobble_only_session() -> None:
+    requests: list[str] = []
+    window = SimpleNamespace(
+        _sync_session=SimpleNamespace(
+            start_scrobble_only=lambda: requests.append("scrobble"),
+        ),
+    )
+
+    MainWindow._onScrobbleNowRequested(cast(Any, window))
+
+    assert requests == ["scrobble"]
 
 
 class _FakeStack:
@@ -38,6 +112,20 @@ class _FakeStack:
     def setCurrentIndex(self, index: int) -> None:
         self.set_indices.append(index)
         self._current_index = index
+
+
+def test_startup_update_result_routes_to_current_settings_page() -> None:
+    original_results: list[object] = []
+    current_results: list[object] = []
+    window = SimpleNamespace(settingsPage=SimpleNamespace(_handle_update_result=original_results.append))
+    handler = MainWindow._handle_startup_update_result.__get__(window)
+    window.settingsPage = SimpleNamespace(_handle_update_result=current_results.append)
+    result = object()
+
+    handler(result)
+
+    assert original_results == []
+    assert current_results == [result]
 
 
 class _FakeSignal:
@@ -80,7 +168,9 @@ class _FakeSidebar:
         self.library_tabs_visible: list[bool] = []
         self.tag_fixes_available: list[bool] = []
         self.tag_fix_counts: list[tuple[int, int]] = []
+        self.scrobble_availability: list[tuple[bool, int]] = []
         self.device_info_updates: list[dict] = []
+        self.eject_availability: list[bool] = []
         self.clear_count = 0
 
     def setLibraryTabsVisible(self, visible: bool) -> None:
@@ -92,11 +182,21 @@ class _FakeSidebar:
     def setTagFixCount(self, field_count: int, track_count: int = 0) -> None:
         self.tag_fix_counts.append((field_count, track_count))
 
+    def setScrobbleAvailable(
+        self,
+        available: bool,
+        pending_play_count: int = 0,
+    ) -> None:
+        self.scrobble_availability.append((available, pending_play_count))
+
     def updateDeviceInfo(self, **kwargs) -> None:
         self.device_info_updates.append(kwargs)
 
     def clearDeviceInfo(self) -> None:
         self.clear_count += 1
+
+    def setEjectAvailable(self, available: bool) -> None:
+        self.eject_availability.append(available)
 
 
 class _FakeSettingsService:
@@ -139,15 +239,9 @@ def test_sync_session_progress_targets_rebuilt_review_widget() -> None:
     old_review = _FakeSyncReview()
     current_review = _FakeSyncReview()
     window = SimpleNamespace(_sync_session=session, syncReview=old_review)
-    window._on_sync_session_planning_progress = (
-        MainWindow._on_sync_session_planning_progress.__get__(window)
-    )
-    window._on_sync_session_execution_started = (
-        MainWindow._on_sync_session_execution_started.__get__(window)
-    )
-    window._on_sync_session_execution_progress = (
-        MainWindow._on_sync_session_execution_progress.__get__(window)
-    )
+    window._on_sync_session_planning_progress = MainWindow._on_sync_session_planning_progress.__get__(window)
+    window._on_sync_session_execution_started = MainWindow._on_sync_session_execution_started.__get__(window)
+    window._on_sync_session_execution_progress = MainWindow._on_sync_session_execution_progress.__get__(window)
 
     MainWindow._connect_sync_session_review_signals(cast(Any, window))
     window.syncReview = current_review  # live theme changes rebuild this widget
@@ -172,29 +266,65 @@ def test_sync_session_progress_targets_rebuilt_review_widget() -> None:
 
 
 def test_main_window_device_name_ignores_dataset5_category_master() -> None:
-    assert MainWindow._device_name_from_playlists(
-        [
-            {
-                "master_flag": True,
-                "Title": "Rentals",
-                "_source": "category",
-                "mhsd5_type": 7,
-            },
-            {"master_flag": True, "Title": "RoadPod"},
-        ]
-    ) == "RoadPod"
+    assert (
+        MainWindow._device_name_from_playlists(
+            [
+                {
+                    "master_flag": True,
+                    "Title": "Rentals",
+                    "_source": "category",
+                    "mhsd5_type": 7,
+                },
+                {"master_flag": True, "Title": "RoadPod"},
+            ]
+        )
+        == "RoadPod"
+    )
 
 
-def test_failed_sync_result_gets_user_visible_message() -> None:
+def test_failed_sync_result_gets_user_visible_message(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "linux")
     result = SimpleNamespace(
         success=False,
         partial_save=False,
-        errors=[("read-only", "iOpenPod cannot write to this iPod.")],
+        errors=[("read-only", "[Errno 13] Permission denied")],
     )
 
-    assert _sync_execute_failure_message(result) == (
-        "iOpenPod cannot write to this iPod."
+    message = _sync_execute_failure_message(result, "/media/user/IPOD")
+
+    assert message is not None
+    assert "iOpenPod cannot write to this iPod" in message
+    assert "/media/user/IPOD" in message
+    assert "Permission denied" in message
+    assert "unmount it before" in message.lower()
+    assert "mount -o remount,rw" not in message
+
+
+def test_device_write_access_message_routes_mac_format_to_first_aid(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "linux")
+    mount = LinuxMountDetails(
+        mount_point="/media/user/IPOD",
+        source="/dev/sdz2",
+        filesystem="hfsplus",
+        options=("ro", "nosuid"),
+        super_options=("ro",),
     )
+
+    message = _device_write_access_failure_message(
+        DeviceWriteAccessResult(
+            writable=False,
+            reason="mount is read-only",
+            mount_path=mount.mount_point,
+            mount=mount,
+        )
+    )
+
+    assert "/dev/sdz2" in message
+    assert "hfsplus" in message
+    assert "Mac-formatted" in message
+    assert "Disk Utility First Aid" in message
+    assert "fsck.fat" not in message
+    assert "mount -o remount,rw" not in message
 
 
 def test_successful_sync_queues_silent_normalization_after_rescan(monkeypatch) -> None:
@@ -224,6 +354,37 @@ def test_successful_sync_queues_silent_normalization_after_rescan(monkeypatch) -
     assert scheduled == [(500, window._rescanAfterSync)]
 
 
+def test_successful_scrobble_only_does_not_reload_itunesdb_cache(monkeypatch) -> None:
+    shown_results: list[object] = []
+    scheduled: list[tuple[int, object]] = []
+    availability_updates: list[None] = []
+    monkeypatch.setattr(
+        "iopenpod.gui.app.QTimer.singleShot",
+        lambda delay, callback: scheduled.append((delay, callback)),
+    )
+    window = SimpleNamespace(
+        _scrobble_only_running=True,
+        syncReview=SimpleNamespace(show_result=shown_results.append),
+        settings_service=SimpleNamespace(
+            get_effective_settings=lambda: AppSettings(
+                normalize_tags_after_sync=True,
+            )
+        ),
+        isActiveWindow=lambda: True,
+        _rescanAfterSync=lambda: None,
+        _update_scrobble_availability=lambda: availability_updates.append(None),
+        _normalize_tags_after_sync_pending=False,
+    )
+    result = SimpleNamespace(success=True, partial_save=False, errors=[])
+
+    MainWindow._onSyncExecuteComplete(cast(Any, window), result)
+
+    assert shown_results == [result]
+    assert window._normalize_tags_after_sync_pending is False
+    assert availability_updates == [None]
+    assert scheduled == []
+
+
 def test_post_sync_tag_scan_applies_silently_to_unchanged_cache() -> None:
     tracks = [
         {"db_track_id": 1, "Title": "  Song  "},
@@ -243,9 +404,7 @@ def test_post_sync_tag_scan_applies_silently_to_unchanged_cache() -> None:
         ),
         library_cache=SimpleNamespace(
             get_tracks=lambda: tracks,
-            update_track_flags_by_track=lambda current, changes: staged_changes.append(
-                (current, changes)
-            ),
+            update_track_flags_by_track=lambda current, changes: staged_changes.append((current, changes)),
         ),
         _schedule_tag_fix_scan=lambda: None,
     )
@@ -264,9 +423,7 @@ def test_post_sync_tag_scan_applies_silently_to_unchanged_cache() -> None:
     )
 
     assert sidebar.tag_fix_counts == [(2, 1)]
-    assert staged_changes == [
-        (tracks, {id(tracks[0]): {"Title": "Song", "Sort Title": "Song"}})
-    ]
+    assert staged_changes == [(tracks, {id(tracks[0]): {"Title": "Song", "Sort Title": "Song"}})]
     assert window._normalize_tags_after_sync_pending is False
 
 
@@ -292,7 +449,8 @@ def test_stale_tag_scan_does_not_update_badge_or_cache() -> None:
     assert sidebar.tag_fix_counts == []
 
 
-def test_library_load_permission_message_includes_linux_recovery_steps() -> None:
+def test_library_load_permission_message_includes_linux_recovery_steps(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "linux")
     message = _library_load_failure_message(
         "/media/user/IPOD",
         "Could not load iTunesDB: [Errno 13] Permission denied",
@@ -300,11 +458,44 @@ def test_library_load_permission_message_includes_linux_recovery_steps() -> None
 
     assert "iOpenPod could not read this iPod cleanly" in message
     assert "/media/user/IPOD" in message
-    assert "mount -o remount,rw" in message
-    assert "fsck.vfat" in message
+    assert "unmount it before" in message.lower()
+    assert "findmnt" in message
+    assert "mount -o remount,rw" not in message
 
 
-def test_device_changed_rejects_unwritable_device_before_loading(monkeypatch) -> None:
+def test_sync_write_failure_uses_windows_recovery_steps(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "win32")
+    result = SimpleNamespace(
+        success=False,
+        partial_save=False,
+        errors=[("read-only", "The media is write protected")],
+    )
+
+    message = _sync_execute_failure_message(result, "E:\\")
+
+    assert message is not None
+    assert "Windows drive Error Checking" in message
+    assert "iTunes Restore" in message
+    assert "sudo" not in message
+    assert "findmnt" not in message
+
+
+def test_library_load_failure_uses_macos_recovery_steps(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "darwin")
+
+    message = _library_load_failure_message(
+        "/Volumes/IPOD",
+        "Could not load iTunesDB: Input/output error",
+    )
+
+    assert "Disk Utility First Aid" in message
+    assert "sudo" not in message
+    assert "findmnt" not in message
+
+
+def test_device_changed_keeps_unwritable_device_available_for_safe_eject(
+    monkeypatch,
+) -> None:
     calls: list[str] = []
     criticals: list[tuple[str, str]] = []
     fake_pool = SimpleNamespace(clear=lambda: calls.append("clear_pool"))
@@ -316,39 +507,216 @@ def test_device_changed_rejects_unwritable_device_before_loading(monkeypatch) ->
     monkeypatch.setattr("iopenpod.gui.imgMaker.clear_artwork_api", lambda: calls.append("art"))
     monkeypatch.setattr(
         "iopenpod.gui.app.check_ipod_write_access",
-        lambda _path: SimpleNamespace(writable=False, message="not writable"),
+        lambda path: DeviceWriteAccessResult(
+            writable=False,
+            reason="not writable",
+            mount_path=path,
+        ),
     )
     monkeypatch.setattr(
         "iopenpod.gui.app.QMessageBox.critical",
         lambda _parent, title, message: criticals.append((title, message)),
     )
 
+    class _SignalingDeviceManager:
+        def __init__(self, path: str) -> None:
+            self._device_path: str | None = path
+            self.changed: Callable[[str], None] | None = None
+
+        @property
+        def device_path(self) -> str | None:
+            return self._device_path
+
+        @device_path.setter
+        def device_path(self, path: str | None) -> None:
+            self._device_path = path
+            if self.changed is not None:
+                self.changed(path or "")
+
+    device_storage = object()
+    device_manager = _SignalingDeviceManager("/media/user/IPOD")
     window = SimpleNamespace(
         _theme_rebuild_timer=SimpleNamespace(
             isActive=lambda: False,
             stop=lambda: calls.append("stop_timer"),
         ),
         _pending_theme_rebuild=True,
+        _eject_only_device_path=None,
+        _eject_only_device_storage=None,
         musicBrowser=SimpleNamespace(reloadData=lambda: calls.append("reload")),
         sidebar=_FakeSidebar(),
-        device_manager=SimpleNamespace(device_path="/media/user/IPOD"),
+        device_manager=device_manager,
+        device_session_service=SimpleNamespace(current_session=lambda: SimpleNamespace(storage=device_storage)),
         library_cache=SimpleNamespace(start_loading=lambda: calls.append("load")),
         _apply_effective_theme=lambda: False,
         _invalidate_tag_fix_scan=lambda: calls.append("invalidate_tag_scan"),
         _schedule_themed_rebuild=lambda restore_page=0: calls.append("theme"),
-        _reset_library_category_for_new_device=lambda path: calls.append(
-            f"category:{path}"
-        ),
+        _reset_library_category_for_new_device=lambda path: calls.append(f"category:{path}"),
         _show_default_page=lambda: calls.append("default"),
+    )
+    device_manager.changed = lambda changed_path: MainWindow.onDeviceChanged(
+        cast(Any, window),
+        changed_path,
     )
 
     MainWindow.onDeviceChanged(cast(Any, window), "/media/user/IPOD")
 
     assert window.device_manager.device_path is None
+    assert window._eject_only_device_path == "/media/user/IPOD"
+    assert window._eject_only_device_storage is device_storage
+    assert window.sidebar.eject_availability[-1] is True
     assert "load" not in calls
     assert "category:/media/user/IPOD" not in calls
     assert "invalidate_tag_scan" in calls
-    assert criticals == [("iPod Not Writable", "not writable")]
+    assert len(criticals) == 1
+    assert criticals[0][0] == "iPod Not Writable"
+    assert "not writable" in criticals[0][1]
+    assert "mount -o remount,rw" not in criticals[0][1]
+
+
+def test_device_changed_keeps_busy_device_selected_without_recovery_guidance(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+    informations: list[tuple[str, str]] = []
+    fake_pool = SimpleNamespace(clear=lambda: calls.append("clear_pool"))
+    device_manager = SimpleNamespace(device_path="/media/user/IPOD")
+    window = SimpleNamespace(
+        _theme_rebuild_timer=SimpleNamespace(isActive=lambda: False),
+        _pending_theme_rebuild=False,
+        _eject_only_device_path=None,
+        _eject_only_device_storage=None,
+        musicBrowser=SimpleNamespace(reloadData=lambda: calls.append("reload")),
+        sidebar=_FakeSidebar(),
+        device_manager=device_manager,
+        device_session_service=SimpleNamespace(current_session=lambda: SimpleNamespace()),
+        library_cache=SimpleNamespace(start_loading=lambda: calls.append("load")),
+        _apply_effective_theme=lambda: False,
+        _invalidate_tag_fix_scan=lambda: calls.append("invalidate_tag_scan"),
+        _reset_library_category_for_new_device=lambda path: calls.append(f"category:{path}"),
+    )
+    monkeypatch.setattr(
+        "iopenpod.gui.app.ThreadPoolSingleton.get_instance",
+        staticmethod(lambda: fake_pool),
+    )
+    monkeypatch.setattr("iopenpod.gui.imgMaker.clear_artwork_api", lambda: None)
+    monkeypatch.setattr(
+        "iopenpod.gui.app.check_ipod_write_access",
+        lambda path: DeviceWriteAccessResult(
+            writable=False,
+            reason="Another iOpenPod process is writing",
+            mount_path=path,
+            busy=True,
+        ),
+    )
+    monkeypatch.setattr(
+        "iopenpod.gui.app.QMessageBox.information",
+        lambda _parent, title, message: informations.append((title, message)),
+    )
+
+    MainWindow.onDeviceChanged(cast(Any, window), "/media/user/IPOD")
+
+    assert window.device_manager.device_path == "/media/user/IPOD"
+    assert window._eject_only_device_path is None
+    assert window.sidebar.eject_availability[-1] is True
+    assert "load" not in calls
+    assert informations == [
+        (
+            "iPod Busy",
+            "Another iOpenPod process is currently writing to this iPod. "
+            "The iPod remains selected; wait for that save to finish, then "
+            "rescan it.",
+        )
+    ]
+
+
+def test_eject_uses_read_only_device_candidate_when_no_active_device(
+    monkeypatch,
+) -> None:
+    workers: list[Any] = []
+    calls: list[str] = []
+    device_storage = object()
+
+    class _Signal:
+        def connect(self, _callback) -> None:
+            pass
+
+    class _FakeEjectWorker:
+        def __init__(self, path: str, *, device_storage: object) -> None:
+            self.path = path
+            self.device_storage = device_storage
+            self.finished_ok = _Signal()
+            self.failed = _Signal()
+            self.started = False
+            workers.append(self)
+
+        def start(self) -> None:
+            self.started = True
+
+    monkeypatch.setattr(app_module, "EjectDeviceWorker", _FakeEjectWorker)
+    sidebar = _FakeSidebar()
+
+    def _flush_before_eject() -> bool:
+        calls.append("flush")
+        return True
+
+    window = SimpleNamespace(
+        device_manager=SimpleNamespace(device_path=None),
+        _eject_only_device_path="/media/user/IPOD",
+        _eject_only_device_storage=device_storage,
+        _is_sync_running=lambda: False,
+        _flush_quick_writes_for_eject=_flush_before_eject,
+        sidebar=sidebar,
+        _eject_worker=None,
+        _onEjectDone=lambda _message: None,
+        _onEjectFailed=lambda _message: None,
+    )
+
+    MainWindow._onEjectDevice(cast(Any, window))
+
+    assert calls == ["flush"]
+    assert len(workers) == 1
+    worker = workers[0]
+    assert worker.path == "/media/user/IPOD"
+    assert worker.device_storage is device_storage
+    assert worker.started is True
+    assert sidebar.eject_availability == [False]
+
+
+def test_eject_failure_keeps_read_only_candidate_available_for_retry(
+    monkeypatch,
+) -> None:
+    criticals: list[tuple[str, str]] = []
+    sidebar = _FakeSidebar()
+
+    class _Worker:
+        def __init__(self) -> None:
+            self.deleted = False
+
+        def deleteLater(self) -> None:
+            self.deleted = True
+
+    worker = _Worker()
+    monkeypatch.setattr(
+        "iopenpod.gui.app.QMessageBox.critical",
+        lambda _parent, title, message: criticals.append((title, message)),
+    )
+    window = SimpleNamespace(
+        _eject_worker=worker,
+        device_manager=SimpleNamespace(device_path=None),
+        _eject_only_device_path="/media/user/IPOD",
+        _eject_only_device_storage=object(),
+        sidebar=sidebar,
+        library_cache=SimpleNamespace(is_ready=lambda: False),
+    )
+
+    MainWindow._onEjectFailed(cast(Any, window), "device is still mounted")
+
+    assert worker.deleted is True
+    assert window._eject_worker is None
+    assert window._eject_only_device_path == "/media/user/IPOD"
+    assert sidebar.eject_availability == [True]
+    assert criticals == [("Eject Failed", "Failed to eject the iPod:\ndevice is still mounted")]
 
 
 def test_pc_media_folder_edits_persist_to_global_settings_immediately(tmp_path) -> None:
@@ -419,15 +787,11 @@ def test_start_pc_sync_without_device_opens_media_folder_dialog(monkeypatch) -> 
     service = _FakeSettingsService()
     entries = [{"directory": "/tmp/Music", "recurse": True, "media_types": ["music"]}]
     window = SimpleNamespace(
-        _quick_write_controller=SimpleNamespace(
-            prepare_for_full_sync=lambda: calls.append("prepared") or (True, None)
-        ),
+        _quick_write_controller=SimpleNamespace(prepare_for_full_sync=lambda: calls.append("prepared") or (True, None)),
         device_manager=SimpleNamespace(device_path=""),
         settings_service=service,
         _last_pc_folder_entries=entries,
-        _persist_pc_folder_entries=lambda folder_entries: calls.append(
-            {"persisted": folder_entries}
-        ),
+        _persist_pc_folder_entries=lambda folder_entries: calls.append({"persisted": folder_entries}),
     )
 
     monkeypatch.setattr("iopenpod.gui.app.PCFolderDialog", _FakeDialog)
@@ -496,12 +860,8 @@ def test_execute_sync_plan_passes_playlist_actions_only_in_plan(
             clear_pending_sync_state=lambda: clear_calls.append(True),
             get_playlists=lambda: [],
         ),
-        device_session_service=SimpleNamespace(
-            current_session=lambda: SimpleNamespace(identity={}, capabilities={})
-        ),
-        _sync_session=SimpleNamespace(
-            start_execution=lambda intent: execution_intents.append(intent)
-        ),
+        device_session_service=SimpleNamespace(current_session=lambda: SimpleNamespace(identity={}, capabilities={})),
+        _sync_session=SimpleNamespace(start_execution=lambda intent: execution_intents.append(intent)),
         _onSyncExecuteComplete=lambda *_args: None,
         _onSyncExecuteError=lambda *_args: None,
         _onConfirmPartialSave=lambda *_args: None,
@@ -534,11 +894,7 @@ def test_missing_tools_download_preserves_sync_planning_intent(monkeypatch) -> N
         "iopenpod.gui.app.QDialog.DialogCode",
         SimpleNamespace(Accepted=1),
     )
-    window = SimpleNamespace(
-        _download_missing_tools_then_sync=lambda need_ffmpeg, need_fpcalc, planning_intent=None: downloads.append(
-            (need_ffmpeg, need_fpcalc, planning_intent)
-        )
-    )
+    window = SimpleNamespace(_download_missing_tools_then_sync=lambda need_ffmpeg, need_fpcalc, planning_intent=None: downloads.append((need_ffmpeg, need_fpcalc, planning_intent)))
 
     MainWindow._on_sync_session_missing_tools(
         cast(Any, window),
@@ -572,12 +928,8 @@ def test_missing_tools_download_resumes_sync_execution(monkeypatch) -> None:
         SimpleNamespace(Accepted=1),
     )
     window = SimpleNamespace(
-        _sync_session=SimpleNamespace(
-            start_execution=lambda ready: execution_intents.append(ready)
-        ),
-        _download_missing_tools_then_sync=lambda _ffmpeg, _fpcalc, **kwargs: kwargs[
-            "completion_callback"
-        ](),
+        _sync_session=SimpleNamespace(start_execution=lambda ready: execution_intents.append(ready)),
+        _download_missing_tools_then_sync=lambda _ffmpeg, _fpcalc, **kwargs: kwargs["completion_callback"](),
     )
 
     MainWindow._on_sync_session_missing_tools(
@@ -627,9 +979,7 @@ def test_tool_download_completion_resumes_pending_drop() -> None:
         _dl_progress=SimpleNamespace(close=lambda: closed.append(True)),
         _pending_tool_sync_intent=None,
         _pending_tool_download_callback=lambda: resumed_drops.append(paths),
-        _sync_session=SimpleNamespace(
-            start_planning=lambda _intent: (_ for _ in ()).throw(AssertionError())
-        ),
+        _sync_session=SimpleNamespace(start_planning=lambda _intent: (_ for _ in ()).throw(AssertionError())),
         startPCSync=lambda: (_ for _ in ()).throw(AssertionError()),
     )
 
@@ -651,12 +1001,8 @@ def test_dropped_files_show_missing_tools_prompt_before_starting_scan(monkeypatc
     worker_started: list[bool] = []
     window = SimpleNamespace(
         settings_service=SimpleNamespace(get_effective_settings=lambda: AppSettings()),
-        _show_missing_tools_for_drop=lambda tools, dropped_paths: prompted.append(
-            (tools, dropped_paths)
-        ),
-        device_session_service=SimpleNamespace(
-            current_session=lambda: SimpleNamespace(capabilities=None)
-        ),
+        _show_missing_tools_for_drop=lambda tools, dropped_paths: prompted.append((tools, dropped_paths)),
+        device_session_service=SimpleNamespace(current_session=lambda: SimpleNamespace(capabilities=None)),
         _drop_worker=SimpleNamespace(start=lambda: worker_started.append(True)),
     )
     monkeypatch.setattr(
@@ -796,16 +1142,13 @@ def _build_window_for_data_ready(
         "tag_fix_scan_schedules",
         window.tag_fix_scan_schedules + 1,
     )
-    window._is_sync_results_visible = MainWindow._is_sync_results_visible.__get__(
-        window
-    )
-    window._refresh_default_page_state = MainWindow._refresh_default_page_state.__get__(
-        window
-    )
+    window._is_sync_results_visible = MainWindow._is_sync_results_visible.__get__(window)
+    window._scrobble_only_running = False
+    window._pending_scrobble_count = MainWindow._pending_scrobble_count
+    window._update_scrobble_availability = MainWindow._update_scrobble_availability.__get__(window)
+    window._refresh_default_page_state = MainWindow._refresh_default_page_state.__get__(window)
     window._show_default_page = MainWindow._show_default_page.__get__(window)
-    window._should_show_default_page_on_data_ready = (
-        MainWindow._should_show_default_page_on_data_ready.__get__(window)
-    )
+    window._should_show_default_page_on_data_ready = MainWindow._should_show_default_page_on_data_ready.__get__(window)
     return window
 
 
@@ -858,10 +1201,13 @@ def test_database_file_size_helper_keeps_cdb_physical_size_for_sqlite_ipods(
     cdb_path = tmp_path / "iTunesCDB"
     cdb_path.write_bytes(bytes(header) + zlib.compress(payload))
 
-    assert _database_file_size_bytes(
-        str(cdb_path),
-        uses_sqlite_db=True,
-    ) == cdb_path.stat().st_size
+    assert (
+        _database_file_size_bytes(
+            str(cdb_path),
+            uses_sqlite_db=True,
+        )
+        == cdb_path.stat().st_size
+    )
 
 
 def test_data_ready_includes_database_storage_metric(tmp_path) -> None:
@@ -896,9 +1242,7 @@ def test_post_sync_rescan_refreshes_library_without_leaving_results():
     window._keep_sync_results_visible_after_rescan = True
     scheduled_rebuild_pages: list[int] = []
     window._apply_match_ipod_accent = lambda dev: True
-    window._schedule_themed_rebuild = (
-        lambda restore_page=0: scheduled_rebuild_pages.append(restore_page)
-    )
+    window._schedule_themed_rebuild = lambda restore_page=0: scheduled_rebuild_pages.append(restore_page)
 
     _call_on_data_ready(window)
 
@@ -906,6 +1250,21 @@ def test_post_sync_rescan_refreshes_library_without_leaving_results():
     assert window.mainContentStack.set_indices == [0]
     assert window._keep_sync_results_visible_after_rescan is False
     assert scheduled_rebuild_pages == [1]
+
+
+def test_post_sync_rescan_keeps_proposed_database_inspector_visible():
+    window = _build_window_for_data_ready(
+        current_page_index=5,
+        sync_results_visible=False,
+    )
+    window._keep_sync_results_visible_after_rescan = True
+    window._database_storage_recovery = object()
+    window._apply_match_ipod_accent = lambda dev: False
+
+    _call_on_data_ready(window)
+
+    assert window.centralStack.set_indices == []
+    assert window.mainContentStack.set_indices == [0]
 
 
 def test_data_ready_preserves_settings_page():
@@ -1003,9 +1362,7 @@ def test_sync_review_edit_selection_opens_selective_plan_editor():
     window = SimpleNamespace(
         _plan=plan,
         centralStack=_FakeStack(),
-        selectiveSyncBrowser=SimpleNamespace(
-            load_sync_plan=lambda p, state: load_calls.append((p, state))
-        ),
+        selectiveSyncBrowser=SimpleNamespace(load_sync_plan=lambda p, state: load_calls.append((p, state))),
     )
 
     MainWindow._onSyncReviewEditSelection(cast(Any, window), selection)
@@ -1019,9 +1376,7 @@ def test_selective_plan_editor_done_applies_state_and_returns_to_review():
     applied: list[object] = []
     window = SimpleNamespace(
         centralStack=_FakeStack(),
-        syncReview=SimpleNamespace(
-            apply_selection_state=lambda state: applied.append(state)
-        ),
+        syncReview=SimpleNamespace(apply_selection_state=lambda state: applied.append(state)),
     )
 
     MainWindow._onPlanSelectionDone(cast(Any, window), selection)
@@ -1036,11 +1391,7 @@ def test_show_database_storage_loads_current_device_report(tmp_path) -> None:
     load_calls: list[tuple[DatabaseStorageReport, int]] = []
     window = SimpleNamespace(
         centralStack=_FakeStack(),
-        databaseStorageBrowser=SimpleNamespace(
-            load_report=lambda report, *, max_database_bytes=0: load_calls.append(
-                (report, max_database_bytes)
-            )
-        ),
+        databaseStorageBrowser=SimpleNamespace(load_report=lambda report, *, max_database_bytes=0: load_calls.append((report, max_database_bytes))),
         device_manager=SimpleNamespace(device_path=str(tmp_path)),
         device_session_service=SimpleNamespace(
             current_session=lambda: SimpleNamespace(
@@ -1059,6 +1410,33 @@ def test_show_database_storage_loads_current_device_report(tmp_path) -> None:
     report, max_database_bytes = load_calls[-1]
     assert report.database_path == str(db_path)
     assert max_database_bytes == 64 * 1024 * 1024
+
+
+def test_show_proposed_database_storage_loads_rejected_database() -> None:
+    load_calls: list[tuple[DatabaseStorageReport, int, str]] = []
+    recovery = object()
+    window = SimpleNamespace(
+        centralStack=_FakeStack(),
+        databaseStorageBrowser=SimpleNamespace(load_report=lambda report, *, max_database_bytes=0, source_label="": load_calls.append((report, max_database_bytes, source_label))),
+        device_session_service=SimpleNamespace(
+            current_session=lambda: SimpleNamespace(
+                capabilities=SimpleNamespace(max_database_bytes=1024),
+            )
+        ),
+    )
+    result = SimpleNamespace(
+        proposed_database_bytes=b"mhbd",
+        proposed_database_recovery=recovery,
+    )
+
+    MainWindow.showProposedDatabaseStorage(cast(Any, window), result)
+
+    assert window._database_storage_recovery is recovery
+    assert window.centralStack.set_indices == [5]
+    report, max_database_bytes, source_label = load_calls[-1]
+    assert report.database_path == "Proposed iTunesDB"
+    assert max_database_bytes == 1024
+    assert source_label == "Proposed database — not written to the iPod"
 
 
 def test_hide_database_storage_returns_to_default_page() -> None:
@@ -1144,9 +1522,7 @@ def test_stale_back_sync_completion_after_cancel_is_ignored():
     shown_results: list[object] = []
     window = SimpleNamespace(
         _back_sync_worker=None,
-        syncReview=SimpleNamespace(
-            show_back_sync_result=lambda result: shown_results.append(result)
-        ),
+        syncReview=SimpleNamespace(show_back_sync_result=lambda result: shown_results.append(result)),
     )
     window._clear_back_sync_worker = MainWindow._clear_back_sync_worker.__get__(window)
 
@@ -1160,9 +1536,7 @@ def test_stale_back_sync_completion_after_cancel_is_ignored():
 
 
 def test_sync_review_cancel_cancels_sync_session_and_returns_to_library():
-    window, default_page_calls = _build_window_for_back_sync_cancel(
-        _FakeBackSyncWorker(running=False)
-    )
+    window, default_page_calls = _build_window_for_back_sync_cancel(_FakeBackSyncWorker(running=False))
     window._back_sync_worker = None
     window._back_sync_workers = []
 

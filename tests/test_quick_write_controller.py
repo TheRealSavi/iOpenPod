@@ -4,16 +4,24 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
 from PyQt6.QtCore import QObject, QTimer
 
 from iopenpod.application import controllers
 from iopenpod.application.controllers import QuickWriteController
 from iopenpod.application.jobs import (
+    EjectDeviceWorker,
     PlaylistImportWorker,
     QuickWriteWorker,
     _snapshot_cache_for_itunesdb_write,
 )
-from iopenpod.application.services import DeviceManagerLike, LibraryCacheLike
+from iopenpod.application.services import (
+    DeviceManagerLike,
+    DeviceStorageSnapshot,
+    LibraryCacheLike,
+)
+from iopenpod.device.write_guard import DatabaseGeneration
+from iopenpod.sync.core.models import EngineRequest
 from iopenpod.sync.quick_writes import QuickWriteResult
 
 
@@ -82,6 +90,7 @@ class _FakeCache:
 class _FakeDeviceManager:
     def __init__(self) -> None:
         self.device_path = "/fake/ipod"
+        self.discovered_ipod: object | None = None
 
 
 class _WorkerCache:
@@ -391,6 +400,222 @@ def test_artwork_edits_start_itunesdb_quick_write(monkeypatch) -> None:
 
     assert "worker" in created
     assert created.get("started") is True
+
+
+def test_quick_write_controller_passes_scan_time_storage_snapshot(monkeypatch) -> None:
+    created: dict[str, object] = {}
+
+    class _Signal:
+        def connect(self, _callback) -> None:
+            pass
+
+    class _QuickWriteWorker:
+        def __init__(self, **kwargs) -> None:
+            created.update(kwargs)
+            self.completed = _Signal()
+            self.error = _Signal()
+
+        def start(self) -> None:
+            created["started"] = True
+
+    manager = _FakeDeviceManager()
+    manager.discovered_ipod = SimpleNamespace(
+        reported_volume_format="win",
+        filesystem_type="vfat",
+        max_file_size_gb=4,
+        volume_identity_key="scan-volume",
+    )
+    monkeypatch.setattr(controllers, "QuickWriteWorker", _QuickWriteWorker)
+
+    controller = QuickWriteController(
+        device_manager=cast(DeviceManagerLike, manager),
+        library_cache=cast(LibraryCacheLike, _FakeCache()),
+        is_sync_running=lambda: False,
+    )
+    controller.start_quick_write()
+
+    storage = created["device_storage"]
+    assert isinstance(storage, DeviceStorageSnapshot)
+    assert storage.reported_volume_format == "win"
+    assert storage.volume_identity_key == "scan-volume"
+
+
+def test_engine_quick_write_passes_device_storage_to_request(monkeypatch) -> None:
+    from iopenpod.application import jobs
+    from iopenpod.sync.core import SyncEngine
+
+    storage = DeviceStorageSnapshot("win", "vfat", None, "scan-volume")
+    requests: list[EngineRequest] = []
+    monkeypatch.setattr(
+        SyncEngine,
+        "quick_write",
+        lambda _self, request: requests.append(request) or object(),
+    )
+
+    jobs._engine_quick_write(
+        "/fake/ipod",
+        tracks_data=[],
+        playlists_data=[],
+        artwork_sources={},
+        device_storage=storage,
+    )
+
+    assert requests[0].device_storage is storage
+
+
+def test_eject_worker_passes_scan_time_filesystem_facts(monkeypatch) -> None:
+    from iopenpod.device import eject
+
+    captured: dict[str, object] = {}
+    storage = DeviceStorageSnapshot("win", "vfat", None, "scan-volume")
+    monkeypatch.setattr(
+        eject,
+        "eject_ipod",
+        lambda path, **kwargs: captured.update(path=path, **kwargs) or (True, "ok"),
+    )
+    messages: list[str] = []
+    worker = EjectDeviceWorker("/fake/ipod", device_storage=storage)
+    worker.finished_ok.connect(messages.append)
+
+    worker.run()
+
+    assert captured == {
+        "path": "/fake/ipod",
+        "reported_volume_format": "win",
+        "expected_volume_identity_key": "scan-volume",
+    }
+    assert messages == ["ok"]
+
+
+def test_otg_cleanup_is_guarded_identity_checked_and_durable(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from iopenpod.application import jobs
+    from iopenpod.device import durability, write_readiness
+
+    otg_path = tmp_path / "iPod_Control" / "iTunes" / "OTGPlaylistInfo"
+    otg_path.parent.mkdir(parents=True)
+    otg_path.write_bytes(b"mhpo")
+    profile = SimpleNamespace()
+    events: list[object] = []
+
+    class _Guard:
+        def __init__(self, path, **kwargs) -> None:
+            events.append(("guard", Path(path), kwargs))
+
+        def __enter__(self):
+            events.append("enter")
+            return self
+
+        def __exit__(self, *_args) -> None:
+            events.append("exit")
+
+        def assert_database_unchanged(self) -> None:
+            events.append("generation-check")
+
+    monkeypatch.setattr(jobs, "DeviceWriteGuard", _Guard)
+    monkeypatch.setattr(
+        write_readiness,
+        "inspect_device_write_readiness",
+        lambda *_args, **_kwargs: profile,
+    )
+    monkeypatch.setattr(
+        write_readiness,
+        "volume_lock_key",
+        lambda _profile: "scan-volume",
+    )
+    monkeypatch.setattr(
+        write_readiness,
+        "revalidate_device_write_readiness",
+        lambda retained, **kwargs: events.append(("revalidate", kwargs)) or retained,
+    )
+    monkeypatch.setattr(
+        durability,
+        "durable_unlink",
+        lambda path: events.append(("unlink", Path(path))),
+    )
+    monkeypatch.setattr(
+        durability,
+        "flush_filesystem",
+        lambda path: events.append(("flush", Path(path))) or (True, "ok"),
+    )
+    generation = DatabaseGeneration("iTunesDB", True)
+    storage = DeviceStorageSnapshot("win", "vfat", None, "scan-volume")
+
+    jobs._delete_imported_otg_files(
+        str(tmp_path),
+        device_storage=storage,
+        expected_database_generation=generation,
+    )
+
+    assert events[0] == (
+        "guard",
+        tmp_path,
+        {
+            "volume_key": "scan-volume",
+            "expected_database_generation": generation,
+        },
+    )
+    assert ("unlink", otg_path) in events
+    assert events.index("generation-check") < events.index(("unlink", otg_path))
+    assert ("flush", tmp_path) in events
+    assert events[-1] == "exit"
+
+
+def test_otg_cleanup_does_not_swallow_durability_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from iopenpod.application import jobs
+    from iopenpod.device import durability, write_readiness
+
+    otg_path = tmp_path / "iPod_Control" / "iTunes" / "OTGPlaylistInfo"
+    otg_path.parent.mkdir(parents=True)
+    otg_path.write_bytes(b"mhpo")
+    profile = SimpleNamespace()
+
+    class _Guard:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            pass
+
+        def assert_database_unchanged(self) -> None:
+            pass
+
+    monkeypatch.setattr(jobs, "DeviceWriteGuard", _Guard)
+    monkeypatch.setattr(
+        write_readiness,
+        "inspect_device_write_readiness",
+        lambda *_args, **_kwargs: profile,
+    )
+    monkeypatch.setattr(
+        write_readiness,
+        "volume_lock_key",
+        lambda _profile: "scan-volume",
+    )
+    monkeypatch.setattr(
+        write_readiness,
+        "revalidate_device_write_readiness",
+        lambda retained, **_kwargs: retained,
+    )
+
+    def fail_unlink(_path: object) -> None:
+        raise OSError("unlink failed")
+
+    monkeypatch.setattr(
+        durability,
+        "durable_unlink",
+        fail_unlink,
+    )
+
+    with pytest.raises(OSError, match="unlink failed"):
+        jobs._delete_imported_otg_files(str(tmp_path))
 
 
 def test_quick_write_failure_discards_and_reloads() -> None:

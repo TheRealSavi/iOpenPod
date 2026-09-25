@@ -1,0 +1,14 @@
+{
+  "name": "Catppuccin Frappé",
+  "type": "dark",
+  "colors": {
+    "accent": "#8caaee", "accent_light": "#babbf1",
+    "background": "#303446", "background_alt": "#292c3c",
+    "surface": "#34384a", "surface_alt": "#414559", "surface_raised": "#51576d", "surface_hover": "#626880", "surface_active": "#5b6178",
+    "menu_background": "#414559", "dialog_background": "#292c3c", "tooltip_background": "#414559",
+    "text_primary": "#c6d0f5", "text_secondary": "#b5bfe2", "text_tertiary": "#a5adce", "text_disabled": "#737994",
+    "border": "#4a4f65", "border_subtle": "#414559", "gridline": "#414559", "danger": "#e78284", "success": "#a6d189", "warning": "#e5c890", "info": "#99d1db", "star": "#e5c890",
+    "sync_cyan": "#81c8be", "sync_purple": "#ca9ee6", "sync_magenta": "#f4b8e4", "sync_orange": "#ef9f76", "sync_freed": "#81c8be",
+    "playlist_smart": "#ca9ee6", "playlist_podcast": "#a6d189", "playlist_master": "#626880", "playlist_regular": "#8caaee"
+  }
+}

@@ -1,0 +1,10 @@
+[
+  {
+    "date": "2026-08-12",
+    "macrostructure": "Workbench",
+    "theme": "iOpenPod runtime",
+    "enrichment": "none",
+    "scope": "playlist-ui",
+    "brief": "Playlist sidebar management and smart-rule editor refinement"
+  }
+]

@@ -21,7 +21,11 @@ def parse_playlist_item(
 ) -> ParseResult:
     """Parse an MHIP (Playlist Item) chunk and its MHOD children."""
     mhip = idb.read_fields(data, offset, "mhip", header_length)
-    mhip["children"], _ = parse_children(
+    mhip["children"], child_end = parse_children(
         data, offset + header_length, mhip["child_count"],
     )
-    return {"next_offset": offset + chunk_length, "data": mhip}
+    return {
+        "next_offset": offset + chunk_length,
+        "data": mhip,
+        "_body_end": child_end,
+    }

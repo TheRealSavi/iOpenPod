@@ -73,3 +73,9 @@ def test_reference_type3_playlist_shape_writes_type2_companion() -> None:
     )
 
     assert _mhsd_types(data) == [4, 1, 3, 2, 5]
+
+
+def test_write_mhbd_preserves_reference_platform_flag() -> None:
+    data = write_mhbd([], reference_info={"platform": 1})
+
+    assert struct.unpack_from("<H", data, 0x20)[0] == 1

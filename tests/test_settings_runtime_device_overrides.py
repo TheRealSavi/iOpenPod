@@ -6,6 +6,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
+from iopenpod.device.write_guard import DeviceWriteSafetyError
 from iopenpod.infrastructure import settings_runtime
 from iopenpod.infrastructure.settings_runtime import SettingsRuntime
 from iopenpod.infrastructure.settings_schema import AppSettings
@@ -25,6 +28,8 @@ def repo_temp_dir():
 def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) -> None:
     with repo_temp_dir() as tmp_path:
         monkeypatch.setattr(settings_runtime, "_clear_transcoder_caches", lambda: None)
+        (tmp_path / "iPod_Control" / "iTunes").mkdir(parents=True)
+        (tmp_path / "iPodInfo.json").write_text("{}", encoding="utf-8")
         runtime = SettingsRuntime()
 
         device_settings = AppSettings(
@@ -41,6 +46,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
             lastfm_username="lf-user",
             backup_before_sync_mode="off",
             normalize_tags_after_sync=True,
+            rockbox_metadata_support=True,
         )
         runtime.save_device_settings(
             str(tmp_path),
@@ -75,18 +81,46 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
     assert loaded.settings.backup_before_sync_mode == "off"
     assert loaded.settings.backup_before_sync is False
     assert loaded.settings.normalize_tags_after_sync is True
+    assert loaded.settings.rockbox_metadata_support is True
     assert raw["settings"]["lastfm_api_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_api_secret"].startswith("xor1:")
     assert raw["settings"]["lastfm_session_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_username"] == "lf-user"
     assert raw["settings"]["backup_before_sync_mode"] == "off"
     assert raw["settings"]["normalize_tags_after_sync"] is True
+    assert raw["settings"]["rockbox_metadata_support"] is True
     assert raw["settings"]["always_encode_lossy"] is True
     assert raw["settings"]["convert_wav_to_alac"] is False
 
 
 def test_normalize_tags_after_sync_defaults_off() -> None:
     assert AppSettings().normalize_tags_after_sync is False
+
+
+def test_rockbox_metadata_support_defaults_off() -> None:
+    assert AppSettings().rockbox_metadata_support is False
+
+
+def test_max_backups_defaults_to_unlimited() -> None:
+    assert AppSettings().max_backups == 0
+
+
+def test_corrupt_device_settings_are_not_silently_overwritten(monkeypatch) -> None:
+    with repo_temp_dir() as tmp_path:
+        monkeypatch.setattr(settings_runtime, "_clear_transcoder_caches", lambda: None)
+        settings_path = tmp_path / "iPod_Control" / "iOpenPod" / "settings.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text("{broken", encoding="utf-8")
+        original = settings_path.read_bytes()
+        runtime = SettingsRuntime()
+
+        loaded = runtime.load_device_settings(str(tmp_path), "", AppSettings())
+
+        assert loaded.exists is True
+        assert "could not be read safely" in loaded.load_error
+        with pytest.raises(DeviceWriteSafetyError, match="did not overwrite"):
+            runtime.save_device_settings(str(tmp_path), AppSettings())
+        assert settings_path.read_bytes() == original
 
 
 def test_device_settings_migrates_legacy_backup_false_to_ask(monkeypatch) -> None:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from types import SimpleNamespace
 from typing import cast
 
@@ -9,8 +8,9 @@ from PyQt6.QtGui import QFontMetrics, QMouseEvent
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
 from iopenpod.application.services import DeviceSessionService, SettingsService
+from iopenpod.gui import styles
 from iopenpod.gui.app import MainWindow, _playback_track_path_for_session, _track_artwork_id
-from iopenpod.gui.styles import Colors, Metrics
+from iopenpod.gui.styles import Metrics, apply_theme, current_theme
 from iopenpod.gui.widgets.MBListView import MusicBrowserList
 from iopenpod.gui.widgets.musicPlayer import MusicPlayerBar
 from iopenpod.infrastructure.settings_schema import AppSettings
@@ -26,6 +26,9 @@ class _SettingsService:
     def get_effective_settings(self) -> AppSettings:
         return self.settings
 
+    def save_global_settings(self, settings: AppSettings) -> None:
+        self.settings = settings
+
 
 class _DeviceSessions:
     def current_session(self):
@@ -39,19 +42,6 @@ def _snapshot_font_metrics() -> dict[str, int]:
 def _restore_font_metrics(snapshot: dict[str, int]) -> None:
     for attr, value in snapshot.items():
         setattr(Metrics, attr, value)
-
-
-def _snapshot_color_state() -> dict[str, object]:
-    return {
-        attr: getattr(Colors, attr)
-        for attr in vars(Colors)
-        if attr.isupper() or attr.startswith("_active_")
-    }
-
-
-def _restore_color_state(snapshot: dict[str, object]) -> None:
-    for attr, value in snapshot.items():
-        setattr(Colors, attr, value)
 
 
 def _mount_track_list(qtbot) -> MusicBrowserList:
@@ -284,9 +274,9 @@ def test_music_player_bar_grows_now_playing_panel_and_anchors_close(qtbot) -> No
 
 
 def test_music_player_bar_derives_chrome_from_active_theme(qtbot) -> None:
-    color_snapshot = _snapshot_color_state()
+    theme_snapshot = current_theme()
     try:
-        Colors.apply_theme("dark", "off", "blue")
+        apply_theme("dark", "off", "blue")
         player = MusicPlayerBar()
         qtbot.addWidget(player)
         player.show()
@@ -299,7 +289,7 @@ def test_music_player_bar_derives_chrome_from_active_theme(qtbot) -> None:
             )
         )
 
-        Colors.apply_theme("light", "off", "blue")
+        apply_theme("light", "off", "blue")
         player.refreshStyle()
         light_styles = "\n".join(
             (
@@ -312,41 +302,27 @@ def test_music_player_bar_derives_chrome_from_active_theme(qtbot) -> None:
         assert dark_styles != light_styles
         assert "#f6f7f8" not in dark_styles
     finally:
-        _restore_color_state(color_snapshot)
+        styles._THEME_RUNTIME.replace(theme_snapshot)
 
 
-def test_music_player_slider_handle_stays_round_in_every_interaction_state() -> None:
-    css = MusicPlayerBar._themed_slider_css(
-        handle_size=14,
-        groove_height=4,
-        colors={
-            "accent": "#1a1a1a",
-            "border": "#2a2a2a",
-            "border_subtle": "#3a3a3a",
-            "disabled": "#4a4a4a",
-            "groove_bottom": "#5a5a5a",
-            "groove_fill_bottom": "#6a6a6a",
-            "groove_fill_top": "#7a7a7a",
-            "groove_mid": "#8a8a8a",
-            "groove_top": "#9a9a9a",
-            "handle_bottom": "#aaaaaa",
-            "handle_mid": "#bababa",
-            "handle_top": "#cacaca",
-        },
-    )
+def test_music_player_slider_handles_use_gently_oval_bounds(qtbot) -> None:
+    player = MusicPlayerBar()
+    qtbot.addWidget(player)
+    player.resize(1200, player.height())
+    player.show()
+    player.setTrack({"Title": "Song", "Artist": "Artist", "length": 180000})
+    player.setPosition(60_000)
+    player.setVolumePercent(60)
+    qtbot.wait(20)
 
-    for state in ("", ":hover", ":pressed", ":disabled"):
-        match = re.search(
-            rf"QSlider::handle:horizontal{state}\s*\{{(?P<body>.*?)\}}",
-            css,
-            re.DOTALL,
-        )
-        assert match is not None
-        body = match.group("body")
-        assert "width: 14px;" in body
-        assert "height: 14px;" in body
-        assert "margin: -5px 0;" in body
-        assert "border-radius: 7px;" in body
+    for slider in (player.progress_slider, player.volume_slider):
+        handle = slider._handle_rect()
+        assert handle.width() > handle.height()
+        assert handle.height() >= handle.width() * 0.75
+        assert handle.left() >= 0
+        assert handle.right() <= slider.width()
+        assert handle.top() >= 0
+        assert handle.bottom() <= slider.height()
 
 
 def test_music_player_artwork_contains_wide_images_without_cover_crop(qtbot) -> None:

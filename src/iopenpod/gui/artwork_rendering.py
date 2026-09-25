@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PIL import Image, ImageEnhance, ImageFilter
 from PyQt6.QtCore import QRectF, Qt
-from PyQt6.QtGui import QPainter, QPainterPath, QPixmap
+from PyQt6.QtGui import QImage, QPainter, QPainterPath, QPixmap
 
 
 def nested_artwork_radius(
@@ -47,6 +47,34 @@ def rounded_artwork_pixmap(pixmap: QPixmap, radius: int) -> QPixmap:
     painter.drawPixmap(0, 0, pixmap)
     painter.end()
     return target
+
+
+def dominant_artwork_color_from_pixmap(pixmap: QPixmap) -> tuple[int, int, int] | None:
+    """Run the shared artwork color policy over an already-decoded pixmap."""
+
+    if pixmap.isNull():
+        return None
+
+    image = pixmap.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+    if image.isNull() or image.width() <= 0 or image.height() <= 0:
+        return None
+    bits = image.bits()
+    if bits is None:
+        return None
+
+    pixels = bytes(bits.asarray(image.sizeInBytes()))
+    pil_image = Image.frombytes(
+        "RGBA",
+        (image.width(), image.height()),
+        pixels,
+        "raw",
+        "RGBA",
+        image.bytesPerLine(),
+        1,
+    )
+    from .imgMaker import getDominantColor
+
+    return getDominantColor(pil_image)
 
 
 def enhance_artwork_image(

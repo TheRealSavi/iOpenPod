@@ -12,9 +12,18 @@ Location on iPod: /iPod_Control/iTunes/iOpenPod.json
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+import shutil
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_written_file,
+    open_unique_sibling_temp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,11 +114,14 @@ class MappingFile:
     the same song appears on multiple albums (same acoustic fingerprint).
     """
 
-    version: int = 5  # v5: optional aggregate/container metadata
+    version: int = 6  # v6: Rockbox tag-validation markers
     created: str = ""
     modified: str = ""
     _tracks: dict[str, list[TrackMapping]] | None = None
+    rockbox_metadata_markers: dict[int, dict[str, int | str]] = field(default_factory=dict)
+    rockbox_artwork_state: dict[str, int | bool] | None = None
     _db_track_id_index: dict[int, tuple[str, TrackMapping]] | None = None
+    _source_was_corrupt: bool = False
 
     def __post_init__(self):
         if self._tracks is None:
@@ -126,6 +138,11 @@ class MappingFile:
         if self._tracks is None:
             self._tracks = {}
         return self._tracks
+
+    @property
+    def source_was_corrupt(self) -> bool:
+        """Whether load detected an on-device mapping that needs rebuilding."""
+        return self._source_was_corrupt
 
     def add_track(
         self,
@@ -304,9 +321,35 @@ class MappingFile:
                 result.append((fp, entry))
         return result
 
+    def set_rockbox_metadata_validation(
+        self,
+        markers: Mapping[int, Mapping[str, int | str]],
+        artwork_state: Mapping[str, int | bool] | None,
+    ) -> None:
+        """Replace cached Rockbox validation proofs from a completed pass."""
+
+        self.rockbox_metadata_markers = {
+            int(db_track_id): {
+                "file_size": int(marker["file_size"]),
+                "mtime_ns": int(marker["mtime_ns"]),
+                "metadata_signature": str(marker["metadata_signature"]),
+            }
+            for db_track_id, marker in markers.items()
+            if _is_rockbox_marker(marker)
+        }
+        self.rockbox_artwork_state = _normalize_rockbox_artwork_state(artwork_state)
+
+    def set_rockbox_artwork_state(
+        self,
+        artwork_state: Mapping[str, int | bool] | None,
+    ) -> None:
+        """Refresh the ArtworkDB portion of the Rockbox validation state."""
+
+        self.rockbox_artwork_state = _normalize_rockbox_artwork_state(artwork_state)
+
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
-        return {
+        data = {
             "version": self.version,
             "created": self.created,
             "modified": self.modified,
@@ -315,13 +358,22 @@ class MappingFile:
                 for fp, entries in self.tracks.items()
             },
         }
+        if self.rockbox_artwork_state is not None:
+            data["rockboxMetadata"] = {
+                "markers": {
+                    str(db_track_id): marker
+                    for db_track_id, marker in self.rockbox_metadata_markers.items()
+                },
+                "artworkState": self.rockbox_artwork_state,
+            }
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "MappingFile":
         """Create from dict (JSON parsing).
 
         Handles v1 (single entry), v2 (list entries), v3 (db_track_id key),
-        v4 (source_hash), and v5 (aggregate metadata) formats.
+        v4 (source_hash), v5 (aggregate metadata), and v6 (Rockbox markers).
         """
         version = data.get("version", 1)
         tracks: dict[str, list[TrackMapping]] = {}
@@ -336,12 +388,73 @@ class MappingFile:
             else:
                 logger.warning(f"Unexpected track data format for {fp}: {type(track_data)}")
 
+        rockbox_markers, rockbox_artwork_state = _rockbox_metadata_validation_from_dict(data)
         return cls(
-            version=5,  # Always upgrade to current format
+            version=6,  # Always upgrade to current format
             created=data.get("created", ""),
             modified=data.get("modified", ""),
             _tracks=tracks,
+            rockbox_metadata_markers=rockbox_markers,
+            rockbox_artwork_state=rockbox_artwork_state,
         )
+
+
+def _is_rockbox_marker(marker: Mapping[str, int | str]) -> bool:
+    try:
+        return (
+            int(marker["file_size"]) >= 0
+            and int(marker["mtime_ns"]) >= 0
+            and bool(str(marker["metadata_signature"]))
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _normalize_rockbox_artwork_state(
+    state: Mapping[str, int | bool] | None,
+) -> dict[str, int | bool] | None:
+    if state is None:
+        return None
+    try:
+        return {
+            "exists": bool(state["exists"]),
+            "file_size": max(0, int(state.get("file_size", 0))),
+            "mtime_ns": max(0, int(state.get("mtime_ns", 0))),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _rockbox_metadata_validation_from_dict(
+    data: Mapping[str, object],
+) -> tuple[dict[int, dict[str, int | str]], dict[str, int | bool] | None]:
+    raw_rockbox = data.get("rockboxMetadata")
+    if not isinstance(raw_rockbox, Mapping):
+        return {}, None
+
+    markers: dict[int, dict[str, int | str]] = {}
+    raw_markers = raw_rockbox.get("markers")
+    if isinstance(raw_markers, Mapping):
+        for raw_db_track_id, raw_marker in raw_markers.items():
+            if not isinstance(raw_marker, Mapping):
+                continue
+            try:
+                db_track_id = int(raw_db_track_id)
+                marker = {
+                    "file_size": int(raw_marker["file_size"]),
+                    "mtime_ns": int(raw_marker["mtime_ns"]),
+                    "metadata_signature": str(raw_marker["metadata_signature"]),
+                }
+            except (KeyError, TypeError, ValueError):
+                continue
+            if db_track_id and _is_rockbox_marker(marker):
+                markers[db_track_id] = marker
+
+    raw_artwork_state = raw_rockbox.get("artworkState")
+    artwork_state = _normalize_rockbox_artwork_state(
+        raw_artwork_state if isinstance(raw_artwork_state, Mapping) else None,
+    )
+    return markers, artwork_state
 
 
 class MappingManager:
@@ -365,7 +478,7 @@ class MappingManager:
         return self.mapping_file.exists()
 
     def load(self) -> MappingFile:
-        """Load mapping file from iPod. Returns empty MappingFile if not found."""
+        """Load mapping state without modifying any on-device files."""
         if not self.mapping_file.exists():
             logger.info(f"No mapping file found at {self.mapping_file}; starting with empty mapping")
             return MappingFile()
@@ -378,34 +491,78 @@ class MappingManager:
                         f"({mapping.fingerprint_count} fingerprints)")
             return mapping
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in mapping file: {e}")
-            backup = self.mapping_file.with_suffix(".json.bak")
-            self.mapping_file.replace(backup)
-            logger.warning(f"Backed up corrupt mapping to {backup}")
-            return MappingFile()
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.error("Invalid iOpenPod mapping file: %s", e)
+            logger.warning(
+                "The corrupt mapping remains untouched until a guarded sync "
+                "can back it up and rebuild it"
+            )
+            return MappingFile(_source_was_corrupt=True)
 
-        except Exception as e:
-            logger.error(f"Error loading mapping file: {e}")
-            return MappingFile()
+        except OSError as e:
+            logger.error("Could not read mapping file: %s", e)
+            raise MappingLoadError(
+                f"Could not read the iPod mapping file: {e}"
+            ) from e
 
     def save(self, mapping: MappingFile) -> bool:
         """Save mapping file to iPod atomically."""
+        temp_file: Path | None = None
         try:
             self.mapping_dir.mkdir(parents=True, exist_ok=True)
             mapping.modified = datetime.now(UTC).isoformat()
 
-            temp_file = self.mapping_file.with_suffix(".json.tmp")
-            with open(temp_file, "w", encoding="utf-8") as f:
-                json.dump(mapping.to_dict(), f, indent=2)
+            if mapping.source_was_corrupt and self.mapping_file.exists():
+                self._backup_corrupt_mapping()
 
-            temp_file.replace(self.mapping_file)
+            temp_file, opened_temp = open_unique_sibling_temp(
+                self.mapping_file,
+                mode="w",
+                encoding="utf-8",
+            )
+            with opened_temp as f:
+                json.dump(mapping.to_dict(), f, indent=2)
+                flush_written_file(f)
+
+            durable_replace(temp_file, self.mapping_file)
+            mapping._source_was_corrupt = False
             logger.info(f"Saved mapping with {mapping.track_count} tracks")
             return True
 
         except Exception as e:
             logger.error(f"Error saving mapping file: {e}")
             return False
+        finally:
+            if temp_file is not None:
+                try:
+                    durable_unlink(temp_file, missing_ok=True)
+                except OSError as cleanup_error:
+                    logger.warning(
+                        "Could not remove incomplete mapping temp %s: %s",
+                        temp_file,
+                        cleanup_error,
+                    )
+
+    def _backup_corrupt_mapping(self) -> Path:
+        """Durably preserve a corrupt mapping immediately before replacement."""
+        backup_path = self.mapping_file.with_suffix(".json.bak")
+        temp_backup: Path | None = None
+        try:
+            temp_backup, opened_temp = open_unique_sibling_temp(
+                backup_path,
+                mode="wb",
+            )
+            with opened_temp as target:
+                with open(self.mapping_file, "rb") as source:
+                    shutil.copyfileobj(source, target)
+                flush_written_file(target)
+            durable_replace(temp_backup, backup_path)
+        except Exception:
+            if temp_backup is not None:
+                durable_unlink(temp_backup, missing_ok=True)
+            raise
+        logger.warning("Backed up corrupt mapping to %s", backup_path)
+        return backup_path
 
     def backup(self) -> Path | None:
         """Create a timestamped backup of the mapping file."""
@@ -414,12 +571,34 @@ class MappingManager:
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = self.mapping_file.with_suffix(f".{timestamp}.bak")
+        temp_backup: Path | None = None
 
         try:
-            import shutil
-            shutil.copy2(self.mapping_file, backup_path)
+            temp_backup, opened_temp = open_unique_sibling_temp(
+                backup_path,
+                mode="wb",
+            )
+            with opened_temp as target:
+                with open(self.mapping_file, "rb") as source:
+                    shutil.copyfileobj(source, target)
+                flush_written_file(target)
+            durable_replace(temp_backup, backup_path)
             logger.info(f"Created mapping backup: {backup_path}")
             return backup_path
         except Exception as e:
             logger.error(f"Failed to backup mapping: {e}")
             return None
+        finally:
+            if temp_backup is not None:
+                try:
+                    durable_unlink(temp_backup, missing_ok=True)
+                except OSError as cleanup_error:
+                    logger.warning(
+                        "Could not remove incomplete mapping backup temp %s: %s",
+                        temp_backup,
+                        cleanup_error,
+                    )
+
+
+class MappingLoadError(RuntimeError):
+    """Raised when mapping state cannot be read safely."""

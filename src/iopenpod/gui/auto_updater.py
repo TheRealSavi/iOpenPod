@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -30,8 +31,9 @@ import sys
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.error import URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from packaging.version import InvalidVersion, Version
@@ -42,6 +44,11 @@ logger = logging.getLogger(__name__)
 GITHUB_REPO = "TheRealSavi/iOpenPod"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
+
+_DOWNLOAD_TEMP_PREFIX = "iopenpod-update-"
+_STAGING_TEMP_PREFIX = "iopenpod-staging-"
+_WINDOWS_PAYLOAD_ENTRIES = frozenset({"iOpenPod.exe", "_internal"})
+_LINUX_PAYLOAD_ENTRIES = frozenset({"iOpenPod", "_internal"})
 
 
 # ── Data types ──────────────────────────────────────────────────────────────
@@ -406,19 +413,27 @@ def download_update(
     Returns the path to the downloaded file, or ``None`` on failure.
     """
     if dest_dir is None:
-        dest_dir = Path(tempfile.mkdtemp(prefix="iopenpod-update-"))
+        dest_dir = Path(tempfile.mkdtemp(prefix=_DOWNLOAD_TEMP_PREFIX))
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = url.rsplit("/", 1)[-1]
+    filename = Path(urlparse(url).path).name
+    if not filename or filename in {".", ".."}:
+        logger.error("Update URL has no usable archive filename: %s", url)
+        return None
     dest = dest_dir / filename
     logger.info("Downloading update: %s → %s", url, dest)
 
+    created_dest = False
     try:
         req = Request(url, headers={"User-Agent": "iOpenPod-Updater"})
         with urlopen(req, timeout=300) as resp:
             total = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
-            with open(dest, "wb") as f:
+            # Do not overwrite an existing file supplied by the caller.  The
+            # normal destination is a new private temporary directory, but an
+            # update failure must never remove or replace an unrelated file.
+            with open(dest, "xb") as f:
+                created_dest = True
                 while True:
                     chunk = resp.read(256 * 1024)
                     if not chunk:
@@ -431,7 +446,7 @@ def download_update(
         return dest
     except (URLError, OSError) as exc:
         logger.error("Download failed: %s", exc)
-        if dest.exists():
+        if created_dest:
             dest.unlink()
         return None
 
@@ -471,7 +486,55 @@ def verify_checksum(archive_path: Path, checksum_url: str) -> bool:
 # ── Update staging (extract to a staging directory) ─────────────────────────
 
 
-def stage_update(archive_path: Path) -> Path | None:
+def _validate_archive_member_path(name: str) -> None:
+    """Reject archive members that could escape the updater staging directory."""
+    path = PurePosixPath(name)
+    if path.is_absolute() or ".." in path.parts or "\\" in name:
+        raise ValueError(f"unsafe archive member path: {name!r}")
+
+
+def _is_symlink_or_junction(path: Path) -> bool:
+    """Return whether *path* is a link/reparse point rather than real content."""
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or bool(is_junction and is_junction())
+
+
+def _validate_staged_payload(staged_dir: Path, platform: str) -> None:
+    """Ensure the extracted payload has the expected, narrowly scoped layout.
+
+    The bootstrapper treats the archive as executable code.  Checking its layout
+    before it is launched prevents a malformed archive from being overlaid onto
+    an installation directory with arbitrary top-level files.
+    """
+    if not staged_dir.is_dir() or _is_symlink_or_junction(staged_dir):
+        raise ValueError("staged update directory is missing or is a link")
+
+    entries = {entry.name: entry for entry in staged_dir.iterdir()}
+    if platform == "win32":
+        if set(entries) != _WINDOWS_PAYLOAD_ENTRIES:
+            raise ValueError("Windows update must contain only iOpenPod.exe and _internal")
+        executable = entries["iOpenPod.exe"]
+        internal = entries["_internal"]
+    elif platform == "darwin":
+        if staged_dir.name != "iOpenPod.app":
+            raise ValueError("macOS update must contain an iOpenPod.app bundle")
+        executable = staged_dir / "Contents" / "MacOS" / "iOpenPod"
+        if not executable.is_file() or _is_symlink_or_junction(executable):
+            raise ValueError("macOS update is missing its iOpenPod executable")
+        return
+    else:
+        if set(entries) != _LINUX_PAYLOAD_ENTRIES:
+            raise ValueError("Linux update must contain only iOpenPod and _internal")
+        executable = entries["iOpenPod"]
+        internal = entries["_internal"]
+
+    if not executable.is_file() or _is_symlink_or_junction(executable):
+        raise ValueError("staged update is missing a regular iOpenPod executable")
+    if not internal.is_dir() or _is_symlink_or_junction(internal):
+        raise ValueError("staged update is missing a regular _internal directory")
+
+
+def stage_update(archive_path: Path, *, platform: str = sys.platform) -> Path | None:
     """Extract the archive into a staging directory.
 
     Returns the path to the staging directory containing the extracted
@@ -481,25 +544,30 @@ def stage_update(archive_path: Path) -> Path | None:
     import tarfile
     import zipfile
 
-    staging = Path(tempfile.mkdtemp(prefix="iopenpod-staging-"))
+    staging = Path(tempfile.mkdtemp(prefix=_STAGING_TEMP_PREFIX))
 
     try:
         if archive_path.suffix == ".zip":
             with zipfile.ZipFile(archive_path) as zf:
+                for info in zf.infolist():
+                    _validate_archive_member_path(info.filename)
                 zf.extractall(staging)
         elif archive_path.name.endswith((".tar.gz", ".tgz")):
             with tarfile.open(archive_path) as tf:
+                for member in tf.getmembers():
+                    _validate_archive_member_path(member.name)
                 tf.extractall(staging, filter='data')
         else:
-            logger.error("Unknown archive format: %s", archive_path.name)
-            return None
+            raise ValueError(f"unknown archive format: {archive_path.name}")
 
         # Determine the actual root of the extracted update.
         # Some archives wrap everything in a single top-level folder
         # (e.g. macOS: iOpenPod.app/, Linux: iOpenPod/), while others
         # have files directly at the root (e.g. Windows zip created
         # with Compress-Archive -Path dist\iOpenPod\*).
-        entries = list(staging.iterdir())
+        # ditto-created macOS archives can include an __MACOSX metadata
+        # directory.  It is never part of the payload and is not copied.
+        entries = [entry for entry in staging.iterdir() if entry.name != "__MACOSX"]
         if len(entries) == 1 and entries[0].is_dir():
             # Single top-level folder — use it as the source
             source_dir = entries[0]
@@ -507,6 +575,7 @@ def stage_update(archive_path: Path) -> Path | None:
             # Multiple entries at root — staging IS the source
             source_dir = staging
 
+        _validate_staged_payload(source_dir, platform)
         logger.info("Update staged at %s", source_dir)
         return source_dir
 
@@ -519,17 +588,48 @@ def stage_update(archive_path: Path) -> Path | None:
 # ── Bootstrap installer (runs after the app exits) ─────────────────────────
 #
 # On Windows, a running .exe and its DLLs are locked by the OS — you can't
-# overwrite or rename them from inside the same process.  The solution is a
-# small script that:
-#   1. Waits for the current process to exit
-#   2. Moves the old install to a .bak directory
-#   3. Copies the staged update into the install location
-#   4. Relaunches the new executable
-#   5. Cleans up the .bak directory and the staging folder
-#
-# On macOS/Linux a shell script does the same thing (though renaming open
-# files would technically work, the script approach is consistent and also
-# restarts the app).
+# overwrite or rename them from inside the same process.  A small bootstrap
+# script waits for the app to exit, replaces only the known runtime payload,
+# and relaunches it.  On macOS/Linux the same approach is used for a
+# consistent restart, but the staged files are overlaid without ever removing
+# the installed app directory or bundle.
+
+
+def _new_bootstrap_path(suffix: str) -> Path:
+    """Create an owner-only, uniquely named temporary bootstrap file."""
+    fd, raw_path = tempfile.mkstemp(prefix="iopenpod-bootstrap-", suffix=suffix)
+    os.close(fd)
+    return Path(raw_path)
+
+
+def _staging_root_for(staged_dir: Path) -> Path:
+    """Return the updater-owned staging root containing *staged_dir*.
+
+    Bootstrap scripts are intentionally allowed to remove their own staging
+    directory.  This check makes that permission explicit: callers cannot
+    point cleanup at an arbitrary directory merely by supplying a path.
+    """
+    source = staged_dir.resolve(strict=True)
+    temp_dir = Path(tempfile.gettempdir()).resolve()
+
+    for candidate in (source, *source.parents):
+        if candidate.parent == temp_dir and candidate.name.startswith(_STAGING_TEMP_PREFIX):
+            return candidate
+    raise ValueError("staged update is not in an updater-owned temporary directory")
+
+
+def _cmd_safe_path(path: Path) -> str:
+    """Return a path safe for use in a generated cmd.exe script.
+
+    Quoting alone does not make all cmd metacharacters safe (notably percent
+    expansion and delayed expansion), so a native update declines to run from
+    a path containing one.  The user can still update manually in that rare
+    case; the updater must not turn a path into a command.
+    """
+    text = str(path)
+    if any(character in text for character in '"&|<>()^%!\r\n'):
+        raise ValueError("update path contains cmd.exe metacharacters")
+    return text
 
 
 def _write_windows_bootstrap(
@@ -538,27 +638,38 @@ def _write_windows_bootstrap(
     staged_dir: Path,
     exe_name: str,
 ) -> Path:
-    """Write a .cmd batch script that swaps the update after we exit."""
+    """Write a .cmd script that replaces only the Windows runtime payload."""
     # Write to temp dir — app_dir.parent may be read-only (Program Files, etc.)
-    script = Path(tempfile.gettempdir()) / "_iopenpod_update.cmd"
+    script = _new_bootstrap_path(".cmd")
     log_file = Path(tempfile.gettempdir()) / "_iopenpod_update.log"
+    staging_root = _staging_root_for(staged_dir)
+    app_executable = app_dir / exe_name
+    app_internal = app_dir / "_internal"
+    staged_executable = staged_dir / exe_name
 
-    # staged_dir may be the staging root itself (flat archive) or a
-    # subfolder (archive with single top-level dir).  Clean up the
-    # staging root in both cases.
-    staging_root = staged_dir
-    if staged_dir.parent.name.startswith("iopenpod-staging-"):
-        staging_root = staged_dir.parent
+    app_dir_text = _cmd_safe_path(app_dir)
+    staged_dir_text = _cmd_safe_path(staged_dir)
+    staging_root_text = _cmd_safe_path(staging_root)
+    app_executable_text = _cmd_safe_path(app_executable)
+    app_internal_text = _cmd_safe_path(app_internal)
+    staged_executable_text = _cmd_safe_path(staged_executable)
+    log_file_text = _cmd_safe_path(log_file)
 
     script.write_text(
         f'@echo off\r\n'
         f'setlocal EnableDelayedExpansion\r\n'
         f'title iOpenPod Updater\r\n'
         f'\r\n'
-        f'set "LOG={log_file}"\r\n'
+        f'set "LOG={log_file_text}"\r\n'
+        f'set "APP_DIR={app_dir_text}"\r\n'
+        f'set "STAGED_DIR={staged_dir_text}"\r\n'
+        f'set "STAGING_ROOT={staging_root_text}"\r\n'
+        f'set "APP_EXE={app_executable_text}"\r\n'
+        f'set "APP_INTERNAL={app_internal_text}"\r\n'
+        f'set "STAGED_EXE={staged_executable_text}"\r\n'
         f'echo [%date% %time%] iOpenPod updater starting >> "%LOG%"\r\n'
-        f'echo App dir:    {app_dir} >> "%LOG%"\r\n'
-        f'echo Staged dir: {staged_dir} >> "%LOG%"\r\n'
+        f'echo App dir:    %APP_DIR% >> "%LOG%"\r\n'
+        f'echo Staged dir: %STAGED_DIR% >> "%LOG%"\r\n'
         f'echo Exe name:   {exe_name} >> "%LOG%"\r\n'
         f'echo PID:        {pid} >> "%LOG%"\r\n'
         f'\r\n'
@@ -574,31 +685,53 @@ def _write_windows_bootstrap(
         f'echo Applying update...\r\n'
         f'ping -n 5 127.0.0.1 >NUL\r\n'
         f'\r\n'
-        f'rem Use robocopy to mirror staged files over the install dir.\r\n'
-        f'rem Robocopy retries locked files individually (unlike move which\r\n'
-        f'rem fails if ANY file is locked). /MIR = mirror, /R:30 = 30 retries,\r\n'
-        f'rem /W:2 = 2 sec between retries, /NP = no progress percentage.\r\n'
+        f'if not exist "%STAGED_EXE%" (\r\n'
+        f'    echo ERROR: staged executable is missing >> "%LOG%"\r\n'
+        f'    exit /b 1\r\n'
+        f')\r\n'
+        f'\r\n'
+        f'rem Remove only the old executable and its PyInstaller _internal\r\n'
+        f'rem runtime directory.  Do not mirror the install directory: /MIR\r\n'
+        f'rem would remove unrelated files a user keeps beside iOpenPod.\r\n'
+        f'if exist "%APP_EXE%" del /f /q "%APP_EXE%"\r\n'
+        f'if exist "%APP_EXE%" (\r\n'
+        f'    echo ERROR: old executable is still locked >> "%LOG%"\r\n'
+        f'    exit /b 1\r\n'
+        f')\r\n'
+        f'if exist "%APP_INTERNAL%" rmdir /s /q "%APP_INTERNAL%"\r\n'
+        f'if exist "%APP_INTERNAL%" (\r\n'
+        f'    echo ERROR: old _internal directory could not be removed >> "%LOG%"\r\n'
+        f'    exit /b 1\r\n'
+        f')\r\n'
+        f'\r\n'
+        f'rem Robocopy overlays the validated payload.  /E copies directories\r\n'
+        f'rem but intentionally does not delete anything at the destination.\r\n'
         f'echo Copying new files over existing install... >> "%LOG%"\r\n'
         f'echo Copying new files...\r\n'
-        f'robocopy "{staged_dir}" "{app_dir}" /MIR /R:30 /W:2 /NP /NDL /NFL >> "%LOG%" 2>&1\r\n'
+        f'robocopy "%STAGED_DIR%" "%APP_DIR%" /E /COPY:DAT /DCOPY:DAT /R:30 /W:2 /NP /NDL /NFL >> "%LOG%" 2>&1\r\n'
         f'set "RC=!errorlevel!"\r\n'
         f'echo robocopy exit code: !RC! >> "%LOG%"\r\n'
-        f'rem robocopy: 0=nothing copied, 1=files copied, 2=extra files removed,\r\n'
-        f'rem 3=1+2, etc.  Codes < 8 are success. 8+ means error.\r\n'
+        f'rem Robocopy codes below 8 are successful.\r\n'
         f'if !RC! geq 8 (\r\n'
         f'    echo ERROR: robocopy failed with exit code !RC! >> "%LOG%"\r\n'
         f'    echo ERROR: File copy failed. The update files are at:\r\n'
-        f'    echo {staged_dir}\r\n'
+        f'    echo %STAGED_DIR%\r\n'
         f'    pause\r\n'
         f'    exit /b 1\r\n'
         f')\r\n'
         f'\r\n'
+        f'if not exist "%APP_EXE%" (\r\n'
+        f'    echo ERROR: updated executable was not installed >> "%LOG%"\r\n'
+        f'    exit /b 1\r\n'
+        f')\r\n'
+        f'\r\n'
         f'echo Starting updated iOpenPod...\r\n'
-        f'echo Launching: "{app_dir}\\{exe_name}" >> "%LOG%"\r\n'
-        f'start "" "{app_dir}\\{exe_name}"\r\n'
+        f'echo Launching: "%APP_EXE%" >> "%LOG%"\r\n'
+        f'start "" "%APP_EXE%"\r\n'
         f'\r\n'
         f'echo Cleaning up...\r\n'
-        f'rmdir /s /q "{staging_root}" 2>NUL\r\n'
+        f'rem STAGING_ROOT was validated as an updater-owned temp directory.\r\n'
+        f'rmdir /s /q "%STAGING_ROOT%" 2>NUL\r\n'
         f'echo [%date% %time%] Update complete. >> "%LOG%"\r\n'
         f'ping -n 2 127.0.0.1 >NUL\r\n'
         f'del "%~f0"\r\n',
@@ -626,99 +759,142 @@ def _resolve_install_target(executable: Path, platform: str) -> tuple[Path, str]
     return app_dir, exe_name
 
 
+def _validated_install_target(executable: Path, platform: str) -> tuple[Path, str]:
+    """Return a safe native install target or reject an unexpected launcher.
+
+    Auto-update is deliberately limited to the executable layout produced by
+    this project's release builds.  In particular, it must not operate on a
+    renamed launcher, a symbolic link, or a reparse-point runtime directory.
+    Those configurations can still be updated manually.
+    """
+    expected_name = "iOpenPod.exe" if platform == "win32" else "iOpenPod"
+    names_match = (
+        executable.name.lower() == expected_name.lower()
+        if platform == "win32"
+        else executable.name == expected_name
+    )
+    if not names_match:
+        raise ValueError("running executable is not a native iOpenPod release binary")
+    if not executable.is_file() or _is_symlink_or_junction(executable):
+        raise ValueError("running executable is missing or is a link")
+
+    app_dir, exe_name = _resolve_install_target(executable, platform)
+    target_executable = app_dir / exe_name
+    if not app_dir.is_dir() or _is_symlink_or_junction(app_dir):
+        raise ValueError("native install directory is missing or is a link")
+    if not target_executable.is_file() or _is_symlink_or_junction(target_executable):
+        raise ValueError("native install executable is missing or is a link")
+
+    # Windows is the sole platform where the updater deliberately removes a
+    # directory.  Refuse to delete a junction, which could otherwise point
+    # outside the iOpenPod install directory.
+    internal = app_dir / "_internal"
+    if platform == "win32" and internal.exists() and _is_symlink_or_junction(internal):
+        raise ValueError("Windows _internal directory is a link")
+
+    return app_dir, exe_name
+
+
 def _write_unix_bootstrap(
     pid: int,
     app_dir: Path,
     staged_dir: Path,
     exe_name: str,
+    *,
+    platform: str = sys.platform,
 ) -> Path:
-    """Write a shell script that swaps the update after we exit."""
-    # Write to temp dir — app_dir.parent (e.g. /Applications/) may not be writable
-    script = Path(tempfile.gettempdir()) / "_iopenpod_update.sh"
+    """Write a shell script that overlays the update after we exit."""
+    # Write to temp dir — app_dir.parent (e.g. /Applications/) may not be writable.
+    script = _new_bootstrap_path(".sh")
     log_file = Path(tempfile.gettempdir()) / "_iopenpod_update.log"
+    staging_root = _staging_root_for(staged_dir)
+    temp_dir = Path(tempfile.gettempdir()).resolve()
 
-    is_macos = sys.platform == "darwin"
+    script_path = shlex.quote(str(script))
+    app_dir_path = shlex.quote(str(app_dir))
+    staged_dir_path = shlex.quote(str(staged_dir))
+    staging_root_path = shlex.quote(str(staging_root))
+    temp_dir_path = shlex.quote(str(temp_dir))
+    log_file_path = shlex.quote(str(log_file))
+    executable_path = shlex.quote(str(app_dir / exe_name))
+    cleanup_staging = (
+        f'cleanup_staging() {{\n'
+        f'    case "$STAGING_ROOT" in\n'
+        f'        "$TEMP_DIR"/{_STAGING_TEMP_PREFIX}*) /bin/rm -rf -- "$STAGING_ROOT" ;;\n'
+        f'        *) echo "ERROR: refusing to remove non-updater staging directory $STAGING_ROOT"; return 1 ;;\n'
+        f'    esac\n'
+        f'}}\n'
+    )
 
-    if is_macos:
-        # On macOS, put the actual file operations in a separate helper script.
-        # The bootstrap then tries running it directly; if that fails (e.g. the
-        # app is in /Applications/ which is root-owned), it retries via osascript
-        # which shows macOS's standard admin password dialog.
-        ops_script = Path(tempfile.gettempdir()) / "_iopenpod_update_ops.sh"
+    if platform == "darwin":
+        # The app bundle is overlaid in place.  A separate helper permits the
+        # same operation to be retried through macOS's standard admin prompt.
+        ops_script = _new_bootstrap_path(".sh")
+        ops_script_path = shlex.quote(str(ops_script))
         ops_script.write_text(
             f'#!/bin/sh\n'
-            f'LOG="{log_file}"\n'
+            f'LOG={log_file_path}\n'
+            f'APP_DIR={app_dir_path}\n'
+            f'STAGED_DIR={staged_dir_path}\n'
+            f'STAGING_ROOT={staging_root_path}\n'
+            f'TEMP_DIR={temp_dir_path}\n'
             f'exec >> "$LOG" 2>&1\n'
             f'echo "Starting file operations..."\n'
-            f'rm -rf "{app_dir}.bak"\n'
-            f'if ! mv "{app_dir}" "{app_dir}.bak"; then\n'
-            f'    echo "ERROR: mv failed — cannot move old app aside"\n'
+            f'if ! /usr/bin/ditto "$STAGED_DIR" "$APP_DIR"; then\n'
+            f'    echo "ERROR: ditto failed while overlaying the app bundle"\n'
             f'    exit 1\n'
             f'fi\n'
-            f'echo "Old app moved to .bak"\n'
-            f'if ! ditto "{staged_dir}" "{app_dir}"; then\n'
-            f'    echo "ERROR: ditto failed — restoring backup"\n'
-            f'    mv "{app_dir}.bak" "{app_dir}"\n'
-            f'    exit 1\n'
-            f'fi\n'
-            f'echo "New app copied"\n'
-            f'xattr -dr com.apple.quarantine "{app_dir}" 2>/dev/null\n'
-            f'chmod -R +x "{app_dir}/Contents/MacOS" 2>/dev/null\n'
-            f'rm -rf "{app_dir}.bak"\n'
-            f'rm -rf "{staged_dir.parent}"\n'
+            f'echo "New app overlaid"\n'
+            f'/usr/bin/xattr -dr com.apple.quarantine "$APP_DIR" 2>/dev/null || true\n'
+            f'{cleanup_staging}'
             f'echo "File operations complete"\n',
             encoding="utf-8",
         )
         ops_script.chmod(ops_script.stat().st_mode | stat.S_IEXEC)
 
-        # Build the osascript fallback.  The ops script path is embedded as a
-        # double-quoted shell word inside the AppleScript string literal, so
-        # inner double-quotes must be escaped with \".
-        ops_escaped = str(ops_script).replace('"', '\\"')
+        apple_script = (
+            f"do shell script {json.dumps('/bin/sh ' + shlex.quote(str(ops_script)))} "
+            "with administrator privileges"
+        )
         apply_block = (
             f'# Try without admin first (works when app is outside /Applications/)\n'
-            f'if /bin/sh "{ops_script}"; then\n'
+            f'if /bin/sh {ops_script_path}; then\n'
             f'    echo "Updated without elevated privileges"\n'
             f'else\n'
             f'    echo "Retrying with administrator privileges via osascript..."\n'
-            f'    osascript -e \'do shell script "/bin/sh \\"{ops_escaped}\\"" with administrator privileges\' >> "$LOG" 2>&1\n'
-            f'    if [ $? -ne 0 ]; then\n'
+            f'    if ! /usr/bin/osascript -e {shlex.quote(apple_script)} >> "$LOG" 2>&1; then\n'
             f'        echo "ERROR: osascript elevated install failed"\n'
             f'        exit 1\n'
             f'    fi\n'
             f'fi\n'
         )
-        relaunch = f'open -a "{app_dir}"\n'
-        cleanup = f'rm -f "{ops_script}"\n'
-
+        relaunch = '/usr/bin/open "$APP_DIR"\n'
+        cleanup = f'/bin/rm -f -- {ops_script_path}\n'
     else:
         apply_block = (
-            f'rm -rf "{app_dir}.bak"\n'
-            f'if ! mv "{app_dir}" "{app_dir}.bak"; then\n'
-            f'    echo "ERROR: mv failed — cannot move old app aside"\n'
+            f'if ! /bin/cp -a "$STAGED_DIR/." "$APP_DIR/"; then\n'
+            f'    echo "ERROR: copy failed while overlaying the app files"\n'
             f'    exit 1\n'
             f'fi\n'
-            f'echo "Old app moved to .bak"\n'
-            f'if ! cp -a "{staged_dir}/." "{app_dir}/"; then\n'
-            f'    echo "ERROR: copy failed — restoring backup"\n'
-            f'    mv "{app_dir}.bak" "{app_dir}"\n'
-            f'    exit 1\n'
-            f'fi\n'
-            f'echo "New files copied"\n'
-            f'chmod +x "{app_dir}/{exe_name}"\n'
-            f'rm -rf "{app_dir}.bak"\n'
-            f'rm -rf "{staged_dir.parent}"\n'
+            f'echo "New files overlaid"\n'
+            f'chmod +x {executable_path}\n'
+            f'{cleanup_staging}'
         )
-        relaunch = f'"{app_dir}/{exe_name}" &\n'
+        relaunch = f'{executable_path} &\n'
         cleanup = ''
 
     script.write_text(
         f'#!/bin/sh\n'
-        f'LOG="{log_file}"\n'
+        f'LOG={log_file_path}\n'
+        f'APP_DIR={app_dir_path}\n'
+        f'STAGED_DIR={staged_dir_path}\n'
+        f'STAGING_ROOT={staging_root_path}\n'
+        f'TEMP_DIR={temp_dir_path}\n'
         f'exec >> "$LOG" 2>&1\n'
+        f'{cleanup_staging}'
         f'echo "=== iOpenPod updater started $(date) ==="\n'
-        f'echo "App dir:    {app_dir}"\n'
-        f'echo "Staged dir: {staged_dir}"\n'
+        f'echo "App dir:    $APP_DIR"\n'
+        f'echo "Staged dir: $STAGED_DIR"\n'
         f'echo "Exe name:   {exe_name}"\n'
         f'echo "PID:        {pid}"\n'
         f'\n'
@@ -734,7 +910,7 @@ def _write_unix_bootstrap(
         f'{relaunch}'
         f'{cleanup}'
         f'echo "=== Update complete $(date) ==="\n'
-        f'rm -f "$0"\n',
+        f'/bin/rm -f -- {script_path}\n',
         encoding="utf-8",
     )
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
@@ -775,8 +951,16 @@ def launch_bootstrap_and_exit(staged_dir: Path) -> bool:
         _log_update("Not a frozen build — bootstrap not applicable.")
         return False
 
+    try:
+        _validate_staged_payload(staged_dir, sys.platform)
+        app_dir, exe_name = _validated_install_target(Path(sys.executable), sys.platform)
+        _staging_root_for(staged_dir)
+    except (OSError, ValueError) as exc:
+        _log_update(f"Refusing unsafe update target or payload: {exc}")
+        logger.error("Refusing unsafe update target or payload: %s", exc)
+        return False
+
     pid = os.getpid()
-    app_dir, exe_name = _resolve_install_target(Path(sys.executable), sys.platform)
 
     try:
         staged_contents = [p.name for p in staged_dir.iterdir()]

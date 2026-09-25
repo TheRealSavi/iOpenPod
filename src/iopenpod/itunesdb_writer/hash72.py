@@ -29,7 +29,9 @@ Usage:
 
 import hashlib
 import os
+from pathlib import Path
 
+from iopenpod.device.metadata_write import guarded_device_metadata_session
 from iopenpod.itunesdb_shared.mhbd_defs import (
     MHBD_OFFSET_DB_ID as OFFSET_DB_ID,
 )
@@ -92,8 +94,8 @@ def read_hash_info(ipod_path: str) -> HashInfo | None:
     """
     # Check centralized device_info store first
     try:
-        from iopenpod.device import get_current_device
-        dev = get_current_device()
+        from iopenpod.device import get_current_device_for_path
+        dev = get_current_device_for_path(ipod_path)
         if dev and dev.hash_info_iv and dev.hash_info_rndpart:
             return HashInfo(uuid=b'\x00' * 20, rndpart=dev.hash_info_rndpart, iv=dev.hash_info_iv)
     except Exception:
@@ -122,7 +124,15 @@ def read_hash_info(ipod_path: str) -> HashInfo | None:
     return HashInfo(uuid, rndpart, iv)
 
 
-def write_hash_info(ipod_path: str, uuid: bytes, iv: bytes, rndpart: bytes) -> bool:
+def write_hash_info(
+    ipod_path: str,
+    uuid: bytes,
+    iv: bytes,
+    rndpart: bytes,
+    *,
+    reported_volume_format: str = "",
+    expected_volume_identity_key: str = "",
+) -> bool:
     """
     Write HashInfo file to iPod.
 
@@ -140,12 +150,17 @@ def write_hash_info(ipod_path: str, uuid: bytes, iv: bytes, rndpart: bytes) -> b
 
     data = HASHINFO_HEADER + uuid + rndpart + iv
 
-    path = _get_hash_info_path(ipod_path)
-    device_dir = os.path.dirname(path)
-    os.makedirs(device_dir, exist_ok=True)
-
-    with open(path, 'wb') as f:
-        f.write(data)
+    device_subtree = Path("iPod_Control") / "Device"
+    with guarded_device_metadata_session(
+        ipod_path,
+        reported_volume_format=reported_volume_format,
+        expected_volume_identity_key=expected_volume_identity_key,
+    ) as writer:
+        writer.write_bytes_atomic(
+            device_subtree / "HashInfo",
+            data,
+            allowed_subtree=device_subtree,
+        )
 
     return True
 

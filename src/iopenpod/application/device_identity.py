@@ -4,7 +4,44 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
+
+
+@dataclass(frozen=True)
+class LinuxIdentitySetupGuidance:
+    """GUI-safe description of the Linux host setup required for an iPod."""
+
+    explanation: str
+    setup_instructions: str
+
+
+def linux_identity_setup_guidance(
+    device_info: Any | None,
+    *,
+    platform: str,
+) -> LinuxIdentitySetupGuidance | None:
+    """Return Linux host setup guidance when the product serial is unavailable."""
+
+    from iopenpod.device.linux_integration import (
+        describe_linux_identity_integration,
+        linux_identity_setup_needed,
+    )
+
+    if not linux_identity_setup_needed(device_info, platform=platform):
+        return None
+
+    mount = str(getattr(device_info, "path", "") or "")
+    product_serial = str(getattr(device_info, "serial", "") or "")
+    integration = describe_linux_identity_integration(
+        mount,
+        product_serial=product_serial,
+        platform=platform,
+    )
+    return LinuxIdentitySetupGuidance(
+        explanation=integration.explanation,
+        setup_instructions=integration.setup_instructions,
+    )
 
 
 def identify_ipod_at_root(path: str) -> Any | None:

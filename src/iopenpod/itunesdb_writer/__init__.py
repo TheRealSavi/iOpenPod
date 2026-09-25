@@ -50,6 +50,7 @@ from .mhbd_writer import extract_db_info, write_itunesdb, write_mhbd
 from .mhit_writer import TrackInfo, write_mhit
 from .mhli_writer import write_mhii_artist, write_mhli, write_mhli_empty
 from .mhod_spl_writer import (
+    RuleGroup,
     SmartPlaylistPrefs,
     SmartPlaylistRule,
     SmartPlaylistRules,
@@ -139,6 +140,7 @@ __all__ = [
     'SmartPlaylistPrefs',
     'SmartPlaylistRules',
     'SmartPlaylistRule',
+    'RuleGroup',
     'prefs_from_parsed',
     'rules_from_parsed',
 ]

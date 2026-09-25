@@ -13,13 +13,24 @@ import threading
 import traceback
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from iopenpod.device.write_guard import (
+    DatabaseGeneration,
+    DeviceWriteGuard,
+    DeviceWriteSafetyError,
+    ExternalDatabaseChangeError,
+    capture_database_generation,
+)
 from iopenpod.infrastructure.media_folders import media_folder_paths
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    is_playlist_folder,
+    is_podcast_playlist,
+)
 
 from .dropped_files import (
     append_unique_path,
@@ -33,6 +44,7 @@ if TYPE_CHECKING:
     from .services import (
         DeviceCapabilitySnapshot,
         DeviceIdentitySnapshot,
+        DeviceStorageSnapshot,
         LibraryCacheLike,
         QuickWriteSnapshot,
     )
@@ -73,15 +85,9 @@ class SyncToolAvailability:
     def install_help_text(self) -> str:
         lines = []
         if self.missing_fpcalc:
-            lines.append(
-                "fpcalc is required for sync.\n"
-                "Install from: https://acoustid.org/chromaprint"
-            )
+            lines.append("fpcalc is required for sync.\nInstall from: https://acoustid.org/chromaprint")
         if self.missing_ffmpeg:
-            lines.append(
-                "FFmpeg and ffprobe are required for transcoding and media probing.\n"
-                "Install from: https://ffmpeg.org"
-            )
+            lines.append("FFmpeg and ffprobe are required for transcoding and media probing.\nInstall from: https://ffmpeg.org")
         lines.append("You can also set custom paths in\nSettings -> External Tools.")
         return "\n\n".join(lines)
 
@@ -212,11 +218,7 @@ class AlbumConversionWorker(QThread):
 
             group_id = f"album-{random.getrandbits(64):016x}"
             output_size = converted.output_path.stat().st_size
-            album_title = (
-                request.album_item.get("album")
-                or request.album_item.get("title")
-                or converted.pc_track.title
-            )
+            album_title = request.album_item.get("album") or request.album_item.get("title") or converted.pc_track.title
             add_item = SyncItem(
                 action=SyncAction.ADD_TO_IPOD,
                 fingerprint=None,
@@ -265,11 +267,7 @@ class AlbumConversionWorker(QThread):
                         fingerprint=source.fingerprint,
                         db_track_id=db_track_id,
                         ipod_track=track,
-                        description=(
-                            f"Replace with chapter: {artist} - {title}"
-                            if artist
-                            else f"Replace with chapter: {title}"
-                        ),
+                        description=(f"Replace with chapter: {artist} - {title}" if artist else f"Replace with chapter: {title}"),
                         conversion_group_id=group_id,
                         defer_removal_until_after_add=True,
                     )
@@ -308,11 +306,7 @@ class AlbumConversionWorker(QThread):
 
     @staticmethod
     def _output_dir(settings: AppSettings) -> Path:
-        base = (
-            Path(settings.transcode_cache_dir)
-            if getattr(settings, "transcode_cache_dir", "")
-            else Path(getattr(settings, "settings_dir", "") or tempfile.gettempdir())
-        )
+        base = Path(settings.transcode_cache_dir) if getattr(settings, "transcode_cache_dir", "") else Path(getattr(settings, "settings_dir", "") or tempfile.gettempdir())
         return base / "album-conversions"
 
     @staticmethod
@@ -413,20 +407,11 @@ class ChapterSplitWorker(QThread):
             )
             add_items: list[SyncItem] = []
             bytes_to_add = 0
-            for index, (pc_track, output_path) in enumerate(
-                zip(split.pc_tracks, split.output_paths, strict=False)
-            ):
+            for index, (pc_track, output_path) in enumerate(zip(split.pc_tracks, split.output_paths, strict=False)):
                 output_size = output_path.stat().st_size
                 bytes_to_add += output_size
-                source_meta = (
-                    aggregate_source_rows[index]
-                    if index < len(aggregate_source_rows)
-                    else None
-                )
-                source_fp = (
-                    str(source_meta.get("fingerprint") or "").strip()
-                    if source_meta else None
-                )
+                source_meta = aggregate_source_rows[index] if index < len(aggregate_source_rows) else None
+                source_fp = str(source_meta.get("fingerprint") or "").strip() if source_meta else None
                 add_items.append(
                     SyncItem(
                         action=SyncAction.ADD_TO_IPOD,
@@ -515,11 +500,7 @@ class ChapterSplitWorker(QThread):
 
     @staticmethod
     def _output_dir(settings: AppSettings) -> Path:
-        base = (
-            Path(settings.transcode_cache_dir)
-            if getattr(settings, "transcode_cache_dir", "")
-            else Path(getattr(settings, "settings_dir", "") or tempfile.gettempdir())
-        )
+        base = Path(settings.transcode_cache_dir) if getattr(settings, "transcode_cache_dir", "") else Path(getattr(settings, "settings_dir", "") or tempfile.gettempdir())
         return base / "chapter-splits"
 
 
@@ -568,21 +549,9 @@ def build_podcast_plan_for_sync(
         builder = build_podcast_managed_plan
 
     refreshed = []
-    podcast_dir = getattr(store, "podcast_dir", "")
-    cache_artwork = None
-    if podcast_dir:
-        try:
-            from iopenpod.podcasts.artwork import cache_feed_artwork
-
-            cache_artwork = cache_feed_artwork
-        except Exception:
-            cache_artwork = None
-
     for feed in feeds:
         try:
             refreshed_feed = fetcher(feed.feed_url, existing=feed)
-            if cache_artwork is not None:
-                cache_artwork(refreshed_feed, podcast_dir)
             refreshed.append(refreshed_feed)
         except Exception as exc:
             logger.warning(
@@ -592,8 +561,12 @@ def build_podcast_plan_for_sync(
             )
             refreshed.append(feed)
 
-    store.update_feeds(refreshed)
-    return builder(refreshed, ipod_tracks, store)
+    plan = builder(refreshed, ipod_tracks, store)
+    # Feed persistence and artwork caching target the iPod.  Carry the
+    # refreshed state into execution so those writes happen under the same
+    # retained device writer guard as the rest of the sync.
+    plan._refreshed_podcast_feeds = refreshed
+    return plan
 
 
 @dataclass(frozen=True)
@@ -709,6 +682,7 @@ class BackupDeviceContext:
     device_id: str
     device_name: str
     device_meta: dict[str, str]
+    stable_identity: bool
 
 
 @dataclass(frozen=True)
@@ -718,6 +692,7 @@ class BackupDeviceInventory:
     devices: list[dict[str, Any]]
     connected_device_id: str
     device_connected: bool
+    connected_identity_stable: bool
 
 
 @dataclass(frozen=True)
@@ -812,7 +787,9 @@ def _is_regular_import_target_playlist(playlist: dict) -> bool:
         return False
     if playlist.get("smart_playlist_data") or playlist.get("smart_playlist_rules"):
         return False
-    if playlist.get("podcast_flag") or playlist.get("_source") == "podcast":
+    if is_podcast_playlist(playlist) or playlist.get("_source") == "podcast":
+        return False
+    if is_playlist_folder(playlist):
         return False
     if _is_ipod_category_playlist(playlist):
         return False
@@ -963,6 +940,7 @@ def build_backup_device_context(
     device_info: Any | None,
     *,
     device_name: str = "",
+    volume_identity_key: str = "",
 ) -> BackupDeviceContext:
     """Return the sanitized backup identity for a connected device."""
 
@@ -972,11 +950,17 @@ def build_backup_device_context(
         get_device_identifier,
     )
 
-    raw_id = get_device_identifier(ipod_path, device_info)
+    raw_id = get_device_identifier(
+        ipod_path,
+        device_info,
+        volume_identity_key=volume_identity_key,
+    )
+    stable_identity = bool(str(getattr(device_info, "serial", "") or "").strip() or str(getattr(device_info, "firewire_guid", "") or "").strip())
     return BackupDeviceContext(
         device_id=BackupManager._sanitize_id(raw_id),
         device_name=device_name.strip() or get_device_display_name(device_info),
         device_meta=build_backup_device_meta(device_info),
+        stable_identity=stable_identity,
     )
 
 
@@ -986,6 +970,7 @@ def list_backup_devices_for_view(
     connected_ipod_path: str = "",
     connected_ipod_info: Any | None = None,
     connected_device_name: str = "",
+    connected_volume_identity_key: str = "",
 ) -> BackupDeviceInventory:
     """Return backup devices sorted for the backup browser sidebar."""
 
@@ -997,35 +982,33 @@ def list_backup_devices_for_view(
             connected_ipod_path,
             connected_ipod_info,
             device_name=connected_device_name,
+            volume_identity_key=connected_volume_identity_key,
         )
-        BackupManager(
-            device_id=connected_context.device_id,
-            backup_dir=backup_dir,
-            device_name=connected_context.device_name,
-            device_meta=connected_context.device_meta,
-        ).update_device_metadata()
+        if connected_context.stable_identity:
+            BackupManager(
+                device_id=connected_context.device_id,
+                backup_dir=backup_dir,
+                device_name=connected_context.device_name,
+                device_meta=connected_context.device_meta,
+                identity_is_stable=True,
+            ).update_device_metadata()
 
-    devices_by_id = {
-        item["device_id"]: dict(item)
-        for item in BackupManager.list_all_devices(backup_dir)
-    }
+    devices_by_id = {item["device_id"]: dict(item) for item in BackupManager.list_all_devices(backup_dir)}
     connected_device_id = ""
     device_connected = bool(connected_ipod_path)
+    connected_identity_stable = False
 
     if connected_context:
         connected_device_id = connected_context.device_id
+        connected_identity_stable = connected_context.stable_identity
         connected_info = devices_by_id.get(connected_device_id, {})
         connected_info.update(
             {
                 "device_id": connected_device_id,
                 "device_name": connected_context.device_name,
-                "snapshot_count": int(
-                    connected_info.get("snapshot_count", 0) or 0
-                ),
-                "device_meta": (
-                    connected_context.device_meta
-                    or connected_info.get("device_meta", {})
-                ),
+                "snapshot_count": int(connected_info.get("snapshot_count", 0) or 0),
+                "identity_is_stable": connected_context.stable_identity,
+                "device_meta": (connected_context.device_meta or connected_info.get("device_meta", {})),
             }
         )
         devices_by_id[connected_device_id] = connected_info
@@ -1041,6 +1024,7 @@ def list_backup_devices_for_view(
         devices=devices,
         connected_device_id=connected_device_id,
         device_connected=device_connected,
+        connected_identity_stable=connected_identity_stable,
     )
 
 
@@ -1082,6 +1066,41 @@ def delete_backup_snapshot(device_id: str, backup_dir: str, snapshot_id: str) ->
     return bool(manager.delete_snapshot(snapshot_id))
 
 
+def export_backup_snapshot(
+    device_id: str,
+    backup_dir: str,
+    snapshot_id: str,
+    destination_dir: str,
+    progress_callback=None,
+    is_cancelled=None,
+):
+    """Materialize one validated snapshot as ordinary files."""
+
+    from iopenpod.sync.backup_manager import BackupManager
+
+    manager = BackupManager(device_id=device_id, backup_dir=backup_dir)
+    return manager.export_snapshot(
+        snapshot_id=snapshot_id,
+        destination_dir=destination_dir,
+        progress_callback=progress_callback,
+        is_cancelled=is_cancelled,
+    )
+
+
+def update_backup_snapshot_note(
+    device_id: str,
+    backup_dir: str,
+    snapshot_id: str,
+    note: str,
+) -> bool:
+    """Persist the user-authored note for one backup snapshot."""
+
+    from iopenpod.sync.backup_manager import BackupManager
+
+    manager = BackupManager(device_id=device_id, backup_dir=backup_dir)
+    return manager.update_snapshot_note(snapshot_id, note)
+
+
 @dataclass(frozen=True)
 class BackupCreateRequest:
     """Typed request for creating a full device backup."""
@@ -1092,6 +1111,10 @@ class BackupCreateRequest:
     backup_dir: str
     max_backups: int
     device_meta: dict[str, str]
+    identity_is_stable: bool = False
+    reason: str = "manual"
+    reported_volume_format: str = ""
+    expected_volume_identity_key: str = ""
 
 
 class BackupCreateWorker(QThread):
@@ -1115,6 +1138,7 @@ class BackupCreateWorker(QThread):
                 backup_dir=request.backup_dir,
                 device_name=request.device_name,
                 device_meta=request.device_meta,
+                identity_is_stable=request.identity_is_stable,
             )
 
             def on_progress(prog) -> None:
@@ -1130,13 +1154,10 @@ class BackupCreateWorker(QThread):
                 progress_callback=on_progress,
                 is_cancelled=self.isInterruptionRequested,
                 max_backups=request.max_backups,
+                reported_volume_format=request.reported_volume_format,
+                expected_volume_identity_key=request.expected_volume_identity_key,
+                reason=request.reason,
             )
-
-            if result is None:
-                try:
-                    manager.garbage_collect()
-                except Exception as exc:
-                    logger.debug("Backup garbage collection failed: %s", exc)
 
             self.finished.emit(result)
         except Exception as exc:
@@ -1152,6 +1173,69 @@ class BackupRestoreRequest:
     ipod_path: str
     device_id: str
     backup_dir: str
+    device_name: str = "iPod"
+    device_meta: dict[str, str] = field(default_factory=dict)
+    identity_is_stable: bool = False
+    reported_volume_format: str = ""
+    expected_volume_identity_key: str = ""
+
+
+@dataclass(frozen=True)
+class BackupExportRequest:
+    """Typed request for materializing a backup snapshot on the computer."""
+
+    snapshot_id: str
+    device_id: str
+    backup_dir: str
+    destination_dir: str
+
+
+class BackupExportWorker(QThread):
+    """Export a snapshot without blocking the Qt event loop."""
+
+    progress = pyqtSignal(str, int, int, str)
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, request: BackupExportRequest):
+        super().__init__()
+        self._request = request
+
+    def run(self) -> None:
+        try:
+            request = self._request
+
+            def on_progress(prog) -> None:
+                self.progress.emit(
+                    prog.stage,
+                    prog.current,
+                    prog.total,
+                    prog.message,
+                )
+
+            result = export_backup_snapshot(
+                device_id=request.device_id,
+                backup_dir=request.backup_dir,
+                snapshot_id=request.snapshot_id,
+                destination_dir=request.destination_dir,
+                progress_callback=on_progress,
+                is_cancelled=self.isInterruptionRequested,
+            )
+            self.finished.emit(result)
+        except Exception as exc:
+            logger.exception("BackupExportWorker failed")
+            self.error.emit(str(exc))
+
+
+@dataclass(frozen=True)
+class BackupRestoreFailure:
+    """Typed restore failure so the UI can give the correct recovery path."""
+
+    message: str
+    device_changed: bool
+    safety_snapshot_id: str = ""
+    content_verified: bool = False
+    requires_safe_eject: bool = False
 
 
 class BackupRestoreWorker(QThread):
@@ -1159,7 +1243,7 @@ class BackupRestoreWorker(QThread):
 
     progress = pyqtSignal(str, int, int, str)
     finished = pyqtSignal(bool)
-    error = pyqtSignal(str)
+    error = pyqtSignal(object)
 
     def __init__(self, request: BackupRestoreRequest):
         super().__init__()
@@ -1173,9 +1257,12 @@ class BackupRestoreWorker(QThread):
             manager = BackupManager(
                 device_id=request.device_id,
                 backup_dir=request.backup_dir,
+                device_name=request.device_name,
+                device_meta=request.device_meta,
+                identity_is_stable=request.identity_is_stable,
             )
 
-            def on_progress(prog) -> None:
+            def on_restore_progress(prog) -> None:
                 self.progress.emit(
                     prog.stage,
                     prog.current,
@@ -1183,17 +1270,42 @@ class BackupRestoreWorker(QThread):
                     prog.message,
                 )
 
-            success = manager.restore_backup(
+            def on_safety_backup_progress(prog) -> None:
+                self.progress.emit(
+                    "safety_backup",
+                    prog.current,
+                    prog.total,
+                    f"Protecting current iPod: {prog.message}",
+                )
+
+            self.progress.emit(
+                "safety_backup",
+                0,
+                0,
+                "Creating a verified safety backup of the current iPod…",
+            )
+            success = manager.restore_with_safety_checkpoint(
                 snapshot_id=request.snapshot_id,
                 ipod_path=request.ipod_path,
-                progress_callback=on_progress,
+                progress_callback=on_restore_progress,
+                safety_progress_callback=on_safety_backup_progress,
                 is_cancelled=self.isInterruptionRequested,
+                reported_volume_format=request.reported_volume_format,
+                expected_volume_identity_key=request.expected_volume_identity_key,
             )
 
             self.finished.emit(success)
         except Exception as exc:
             logger.exception("BackupRestoreWorker failed")
-            self.error.emit(str(exc))
+            self.error.emit(
+                BackupRestoreFailure(
+                    message=str(exc),
+                    device_changed=bool(getattr(exc, "device_dirty", False)),
+                    safety_snapshot_id=str(getattr(exc, "safety_snapshot_id", "") or ""),
+                    content_verified=bool(getattr(exc, "content_verified", False)),
+                    requires_safe_eject=bool(getattr(exc, "requires_safe_eject", False)),
+                )
+            )
 
 
 @dataclass(frozen=True)
@@ -1232,11 +1344,7 @@ class SyncDiffWorker(QThread):
 
     @staticmethod
     def _pc_folders(request: SyncDiffRequest) -> tuple[Any, ...]:
-        folders = tuple(
-            path
-            for path in request.pc_folders
-            if path is not None and not (isinstance(path, str) and not path.strip())
-        )
+        folders = tuple(path for path in request.pc_folders if path is not None and not (isinstance(path, str) and not path.strip()))
         if folders:
             return folders
         return (request.pc_folder,) if request.pc_folder else ()
@@ -1325,6 +1433,7 @@ class BackSyncWorker(QThread):
         self._request = request
         self._artwork_provider = artwork_provider
         from iopenpod.sync.unknown_metadata import UnknownMetadataRegistry
+
         self._unknown_registry = UnknownMetadataRegistry()
 
     @staticmethod
@@ -1367,10 +1476,7 @@ class BackSyncWorker(QThread):
                 "backsync_pc_fingerprint",
                 0,
                 total_pc,
-                (
-                    f"Building fingerprints for {total_pc:,} PC track"
-                    f"{'s' if total_pc != 1 else ''}."
-                ),
+                (f"Building fingerprints for {total_pc:,} PC track{'s' if total_pc != 1 else ''}."),
             )
             pc_fps: set[str] = set()
             pc_fingerprint_errors: list[str] = []
@@ -1386,10 +1492,7 @@ class BackSyncWorker(QThread):
             pool = ThreadPoolExecutor(max_workers=workers)
             cancel_fingerprints = False
             try:
-                futures = {
-                    pool.submit(_fp_pc, track.path): track
-                    for track in pc_tracks
-                }
+                futures = {pool.submit(_fp_pc, track.path): track for track in pc_tracks}
                 done = 0
                 for fut in as_completed(futures):
                     if self.isInterruptionRequested():
@@ -1411,11 +1514,7 @@ class BackSyncWorker(QThread):
                             "backsync_pc_fingerprint",
                             done,
                             total_pc,
-                            (
-                                f"{done:,}/{total_pc:,} checked - "
-                                f"{len(pc_fps):,} usable fingerprints - "
-                                f"{self._short_label(pc_track.filename)}"
-                            ),
+                            (f"{done:,}/{total_pc:,} checked - {len(pc_fps):,} usable fingerprints - {self._short_label(pc_track.filename)}"),
                         )
             finally:
                 pool.shutdown(
@@ -1448,10 +1547,7 @@ class BackSyncWorker(QThread):
                 "backsync_ipod_fingerprint",
                 0,
                 total_ipod,
-                (
-                    f"Comparing {total_ipod:,} iPod media file"
-                    f"{'s' if total_ipod != 1 else ''} against your PC library."
-                ),
+                (f"Comparing {total_ipod:,} iPod media file{'s' if total_ipod != 1 else ''} against your PC library."),
             )
 
             to_export: list[tuple[dict, Path]] = []
@@ -1474,11 +1570,7 @@ class BackSyncWorker(QThread):
                     "backsync_ipod_fingerprint",
                     idx,
                     total_ipod,
-                    (
-                        f"{idx:,}/{total_ipod:,} checked - "
-                        f"{len(to_export):,} missing so far - "
-                        f"{self._short_label(title)}"
-                    ),
+                    (f"{idx:,}/{total_ipod:,} checked - {len(to_export):,} missing so far - {self._short_label(title)}"),
                 )
 
             pc_folder_paths = media_folder_paths(pc_folders)
@@ -1496,10 +1588,7 @@ class BackSyncWorker(QThread):
                 "backsync_copy",
                 0,
                 total_export,
-                (
-                    f"Exporting {total_export:,} missing track"
-                    f"{'s' if total_export != 1 else ''} to iOpenPod Back Sync."
-                ),
+                (f"Exporting {total_export:,} missing track{'s' if total_export != 1 else ''} to iOpenPod Back Sync."),
             )
 
             for idx, (track, src_path) in enumerate(to_export, start=1):
@@ -1530,12 +1619,7 @@ class BackSyncWorker(QThread):
                         "backsync_copy",
                         idx,
                         total_export,
-                        (
-                            f"{idx:,}/{total_export:,} exported - "
-                            f"{metadata_hydrated:,} tagged - "
-                            f"{artwork_hydrated:,} with artwork - "
-                            f"{self._short_label(dest_path.name)}"
-                        ),
+                        (f"{idx:,}/{total_export:,} exported - {metadata_hydrated:,} tagged - {artwork_hydrated:,} with artwork - {self._short_label(dest_path.name)}"),
                     )
                 except Exception as exc:
                     errors.append(f"{src_path.name}: {exc}")
@@ -1543,13 +1627,7 @@ class BackSyncWorker(QThread):
                         "backsync_copy",
                         idx,
                         total_export,
-                        (
-                            f"{idx:,}/{total_export:,} processed - "
-                            f"{exported:,} exported - "
-                            f"{len(errors):,} warning"
-                            f"{'s' if len(errors) != 1 else ''} - "
-                            f"{self._short_label(src_path.name)}"
-                        ),
+                        (f"{idx:,}/{total_export:,} processed - {exported:,} exported - {len(errors):,} warning{'s' if len(errors) != 1 else ''} - {self._short_label(src_path.name)}"),
                     )
 
             self.finished.emit(
@@ -1703,18 +1781,10 @@ class BackSyncWorker(QThread):
                 if year:
                     _set_text("TDRC", TDRC(encoding=3, text=[str(year)]))
                 if track_number:
-                    trk = (
-                        f"{track_number}/{total_tracks}"
-                        if total_tracks
-                        else str(track_number)
-                    )
+                    trk = f"{track_number}/{total_tracks}" if total_tracks else str(track_number)
                     _set_text("TRCK", TRCK(encoding=3, text=[trk]))
                 if disc_number:
-                    dsk = (
-                        f"{disc_number}/{total_discs}"
-                        if total_discs
-                        else str(disc_number)
-                    )
+                    dsk = f"{disc_number}/{total_discs}" if total_discs else str(disc_number)
                     _set_text("TPOS", TPOS(encoding=3, text=[dsk]))
                 if comment:
                     tags.delall("COMM")
@@ -1772,18 +1842,12 @@ class BackSyncWorker(QThread):
                     mp4_tags["\xa9day"] = [str(year)]
 
                 if track_number:
-                    mp4_tags["trkn"] = [
-                        (int(track_number), int(total_tracks or 0))
-                    ]
+                    mp4_tags["trkn"] = [(int(track_number), int(total_tracks or 0))]
                 if disc_number:
-                    mp4_tags["disk"] = [
-                        (int(disc_number), int(total_discs or 0))
-                    ]
+                    mp4_tags["disk"] = [(int(disc_number), int(total_discs or 0))]
 
                 if art_bytes:
-                    mp4_tags["covr"] = [
-                        MP4Cover(art_bytes, imageformat=MP4Cover.FORMAT_JPEG)
-                    ]
+                    mp4_tags["covr"] = [MP4Cover(art_bytes, imageformat=MP4Cover.FORMAT_JPEG)]
                     wrote_art = True
 
                 audio.save()
@@ -1818,10 +1882,7 @@ class AutoRestoreDeviceWorker(QThread):
                 is_virtual = has_virtual_ipod_info(path)
             except Exception:
                 is_virtual = False
-            if (
-                not is_virtual
-                and (not os.path.isdir(ipod_control) or not os.path.isdir(itunes_folder))
-            ):
+            if not is_virtual and (not os.path.isdir(ipod_control) or not os.path.isdir(itunes_folder)):
                 self.not_found.emit(path)
                 return
 
@@ -1880,15 +1941,31 @@ class EjectDeviceWorker(QThread):
     finished_ok = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, ipod_path: str):
+    def __init__(
+        self,
+        ipod_path: str,
+        device_storage: DeviceStorageSnapshot | None = None,
+    ):
         super().__init__()
         self._ipod_path = ipod_path
+        self._device_storage = device_storage
 
     def run(self) -> None:
         try:
             from iopenpod.device.eject import eject_ipod
 
-            ok, message = eject_ipod(self._ipod_path)
+            ok, message = eject_ipod(
+                self._ipod_path,
+                reported_volume_format=str(
+                    getattr(
+                        self._device_storage,
+                        "reported_volume_format",
+                        "",
+                    )
+                    or ""
+                ),
+                expected_volume_identity_key=str(getattr(self._device_storage, "volume_identity_key", "") or ""),
+            )
             if ok:
                 self.finished_ok.emit(message)
             else:
@@ -1905,15 +1982,19 @@ def _reload_after_itunesdb_write(cache: LibraryCacheLike) -> None:
 def _snapshot_cache_for_itunesdb_write(
     cache: LibraryCacheLike,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str]]:
-    tracks, playlists, artwork_sources, _revision = (
-        _capture_cache_for_itunesdb_write(cache)
-    )
+    tracks, playlists, artwork_sources, _revision, _database_generation = _capture_cache_for_itunesdb_write(cache)
     return tracks, playlists, artwork_sources
 
 
 def _capture_cache_for_itunesdb_write(
     cache: LibraryCacheLike,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str], int]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[int, str],
+    int,
+    DatabaseGeneration | None,
+]:
     capture = getattr(cache, "capture_quick_write_state", None)
     if callable(capture):
         capture_snapshot = cast("Callable[[], QuickWriteSnapshot]", capture)
@@ -1923,6 +2004,10 @@ def _capture_cache_for_itunesdb_write(
         raw_track_edits: object = snapshot.track_edits
         artwork_sources = snapshot.artwork_sources
         revision_value: SupportsInt = snapshot.revision
+        database_generation = cast(
+            "DatabaseGeneration | None",
+            getattr(snapshot, "database_generation", None),
+        )
     else:
         tracks = copy.deepcopy(cache.get_tracks())
         playlists = copy.deepcopy(cache.get_playlists())
@@ -1935,13 +2020,18 @@ def _capture_cache_for_itunesdb_write(
             revision_value = get_revision()
         else:
             revision_value = 0
+        generation_getter = getattr(cache, "get_database_generation", None)
+        if callable(generation_getter):
+            get_database_generation = cast(
+                "Callable[[], DatabaseGeneration | None]",
+                generation_getter,
+            )
+            database_generation = get_database_generation()
+        else:
+            database_generation = None
     track_edits = cast(Mapping[Any, Mapping[str, Any]], raw_track_edits)
     if track_edits:
-        tracks_by_db_track_id = {
-            _track_db_track_id(track): track
-            for track in tracks
-            if _track_db_track_id(track)
-        }
+        tracks_by_db_track_id = {_track_db_track_id(track): track for track in tracks if _track_db_track_id(track)}
         for raw_db_track_id, edits in track_edits.items():
             try:
                 db_track_id = int(raw_db_track_id)
@@ -1957,7 +2047,13 @@ def _capture_cache_for_itunesdb_write(
                     track[field] = change
     for track in tracks:
         track.pop("_iop_pending_artwork_path", None)
-    return tracks, playlists, artwork_sources, int(revision_value)
+    return (
+        tracks,
+        playlists,
+        artwork_sources,
+        int(revision_value),
+        database_generation,
+    )
 
 
 def _engine_quick_write(
@@ -1966,6 +2062,8 @@ def _engine_quick_write(
     tracks_data: list[dict[str, Any]],
     playlists_data: list[dict[str, Any]],
     artwork_sources: dict[int, str],
+    expected_database_generation: DatabaseGeneration | None = None,
+    device_storage: DeviceStorageSnapshot | None = None,
 ):
     from iopenpod.sync.core import (
         EngineOperation,
@@ -1980,6 +2078,8 @@ def _engine_quick_write(
             tracks_data=tuple(tracks_data),
             playlists_data=tuple(playlists_data),
             artwork_sources=artwork_sources,
+            expected_database_generation=expected_database_generation,
+            device_storage=device_storage,
         )
     )
 
@@ -1994,15 +2094,18 @@ class QuickWriteWorker(QThread):
         self,
         ipod_path: str,
         cache: LibraryCacheLike,
+        device_storage: DeviceStorageSnapshot | None = None,
     ):
         super().__init__()
         self._ipod_path = ipod_path
         self._cache = cache
+        self._device_storage = device_storage
         (
             self._tracks_data,
             self._playlists_data,
             self._artwork_sources,
             self._cache_revision,
+            self._database_generation,
         ) = _capture_cache_for_itunesdb_write(cache)
 
     def run(self) -> None:
@@ -2012,12 +2115,24 @@ class QuickWriteWorker(QThread):
                 tracks_data=self._tracks_data,
                 playlists_data=self._playlists_data,
                 artwork_sources=self._artwork_sources,
+                expected_database_generation=self._database_generation,
+                device_storage=self._device_storage,
             )
 
             if result.success and not self._artwork_sources:
-                result.newer_changes_pending = not self._cache.commit_quick_write_state(
-                    self._cache_revision
+                commit_with_generation = getattr(
+                    self._cache,
+                    "commit_quick_write_state_with_generation",
+                    None,
                 )
+                if callable(commit_with_generation):
+                    committed = commit_with_generation(
+                        self._cache_revision,
+                        result.database_generation,
+                    )
+                else:
+                    committed = self._cache.commit_quick_write_state(self._cache_revision)
+                result.newer_changes_pending = not committed
             else:
                 # Failed writes need disk authority restored. Artwork writes also
                 # change ArtworkDB references that the live track cache cannot
@@ -2036,11 +2151,18 @@ class PlaylistWriteWorker(QThread):
     finished_ok = pyqtSignal(int, str)
     failed = pyqtSignal(str)
 
-    def __init__(self, playlist: dict, ipod_path: str, cache: LibraryCacheLike):
+    def __init__(
+        self,
+        playlist: dict,
+        ipod_path: str,
+        cache: LibraryCacheLike,
+        device_storage: DeviceStorageSnapshot | None = None,
+    ):
         super().__init__()
         self._playlist = playlist
         self._ipod_path = ipod_path
         self._cache = cache
+        self._device_storage = device_storage
 
     def run(self) -> None:
         try:
@@ -2053,21 +2175,31 @@ class PlaylistWriteWorker(QThread):
                 self.failed.emit("No iPod database loaded.")
                 return
 
-            tracks_data, playlists_data, artwork_sources = (
-                _snapshot_cache_for_itunesdb_write(self._cache)
-            )
+            (
+                tracks_data,
+                playlists_data,
+                artwork_sources,
+                _revision,
+                database_generation,
+            ) = _capture_cache_for_itunesdb_write(self._cache)
             result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=tracks_data,
                 playlists_data=playlists_data,
                 artwork_sources=artwork_sources,
+                expected_database_generation=database_generation,
+                device_storage=self._device_storage,
             )
             if not result.success:
                 _reload_after_itunesdb_write(self._cache)
                 self.failed.emit(result.error or "Database write failed.")
                 return
 
-            _delete_imported_otg_files(self._ipod_path)
+            _delete_imported_otg_files(
+                self._ipod_path,
+                device_storage=self._device_storage,
+                expected_database_generation=result.database_generation,
+            )
             playlist_id = int(self._playlist.get("playlist_id", 0) or 0)
             matched_count = result.playlist_counts.get(playlist_id, 0)
             playlist_name = str(self._playlist.get("Title", "Untitled"))
@@ -2085,11 +2217,18 @@ class PlaylistDeleteWorker(QThread):
     finished_ok = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, playlist: dict, ipod_path: str, cache: LibraryCacheLike):
+    def __init__(
+        self,
+        playlist: dict,
+        ipod_path: str,
+        cache: LibraryCacheLike,
+        device_storage: DeviceStorageSnapshot | None = None,
+    ):
         super().__init__()
         self._playlist = playlist
         self._ipod_path = ipod_path
         self._cache = cache
+        self._device_storage = device_storage
 
     def run(self) -> None:
         try:
@@ -2102,14 +2241,20 @@ class PlaylistDeleteWorker(QThread):
                 self.failed.emit("No iPod database loaded.")
                 return
 
-            tracks_data, playlists_data, artwork_sources = (
-                _snapshot_cache_for_itunesdb_write(self._cache)
-            )
+            (
+                tracks_data,
+                playlists_data,
+                artwork_sources,
+                _revision,
+                database_generation,
+            ) = _capture_cache_for_itunesdb_write(self._cache)
             result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=tracks_data,
                 playlists_data=playlists_data,
                 artwork_sources=artwork_sources,
+                expected_database_generation=database_generation,
+                device_storage=self._device_storage,
             )
             if not result.success:
                 _reload_after_itunesdb_write(self._cache)
@@ -2137,12 +2282,14 @@ class PlaylistImportWorker(QThread):
         ipod_path: str,
         fpcalc_path: str,
         cache: LibraryCacheLike,
+        device_storage: DeviceStorageSnapshot | None = None,
     ):
         super().__init__()
         self._playlist_file = playlist_file
         self._ipod_path = ipod_path
         self._fpcalc_path = fpcalc_path or None
         self._cache = cache
+        self._device_storage = device_storage
 
     def run(self) -> None:
         cache_mutated = False
@@ -2184,9 +2331,7 @@ class PlaylistImportWorker(QThread):
 
             total = len(existing_paths)
             if not existing_paths:
-                self.failed.emit(
-                    "None of the playlist files could be found on this PC."
-                )
+                self.failed.emit("None of the playlist files could be found on this PC.")
                 return
 
             self.progress.emit(0, total, f"Scanning {total} tracks...")
@@ -2197,7 +2342,19 @@ class PlaylistImportWorker(QThread):
                 existing_track_match_db_track_id,
             )
 
+            generation_before_read = capture_database_generation(ipod_root)
             fresh_db = read_existing_database(ipod_root)
+            fresh_database_generation = capture_database_generation(ipod_root)
+            if generation_before_read != fresh_database_generation:
+                raise ExternalDatabaseChangeError("The iPod database changed while iOpenPod was reading it. Reload the iPod library and try the playlist import again.")
+            cached_generation_getter = getattr(
+                self._cache,
+                "get_database_generation",
+                None,
+            )
+            cached_database_generation = cached_generation_getter() if callable(cached_generation_getter) else None
+            if cached_database_generation is not None and cached_database_generation != fresh_database_generation:
+                raise ExternalDatabaseChangeError("The iPod database changed since its library was loaded. iOpenPod stopped before importing the playlist; reload the iPod library and try again.")
             fresh_tracks = list(fresh_db.get("tracks", []))
 
             playlist_db_track_ids: list[int] = []
@@ -2212,11 +2369,7 @@ class PlaylistImportWorker(QThread):
             to_add: list[SyncItem] = []
             if needs_fingerprint:
                 mapping = MappingManager(self._ipod_path).load()
-                valid_db_track_ids = {
-                    db_track_id
-                    for track in fresh_tracks
-                    if (db_track_id := _track_db_track_id(track))
-                }
+                valid_db_track_ids = {db_track_id for track in fresh_tracks if (db_track_id := _track_db_track_id(track))}
                 ipod_fingerprint_cache: dict[str, str | None] = {}
                 fingerprint_total = len(needs_fingerprint)
 
@@ -2226,18 +2379,13 @@ class PlaylistImportWorker(QThread):
                     self.progress.emit(
                         global_idx,
                         total,
-                        (
-                            f"Identifying ({idx + 1} of {fingerprint_total}): "
-                            f"{path.name}"
-                        ),
+                        (f"Identifying ({idx + 1} of {fingerprint_total}): {path.name}"),
                     )
 
-                    fingerprint, _fingerprint_status = (
-                        get_or_compute_fingerprint_with_status(
-                            raw_path,
-                            fpcalc_path=self._fpcalc_path,
-                            write_to_file=False,
-                        )
+                    fingerprint, _fingerprint_status = get_or_compute_fingerprint_with_status(
+                        raw_path,
+                        fpcalc_path=self._fpcalc_path,
+                        write_to_file=False,
                     )
                     if fingerprint is None:
                         skipped += 1
@@ -2313,6 +2461,8 @@ class PlaylistImportWorker(QThread):
                     ipod_path=self._ipod_path,
                     plan=plan,
                     mapping=fresh_mapping,
+                    device_storage=self._device_storage,
+                    expected_database_generation=fresh_database_generation,
                     progress_callback=_on_sync_progress,
                 )
                 result = SyncEngine().execute_plan(request)
@@ -2373,21 +2523,32 @@ class PlaylistImportWorker(QThread):
             self._cache.save_user_playlist(playlist)
             cache_mutated = True
 
-            tracks_data, playlists_data, artwork_sources = (
-                _snapshot_cache_for_itunesdb_write(self._cache)
-            )
+            (
+                tracks_data,
+                playlists_data,
+                artwork_sources,
+                _revision,
+                expected_database_generation,
+            ) = _capture_cache_for_itunesdb_write(self._cache)
             if to_add:
-                fresh_db = read_existing_database(Path(self._ipod_path))
+                generation_before_read = capture_database_generation(ipod_root)
+                fresh_db = read_existing_database(ipod_root)
+                expected_database_generation = capture_database_generation(ipod_root)
+                if generation_before_read != expected_database_generation:
+                    raise ExternalDatabaseChangeError("The iPod database changed while iOpenPod was refreshing the imported playlist. Reload the iPod and try again.")
                 tracks_data = copy.deepcopy(fresh_db.get("tracks", []))
                 playlists_data = copy.deepcopy(self._cache.get_playlists())
             elif already_present_db_track_ids:
                 tracks_data = copy.deepcopy(fresh_tracks)
                 playlists_data = copy.deepcopy(self._cache.get_playlists())
+                expected_database_generation = fresh_database_generation
             write_result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=tracks_data,
                 playlists_data=playlists_data,
                 artwork_sources=artwork_sources,
+                expected_database_generation=expected_database_generation,
+                device_storage=self._device_storage,
             )
             if not write_result.success:
                 _reload_after_itunesdb_write(self._cache)
@@ -2403,18 +2564,73 @@ class PlaylistImportWorker(QThread):
             )
         except Exception as exc:
             logger.exception("PlaylistImportWorker failed")
-            if cache_mutated:
+            if cache_mutated or isinstance(exc, DeviceWriteSafetyError):
                 _reload_after_itunesdb_write(self._cache)
             self.failed.emit(str(exc))
 
 
-def _delete_imported_otg_files(ipod_path: str) -> None:
-    try:
-        from iopenpod.itunesdb_parser.otg import delete_otg_files
+def _delete_imported_otg_files(
+    ipod_path: str,
+    *,
+    device_storage: DeviceStorageSnapshot | None = None,
+    expected_database_generation: DatabaseGeneration | None = None,
+) -> None:
+    """Durably remove imported OTG state from the same verified iPod volume."""
+    from iopenpod.device.durability import durable_unlink, flush_filesystem
+    from iopenpod.device.path_safety import resolve_device_path
+    from iopenpod.device.write_readiness import (
+        inspect_device_write_readiness,
+        revalidate_device_write_readiness,
+        volume_lock_key,
+    )
 
-        delete_otg_files(os.path.join(str(ipod_path), "iPod_Control", "iTunes"))
-    except Exception as exc:
-        logger.debug("OTG cleanup after playlist write failed: %s", exc)
+    profile = inspect_device_write_readiness(
+        ipod_path,
+        reported_volume_format=str(getattr(device_storage, "reported_volume_format", "") or ""),
+    )
+    current_volume_key = volume_lock_key(profile)
+    expected_volume_key = str(getattr(device_storage, "volume_identity_key", "") or "")
+    if expected_volume_key and current_volume_key != expected_volume_key:
+        raise DeviceWriteSafetyError("A different volume is mounted at the selected iPod path. iOpenPod stopped before removing imported On-The-Go playlist data.")
+
+    with DeviceWriteGuard(
+        ipod_path,
+        volume_key=current_volume_key,
+        expected_database_generation=expected_database_generation,
+    ) as write_guard:
+        retained = revalidate_device_write_readiness(
+            profile,
+            probe_case_sensitivity=True,
+        )
+        otg_path = resolve_device_path(
+            ipod_path,
+            "iPod_Control/iTunes/OTGPlaylistInfo",
+            allowed_subtree="iPod_Control/iTunes",
+        )
+        try:
+            otg_path.stat()
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise DeviceWriteSafetyError(f"Could not safely inspect imported On-The-Go playlist data: {exc}") from exc
+        revalidate_device_write_readiness(
+            retained,
+            probe_case_sensitivity=False,
+        )
+        write_guard.assert_database_unchanged()
+        otg_path = resolve_device_path(
+            ipod_path,
+            "iPod_Control/iTunes/OTGPlaylistInfo",
+            allowed_subtree="iPod_Control/iTunes",
+        )
+        durable_unlink(otg_path)
+        revalidate_device_write_readiness(
+            retained,
+            probe_case_sensitivity=False,
+        )
+        flush_ok, flush_message = flush_filesystem(ipod_path)
+        if not flush_ok:
+            raise DeviceWriteSafetyError(f"Imported On-The-Go playlist data was removed, but the filesystem durability barrier failed: {flush_message}")
 
 
 
@@ -2437,8 +2653,11 @@ class SyncExecuteWorker(QThread):
         backup_device_name: str = "",
         device_info: DeviceIdentitySnapshot | None = None,
         device_capabilities: DeviceCapabilitySnapshot | None = None,
+        device_storage: DeviceStorageSnapshot | None = None,
+        expected_database_generation: DatabaseGeneration | None = None,
         on_sync_complete: Callable[[], None] | None = None,
         sync_until_full: bool = False,
+        scrobble_only: bool = False,
     ):
         super().__init__()
         self.ipod_path = ipod_path
@@ -2449,11 +2668,15 @@ class SyncExecuteWorker(QThread):
         self.settings = settings
         self.device_info = device_info
         self.device_capabilities = device_capabilities
+        self.device_storage = device_storage
+        self.expected_database_generation = expected_database_generation
         self.on_sync_complete = on_sync_complete
         self.sync_until_full = bool(sync_until_full)
+        self.scrobble_only = bool(scrobble_only)
         self._give_up_scrobble_requested = False
         self._partial_save_event: threading.Event | None = None
         self._partial_save_decision: list[bool] = [True]
+        self._presync_snapshot_id = ""
 
     def respond_to_partial_save(self, save: bool) -> None:
         """Unblock the worker after the UI decides on a partial save."""
@@ -2481,12 +2704,10 @@ class SyncExecuteWorker(QThread):
             from iopenpod.sync.mapping import MappingManager
 
             settings = self.settings
-            tools = check_sync_tool_availability(settings)
-            if tools.has_missing:
-                raise RuntimeError(
-                    f"{tools.tool_list} required before sync.\n\n"
-                    f"{tools.install_help_text}"
-                )
+            if not self.scrobble_only:
+                tools = check_sync_tool_availability(settings)
+                if tools.has_missing:
+                    raise RuntimeError(f"{tools.tool_list} required before sync.\n\n{tools.install_help_text}")
 
             self._partial_save_event = threading.Event()
 
@@ -2504,7 +2725,7 @@ class SyncExecuteWorker(QThread):
                 evt.wait()
                 return self._partial_save_decision[0]
 
-            if not self.skip_backup:
+            if not self.skip_backup and not self.scrobble_only:
                 self._create_presync_backup(settings, SyncProgress)
 
             if getattr(self.plan, "mapping", None) is not None:
@@ -2540,28 +2761,46 @@ class SyncExecuteWorker(QThread):
                     transcode_cache_dir=settings.transcode_cache_dir or "",
                     max_cache_size_gb=settings.max_cache_size_gb,
                     dry_run=False,
-                    write_back_to_pc=settings.write_back_to_pc,
-                    compute_sound_check=settings.compute_sound_check,
-                    scrobble_on_sync=settings.scrobble_on_sync,
+                    write_back_to_pc=(
+                        False if self.scrobble_only else settings.write_back_to_pc
+                    ),
+                    compute_sound_check=(
+                        False
+                        if self.scrobble_only
+                        else settings.compute_sound_check
+                    ),
+                    scrobble_on_sync=(self.scrobble_only or settings.scrobble_on_sync),
                     listenbrainz_token=settings.listenbrainz_token or "",
                     listenbrainz_username=settings.listenbrainz_username or "",
                     lastfm_api_key=getattr(settings, "lastfm_api_key", ""),
                     lastfm_api_secret=getattr(settings, "lastfm_api_secret", ""),
                     lastfm_session_key=getattr(settings, "lastfm_session_key", ""),
                     lastfm_username=getattr(settings, "lastfm_username", ""),
-                    sync_until_full=self.sync_until_full,
+                    rockbox_metadata_support=(
+                        False
+                        if self.scrobble_only
+                        else bool(
+                            getattr(settings, "rockbox_metadata_support", False)
+                        )
+                    ),
+                    sync_until_full=(
+                        False if self.scrobble_only else self.sync_until_full
+                    ),
+                    scrobble_only=self.scrobble_only,
                     photo_sync_settings={
-                        "rotate_tall_photos_for_device": (
-                            settings.rotate_tall_photos_for_device
-                        ),
+                        "rotate_tall_photos_for_device": (settings.rotate_tall_photos_for_device),
                         "fit_photo_thumbnails": settings.fit_photo_thumbnails,
                     },
                 ),
                 device_info=self.device_info,
                 device_capabilities=self.device_capabilities,
+                device_storage=self.device_storage,
+                expected_database_generation=self.expected_database_generation,
                 progress_callback=on_engine_progress,
                 is_cancelled=self.isInterruptionRequested,
-                on_sync_complete=self.on_sync_complete,
+                on_sync_complete=(
+                    None if self.scrobble_only else self.on_sync_complete
+                ),
                 is_scrobble_cancelled=lambda: self._give_up_scrobble_requested,
                 on_cancel_with_partial=_on_cancel_with_partial,
             )
@@ -2569,24 +2808,34 @@ class SyncExecuteWorker(QThread):
             self.finished.emit(SyncEngine().execute_plan(engine_request))
         except Exception as exc:
             logger.exception("SyncExecuteWorker failed")
-            self.error.emit(str(exc))
+            message = str(exc)
+            if self._presync_snapshot_id:
+                message += f"\n\nA verified pre-sync backup remains available. Snapshot ID: {self._presync_snapshot_id}"
+            self.error.emit(message)
 
     def _create_presync_backup(self, settings: AppSettings, progress_type) -> None:
         try:
-            self.progress.emit(
-                progress_type("backup", 0, 0, message="Creating pre-sync backup...")
-            )
+            self.progress.emit(progress_type("backup", 0, 0, message="Creating pre-sync backup..."))
             from iopenpod.sync.backup_manager import (
                 BackupManager,
                 get_device_display_name,
                 get_device_identifier,
             )
 
-            device_id = get_device_identifier(self.ipod_path, self.device_info)
-            device_name = (
-                self.backup_device_name.strip()
-                or get_device_display_name(self.device_info)
+            volume_identity_key = str(
+                getattr(
+                    self.device_storage,
+                    "volume_identity_key",
+                    "",
+                )
+                or ""
             )
+            device_id = get_device_identifier(
+                self.ipod_path,
+                self.device_info,
+                volume_identity_key=volume_identity_key,
+            )
+            device_name = self.backup_device_name.strip() or get_device_display_name(self.device_info)
             ipod = self.device_info
             device_meta = {}
             if ipod:
@@ -2602,6 +2851,7 @@ class SyncExecuteWorker(QThread):
                 backup_dir=settings.backup_dir,
                 device_name=device_name,
                 device_meta=device_meta,
+                identity_is_stable=bool(str(getattr(ipod, "serial", "") or "").strip() or str(getattr(ipod, "firewire_guid", "") or "").strip()),
             )
 
             def on_backup_progress(prog) -> None:
@@ -2617,24 +2867,236 @@ class SyncExecuteWorker(QThread):
             snap = manager.create_backup(
                 ipod_path=self.ipod_path,
                 progress_callback=on_backup_progress,
-                is_cancelled=lambda: (
-                    self.isInterruptionRequested() or self._skip_backup_requested
-                ),
+                is_cancelled=lambda: self.isInterruptionRequested() or self._skip_backup_requested,
                 max_backups=settings.max_backups,
+                reason="pre_sync",
+                reported_volume_format=str(
+                    getattr(
+                        self.device_storage,
+                        "reported_volume_format",
+                        "",
+                    )
+                    or ""
+                ),
+                expected_volume_identity_key=volume_identity_key,
             )
 
             if snap is None and self.isInterruptionRequested():
                 return
-            if snap is None:
-                try:
-                    manager.garbage_collect()
-                except Exception as exc:
-                    logger.debug("Backup garbage collection failed: %s", exc)
-            else:
+            if snap is not None:
+                self._presync_snapshot_id = snap.id
                 logger.info("Pre-sync backup created: %s", snap.id)
+            elif not self._skip_backup_requested:
+                current_snapshots = manager.list_snapshots()
+                current = next(
+                    (snapshot for snapshot in current_snapshots if snapshot.is_valid),
+                    None,
+                )
+                if current is not None:
+                    self._presync_snapshot_id = current.id
         except Exception as exc:
-            logger.warning("Pre-sync backup failed (continuing sync): %s", exc)
+            logger.error("Pre-sync backup failed; sync stopped: %s", exc)
             logger.debug("Pre-sync backup failure details:\n%s", traceback.format_exc())
+            detail = str(exc).strip() or type(exc).__name__
+            raise DeviceWriteSafetyError(f"The pre-sync backup could not be completed safely, so iOpenPod stopped before changing the iPod.\n\nBackup error: {detail}\n\nResolve the backup error and try again, or explicitly choose Sync Without Backup.") from exc
+
+
+@dataclass(frozen=True)
+class DatabaseStorageTrimResult:
+    """The result of shortening optional database text fields."""
+
+    report: Any
+    changed_tracks: int
+    committed: bool
+    recovery: Any | None = None
+    proposed_database_bytes: bytes = b""
+
+
+class DatabaseStorageFieldInspectionWorker(QThread):
+    """Read field values off the GUI thread for the storage inspector."""
+
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        database_path: str,
+        ipod_path: str,
+        *,
+        mhod_type: int,
+        uses_sqlite_db: bool,
+        proposed_database_bytes: bytes = b"",
+    ) -> None:
+        super().__init__()
+        self._database_path = database_path
+        self._ipod_path = ipod_path
+        self._mhod_type = mhod_type
+        self._uses_sqlite_db = uses_sqlite_db
+        self._proposed_database_bytes = proposed_database_bytes
+
+    def run(self) -> None:
+        try:
+            from iopenpod.application.database_storage import (
+                analyze_database_field_values,
+                analyze_database_field_values_bytes,
+            )
+
+            if self._proposed_database_bytes:
+                inspection = analyze_database_field_values_bytes(
+                    self._proposed_database_bytes,
+                    self._mhod_type,
+                )
+            else:
+                inspection = analyze_database_field_values(
+                    self._database_path or None,
+                    self._mhod_type,
+                    ipod_root=self._ipod_path or None,
+                    uses_sqlite_db=self._uses_sqlite_db,
+                )
+            self.finished.emit(inspection)
+        except Exception as exc:
+            logger.exception("Database storage field inspection failed")
+            self.error.emit(str(exc))
+
+
+class DatabaseStorageTrimWorker(QThread):
+    """Rewrite an iPod database after shortening one optional MHOD field."""
+
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        ipod_path: str,
+        *,
+        mhod_type: int,
+        max_bytes: int,
+        uses_sqlite_db: bool,
+        recovery: Any | None = None,
+    ) -> None:
+        super().__init__()
+        self._ipod_path = Path(ipod_path)
+        self._mhod_type = mhod_type
+        self._max_bytes = max_bytes
+        self._uses_sqlite_db = uses_sqlite_db
+        self._recovery = recovery
+
+    def run(self) -> None:
+        try:
+            from iopenpod.application.database_storage import (
+                analyze_database_storage,
+                analyze_database_storage_bytes,
+                truncate_track_mhod_values,
+            )
+            from iopenpod.device.storage_safety import FileSizeLimitError
+            from iopenpod.sync.database_commit import write_database_commit
+            from iopenpod.sync.mapping import MappingManager
+
+            recovery = self._recovery
+            if recovery is None:
+                payload = self._current_database_payload()
+            else:
+                payload = recovery.payload
+
+            changed_tracks = truncate_track_mhod_values(
+                payload.all_tracks,
+                self._mhod_type,
+                self._max_bytes,
+            )
+            if changed_tracks == 0 and recovery is None:
+                self.finished.emit(
+                    DatabaseStorageTrimResult(
+                        report=self._current_report(analyze_database_storage),
+                        changed_tracks=0,
+                        committed=False,
+                    )
+                )
+                return
+
+            try:
+                written = write_database_commit(
+                    self._ipod_path,
+                    payload,
+                    protect_itunes=True,
+                )
+            except FileSizeLimitError as exc:
+                if recovery is None or not exc.proposed_database_bytes:
+                    raise
+                self.finished.emit(
+                    DatabaseStorageTrimResult(
+                        report=analyze_database_storage_bytes(
+                            exc.proposed_database_bytes,
+                            database_path=(exc.proposed_database_filename or "Proposed iTunesDB"),
+                        ),
+                        changed_tracks=changed_tracks,
+                        committed=False,
+                        recovery=recovery,
+                        proposed_database_bytes=exc.proposed_database_bytes,
+                    )
+                )
+                return
+
+            if not written:
+                raise RuntimeError("The trimmed database could not be written.")
+            if recovery is not None and MappingManager(self._ipod_path).save(recovery.mapping) is False:
+                raise DeviceWriteSafetyError("The trimmed database was written, but the iOpenPod mapping file could not be saved.")
+
+            self.finished.emit(
+                DatabaseStorageTrimResult(
+                    report=self._current_report(analyze_database_storage),
+                    changed_tracks=changed_tracks,
+                    committed=True,
+                )
+            )
+        except Exception as exc:
+            logger.exception("Database storage trimming failed")
+            self.error.emit(str(exc))
+
+    def _current_database_payload(self):
+        from iopenpod.sync._db_io import read_existing_database
+        from iopenpod.sync._playlist_builder import build_and_evaluate_playlists
+        from iopenpod.sync._track_conversion import track_dict_to_info
+        from iopenpod.sync.database_commit import DatabaseCommitPayload
+
+        existing = read_existing_database(self._ipod_path, raise_on_error=True)
+        tracks_data = existing.get("tracks", [])
+        tracks = [track_dict_to_info(track) for track in tracks_data]
+        (
+            master_name,
+            master_playlist_id,
+            playlists,
+            podcast_master_name,
+            podcast_master_playlist_id,
+            podcast_playlists,
+            smart_playlists,
+        ) = build_and_evaluate_playlists(
+            tracks_data,
+            existing.get("dataset2_standard_playlists", []),
+            existing.get("dataset3_podcast_playlists", []),
+            existing.get("dataset5_smart_playlists", []),
+            tracks,
+            time_context=existing.get("device_time_context"),
+        )
+        return DatabaseCommitPayload(
+            all_tracks=tracks,
+            playlists=playlists,
+            podcast_playlists=podcast_playlists,
+            smart_playlists=smart_playlists,
+            master_playlist_name=master_name,
+            master_playlist_id=master_playlist_id,
+            podcast_master_playlist_name=podcast_master_name,
+            podcast_master_playlist_id=podcast_master_playlist_id,
+        )
+
+    def _current_report(self, analyzer):
+        from iopenpod.device import resolve_itdb_path
+
+        database_path = resolve_itdb_path(str(self._ipod_path))
+        return analyzer(
+            database_path,
+            ipod_root=self._ipod_path,
+            uses_sqlite_db=self._uses_sqlite_db,
+        )
 
     def _resolve_subsonic_sources(self, settings: AppSettings) -> None:
         """Download any Subsonic tracks referenced via ``subsonic://`` URIs.
@@ -2758,11 +3220,7 @@ class DropScanWorker(QThread):
                     fresh_db = read_existing_database(Path(self._ipod_path))
                     fresh_tracks = list(fresh_db.get("tracks", []))
                     existing_standard_playlists = _fresh_standard_playlists(fresh_db)
-                    valid_db_track_ids = {
-                        db_track_id
-                        for track in fresh_tracks
-                        if (db_track_id := _track_db_track_id(track))
-                    }
+                    valid_db_track_ids = {db_track_id for track in fresh_tracks if (db_track_id := _track_db_track_id(track))}
                     mapping = MappingManager(self._ipod_path).load()
                 except Exception as exc:
                     logger.debug("Could not load iPod state for dropped files: %s", exc)
@@ -2795,18 +3253,16 @@ class DropScanWorker(QThread):
                                     get_or_compute_fingerprint_with_status,
                                 )
 
-                                fingerprint, _fingerprint_status = (
-                                    get_or_compute_fingerprint_with_status(
-                                        path,
-                                        write_to_file=False,
-                                    )
+                                fingerprint, _fingerprint_status = get_or_compute_fingerprint_with_status(
+                                    path,
+                                    write_to_file=False,
                                 )
                             except Exception as exc:
                                 logger.debug(
                                     "Could not fingerprint dropped file %s: %s",
                                     path,
                                     exc,
-                            )
+                                )
                             if fingerprint:
                                 existing_db_track_id = existing_track_match_db_track_id(
                                     Path(self._ipod_path),
@@ -2848,18 +3304,10 @@ class DropScanWorker(QThread):
                 )
                 for playlist in playlists_to_add
             ]
-            plan.playlists_to_add.extend(
-                playlist for playlist in playlist_updates if playlist.get("_isNew", True)
-            )
-            plan.playlists_to_edit.extend(
-                playlist for playlist in playlist_updates if not playlist.get("_isNew", True)
-            )
+            plan.playlists_to_add.extend(playlist for playlist in playlist_updates if playlist.get("_isNew", True))
+            plan.playlists_to_edit.extend(playlist for playlist in playlist_updates if not playlist.get("_isNew", True))
             plan.storage = StorageSummary(bytes_to_add=total_bytes)
-            if (
-                self._supports_photo
-                and self._photo_imports
-                and self._ipod_path
-            ):
+            if self._supports_photo and self._photo_imports and self._ipod_path:
                 from iopenpod.sync.photos import (
                     build_photo_library_from_device,
                     build_photo_sync_plan,

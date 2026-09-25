@@ -33,7 +33,11 @@ def parse_db(
 ) -> ParseResult:
     """Parse an MHBD (Database) chunk and its MHSD children."""
     mhbd = idb.read_fields(data, offset, "mhbd", header_length)
-    mhbd["children"], _ = parse_children(
+    mhbd["children"], child_end = parse_children(
         data, offset + header_length, mhbd["child_count"],
     )
-    return {"next_offset": offset + chunk_length, "data": mhbd}
+    return {
+        "next_offset": offset + chunk_length,
+        "data": mhbd,
+        "_body_end": child_end,
+    }

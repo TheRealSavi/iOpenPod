@@ -6,19 +6,19 @@ ALL available data sources and picks the best value for each field.
 
 Detection pipeline:
 
-  **Phase 1 — Hardware probing** (pure Win32, no file I/O, no subprocess):
-    1a. IOCTL_STORAGE_QUERY_PROPERTY → vendor, product, firmware, Apple serial
-    1b. PnP device tree walk (SetupAPI/cfgmgr32) → FireWire GUID, USB PID
-    1c. If both fail: silent fallback to WMI (PowerShell + registry)
+  **Phase 1 — Hardware probing** (platform adapter, read-only):
+    - Windows: storage descriptor/WMI → Apple serial; PnP → FireWire GUID/PID
+    - macOS: Disk Arbitration/ioreg → storage and USB identity
+    - Linux: cached VPD page 0x80/udev → Apple serial; sysfs → GUID/PID
 
   **Phase 2 — Filesystem probing** (file reads on iPod):
     2a. SysInfo / SysInfoExtended → ModelNumStr, FireWire GUID, serial
     2b. iTunesDB header → hashing_scheme (generation class)
 
   **Phase 3 — Model resolution** (pure computation, per-field priority):
-    - model_number:  SysInfo ModelNumStr → IPOD_MODELS  >  serial last-3 → IPOD_MODELS
+    - model_number:  SysInfo ModelNumStr → IPOD_MODELS  >  serial suffix → IPOD_MODELS
     - firewire_guid: device tree  >  SysInfoExtended  >  SysInfo  >  USB serial (always 16 hex chars on iPods)
-    - serial:        SysInfo pszSerialNumber (Apple serial)  >  IOCTL (only if non-GUID)
+    - serial:        live product serial  >  SysInfoExtended  >  SysInfo
     - firmware:      IOCTL revision  >  SysInfo visibleBuildID
     - usb_pid:       device tree USB parent  >  WMI fallback
     - model_family:  IPOD_MODELS  >  USB PID table (with disk-size sanity check)  >  hashing_scheme
@@ -26,7 +26,7 @@ Detection pipeline:
   **Phase 4 — Inline VPD** (macOS only, for incomplete identification):
     If model_number is still unknown after Phase 3, query the iPod's
     firmware via IOKit SCSI VPD (~1 s, no root, disk stays mounted)
-    to get the Apple serial.  Serial-last-3 lookup resolves exact model
+    to get the Apple serial. Serial-suffix lookup resolves the exact model
     (family, generation, capacity, color).  Writes SysInfo to the iPod
     so that subsequent scans never need VPD again.
 """
@@ -54,8 +54,16 @@ from .diagnostic_log import (
     format_fields,
     format_sources,
 )
+from .filesystem import (
+    ITUNESDB_PLATFORM_MAC,
+    detect_filesystem_type,
+    filesystem_itunesdb_platform,
+)
+from .filesystem_profile import inspect_filesystem_profile
 from .info import DeviceInfo
+from .linux_identity import probe_linux_identity
 from .models import USB_PID_TO_MODEL
+from .write_readiness import volume_lock_key
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +74,8 @@ _PROBE_META_FIELDS: tuple[tuple[str, str], ...] = (
     ("_sysinfo_extended_keys", "sie_keys"),
     ("_sysinfo_extended_regex_fallback", "sie_regex"),
     ("hashing_scheme", "hash_scheme"),
+    ("filesystem_type", "fs_type"),
+    ("volume_identity_key", "volume_identity"),
 )
 
 # Prevents console windows from flashing on Windows during subprocess calls
@@ -795,64 +805,9 @@ def _linux_usb_info_from_bus_scan(base_disk: str) -> dict:
 
 
 def _probe_hardware_linux(mount_path: str) -> dict:
-    """
-    Linux hardware probing via sysfs / udevadm / findmnt.
+    """Compatibility wrapper around the Linux identity adapter."""
 
-    Traces the mount point → block device → USB device through multiple
-    strategies to extract the USB PID, serial number, and FireWire GUID.
-
-    Strategies (tried in order for each sub-task):
-
-    Block device lookup:
-      1. ``findmnt`` — handles paths with spaces and bind mounts
-      2. ``/proc/mounts`` with octal-escape decoding
-      3. ``lsblk --json``
-
-    USB identity extraction:
-      1. ``udevadm info`` on the partition device
-      2. ``udevadm info`` on the parent disk device (Arch/CachyOS may not
-         propagate USB properties to partition devices)
-      3. sysfs walk — manual traversal from block device to USB ancestor
-      4. USB bus scan — walk ``/sys/bus/usb/devices/`` for Apple devices
-         matching this block device
-    """
-    import re as _re
-
-    result: dict = {}
-
-    try:
-        device = _linux_find_block_device(mount_path)
-        if not device:
-            logger.debug("Linux probe: could not resolve block device for %s", mount_path)
-            return result
-
-        # Get the base disk name (e.g., sdb from /dev/sdb1)
-        dev_name = os.path.basename(device)
-        base_disk = _re.sub(r"\d+$", "", dev_name)  # sdb1 → sdb
-
-        # ── Strategy 1: udevadm info on partition ─────────────────
-        result = _linux_usb_info_from_udevadm(device)
-
-        # ── Strategy 2: udevadm info on parent disk ──────────────
-        #   On Arch-based distros (CachyOS, Manjaro, EndeavourOS), udev
-        #   rules may not propagate USB identity properties (ID_VENDOR_ID,
-        #   ID_MODEL_ID, ID_SERIAL_SHORT) from the USB device to its
-        #   partition children.  Querying the parent disk directly works.
-        if not result and base_disk != dev_name:
-            result = _linux_usb_info_from_udevadm(f"/dev/{base_disk}")
-
-        # ── Strategy 3: sysfs walk ────────────────────────────────
-        if not result:
-            result = _linux_usb_info_from_sysfs(base_disk)
-
-        # ── Strategy 4: USB bus scan (last resort) ────────────────
-        if not result:
-            result = _linux_usb_info_from_bus_scan(base_disk)
-
-    except Exception as e:
-        logger.debug("Linux hardware probe failed: %s", e)
-
-    return result
+    return probe_linux_identity(mount_path)
 
 
 def _identify_via_usb_for_drive(drive_letter: str) -> dict | None:
@@ -1666,8 +1621,8 @@ def _probe_hardware(mount_path: str, mount_name: str) -> dict:
             logger.debug("Hardware probe (macOS): %s", result)
 
     else:
-        result = _probe_hardware_linux(mount_path)
-        _hw_method = "sysfs"
+        result = probe_linux_identity(mount_path)
+        _hw_method = "linux_identity"
         if result:
             logger.debug("Hardware probe (Linux): %s", result)
 
@@ -1676,16 +1631,18 @@ def _probe_hardware(mount_path: str, mount_name: str) -> dict:
         sources = result.setdefault("_sources", {})
         if result.get("firewire_guid"):
             # On Windows, FW GUID comes from device tree walk specifically
-            sources["firewire_guid"] = (
-                "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method
+            sources.setdefault(
+                "firewire_guid",
+                "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method,
             )
         if result.get("serial"):
-            sources["serial"] = _hw_method
+            sources.setdefault("serial", _hw_method)
         if result.get("firmware"):
-            sources["firmware"] = _hw_method
+            sources.setdefault("firmware", _hw_method)
         if result.get("usb_pid"):
-            sources["usb_pid"] = (
-                "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method
+            sources.setdefault(
+                "usb_pid",
+                "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method,
             )
 
     logger.debug(
@@ -1711,6 +1668,46 @@ def _probe_filesystem(ipod_path: str) -> dict:
     """
     result: dict = {}
 
+    filesystem_type = detect_filesystem_type(ipod_path)
+    try:
+        filesystem_profile = inspect_filesystem_profile(ipod_path)
+    except Exception as exc:
+        filesystem_profile = None
+        logger.warning(
+            "Could not capture scan-time iPod volume identity: mount=%s error=%s",
+            ipod_path,
+            exc,
+        )
+    if filesystem_profile is not None:
+        filesystem_type = filesystem_type or filesystem_profile.filesystem_type
+        if filesystem_profile.identity.is_complete:
+            result["volume_identity_key"] = volume_lock_key(filesystem_profile)
+            result.setdefault("_sources", {})["volume_identity_key"] = (
+                "mounted_volume_identity"
+            )
+            logger.info(
+                "iPod mounted volume identity captured: mount=%s identity=%s",
+                ipod_path,
+                result["volume_identity_key"],
+            )
+    if filesystem_type:
+        logger.info(
+            "iPod mounted filesystem detected: mount=%s filesystem=%s",
+            ipod_path,
+            filesystem_type,
+        )
+        if (
+            sys.platform.startswith("linux")
+            and filesystem_itunesdb_platform(filesystem_type) == ITUNESDB_PLATFORM_MAC
+        ):
+            logger.warning(
+                "Mac-formatted iPod filesystem detected on Linux: "
+                "mount=%s filesystem=%s. Linux may mount journaled HFS+ "
+                "read-only; verify write support before syncing.",
+                ipod_path,
+                filesystem_type,
+            )
+
     # ── SysInfo / SysInfoExtended ──────────────────────────────────────
     sysinfo = _identify_via_sysinfo(ipod_path)
     if sysinfo:
@@ -1727,6 +1724,10 @@ def _probe_filesystem(ipod_path: str) -> dict:
         if hash_info.get("model_family"):
             result["hash_model_family"] = hash_info["model_family"]
             result["hash_generation"] = hash_info.get("generation", "")
+
+    if filesystem_type:
+        result["filesystem_type"] = filesystem_type
+        result.setdefault("_sources", {})["filesystem_type"] = "mounted_filesystem"
 
     logger.debug(
         "Filesystem probe result: mount=%s meta=[%s] identity=[%s] caps=[%s] "
@@ -1788,7 +1789,9 @@ def _resolve_model(
         "scsi_product",
         "scsi_revision",
         "connected_bus",
-        "volume_format",
+        "reported_volume_format",
+        "filesystem_type",
+        "volume_identity_key",
         "db_version",
         "shadow_db_version",
         "uses_sqlite_db",
@@ -1830,17 +1833,31 @@ def _resolve_model(
         resolved["firewire_guid"] = ""
 
     # ── Serial (Apple serial number, NOT the USB/FireWire GUID) ────────
-    # Only the filesystem layer (SysInfo pszSerialNumber) provides the real
-    # Apple serial.  Hardware probing returns the USB serial which is always
-    # the FireWire GUID on iPods — that's stored in firewire_guid above.
+    # Live hardware evidence wins over cached SysInfo. Platform probes keep
+    # the USB descriptor serial separate as firewire_guid, so hw["serial"] is
+    # specifically Apple product-serial evidence.
     fs_serial = fs.get("serial", "")
-    hw_serial = hw.get("serial", "")  # rare: non-GUID serial from IOCTL
-    if fs_serial and not fs_serial.startswith("RAND"):
-        resolved["serial"] = fs_serial
-        sources["serial"] = fs_sources.get("serial", "sysinfo")
-    elif hw_serial and not hw_serial.startswith("RAND"):
+    hw_serial = hw.get("serial", "")
+    if hw_serial and not hw_serial.startswith("RAND"):
         resolved["serial"] = hw_serial
         sources["serial"] = hw_sources.get("serial", "hardware")
+        if (
+            fs_serial
+            and not fs_serial.startswith("RAND")
+            and str(fs_serial).casefold() != str(hw_serial).casefold()
+        ):
+            conflicts.append({
+                "field": "serial",
+                "winner": sources["serial"],
+                "rejected_source": fs_sources.get("serial", "sysinfo"),
+                "rejected_value": fs_serial,
+                "reason": (
+                    "cached product serial conflicts with live hardware serial"
+                ),
+            })
+    elif fs_serial and not fs_serial.startswith("RAND"):
+        resolved["serial"] = fs_serial
+        sources["serial"] = fs_sources.get("serial", "sysinfo")
     else:
         resolved["serial"] = ""
 
@@ -1867,7 +1884,7 @@ def _resolve_model(
     #
     # Layers 1 and 2 are evaluated together so they can cross-check each
     # other.  When they agree the SysInfo result is used (preserving its
-    # provenance).  When they DISAGREE the serial wins: the last-3 suffix
+    # provenance). When they DISAGREE the serial suffix wins: it is a
     # is a manufacturer-encoded identifier that is much harder to corrupt
     # than the NVRAM-stored ModelNumStr, which can be wrong after a botched
     # restore, firmware flash, or logic-board swap (e.g. a device whose
@@ -1879,7 +1896,7 @@ def _resolve_model(
     if sysinfo_model:
         sysinfo_mi = get_model_info(sysinfo_model)
 
-    # Layer 2: Serial last-3-char → IPOD_MODELS
+    # Layer 2: Longest matching serial suffix → IPOD_MODELS
     serial = resolved["serial"]
     serial_info: dict | None = None
     if serial:
@@ -1919,10 +1936,10 @@ def _resolve_model(
         pid_gen,
     ):
         logger.warning(
-            "_resolve_model: serial last-3 '%s' resolves to %s %s, "
+            "_resolve_model: serial suffix '%s' resolves to %s %s, "
             "which conflicts with live USB PID identity %s %s; ignoring "
             "cached serial-derived model",
-            serial[-3:],
+            serial_info.get("serial_suffix", "?"),
             serial_info.get("model_family", "?"),
             serial_info.get("generation", "?"),
             pid_family,
@@ -1944,10 +1961,10 @@ def _resolve_model(
         if sr_model and sr_model != sysinfo_model:
             logger.warning(
                 "_resolve_model: SysInfo ModelNumStr %s (%s %s) conflicts "
-                "with serial last-3 '%s' → %s (%s %s); preferring serial "
+                "with serial suffix '%s' → %s (%s %s); preferring serial "
                 "(USB PID family: %s)",
                 sysinfo_model, sysinfo_mi[0], sysinfo_mi[1],
-                serial[-3:], sr_model,
+                serial_info.get("serial_suffix", "?"), sr_model,
                 serial_info.get("model_family", "?"),
                 serial_info.get("generation", "?"),
                 hw.get("model_family", "unknown"),
@@ -2153,7 +2170,7 @@ def _extract_ipod_name(ipod_path: str) -> str:
     return ""
 
 
-def _ipod_name_from_data(data: bytes) -> str:
+def _ipod_name_from_data(data: bytes | bytearray) -> str:
     """Extract iPod name from a fully in-memory (decompressed) database."""
     import io
     return _ipod_name_from_stream(io.BytesIO(data))
@@ -2310,8 +2327,8 @@ def _identify_via_hashing_scheme(ipod_path: str) -> dict | None:
 
 
 def _identify_via_serial_lookup(serial: str) -> dict | None:
-    """Look up model from serial number's last 3 characters."""
-    from .lookup import lookup_by_serial
+    """Look up a model from the serial's longest published suffix."""
+    from .lookup import lookup_by_serial, match_serial_suffix
 
     result = lookup_by_serial(serial)
     if not result:
@@ -2324,6 +2341,7 @@ def _identify_via_serial_lookup(serial: str) -> dict | None:
         "generation": info[1],
         "capacity": info[2],
         "color": info[3],
+        "serial_suffix": match_serial_suffix(serial) or "",
     }
 
 
@@ -2365,6 +2383,10 @@ def _try_vpd_identification(ipod: DeviceInfo) -> None:
     )
     if result is None:
         return
+
+    vpd_raw = result.get("vpd_info") or {}
+    if vpd_raw:
+        ipod.raw_identity_evidence.setdefault("vpd", []).append(dict(vpd_raw))
 
     # Apply resolved fields
     if result["model_number"]:
@@ -2467,6 +2489,11 @@ def _identify_ipod_mount(mount_path: str, display_name: str) -> DeviceInfo:
     ipod.serial = resolved.get("serial", "")
     ipod.firmware = resolved.get("firmware", "")
     ipod.usb_pid = resolved.get("usb_pid", 0)
+    # _probe_hardware is a current, mount-anchored observation on every
+    # platform.  Keep it process-local so persisted provenance cannot imitate
+    # fresh hardware evidence on a later scan.
+    if hw.get("usb_pid"):
+        ipod._live_usb_pid = int(hw["usb_pid"])
     ipod.hashing_scheme = resolved.get("hashing_scheme", -1)
     ipod.identification_method = resolved.get("identification_method", "filesystem")
     # `DeviceInfo.raw_identity_evidence` expects lists of evidence dicts;
@@ -2489,7 +2516,9 @@ def _identify_ipod_mount(mount_path: str, display_name: str) -> DeviceInfo:
         "scsi_product",
         "scsi_revision",
         "connected_bus",
-        "volume_format",
+        "reported_volume_format",
+        "filesystem_type",
+        "volume_identity_key",
         "db_version",
         "shadow_db_version",
         "uses_sqlite_db",
@@ -2533,10 +2562,13 @@ def _identify_ipod_mount(mount_path: str, display_name: str) -> DeviceInfo:
 
     ipod_data = ipod.__dict__
     logger.info(
-        "iPod identified: mount=%s display=%s identity=[%s] caps=[%s] "
-        "method=%s checksum=%s hash_scheme=%s sources=[%s] conflicts=[%s]",
+        "iPod identified: mount=%s display=%s filesystem=%s "
+        "reported_volume_format=%s identity=[%s] caps=[%s] method=%s "
+        "checksum=%s hash_scheme=%s sources=[%s] conflicts=[%s]",
         ipod.path,
         ipod.display_name,
+        ipod.filesystem_type or "unknown",
+        ipod.reported_volume_format or "unknown",
         format_fields(ipod_data, IDENTITY_FIELDS),
         format_fields(ipod_data, CAPABILITY_FIELDS, include_false=True),
         ipod.identification_method,
@@ -2585,12 +2617,12 @@ def scan_for_ipods() -> list[DeviceInfo]:
         SysInfo / SysInfoExtended + iTunesDB header.
 
       **Phase 3 — Model resolution** (per-field priority merge):
-        SysInfo ModelNumStr > serial last-3 > USB PID > hashing_scheme.
+        SysInfo ModelNumStr > serial suffix > USB PID > hashing_scheme.
 
       **Phase 4 — Inline VPD** (macOS only, for incomplete identification):
         If model_number is still unknown after Phase 3, query the iPod's
         firmware via IOKit SCSI VPD to get the Apple serial, then resolve
-        via serial-last-3 lookup.  Writes SysInfo so this only runs once.
+        via serial-suffix lookup. Writes SysInfo so this only runs once.
 
       **Phase 5 — Enrich** (fills derived fields: checksum, artwork, etc.)
 

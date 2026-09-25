@@ -26,7 +26,12 @@ import logging
 from collections import Counter
 from typing import Any
 
-from ._parsing import ParseResult, read_generic_header
+from ._parsing import (
+    ParseResult,
+    raw_chunk_metadata,
+    raw_chunk_preservation_enabled,
+    read_generic_header,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +81,10 @@ def parse_children(
     for _ in range(child_count):
         parsed, chunk_type = parse_chunk(data, current)
         current = parsed["next_offset"]
-        children.append({"chunk_type": chunk_type, "data": parsed["data"]})
+        child = {"chunk_type": chunk_type, "data": parsed["data"]}
+        if "_raw_chunk" in parsed:
+            child["_raw_chunk"] = parsed["_raw_chunk"]
+        children.append(child)
     return children, current
 
 
@@ -95,7 +103,11 @@ def _parse_child_list(
         ``{"next_offset": int, "data": list[...]}``
     """
     children, next_offset = parse_children(data, offset + header_length, child_count)
-    return {"next_offset": next_offset, "data": children}
+    return {
+        "next_offset": next_offset,
+        "data": children,
+        "_body_end": next_offset,
+    }
 
 
 # ── Top-level dispatcher ────────────────────────────────────────────
@@ -155,13 +167,37 @@ def parse_chunk(
             # a byte length.  For unknown types we naively treat it as a
             # length — the worst case is skipping too little, which the
             # parent's child loop will catch on the next iteration.
-            return {
+            result = {
                 "next_offset": offset + length_or_children,
                 "data": {
                     "chunk_type": chunk_type,
                     "header": bytes(data[offset:offset + header_length]),
                     "body": bytes(data[offset + header_length:offset + length_or_children]),
                 },
-            }, chunk_type
+                "_body_end": offset + header_length,
+            }
+            if raw_chunk_preservation_enabled():
+                result["_raw_chunk"] = raw_chunk_metadata(
+                    data,
+                    offset=offset,
+                    header_length=header_length,
+                    declared_length_or_child_count=length_or_children,
+                    end_offset=result["next_offset"],
+                    parsed_body_end=result.pop("_body_end"),
+                )
+            else:
+                result.pop("_body_end")
+            return result, chunk_type
+
+    parsed_body_end = result.pop("_body_end", result["next_offset"])
+    if raw_chunk_preservation_enabled():
+        result["_raw_chunk"] = raw_chunk_metadata(
+            data,
+            offset=offset,
+            header_length=header_length,
+            declared_length_or_child_count=length_or_children,
+            end_offset=result["next_offset"],
+            parsed_body_end=parsed_body_end,
+        )
 
     return result, chunk_type

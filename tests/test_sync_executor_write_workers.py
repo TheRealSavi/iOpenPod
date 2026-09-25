@@ -7,7 +7,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
+import pytest
+
+import iopenpod.sync.sync_executor as sync_executor_module
+from iopenpod.device.filesystem_profile import FilesystemProfile
+from iopenpod.device.write_guard import DatabaseGeneration, DeviceWriteSafetyError
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.sync.contracts import (
     SYNC_DB_OVERHEAD_BYTES,
@@ -16,10 +22,16 @@ from iopenpod.sync.contracts import (
     SyncAction,
     SyncItem,
     SyncPlan,
+    SyncRequest,
     sync_plan_required_free_bytes,
 )
+from iopenpod.sync.database_commit import DatabaseCommitPayload
 from iopenpod.sync.mapping import MappingFile
 from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.rockbox_metadata import (
+    RockboxArtworkDatabaseState,
+    RockboxMetadataValidationMarker,
+)
 from iopenpod.sync.sync_executor import SyncExecutor, _ExecutionLifecycle, _SyncContext
 from iopenpod.sync.sync_playlist_files import normalize_sync_playlist_path, sync_playlist_file_id
 from iopenpod.sync.transcoder import TranscodeResult, TranscodeTarget, resolve_transcode_plan
@@ -111,6 +123,271 @@ def test_commit_file_mutations_writes_normal_database(monkeypatch, tmp_path: Pat
     assert not ctx.result.partial_save
 
 
+def test_rockbox_metadata_pass_defers_durability_to_sync_flush(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    received: dict[str, object] = {}
+
+    def record_metadata_pass(*_args, **kwargs):
+        received.update(kwargs)
+        return SimpleNamespace(updated=0, failures=())
+
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        record_metadata_pass,
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(all_tracks=[]),
+    )
+
+    assert received["defer_durability"] is True
+    assert received["revalidate_interval_seconds"] == 5.0
+
+
+def test_lyrics_metadata_pass_targets_written_and_lyrics_changed_tracks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    new_track = TrackInfo(
+        db_track_id=1,
+        title="New track",
+        location=":iPod_Control:Music:F00:new.mp3",
+        lyrics="New lyrics",
+    )
+    re_copied_track = TrackInfo(
+        db_track_id=2,
+        title="Re-copied track",
+        location=":iPod_Control:Music:F00:recopied.mp3",
+        lyrics="Existing lyrics",
+    )
+    lyrics_changed_track = TrackInfo(
+        db_track_id=3,
+        title="Cleared lyrics",
+        location=":iPod_Control:Music:F00:cleared.mp3",
+    )
+    untouched_track = TrackInfo(
+        db_track_id=4,
+        title="Untouched track",
+        location=":iPod_Control:Music:F00:untouched.mp3",
+        lyrics="Do not visit",
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            to_update_file=[SyncItem(action=SyncAction.UPDATE_FILE, db_track_id=2)],
+            to_update_metadata=[
+                SyncItem(
+                    action=SyncAction.UPDATE_METADATA,
+                    db_track_id=3,
+                    metadata_changes={"lyrics": (None, "Old lyrics")},
+                )
+            ],
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    ctx.new_tracks = [new_track]
+    received: dict[str, object] = {}
+
+    def write_lyrics(_root, tracks, **kwargs):
+        received["track_ids"] = [track.db_track_id for track in tracks]
+        received.update(kwargs)
+        return SimpleNamespace(updated=3, failures=())
+
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_lyrics_metadata_library",
+        write_lyrics,
+    )
+
+    executor._execute_lyrics_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(
+            all_tracks=[
+                new_track,
+                re_copied_track,
+                lyrics_changed_track,
+                untouched_track,
+            ]
+        ),
+    )
+
+    assert received["track_ids"] == [1, 2, 3]
+    assert received["defer_durability"] is True
+    assert ctx.result.lyrics_metadata_updated == 3
+
+
+def test_rockbox_metadata_progress_is_rate_limited(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    progress_events = []
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=progress_events.append,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+
+    def emit_metadata_progress(*_args, **kwargs):
+        callback = kwargs["progress_callback"]
+        callback(1, 10, "first.mp3")
+        callback(2, 10, "second.mp3")
+        callback(10, 10, "last.mp3")
+        return SimpleNamespace(updated=0, failures=())
+
+    monotonic_values = iter((0.0, 0.01, 0.02))
+    monkeypatch.setattr(sync_executor_module.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        emit_metadata_progress,
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(all_tracks=[TrackInfo(title="Track", location=":iPod_Control:Music:F00:track.mp3")]),
+    )
+
+    assert [(event.current, event.total) for event in progress_events] == [
+        (0, 1),
+        (1, 10),
+        (10, 10),
+    ]
+
+
+def test_rockbox_metadata_pass_persists_validation_markers(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    mapping = MappingFile()
+    artwork_state = RockboxArtworkDatabaseState(exists=False)
+    existing_marker = RockboxMetadataValidationMarker(
+        db_track_id=11,
+        file_size=1_024,
+        mtime_ns=1_000,
+        metadata_signature="before",
+    )
+    mapping.set_rockbox_metadata_validation(
+        {
+            11: {
+                "file_size": existing_marker.file_size,
+                "mtime_ns": existing_marker.mtime_ns,
+                "metadata_signature": existing_marker.metadata_signature,
+            },
+        },
+        {"exists": False, "file_size": 0, "mtime_ns": 0},
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=mapping,
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    returned_marker = RockboxMetadataValidationMarker(
+        db_track_id=11,
+        file_size=2_048,
+        mtime_ns=2_000,
+        metadata_signature="after",
+    )
+    received: dict[str, object] = {}
+
+    def record_metadata_pass(*_args, **kwargs):
+        received.update(kwargs)
+        return SimpleNamespace(
+            updated=0,
+            failures=(),
+            validation_markers={11: returned_marker},
+            validation_artwork_state=artwork_state,
+        )
+
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        record_metadata_pass,
+    )
+    track = TrackInfo(
+        title="Track",
+        location=":iPod_Control:Music:F00:track.mp3",
+        db_track_id=11,
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(all_tracks=[track]),
+    )
+
+    assert received["validation_markers"] == {11: existing_marker}
+    assert received["validation_artwork_state"] == artwork_state
+    assert ctx.mapping.rockbox_metadata_markers[11]["metadata_signature"] == "after"
+
+
+def test_rockbox_metadata_pass_forces_planned_track_updates(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            to_update_metadata=[
+                SyncItem(action=SyncAction.UPDATE_METADATA, db_track_id=11),
+            ],
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    received: dict[str, object] = {}
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        lambda *_args, **kwargs: (
+            received.update(kwargs)
+            or SimpleNamespace(updated=0, failures=())
+        ),
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(
+            all_tracks=[
+                TrackInfo(
+                    title="Track",
+                    location=":iPod_Control:Music:F00:track.mp3",
+                    db_track_id=11,
+                ),
+            ],
+        ),
+    )
+
+    assert received["force_write_track_ids"] == {11}
+    assert received["preserve_embedded_artwork_track_ids"] == {11}
+
+
 def test_execution_lifecycle_runs_named_phases_in_order(
     monkeypatch,
     tmp_path: Path,
@@ -148,11 +425,281 @@ def test_execution_lifecycle_runs_named_phases_in_order(
         order.append("commit")
 
     monkeypatch.setattr(executor, "_run_database_commit_phase", fake_commit)
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.flush_filesystem",
+        lambda _mount_path: (True, "flushed"),
+    )
 
     executor._run_execution_lifecycle(ctx, lifecycle)
 
     assert order == ["prepare", "preflight", "mutate", "commit"]
     assert ctx.result.success
+
+
+def test_full_sync_holds_one_writer_guard_for_the_execution_lifecycle(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    expected_generation = DatabaseGeneration("iTunesDB", True, digest="loaded")
+    guard_arguments: dict[str, object] = {}
+
+    class FakeGuard:
+        def __init__(self, ipod_path, **kwargs) -> None:
+            assert Path(ipod_path) == tmp_path
+            guard_arguments.update(kwargs)
+
+        def __enter__(self):
+            events.append("guard-enter")
+            return self
+
+        def __exit__(self, *_args) -> None:
+            events.append("guard-exit")
+
+    executor = SyncExecutor(
+        tmp_path,
+        expected_database_generation=expected_generation,
+    )
+    profile = SimpleNamespace()
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.inspect_device_write_readiness",
+        lambda *_args, **_kwargs: profile,
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.volume_lock_key",
+        lambda _profile: "test-volume",
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.revalidate_device_write_readiness",
+        lambda retained, **_kwargs: retained,
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.DeviceWriteGuard",
+        FakeGuard,
+        raising=False,
+    )
+
+    def fake_lifecycle(ctx, _lifecycle) -> None:
+        assert isinstance(ctx.write_guard, FakeGuard)
+        events.append("lifecycle")
+
+    monkeypatch.setattr(executor, "_run_execution_lifecycle", fake_lifecycle)
+
+    executor.execute_request(
+        SyncRequest(
+            plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+            mapping=MappingFile(),
+        )
+    )
+
+    assert events == ["guard-enter", "lifecycle", "guard-exit"]
+    assert guard_arguments["expected_database_generation"] == expected_generation
+
+
+def test_full_sync_reports_filesystem_safety_failure_before_lifecycle(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    lifecycle_calls: list[bool] = []
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.inspect_device_write_readiness",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            DeviceWriteSafetyError("mounted read-only")
+        ),
+    )
+    monkeypatch.setattr(
+        executor,
+        "_run_execution_lifecycle",
+        lambda *_args: lifecycle_calls.append(True),
+    )
+
+    result = executor.execute_request(
+        SyncRequest(
+            plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+            mapping=MappingFile(),
+        )
+    )
+
+    assert result.success is False
+    assert result.errors == [("filesystem_safety", "mounted read-only")]
+    assert lifecycle_calls == []
+
+
+def test_full_sync_rejects_volume_changed_since_worker_was_created(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(
+        tmp_path,
+        device_storage=SimpleNamespace(
+            reported_volume_format="FAT32",
+            volume_identity_key="original-volume",
+        ),
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.inspect_device_write_readiness",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.volume_lock_key",
+        lambda _profile: "replacement-volume",
+    )
+
+    result = executor.execute_request(
+        SyncRequest(
+            plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+            mapping=MappingFile(),
+        )
+    )
+
+    assert result.success is False
+    assert result.errors[0][0] == "filesystem_safety"
+    assert "different volume" in result.errors[0][1]
+
+
+def test_execution_lifecycle_rejects_success_when_device_flush_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    lifecycle = _ExecutionLifecycle(on_cancel_with_partial=None)
+
+    monkeypatch.setattr(executor, "_prepare_execution_plan", lambda _ctx: True)
+    monkeypatch.setattr(executor, "_run_preflight_phase", lambda _ctx: True)
+    monkeypatch.setattr(executor, "_run_file_mutation_phase", lambda _ctx: None)
+    monkeypatch.setattr(executor, "_run_database_commit_phase", lambda *_args: None)
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.flush_filesystem",
+        lambda _mount_path: (False, "filesystem flush timed out"),
+    )
+
+    executor._run_execution_lifecycle(ctx, lifecycle)
+
+    assert ctx.result.success is False
+    assert ctx.result.errors == [
+        ("filesystem_flush", "filesystem flush timed out")
+    ]
+
+
+def test_execution_lifecycle_does_not_flush_a_stale_mount_path(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    executor._filesystem_profile = cast(FilesystemProfile, SimpleNamespace())
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    flushes: list[Path] = []
+    monkeypatch.setattr(executor, "_prepare_execution_plan", lambda _ctx: True)
+    monkeypatch.setattr(executor, "_run_preflight_phase", lambda _ctx: True)
+    monkeypatch.setattr(executor, "_run_file_mutation_phase", lambda _ctx: None)
+    monkeypatch.setattr(executor, "_run_database_commit_phase", lambda *_args: None)
+    monkeypatch.setattr(
+        executor,
+        "_revalidate_device_write_readiness",
+        lambda: (_ for _ in ()).throw(DeviceWriteSafetyError("volume changed")),
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.flush_filesystem",
+        lambda path: (flushes.append(Path(path)) or True, "flushed"),
+    )
+
+    executor._run_execution_lifecycle(
+        ctx,
+        _ExecutionLifecycle(on_cancel_with_partial=None),
+    )
+
+    assert flushes == []
+    assert ctx.result.success is False
+    assert ctx.result.errors[0][0] == "filesystem_flush"
+    assert "skipped" in ctx.result.errors[0][1]
+
+
+def test_execution_lifecycle_flushes_after_a_file_stage_safety_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    flushes: list[Path] = []
+    monkeypatch.setattr(executor, "_prepare_execution_plan", lambda _ctx: True)
+    monkeypatch.setattr(executor, "_run_preflight_phase", lambda _ctx: True)
+    monkeypatch.setattr(
+        executor,
+        "_run_file_mutation_phase",
+        lambda _ctx: (_ for _ in ()).throw(
+            DeviceWriteSafetyError("volume changed")
+        ),
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.flush_filesystem",
+        lambda path: (flushes.append(Path(path)) or True, "flushed"),
+    )
+
+    with pytest.raises(DeviceWriteSafetyError, match="volume changed"):
+        executor._run_execution_lifecycle(
+            ctx,
+            _ExecutionLifecycle(on_cancel_with_partial=None),
+        )
+
+    assert flushes == [tmp_path]
+
+
+def test_sync_complete_callback_runs_only_after_committed_writes_are_flushed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    order: list[str] = []
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+        on_sync_complete=lambda: order.append("complete"),
+    )
+    lifecycle = _ExecutionLifecycle(on_cancel_with_partial=None)
+
+    monkeypatch.setattr(executor, "_prepare_execution_plan", lambda _ctx: True)
+    monkeypatch.setattr(executor, "_run_preflight_phase", lambda _ctx: True)
+    monkeypatch.setattr(executor, "_run_file_mutation_phase", lambda _ctx: None)
+
+    def fake_commit(commit_ctx, _lifecycle) -> None:
+        commit_ctx.database_committed = True
+
+    monkeypatch.setattr(executor, "_run_database_commit_phase", fake_commit)
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.flush_filesystem",
+        lambda _mount_path: (order.append("flush") or True, "flushed"),
+    )
+
+    executor._run_execution_lifecycle(ctx, lifecycle)
+
+    assert order == ["flush", "complete"]
 
 
 def test_prepare_execution_plan_rejects_structurally_invalid_plan(
@@ -237,6 +784,22 @@ def test_sync_plan_required_free_bytes_excludes_deferred_removal_credit() -> Non
     )
 
 
+def test_sync_plan_required_free_bytes_rounds_each_new_file_to_cluster_size() -> None:
+    plan = SyncPlan(
+        to_add=[
+            SyncItem(action=SyncAction.ADD_TO_IPOD, estimated_size=1),
+            SyncItem(action=SyncAction.ADD_TO_IPOD, estimated_size=1),
+        ],
+        storage=StorageSummary(bytes_to_add=2),
+    )
+
+    assert sync_plan_required_free_bytes(
+        plan,
+        db_overhead_bytes=0,
+        allocation_unit_size=4096,
+    ) == 8192
+
+
 def test_preflight_blocks_over_capacity_without_until_full(
     monkeypatch,
     tmp_path: Path,
@@ -266,6 +829,44 @@ def test_preflight_blocks_over_capacity_without_until_full(
     assert not executor._preflight_checks(ctx)
     assert ctx.result.errors[0][0] == "storage"
     assert "Not enough space on iPod" in ctx.result.errors[0][1]
+
+
+def test_preflight_fails_closed_when_free_space_cannot_be_read(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(storage=StorageSummary(bytes_to_add=1)),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.shutil.disk_usage",
+        lambda _path: (_ for _ in ()).throw(OSError(errno.EIO, "device I/O error")),
+    )
+
+    assert executor._preflight_checks(ctx) is False
+    assert ctx.result.success is False
+    assert ctx.result.errors[0][0] == "filesystem_safety"
+    assert "free space" in ctx.result.errors[0][1]
+
+
+def test_per_file_space_guard_fails_closed_when_volume_state_is_unreadable(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.shutil.disk_usage",
+        lambda _path: (_ for _ in ()).throw(OSError(errno.ENOENT, "disconnected")),
+    )
+
+    with pytest.raises(DeviceWriteSafetyError, match="free space"):
+        executor._ensure_device_has_space_for_write(1, 1)
 
 
 def test_preflight_allows_over_capacity_with_until_full(
@@ -326,10 +927,98 @@ def test_preflight_blocks_read_only_or_permission_denied_mount(
     assert not ctx.result.success
     assert ctx.result.errors[0][0] == "read-only"
     message = ctx.result.errors[0][1]
-    assert "iOpenPod cannot write to this iPod" in message
-    assert str(tmp_path) in message
     assert "Permission denied" in message
-    assert "fsck.vfat" in message
+    assert "fsck" not in message
+
+
+def test_preflight_rejects_file_above_ipod_or_filesystem_limit(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "iPod_Control" / "iTunes").mkdir(parents=True)
+    executor = SyncExecutor(
+        tmp_path,
+        device_storage=SimpleNamespace(device_max_file_size_bytes=4),
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            to_add=[
+                SyncItem(
+                    action=SyncAction.ADD_TO_IPOD,
+                    estimated_size=5,
+                    description="oversized.flac",
+                )
+            ],
+            storage=StorageSummary(bytes_to_add=5),
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.shutil.disk_usage",
+        lambda _path: SimpleNamespace(total=10**9, used=0, free=10**9),
+    )
+
+    assert executor._preflight_checks(ctx) is False
+    assert ctx.result.errors[0][0] == "filesystem_safety"
+    assert "oversized.flac" in ctx.result.errors[0][1]
+
+
+def test_media_copy_flushes_destination_before_reporting_success(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.mp3"
+    destination = tmp_path / "ipod" / "song.mp3"
+    source.write_bytes(b"audio payload")
+    destination.parent.mkdir()
+    flushed: list[Path] = []
+
+    def record_flush(file, *, full: bool = False) -> None:
+        assert full is False
+        flushed.append(Path(file.name))
+
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.flush_written_file",
+        record_flush,
+    )
+
+    SyncExecutor._copy_file_chunked(source, destination)
+
+    assert destination.read_bytes() == b"audio payload"
+    assert flushed == [destination]
+
+
+def test_media_copy_creates_device_directory_only_after_revalidation(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    ipod_root.mkdir()
+    source = tmp_path / "source.mp3"
+    source.write_bytes(b"audio payload")
+    destination = ipod_root / "iPod_Control" / "Music" / "F00" / "song.mp3"
+    executor = SyncExecutor(ipod_root, max_workers=1, max_device_write_workers=1)
+    executor._filesystem_profile = cast(FilesystemProfile, SimpleNamespace())
+    checks: list[bool] = []
+
+    monkeypatch.setattr(
+        executor,
+        "_revalidate_device_write_readiness",
+        lambda: checks.append(destination.parent.exists()),
+    )
+    monkeypatch.setattr(
+        "iopenpod.sync.sync_executor.shutil.disk_usage",
+        lambda _path: SimpleNamespace(total=10**9, used=0, free=10**9),
+    )
+
+    executor._copy_file_to_device(source, destination)
+
+    assert checks == [False]
+    assert destination.read_bytes() == b"audio payload"
 
 
 def test_until_full_copy_uses_actual_staged_size_instead_of_estimate(
@@ -423,6 +1112,33 @@ def test_loaded_database_validation_accepts_remove_target_by_location(
 
     assert executor._validate_loaded_database_targets(ctx)
     assert ctx.result.success
+
+
+def test_loaded_database_validation_rejects_unsafe_remove_path_before_mutation(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    item = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        db_track_id=7,
+        ipod_track={"Location": str(tmp_path.parent / "host-file.mp3")},
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(to_remove=[item]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    ctx.tracks_by_db_track_id[7] = TrackInfo(
+        db_track_id=7,
+        location=str(tmp_path.parent / "host-file.mp3"),
+        title="Unsafe",
+    )
+
+    assert executor._validate_loaded_database_targets(ctx) is False
+    assert ctx.result.errors[0][0] == "unsafe_device_path_to_remove"
 
 
 def test_metadata_update_repairs_video_duration(tmp_path: Path) -> None:
@@ -993,6 +1709,97 @@ def test_direct_copy_writes_metadata_stripped_payload_without_touching_source(
     assert source.read_bytes() == b"source-with-tags"
     assert copied_from and copied_from[0] != source
     assert not copied_from[0].exists()
+
+
+def test_direct_video_copy_strips_embedded_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.m4v"
+    ipod_root.mkdir()
+    source.write_bytes(b"video-with-tags")
+
+    executor = SyncExecutor(
+        ipod_root,
+        max_workers=1,
+        max_device_write_workers=1,
+    )
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.COPY,
+    )
+
+    stripped_inputs: list[Path] = []
+
+    def fake_strip_metadata(path: Path) -> bool:
+        assert path != source
+        stripped_inputs.append(path)
+        path.write_bytes(b"stripped-video")
+        return True
+
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
+
+    success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
+
+    assert success is True
+    assert err == ""
+    assert was_transcoded is False
+    assert ipod_path is not None
+    assert ipod_path.read_bytes() == b"stripped-video"
+    assert source.read_bytes() == b"video-with-tags"
+    assert stripped_inputs and not stripped_inputs[0].exists()
+
+
+def test_transcoded_video_strips_embedded_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.mkv"
+    transcoded = tmp_path / "out.m4v"
+    ipod_root.mkdir()
+    source.write_bytes(b"source-video")
+    transcoded.write_bytes(b"transcoded-video-with-tags")
+
+    executor = SyncExecutor(
+        ipod_root,
+        max_workers=1,
+        max_device_write_workers=1,
+    )
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.VIDEO_H264,
+    )
+
+    def fake_transcode(*_args, **_kwargs):
+        return TranscodeResult(
+            success=True,
+            source_path=source,
+            output_path=transcoded,
+            target_format=TranscodeTarget.VIDEO_H264,
+            was_transcoded=True,
+        )
+
+    stripped_inputs: list[Path] = []
+
+    def fake_strip_metadata(path: Path) -> bool:
+        assert path != transcoded
+        stripped_inputs.append(path)
+        path.write_bytes(b"stripped-transcoded-video")
+        return True
+
+    monkeypatch.setattr("iopenpod.sync.sync_executor.transcode", fake_transcode)
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
+
+    success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
+
+    assert success is True
+    assert err == ""
+    assert was_transcoded is True
+    assert ipod_path is not None
+    assert ipod_path.read_bytes() == b"stripped-transcoded-video"
+    assert stripped_inputs and not stripped_inputs[0].exists()
 
 
 def test_transcoded_file_is_stripped_before_device_write(

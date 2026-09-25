@@ -34,7 +34,7 @@ from PyQt6.QtWidgets import (
 
 from iopenpod.sync_progress_stages import PIPELINE_STAGE_ROWS
 
-from ..styles import FONT_FAMILY, Colors, Metrics
+from ..styles import FONT_FAMILY, Metrics, paint_css
 
 # ── Pure data model ─────────────────────────────────────────────────────
 
@@ -241,23 +241,29 @@ class _StageRow(QFrame):
 def _row_colors(status: StageStatus) -> tuple[str, str, bool]:
     """Return ``(glyph_color, label_color, bold_label)`` for a status."""
     if status == StageStatus.CURRENT:
-        return Colors.ACCENT, Colors.TEXT_PRIMARY, True
+        return paint_css("control.primary.fill"), paint_css("text.primary"), True
     if status == StageStatus.DONE:
-        return Colors.SUCCESS, Colors.TEXT_SECONDARY, False
+        return paint_css("status.success.text"), paint_css("text.secondary"), False
     if status == StageStatus.FAILED:
-        return Colors.DANGER, Colors.TEXT_PRIMARY, True
+        return paint_css("status.danger.text"), paint_css("text.primary"), True
     if status == StageStatus.SKIPPED:
-        return Colors.TEXT_DISABLED, Colors.TEXT_DISABLED, False
+        return paint_css("text.disabled"), paint_css("text.disabled"), False
     # PENDING
-    return Colors.TEXT_TERTIARY, Colors.TEXT_TERTIARY, False
+    return paint_css("text.tertiary"), paint_css("text.tertiary"), False
 
 
 def _row_frame_style(status: StageStatus) -> tuple[str, str]:
     """Return ``(background, left_border)`` for a row frame."""
     if status == StageStatus.CURRENT:
-        return Colors.ACCENT_MUTED, Colors.ACCENT
+        return (
+            paint_css("sync.stage.current_fill"),
+            paint_css("sync.stage.current_border"),
+        )
     if status == StageStatus.FAILED:
-        return Colors.DANGER_DIM, Colors.DANGER
+        return (
+            paint_css("sync.stage.failed_fill"),
+            paint_css("sync.stage.failed_border"),
+        )
     return "transparent", "transparent"
 
 
@@ -282,7 +288,12 @@ class SyncStagesPanel(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("syncStagesPanel")
-        self.setStyleSheet(f"#syncStagesPanel {{ background: {Colors.SURFACE}; border-right: 1px solid {Colors.BORDER_SUBTLE};}}")
+        self.setStyleSheet(
+            "#syncStagesPanel {"
+            f"background: {paint_css('surface.default')};"
+            f"border-right: 1px solid {paint_css('border.subtle')};"
+            "}"
+        )
 
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(20, 24, 20, 24)
@@ -290,7 +301,9 @@ class SyncStagesPanel(QWidget):
 
         self._title = QLabel("Sync steps", self)
         self._title.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
-        self._title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        self._title.setStyleSheet(
+            f"color: {paint_css('text.primary')}; background: transparent;"
+        )
         self._outer.addWidget(self._title)
 
         self._rows_container = QWidget(self)

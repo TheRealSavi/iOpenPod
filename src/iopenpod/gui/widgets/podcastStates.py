@@ -18,10 +18,10 @@ from ..glyphs import glyph_pixmap
 from ..styles import (
     FONT_FAMILY,
     MONO_FONT_FAMILY,
-    Colors,
     Metrics,
     accent_btn_css,
     make_label,
+    paint_css,
     progress_bar_css,
 )
 
@@ -62,7 +62,7 @@ class PodcastStatePanel(QFrame):
         self._message = make_label(
             "",
             size=Metrics.FONT_SM if compact else Metrics.FONT_LG,
-            style=f"color: {Colors.TEXT_SECONDARY}; background: transparent;",
+            style=f"color: {paint_css('text.secondary')}; background: transparent;",
             wrap=True,
         )
         self._message.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -78,9 +78,9 @@ class PodcastStatePanel(QFrame):
         self._code.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._code.setStyleSheet(f"""
             QLabel {{
-                color: {Colors.TEXT_SECONDARY};
-                background: {Colors.SURFACE_RAISED};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                color: {paint_css('text.secondary')};
+                background: {paint_css('surface.raised')};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 4px 9px;
             }}
@@ -94,7 +94,7 @@ class PodcastStatePanel(QFrame):
         self._progress.setTextVisible(False)
         self._progress.setRange(0, 0)
         self._progress.setStyleSheet(
-            progress_bar_css(height=4, radius=2, bg=Colors.SURFACE)
+            progress_bar_css(height=4, radius=2, bg=paint_css("surface.inset"))
         )
         self._progress.hide()
         layout.addWidget(self._progress, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -110,7 +110,7 @@ class PodcastStatePanel(QFrame):
         layout.addStretch()
 
     def show_loading(self, title: str, message: str) -> None:
-        self._set_icon("broadcast", Colors.ACCENT)
+        self._set_icon("broadcast", paint_css("control.primary.fill"))
         self._title.setText(title)
         self._set_message(message)
         self._code.hide()
@@ -118,7 +118,7 @@ class PodcastStatePanel(QFrame):
         self._action.hide()
 
     def show_empty(self, title: str, message: str, *, glyph: str = "broadcast") -> None:
-        self._set_icon(glyph, Colors.TEXT_TERTIARY)
+        self._set_icon(glyph, paint_css("text.tertiary"))
         self._title.setText(title)
         self._set_message(message)
         self._code.hide()
@@ -133,7 +133,7 @@ class PodcastStatePanel(QFrame):
         code: str = "",
         action_text: str = "Try Again",
     ) -> None:
-        self._set_icon("wifi-no-connection", Colors.WARNING)
+        self._set_icon("wifi-no-connection", paint_css("status.warning.text"))
         self._title.setText(title)
         self._set_message(message)
         self._code.setText(code)

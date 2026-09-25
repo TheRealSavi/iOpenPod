@@ -8,6 +8,10 @@ import logging
 import os
 import threading
 from importlib import import_module
+from pathlib import Path
+
+from iopenpod.device.metadata_write import guarded_device_metadata_session
+from iopenpod.device.write_guard import DeviceWriteSafetyError
 
 from .settings_persistence import load_app_settings, save_app_settings
 from .settings_schema import (
@@ -46,6 +50,7 @@ def _copy_device_settings_state(state: DeviceSettingsState) -> DeviceSettingsSta
         use_global_settings=bool(state.use_global_settings),
         exists=bool(state.exists),
         path=state.path,
+        load_error=state.load_error,
     )
 
 
@@ -168,22 +173,59 @@ class SettingsRuntime:
     ) -> DeviceSettingsState:
         base = _copy_settings(base_settings or self._get_global_settings_unlocked())
         path = device_settings_path(ipod_root)
-        if not ipod_root or not os.path.exists(path):
+        if not ipod_root:
             return DeviceSettingsState(settings=base, exists=False, path=path)
 
         try:
             with open(path, encoding="utf-8") as file:
                 raw = json.load(file)
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-            return DeviceSettingsState(settings=base, exists=True, path=path)
+        except FileNotFoundError:
+            return DeviceSettingsState(settings=base, exists=False, path=path)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+            return DeviceSettingsState(
+                settings=base,
+                exists=True,
+                path=path,
+                load_error=(
+                    "The existing on-iPod settings file could not be read "
+                    f"safely: {exc}"
+                ),
+            )
 
         if not isinstance(raw, dict):
-            return DeviceSettingsState(settings=base, exists=True, path=path)
+            return DeviceSettingsState(
+                settings=base,
+                exists=True,
+                path=path,
+                load_error=(
+                    "The existing on-iPod settings file is malformed: its "
+                    "top-level value is not an object."
+                ),
+            )
 
-        use_global = bool(raw.get("use_global_settings", False))
+        raw_use_global = raw.get("use_global_settings", False)
+        if not isinstance(raw_use_global, bool):
+            return DeviceSettingsState(
+                settings=base,
+                exists=True,
+                path=path,
+                load_error=(
+                    "The existing on-iPod settings file is malformed: "
+                    "use_global_settings is not true or false."
+                ),
+            )
+        use_global = raw_use_global
         data = raw.get("settings", raw)
         if not isinstance(data, dict):
-            data = {}
+            return DeviceSettingsState(
+                settings=base,
+                exists=True,
+                path=path,
+                load_error=(
+                    "The existing on-iPod settings file is malformed: settings "
+                    "is not an object."
+                ),
+            )
         stored_key_hint = str(raw.get("device_key_hint", "") or "")
 
         decoded = dict(data)
@@ -303,10 +345,10 @@ class SettingsRuntime:
         settings: AppSettings,
         use_global_settings: bool = False,
         device_key: str = "",
+        reported_volume_format: str = "",
+        expected_volume_identity_key: str = "",
     ) -> None:
         path = device_settings_path(ipod_root)
-        directory = os.path.dirname(path)
-        os.makedirs(directory, exist_ok=True)
         payload = {
             "version": 1,
             "use_global_settings": bool(use_global_settings),
@@ -314,17 +356,34 @@ class SettingsRuntime:
         }
         if device_key and device_key != "unknown-device":
             payload["device_key_hint"] = device_key
-        tmp = path + ".tmp"
-        try:
-            with open(tmp, "w", encoding="utf-8") as file:
-                json.dump(payload, file, indent=2, ensure_ascii=False)
-            os.replace(tmp, path)
-        except Exception:
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-            raise
+        existing_state = self._load_device_settings_unlocked(
+            ipod_root,
+            device_key,
+            settings,
+        )
+        if existing_state.load_error:
+            raise DeviceWriteSafetyError(
+                f"{existing_state.load_error} iOpenPod did not overwrite it."
+            )
+        with guarded_device_metadata_session(
+            ipod_root,
+            reported_volume_format=reported_volume_format,
+            expected_volume_identity_key=expected_volume_identity_key,
+        ) as session:
+            existing_state = self._load_device_settings_unlocked(
+                ipod_root,
+                device_key,
+                settings,
+            )
+            if existing_state.load_error:
+                raise DeviceWriteSafetyError(
+                    f"{existing_state.load_error} iOpenPod did not overwrite it."
+                )
+            session.write_text_atomic(
+                Path(DEVICE_SETTINGS_RELATIVE),
+                json.dumps(payload, indent=2, ensure_ascii=False),
+                allowed_subtree=Path("iPod_Control") / "iOpenPod",
+            )
 
         _clear_transcoder_caches()
         with self._lock:
@@ -352,6 +411,8 @@ class SettingsRuntime:
         ipod_root: str,
         device_key: str = "",
         use_global_settings: bool = False,
+        reported_volume_format: str = "",
+        expected_volume_identity_key: str = "",
     ) -> AppSettings:
         """Replace the on-iPod settings file with current global device settings."""
 
@@ -361,6 +422,8 @@ class SettingsRuntime:
             settings,
             use_global_settings=use_global_settings,
             device_key=device_key,
+            reported_volume_format=reported_volume_format,
+            expected_volume_identity_key=expected_volume_identity_key,
         )
         return settings
 
@@ -438,8 +501,9 @@ class SettingsRuntime:
                     self._active_device_state = DeviceSettingsState(
                         settings=refreshed,
                         use_global_settings=state.use_global_settings,
-                        exists=state.exists,
-                        path=state.path,
+                    exists=state.exists,
+                    path=state.path,
+                    load_error=state.load_error,
                     )
                     self._effective_settings = refreshed
                     effective = refreshed

@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import iopenpod.sync.transcoder as transcoder_module
 from iopenpod.podcasts.downloader import (
     DownloadedEpisodeInfo,
     download_and_probe_episode,
@@ -14,6 +15,11 @@ from iopenpod.podcasts.podcast_sync import episode_to_pc_track
 from iopenpod.podcasts.subscription_store import SubscriptionStore
 from iopenpod.sync.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from iopenpod.sync.sync_executor import SyncExecutor
+from iopenpod.sync.transcoder import (
+    AudioProperties,
+    TranscodeOptions,
+    TranscodeTarget,
+)
 
 
 def test_episode_to_pc_track_reuses_predicted_download_and_hashes_folder_art(
@@ -114,10 +120,13 @@ def test_sync_podcast_download_progress_uses_bytes(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    downloaded = tmp_path / "episode.mp3"
+    ipod_root = tmp_path / "ipod"
+    host_cache = tmp_path / "cache"
+    host_cache.mkdir()
+    downloaded = host_cache / "episode.mp3"
     pc_track = SimpleNamespace(
         is_podcast=True,
-        path=str(tmp_path / "missing.mp3"),
+        path=str(host_cache / "missing.mp3"),
         podcast_enclosure_url="https://example.test/episode.mp3",
         podcast_url="",
         title="Episode",
@@ -182,7 +191,7 @@ def test_sync_podcast_download_progress_uses_bytes(
         fake_download_and_probe_episode,
     )
 
-    SyncExecutor(tmp_path)._download_podcast_episodes(cast(Any, _Ctx()))
+    SyncExecutor(ipod_root)._download_podcast_episodes(cast(Any, _Ctx()))
 
     byte_events = [
         event for event in progress_events
@@ -194,3 +203,107 @@ def test_sync_podcast_download_progress_uses_bytes(
     assert byte_events[-1][5]["size_progress"] == 1.0
     assert pc_track.path == str(downloaded)
     assert pc_track.art_hash == "hash"
+
+
+def test_downloaded_podcast_replans_with_spoken_word_smart_quality(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    host_cache = tmp_path / "cache"
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        author="Host",
+    )
+    episode = PodcastEpisode(
+        guid="episode-1",
+        title="Episode 1",
+        audio_url="https://example.test/episode-1.mp3",
+        size_bytes=16_000,
+    )
+    store = SubscriptionStore(
+        str(ipod_root),
+        download_cache_dir=str(host_cache),
+    )
+    pc_track = episode_to_pc_track(episode, feed, store)
+    item = SyncItem(
+        action=SyncAction.ADD_TO_IPOD,
+        pc_track=pc_track,
+        estimated_size=episode.size_bytes,
+        description=episode.title,
+    )
+
+    class _Ctx:
+        plan = SyncPlan(to_add=[item])
+
+        def progress(self, *_args, **_kwargs) -> None:
+            pass
+
+        def cancelled(self) -> bool:
+            return False
+
+    downloaded = host_cache / "episode-1.mp3"
+
+    def fake_download_and_probe_episode(**_kwargs):
+        downloaded.parent.mkdir(parents=True, exist_ok=True)
+        downloaded.write_bytes(b"x" * episode.size_bytes)
+        return DownloadedEpisodeInfo(
+            path=str(downloaded),
+            size=episode.size_bytes,
+            mtime=2.0,
+            extension=".mp3",
+        )
+
+    monkeypatch.setattr(
+        "iopenpod.podcasts.downloader.download_and_probe_episode",
+        fake_download_and_probe_episode,
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "probe_audio",
+        lambda _path: AudioProperties(
+            sample_rate=44_100,
+            bits_per_sample=0,
+            channels=2,
+            codec_name="mp3",
+            probe_ok=True,
+        ),
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "available_aac_encoders",
+        lambda _path=None: {"aac"},
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "_best_aac_encoder",
+        lambda _path=None: "aac",
+    )
+    executor = SyncExecutor(ipod_root)
+    executor.transcode_options = TranscodeOptions(
+        always_encode_lossy=True,
+        lossy_encoder="aac",
+        music_lossy_cbr_bitrate=256,
+        spoken_lossy_cbr_bitrate=64,
+        smart_quality_by_type=True,
+        mono_for_spoken=True,
+    )
+
+    executor._download_podcast_episodes(cast(Any, _Ctx()))
+
+    assert item.transcode_plan is not None
+    assert item.transcode_plan.target == TranscodeTarget.AAC
+    assert item.transcode_plan.effective_quality == "spoken"
+    assert item.transcode_plan.cache_bitrate_kbps == 64
+    assert item.transcode_plan.is_spoken is True
+    assert item.transcode_plan.mono_for_spoken is True
+
+    item.transcode_plan = None
+    fallback_plan = executor._transcode_plan_for_item(
+        item,
+        Path(pc_track.path),
+    )
+    assert fallback_plan.target == TranscodeTarget.AAC
+    assert fallback_plan.effective_quality == "spoken"
+    assert fallback_plan.cache_bitrate_kbps == 64

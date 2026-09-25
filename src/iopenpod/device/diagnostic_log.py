@@ -15,11 +15,13 @@ IDENTITY_FIELDS: tuple[FieldSpec, ...] = (
     ("capacity", "capacity"),
     ("color", "color"),
     ("serial", "serial"),
+    ("serial_rejected_reason", "serial_rejected"),
     ("firewire_guid", "fwguid"),
     ("firmware", "fw"),
     ("usb_vid", "vid"),
     ("usb_pid", "pid"),
     ("usb_serial", "usb_serial"),
+    ("vpd_serial", "vpd_unit_serial"),
     ("scsi_vendor", "scsi_vendor"),
     ("scsi_product", "scsi_product"),
     ("scsi_revision", "scsi_rev"),
@@ -53,6 +55,7 @@ SOURCE_FIELDS: tuple[FieldSpec, ...] = (
     ("color", "color"),
     ("usb_pid", "pid"),
     ("firmware", "fw"),
+    ("filesystem_type", "filesystem"),
 )
 
 _HEX_WIDTHS: dict[str, int] = {

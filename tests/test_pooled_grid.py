@@ -4,7 +4,7 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PyQt6.QtWidgets import QApplication, QScrollArea
 
-from iopenpod.gui.styles import Metrics
+from iopenpod.gui.styles import Metrics, paint_css
 from iopenpod.gui.widgets.gridItem import GridItem
 from iopenpod.gui.widgets.pooledGrid import GridItemModel, PooledGridView
 
@@ -55,7 +55,7 @@ def test_grid_caption_geometry_tracks_accessibility_font_scale() -> None:
         Metrics.apply_font_scale("125%")
         Metrics.apply_grid_item_scale("large")
 
-        assert Metrics.FONT_GRID_TITLE == 16
+        assert Metrics.FONT_GRID_TITLE == 18
         assert Metrics.FONT_GRID_SUBTITLE == 15
         assert Metrics.GRID_TEXT_HEIGHT == 28
         assert Metrics.GRID_SUBTITLE_HEIGHT == 25
@@ -129,7 +129,8 @@ def test_shared_grid_item_treats_null_pixmap_as_photo_placeholder(qtbot):
         )
     )
 
-    assert "background: rgba(" in item.image_label.styleSheet()
+    assert paint_css("grid.art.placeholder_fill") in item.image_label.styleSheet()
+    assert "rgba(" not in item.image_label.styleSheet()
 
 
 def test_shared_pooled_grid_owns_keyed_selection_checking_and_context(qtbot):

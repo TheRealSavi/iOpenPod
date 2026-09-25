@@ -1,0 +1,18 @@
+# Install: uv run pre-commit install
+# Requires: uv sync  (adds pre-commit to the dev group)
+
+repos:
+  - repo: local
+    hooks:
+      - id: dev-lint
+        name: ruff check (dev.py)
+        entry: uv run python scripts/dev.py lint
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      # - id: dev-arch
+      #   name: architecture checks (dev.py)
+      #   entry: uv run python scripts/dev.py arch
+      #   language: system
+      #   pass_filenames: false

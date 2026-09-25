@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..styles import Colors, Metrics, btn_css, make_scroll_area
+from ..styles import Metrics, btn_css, make_scroll_area, paint_css
 
 log = logging.getLogger(__name__)
 
@@ -387,28 +387,28 @@ class UnifyArtworkDialog(QDialog):
         self.setStyleSheet(
             f"""
             QDialog {{
-                background: {Colors.DIALOG_BG};
+                background: {paint_css('modal.background')};
             }}
             QLabel#dialogTitle {{
-                color: {Colors.TEXT_PRIMARY};
+                color: {paint_css('text.primary')};
             }}
             QLabel#dialogSubtitle {{
-                color: {Colors.TEXT_SECONDARY};
+                color: {paint_css('text.secondary')};
             }}
             QToolButton#artworkChoice {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('surface.default')};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_PRIMARY};
+                color: {paint_css('text.primary')};
                 padding: 10px;
             }}
             QToolButton#artworkChoice:hover {{
-                background: {Colors.SURFACE_HOVER};
-                border-color: {Colors.BORDER};
+                background: {paint_css('surface.hover')};
+                border-color: {paint_css('border.default')};
             }}
             QToolButton#artworkChoice:pressed {{
-                background: {Colors.SURFACE_ACTIVE};
-                border-color: {Colors.ACCENT_BORDER};
+                background: {paint_css('surface.active')};
+                border-color: {paint_css('focus.border')};
             }}
             """
         )

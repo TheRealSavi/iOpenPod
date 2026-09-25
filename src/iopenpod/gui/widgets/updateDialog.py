@@ -30,10 +30,10 @@ from iopenpod.gui.auto_updater import (
 from iopenpod.gui.styles import (
     FONT_FAMILY,
     MONO_FONT_FAMILY,
-    Colors,
     Metrics,
     button_css,
     link_btn_css,
+    paint_css,
     panel_css,
 )
 
@@ -42,9 +42,11 @@ def _plain_label(
     text: str,
     *,
     size: int = Metrics.FONT_MD,
-    color: str = Colors.TEXT_SECONDARY,
+    color: str | None = None,
     weight: QFont.Weight = QFont.Weight.Normal,
 ) -> QLabel:
+    if color is None:
+        color = paint_css("text.secondary")
     label = QLabel(text)
     label.setFont(QFont(FONT_FAMILY, size, weight))
     label.setWordWrap(True)
@@ -58,8 +60,8 @@ def _panel(name: str) -> QFrame:
     frame.setStyleSheet(
         panel_css(
             name,
-            bg=Colors.SURFACE_ALT,
-            border=f"1px solid {Colors.BORDER_SUBTLE}",
+            bg=paint_css("surface.inset"),
+            border=f"1px solid {paint_css('border.subtle')}",
             radius=Metrics.BORDER_RADIUS,
         )
     )
@@ -74,8 +76,8 @@ class _CommandPanel(QFrame):
         self.setStyleSheet(
             panel_css(
                 "UpdateCommandPanel",
-                bg=Colors.DIALOG_BG,
-                border=f"1px solid {Colors.BORDER_SUBTLE}",
+                bg=paint_css("modal.background"),
+                border=f"1px solid {paint_css('border.subtle')}",
                 radius=Metrics.BORDER_RADIUS_SM,
             )
         )
@@ -90,7 +92,7 @@ class _CommandPanel(QFrame):
         title = _plain_label(
             "Terminal command",
             size=Metrics.FONT_SM,
-            color=Colors.TEXT_TERTIARY,
+            color=paint_css("text.tertiary"),
             weight=QFont.Weight.DemiBold,
         )
         header.addWidget(title)
@@ -112,7 +114,7 @@ class _CommandPanel(QFrame):
         command_label.setStyleSheet(
             f"""
             QLabel {{
-                color: {Colors.TEXT_PRIMARY};
+                color: {paint_css('text.primary')};
                 background: transparent;
                 border: none;
                 line-height: 1.35;
@@ -153,7 +155,7 @@ class UpdateAvailableDialog(QDialog):
         self.setWindowTitle("iOpenPod Update")
         self.setModal(True)
         self.setMinimumWidth(660)
-        self.setStyleSheet(f"QDialog {{ background: {Colors.DIALOG_BG}; }}")
+        self.setStyleSheet(f"QDialog {{ background: {paint_css('modal.background')}; }}")
 
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 22, 22, 18)
@@ -168,18 +170,18 @@ class UpdateAvailableDialog(QDialog):
         content.setStyleSheet(
             f"""
             QScrollArea#UpdateDialogContent {{
-                background: {Colors.DIALOG_BG};
+                background: {paint_css('modal.background')};
                 border: none;
             }}
             QScrollArea#UpdateDialogContent > QWidget > QWidget {{
-                background: {Colors.DIALOG_BG};
+                background: {paint_css('modal.background')};
             }}
             """
         )
 
         content_body = QWidget()
         content_body.setObjectName("UpdateDialogContentBody")
-        content_body.setStyleSheet(f"background: {Colors.DIALOG_BG};")
+        content_body.setStyleSheet(f"background: {paint_css('modal.background')};")
 
         content_layout = QVBoxLayout(content_body)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -199,7 +201,7 @@ class UpdateAvailableDialog(QDialog):
         eyebrow = _plain_label(
             "Update available",
             size=Metrics.FONT_SM,
-            color=Colors.ACCENT,
+            color=paint_css("control.primary.fill"),
             weight=QFont.Weight.DemiBold,
         )
         layout.addWidget(eyebrow)
@@ -208,7 +210,7 @@ class UpdateAvailableDialog(QDialog):
         title = _plain_label(
             f"iOpenPod v{latest} is ready",
             size=Metrics.FONT_PAGE_TITLE,
-            color=Colors.TEXT_PRIMARY,
+            color=paint_css("text.primary"),
             weight=QFont.Weight.DemiBold,
         )
         layout.addWidget(title)
@@ -217,7 +219,7 @@ class UpdateAvailableDialog(QDialog):
         sub = _plain_label(
             f"Installed: v{current}  |  Latest: v{latest}",
             size=Metrics.FONT_MD,
-            color=Colors.TEXT_SECONDARY,
+            color=paint_css("text.secondary"),
         )
         layout.addWidget(sub)
         return layout
@@ -232,7 +234,7 @@ class UpdateAvailableDialog(QDialog):
         label = _plain_label(
             self._guidance.install_label,
             size=Metrics.FONT_XL,
-            color=Colors.TEXT_PRIMARY,
+            color=paint_css("text.primary"),
             weight=QFont.Weight.DemiBold,
         )
         layout.addWidget(label)
@@ -251,15 +253,15 @@ class UpdateAvailableDialog(QDialog):
             chip.setStyleSheet(
                 f"""
                 QLabel {{
-                    color: {Colors.TEXT_ON_ACCENT};
-                    background: {Colors.ACCENT};
+                    color: {paint_css('control.primary.text')};
+                    background: {paint_css('control.primary.fill')};
                     border: none;
                     border-radius: {chip_size // 2}px;
                 }}
                 """
             )
             row.addWidget(chip, alignment=Qt.AlignmentFlag.AlignTop)
-            row.addWidget(_plain_label(step, color=Colors.TEXT_PRIMARY), stretch=1)
+            row.addWidget(_plain_label(step, color=paint_css("text.primary")), stretch=1)
             layout.addLayout(row)
 
         if self._guidance.commands:
@@ -278,7 +280,7 @@ class UpdateAvailableDialog(QDialog):
             _plain_label(
                 "Release notes",
                 size=Metrics.FONT_XL,
-                color=Colors.TEXT_PRIMARY,
+                color=paint_css("text.primary"),
                 weight=QFont.Weight.DemiBold,
             )
         )
@@ -294,9 +296,9 @@ class UpdateAvailableDialog(QDialog):
         browser.setStyleSheet(
             f"""
             QTextBrowser {{
-                color: {Colors.TEXT_SECONDARY};
-                background: {Colors.DIALOG_BG};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                color: {paint_css('text.secondary')};
+                background: {paint_css('modal.background')};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 10px;
             }}
@@ -372,7 +374,7 @@ class UpdateStatusDialog(QDialog):
         self.setWindowTitle("iOpenPod Updates")
         self.setModal(True)
         self.setMinimumWidth(520)
-        self.setStyleSheet(f"QDialog {{ background: {Colors.DIALOG_BG}; }}")
+        self.setStyleSheet(f"QDialog {{ background: {paint_css('modal.background')}; }}")
 
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 22, 22, 18)
@@ -381,23 +383,31 @@ class UpdateStatusDialog(QDialog):
         if result.error:
             title = "Could not check for updates"
             body = result.error
-            accent = Colors.WARNING
+            status_role = "warning"
         else:
             title = "iOpenPod is up to date"
             version = result.current_version or "unknown"
             body = f"You are running v{version}. Install method: {method.label}."
-            accent = Colors.SUCCESS
+            status_role = "success"
 
         root.addWidget(
             _plain_label(
                 title,
                 size=Metrics.FONT_PAGE_TITLE,
-                color=Colors.TEXT_PRIMARY,
+                color=paint_css("text.primary"),
                 weight=QFont.Weight.DemiBold,
             )
         )
 
         status = _panel("UpdateStatusPanel")
+        status.setStyleSheet(
+            panel_css(
+                "UpdateStatusPanel",
+                bg=paint_css(f"status.{status_role}.subtle_fill"),
+                border=f"1px solid {paint_css(f'status.{status_role}.border')}",
+                radius=Metrics.BORDER_RADIUS,
+            )
+        )
         status.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         status_layout = QVBoxLayout(status)
         status_layout.setContentsMargins(16, 14, 16, 14)
@@ -407,11 +417,11 @@ class UpdateStatusDialog(QDialog):
             _plain_label(
                 method.label if not result.error else "Update check",
                 size=Metrics.FONT_XL,
-                color=accent,
+                color=paint_css(f"status.{status_role}.text"),
                 weight=QFont.Weight.DemiBold,
             )
         )
-        status_layout.addWidget(_plain_label(body, color=Colors.TEXT_PRIMARY))
+        status_layout.addWidget(_plain_label(body, color=paint_css("text.primary")))
         if not result.error:
             status_layout.addWidget(_plain_label(method.detail))
         root.addWidget(status, 0)

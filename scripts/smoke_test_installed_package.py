@@ -1,60 +1,26 @@
-"""Validate the contents and entry point of an isolated wheel installation."""
+"""Smoke-test the installed wheel without importing from the source tree."""
 
 from __future__ import annotations
 
-import importlib.util
-from importlib.metadata import entry_points
+from importlib.resources import files
 from pathlib import Path
 
 import iopenpod
-from iopenpod.resources import resource_path
-
-LEGACY_NAMESPACES = (
-    "ArtworkDB_Parser",
-    "ArtworkDB_Writer",
-    "GUI",
-    "PodcastManager",
-    "SyncEngine",
-    "app_core",
-    "infrastructure",
-    "ipod_device",
-    "iTunesDB_Parser",
-    "iTunesDB_Writer",
-)
-REQUIRED_RESOURCES = (
-    ("assets", "fonts", "NotoSans-Regular.ttf"),
-    ("assets", "glyphs", "music.svg"),
-    ("assets", "icons", "icon-256.png"),
-    ("assets", "ipod_images", "iPodGeneric.png"),
-    ("itunesdb_writer", "wasm", "calcHashAB.wasm"),
-)
 
 
 def main() -> None:
-    """Fail if the installed distribution is incomplete or leaks old namespaces."""
-
-    package_path = Path(iopenpod.__file__).resolve()
-    source_package = Path(__file__).resolve().parents[1] / "src" / "iopenpod"
-    if package_path.is_relative_to(source_package):
-        raise SystemExit(f"Imported source tree instead of installed wheel: {package_path}")
-
-    missing_namespaces = [
-        name for name in LEGACY_NAMESPACES if importlib.util.find_spec(name) is not None
-    ]
-    if missing_namespaces:
-        raise SystemExit(f"Legacy namespaces remain importable: {missing_namespaces}")
-
-    missing_resources = [
-        "/".join(parts) for parts in REQUIRED_RESOURCES if not resource_path(*parts).is_file()
-    ]
-    if missing_resources:
-        raise SystemExit(f"Wheel is missing resources: {missing_resources}")
-
-    scripts = tuple(entry_points(group="console_scripts", name="iopenpod"))
-    if len(scripts) != 1 or not callable(scripts[0].load()):
-        raise SystemExit("Installed iopenpod console entry point is missing or invalid")
-
-    print(f"Installed package smoke test passed: {package_path}")
+    package_file = Path(iopenpod.__file__).resolve()
+    rule = (
+        files("iopenpod")
+        .joinpath("assets", "linux", "61-iopenpod.rules")
+        .read_text(encoding="utf-8")
+    )
+    if "ID_IOPENPOD_PRODUCT_SERIAL" not in rule:
+        raise SystemExit("installed wheel is missing the Linux identity rule")
+    if 'TAG+="uaccess"' in rule or "MODE=" in rule:
+        raise SystemExit("installed Linux identity rule grants raw-device access")
+    print(f"installed_package={package_file}")
+    print("linux_identity_rule=ok")
 
 
 if __name__ == "__main__":

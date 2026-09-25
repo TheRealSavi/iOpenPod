@@ -12,13 +12,24 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
-import tempfile
-import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
-from .models import PodcastFeed
+from iopenpod.device.durability import durable_unlink
+from iopenpod.device.metadata_write import (
+    DeviceMetadataWriteSession,
+    guarded_device_metadata_session,
+)
+from iopenpod.device.path_safety import UnsafeHostPathError, resolve_host_path
+from iopenpod.device.write_guard import DeviceWriteSafetyError
+
+from .models import STATUS_NOT_DOWNLOADED, PodcastFeed
 
 log = logging.getLogger(__name__)
+
+_PODCAST_SUBTREE = Path("iPod_Control") / "iOpenPodPodcasts"
+_SUBSCRIPTIONS_PATH = _PODCAST_SUBTREE / "subscriptions.json"
 
 
 class SubscriptionStore:
@@ -29,9 +40,20 @@ class SubscriptionStore:
                    ``"/Volumes/iPod"``).
     """
 
-    def __init__(self, ipod_path: str, download_cache_dir: str = ""):
+    def __init__(
+        self,
+        ipod_path: str,
+        download_cache_dir: str = "",
+        *,
+        reported_volume_format: str = "",
+        expected_volume_identity_key: str = "",
+        metadata_write_session: DeviceMetadataWriteSession | None = None,
+    ):
         self._ipod_path = ipod_path
         self._download_cache_dir = download_cache_dir
+        self._reported_volume_format = reported_volume_format
+        self._expected_volume_identity_key = expected_volume_identity_key
+        self._metadata_write_session = metadata_write_session
         self._podcast_dir = os.path.join(
             ipod_path, "iPod_Control", "iOpenPodPodcasts",
         )
@@ -44,6 +66,133 @@ class SubscriptionStore:
         """The podcast directory on the iPod."""
         return self._podcast_dir
 
+    @property
+    def download_cache_root(self) -> Path:
+        """Return the configured host directory containing podcast downloads."""
+        base = self._download_cache_dir
+        if not base:
+            from iopenpod.infrastructure.settings_paths import default_cache_dir
+
+            base = default_cache_dir()
+        return Path(os.path.abspath(base)) / "podcasts"
+
+    def remove_episode_download(self, downloaded_path: str | Path) -> None:
+        """Durably remove one file contained by the host podcast cache."""
+        try:
+            candidate = resolve_host_path(self.download_cache_root, downloaded_path)
+        except (OSError, TypeError, UnsafeHostPathError) as exc:
+            raise DeviceWriteSafetyError(
+                "The stored episode path is outside the configured podcast "
+                "download cache or passes through a link/reparse point. "
+                "iOpenPod refused to remove it."
+            ) from exc
+        durable_unlink(candidate, missing_ok=True)
+
+    def remove_feed_downloads(self, feed: PodcastFeed) -> int:
+        """Remove all host-cached episode downloads belonging to one feed."""
+        removed = 0
+        removed_paths: set[Path] = set()
+        for episode in feed.episodes:
+            downloaded_path = episode.downloaded_path
+            if not downloaded_path:
+                continue
+            self.remove_episode_download(downloaded_path)
+            removed_paths.add(Path(os.path.abspath(downloaded_path)))
+            episode.downloaded_path = ""
+            episode.status = STATUS_NOT_DOWNLOADED
+            removed += 1
+
+        feed_dir = Path(self.feed_dir(feed))
+        try:
+            cached_entries = list(feed_dir.iterdir())
+        except FileNotFoundError:
+            cached_entries = []
+        for cached_entry in cached_entries:
+            cached_path = Path(os.path.abspath(cached_entry))
+            if cached_path in removed_paths:
+                continue
+            self.remove_episode_download(cached_entry)
+            removed += 1
+
+        try:
+            feed_dir.rmdir()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+
+        return removed
+
+    def prune_download_cache(self, feeds: list[PodcastFeed] | None = None) -> int:
+        """Remove stale files from the managed podcast staging cache.
+
+        Podcast downloads are short-lived staging files: an episode referenced
+        by the current subscription state is retained, while failed-download
+        parts, abandoned files, and directories for removed feeds are swept.
+        Every deletion goes through :meth:`remove_episode_download`, which
+        rejects paths outside this cache or paths through links/reparse points.
+        """
+        active_feeds = self.get_feeds() if feeds is None else feeds
+        referenced: set[Path] = set()
+        active_dirs: set[str] = set()
+        for feed in active_feeds:
+            feed_dir = Path(self.feed_dir(feed))
+            active_dirs.add(feed_dir.name)
+            for episode in feed.episodes:
+                if episode.downloaded_path:
+                    referenced.add(Path(os.path.abspath(episode.downloaded_path)))
+
+        try:
+            feed_dirs = list(self.download_cache_root.iterdir())
+        except FileNotFoundError:
+            return 0
+        except OSError as exc:
+            log.warning("Could not inspect podcast download cache: %s", exc)
+            return 0
+
+        removed = 0
+        for feed_dir in feed_dirs:
+            # Feed directories are flat and SHA-256-derived. Retaining anything
+            # else keeps cleanup conservative if a user placed files here.
+            if (
+                len(feed_dir.name) != 16
+                or any(char not in "0123456789abcdef" for char in feed_dir.name)
+            ):
+                continue
+            try:
+                resolved_feed_dir = resolve_host_path(
+                    self.download_cache_root,
+                    feed_dir,
+                )
+                if not resolved_feed_dir.is_dir():
+                    continue
+                entries = list(resolved_feed_dir.iterdir())
+            except (OSError, UnsafeHostPathError) as exc:
+                log.warning("Could not inspect podcast cache directory %s: %s", feed_dir, exc)
+                continue
+
+            for entry in entries:
+                if entry.is_dir() or Path(os.path.abspath(entry)) in referenced:
+                    continue
+                try:
+                    self.remove_episode_download(entry)
+                    removed += 1
+                except DeviceWriteSafetyError as exc:
+                    log.warning("Could not safely remove stale podcast cache file %s: %s", entry, exc)
+
+            if feed_dir.name not in active_dirs:
+                try:
+                    resolved_feed_dir.rmdir()
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    # Nested or locked content is intentionally retained.
+                    pass
+
+        if removed:
+            log.info("Removed %d stale podcast staging file(s)", removed)
+        return removed
+
     def _ensure_loaded(self) -> None:
         """Load subscriptions lazily on first access."""
         if not self._loaded:
@@ -53,57 +202,87 @@ class SubscriptionStore:
 
     def load(self) -> list[PodcastFeed]:
         """Load subscriptions from disk.  Returns the feed list."""
-        if not os.path.exists(self._json_path):
-            self._feeds = []
-            self._loaded = True
-            return self._feeds
-
         try:
             with open(self._json_path, encoding="utf-8") as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, OSError) as exc:
-            log.warning("Failed to load subscriptions: %s", exc)
+        except FileNotFoundError:
             self._feeds = []
             self._loaded = True
             return self._feeds
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+            raise DeviceWriteSafetyError(
+                "The existing podcast subscriptions file could not be read "
+                f"safely. iOpenPod left it unchanged: {exc}"
+            ) from exc
 
-        self._feeds = [PodcastFeed.from_dict(d) for d in data.get("feeds", [])]
+        if not isinstance(data, dict) or not isinstance(data.get("feeds", []), list):
+            raise DeviceWriteSafetyError(
+                "The existing podcast subscriptions file is malformed. "
+                "iOpenPod left it unchanged instead of replacing podcast state."
+            )
+
+        try:
+            feeds = [PodcastFeed.from_dict(d) for d in data.get("feeds", [])]
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise DeviceWriteSafetyError(
+                "The existing podcast subscriptions contain malformed feed "
+                f"data. iOpenPod left the file unchanged: {exc}"
+            ) from exc
+
+        self._feeds = feeds
         self._loaded = True
         return self._feeds
 
     def save(self) -> None:
-        """Write subscriptions to disk atomically."""
-        os.makedirs(self._podcast_dir, exist_ok=True)
-
+        """Write subscriptions through the guarded, durable metadata writer."""
+        self._ensure_loaded()
         payload = {
             "version": 1,
             "feeds": [f.to_dict() for f in self._feeds],
         }
+        text = json.dumps(payload, indent=2, ensure_ascii=False)
+        with self._writer() as writer:
+            writer.write_text_atomic(
+                _SUBSCRIPTIONS_PATH,
+                text,
+                allowed_subtree=_PODCAST_SUBTREE,
+            )
 
-        # Atomic write: temp file in same directory, then rename
-        fd, tmp = tempfile.mkstemp(
-            dir=self._podcast_dir, suffix=".tmp", prefix="subs_",
+    def cache_feed_artwork(
+        self,
+        feed,
+        fallback_urls=(),
+    ) -> str:
+        """Cache feed artwork using the same guarded device writer policy."""
+        from .artwork import cache_feed_artwork
+
+        return cache_feed_artwork(
+            feed,
+            self._podcast_dir,
+            fallback_urls=fallback_urls,
+            write_bytes=self._write_artwork_bytes,
         )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2, ensure_ascii=False)
-            # On Windows, antivirus / Explorer / indexer can briefly lock
-            # the target file, causing os.replace() to fail with
-            # PermissionError.  Retry a few times before giving up.
-            for attempt in range(5):
-                try:
-                    os.replace(tmp, self._json_path)
-                    break
-                except PermissionError:
-                    if sys.platform != "win32" or attempt == 4:
-                        raise
-                    time.sleep(0.05 * (attempt + 1))
-        except Exception:
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-            raise
+
+    def _write_artwork_bytes(self, relative_path: Path, data: bytes) -> Path:
+        with self._writer() as writer:
+            return writer.write_bytes_atomic(
+                _PODCAST_SUBTREE / relative_path,
+                data,
+                allowed_subtree=_PODCAST_SUBTREE,
+            )
+
+    @contextmanager
+    def _writer(self) -> Iterator[DeviceMetadataWriteSession]:
+        if self._metadata_write_session is not None:
+            yield self._metadata_write_session
+            return
+
+        with guarded_device_metadata_session(
+            self._ipod_path,
+            reported_volume_format=self._reported_volume_format,
+            expected_volume_identity_key=self._expected_volume_identity_key,
+        ) as writer:
+            yield writer
 
     def get_feeds(self) -> list[PodcastFeed]:
         """Return the current feed list (loads from disk if needed)."""
@@ -138,6 +317,7 @@ class SubscriptionStore:
                 new_feeds.append(f)
         self._feeds = new_feeds
         if removed:
+            self.remove_feed_downloads(removed)
             self.save()
         return removed
 
@@ -186,8 +366,4 @@ class SubscriptionStore:
         """
         import hashlib
         url_hash = hashlib.sha256(feed.feed_url.encode()).hexdigest()[:16]
-        base = self._download_cache_dir
-        if not base:
-            from iopenpod.infrastructure.settings_paths import default_cache_dir
-            base = default_cache_dir()
-        return os.path.join(base, "podcasts", url_hash)
+        return str(self.download_cache_root / url_hash)

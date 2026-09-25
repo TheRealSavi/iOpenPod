@@ -146,7 +146,9 @@ class DeviceInfo:
     scsi_product: str = ""
     scsi_revision: str = ""
     connected_bus: str = ""
-    volume_format: str = ""
+    reported_volume_format: str = ""  # SysInfoExtended hint, not an OS probe
+    filesystem_type: str = ""         # Actual mounted filesystem (vfat, hfsplus, ...)
+    volume_identity_key: str = ""      # Host-observed identity captured during scan
 
     # ── Device capabilities from SysInfoExtended / VPD ────────────────
     db_version: int = 0
@@ -185,6 +187,9 @@ class DeviceInfo:
     # ── Provenance ────────────────────────────────────────────────────
     identification_method: str = "unknown"
     _field_sources: dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    # Current-process hardware observation; deliberately never persisted in
+    # SysInfo authority metadata.
+    _live_usb_pid: int = field(default=0, init=False, repr=False)
 
     # ── Computed helpers ──────────────────────────────────────────────
 
@@ -209,6 +214,15 @@ class DeviceInfo:
         if _sys.platform == "win32" and self.path and self.path[0].isalpha():
             return self.path[0]
         return ""
+
+    @property
+    def volume_format(self) -> str:
+        """Legacy alias for :attr:`reported_volume_format`."""
+        return self.reported_volume_format
+
+    @volume_format.setter
+    def volume_format(self, value: str) -> None:
+        self.reported_volume_format = str(value or "")
 
     @property
     def display_name(self) -> str:
@@ -290,6 +304,20 @@ class DeviceInfo:
 # Utility functions (used by multiple modules)
 # ──────────────────────────────────────────────────────────────────────
 
+def _capability_itdb_filename(ipod_path: str) -> str | None:
+    """Return the database filename required by the matched device, if known."""
+    dev = get_current_device_for_path(ipod_path)
+    if not dev or not dev.model_family:
+        return None
+
+    from .capabilities import capabilities_for_family_gen
+
+    caps = capabilities_for_family_gen(dev.model_family, dev.generation or "")
+    if caps is None:
+        return None
+    return "iTunesCDB" if caps.supports_compressed_db else "iTunesDB"
+
+
 def resolve_itdb_path(ipod_path: str) -> str | None:
     """Return the path to the iTunesDB (or iTunesCDB) on the iPod.
 
@@ -300,7 +328,13 @@ def resolve_itdb_path(ipod_path: str) -> str | None:
     ``DeviceCapabilities.supports_compressed_db`` is True.  The firmware
     on those devices reads ``iTunesCDB`` and ignores ``iTunesDB``.
 
-    Check order:
+    When the mounted path matches the selected device and its capabilities are
+    known, only the database filename that firmware uses is considered.  This
+    prevents a stale, non-empty alternate database from being loaded while the
+    writer and generation guard operate on the real database.
+
+    Without matched device capabilities, check order is (ignoring zero-byte
+    stale-filename markers while a non-empty alternate exists):
 
     1. ``iTunesCDB`` — used by devices with ``supports_compressed_db``
     2. ``iTunesDB``  — used by all other devices
@@ -310,11 +344,55 @@ def resolve_itdb_path(ipod_path: str) -> str | None:
     """
     itunes_dir = os.path.join(ipod_path, "iPod_Control", "iTunes")
     cdb = os.path.join(itunes_dir, "iTunesCDB")
-    if os.path.exists(cdb):
-        return cdb
     db = os.path.join(itunes_dir, "iTunesDB")
-    if os.path.exists(db):
-        return db
+    required_filename = _capability_itdb_filename(ipod_path)
+    if required_filename is not None:
+        required_path = os.path.join(itunes_dir, required_filename)
+        alternate_path = cdb if required_filename == "iTunesDB" else db
+        for candidate in (required_path, alternate_path):
+            try:
+                if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                    if candidate == alternate_path:
+                        logger.warning(
+                            "The identified iPod has only the alternate database "
+                            "%s; it will be used as the recovery source while the "
+                            "next guarded write restores %s",
+                            os.path.basename(alternate_path),
+                            required_filename,
+                        )
+                    return candidate
+            except OSError as exc:
+                from .write_guard import DeviceWriteSafetyError
+
+                raise DeviceWriteSafetyError(
+                    "Could not safely inspect the iPod database filenames: "
+                    f"{exc}"
+                ) from exc
+        for candidate in (required_path, alternate_path):
+            try:
+                if os.path.exists(candidate):
+                    return candidate
+            except OSError as exc:
+                from .write_guard import DeviceWriteSafetyError
+
+                raise DeviceWriteSafetyError(
+                    "Could not safely inspect the iPod database filenames: "
+                    f"{exc}"
+                ) from exc
+        return None
+
+    # The writer deliberately leaves the obsolete alternate filename as a
+    # zero-byte marker for firmware compatibility. Never mistake that marker
+    # for the live database when the other file contains a committed DB.
+    for candidate in (cdb, db):
+        try:
+            if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                return candidate
+        except OSError:
+            continue
+    for candidate in (cdb, db):
+        if os.path.exists(candidate):
+            return candidate
     return None
 
 
@@ -325,20 +403,21 @@ def itdb_write_filename(ipod_path: str) -> str:
     available.  Falls back to whichever file already exists on disk, and
     finally defaults to ``"iTunesDB"``.
     """
-    # 1. Ask the device store (capabilities handles family-level fallback)
-    dev = get_current_device()
-    if dev and dev.model_family:
-        from .capabilities import capabilities_for_family_gen
-        caps = capabilities_for_family_gen(
-            dev.model_family, dev.generation or "",
-        )
-        if caps and caps.supports_compressed_db:
-            return "iTunesCDB"
+    # 1. Ask the matched device store (capabilities handles family fallback).
+    required_filename = _capability_itdb_filename(ipod_path)
+    if required_filename is not None:
+        return required_filename
 
-    # 2. If an iTunesCDB already exists on disk, keep using it
-    cdb = os.path.join(ipod_path, "iPod_Control", "iTunes", "iTunesCDB")
-    if os.path.exists(cdb):
-        return "iTunesCDB"
+    # 2. Without capabilities, follow the non-empty committed database. The
+    # obsolete alternate filename may intentionally remain as a zero-byte
+    # firmware marker and must not influence the next write target.
+    existing = resolve_itdb_path(ipod_path)
+    if existing:
+        try:
+            if os.path.getsize(existing) > 0:
+                return os.path.basename(existing)
+        except OSError:
+            pass
 
     return "iTunesDB"
 
@@ -363,11 +442,11 @@ def read_sysinfo(ipod_path: str) -> dict:
     """
     sysinfo_path = os.path.join(ipod_path, "iPod_Control", "Device", "SysInfo")
 
-    if not os.path.exists(sysinfo_path):
-        raise FileNotFoundError(f"SysInfo not found at {sysinfo_path}")
-
-    with open(sysinfo_path, errors="ignore") as f:
-        content = f.read()
+    try:
+        with open(sysinfo_path, errors="ignore") as f:
+            content = f.read()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"SysInfo not found at {sysinfo_path}") from exc
 
     from .sysinfo import parse_sysinfo_text
     return parse_sysinfo_text(content)
@@ -689,13 +768,112 @@ def _canonicalize_device_identity(info: DeviceInfo) -> None:
 
 
 class UnidentifiedDeviceError(ValueError):
-    """Raised when code tries to activate an iPod without an exact model."""
+    """Raised when code tries to activate an iPod without a safe profile."""
 
 
 def has_exact_model_number(info: object | None) -> bool:
-    """Return whether *info* has the exact model number required for use."""
+    """Return whether *info* carries an exact catalogued model number."""
 
-    return bool(str(getattr(info, "model_number", "") or "").strip())
+    from .models import catalog_variant_for_model_number
+
+    return catalog_variant_for_model_number(
+        str(getattr(info, "model_number", "") or "")
+    ) is not None
+
+
+def has_safe_device_profile(info: object | None) -> bool:
+    """Return whether *info* identifies one unambiguous write profile.
+
+    A catalogued model with matching identity fields is sufficient unless live
+    hardware contradicts it.  Without one, a current-process hardware PID is
+    sufficient only when it resolves a concrete family/generation and every
+    catalogued variant has the same write-affecting capabilities.
+    """
+
+    if info is None:
+        return False
+
+    from .models import (
+        IPOD_RECOVERY_USB_PIDS,
+        USB_PID_TO_MODEL,
+        canonicalize_model_identity,
+        catalog_variant_for_model_number,
+        catalog_variants_for_normal_usb_pid,
+    )
+
+    exact_variant = catalog_variant_for_model_number(
+        str(getattr(info, "model_number", "") or "")
+    )
+    try:
+        usb_pid = int(getattr(info, "usb_pid", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    sources = getattr(info, "_field_sources", {}) or {}
+    try:
+        live_usb_pid = int(getattr(info, "_live_usb_pid", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    if live_usb_pid and live_usb_pid != usb_pid:
+        return False
+    live_pid_matches = (
+        usb_pid != 0
+        and live_usb_pid == usb_pid
+    )
+    family, generation, _color = canonicalize_model_identity(
+        str(getattr(info, "model_family", "") or ""),
+        str(getattr(info, "generation", "") or ""),
+    )
+
+    if exact_variant is not None:
+        exact_family, exact_generation, _color = canonicalize_model_identity(
+            exact_variant.family,
+            exact_variant.generation,
+        )
+        if (family, generation) != (exact_family, exact_generation):
+            return False
+        if not live_pid_matches:
+            return True
+        if usb_pid in IPOD_RECOVERY_USB_PIDS:
+            return False
+        pid_candidates = catalog_variants_for_normal_usb_pid(usb_pid)
+        if pid_candidates:
+            return any(
+                candidate.model_number == exact_variant.model_number
+                for candidate in pid_candidates
+            )
+
+        pid_identity = USB_PID_TO_MODEL.get(usb_pid)
+        if pid_identity is None:
+            return False
+        from .lookup import usb_pid_identity_conflicts
+
+        return not usb_pid_identity_conflicts(
+            exact_variant.family,
+            exact_variant.generation,
+            pid_identity[0],
+            pid_identity[1],
+        )
+
+    if not live_pid_matches:
+        return False
+
+    from .capabilities import has_uniform_write_profile_for_usb_pid
+
+    pid_identity = USB_PID_TO_MODEL.get(usb_pid)
+    if pid_identity is None:
+        return False
+    pid_family, pid_generation, _color = canonicalize_model_identity(*pid_identity)
+    if family != pid_family or sources.get("model_family") != "usb_pid":
+        return False
+    if not pid_generation:
+        # Existing writers consume a concrete family/generation profile.  Do not
+        # activate a cross-generation PID even when today's candidate profiles
+        # happen to compare equal.
+        return False
+    if generation != pid_generation or sources.get("generation") != "usb_pid":
+        return False
+
+    return has_uniform_write_profile_for_usb_pid(usb_pid)
 
 
 def require_exact_model_number(info: object) -> None:
@@ -707,6 +885,18 @@ def require_exact_model_number(info: object) -> None:
     raise UnidentifiedDeviceError(
         f"Refusing to activate unidentified iPod at {path}: "
         "no exact model number was resolved"
+    )
+
+
+def require_safe_device_profile(info: object) -> None:
+    """Reject an iPod whose evidence cannot select one safe write profile."""
+
+    if has_safe_device_profile(info):
+        return
+    path = str(getattr(info, "path", "") or "unknown mount")
+    raise UnidentifiedDeviceError(
+        f"Refusing to activate unidentified iPod at {path}: "
+        "no safe device profile was resolved"
     )
 
 
@@ -751,17 +941,30 @@ def get_current_device() -> DeviceInfo | None:
     return _Store._get().current
 
 
+def get_current_device_for_path(ipod_path: str | os.PathLike[str]) -> DeviceInfo | None:
+    """Return the active device only when it describes *ipod_path* exactly."""
+    device = get_current_device()
+    if device is None or not str(device.path or "").strip():
+        return None
+    try:
+        selected = os.path.normcase(os.path.realpath(os.fspath(ipod_path)))
+        identified = os.path.normcase(os.path.realpath(device.path))
+    except (OSError, TypeError, ValueError):
+        return None
+    return device if selected == identified else None
+
+
 def set_current_device(info: DeviceInfo | None) -> None:
     """Store *info* as the active device (called once during selection)."""
     if info is not None:
-        require_exact_model_number(info)
+        require_safe_device_profile(info)
     _Store._get().current = info
     if info is not None:
         logger.info(
             "Device stored: %s %s (%s) serial=…%s fwguid=%s "
             "checksum=%s method=%s capacity=%s formats=%s",
             info.model_family, info.generation, info.model_number,
-            info.serial[-3:] if info.serial else "none",
+            info.serial[-4:] if info.serial else "none",
             info.firewire_guid or "none",
             info.checksum_type,
             info.identification_method,
@@ -788,7 +991,7 @@ def detect_checksum_type(ipod_path: str):
     from .lookup import extract_model_number, get_model_info
 
     # Fast path: centralised store
-    device = get_current_device()
+    device = get_current_device_for_path(ipod_path)
     if device is not None and device.checksum_type != 99:
         return ChecksumType(device.checksum_type)
 
@@ -806,7 +1009,7 @@ def detect_checksum_type(ipod_path: str):
     try:
         sysinfo = read_sysinfo(ipod_path)
     except FileNotFoundError:
-        return ChecksumType.NONE
+        return ChecksumType.UNKNOWN
 
     model_str = sysinfo.get("ModelNumStr", "")
     model_num = extract_model_number(model_str)
@@ -819,7 +1022,17 @@ def detect_checksum_type(ipod_path: str):
                 return ct
 
     hi_path = os.path.join(ipod_path, "iPod_Control", "Device", "HashInfo")
-    if os.path.exists(hi_path):
+    try:
+        os.stat(hi_path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        from .write_guard import DeviceWriteSafetyError
+
+        raise DeviceWriteSafetyError(
+            f"Could not inspect the iPod HashInfo checksum material: {exc}"
+        ) from exc
+    else:
         return ChecksumType.HASH72
 
     firmware = sysinfo.get("visibleBuildID", "")
@@ -834,7 +1047,10 @@ def detect_checksum_type(ipod_path: str):
     if "FirewireGuid" in sysinfo:
         return ChecksumType.UNKNOWN
 
-    return ChecksumType.NONE
+    # An identified legacy model above can positively select NONE. Empty or
+    # unidentifiable physical metadata cannot: guessing "no checksum" would
+    # produce a database that modern firmware rejects.
+    return ChecksumType.UNKNOWN
 
 
 def get_firewire_id(ipod_path: str, *, known_guid: str | None = None) -> bytes:
@@ -862,7 +1078,7 @@ def get_firewire_id(ipod_path: str, *, known_guid: str | None = None) -> bytes:
             pass
 
     # Source 1: centralised store
-    device = get_current_device()
+    device = get_current_device_for_path(ipod_path)
     if device is not None:
         fwid = device.firewire_id_bytes
         if fwid:
@@ -1062,9 +1278,9 @@ def enrich(info: DeviceInfo) -> None:
         except ImportError:
             pass
 
-    # ── 3b. Serial-last-3 model lookup ────────────────────────────────
-    #   Very reliable — the last 3 chars of the serial encode the exact
-    #   model (incl. capacity and color).  Run whenever the serial is
+    # ── 3b. Serial-suffix model lookup ─────────────────────────────────
+    #   Very reliable — a published 3- or 4-character suffix encodes the
+    #   exact model (incl. capacity and color). Run whenever the serial is
     #   available: the lookup is cheap and _enrich_from_serial_lookup
     #   uses authority-rank comparison, so it only overwrites fields
     #   whose current source is less reliable than the serial.  This
@@ -1295,6 +1511,7 @@ def _cache_live_sysinfo_extended(
     ipod_path: str,
     vpd_raw: dict,
     source: str,
+    expected_volume_identity_key: str = "",
 ) -> None:
     raw_xml = vpd_raw.get("vpd_raw_xml") if isinstance(vpd_raw, dict) else b""
     if not raw_xml:
@@ -1333,6 +1550,7 @@ def _cache_live_sysinfo_extended(
             raw_xml,
             source=source,
             metadata=metadata,
+            expected_volume_identity_key=expected_volume_identity_key,
         )
     except Exception as exc:
         logger.debug("enrich: live SysInfoExtended cache failed: %s", exc)
@@ -1394,11 +1612,13 @@ def _apply_live_result_to_cache(
     usb_pid_source: str,
     live_result: dict,
     live_source: str,
+    expected_volume_identity_key: str = "",
 ) -> None:
     validated = DeviceInfo()
     validated.path = path
     validated.mount_name = mount_name
     validated.usb_pid = usb_pid
+    validated.volume_identity_key = expected_volume_identity_key
     if usb_pid:
         validated._field_sources["usb_pid"] = usb_pid_source or "unknown"
 
@@ -1483,6 +1703,7 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
     cached.serial = info.serial
     cached.firmware = info.firmware
     cached.usb_pid = info.usb_pid
+    cached.volume_identity_key = info.volume_identity_key
     cached._field_sources.update(info._field_sources)
 
     def _run() -> None:
@@ -1509,6 +1730,13 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
                 return
 
             vpd_raw = result.get("vpd_info") or {}
+            if vpd_raw:
+                evidence = info.raw_identity_evidence.setdefault("vpd", [])
+                if vpd_raw not in evidence:
+                    evidence.append(dict(vpd_raw))
+            from .vpd_libusb import consumer_safe_vpd_info
+
+            consumer_vpd = consumer_safe_vpd_info(result)
             live_source = str(vpd_raw.get("_source") or result.get("source") or "vpd")
             logger.debug(
                 "Live identity validation result: mount=%s source=%s "
@@ -1519,7 +1747,12 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
                 format_fields(vpd_raw, CAPABILITY_FIELDS, include_false=True),
             )
             _log_live_validation_differences(cached, result, live_source)
-            _cache_live_sysinfo_extended(cached.path, vpd_raw, live_source)
+            _cache_live_sysinfo_extended(
+                cached.path,
+                consumer_vpd,
+                live_source,
+                cached.volume_identity_key,
+            )
             for fld in (
                 "serial",
                 "firewire_guid",
@@ -1546,13 +1779,13 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
 
                 parsed = (
                     parse_sysinfo_extended(
-                        vpd_raw["vpd_raw_xml"],
+                        consumer_vpd["vpd_raw_xml"],
                         source=live_source,
                         live=True,
                     )
-                    if vpd_raw.get("vpd_raw_xml")
+                    if consumer_vpd.get("vpd_raw_xml")
                     else ParsedSysInfoExtended(
-                        plist=vpd_raw,
+                        plist=consumer_vpd,
                         source=live_source,
                         live=True,
                     )
@@ -1571,7 +1804,7 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
                     "scsi_product",
                     "scsi_revision",
                 ):
-                    value = vpd_raw.get(fld)
+                    value = consumer_vpd.get(fld)
                     if value not in (None, "", b""):
                         identity[fld] = value
                         identity_sources[fld] = live_source
@@ -1585,6 +1818,7 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
                 cached._field_sources.get("usb_pid", ""),
                 result,
                 live_source,
+                cached.volume_identity_key,
             )
         except Exception as exc:
             logger.debug("Live identity validation failed for %s: %s", cached.path, exc)
@@ -1843,7 +2077,7 @@ def _apply_sysinfo_extended_identity(
         "scsi_product",
         "scsi_revision",
         "connected_bus",
-        "volume_format",
+        "reported_volume_format",
         "db_version",
         "shadow_db_version",
         "uses_sqlite_db",
@@ -1957,6 +2191,12 @@ def _enrich_from_hardware_probe(info: DeviceInfo) -> None:
     # On Windows, FW GUID comes from the device tree walk specifically
     _fw_source = "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method
 
+    # Keep the current mount-anchored hardware observation separate from
+    # persisted source labels on every platform.  Authority metadata may restore
+    # an old provenance value, but it cannot restore this process-local evidence.
+    if hw.get("usb_pid"):
+        info._live_usb_pid = int(hw["usb_pid"])
+
     # Merge hardware results into DeviceInfo (never overwrite existing)
     if not info.firewire_guid and hw.get("firewire_guid"):
         guid_hex = hw["firewire_guid"]
@@ -2009,7 +2249,7 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
     """Query iPod firmware via USB SCSI VPD pages for device identification.
 
     Delegates to :func:`iopenpod.device.vpd_libusb.identify_via_vpd` on supported
-    non-Windows platforms, resolves the exact model via serial-last-3 lookup,
+    non-Windows platforms, resolves the exact model via serial-suffix lookup,
     and handles post-query remount on Linux/macOS.
 
     SysInfo writing is NOT done here — the authority module handles it
@@ -2046,13 +2286,20 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
 
     vpd_raw = result.get("vpd_info") or {}
     vpd_source = str(vpd_raw.get("_source") or result.get("source") or "vpd")
+    if vpd_raw:
+        evidence = info.raw_identity_evidence.setdefault("vpd", [])
+        if vpd_raw not in evidence:
+            evidence.append(dict(vpd_raw))
+    from .vpd_libusb import consumer_safe_vpd_info
+
+    consumer_vpd = consumer_safe_vpd_info(result)
     logger.debug(
         "enrich: live VPD query result source=%s identity=[%s] caps=[%s]",
         vpd_source,
         format_fields(result, IDENTITY_FIELDS),
         format_fields(vpd_raw, CAPABILITY_FIELDS, include_false=True),
     )
-    _cache_live_sysinfo_extended(info.path, vpd_raw, vpd_source)
+    _cache_live_sysinfo_extended(info.path, consumer_vpd, vpd_source)
 
     # Apply VPD-derived fields to DeviceInfo
     _set_field_from_source(
@@ -2083,7 +2330,7 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
         info._field_sources["model_number"] = vpd_source
         info._field_sources["model_family"] = vpd_source
         info._field_sources["generation"] = vpd_source
-        # VPD serial-last-3 is authoritative — always overwrite capacity
+        # A VPD serial suffix is authoritative — always overwrite capacity
         # and color even if they were pre-populated from a stale/wrong
         # SysInfo model number (e.g. MB029 → 80GB when device is MB565 → 120GB).
         if result["capacity"]:
@@ -2110,15 +2357,15 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
         )
 
         parsed: ParsedSysInfoExtended | None = None
-        if vpd_raw.get("vpd_raw_xml"):
+        if consumer_vpd.get("vpd_raw_xml"):
             parsed = parse_sysinfo_extended(
-                vpd_raw["vpd_raw_xml"],
+                consumer_vpd["vpd_raw_xml"],
                 source=vpd_source,
                 live=True,
             )
-        elif isinstance(vpd_raw, dict):
+        elif isinstance(consumer_vpd, dict):
             parsed = ParsedSysInfoExtended(
-                plist=vpd_raw,
+                plist=consumer_vpd,
                 source=vpd_source,
                 live=True,
             )
@@ -2137,7 +2384,7 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
                 "scsi_product",
                 "scsi_revision",
             ):
-                value = vpd_raw.get(fld)
+                value = consumer_vpd.get(fld)
                 if value not in (None, "", b""):
                     identity[fld] = value
                     identity_sources[fld] = vpd_source
@@ -2156,11 +2403,11 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
 
 
 def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
-    """Look up exact model from serial number's last 3 characters.
+    """Look up the exact model from its longest published serial suffix.
 
-    This is very high confidence — the last 3 chars encode the exact model
+    This is very high confidence — the suffix encodes the exact model
     including capacity, color, and hardware revision.  Always fills gaps
-    even when ``model_number`` is already known, because serial-last-3
+    even when ``model_number`` is already known, because serial-suffix lookup
     provides exact variant resolution that generic model lookup may miss.
 
     The derived fields inherit the serial number's authority source, since
@@ -2171,10 +2418,11 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
         return
 
     try:
-        from .lookup import lookup_by_serial
+        from .lookup import lookup_by_serial, match_serial_suffix
     except ImportError:
         return
 
+    matched_suffix = match_serial_suffix(info.serial)
     result = lookup_by_serial(info.serial)
     if not result:
         return
@@ -2198,10 +2446,10 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
     if not info.model_number or _serial_rank <= _cur_mn_rank:
         if info.model_number and info.model_number != model_num:
             logger.warning(
-                "enrich: serial last-3 '%s' gives model %s but current "
+                "enrich: serial suffix '%s' gives model %s but current "
                 "model_number is %s (source: %s, rank %d); overriding with "
                 "serial result (serial source: %s, rank %d)",
-                info.serial[-3:], model_num, info.model_number,
+                matched_suffix, model_num, info.model_number,
                 info._field_sources.get("model_number", "unknown"),
                 _cur_mn_rank, _src, _serial_rank,
             )
@@ -2226,7 +2474,7 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
         info.generation = model_info[1]
         info._field_sources["generation"] = _src
 
-    # Serial-last-3 is authoritative for capacity/color — use the same
+    # Serial-suffix lookup is authoritative for capacity/color — use the same
     # rank comparison as family/generation so it overwrites stale values
     # from a wrong SysInfo model number.
     _cur_cap_rank = SOURCE_RANK.get(
@@ -2246,8 +2494,8 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
     if info.identification_method in ("unknown", "hardware"):
         info.identification_method = "serial"
     logger.debug(
-        "enrich: serial-last-3 '%s' -> %s %s %s %s model=%s source=%s",
-        info.serial[-3:], model_info[0], model_info[1],
+        "enrich: serial suffix '%s' -> %s %s %s %s model=%s source=%s",
+        matched_suffix, model_info[0], model_info[1],
         model_info[2], model_info[3], model_num, _src,
     )
 

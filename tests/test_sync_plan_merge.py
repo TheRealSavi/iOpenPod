@@ -6,6 +6,8 @@ from iopenpod.application.sync_plan_merge import (
     merge_additional_sync_plan,
 )
 from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.integrity import IntegrityReport
+from iopenpod.sync.mapping import MappingFile
 from iopenpod.sync.photos import PhotoAlbumChange, PhotoSyncItem, PhotoSyncPlan
 
 
@@ -44,6 +46,7 @@ def test_merge_additional_sync_plan_preserves_import_context() -> None:
         total_pc_tracks=1,
         total_ipod_tracks=9,
         matched_tracks=2,
+        _mapping_requires_persistence=True,
     )
     dropped.storage.bytes_to_add = 200
     dropped.storage.bytes_to_remove = 50
@@ -67,6 +70,7 @@ def test_merge_additional_sync_plan_preserves_import_context() -> None:
     assert existing.storage.bytes_to_remove == 50
     assert existing.storage.bytes_to_update == 25
     assert existing.photo_plan is existing_photo_plan
+    assert existing.photo_plan is not None
     assert existing.photo_plan.albums_to_add == [PhotoAlbumChange("Existing Album")]
     assert existing.photo_plan.photos_to_add == [PhotoSyncItem("hash-a", "A")]
     assert existing.photo_plan.thumb_bytes_to_add == 300
@@ -74,11 +78,12 @@ def test_merge_additional_sync_plan_preserves_import_context() -> None:
     assert existing.total_ipod_tracks == 10
     assert existing.matched_tracks == 3
     assert existing.removals_pre_checked is True
+    assert existing._mapping_requires_persistence is True
 
 
 def test_merge_additional_sync_plan_adopts_optional_context_when_missing() -> None:
-    mapping = object()
-    integrity_report = object()
+    mapping = MappingFile()
+    integrity_report = IntegrityReport()
     photo_plan = PhotoSyncPlan(photos_to_add=[PhotoSyncItem("hash-a", "A")])
     existing = SyncPlan()
     incoming = SyncPlan(

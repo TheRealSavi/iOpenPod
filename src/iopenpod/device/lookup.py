@@ -3,7 +3,7 @@
 import re
 
 from .capabilities import _FAMILY_GEN_CAPABILITIES
-from .models import IPOD_MODELS, SERIAL_LAST3_TO_MODEL, canonicalize_model_identity
+from .models import IPOD_MODELS, SERIAL_SUFFIX_TO_MODEL, canonicalize_model_identity
 
 
 def _identity_text(value: str | None) -> str:
@@ -134,15 +134,36 @@ def get_friendly_model_name(model_number: str | None) -> str:
     return f"Unknown iPod ({model_number})" if model_number else "Unknown iPod"
 
 
+def match_serial_suffix(serial: str) -> str | None:
+    """Return the longest published model suffix matching *serial*."""
+
+    normalized = str(serial or "").strip().upper()
+    if not normalized:
+        return None
+
+    suffix_lengths = sorted(
+        {len(suffix) for suffix in SERIAL_SUFFIX_TO_MODEL},
+        reverse=True,
+    )
+    for suffix_length in suffix_lengths:
+        if len(normalized) < suffix_length:
+            continue
+        candidate = normalized[-suffix_length:]
+        if candidate in SERIAL_SUFFIX_TO_MODEL:
+            return candidate
+    return None
+
+
 def lookup_by_serial(serial: str) -> tuple[str, tuple[str, str, str, str]] | None:
-    """Look up iPod model from a serial number's last 3 characters.
+    """Look up an iPod model from its longest matching serial suffix.
 
     Returns:
         ``(model_number, (family, generation, capacity, color))`` or ``None``.
     """
-    if not serial or len(serial) < 3:
+    suffix = match_serial_suffix(serial)
+    if not suffix:
         return None
-    model_num = SERIAL_LAST3_TO_MODEL.get(serial[-3:])
+    model_num = SERIAL_SUFFIX_TO_MODEL.get(suffix)
     if not model_num:
         return None
     info = IPOD_MODELS.get(model_num)

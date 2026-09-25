@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
+from iopenpod.device.write_guard import DatabaseGeneration
 from iopenpod.infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
@@ -59,6 +60,7 @@ class SyncExecutionIntent:
     plan: Any
     skip_backup: bool = False
     sync_until_full: bool = False
+    scrobble_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,7 @@ class SyncSessionController(QObject):
     plan_ready = pyqtSignal(object)
     plan_failed = pyqtSignal(str)
     execution_started = pyqtSignal()
+    scrobble_only_started = pyqtSignal()
     execution_progress = pyqtSignal(object)
     execution_complete = pyqtSignal(object)
     execution_failed = pyqtSignal(str)
@@ -189,19 +192,52 @@ class SyncSessionController(QObject):
         if self.is_running():
             self.blocked.emit(SyncSessionBlocked("busy"))
             return
-        if intent.plan is None or not getattr(intent.plan, "has_changes", True):
+        if intent.plan is None:
             self.blocked.emit(SyncSessionBlocked("no_changes"))
             return
 
         settings = self._settings_service.get_effective_settings()
-        tools = self._tool_availability_check(settings)
-        if tools.has_missing:
-            self.missing_tools.emit(
-                SyncSessionMissingTools(tools, execution_intent=intent)
-            )
+        if intent.scrobble_only:
+            # A manual scrobble changes only the durable pending-count queue.
+            # It must not inherit full-sync maintenance passes.
+            intent.plan.rockbox_metadata_pass = False
+        else:
+            self._apply_settings_to_plan(intent.plan, settings)
+        if not getattr(intent.plan, "has_changes", True):
+            self.blocked.emit(SyncSessionBlocked("no_changes"))
             return
+        if not intent.scrobble_only:
+            quick_ready, blocked_label = self._quick_writes.prepare_for_full_sync()
+            if not quick_ready:
+                self.blocked.emit(
+                    SyncSessionBlocked(
+                        "quick_changes_saving",
+                        blocked_label or "quick changes",
+                    )
+                )
+                return
+        if not intent.scrobble_only:
+            tools = self._tool_availability_check(settings)
+            if tools.has_missing:
+                self.missing_tools.emit(
+                    SyncSessionMissingTools(tools, execution_intent=intent)
+                )
+                return
 
         device_session = self._device_sessions.current_session()
+        generation_getter = getattr(
+            self._library_cache,
+            "get_database_generation",
+            None,
+        )
+        if callable(generation_getter):
+            get_database_generation = cast(
+                "Callable[[], DatabaseGeneration | None]",
+                generation_getter,
+            )
+            expected_database_generation = get_database_generation()
+        else:
+            expected_database_generation = None
 
         worker = SyncExecuteWorker(
             ipod_path,
@@ -213,8 +249,15 @@ class SyncSessionController(QObject):
             ),
             device_info=device_session.identity,
             device_capabilities=device_session.capabilities,
-            on_sync_complete=self._library_cache.clear_pending_sync_state,
+            device_storage=getattr(device_session, "storage", None),
+            expected_database_generation=expected_database_generation,
+            on_sync_complete=(
+                None
+                if intent.scrobble_only
+                else self._library_cache.clear_pending_sync_state
+            ),
             sync_until_full=bool(intent.sync_until_full),
+            scrobble_only=bool(intent.scrobble_only),
         )
         self._execute_worker = worker
         worker.progress.connect(lambda progress: self.execution_progress.emit(progress))
@@ -225,8 +268,50 @@ class SyncSessionController(QObject):
         worker.confirm_partial_save.connect(
             lambda added, skipped: self.partial_save_requested.emit(added, skipped)
         )
+        if intent.scrobble_only:
+            self.scrobble_only_started.emit()
         self.execution_started.emit()
         worker.start()
+
+    def start_scrobble_only(self) -> None:
+        """Submit the cache's durable pending-scrobble queue without PC sync."""
+        if not self._device_manager.device_path:
+            self.blocked.emit(SyncSessionBlocked("no_device"))
+            return
+        if self.is_running():
+            self.blocked.emit(SyncSessionBlocked("busy"))
+            return
+        if not self._library_cache.is_ready() or self._library_cache.is_loading():
+            self.blocked.emit(SyncSessionBlocked("library_loading"))
+            return
+
+        from iopenpod.sync.scrobble_plan import build_pending_scrobble_plan
+
+        plan = build_pending_scrobble_plan(self._library_cache.get_tracks())
+        if not plan.has_changes:
+            self.blocked.emit(SyncSessionBlocked("no_pending_scrobbles"))
+            return
+
+        settings = self._settings_service.get_effective_settings()
+        listenbrainz_enabled = bool(getattr(settings, "listenbrainz_token", ""))
+        lastfm_enabled = all(
+            (
+                getattr(settings, "lastfm_api_key", ""),
+                getattr(settings, "lastfm_api_secret", ""),
+                getattr(settings, "lastfm_session_key", ""),
+            )
+        )
+        if not listenbrainz_enabled and not lastfm_enabled:
+            self.blocked.emit(SyncSessionBlocked("scrobbling_not_configured"))
+            return
+
+        self.start_execution(
+            SyncExecutionIntent(
+                plan=plan,
+                skip_backup=True,
+                scrobble_only=True,
+            )
+        )
 
     def request_execution_cancel(self) -> None:
         worker = self._execute_worker
@@ -347,6 +432,10 @@ class SyncSessionController(QObject):
         podcast_input = self._current_podcast_input()
         supports_podcast = self._supports_podcast()
         if podcast_input is None or not podcast_input.feeds or not supports_podcast:
+            self._apply_settings_to_plan(
+                plan,
+                self._settings_service.get_effective_settings(),
+            )
             self.plan_ready.emit(plan)
             return
 
@@ -402,6 +491,10 @@ class SyncSessionController(QObject):
         if getattr(podcast_plan, "to_remove", None):
             plan.to_remove.extend(podcast_plan.to_remove)
             plan.storage.bytes_to_remove += podcast_plan.storage.bytes_to_remove
+        self._apply_settings_to_plan(
+            plan,
+            self._settings_service.get_effective_settings(),
+        )
         self.plan_ready.emit(plan)
 
     def _on_podcast_plan_error(self, plan: Any, error_msg: str, worker: Any) -> None:
@@ -409,12 +502,24 @@ class SyncSessionController(QObject):
             return
         self._podcast_plan_worker = None
         logger.warning("Failed to build podcast plan: %s", error_msg)
+        self._apply_settings_to_plan(
+            plan,
+            self._settings_service.get_effective_settings(),
+        )
         self.plan_ready.emit(plan)
 
     def _on_execution_complete(self, result: Any, worker: Any) -> None:
         if self._execute_worker is not worker:
             return
         self._execute_worker = None
+        if bool(getattr(worker, "scrobble_only", False)):
+            cleared_track_ids = tuple(
+                getattr(result, "cleared_pending_scrobble_track_ids", ()) or ()
+            )
+            if cleared_track_ids:
+                self._library_cache.clear_pending_scrobble_counts(
+                    cleared_track_ids
+                )
         self.execution_complete.emit(result)
 
     def _on_execution_error(self, error_msg: str, worker: Any) -> None:
@@ -431,6 +536,14 @@ class SyncSessionController(QObject):
     def _supports_podcast(self) -> bool:
         caps = self._device_sessions.current_session().capabilities
         return bool(caps and caps.supports_podcast)
+
+    @staticmethod
+    def _apply_settings_to_plan(plan: Any, settings: Any) -> None:
+        """Capture execution-only settings in the reviewable plan."""
+
+        plan.rockbox_metadata_pass = bool(
+            getattr(settings, "rockbox_metadata_support", False)
+        )
 
     @staticmethod
     def _worker_is_running(worker: Any | None) -> bool:

@@ -44,19 +44,21 @@ def extract_art(file_path: str) -> bytes | None:
     try:
         if ext in _IMAGE_EXTS:
             return path.read_bytes()
+        if ext in _VIDEO_EXTS:
+            # All supported video containers can produce a poster frame.  MP4
+            # family files may have a covr atom, but non-MP4 sources such as
+            # MKV need the frame fallback directly.
+            if MUTAGEN_AVAILABLE and ext in ('.m4v', '.mp4', '.mov'):
+                art = _extract_mp4(file_path)
+                if art:
+                    return art
+            return _extract_video_frame(file_path)
         if not MUTAGEN_AVAILABLE:
             return None
         if ext == '.mp3':
             return _extract_mp3(file_path)
         elif ext in ('.m4a', '.m4p', '.m4b', '.aac', '.alac'):
             return _extract_mp4(file_path)
-        elif ext in ('.m4v', '.mp4', '.mov'):
-            # Video files may have embedded cover art in the covr atom.
-            # Fall back to extracting a thumbnail frame via ffmpeg.
-            art = _extract_mp4(file_path)
-            if art:
-                return art
-            return _extract_video_frame(file_path)
         elif ext == '.flac':
             return _extract_flac(file_path)
         elif ext == '.ogg':
@@ -81,6 +83,11 @@ _FOLDER_ART_NAMES = (
     "cover", "folder", "album", "front", "artwork", "thumb",
 )
 _IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+_VIDEO_EXTS = (
+    ".m4v", ".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv",
+    ".mpg", ".mpeg", ".3gp", ".3g2", ".flv", ".mts", ".m2ts",
+    ".ts", ".ogv",
+)
 
 
 def find_folder_art(file_path: str) -> str | None:

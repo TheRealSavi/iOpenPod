@@ -10,10 +10,10 @@ from __future__ import annotations
 import ctypes
 import logging
 import os
-import re
 import sys
 
 from .diagnostic_log import CAPABILITY_FIELDS, IDENTITY_FIELDS, format_fields
+from .linux_identity import find_block_device, whole_disk_device
 from .sysinfo import normalize_guid, parse_sysinfo_extended
 
 logger = logging.getLogger(__name__)
@@ -49,28 +49,18 @@ class _SG_IO_HDR(ctypes.Structure):
     ]
 
 
-def _whole_disk_candidate(device: str) -> str:
-    real = os.path.realpath(device)
-    base = os.path.basename(real)
-    dirname = os.path.dirname(real)
-    if re.match(r"sd[a-z]+\d+$", base):
-        return os.path.join(dirname, re.sub(r"\d+$", "", base))
-    if re.match(r"(mmcblk|nvme).+p\d+$", base):
-        return os.path.join(dirname, re.sub(r"p\d+$", "", base))
-    return real
-
-
 def _block_candidates(mount_path: str) -> list[str]:
     try:
-        from .scanner import _linux_find_block_device
-
-        partition = _linux_find_block_device(mount_path)
+        partition = find_block_device(mount_path)
     except Exception as exc:
         logger.debug("Linux SG_IO: mount lookup failed for %s: %s", mount_path, exc)
         partition = None
 
     candidates: list[str] = []
-    for path in (partition, _whole_disk_candidate(partition) if partition else None):
+    for path in (
+        whole_disk_device(partition) if partition else None,
+        partition,
+    ):
         if path and path not in candidates:
             candidates.append(path)
     return candidates

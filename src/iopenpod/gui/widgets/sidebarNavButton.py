@@ -7,9 +7,9 @@ from PyQt6.QtWidgets import QLabel, QPushButton, QSizePolicy
 from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
+    paint_css,
     sidebar_nav_css,
     sidebar_nav_state,
 )
@@ -139,8 +139,8 @@ class SidebarNavButton(QPushButton):
         self._badge_label.setFont(badge_font)
         self._badge_label.setStyleSheet(f"""
             QLabel#sidebarNavBadge {{
-                background: {Colors.ACCENT};
-                color: {Colors.TEXT_ON_ACCENT};
+                background: {paint_css('control.primary.fill')};
+                color: {paint_css('control.primary.text')};
                 border: none;
                 border-radius: 9px;
                 padding: 0px 5px;

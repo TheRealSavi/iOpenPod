@@ -21,7 +21,11 @@ def parse_album_item(
 ) -> ParseResult:
     """Parse an MHIA (Album Item) chunk and its MHOD children."""
     mhia = idb.read_fields(data, offset, "mhia", header_length)
-    mhia["children"], _ = parse_children(
+    mhia["children"], child_end = parse_children(
         data, offset + header_length, mhia["child_count"],
     )
-    return {"next_offset": offset + chunk_length, "data": mhia}
+    return {
+        "next_offset": offset + chunk_length,
+        "data": mhia,
+        "_body_end": child_end,
+    }

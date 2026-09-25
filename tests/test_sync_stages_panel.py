@@ -8,6 +8,7 @@ logic so we can catch regressions without spinning up Qt.
 
 from __future__ import annotations
 
+from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets.syncStagesPanel import (
     DEFAULT_PIPELINE,
     StageStatus,
@@ -335,3 +336,16 @@ def test_panel_reset_for_pipeline_clears_previous_state(qtbot) -> None:
     panel.reset_for_pipeline(_TEST_PIPELINE)
     assert all(v == StageStatus.PENDING for v in panel.states_snapshot().values())
     assert panel.active_stage() is None
+
+
+def test_stage_row_states_use_final_component_paints() -> None:
+    from iopenpod.gui.widgets.syncStagesPanel import _row_frame_style
+
+    assert _row_frame_style(StageStatus.CURRENT) == (
+        paint_css("sync.stage.current_fill"),
+        paint_css("sync.stage.current_border"),
+    )
+    assert _row_frame_style(StageStatus.FAILED) == (
+        paint_css("sync.stage.failed_fill"),
+        paint_css("sync.stage.failed_border"),
+    )

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "iopenpod"
-version = "1.66.1"
+version = "1.68.1"
 description = "Open-source iPod Classic sync tool — manage your iPod media library without iTunes. Reads and writes iTunesDB directly."
 authors = [
     {name = "John Gibbons", email = "johngibbons167@gmail.com"}
@@ -35,12 +35,14 @@ dependencies = [
     "pycryptodome>=3.20.0,<4.0.0",
     "mutagen>=1.47.0,<2.0.0",
     "pyusb>=1.3.1",
+    "libusb-package>=1.0.30.0",
     "wasmtime>=30.0.0",
     "certifi>=2024.0.0",
     "feedparser>=6.0.10",
     "requests>=2.31.0",
     "packaging>=23.0",
     "tqdm>=4.67.3",
+    "tzdata>=2024.1",
     "python-dateutil>=2.9.0.post0",
 ]
 
@@ -52,6 +54,7 @@ dev = [
     "mypy>=1.15.0",
     "nuitka>=4.0.3",
     "ordered-set>=4.1.0",
+    "pre-commit>=4.2.0",
     "pytest>=8.3.5",
     "pytest-qt>=4.4.0",
     "pyinstaller>=6.19.0",
@@ -61,12 +64,6 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/iopenpod"]
-
-[tool.flake8]
-# Allow line breaks before binary operators (W503) — matches Black's style
-extend-ignore = ["W503"]
-# Keep line length reasonable; adjust if you prefer a different value
-max-line-length = 320
 
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"

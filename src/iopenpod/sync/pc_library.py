@@ -820,10 +820,12 @@ class PCLibrary:
         ext = file_path.suffix.lower()
         is_video = ext in VIDEO_EXTENSIONS
 
-        # Video scanning must remain metadata-light. Opening large or malformed
-        # containers with Mutagen, FFmpeg, or ffprobe here can exhaust system
-        # resources before the user has even reviewed the sync plan. Video
-        # metadata and artwork therefore use safe filename/default values.
+        # Video scanning must remain metadata-light. Read only the embedded
+        # MP4 tag atom so the iPod database receives the user's title, artist,
+        # album, and video-kind metadata; do not decode media, probe codecs, or
+        # extract artwork/thumbnails during planning.  Containers which
+        # Mutagen cannot read receive one format-level ffprobe fallback so
+        # their iTunesDB records still have a usable title and duration.
         metadata: dict[str, Any]
         if is_video:
             audio = None
@@ -834,6 +836,30 @@ class PCLibrary:
                     else 0
                 ),
             }
+            if ext in {".mp4", ".m4v", ".mov"} and mutagen is not None:
+                try:
+                    audio = mutagen.File(file_path)  # type: ignore[union-attr]
+                    if audio is not None:
+                        video_metadata = self._extract_metadata(audio, ext, file_path)
+                        if not video_metadata.get("duration_ms"):
+                            # Keep the lightweight movie-header duration when
+                            # Mutagen cannot derive one from a sparse file.
+                            video_metadata.pop("duration_ms", None)
+                        metadata.update(video_metadata)
+                except Exception as e:
+                    logging.debug("Could not read video metadata from %s: %s", file_path, e)
+            if ext not in {".mp4", ".m4v", ".mov"} or (
+                ext == ".mov" and not metadata.get("title")
+            ):
+                # MKV and other non-MP4 containers have no lightweight local
+                # parser here.  QuickTime MOV files can also carry legacy
+                # ``udta`` tags that Mutagen does not expose.  This asks
+                # ffprobe for the container header only; it neither decodes
+                # streams nor extracts artwork.
+                fallback_metadata = self._extract_metadata(None, ext, file_path)
+                for key, value in fallback_metadata.items():
+                    if metadata.get(key) in (None, "", 0):
+                        metadata[key] = value
             art_hash = None
         else:
             # Try to open audio with mutagen.
@@ -863,7 +889,7 @@ class PCLibrary:
         # iPod DB chapter timelines are format-agnostic; embedded chapters are
         # only a source/import convenience when the container exposes them.
         chapters = None
-        if not is_video and ext in MEDIA_EXTENSIONS:
+        if ext in MEDIA_EXTENSIONS:
             try:
                 from iopenpod.podcasts.downloader import extract_chapters
                 chapters = extract_chapters(str(file_path))
@@ -1031,7 +1057,7 @@ class PCLibrary:
         # Handle different tag formats
         if ext == ".mp3":
             metadata.update(self._extract_id3(audio))
-        elif ext in {".m4a", ".m4p", ".m4b", ".m4v", ".mp4", ".aac"}:
+        elif ext in {".m4a", ".m4p", ".m4b", ".m4v", ".mp4", ".mov", ".aac"}:
             metadata.update(self._extract_mp4(audio))
         elif ext == ".flac":
             metadata.update(self._extract_vorbis(audio))

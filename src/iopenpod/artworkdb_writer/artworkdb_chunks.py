@@ -28,6 +28,7 @@ from iopenpod.artworkdb_shared.ithmb_paths import (
 )
 from iopenpod.artworkdb_shared.mhni import read_mhni_fields
 from iopenpod.artworkdb_shared.mhod import decode_mhod_string_chunk, encode_mhod_string_body
+from iopenpod.device.write_guard import DeviceWriteSafetyError
 
 from .artwork_types import ArtworkEntry, ArtworkFormatPayload, ExistingFormatRef, IthmbLocation
 from .ithmb_codecs import expected_size_bytes
@@ -248,72 +249,121 @@ def build_artworkdb(
 
 def read_existing_artwork(artworkdb_path: str, artwork_dir: str) -> dict[int, dict]:
     """Read existing ArtworkDB entries as typed ithmb location refs."""
-    if not os.path.exists(artworkdb_path):
-        return {}
-
     try:
         with open(artworkdb_path, "rb") as f:
             data = f.read()
-    except Exception as exc:
-        logger.warning("ART: failed to read existing ArtworkDB: %s", exc)
+    except FileNotFoundError:
         return {}
+    except OSError as exc:
+        raise DeviceWriteSafetyError(
+            "The existing ArtworkDB could not be read safely. iOpenPod stopped "
+            f"before replacing artwork metadata: {exc}"
+        ) from exc
 
     if len(data) < 32 or data[:4] != b"mhfd":
-        return {}
+        raise _invalid_artworkdb("missing or truncated mhfd header")
 
     entries = {}
-    mhfd_header = read_chunk_header(data, 0)
+    try:
+        mhfd_header = read_chunk_header(data, 0)
+    except (ValueError, struct.error) as exc:
+        raise _invalid_artworkdb(str(exc)) from exc
     mhfd_header_size = mhfd_header.header_size
+    mhfd_total_size = mhfd_header.length_or_count
     child_count = read_u32(data, 20)
-    if mhfd_header_size < 32 or mhfd_header_size > len(data):
-        logger.warning("ART: invalid ArtworkDB mhfd header size %d", mhfd_header_size)
-        return {}
+    if not total_length_is_valid(
+        data,
+        0,
+        mhfd_header_size,
+        mhfd_total_size,
+        32,
+    ):
+        raise _invalid_artworkdb(
+            f"invalid mhfd size header={mhfd_header_size} total={mhfd_total_size}"
+        )
 
     offset = mhfd_header_size
-    for _ in range(child_count):
-        if offset + 14 > len(data) or data[offset:offset + 4] != b"mhsd":
-            break
+    database_end = mhfd_total_size
+    for child_index in range(child_count):
+        if (
+            offset + 14 > database_end
+            or data[offset:offset + 4] != b"mhsd"
+        ):
+            raise _invalid_artworkdb(
+                f"missing mhsd child {child_index} at offset {offset}"
+            )
         mhsd_chunk = read_chunk_header(data, offset)
         mhsd_header = mhsd_chunk.header_size
         mhsd_total = mhsd_chunk.length_or_count
         ds_type = read_u16(data, offset + 12)
-        if not total_length_is_valid(data, offset, mhsd_header, mhsd_total, 14):
-            logger.warning("ART: invalid ArtworkDB mhsd chunk at offset %d", offset)
-            break
+        if not total_length_is_valid(
+            data,
+            offset,
+            mhsd_header,
+            mhsd_total,
+            14,
+            database_end,
+        ):
+            raise _invalid_artworkdb(f"invalid mhsd chunk at offset {offset}")
 
         if ds_type == ArtworkDatasetType.IMAGE_LIST:
             dataset_end = offset + mhsd_total
             mhli_offset = offset + mhsd_header
-            if mhli_offset + 12 <= dataset_end and data[mhli_offset:mhli_offset + 4] == b"mhli":
-                mhli_chunk = read_chunk_header(data, mhli_offset)
-                mhli_header = mhli_chunk.header_size
-                mhii_count = mhli_chunk.length_or_count
-                if mhli_header < 12 or mhli_offset + mhli_header > dataset_end:
-                    logger.warning("ART: invalid ArtworkDB mhli chunk at offset %d", mhli_offset)
-                    break
-                mhii_offset = mhli_offset + mhli_header
-                for _ in range(mhii_count):
-                    if mhii_offset + 52 > dataset_end or data[mhii_offset:mhii_offset + 4] != b"mhii":
-                        break
-                    mhii_total = read_u32(data, mhii_offset + 8)
-                    if mhii_total < 52 or mhii_offset + mhii_total > dataset_end:
-                        logger.warning("ART: invalid ArtworkDB mhii chunk at offset %d", mhii_offset)
-                        break
-                    entry = _parse_mhii_existing(data, mhii_offset, mhii_total, artwork_dir)
-                    if entry:
-                        entries[entry["img_id"]] = entry
-                    mhii_offset += mhii_total
+            if (
+                mhli_offset + 12 > dataset_end
+                or data[mhli_offset:mhli_offset + 4] != b"mhli"
+            ):
+                raise _invalid_artworkdb(
+                    f"missing mhli image list at offset {mhli_offset}"
+                )
+            mhli_chunk = read_chunk_header(data, mhli_offset)
+            mhli_header = mhli_chunk.header_size
+            mhii_count = mhli_chunk.length_or_count
+            if mhli_header < 12 or mhli_offset + mhli_header > dataset_end:
+                raise _invalid_artworkdb(
+                    f"invalid mhli chunk at offset {mhli_offset}"
+                )
+            mhii_offset = mhli_offset + mhli_header
+            for entry_index in range(mhii_count):
+                if (
+                    mhii_offset + 52 > dataset_end
+                    or data[mhii_offset:mhii_offset + 4] != b"mhii"
+                ):
+                    raise _invalid_artworkdb(
+                        f"missing mhii entry {entry_index} at offset {mhii_offset}"
+                    )
+                mhii_total = read_u32(data, mhii_offset + 8)
+                if mhii_total < 52 or mhii_offset + mhii_total > dataset_end:
+                    raise _invalid_artworkdb(
+                        f"invalid mhii chunk at offset {mhii_offset}"
+                    )
+                entry = _parse_mhii_existing(
+                    data,
+                    mhii_offset,
+                    mhii_total,
+                    artwork_dir,
+                )
+                if entry:
+                    entries[entry["img_id"]] = entry
+                mhii_offset += mhii_total
 
         offset += mhsd_total
 
     return entries
 
 
+def _invalid_artworkdb(detail: str) -> DeviceWriteSafetyError:
+    return DeviceWriteSafetyError(
+        "The existing ArtworkDB is malformed or truncated. iOpenPod stopped "
+        f"before replacing artwork metadata ({detail})."
+    )
+
+
 def _parse_mhii_existing(data: bytes, offset: int, total_len: int, artwork_dir: str) -> dict | None:
     """Parse one MHII entry from an existing ArtworkDB."""
     entry_end = offset + total_len
     if offset + 52 > entry_end:
-        return None
+        raise _invalid_artworkdb(f"truncated mhii header at offset {offset}")
 
     header_size = read_u32(data, offset + 4)
     child_count = read_u32(data, offset + 12)
@@ -321,44 +371,61 @@ def _parse_mhii_existing(data: bytes, offset: int, total_len: int, artwork_dir: 
     song_id = read_u64(data, offset + 20)
     src_img_size = read_u32(data, offset + 48)
     if header_size < 52 or header_size > total_len:
-        logger.warning("ART: invalid ArtworkDB mhii header size %d at offset %d", header_size, offset)
-        return None
+        raise _invalid_artworkdb(
+            f"invalid mhii header size {header_size} at offset {offset}"
+        )
 
     formats: dict[int, ExistingFormatRef] = {}
     child_offset = offset + header_size
-    for _ in range(child_count):
-        if child_offset + 14 > entry_end or data[child_offset:child_offset + 4] != b"mhod":
-            break
+    for child_index in range(child_count):
+        if (
+            child_offset + 14 > entry_end
+            or data[child_offset:child_offset + 4] != b"mhod"
+        ):
+            raise _invalid_artworkdb(
+                f"missing mhod child {child_index} at offset {child_offset}"
+            )
         mhod_chunk = read_chunk_header(data, child_offset)
         mhod_header = mhod_chunk.header_size
         mhod_total = mhod_chunk.length_or_count
         mhod_type = read_u16(data, child_offset + 12)
         if not total_length_is_valid(data, child_offset, mhod_header, mhod_total, 14, entry_end):
-            logger.warning("ART: invalid ArtworkDB mhod chunk at offset %d", child_offset)
-            break
+            raise _invalid_artworkdb(
+                f"invalid mhod chunk at offset {child_offset}"
+            )
 
         if mhod_type == ArtworkMhodType.THUMBNAIL_IMAGE:
             mhni_offset = child_offset + mhod_header
             child_end = child_offset + mhod_total
-            if mhni_offset + MHNI_HEADER_SIZE <= child_end and data[mhni_offset:mhni_offset + 4] == b"mhni":
-                fields = read_mhni_fields(data, mhni_offset)
-                format_id = fields.format_id
-                ithmb_offset = fields.ithmb_offset
-                img_size = fields.image_size
-                ithmb_filename = _parse_mhni_filename(data, mhni_offset, child_end)
-                ithmb_filename = _normalize_ithmb_filename(format_id, ithmb_filename)
-                ithmb_path = _ithmb_path_for_filename(artwork_dir, format_id, ithmb_filename)
-                if os.path.exists(ithmb_path) and img_size > 0:
-                    formats[format_id] = ExistingFormatRef(
-                        path=ithmb_path,
-                        ithmb_offset=ithmb_offset,
-                        size=img_size,
-                        width=max(1, int(fields.image_width)),
-                        height=max(1, int(fields.image_height)),
-                        hpad=max(0, int(fields.horizontal_padding)),
-                        vpad=max(0, int(fields.vertical_padding)),
-                        ithmb_filename=ithmb_filename,
-                    )
+            if (
+                mhni_offset + MHNI_HEADER_SIZE > child_end
+                or data[mhni_offset:mhni_offset + 4] != b"mhni"
+            ):
+                raise _invalid_artworkdb(
+                    f"invalid mhni thumbnail at offset {mhni_offset}"
+                )
+            fields = read_mhni_fields(data, mhni_offset)
+            format_id = fields.format_id
+            ithmb_offset = fields.ithmb_offset
+            img_size = fields.image_size
+            ithmb_filename = _parse_mhni_filename(data, mhni_offset, child_end)
+            ithmb_filename = _normalize_ithmb_filename(format_id, ithmb_filename)
+            ithmb_path = _ithmb_path_for_filename(
+                artwork_dir,
+                format_id,
+                ithmb_filename,
+            )
+            if os.path.exists(ithmb_path) and img_size > 0:
+                formats[format_id] = ExistingFormatRef(
+                    path=ithmb_path,
+                    ithmb_offset=ithmb_offset,
+                    size=img_size,
+                    width=max(1, int(fields.image_width)),
+                    height=max(1, int(fields.image_height)),
+                    hpad=max(0, int(fields.horizontal_padding)),
+                    vpad=max(0, int(fields.vertical_padding)),
+                    ithmb_filename=ithmb_filename,
+                )
 
         child_offset += mhod_total
 

@@ -17,6 +17,7 @@ Usage::
 
 import logging
 import os
+import struct
 
 from iopenpod.itunesdb_shared.extraction import (
     extract_datasets,
@@ -50,7 +51,32 @@ def load_ipod_library(itunesdb_path: str,
         return None
 
     try:
-        raw = parse_itunesdb(itunesdb_path)
+        from iopenpod.itunesdb_shared.device_time import (
+            DeviceTimeContext,
+            read_device_time_context,
+            timezone_changed_since_database,
+        )
+
+        with open(itunesdb_path, "rb") as db_file:
+            header = db_file.read(0x70)
+        database_offset = (
+            struct.unpack_from("<i", header, 0x6C)[0]
+            if len(header) >= 0x70 and header[:4] == b"mhbd"
+            else None
+        )
+        device_time_context = read_device_time_context(
+            os.path.dirname(os.path.dirname(os.path.dirname(itunesdb_path))),
+            database_offset=database_offset,
+        )
+        timezone_changed = timezone_changed_since_database(
+            device_time_context, database_offset,
+        )
+        database_time_context = (
+            DeviceTimeContext.fixed_offset(database_offset)
+            if timezone_changed and database_offset is not None
+            else device_time_context
+        )
+        raw = parse_itunesdb(itunesdb_path, time_context=database_time_context)
         data = extract_datasets(raw)
 
         _inline_track_strings(data)
@@ -62,7 +88,8 @@ def load_ipod_library(itunesdb_path: str,
         _inline_artist_strings(data)
 
         if merge_playcounts:
-            _merge_play_counts(data, itunesdb_path)
+            _merge_play_counts(data, itunesdb_path, device_time_context)
+        data["playcounts_timezone_changed"] = timezone_changed
 
         # Import On-The-Go playlists from OTGPlaylistInfo files.
         # These are device-created playlists stored outside the iTunesDB.
@@ -133,7 +160,7 @@ def _inline_artist_strings(data: dict) -> None:
         artist.update(strings)
 
 
-def _merge_play_counts(data: dict, itunesdb_path: str) -> None:
+def _merge_play_counts(data: dict, itunesdb_path: str, time_context) -> None:
     try:
         from .playcounts import merge_playcounts as _merge
         from .playcounts import parse_playcounts
@@ -142,6 +169,6 @@ def _merge_play_counts(data: dict, itunesdb_path: str) -> None:
         entries = parse_playcounts(pc_path)
         if entries is not None:
             tracks = data.get("mhlt", [])
-            _merge(tracks, entries)
+            _merge(tracks, entries, time_context=time_context)
     except Exception:
         logger.debug("Play Counts merge skipped", exc_info=True)

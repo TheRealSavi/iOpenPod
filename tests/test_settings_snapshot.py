@@ -49,6 +49,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         lastfm_username="lf-user",
         backup_before_sync_mode="ask",
         normalize_tags_after_sync=True,
+        rockbox_metadata_support=True,
     )
 
     snapshot = SettingsSnapshot.from_settings(cast(Any, settings))
@@ -94,6 +95,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
     assert snapshot.backup_before_sync_mode == "ask"
     assert snapshot.backup_before_sync is False
     assert snapshot.normalize_tags_after_sync is True
+    assert snapshot.rockbox_metadata_support is True
 
     settings.track_list_columns_by_content["music"]["year"] = 120
     assert "year" not in snapshot.track_list_columns_by_content["music"]

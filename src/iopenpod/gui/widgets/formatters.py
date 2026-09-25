@@ -281,6 +281,28 @@ def format_smart_rule(rule: dict) -> str:
     return f"{field} {action}"
 
 
+def _smart_conjunction_label(value: object) -> str:
+    if isinstance(value, int):
+        return "ANY" if value == 1 else "ALL"
+    return "ANY" if str(value).upper() == "OR" else "ALL"
+
+
+def _format_smart_rule_tree(rules: list[dict], *, indent: int) -> list[str]:
+    lines: list[str] = []
+    prefix = " " * indent + "• "
+    for rule in rules:
+        group = rule.get("group")
+        if isinstance(group, dict):
+            conjunction = _smart_conjunction_label(group.get("conjunction", "AND"))
+            lines.append(f"{prefix}Match {conjunction} of:")
+            child_rules = group.get("rules", [])
+            if isinstance(child_rules, list):
+                lines.extend(_format_smart_rule_tree(child_rules, indent=indent + 4))
+            continue
+        lines.append(f"{prefix}{format_smart_rule(rule)}")
+    return lines
+
+
 def format_smart_rules_summary(rules_data: dict | None, prefs_data: dict | None) -> list[str]:
     """Build a list of human-readable lines summarizing smart playlist rules.
 
@@ -313,15 +335,10 @@ def format_smart_rules_summary(rules_data: dict | None, prefs_data: dict | None)
 
     # Rules
     if rules_data:
-        raw_conj = rules_data.get("conjunction", "AND")
-        if isinstance(raw_conj, int):
-            conjunction = "ANY" if raw_conj == 1 else "ALL"
-        else:
-            conjunction = "ANY" if str(raw_conj).upper() == "OR" else "ALL"
+        conjunction = _smart_conjunction_label(rules_data.get("conjunction", "AND"))
         rules = rules_data.get("rules", [])
         if rules:
             lines.append(f"Match {conjunction} of the following:")
-            for rule in rules:
-                lines.append(f"  • {format_smart_rule(rule)}")
+            lines.extend(_format_smart_rule_tree(rules, indent=2))
 
     return lines

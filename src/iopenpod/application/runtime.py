@@ -14,8 +14,22 @@ from typing import TypeAlias
 
 from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, pyqtSignal, pyqtSlot
 
+from iopenpod.device.write_guard import (
+    DatabaseGeneration,
+    DeviceWriteSafetyError,
+    ExternalDatabaseChangeError,
+    capture_database_generation,
+)
 from iopenpod.itunesdb_shared.album_identity import album_identity_from_mapping
 from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_AUDIO, MEDIA_TYPE_AUDIO_VIDEO
+from iopenpod.itunesdb_shared.playlist_hierarchy import (
+    reconcile_playlist_hierarchy,
+    refresh_playlist_hierarchy_ancestors,
+)
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    is_playlist_folder,
+    is_podcast_playlist,
+)
 from iopenpod.itunesdb_shared.playlist_properties import (
     normalize_playlist_description,
 )
@@ -38,6 +52,7 @@ _DISPLAY_ONLY_PLAYLIST_KEYS = {
     "_mhsd_display_merged",
     "_mhsd_display_label",
 }
+_PLAYLIST_HIERARCHY_PREPARED = "_iopenpod_playlist_hierarchy_prepared"
 
 
 def _is_iopenpod_temp_artwork_path(path: str) -> bool:
@@ -116,7 +131,7 @@ def _is_regular_playlist_mirror_candidate(playlist: dict) -> bool:
         return False
     if _is_ipod_category_playlist(playlist):
         return False
-    if playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
+    if is_podcast_playlist(playlist) or playlist.get("_source") == "podcast":
         return False
     return True
 
@@ -372,6 +387,205 @@ def _playlist_with_origin(playlist: dict, dataset_type: int, result_key: str) ->
     return _playlist_with_description(row)
 
 
+def _prepare_playlist_data(data: dict) -> None:
+    """Reconcile parsed playlist buckets before publishing the cache."""
+
+    for bucket_key, (_dataset_type, _result_key) in _PLAYLIST_BUCKET_ORIGINS.items():
+        bucket = data.get(bucket_key, [])
+        if isinstance(bucket, list):
+            data[bucket_key] = reconcile_playlist_hierarchy(
+                row for row in bucket if isinstance(row, dict)
+            )
+    data[_PLAYLIST_HIERARCHY_PREPARED] = True
+
+
+def _prepared_playlist_rows(data: dict) -> list[dict]:
+    result: list[dict] = []
+    for bucket_key, (dataset_type, result_key) in _PLAYLIST_BUCKET_ORIGINS.items():
+        bucket = data.get(bucket_key, [])
+        if not isinstance(bucket, list):
+            continue
+        result.extend(
+            _playlist_with_origin(row, dataset_type, result_key)
+            for row in bucket
+            if isinstance(row, dict)
+        )
+    return result
+
+
+def _hydrate_live_playlist_buckets(
+    data: dict,
+    prepared_playlists: list[dict],
+) -> None:
+    """Replace live buckets with the committed prepared hierarchy."""
+
+    for bucket_key, (dataset_type, _result_key) in _PLAYLIST_BUCKET_ORIGINS.items():
+        data[bucket_key] = [
+            _without_display_playlist_keys(playlist)
+            for playlist in prepared_playlists
+            if _playlist_dataset_type(playlist) == dataset_type
+        ]
+
+
+def _playlist_parent_id(playlist: dict | None) -> int:
+    if playlist is None:
+        return 0
+    try:
+        return int(
+            playlist.get(
+                "parent_folder_playlist_id",
+                playlist.get("unk0x30_playlist_ref", 0),
+            )
+            or 0
+        )
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _playlist_id(playlist: dict | None) -> int:
+    if playlist is None:
+        return 0
+    try:
+        return int(playlist.get("playlist_id", 0) or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _playlist_rows_with_dataset(
+    rows: list[dict],
+    dataset_type: int,
+    replacement: list[dict],
+) -> list[dict]:
+    by_dataset = {
+        current_dataset: (
+            replacement
+            if current_dataset == dataset_type
+            else [
+                row
+                for row in rows
+                if _playlist_dataset_type(row) == current_dataset
+            ]
+        )
+        for current_dataset in (2, 3, 5)
+    }
+    unknown = [
+        row for row in rows if _playlist_dataset_type(row) not in (2, 3, 5)
+    ]
+    return [*by_dataset[2], *by_dataset[3], *by_dataset[5], *unknown]
+
+
+def _upsert_prepared_playlist(
+    rows: list[dict],
+    playlist: dict,
+) -> list[dict]:
+    """Apply one staged edit without rebuilding unrelated folder trees."""
+
+    dataset_type = _playlist_dataset_type(playlist)
+    playlist_id = _playlist_id(playlist)
+    if dataset_type not in (2, 3, 5):
+        updated = list(rows)
+        for index, existing in enumerate(updated):
+            if (
+                _playlist_dataset_type(existing) == dataset_type
+                and _playlist_id(existing) == playlist_id
+            ):
+                updated[index] = playlist
+                break
+        else:
+            updated.append(playlist)
+        return updated
+
+    dataset_rows = [
+        row for row in rows if _playlist_dataset_type(row) == dataset_type
+    ]
+    existing: dict | None = None
+    for index, row in enumerate(dataset_rows):
+        if _playlist_id(row) == playlist_id:
+            existing = row
+            result_key = str(
+                playlist.get("_mhsd_result_key")
+                or _result_key_for_dataset(dataset_type)
+            )
+            dataset_rows[index] = _playlist_with_origin(
+                playlist,
+                dataset_type,
+                result_key,
+            )
+            break
+    else:
+        result_key = str(
+            playlist.get("_mhsd_result_key")
+            or _result_key_for_dataset(dataset_type)
+        )
+        dataset_rows.append(
+            _playlist_with_origin(
+                playlist,
+                dataset_type,
+                result_key,
+            )
+        )
+
+    affected_folder_ids = {
+        _playlist_parent_id(existing),
+        _playlist_parent_id(playlist),
+    }
+    if is_playlist_folder(existing or {}) or is_playlist_folder(playlist):
+        affected_folder_ids.add(playlist_id)
+    refreshed = refresh_playlist_hierarchy_ancestors(
+        dataset_rows,
+        affected_folder_ids,
+    )
+    return _playlist_rows_with_dataset(rows, dataset_type, refreshed)
+
+
+def _remove_prepared_playlist(
+    rows: list[dict],
+    playlist_id: int,
+    dataset_type: int | None,
+) -> list[dict]:
+    """Remove rows and refresh only folders touched by the deletion."""
+
+    target_datasets = (2, 3, 5) if not dataset_type else (dataset_type,)
+    updated = list(rows)
+    for target_dataset in target_datasets:
+        if target_dataset not in (2, 3, 5):
+            continue
+        dataset_rows = [
+            row for row in updated if _playlist_dataset_type(row) == target_dataset
+        ]
+        removed_rows = [
+            row for row in dataset_rows if _playlist_id(row) == playlist_id
+        ]
+        if not removed_rows:
+            continue
+        removed_parent_id = _playlist_parent_id(removed_rows[0])
+        kept: list[dict] = []
+        for row in dataset_rows:
+            if _playlist_id(row) == playlist_id:
+                continue
+            if _playlist_parent_id(row) == playlist_id:
+                row = dict(row)
+                row["parent_folder_playlist_id"] = removed_parent_id
+                row["unk0x30_playlist_ref"] = removed_parent_id
+            kept.append(row)
+        refreshed = refresh_playlist_hierarchy_ancestors(
+            kept,
+            {removed_parent_id},
+        )
+        updated = _playlist_rows_with_dataset(updated, target_dataset, refreshed)
+
+    if dataset_type not in (2, 3, 5):
+        updated = [
+            row
+            for row in updated
+            if not (
+                _playlist_id(row) == playlist_id
+                and (not dataset_type or _playlist_dataset_type(row) == dataset_type)
+            )
+        ]
+    return updated
+
+
 def _playlist_live_origins(
     data: dict | None,
     playlist_id: object,
@@ -617,6 +831,10 @@ class DeviceSettingsLoader(QThread):
                 self._device_key,
                 settings_runtime.get_global_settings(),
             )
+            if state.load_error:
+                from iopenpod.device.write_guard import DeviceWriteSafetyError
+
+                raise DeviceWriteSafetyError(state.load_error)
             if not self.isInterruptionRequested():
                 self.loaded.emit(
                     self._token,
@@ -682,9 +900,9 @@ class DeviceManager(QObject):
     @discovered_ipod.setter
     def discovered_ipod(self, ipod: DeviceInfoLike | None) -> None:
         if ipod is not None:
-            from iopenpod.device import require_exact_model_number
+            from iopenpod.device import require_safe_device_profile
 
-            require_exact_model_number(ipod)
+            require_safe_device_profile(ipod)
         self._sync_device_info(ipod)
         self._discovered_ipod = ipod
 
@@ -754,12 +972,20 @@ class DeviceManager(QObject):
             from iopenpod.device import (
                 DeviceInfo,
                 ensure_device_itunes_database,
-                require_exact_model_number,
+                require_safe_device_profile,
             )
 
-            require_exact_model_number(self._discovered_ipod)
+            require_safe_device_profile(self._discovered_ipod)
             if isinstance(self._discovered_ipod, DeviceInfo):
-                ensure_device_itunes_database(path, self._discovered_ipod)
+                try:
+                    ensure_device_itunes_database(path, self._discovered_ipod)
+                except Exception as exc:
+                    logger.error(
+                        "iPod selection stopped before activation: path=%s error=%s",
+                        path,
+                        exc,
+                    )
+                    raise
         self.device_changing.emit()
         self.cancel_all_operations()
         iTunesDBCache.get_instance().clear()
@@ -855,9 +1081,12 @@ class iTunesDBCache(QObject):
         self._track_id_index: dict | None = None
         self._photo_db = None
         self._user_playlists: list[dict] = []
+        self._base_playlists: list[dict] = []
+        self._prepared_playlists: list[dict] = []
         self._track_edits: dict[int, dict[str, tuple]] = {}
         self._track_artwork_edits: dict[int, str] = {}
         self._quick_write_revision = 0
+        self._database_generation: DatabaseGeneration | None = None
         from iopenpod.sync.photos import PhotoEditState
 
         self._photo_edits = PhotoEditState()
@@ -880,10 +1109,13 @@ class iTunesDBCache(QObject):
             self._track_id_index = None
             self._photo_db = None
             self._user_playlists.clear()
+            self._base_playlists.clear()
+            self._prepared_playlists.clear()
             _cleanup_temp_artwork_paths(list(self._track_artwork_edits.values()))
             self._track_edits.clear()
             self._track_artwork_edits.clear()
             self._quick_write_revision += 1
+            self._database_generation = None
             from iopenpod.sync.photos import PhotoEditState
 
             self._photo_edits = PhotoEditState()
@@ -896,6 +1128,9 @@ class iTunesDBCache(QObject):
             self._artist_index = None
             self._genre_index = None
             self._track_id_index = None
+            self._database_generation = None
+            self._base_playlists.clear()
+            self._prepared_playlists.clear()
 
     def is_ready(self) -> bool:
         device = DeviceManager.get_instance()
@@ -925,6 +1160,28 @@ class iTunesDBCache(QObject):
     def get_tracks(self) -> list:
         data = self.get_data()
         return list(data.get("mhlt", [])) if data else []
+
+    def clear_pending_scrobble_counts(self, db_track_ids: tuple[int, ...]) -> None:
+        """Reconcile a committed pending-scrobble clear without reloading iTunesDB."""
+
+        target_ids = {int(db_track_id) for db_track_id in db_track_ids if db_track_id}
+        if not target_ids:
+            return
+
+        changed = False
+        with self._lock:
+            data = self._data
+            if data is None:
+                return
+            for track in data.get("mhlt", []):
+                if int(track.get("db_track_id", 0) or 0) not in target_ids:
+                    continue
+                if int(track.get("play_count_2", 0) or 0) == 0:
+                    continue
+                track["play_count_2"] = 0
+                changed = True
+        if changed:
+            self.data_ready.emit()
 
     def get_albums(self) -> list:
         data = self.get_data()
@@ -965,36 +1222,8 @@ class iTunesDBCache(QObject):
         data = self.get_data()
         if not data:
             return []
-
-        result: list[dict] = []
-
-        for playlist in data.get("mhlp", []):
-            result.append(_playlist_with_origin(playlist, 2, "mhlp"))
-
-        for playlist in data.get("mhlp_podcast", []):
-            result.append(_playlist_with_origin(playlist, 3, "mhlp_podcast"))
-
-        for playlist in data.get("mhlp_smart", []):
-            result.append(_playlist_with_origin(playlist, 5, "mhlp_smart"))
-
         with self._lock:
-            for user_playlist in self._user_playlists:
-                playlist_id = user_playlist.get("playlist_id", 0)
-                dataset_type = _playlist_dataset_type(user_playlist)
-                replaced = False
-                if playlist_id and dataset_type:
-                    for index, row in enumerate(result):
-                        if (
-                            row.get("playlist_id") == playlist_id
-                            and _playlist_dataset_type(row) == dataset_type
-                        ):
-                            result[index] = user_playlist
-                            replaced = True
-                            break
-                if not replaced:
-                    result.append(user_playlist)
-
-        return result
+            return [dict(playlist) for playlist in self._prepared_playlists]
 
     def get_display_playlists(self) -> list:
         return display_playlists_from_rows(self.get_playlists())
@@ -1046,6 +1275,10 @@ class iTunesDBCache(QObject):
                         break
                 if not replaced:
                     self._user_playlists.append(target_playlist)
+                self._prepared_playlists = _upsert_prepared_playlist(
+                    self._prepared_playlists,
+                    target_playlist,
+                )
             self._quick_write_revision += 1
 
         logger.info(
@@ -1107,15 +1340,35 @@ class iTunesDBCache(QObject):
             if data is not None:
                 for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
                     bucket = data.get(key, [])
-                    kept = [
-                        playlist
-                        for playlist in bucket
-                        if not matches(playlist, key)
+                    removed_rows = [
+                        playlist for playlist in bucket if matches(playlist, key)
                     ]
+                    removed_parent_id = (
+                        _playlist_parent_id(removed_rows[0]) if removed_rows else 0
+                    )
+                    kept = []
+                    for playlist in bucket:
+                        if matches(playlist, key):
+                            continue
+                        if removed_rows and _playlist_parent_id(playlist) == playlist_id:
+                            playlist = dict(playlist)
+                            playlist["parent_folder_playlist_id"] = removed_parent_id
+                            playlist["unk0x30_playlist_ref"] = removed_parent_id
+                        kept.append(playlist)
                     if len(kept) != len(bucket):
                         data[key] = kept
                         removed = True
             if removed:
+                self._base_playlists = _remove_prepared_playlist(
+                    self._base_playlists,
+                    playlist_id,
+                    dataset_type,
+                )
+                self._prepared_playlists = _remove_prepared_playlist(
+                    self._prepared_playlists,
+                    playlist_id,
+                    dataset_type,
+                )
                 self._quick_write_revision += 1
         if removed:
             self.playlists_changed.emit()
@@ -1133,6 +1386,13 @@ class iTunesDBCache(QObject):
                         playlist["Title"] = new_name
                         renamed = True
             if renamed:
+                for rows in (self._base_playlists, self._prepared_playlists):
+                    for index, playlist in enumerate(rows):
+                        if not playlist.get("master_flag"):
+                            continue
+                        updated = dict(playlist)
+                        updated["Title"] = new_name
+                        rows[index] = updated
                 self._quick_write_revision += 1
         if renamed:
             self.playlists_changed.emit()
@@ -1149,6 +1409,7 @@ class iTunesDBCache(QObject):
     def clear_pending_playlists(self) -> None:
         with self._lock:
             self._user_playlists.clear()
+            self._prepared_playlists = list(self._base_playlists)
 
     def commit_user_playlists(self) -> None:
         """Hydrate pending playlist edits into the live parsed cache in place."""
@@ -1164,14 +1425,17 @@ class iTunesDBCache(QObject):
             regular = data.setdefault("mhlp", [])
             podcast = data.setdefault("mhlp_podcast", [])
             smart = data.setdefault("mhlp_smart", [])
-            buckets = (regular, podcast, smart)
+            buckets = ((regular, 2), (podcast, 3), (smart, 5))
+            committed_playlists = list(self._base_playlists)
 
             for pending in self._user_playlists:
                 playlist_id = pending.get("playlist_id", 0)
                 if not playlist_id or pending.get("master_flag"):
                     continue
 
-                row = _playlist_with_description(dict(pending))
+                row = _playlist_with_description(
+                    _without_display_playlist_keys(pending)
+                )
                 row = _playlist_with_known_edit_origin(row, data)
                 if row is None:
                     continue
@@ -1188,7 +1452,7 @@ class iTunesDBCache(QObject):
                     target = smart
                     row.setdefault("_mhsd_dataset_type", 5)
                     row.setdefault("_mhsd_result_key", "mhlp_smart")
-                elif row.get("podcast_flag", 0) == 1 or row.get("_source") == "podcast":
+                elif is_podcast_playlist(row) or row.get("_source") == "podcast":
                     target = podcast
                     row.setdefault("_mhsd_dataset_type", 3)
                     row.setdefault("_mhsd_result_key", "mhlp_podcast")
@@ -1200,7 +1464,7 @@ class iTunesDBCache(QObject):
                 dataset_type = _playlist_dataset_type(row)
 
                 found_in_target = False
-                for bucket in buckets:
+                for bucket, bucket_dataset_type in buckets:
                     for index, existing in enumerate(bucket):
                         if (
                             existing.get("playlist_id") == playlist_id
@@ -1211,6 +1475,11 @@ class iTunesDBCache(QObject):
                                 found_in_target = True
                             else:
                                 del bucket[index]
+                                committed_playlists = _remove_prepared_playlist(
+                                    committed_playlists,
+                                    int(playlist_id),
+                                    bucket_dataset_type,
+                                )
                             break
                     else:
                         continue
@@ -1218,7 +1487,15 @@ class iTunesDBCache(QObject):
                 if not found_in_target:
                     target.append(row)
 
+                committed_playlists = _upsert_prepared_playlist(
+                    committed_playlists,
+                    row,
+                )
+
+            _hydrate_live_playlist_buckets(data, committed_playlists)
             self._user_playlists.clear()
+            self._base_playlists = _prepared_playlist_rows(data)
+            self._prepared_playlists = list(self._base_playlists)
 
         self.playlists_changed.emit()
 
@@ -1369,6 +1646,7 @@ class iTunesDBCache(QObject):
         with self._lock:
             _cleanup_temp_artwork_paths(list(self._track_artwork_edits.values()))
             self._user_playlists.clear()
+            self._prepared_playlists = list(self._base_playlists)
             self._track_edits.clear()
             self._track_artwork_edits.clear()
             self._quick_write_revision += 1
@@ -1386,9 +1664,18 @@ class iTunesDBCache(QObject):
                 track_edits=copy.deepcopy(self._track_edits),
                 artwork_sources=copy.deepcopy(self._track_artwork_edits),
                 revision=self._quick_write_revision,
+                database_generation=self._database_generation,
             )
 
     def commit_quick_write_state(self, expected_revision: int) -> bool:
+        """Finalize a legacy quick-write result without a generation update."""
+        return self.commit_quick_write_state_with_generation(expected_revision, None)
+
+    def commit_quick_write_state_with_generation(
+        self,
+        expected_revision: int,
+        database_generation: DatabaseGeneration | None,
+    ) -> bool:
         """Finalize an unchanged quick-write snapshot without reparsing."""
         with self._lock:
             if expected_revision != self._quick_write_revision:
@@ -1397,9 +1684,16 @@ class iTunesDBCache(QObject):
             _cleanup_temp_artwork_paths(list(self._track_artwork_edits.values()))
             self._track_edits.clear()
             self._track_artwork_edits.clear()
+            if database_generation is not None:
+                self._database_generation = database_generation
             self._quick_write_revision += 1
 
         return True
+
+    def get_database_generation(self) -> DatabaseGeneration | None:
+        """Return the on-device generation backing the live parsed cache."""
+        with self._lock:
+            return self._database_generation
 
     def reload_after_itunesdb_write(self) -> None:
         """Clear committed iTunesDB staging and reload the device database."""
@@ -1413,6 +1707,9 @@ class iTunesDBCache(QObject):
             self._genre_index = None
             self._track_id_index = None
             self._photo_db = None
+            self._database_generation = None
+            self._base_playlists.clear()
+            self._prepared_playlists.clear()
         self.start_loading()
 
     def has_pending_photo_edits(self) -> bool:
@@ -1461,7 +1758,17 @@ class iTunesDBCache(QObject):
             self._track_artwork_edits.clear()
             return edits
 
-    def set_data(self, data: dict, device_path: str) -> None:
+    def set_data(
+        self,
+        data: dict,
+        device_path: str,
+        database_generation: DatabaseGeneration | None = None,
+    ) -> None:
+        hierarchy_prepared = bool(data.pop(_PLAYLIST_HIERARCHY_PREPARED, False))
+        if not hierarchy_prepared:
+            _prepare_playlist_data(data)
+            data.pop(_PLAYLIST_HIERARCHY_PREPARED, None)
+
         for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
             bucket = data.get(key, [])
             if isinstance(bucket, list):
@@ -1470,9 +1777,16 @@ class iTunesDBCache(QObject):
                         _playlist_with_description(playlist)
 
         tracks = list(data.get("mhlt", []))
+        prepared_playlists = _prepared_playlist_rows(data)
         album_index, album_only_index, artist_index, genre_index, track_id_index = _build_track_indexes(tracks)
 
         with self._lock:
+            current_playlists = list(prepared_playlists)
+            for pending_playlist in self._user_playlists:
+                current_playlists = _upsert_prepared_playlist(
+                    current_playlists,
+                    pending_playlist,
+                )
             self._data = data
             self._device_path = device_path
             self._is_loading = False
@@ -1482,6 +1796,9 @@ class iTunesDBCache(QObject):
             self._genre_index = genre_index
             self._track_id_index = track_id_index
             self._photo_db = data.get("photodb")
+            self._database_generation = database_generation
+            self._base_playlists = prepared_playlists
+            self._prepared_playlists = current_playlists
         self.data_ready.emit()
 
     def set_loading(self, loading: bool) -> None:
@@ -1510,13 +1827,14 @@ class iTunesDBCache(QObject):
         self,
         device_path: str,
         itunesdb_path: str | None,
-    ) -> tuple[dict, str, list[str]]:
+    ) -> tuple[dict, str, list[str], DatabaseGeneration | None]:
         data: dict = {}
         load_errors: list[str] = []
+        database_generation: DatabaseGeneration | None = None
         if not itunesdb_path:
             message = f"No iTunesDB path available for device: {device_path}"
             logger.warning(message)
-            return data, device_path, [message]
+            return data, device_path, [message], None
 
         try:
             from iopenpod.itunesdb_parser.ipod_library import load_ipod_library
@@ -1528,13 +1846,26 @@ class iTunesDBCache(QObject):
                 committed_playcounts = commit_playcounts_if_needed(
                     Path(device_path),
                 )
+            except DeviceWriteSafetyError as exc:
+                # The parser merges uncommitted Play Counts into the in-memory
+                # library, so a transient writer conflict must not make the
+                # entire library load look broken to the user.
+                logger.debug("Deferred Play Counts auto-commit: %s", exc)
             except Exception:
                 logger.warning("Play Counts auto-commit failed", exc_info=True)
 
+            generation_before_parse = capture_database_generation(device_path)
             parsed = load_ipod_library(
                 itunesdb_path,
                 merge_playcounts=not committed_playcounts,
             ) or {}
+            generation_after_parse = capture_database_generation(device_path)
+            if generation_before_parse != generation_after_parse:
+                raise ExternalDatabaseChangeError(
+                    "The iPod database changed while iOpenPod was loading it. "
+                    "Close other device-management apps and reload the iPod."
+                )
+            database_generation = generation_after_parse
             if isinstance(parsed, dict):
                 data = parsed
             else:
@@ -1560,7 +1891,9 @@ class iTunesDBCache(QObject):
             data["photodb"] = PhotoDB()
             load_errors.append(f"Could not load photo database: {exc}")
 
-        return (data, device_path, load_errors)
+        _prepare_playlist_data(data)
+
+        return (data, device_path, load_errors, database_generation)
 
     def _on_load_error(self, error: tuple) -> None:
         exc_type, value, _traceback = error
@@ -1574,16 +1907,21 @@ class iTunesDBCache(QObject):
 
     def _on_load_complete(
         self,
-        result: tuple[dict, str] | tuple[dict, str, list[str]],
+        result: (
+            tuple[dict, str]
+            | tuple[dict, str, list[str]]
+            | tuple[dict, str, list[str], DatabaseGeneration | None]
+        ),
     ) -> None:
         data = result[0]
         device_path = result[1]
         load_errors = result[2] if len(result) >= 3 else []
+        database_generation = result[3] if len(result) >= 4 else None
         if device_path != DeviceManager.get_instance().device_path:
             self.set_loading(False)
             return
-        if data:
-            self.set_data(data, device_path)
+        if data and (len(result) < 4 or database_generation is not None):
+            self.set_data(data, device_path, database_generation)
         else:
             self.set_loading(False)
         if load_errors:

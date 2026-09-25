@@ -151,6 +151,8 @@ class SyncEngine:
             transcode_options=request.options.transcode_options,
             device_info=request.device_info,
             device_capabilities=request.device_capabilities,
+            device_storage=request.device_storage,
+            expected_database_generation=request.expected_database_generation,
             photo_sync_settings=dict(request.options.photo_sync_settings or {}),
         )
 
@@ -184,9 +186,11 @@ class SyncEngine:
             lastfm_api_secret=request.options.lastfm_api_secret,
             lastfm_session_key=request.options.lastfm_session_key,
             lastfm_username=request.options.lastfm_username,
+            rockbox_metadata_support=request.options.rockbox_metadata_support,
             is_scrobble_cancelled=request.is_scrobble_cancelled,
             on_cancel_with_partial=request.on_cancel_with_partial,
             sync_until_full=request.options.sync_until_full,
+            scrobble_only=request.options.scrobble_only,
         )
         self._emit(request, EngineStage.EXECUTE_FILES, message="Applying file changes")
         return executor.execute_request(sync_request)
@@ -214,6 +218,13 @@ class SyncEngine:
             playlists_data=[dict(playlist) for playlist in request.playlists_data],
             artwork_sources=request.artwork_sources,
             progress_callback=on_progress,
+            expected_database_generation=request.expected_database_generation,
+            reported_volume_format=str(
+                getattr(request.device_storage, "reported_volume_format", "") or ""
+            ),
+            expected_volume_identity_key=str(
+                getattr(request.device_storage, "volume_identity_key", "") or ""
+            ),
         )
 
     def _migrate(
