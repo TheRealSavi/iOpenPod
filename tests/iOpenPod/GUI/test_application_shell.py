@@ -85,7 +85,7 @@ from iOpenPod.GUI.widgets.themed_buttons import (
 )
 from iOpenPod.GUI.widgets.track_list_header import LibrarySplitter
 from iOpenPod.GUI.widgets.track_table import TrackTable
-from iPodDB.library import MediaType, Track
+from iPodDB.library import LibrarySnapshot, MediaType, Track
 
 
 def test_draft_all_changes_setting_controls_review_visibility_immediately() -> None:
@@ -1452,6 +1452,7 @@ def test_track_table_layout_is_saved_per_named_instance() -> None:
 
 def test_player_transport_uses_flat_emphasis_without_accent_fill() -> None:
     context = _context()
+    context.library_workspace.load(LibrarySnapshot(_tracks(1)))
     context.track_model.replace_tracks(_tracks(1))
     window = MainWindow(context, auto_discover=False)
 
@@ -1489,6 +1490,7 @@ def test_player_transport_uses_flat_emphasis_without_accent_fill() -> None:
 
 def test_player_clears_on_a_whole_library_snapshot_with_reused_track_ids() -> None:
     context = _context()
+    context.library_workspace.load(LibrarySnapshot(_tracks(1)))
     context.track_model.replace_tracks(_tracks(1))
     window = MainWindow(context, auto_discover=False)
 

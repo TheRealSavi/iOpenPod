@@ -44,6 +44,15 @@ class IPodLibraryViewMode(StrEnum):
     WHOLE_PAGE_TABLE = "whole-page-table"
 
 
+class LibraryDoubleClickShortcut(StrEnum):
+    """Stable actions for double-clicking a Library Track selection."""
+
+    ADD_TO_QUEUE = "add-to-queue"
+    PLAY_NEXT = "play-next"
+    PLAY_NOW = "play-now"
+    EDIT = "edit"
+
+
 class LightTheme(StrEnum):
     """Stable Light-theme selections."""
 
@@ -185,6 +194,13 @@ IPOD_LIBRARY_VIEW_MODE = SettingDefinition[str](
     value_type=str,
     default=IPodLibraryViewMode.SPLIT_TABLE.value,
     validator=_one_of(*(mode.value for mode in IPodLibraryViewMode)),
+)
+
+LIBRARY_DOUBLE_CLICK_SHORTCUT = SettingDefinition[str](
+    key="library/double-click-shortcut",
+    value_type=str,
+    default=LibraryDoubleClickShortcut.ADD_TO_QUEUE.value,
+    validator=_one_of(*(action.value for action in LibraryDoubleClickShortcut)),
 )
 
 BACKUP_LOCATION = SettingDefinition[str](

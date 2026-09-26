@@ -365,6 +365,14 @@ surfaces and route media commands back through the controller. Artwork remains b
 RGB888 data until each native adapter converts and caches it. Linux publishes the
 same fail-open contract through MPRIS on the desktop session bus.
 
+The Library setting **Double click shortcut** applies immediately to Track tables,
+Album cards, and collection grids and lists and persists across restarts. **Add to
+queue** remains the default. **Play next** places the selection atop the Playback
+Queue. **Play now** starts the first selected Track and places the remainder atop
+the Queue. **Edit** opens the metadata editor for the selection. Selections retain
+visible order and Playlist occurrences; explicit queue buttons keep their own
+actions.
+
 The Player's Queue/History/Lyrics slideout displays read-only lyrics for the
 current Track. Known Library text and explicit draft clears take precedence;
 otherwise the visible Lyrics tab loads embedded media tags in a background worker

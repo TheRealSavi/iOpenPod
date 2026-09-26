@@ -263,6 +263,8 @@ def test_context_menu_shortcuts_are_visible_and_use_native_platform_text() -> No
 
         expected = {
             "Edit Metadata…": "Ctrl+E",
+            "Play Next": "Ctrl+Shift+Q",
+            "Add to Queue": "Ctrl+Q",
             "Move Up": "Ctrl+Up",
             "Move Down": "Ctrl+Down",
             "Copy as Text": "Ctrl+C",
@@ -286,7 +288,82 @@ def test_context_menu_shortcuts_are_visible_and_use_native_platform_text() -> No
             shortcut.property("trackAction")
             for shortcut in window.findChildren(QShortcut)
         }
-        assert {"edit", "copy", "move_up", "move_down"} <= installed
+        assert {
+            "edit",
+            "copy",
+            "enqueue",
+            "play_next",
+            "move_up",
+            "move_down",
+        } <= installed
+    finally:
+        window.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize("page_id", ("tracks", "albums"))
+@pytest.mark.parametrize("prepend", (False, True))
+def test_queue_shortcuts_use_focused_selection_and_preserve_track_order(
+    page_id: str, prepend: bool
+) -> None:
+    context = build_context()
+    context.library_workspace.load(LibrarySnapshot(_TRACKS))
+    context.track_model.replace_tracks(_TRACKS)
+    window = MainWindow(context, auto_discover=False)
+    playback = context.playback_controller
+    try:
+        window.show()
+        navigation = next(
+            button
+            for button in window.findChildren(QPushButton)
+            if button.property("pageId") == page_id
+        )
+        navigation.click()
+        APPLICATION.processEvents()
+        view = (
+            window.findChild(TrackTable, "tracksTrackTable")
+            if page_id == "tracks"
+            else window.findChild(AlbumGridView, "albumGrid")
+        )
+        assert view is not None
+        view.clearSelection()
+        # Table selection order must follow visible rows, regardless of click order.
+        for row in (1, 0) if page_id == "tracks" else (0,):
+            view.selectionModel().select(
+                view.model().index(row, 0),
+                QItemSelectionModel.SelectionFlag.Select
+                | QItemSelectionModel.SelectionFlag.Rows,
+            )
+        playback.enqueue(_TRACKS[2])
+        playback.enqueue(_TRACKS[2])
+        current_entry_id = playback.current_entry_id
+        modifiers = Qt.KeyboardModifier.ControlModifier
+        if prepend:
+            modifiers |= Qt.KeyboardModifier.ShiftModifier
+        view.setFocus()
+        APPLICATION.processEvents()
+
+        QTest.keyClick(view, Qt.Key.Key_Q, modifiers)
+
+        expected = (
+            (_TRACKS[0], _TRACKS[1], _TRACKS[2])
+            if prepend
+            else (_TRACKS[2], _TRACKS[0], _TRACKS[1])
+        )
+        assert tuple(entry.track for entry in playback.queue_model.entries) == expected
+        assert playback.current_entry_id == current_entry_id
+
+        navigation.setFocus()
+        APPLICATION.processEvents()
+        QTest.keyClick(navigation, Qt.Key.Key_Q, modifiers)
+        assert tuple(entry.track for entry in playback.queue_model.entries) == expected
+
+        view.clearSelection()
+        view.setFocus()
+        APPLICATION.processEvents()
+        QTest.keyClick(view, Qt.Key.Key_Q, modifiers)
+        assert tuple(entry.track for entry in playback.queue_model.entries) == expected
+        assert playback.current_entry_id == current_entry_id
     finally:
         window.close()
         context.shutdown()

@@ -4,18 +4,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
+from time import monotonic
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
+    QEvent,
+    QItemSelection,
     QItemSelectionModel,
+    QModelIndex,
     QObject,
+    QPersistentModelIndex,
     QPoint,
     QSortFilterProxyModel,
     Qt,
     Signal,
     Slot,
 )
-from PySide6.QtGui import QAction, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QAction, QKeySequence, QMouseEvent, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -30,6 +35,10 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from iOpenPod.app.core.settings.definitions import (
+    LIBRARY_DOUBLE_CLICK_SHORTCUT,
+    LibraryDoubleClickShortcut,
+)
 from iOpenPod.app.library_workspace import EditRevision, LibraryWorkspace, TrackUpdate
 from iOpenPod.app.metadata_fields import field_value
 from iOpenPod.app.models.album_list_model import AlbumRole, AlbumSummary
@@ -58,6 +67,7 @@ from iPodDB.library import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.app.playback_controller import PlaybackController
     from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
@@ -67,6 +77,8 @@ type ShortcutSpec = str | QKeySequence.StandardKey
 
 _EDIT_SHORTCUT: ShortcutSpec = "Ctrl+E"
 _COPY_SHORTCUT: ShortcutSpec = QKeySequence.StandardKey.Copy
+_ENQUEUE_SHORTCUT: ShortcutSpec = "Ctrl+Q"
+_PLAY_NEXT_SHORTCUT: ShortcutSpec = "Ctrl+Shift+Q"
 _MOVE_UP_SHORTCUT: ShortcutSpec = "Ctrl+Up"
 _MOVE_DOWN_SHORTCUT: ShortcutSpec = "Ctrl+Down"
 _VOLUME_ZERO_MAGNET_THRESHOLD = 12
@@ -85,6 +97,15 @@ class TrackSelection:
         return tuple(dict.fromkeys(t.track_id for t in self.tracks))
 
 
+@dataclass(frozen=True, slots=True)
+class _DoubleClickSelection:
+    view: QAbstractItemView
+    index: QPersistentModelIndex
+    indices: QItemSelection
+    selection: TrackSelection
+    pressed_at: float
+
+
 class TrackActions(QObject):
     playlistCreated = Signal(int)
     trackExportRequested = Signal(object)
@@ -95,20 +116,28 @@ class TrackActions(QObject):
         playback: PlaybackController,
         parent: QWidget,
         *,
+        settings: SettingsService | None = None,
         device_controller: DeviceController | None = None,
         artwork_provider: ArtworkPixmapProvider | None = None,
     ) -> None:
         super().__init__(parent)
         self.workspace, self.playback, self.window = workspace, playback, parent
+        self._settings = settings
         self._device_controller = device_controller
         self._artwork_provider = artwork_provider
+        self._double_click_selection: _DoubleClickSelection | None = None
 
     def install(self, view: QAbstractItemView) -> None:
         view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         view.customContextMenuRequested.connect(self._menu_requested)
+        view.doubleClicked.connect(self._double_clicked)
+        view.viewport().installEventFilter(self)
+        view.installEventFilter(self)
         for sequence, action in (
             (_EDIT_SHORTCUT, "edit"),
             (_COPY_SHORTCUT, "copy"),
+            (_ENQUEUE_SHORTCUT, "enqueue"),
+            (_PLAY_NEXT_SHORTCUT, "play_next"),
             (_MOVE_UP_SHORTCUT, "move_up"),
             (_MOVE_DOWN_SHORTCUT, "move_down"),
         ):
@@ -116,6 +145,88 @@ class TrackActions(QObject):
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.setProperty("trackAction", action)
             shortcut.activated.connect(self._shortcut_activated)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.KeyPress:
+            self._double_click_selection = None
+        elif event.type() == QEvent.Type.MouseButtonPress and isinstance(
+            event, QMouseEvent
+        ):
+            self._double_click_selection = None
+            view = watched.parent()
+            if (
+                isinstance(view, QAbstractItemView)
+                and event.button() == Qt.MouseButton.LeftButton
+                and event.modifiers() == Qt.KeyboardModifier.NoModifier
+            ):
+                index = view.indexAt(event.position().toPoint())
+                selection_model = view.selectionModel()
+                if index.isValid() and selection_model.isSelected(index):
+                    selection = self.selection(view)
+                    if len(selection.tracks) > 1:
+                        # Extended selection collapses on the first click's release.
+                        # Retain its Track occurrences only for this double click.
+                        self._double_click_selection = _DoubleClickSelection(
+                            view,
+                            QPersistentModelIndex(index),
+                            selection_model.selection(),
+                            selection,
+                            monotonic(),
+                        )
+        return super().eventFilter(watched, event)
+
+    @Slot(QModelIndex)
+    def _double_clicked(self, index: QModelIndex) -> None:
+        view = self.sender()
+        if not isinstance(view, QAbstractItemView) or not index.isValid():
+            return
+        retained = self._double_click_selection
+        self._double_click_selection = None
+        if (
+            retained is not None
+            and retained.view is view
+            and retained.index == index
+            and monotonic() - retained.pressed_at
+            <= QApplication.doubleClickInterval() / 1000
+        ):
+            self._guard(lambda: self._double_click_retained(retained))
+            return
+        selection_model = view.selectionModel()
+        if not selection_model.isSelected(index):
+            selection_model.setCurrentIndex(
+                index,
+                QItemSelectionModel.SelectionFlag.ClearAndSelect
+                | QItemSelectionModel.SelectionFlag.Rows,
+            )
+        selection = self.selection(view)
+        if selection.tracks:
+            self._guard(lambda: self.double_click(selection))
+
+    def _double_click_retained(self, retained: _DoubleClickSelection) -> None:
+        self._require(retained.selection, editing=False)
+        retained.view.selectionModel().select(
+            retained.indices, QItemSelectionModel.SelectionFlag.ClearAndSelect
+        )
+        self.double_click(retained.selection)
+
+    def double_click(self, selection: TrackSelection) -> None:
+        """Apply the current preference to ordered, explicit Track occurrences."""
+
+        action = LibraryDoubleClickShortcut(
+            LIBRARY_DOUBLE_CLICK_SHORTCUT.default
+            if self._settings is None
+            else self._settings.get(LIBRARY_DOUBLE_CLICK_SHORTCUT)
+        )
+        match action:
+            case LibraryDoubleClickShortcut.ADD_TO_QUEUE:
+                self.enqueue(selection)
+            case LibraryDoubleClickShortcut.PLAY_NEXT:
+                self.play_next(selection)
+            case LibraryDoubleClickShortcut.PLAY_NOW:
+                self._require(selection, editing=False)
+                self.playback.play_now(selection.tracks)
+            case LibraryDoubleClickShortcut.EDIT:
+                self.edit(selection)
 
     @Slot(QPoint)
     def _menu_requested(self, point: QPoint) -> None:
@@ -136,6 +247,10 @@ class TrackActions(QObject):
                 self._guard(lambda: self.edit(selection))
             elif action == "copy":
                 self.copy(selection)
+            elif action == "enqueue" and selection.tracks:
+                self._guard(lambda: self.enqueue(selection))
+            elif action == "play_next" and selection.tracks:
+                self._guard(lambda: self.play_next(selection))
             elif action in ("move_up", "move_down") and selection.reorderable:
                 direction = "up" if action == "move_up" else "down"
                 self._guard(lambda: self.entries(selection, direction))
@@ -329,12 +444,14 @@ class TrackActions(QObject):
             self.tr("Play Next"),
             lambda: self.play_next(selection),
             enabled=bool(selection.tracks),
+            shortcut=_PLAY_NEXT_SHORTCUT,
         )
         enqueue = add(
             menu,
             self.tr("Add to Queue"),
             lambda: self.enqueue(selection),
             enabled=bool(selection.tracks),
+            shortcut=_ENQUEUE_SHORTCUT,
         )
         for item, glyph in ((play_next, "play-next"), (enqueue, "play-last")):
             item.setIcon(

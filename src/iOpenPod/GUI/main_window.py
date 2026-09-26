@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QListView,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -361,6 +362,7 @@ class MainWindow(QMainWindow):
             context.library_workspace,
             context.playback_controller,
             self,
+            settings=context.settings,
             device_controller=context.device_controller,
             artwork_provider=self._artwork_provider,
         )
@@ -486,7 +488,10 @@ class MainWindow(QMainWindow):
         ):
             grid.set_library_workspace(context.library_workspace)
             self._track_actions.install(grid)
-            grid.tracksActivated.connect(self._queue_group_tracks)
+        for name in ("artistsCollectionList", "genresCollectionList"):
+            collection_list = self._library_browser.findChild(QListView, name)
+            if collection_list is not None:
+                self._track_actions.install(collection_list)
         context.library_workspace.changed.connect(self.retranslate_ui)
         self._sidebar.pageRequested.connect(self._navigate_page)
         playlist_tree = self._sidebar.playlist_tree
@@ -726,10 +731,10 @@ class MainWindow(QMainWindow):
     def _connect_playback(self) -> None:
         controller = self._context.playback_controller
         for page in self._library_pages:
-            page.trackActivated.connect(controller.enqueue)
-            if isinstance(page, CollectionPage):
-                page.tracksActivated.connect(self._queue_group_tracks)
+            if isinstance(page, PodcastPage):
+                page.trackActivated.connect(controller.enqueue)
             if isinstance(page, PlaylistPage):
+                page.queueRequested.connect(self._queue_group_tracks)
                 page.playNextRequested.connect(controller.play_next)
         controller.currentTrackChanged.connect(self._player.set_track)
         controller.playingChanged.connect(self._player.set_playing)

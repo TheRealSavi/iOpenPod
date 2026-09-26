@@ -54,6 +54,7 @@ from iPodDB.library import LibrarySnapshot, Playlist, Track, playlist_entries
 def test_double_click_enqueues_without_single_selection_starting_playback() -> None:
     context = build_context()
     tracks = build_tracks(3)
+    context.library_workspace.load(LibrarySnapshot(tracks))
     context.track_model.replace_tracks(tracks)
     window = MainWindow(context, auto_discover=False)
 

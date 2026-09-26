@@ -16,11 +16,13 @@ from iOpenPod.app.core.settings.definitions import (
     DRAFT_ALL_CHANGES,
     IPOD_LIBRARY_VIEW_MODE,
     LAST_SELECTED_IPOD_VOLUME_ID,
+    LIBRARY_DOUBLE_CLICK_SHORTCUT,
     PLAYER_POSITION,
     TRACK_TITLE_BAR_STYLE,
     WINDOW_GEOMETRY,
     DarkTheme,
     IPodLibraryViewMode,
+    LibraryDoubleClickShortcut,
     LightTheme,
     PlayerPosition,
     SettingDefinition,
@@ -115,6 +117,27 @@ def test_track_title_bar_style_defaults_and_rejects_invalid_values() -> None:
     assert service.get(TRACK_TITLE_BAR_STYLE) == TrackTitleBarStyle.FLAT.value
     with pytest.raises(ValueError, match=TRACK_TITLE_BAR_STYLE.key):
         service.set_global(TRACK_TITLE_BAR_STYLE, "unknown")
+
+
+def test_library_double_click_defaults_and_rejects_invalid_values() -> None:
+    store = GlobalSettingsStore()
+    service = _service(store)
+    assert service.get(LIBRARY_DOUBLE_CLICK_SHORTCUT) == "add-to-queue"
+    store.set(LIBRARY_DOUBLE_CLICK_SHORTCUT.key, "unknown")
+    assert service.get(LIBRARY_DOUBLE_CLICK_SHORTCUT) == "add-to-queue"
+    with pytest.raises(ValueError, match=LIBRARY_DOUBLE_CLICK_SHORTCUT.key):
+        service.set_global(LIBRARY_DOUBLE_CLICK_SHORTCUT, "unknown")
+
+
+@pytest.mark.parametrize("action", LibraryDoubleClickShortcut)
+def test_library_double_click_preference_survives_restart(
+    tmp_path: Path, action: LibraryDoubleClickShortcut
+) -> None:
+    settings_path = tmp_path / "settings-v2.json"
+    first = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    first.set_global(LIBRARY_DOUBLE_CLICK_SHORTCUT, action.value)
+    second = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert second.get(LIBRARY_DOUBLE_CLICK_SHORTCUT) == action.value
 
 
 def test_windows_native_backup_default_does_not_reuse_original_archive(

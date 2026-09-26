@@ -26,13 +26,14 @@ from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
 from iOpenPod.GUI.widgets.playlist_artwork_banner import PlaylistArtworkBanner
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iOpenPod.GUI.widgets.track_table import TrackTable
-from iPodDB.library import PlaylistKind, validate_smart_playlist
+from iPodDB.library import PlaylistKind, Track, validate_smart_playlist
 
 
 class PlaylistPage(QWidget):
     """Show Playlist occurrences or recursive folder Tracks in the shared table."""
 
     trackActivated = Signal(object)
+    queueRequested = Signal(object)
     playNextRequested = Signal(object)
     playlistSelected = Signal(object)
     playlistExportRequested = Signal(str, object)
@@ -431,10 +432,13 @@ class PlaylistPage(QWidget):
         self._empty.setText(message)
 
     def _queue_tracks(self) -> None:
+        tracks: list[Track] = []
         for row in range(self._proxy.rowCount()):
             track = self._proxy.track_at(self._proxy.index(row, 0))
             if track is not None:
+                tracks.append(track)
                 self.trackActivated.emit(track)
+        self.queueRequested.emit(tuple(tracks))
 
     def _play_next_tracks(self) -> None:
         tracks = tuple(

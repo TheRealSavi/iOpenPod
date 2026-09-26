@@ -20,11 +20,13 @@ from iOpenPod.app.core.settings.definitions import (
     BACKUP_LOCATION,
     DRAFT_ALL_CHANGES,
     IPOD_LIBRARY_VIEW_MODE,
+    LIBRARY_DOUBLE_CLICK_SHORTCUT,
     MAX_BACKUPS,
     PLAYER_POSITION,
     AppearanceMode,
     DarkTheme,
     IPodLibraryViewMode,
+    LibraryDoubleClickShortcut,
     LightTheme,
     PlayerPosition,
     TrackTitleBarStyle,
@@ -118,6 +120,10 @@ class SettingsPage(QWidget):
         self._ipod_view_mode_combo.setObjectName("ipodLibraryViewModeCombo")
         self._ipod_view_mode_row = SettingRow("", "", self._ipod_view_mode_combo, self)
         library.add_row(self._ipod_view_mode_row)
+        self._double_click_combo = AppComboBox(self)
+        self._double_click_combo.setObjectName("libraryDoubleClickShortcutCombo")
+        self._double_click_row = SettingRow("", "", self._double_click_combo, self)
+        library.add_row(self._double_click_row)
         library.add_row(self._draft_all_changes_row)
 
         self._backups_title = QLabel(self)
@@ -280,6 +286,9 @@ class SettingsPage(QWidget):
         self._ipod_view_mode_combo.currentIndexChanged.connect(
             self._ipod_view_mode_selected
         )
+        self._double_click_combo.currentIndexChanged.connect(
+            self._double_click_selected
+        )
         self._choose_backup_location.clicked.connect(self._choose_backup_folder)
         self._max_backups.currentIndexChanged.connect(self._max_backups_selected)
         self._check_udev_rule.clicked.connect(self._inspect_udev_rule)
@@ -342,6 +351,14 @@ class SettingsPage(QWidget):
             self.tr(
                 "On: review and accept changes before saving to your iPod. "
                 "Off: apply changes to your iPod immediately, including pending changes."
+            ),
+        )
+        self._double_click_row.set_copy(
+            self.tr("Double click shortcut"),
+            self.tr(
+                "Choose what double-clicking selected Tracks, Albums, or collections does. "
+                "Play now starts the first Track and puts the rest at the top of the Queue. "
+                "Edit opens the metadata editor."
             ),
         )
         self._backups_title.setText(self.tr("Backup Snapshots"))
@@ -427,6 +444,7 @@ class SettingsPage(QWidget):
         self._rebuild_backup_options()
         self._rebuild_draft_all_changes_options()
         self._rebuild_ipod_view_mode_options()
+        self._rebuild_double_click_options()
         self._sync_backup_location(self._settings.get(BACKUP_LOCATION))
         self._transcoding_settings.retranslate_ui()
         self._sync_settings.retranslate_ui()
@@ -565,6 +583,31 @@ class SettingsPage(QWidget):
         value = self._ipod_view_mode_combo.itemData(index)
         if isinstance(value, str):
             self._settings.set_global(IPOD_LIBRARY_VIEW_MODE, value)
+
+    def _rebuild_double_click_options(self) -> None:
+        blocker = QSignalBlocker(self._double_click_combo)
+        self._double_click_combo.clear()
+        for label, action in (
+            (self.tr("Add to queue"), LibraryDoubleClickShortcut.ADD_TO_QUEUE),
+            (self.tr("Play next"), LibraryDoubleClickShortcut.PLAY_NEXT),
+            (self.tr("Play now"), LibraryDoubleClickShortcut.PLAY_NOW),
+            (self.tr("Edit"), LibraryDoubleClickShortcut.EDIT),
+        ):
+            self._double_click_combo.addItem(label, action.value)
+        self._sync_double_click(self._settings.get(LIBRARY_DOUBLE_CLICK_SHORTCUT))
+        del blocker
+
+    def _sync_double_click(self, value: str) -> None:
+        blocker = QSignalBlocker(self._double_click_combo)
+        self._double_click_combo.setCurrentIndex(
+            self._double_click_combo.findData(value)
+        )
+        del blocker
+
+    def _double_click_selected(self, index: int) -> None:
+        value = self._double_click_combo.itemData(index)
+        if isinstance(value, str):
+            self._settings.set_global(LIBRARY_DOUBLE_CLICK_SHORTCUT, value)
 
     def _sync_draft_all_changes(self, enabled: bool) -> None:
         blocker = QSignalBlocker(self._draft_all_changes_combo)
@@ -705,6 +748,8 @@ class SettingsPage(QWidget):
     def _setting_changed(self, key: str, value: object) -> None:
         if key == IPOD_LIBRARY_VIEW_MODE.key and isinstance(value, str):
             self._sync_ipod_view_mode(value)
+        elif key == LIBRARY_DOUBLE_CLICK_SHORTCUT.key and isinstance(value, str):
+            self._sync_double_click(value)
         elif key == DRAFT_ALL_CHANGES.key and isinstance(value, bool):
             self._sync_draft_all_changes(value)
         elif key == PLAYER_POSITION.key and isinstance(value, str):
