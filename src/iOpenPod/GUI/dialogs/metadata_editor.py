@@ -31,13 +31,14 @@ from iOpenPod.app.metadata_fields import (
     field_value,
     metadata_fields,
 )
+from iOpenPod.app.track_conversion import media_type_choices
 from iOpenPod.GUI.dialogs.artwork_editor import ArtworkEditor
 from iOpenPod.GUI.widgets.metadata_field_editor import FieldEditor
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
 )
-from iPodDB.library import TrackFieldEdit
+from iPodDB.library import MediaType, TrackFieldEdit
 
 if TYPE_CHECKING:
     from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
@@ -46,7 +47,7 @@ _GROUP_DESCRIPTIONS = {
     "Metadata": "Titles, artists, albums, genres, and tags",
     "Sorting": "Sort overrides used by the iPod Library",
     "Playback": "Rating, counts, timing, and playback position",
-    "Options": "Advisory, shuffle, resume, and gapless settings",
+    "Options": "Media type, advisory, shuffle, resume, and gapless settings",
     "Video": "Show, episode, and TV metadata",
     "Podcast": "Podcast feeds, categories, and playback markers",
     "Dates": "Added, modified, released, played, and skipped timestamps",
@@ -95,6 +96,7 @@ _SUBGROUPS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
         ("Equalizer", ("metadata.equalizer",)),
     ),
     "Options": (
+        ("Media Type", ("media_types",)),
         (
             "Advisory & Library",
             ("metadata.compilation", "metadata.checked", "metadata.content_advisory"),
@@ -265,11 +267,24 @@ class MetadataEditorDialog(QDialog):
         rows_by_path: dict[str, FieldEditor] = {}
         for spec in specs:
             values = tuple(field_value(t, spec.path) for t in self._tracks)
+            choices = (
+                tuple(
+                    choice
+                    for choice in media_type_choices(self._tracks[0])
+                    if all(
+                        choice in media_type_choices(track)
+                        for track in self._tracks[1:]
+                    )
+                )
+                if spec.kind is FieldKind.MEDIA_TYPE
+                else ()
+            )
             row = FieldEditor(
                 spec,
                 values[0],
                 any(value != values[0] for value in values[1:]),
                 body,
+                media_type_choices=choices,
             )
             row.modifiedChanged.connect(self._update_change_summary)
             self.rows[spec.path] = row
@@ -521,11 +536,18 @@ class MetadataEditorDialog(QDialog):
             )
             return
         edits: list[TrackFieldEdit] = []
+        media_type: MediaType | None = None
         errors: list[str] = []
         for row in self.rows.values():
             if row.is_modified():
                 try:
-                    edits.append(TrackFieldEdit(row.spec.path, row.value()))
+                    value = row.value()
+                    if row.spec.kind is FieldKind.MEDIA_TYPE:
+                        if not isinstance(value, MediaType):
+                            raise ValueError("Choose a media type.")
+                        media_type = value
+                    else:
+                        edits.append(TrackFieldEdit(row.spec.path, value))
                 except (ValueError, OverflowError, OSError) as error:
                     errors.append(f"{row.spec.label}: {error}")
         if errors:
@@ -536,6 +558,7 @@ class MetadataEditorDialog(QDialog):
                 tuple(TrackUpdate(t.track_id, tuple(edits)) for t in self._tracks),
                 self._revision,
                 artwork=self._artwork_editor.edit(),
+                media_type=media_type,
             )
         except ValueError as error:
             self._error.setText(str(error))

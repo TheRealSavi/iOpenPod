@@ -5,12 +5,15 @@ from pathlib import Path
 from typing import TypedDict, cast
 
 import pytest
+from tests.iPodDB.library.test_video_flags import video_source
 
 from iOpenPod.app.library_workspace import LibraryWorkspace, TrackUpdate
 from iOpenPod.app.metadata_fields import metadata_fields
 from iOpenPod.app.tag_normalizer import TagProfile, normalize_tags
 from iPodDB.library import (
+    IPodLibrary,
     LibrarySnapshot,
+    MediaType,
     Playlist,
     Track,
     TrackEditError,
@@ -103,7 +106,82 @@ def test_normalization_matches_captured_original_results(case: Case) -> None:
 
 
 def test_editor_fields_cover_the_writer_metadata_policy() -> None:
-    assert {f.path for f in metadata_fields()} == set(editable_track_fields())
+    assert {f.path for f in metadata_fields()} == {
+        *editable_track_fields(),
+        "media_types",
+    }
+
+
+def test_video_to_tv_show_prepares_without_replacing_retained_media() -> None:
+    source = video_source(video=True)
+    original = source.serialize()
+    workspace = LibraryWorkspace()
+    workspace.load(source.snapshot)
+    track = source.snapshot.tracks[0]
+    workspace.apply_track_edits(
+        (TrackUpdate(track.track_id, (TrackFieldEdit("show", "Series"),)),),
+        workspace.edit_revision,
+        media_type=MediaType.TV_SHOW,
+    )
+
+    plan = source.analyze(source.begin_draft(workspace.desired_snapshot()))
+
+    assert plan.required_media == ()
+    result = source.prepare(plan)
+    assert result.prepared is not None, result.issues
+    reparsed = IPodLibrary(result.prepared.itunes)
+    saved = reparsed.snapshot.tracks[0]
+    assert saved.media_types == (MediaType.TV_SHOW,)
+    assert saved.show == "Series"
+    assert (saved.metadata.location, saved.size_bytes, saved.length_ms) == (
+        track.metadata.location,
+        track.size_bytes,
+        track.length_ms,
+    )
+    assert saved.ipod is not None and saved.ipod.movie_flag == 1
+    assert source.serialize() == original
+
+
+def test_incompatible_bulk_classification_cannot_publish_metadata() -> None:
+    source = LibrarySnapshot(
+        (
+            Track(1, "Video", "", "", 100, media_types=(MediaType.VIDEO,)),
+            Track(2, "Audio", "", "", 100),
+        )
+    )
+    workspace = LibraryWorkspace()
+    workspace.load(source)
+    revision = workspace.edit_revision
+    with pytest.raises(ValueError, match="compatible"):
+        workspace.apply_track_edits(
+            tuple(
+                TrackUpdate(track.track_id, (TrackFieldEdit("show", "Series"),))
+                for track in source.tracks
+            ),
+            revision,
+            media_type=MediaType.TV_SHOW,
+        )
+    assert workspace.desired_snapshot() == source
+    assert workspace.edit_revision == revision and not workspace.dirty
+
+
+@pytest.mark.parametrize("unavailable", ["stale", "locked"])
+def test_classification_respects_workspace_revision_and_lock(unavailable: str) -> None:
+    workspace = LibraryWorkspace()
+    source = LibrarySnapshot(
+        (Track(1, "Video", "", "", 100, media_types=(MediaType.VIDEO,)),)
+    )
+    workspace.load(source)
+    revision = workspace.edit_revision
+    if unavailable == "stale":
+        workspace.load(source)
+    else:
+        workspace.set_locked(True)
+    with pytest.raises(ValueError):
+        workspace.apply_track_edits(
+            (TrackUpdate(1, ()),), revision, media_type=MediaType.TV_SHOW
+        )
+    assert workspace.desired_snapshot() == source and not workspace.dirty
 
 
 def test_batch_is_atomic_and_stale_edits_cannot_overwrite_drafts() -> None:

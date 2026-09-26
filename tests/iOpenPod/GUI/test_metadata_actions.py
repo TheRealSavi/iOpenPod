@@ -492,6 +492,116 @@ def test_metadata_editor_uses_original_style_direct_editing_layout() -> None:
         context.shutdown()
 
 
+def test_metadata_editor_reclassifies_video_and_edits_show_in_one_revision() -> None:
+    context = build_context()
+    workspace = context.library_workspace
+    tracks = (
+        replace(_TRACKS[0], media_types=(MediaType.VIDEO,)),
+        replace(_TRACKS[1], media_types=(MediaType.MUSIC_VIDEO,)),
+        _TRACKS[2],
+    )
+    source = LibrarySnapshot(tracks)
+    workspace.load(source)
+    dialog = MetadataEditorDialog(workspace, (1, 2))
+    try:
+        row = dialog.rows["media_types"]
+        editor = row.editor
+        assert isinstance(editor, AppComboBox)
+        assert editor.currentText() == "Mixed values"
+        assert not row.is_modified()
+        assert editor.findData(MediaType.AUDIO) == -1
+        editor.setCurrentIndex(editor.findData(MediaType.TV_SHOW))
+        assert row.is_modified()
+        row.reset()
+        assert editor.currentText() == "Mixed values" and not row.is_modified()
+        editor.setCurrentIndex(editor.findData(MediaType.TV_SHOW))
+        show = dialog.rows["show"].editor
+        assert isinstance(show, QLineEdit)
+        show.setText("Series")
+        revision = workspace.revision
+
+        dialog.accept()
+
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        assert workspace.revision == revision + 1
+        assert all(
+            track == replace(prior, media_types=(MediaType.TV_SHOW,), show="Series")
+            for track, prior in zip(workspace.tracks[:2], tracks[:2], strict=True)
+        )
+        assert workspace.tracks[2] == tracks[2]
+        assert workspace.snapshot is source
+        assert context.track_model.tracks == workspace.tracks
+    finally:
+        dialog.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize(
+    "types",
+    [
+        (MediaType.VIDEO,),
+        (MediaType.VIDEO, MediaType.PODCAST),
+        (MediaType.EPUB_BOOK,),
+        (),
+    ],
+)
+def test_media_type_selector_preserves_current_values_until_changed(
+    types: tuple[MediaType, ...],
+) -> None:
+    context = build_context()
+    workspace = context.library_workspace
+    track = replace(_TRACKS[0], media_types=types)
+    workspace.load(LibrarySnapshot((track,)))
+    dialog = MetadataEditorDialog(workspace, (1,))
+    try:
+        row = dialog.rows["media_types"]
+        editor = row.editor
+        assert isinstance(editor, AppComboBox)
+        assert editor.currentIndex() == 0
+        assert not row.is_modified()
+        if editor.isEnabled():
+            editor.setCurrentIndex(editor.findData(MediaType.TV_SHOW))
+            assert row.is_modified()
+            row.reset()
+            assert editor.currentIndex() == 0 and not row.is_modified()
+        title = dialog.rows["title"].editor
+        assert isinstance(title, QLineEdit)
+        title.setText("New title")
+
+        dialog.accept()
+
+        assert workspace.tracks == (replace(track, title="New title"),)
+    finally:
+        dialog.close()
+        context.shutdown()
+
+
+def test_mixed_audio_and_video_keep_classification_while_editing_other_fields() -> None:
+    context = build_context()
+    workspace = context.library_workspace
+    tracks = (_TRACKS[0], replace(_TRACKS[1], media_types=(MediaType.VIDEO,)))
+    workspace.load(LibrarySnapshot(tracks))
+    dialog = MetadataEditorDialog(workspace, (1, 2))
+    try:
+        row = dialog.rows["media_types"]
+        editor = row.editor
+        assert isinstance(editor, AppComboBox)
+        assert not editor.isEnabled()
+        assert editor.currentText() == "Mixed values" and not row.is_modified()
+        title = dialog.rows["title"].editor
+        assert isinstance(title, QLineEdit)
+        title.setText("New title")
+
+        dialog.accept()
+
+        assert workspace.tracks == tuple(
+            replace(track, title="New title") for track in tracks
+        )
+    finally:
+        dialog.close()
+        context.shutdown()
+
+
 def test_artwork_editor_keeps_text_and_actions_outside_the_preview() -> None:
     context = build_context()
     tracks = tuple(

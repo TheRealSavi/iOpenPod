@@ -138,8 +138,8 @@ TRACK_POLICY = (
         for p in ("length_ms", "size_bytes", "bitrate_kbps")
     ),
     # Reclassifying retained media changes firmware presentation, not its bytes.
-    # The generic metadata editor still accepts only EDITABLE fields; dedicated
-    # Application workflows own classification changes such as Podcast conversion.
+    # Generic metadata field edits accept only EDITABLE fields; dedicated
+    # Application workflows own classification changes, including editor choices.
     FieldPolicy("media_types", FieldOwnership.CLASSIFICATION),
     FieldPolicy("track_id", FieldOwnership.IDENTITY),
     FieldPolicy("artwork_id", FieldOwnership.ARTWORK),

@@ -17,12 +17,23 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.metadata_fields import (
     FieldKind,
     MetadataField,
+    MetadataFieldValue,
     display_value,
     parse_field,
 )
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
-from iPodDB.library import ContentAdvisory, MetadataValue, TrackChapter
+from iPodDB.library import ContentAdvisory, MediaType, MetadataValue, TrackChapter
+
+_MEDIA_TYPE_LABELS = {
+    MediaType.AUDIO: "Music",
+    MediaType.VIDEO: "Movie",
+    MediaType.AUDIOBOOK: "Audiobook",
+    MediaType.PODCAST: "Podcast",
+    MediaType.VIDEO_PODCAST: "Video Podcast",
+    MediaType.TV_SHOW: "TV Show",
+    MediaType.MUSIC_VIDEO: "Music Video",
+}
 
 
 class ChapterEditor(QWidget):
@@ -105,9 +116,11 @@ class FieldEditor(QFrame):
     def __init__(
         self,
         spec: MetadataField,
-        value: MetadataValue,
+        value: MetadataFieldValue,
         mixed: bool,
         parent: QWidget,
+        *,
+        media_type_choices: tuple[MediaType, ...] = (),
     ) -> None:
         super().__init__(parent)
         self.spec, self.initial, self.mixed = spec, value, mixed
@@ -118,7 +131,47 @@ class FieldEditor(QFrame):
 
         field_label = QLabel(spec.label, self)
         field_label.setObjectName("metadataFieldLabel")
-        if spec.kind in (FieldKind.BOOLEAN, FieldKind.ADVISORY):
+        if spec.kind is FieldKind.MEDIA_TYPE:
+            media_editor = AppComboBox(self)
+            current = (
+                value[0]
+                if isinstance(value, tuple) and len(value) == 1 and not mixed
+                else None
+            )
+            if mixed:
+                media_editor.addItem(self.tr("Mixed values"), None)
+            elif current not in media_type_choices:
+                retained = (
+                    " + ".join(
+                        self.tr(_MEDIA_TYPE_LABELS.get(kind, kind.value))
+                        for kind in value
+                        if isinstance(kind, MediaType)
+                    )
+                    if isinstance(value, tuple)
+                    else str(value)
+                )
+                media_editor.addItem(
+                    self.tr("Current (%1)").replace("%1", retained), None
+                )
+            for kind in media_type_choices:
+                media_editor.addItem(self.tr(_MEDIA_TYPE_LABELS[kind]), kind.value)
+            media_editor.setCurrentIndex(
+                media_editor.findData(current) if current in media_type_choices else 0
+            )
+            media_editor.setEnabled(bool(media_type_choices))
+            media_editor.setToolTip(
+                self.tr(
+                    "Changes Library classification; keeps the existing media file."
+                )
+                if media_type_choices
+                else self.tr(
+                    "Select audio Tracks or video Tracks with a known media type "
+                    "to change their classification together."
+                )
+            )
+            media_editor.currentIndexChanged.connect(self._modified)
+            self.editor: QWidget = media_editor
+        elif spec.kind in (FieldKind.BOOLEAN, FieldKind.ADVISORY):
             editor = AppComboBox(self)
             if mixed:
                 editor.addItem(self.tr("Mixed values"), None)
@@ -134,7 +187,7 @@ class FieldEditor(QFrame):
                 editor.addItem(option_label, data)
             editor.setCurrentIndex(0 if mixed else editor.findData(value))
             editor.currentIndexChanged.connect(self._modified)
-            self.editor: QWidget = editor
+            self.editor = editor
         elif spec.kind is FieldKind.LONG_TEXT:
             long_editor = QPlainTextEdit(self)
             long_editor.setMaximumHeight(120)
@@ -146,7 +199,11 @@ class FieldEditor(QFrame):
             long_editor.textChanged.connect(self._modified)
             self.editor = long_editor
         elif spec.kind is FieldKind.CHAPTERS:
-            chapters = value if isinstance(value, tuple) and not mixed else ()
+            chapters = (
+                tuple(chapter for chapter in value if isinstance(chapter, TrackChapter))
+                if isinstance(value, tuple) and not mixed
+                else ()
+            )
             chapter_editor = ChapterEditor(chapters, self)
             chapter_editor.table.itemChanged.connect(self._modified)
             chapter_editor.table.model().rowsRemoved.connect(self._modified)
@@ -190,7 +247,7 @@ class FieldEditor(QFrame):
         if self._syncing:
             return
         if (
-            self.mixed
+            (self.mixed or self.spec.kind is FieldKind.MEDIA_TYPE)
             and isinstance(self.editor, AppComboBox)
             and self.editor.currentData() is None
         ):
@@ -224,12 +281,22 @@ class FieldEditor(QFrame):
             elif isinstance(editor, QPlainTextEdit):
                 editor.setPlainText("" if self.mixed else str(self.initial or ""))
             elif isinstance(editor, AppComboBox):
-                editor.setCurrentIndex(
-                    0 if self.mixed else editor.findData(self.initial)
-                )
+                initial: object = self.initial
+                if self.spec.kind is FieldKind.MEDIA_TYPE:
+                    initial = (
+                        self.initial[0]
+                        if isinstance(self.initial, tuple) and len(self.initial) == 1
+                        else None
+                    )
+                index = editor.findData(initial)
+                editor.setCurrentIndex(0 if self.mixed or index < 0 else index)
             elif isinstance(editor, ChapterEditor):
                 editor.set_chapters(
-                    self.initial
+                    tuple(
+                        chapter
+                        for chapter in self.initial
+                        if isinstance(chapter, TrackChapter)
+                    )
                     if isinstance(self.initial, tuple) and not self.mixed
                     else ()
                 )
@@ -249,6 +316,8 @@ class FieldEditor(QFrame):
             value: object = editor.currentData()
             if self.spec.kind is FieldKind.ADVISORY and isinstance(value, str):
                 return ContentAdvisory(value)
+            if self.spec.kind is FieldKind.MEDIA_TYPE and isinstance(value, str):
+                return MediaType(value)
             if isinstance(value, bool | ContentAdvisory):
                 return value
             raise ValueError("Choose a value to replace mixed values.")

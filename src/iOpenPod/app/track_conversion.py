@@ -13,6 +13,41 @@ _VIDEO_TYPES = frozenset(
         MediaType.VIDEO_PODCAST,
     )
 )
+_AUDIO_CHOICES = (MediaType.AUDIO, MediaType.AUDIOBOOK, MediaType.PODCAST)
+_VIDEO_CHOICES = (
+    MediaType.VIDEO,
+    MediaType.TV_SHOW,
+    MediaType.MUSIC_VIDEO,
+    MediaType.VIDEO_PODCAST,
+)
+_AUDIO_TYPES = frozenset(
+    (*_AUDIO_CHOICES, MediaType.RINGTONE, MediaType.MEMO, MediaType.ITUNES_U)
+)
+
+
+def media_type_choices(track: Track) -> tuple[MediaType, ...]:
+    """Return supported classifications for this Track's retained media family."""
+    if any(
+        kind in track.media_types for kind in (MediaType.EPUB_BOOK, MediaType.PDF_BOOK)
+    ):
+        return ()
+    if any(kind in _VIDEO_TYPES for kind in track.media_types):
+        return _VIDEO_CHOICES
+    if any(kind in _AUDIO_TYPES for kind in track.media_types):
+        return _AUDIO_CHOICES
+    return ()
+
+
+def reclassify_track(track: Track, media_type: MediaType) -> Track:
+    """Change Library classification without changing the retained media or tags."""
+    if not isinstance(media_type, MediaType) or media_type not in media_type_choices(  # pyright: ignore[reportUnnecessaryIsInstance]
+        track
+    ):
+        raise ValueError(
+            f"Track {track.track_id}: choose a media type compatible with its "
+            "retained audio or video."
+        )
+    return replace(track, media_types=(media_type,))
 
 
 def podcast_conversion_needed(track: Track) -> bool:

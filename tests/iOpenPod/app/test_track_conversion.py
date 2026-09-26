@@ -1,10 +1,61 @@
 from dataclasses import replace
 
+import pytest
+
 from iOpenPod.app.track_conversion import (
     convert_track_to_podcast,
     podcast_conversion_needed,
+    reclassify_track,
 )
 from iPodDB.library import MediaType, Track, TrackMetadata
+
+
+@pytest.mark.parametrize(
+    "before,after",
+    [
+        (MediaType.VIDEO, MediaType.TV_SHOW),
+        (MediaType.TV_SHOW, MediaType.VIDEO),
+        (MediaType.VIDEO, MediaType.MUSIC_VIDEO),
+        (MediaType.VIDEO, MediaType.VIDEO_PODCAST),
+        (MediaType.AUDIO, MediaType.AUDIOBOOK),
+        (MediaType.AUDIO, MediaType.PODCAST),
+        (MediaType.AUDIOBOOK, MediaType.AUDIO),
+    ],
+)
+def test_reclassification_changes_only_media_types(
+    before: MediaType, after: MediaType
+) -> None:
+    track = Track(
+        1,
+        "Title",
+        "Artist",
+        "Album",
+        1000,
+        size_bytes=1024,
+        media_types=(before,),
+        metadata=TrackMetadata(location="iPod_Control/Music/F00/media.mp4"),
+    )
+
+    assert reclassify_track(track, after) == replace(track, media_types=(after,))
+
+
+@pytest.mark.parametrize(
+    "before,after",
+    [
+        ((MediaType.AUDIO,), MediaType.TV_SHOW),
+        ((MediaType.TV_SHOW,), MediaType.AUDIO),
+        ((MediaType.EPUB_BOOK,), MediaType.AUDIO),
+        ((MediaType.VIDEO, MediaType.PDF_BOOK), MediaType.TV_SHOW),
+        ((), MediaType.AUDIO),
+    ],
+)
+def test_reclassification_rejects_unknown_or_incompatible_media(
+    before: tuple[MediaType, ...], after: MediaType
+) -> None:
+    track = Track(1, "Title", "", "", 1000, media_types=before)
+
+    with pytest.raises(ValueError, match="compatible"):
+        reclassify_track(track, after)
 
 
 def test_video_podcast_conversion_preserves_existing_presentation_values() -> None:

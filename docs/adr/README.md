@@ -160,3 +160,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0085: Preserve positional playback sidecars during Sync](0085-preserve-positional-playback-sidecars-during-sync.md)
 - [ADR-0086: Prepare bounded stills for oversized Photos](0086-prepare-bounded-stills-for-oversized-photos.md)
 - [ADR-0087: Report concurrent Host preparation progress](0087-report-concurrent-host-preparation-progress.md)
+- [ADR-0088: Edit Track classification in the metadata editor](0088-edit-track-classification-in-the-metadata-editor.md)

@@ -5,7 +5,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from iPodDB.library import ContentAdvisory, MetadataValue, Track, editable_track_fields
+from iPodDB.library import (
+    ContentAdvisory,
+    MediaType,
+    MetadataValue,
+    Track,
+    editable_track_fields,
+)
+
+type MetadataFieldValue = MetadataValue | tuple[MediaType, ...]
 
 
 class FieldKind(StrEnum):
@@ -16,6 +24,7 @@ class FieldKind(StrEnum):
     BOOLEAN = "boolean"
     DATE = "date"
     ADVISORY = "advisory"
+    MEDIA_TYPE = "media_type"
     CHAPTERS = "chapters"
 
 
@@ -62,6 +71,7 @@ _GROUPS: dict[str, tuple[str, ...]] = {
         "metadata.equalizer",
     ),
     "Options": (
+        "media_types",
         "metadata.compilation",
         "metadata.checked",
         "metadata.content_advisory",
@@ -104,6 +114,7 @@ _GROUPS: dict[str, tuple[str, ...]] = {
     ),
 }
 _LABELS = {
+    "media_types": "Media type",
     "track_number": "Track number",
     "metadata.total_tracks": "Total tracks",
     "metadata.volume_adjustment_percent": "Volume adjustment (%)",
@@ -120,8 +131,8 @@ _LABELS = {
 _LONG = frozenset(("metadata.comment", "metadata.lyrics", "metadata.description"))
 
 
-def field_value(track: Track, path: str) -> MetadataValue:
-    value: MetadataValue = (
+def field_value(track: Track, path: str) -> MetadataFieldValue:
+    value: MetadataFieldValue = (
         getattr(track.metadata, path[9:])
         if path.startswith("metadata.")
         else getattr(track, path)
@@ -131,7 +142,8 @@ def field_value(track: Track, path: str) -> MetadataValue:
 
 def metadata_fields() -> tuple[MetadataField, ...]:
     defaults = Track(0, "", "", "", 0)
-    allowed = frozenset(editable_track_fields())
+    # Classification goes through the Application Layer's dedicated workflow.
+    allowed = frozenset((*editable_track_fields(), "media_types"))
     result: list[MetadataField] = []
     for group, paths in _GROUPS.items():
         for path in paths:
@@ -139,7 +151,9 @@ def metadata_fields() -> tuple[MetadataField, ...]:
                 continue
             value = field_value(defaults, path)
             kind = FieldKind.TEXT
-            if path == "metadata.chapters":
+            if path == "media_types":
+                kind = FieldKind.MEDIA_TYPE
+            elif path == "metadata.chapters":
                 kind = FieldKind.CHAPTERS
             elif path == "metadata.content_advisory":
                 kind = FieldKind.ADVISORY
@@ -160,7 +174,7 @@ def metadata_fields() -> tuple[MetadataField, ...]:
     return tuple(result)
 
 
-def display_value(value: MetadataValue, kind: FieldKind) -> str:
+def display_value(value: MetadataFieldValue, kind: FieldKind) -> str:
     if kind is FieldKind.DATE and isinstance(value, int) and value:
         try:
             return (

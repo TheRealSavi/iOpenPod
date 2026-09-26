@@ -1,6 +1,6 @@
 # ADR-0036: Reclassify retained media without replacement
 
-- Status: Accepted
+- Status: Superseded by ADR-0088 (metadata-editor restriction only)
 - Date: 2026-09-12
 - Extends: ADR-0026 and ADR-0034
 

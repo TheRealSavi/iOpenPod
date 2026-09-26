@@ -7,12 +7,13 @@ from PySide6.QtCore import QObject, Signal, Slot
 from iOpenPod.app.media.importing import ImportedSong, LibraryMediaSource
 from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.smart_playlist_preview import preview_smart_playlist
-from iOpenPod.app.track_conversion import convert_track_to_podcast
+from iOpenPod.app.track_conversion import convert_track_to_podcast, reclassify_track
 from iPodDB.library import (
     ArtworkAsset,
     ArtworkPixels,
     IPodPhotoAlbumDetails,
     LibrarySnapshot,
+    MediaType,
     Photo,
     PhotoAlbum,
     PhotoAlbumKind,
@@ -589,8 +590,9 @@ class LibraryWorkspace(QObject):
         expected: EditRevision,
         *,
         artwork: TrackArtworkEdit | None = None,
+        media_type: MediaType | None = None,
     ) -> None:
-        """Validate metadata and artwork before publishing one reversible edit."""
+        """Validate metadata, classification, and artwork before one reversible edit."""
         self.require_revision(expected)
         replacements: dict[int, Track] = {}
         issues: list[WriteIssue] = []
@@ -600,6 +602,10 @@ class LibraryWorkspace(QObject):
                 raise ValueError("The selection contains a missing or repeated Track.")
             try:
                 replacements[track.track_id] = edit_track_metadata(track, update.edits)
+                if media_type is not None:
+                    replacements[track.track_id] = reclassify_track(
+                        replacements[track.track_id], media_type
+                    )
             except TrackEditError as error:
                 issues.extend(error.issues)
         if issues:

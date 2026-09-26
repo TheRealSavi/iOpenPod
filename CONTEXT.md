@@ -330,7 +330,11 @@ file picker, or progress dialog. Application media replacement remains unfinishe
 The Track context menu can also reclassify retained
 audio or video as a Podcast without replacing its media; the existing review/save
 path writes its firmware classification, playback flags, presentation fields, and
-Podcasts Playlist consequences. See ADR-0026, ADR-0030, ADR-0032, and ADR-0036.
+Podcasts Playlist consequences. The metadata editor's Media type selector also
+reclassifies retained audio or video within its current media family, including
+Movie to TV Show, atomically with explicit metadata and artwork edits. Mixed and
+retained compound classifications stay unchanged until selected for replacement.
+See ADR-0026, ADR-0030, ADR-0032, ADR-0036, and ADR-0088.
 
 The application can now inspect real incoming audio/video files through FFprobe
 over a temporary Host snapshot captured by Storage. Typed Media Inspection preserves
