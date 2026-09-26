@@ -10,7 +10,7 @@ import json
 import re
 import shutil
 from collections.abc import Callable
-from contextlib import ExitStack
+from contextlib import AbstractContextManager, ExitStack, nullcontext
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -60,13 +60,16 @@ from iOpenPod.app.sync_execution import (
     _draft,  # pyright: ignore[reportPrivateUsage]
     _PreparedTrack,  # pyright: ignore[reportPrivateUsage]
     _song,  # pyright: ignore[reportPrivateUsage]
+    _validate_plan,  # pyright: ignore[reportPrivateUsage]
     preview_playlist_sync,
 )
 from iOpenPod.app.sync_plan import (
     SyncPlan,
     SyncPlanAction,
     SyncPlanItem,
+    host_path_identity,
     prepare_sync_plan,
+    select_sync_plan,
 )
 from iPodDB.library import (
     AudioEncoding,
@@ -1276,6 +1279,143 @@ def test_prepared_silent_video_uses_motion_duration_without_audio_sample_rate(
         assert song.source.media.content is MediaContent.VIDEO
         assert song.track.metadata.location.endswith(".m4v")
         assert len(Path(song.track.metadata.location).stem) == 4
+    finally:
+        device.coordinator.close()
+
+
+def test_selected_silent_video_add_survives_execution_plan_validation(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        path = tmp_path / "silent-video.mp4"
+        path.write_bytes(b"video without an audio stream")
+        observed = LocalHostFile.observe(HostPath(path))
+        track = Track(
+            1,
+            "Silent video",
+            "Artist",
+            "Videos",
+            1_000,
+            media_types=(MediaType.VIDEO,),
+            metadata=TrackMetadata(location=str(path)),
+        )
+        host = HostMediaLibrary(
+            LibrarySnapshot(tracks=(track,)),
+            (
+                HostMediaSource(
+                    observed.path,
+                    HostMediaFileKind.VIDEO,
+                    observed.size_bytes,
+                    observed.modified_ns,
+                    acoustic_fingerprint=None,
+                ),
+            ),
+            (),
+            HostMediaCacheStats(),
+        )
+        ipod = _ipod(device)
+        comparison = prepare_sync_plan(host, ipod, device.active.library)
+        plan = select_sync_plan(
+            comparison,
+            selected_host_paths=frozenset({host_path_identity(str(path))}),
+            selected_ipod_removals=frozenset(),
+        )
+        assert plan.items[0].action is SyncPlanAction.ADD
+
+        _validate_plan(SyncExecutionRequest(plan, host, ipod, device.active, 1, 1))
+    finally:
+        device.coordinator.close()
+
+
+def test_silent_video_add_does_not_require_unavailable_sync_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        path = tmp_path / "silent-video.mp4"
+        path.write_bytes(b"video without an audio stream")
+        observed = LocalHostFile.observe(HostPath(path))
+        track = Track(
+            1,
+            "Silent video",
+            "Artist",
+            "Videos",
+            1_000,
+            media_types=(MediaType.VIDEO,),
+            metadata=TrackMetadata(location=str(path)),
+        )
+        host = HostMediaLibrary(
+            LibrarySnapshot(tracks=(track,)),
+            (
+                HostMediaSource(
+                    observed.path,
+                    HostMediaFileKind.VIDEO,
+                    observed.size_bytes,
+                    observed.modified_ns,
+                    acoustic_fingerprint=None,
+                ),
+            ),
+            (),
+            HostMediaCacheStats(),
+        )
+        ipod = _ipod(device)
+        comparison = prepare_sync_plan(host, ipod, device.active.library)
+        plan = select_sync_plan(
+            comparison,
+            selected_host_paths=frozenset({host_path_identity(str(path))}),
+            selected_ipod_removals=frozenset(),
+        )
+        request = SyncExecutionRequest(plan, host, ipod, device.active, 1, 1)
+        with capture_host_file(HostPath(path), checkpoint=lambda: None) as captured:
+            inspection = _parse(
+                json.dumps(
+                    {
+                        "format": {
+                            "format_name": "mov",
+                            "size": str(observed.size_bytes),
+                        },
+                        "streams": [
+                            {
+                                "index": 0,
+                                "codec_type": "video",
+                                "codec_name": "h264",
+                                "duration": "1.5",
+                                "bit_rate": "800000",
+                                "disposition": {"attached_pic": 0},
+                            }
+                        ],
+                    }
+                ).encode(),
+                captured,
+            )
+            prepared = PreparedTranscode(
+                captured.snapshot,
+                inspection,
+                VideoEncoding.MP4,
+                captured.fingerprint,
+                True,
+            )
+
+            def prepare_for_test(
+                _self: MediaTranscoder,
+                *_args: object,
+                **_kwargs: object,
+            ) -> AbstractContextManager[PreparedTranscode]:
+                return nullcontext(prepared)
+
+            monkeypatch.setattr(MediaTranscoder, "prepare", prepare_for_test)
+            result = SyncExecutor(
+                device.coordinator, transcoder=MediaTranscoder()
+            )._prepare_one(  # pyright: ignore[reportPrivateUsage]
+                request,
+                plan.items[0],
+                host.sources[0],
+                track,
+                cast("MediaTools", None),
+                lambda: None,
+            )
+        assert result.provenance is None
     finally:
         device.coordinator.close()
 

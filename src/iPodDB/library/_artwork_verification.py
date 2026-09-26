@@ -101,7 +101,7 @@ def verify_artwork(
             if cover.pixel_format is not IthmbPixelFormat.JPEG:
                 rotated = cover.pixel_format is IthmbPixelFormat.RGB565_BE_90
                 expected_size = (
-                    cover.width * cover.height * 3 // 2
+                    cover.width * cover.height * 2
                     if cover.pixel_format is IthmbPixelFormat.I420_LE
                     else (
                         cover.row_bytes

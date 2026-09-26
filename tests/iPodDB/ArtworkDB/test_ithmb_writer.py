@@ -6,6 +6,7 @@ from device_registry import DEFAULT_DEVICE_REGISTRY
 from iPodDB.ArtworkDB.ithmb import (
     DecodedImage,
     IthmbLayout,
+    IthmbPaddingMode,
     IthmbPixelFormat,
     decode_ithmb,
 )
@@ -37,7 +38,7 @@ def test_every_catalog_layout_encodes_a_complete_white_raster(
     )
     payload = encode_ithmb(image, layout)
     expected_size = (
-        layout.width * layout.height * 3 // 2
+        layout.width * layout.height * 2
         if layout.pixel_format is IthmbPixelFormat.I420_LE
         else layout.row_bytes
         * (
@@ -66,10 +67,34 @@ def test_rotated_rectangular_raster_matches_clockwise_big_endian_vector() -> Non
 def test_i420_planes_accept_catalog_aggregate_row_size() -> None:
     image = DecodedImage(2, 2, bytes((255, 0, 0)) * 4)
     payload = encode_ithmb(image, IthmbLayout(2, 2, 3, IthmbPixelFormat.I420_LE))
+    assert len(payload) == 8
     # Allow one level for the full-range to limited-range integer conversion.
     assert all(
-        abs(a - b) <= 1 for a, b in zip(payload, (81, 81, 81, 81, 90, 240), strict=True)
+        abs(a - b) <= 1
+        for a, b in zip(payload[:6], (81, 81, 81, 81, 90, 240), strict=True)
     )
+    assert payload[6:] == b"\x00\x00"
+
+
+def test_symmetric_padding_encoder_preserves_the_visible_raster() -> None:
+    image = DecodedImage(
+        2,
+        1,
+        bytes((255, 0, 0, 0, 255, 0)),
+    )
+    layout = IthmbLayout(
+        3,
+        2,
+        8,
+        IthmbPixelFormat.RGB565_LE,
+        horizontal_padding=1,
+        vertical_padding=1,
+        padding_mode=IthmbPaddingMode.SYMMETRIC,
+    )
+
+    decoded = decode_ithmb(encode_ithmb(image, layout), layout)
+
+    assert decoded == image
 
 
 def test_field_separated_uyvy_writer_stores_even_rows_before_odd_rows() -> None:

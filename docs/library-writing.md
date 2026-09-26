@@ -304,9 +304,11 @@ in the public model; their native Track aggregation is computed recursively.
 
 Dates are Unix seconds with zero meaning absent; the inverse conversion uses the
 source device timezone and the unsigned iPod epoch range. Unknown native bits and
-unchanged timestamp/string representations remain intact. Volume and normalization
-gain quantization produces a warning and the actual stored value in the resulting
-snapshot. Unsupported rule representations survive untouched.
+unchanged timestamp/string representations remain intact. Volume quantization
+produces a warning and the actual stored value in the resulting snapshot.
+Normalization gain is canonicalized to the actual stored value without a warning
+because its native representation is expected to be quantized. Unsupported rule
+representations survive untouched.
 
 ## Supply resources through typed inputs
 

@@ -81,7 +81,9 @@ def _values(
                             "Normalization gain is outside the representable range."
                         )
                     actual = 10 * math.log10(1000 / encoded)
-                if not math.isclose(value, actual, abs_tol=1e-9):
+                if attr == "volume_adjustment_percent" and not math.isclose(
+                    value, actual, abs_tol=1e-9
+                ):
                     issues.append(
                         WriteIssue(
                             "track.quantized",

@@ -23,6 +23,7 @@ from iOpenPod.app.sync_plan import (
 )
 from iPodDB.library import (
     LibrarySnapshot,
+    MediaType,
     Photo,
     PhotoLibrary,
     PhotoRepresentation,
@@ -456,3 +457,42 @@ def test_sync_selection_defaults_to_correlated_host_media_and_opt_in_removals(
     assert selection.removal_check_state(candidate) is Qt.CheckState.Unchecked
     assert selection.set_removal_checked(candidate, True)
     assert selection.selected_plan.count(SyncPlanAction.REMOVE) == 2
+
+
+def test_selecting_a_host_video_without_a_fingerprint_plans_an_add(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "silent-video.mp4"
+    track = Track(
+        1,
+        "Silent video",
+        "Artist",
+        "Videos",
+        1_000,
+        media_types=(MediaType.VIDEO,),
+        metadata=TrackMetadata(location=str(path)),
+    )
+    source = HostMediaSource(
+        HostPath(path),
+        HostMediaFileKind.VIDEO,
+        100,
+        1_000,
+        acoustic_fingerprint=None,
+    )
+    comparison = prepare_sync_plan(
+        _host_library((track,), (), (source,)),
+        _ipod_library(()),
+        _ipod_snapshot(),
+    )
+    assert comparison.items[0].action is SyncPlanAction.ATTENTION
+
+    selection = SyncSelection()
+    selection.reset(
+        _host_library((track,), (), (source,)),
+        comparison,
+    )
+    assert selection.set_tracks_checked((track.track_id,), True)
+
+    item = selection.selected_plan.items[0]
+    assert item.action is SyncPlanAction.ADD
+    assert item.basis is SyncPlanBasis.HOST_ONLY

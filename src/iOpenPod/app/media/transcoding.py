@@ -590,9 +590,6 @@ def _resolve_video(
             "-vf",
             ",".join(filters),
         ]
-        warnings.append(
-            f"Prepared H.264 Baseline video within this iPod's {caps.max_width}x{caps.max_height}, {caps.max_fps} fps and bitrate limits."
-        )
     if audio is not None:
         args += ["-map", f"0:{audio.index}"]
         if (

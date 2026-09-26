@@ -349,6 +349,9 @@ def test_video_and_audio_are_converted_together_and_fully_decoded(
         assert args[args.index("-level:v") + 1] == caps.h264_level
         assert args[args.index("-maxrate") + 1] == f"{caps.max_bitrate_kbps}k"
         assert args[args.index("-bufsize") + 1] == f"{caps.max_bitrate_kbps * 2}k"
+        assert not any(
+            "Prepared H.264 Baseline video" in warning for warning in plan.warnings
+        )
     with transcoder.prepare(
         HostPath(path),
         video_profile,

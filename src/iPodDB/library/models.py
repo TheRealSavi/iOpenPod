@@ -185,10 +185,18 @@ class Track:
     ipod: IPodTrackDetails | None = None
 
     @property
+    def effective_album_artist(self) -> str:
+        """Return the album artist used to group this Track."""
+
+        return self.album_artist or self.artist
+
+    @property
     def album_key(self) -> str:
         """Return the stable presentation key used to group this Track."""
 
-        return "\x1f".join((self.artist.casefold(), self.album.casefold()))
+        return "\x1f".join(
+            (self.effective_album_artist.casefold(), self.album.casefold())
+        )
 
     @property
     def artist_key(self) -> str:

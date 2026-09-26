@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 from io import BytesIO
+from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -26,6 +27,9 @@ from iPodDB.library import (
 )
 from storage import DevicePath
 
+if TYPE_CHECKING:
+    from collections.abc import Collection
+
 MAX_PHOTO_SOURCE_BYTES = 64 * 1024 * 1024
 
 
@@ -38,13 +42,16 @@ def prepare_sync_photo(
     formats: tuple[PhotoThumbnailFormat, ...],
     rotate_tall_photos: bool = False,
     fit_thumbnails: bool = False,
+    always_fit_format_ids: Collection[int] | None = None,
     original: Photo | None = None,
 ) -> PreparedPhoto:
     """Build a complete Photo with fresh, individually verifiable device files.
 
     The caller allocates unused paths and Storage enforces absence at publication.
     Original bytes remain unchanged; EXIF orientation, rotation and fitting affect
-    only the viewing copies. Each fresh shard avoids a read/rewrite of old USB data.
+    only the viewing copies. ``always_fit_format_ids`` identifies high-resolution
+    device renditions that always preserve the whole source. Each fresh shard
+    avoids a read/rewrite of old USB data.
     """
 
     if not data or len(data) > MAX_PHOTO_SOURCE_BYTES:
@@ -84,15 +91,38 @@ def prepare_sync_photo(
             height,
         )
     ]
+    if always_fit_format_ids is None:
+        high_resolution_area = max(
+            image_format.width * image_format.height for image_format in formats
+        )
+        always_fit_ids = {
+            image_format.format_id
+            for image_format in formats
+            if image_format.width * image_format.height == high_resolution_area
+        }
+    else:
+        always_fit_ids = set(always_fit_format_ids)
     for image_format in formats:
         source = image
         target_size = (image_format.width, image_format.height)
         if rotate_tall_photos and _rotation_improves_fit(image.size, target_size):
             source = image.transpose(Image.Transpose.ROTATE_270)
-        if not fit_thumbnails:
+        # High-resolution Photo renditions always preserve the complete source;
+        # the setting controls only the smaller thumbnail renditions.
+        always_fit = image_format.format_id in always_fit_ids
+        if fit_thumbnails or always_fit:
+            source, horizontal_padding, vertical_padding = _fit_thumbnail(
+                source, target_size
+            )
+        else:
             source = ImageOps.fit(source, target_size, Image.Resampling.LANCZOS)
+            horizontal_padding = 0
+            vertical_padding = 0
         encoded = encode_photo_thumbnail(
-            PhotoPixels(source.width, source.height, source.tobytes()), image_format
+            PhotoPixels(source.width, source.height, source.tobytes()),
+            image_format,
+            horizontal_padding=horizontal_padding,
+            vertical_padding=vertical_padding,
         )
         thumbnail_path = (
             f"Photos/Thumbs/F{image_format.format_id}_{thumbnail_shard}.ithmb"
@@ -105,8 +135,10 @@ def prepare_sync_photo(
                 thumbnail_path,
                 0,
                 len(encoded),
-                image_format.width,
-                image_format.height,
+                image_format.width - horizontal_padding,
+                image_format.height - vertical_padding,
+                horizontal_padding,
+                vertical_padding,
             )
         )
     photo = replace(
@@ -184,6 +216,25 @@ def _rotation_improves_fit(source: tuple[int, int], target: tuple[int, int]) -> 
     scale = min(target[0] / width, target[1] / height)
     rotated_scale = min(target[0] / height, target[1] / width)
     return rotated_scale * rotated_scale >= scale * scale * 1.2
+
+
+def _fit_thumbnail(
+    image: Image.Image, target: tuple[int, int]
+) -> tuple[Image.Image, int, int]:
+    """Resize a Photo to the visible symmetric region of a thumbnail frame."""
+
+    target_width, target_height = target
+    scale = min(target_width / image.width, target_height / image.height)
+    width = max(1, round(image.width * scale))
+    height = max(1, round(image.height * scale))
+    # PhotosDB stores one equal margin on both sides. Adjust the fitted raster
+    # by at most one pixel so the physical frame can be represented exactly.
+    if (target_width - width) % 2:
+        width = width - 1 if width > 1 else width + 1
+    if (target_height - height) % 2:
+        height = height - 1 if height > 1 else height + 1
+    resized = image.resize((width, height), Image.Resampling.LANCZOS)  # pyright: ignore[reportUnknownMemberType]
+    return resized, (target_width - width) // 2, (target_height - height) // 2
 
 
 def _source_file(path: str, data: bytes) -> SourceFile:

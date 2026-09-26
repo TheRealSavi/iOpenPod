@@ -29,7 +29,11 @@ in Sync Details. This lets changed content at the same Host path remain associat
 with the iPod item it previously produced. Remaining Tracks correlate by Acoustic
 Fingerprint, and remaining full-resolution Photos correlate by exact Image Content
 Fingerprint. A matching key must identify exactly one item on each side. Missing or
-ambiguous identities become **Needs attention** items and receive no device action.
+ambiguous identities become **Needs attention** items and receive no device action
+in the comparison. An explicitly selected Host-only Track whose only problem is a
+missing identity may derive an **Add** action, because adding a new Host source does
+not require a safe Host-to-iPod correlation. Ambiguous and conflicting correlations
+remain non-actionable.
 
 Each safe correlation produces one of these results:
 
@@ -63,3 +67,8 @@ full-resolution files, Playlist reconciliation, artwork comparison, metadata
 selection, plan editing, and execution require later policy. Plan preparation does
 not weaken the analyze, plan, validate, execute, verify, commit, and cleanup phases
 required for a future Sync transaction.
+
+A deliberately selected Host-only Track may still be executed as a one-way Add
+when no Acoustic Fingerprint is available. The committed Track remains valid, but
+the non-authoritative Library Sync Helper omits provenance that cannot be represented
+as matching evidence; a later comparison therefore requires explicit review again.

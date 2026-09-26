@@ -28,7 +28,13 @@ from iOpenPod.app.models.photo_list_model import PhotoRole
 from iOpenPod.app.models.selection_grouping import SelectionGroupingRole
 from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackRole
-from iOpenPod.app.sync_plan import SyncPlan
+from iOpenPod.app.sync_plan import (
+    SyncPlan,
+    SyncPlanAction,
+    SyncPlanBasis,
+    SyncPlanItem,
+    SyncPlanMediaKind,
+)
 from iOpenPod.GUI.host_library_browser import HostLibraryBrowser
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
@@ -40,6 +46,7 @@ from iOpenPod.GUI.widgets.sync_selection_actions import SyncSelectionActions
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import (
     LibrarySnapshot,
+    MediaType,
     Photo,
     PhotoLibrary,
     PhotoRepresentation,
@@ -167,6 +174,73 @@ def _item_id(view: QAbstractItemView, row: int) -> int | None:
         if isinstance(summary, (AlbumSummary, CollectionSummary))
         else None
     )
+
+
+def test_selecting_a_video_adds_it_to_the_sync_plan() -> None:
+    path = "C:/Videos/selected.mp4"
+    library = HostMediaLibrary(
+        LibrarySnapshot(
+            tracks=(
+                Track(
+                    1,
+                    "Selected video",
+                    "Artist",
+                    "Videos",
+                    1_000,
+                    media_types=(MediaType.VIDEO,),
+                    metadata=TrackMetadata(location=path),
+                ),
+            )
+        ),
+        (),
+        (),
+        HostMediaCacheStats(inspected=1),
+    )
+    selection = SyncSelection()
+    selection.reset(
+        library,
+        SyncPlan(
+            (
+                SyncPlanItem(
+                    SyncPlanAction.ADD,
+                    SyncPlanMediaKind.TRACK,
+                    SyncPlanBasis.HOST_ONLY,
+                    "Selected video",
+                    host_path=path,
+                ),
+            )
+        ),
+    )
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    theme = ThemeManager(APPLICATION, settings)
+    controller = ArtworkController(_EmptyArtworkLoader())
+    provider = ArtworkPixmapProvider(controller)
+    parent = QStackedWidget()
+    workspace = LibraryWorkspace()
+    workspace.set_locked(True)
+    browser = HostLibraryBrowser(
+        settings, theme, provider, workspace, parent, selection
+    )
+    browser.load(library)
+    page = browser.page_widgets[PageId.VIDEOS]
+    table = page.findChild(TrackTable)
+    assert table is not None
+    model = table.model()
+    index = model.index(0, TrackColumn.SYNC_SELECTION)
+
+    try:
+        assert model.setData(
+            index,
+            Qt.CheckState.Checked,
+            Qt.ItemDataRole.CheckStateRole,
+        )
+        assert selection.selected_plan.count(SyncPlanAction.ADD) == 1
+    finally:
+        browser.shutdown()
+        provider.shutdown()
+        controller.shutdown()
+        parent.close()
+        theme.close()
 
 
 def _highlight(view: QAbstractItemView, item_ids: tuple[int, ...]) -> QPoint:

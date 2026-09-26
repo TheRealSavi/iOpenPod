@@ -335,7 +335,8 @@ def edit_track(
             actual = normalization_gain_from_native(encoded)
             values["sound_check"] = encoded
         if (
-            value is not None
+            attr == "volume_adjustment_percent"
+            and value is not None
             and actual is not None
             and not math.isclose(value, actual, abs_tol=1e-9)
         ):

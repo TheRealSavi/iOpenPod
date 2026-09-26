@@ -13,6 +13,7 @@ from threading import Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from device_registry import ArtworkUsage
 from iOpenPod.app.host_media_library import HostMediaFileKind
 from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTrack
 from iOpenPod.app.library_write import (
@@ -134,7 +135,7 @@ class SyncExecutionResult:
 class _PreparedTrack:
     item: SyncPlanItem
     song: ImportedSong
-    provenance: SyncedTrack
+    provenance: SyncedTrack | None
     resources: ExitStack
     warnings: tuple[str, ...]
 
@@ -334,7 +335,11 @@ class SyncExecutor:
                     helper = self._coordinator.publish_sync_success(
                         saved.active,
                         request.ipod,
-                        tuple(item.provenance for item in prepared),
+                        tuple(
+                            item.provenance
+                            for item in prepared
+                            if item.provenance is not None
+                        ),
                         tuple(item.provenance for item in photos),
                     )
                     issues.extend(
@@ -670,13 +675,16 @@ class SyncExecutor:
                         )
                     )
                 else:
+                    provenance = (
+                        None
+                        if result.provenance is None
+                        else replace(result.provenance, path=DevicePath(location))
+                    )
                     allocated.append(
                         replace(
                             result,
                             song=song,
-                            provenance=replace(
-                                result.provenance, path=DevicePath(location)
-                            ),
+                            provenance=provenance,
                         )
                     )
         return allocated, issues
@@ -716,22 +724,22 @@ class SyncExecutor:
                     "The Host file changed since its scan. Rescan before retrying."
                 )
             song = _song(request, track, result)
-            if not source.acoustic_fingerprint:
-                raise ValueError(
-                    "The Host Track has no verified acoustic fingerprint. Rescan it with fpcalc installed."
+            provenance = (
+                None
+                if not source.acoustic_fingerprint
+                else SyncedTrack(
+                    DevicePath(song.track.metadata.location),
+                    source.acoustic_fingerprint,
+                    SyncDetails(
+                        datetime.now(UTC).isoformat(),
+                        str(source.path),
+                        source.size_bytes,
+                        source.modified_ns,
+                        source.path.path.suffix.lstrip(".").casefold(),
+                        result.encoding.value,
+                        result.was_transcoded,
+                    ),
                 )
-            provenance = SyncedTrack(
-                DevicePath(song.track.metadata.location),
-                source.acoustic_fingerprint,
-                SyncDetails(
-                    datetime.now(UTC).isoformat(),
-                    str(source.path),
-                    source.size_bytes,
-                    source.modified_ns,
-                    source.path.path.suffix.lstrip(".").casefold(),
-                    result.encoding.value,
-                    result.was_transcoded,
-                ),
             )
             return _PreparedTrack(
                 item, song, provenance, lifetime.pop_all(), result.warnings
@@ -765,6 +773,20 @@ class SyncExecutor:
         if library is not None:
             used_ids.update(album.album_id for album in library.albums)
         next_id = max((100, *used_ids)) + 1
+        profile_formats = request.source.profile.capabilities.artwork.photo_formats
+        photo_formats = (
+            tuple(item for item in profile_formats if item.usage is ArtworkUsage.PHOTO)
+            or profile_formats
+        )
+        high_resolution_area = max(
+            (item.width * item.height for item in photo_formats),
+            default=0,
+        )
+        always_fit_format_ids = frozenset(
+            item.format_id
+            for item in photo_formats
+            if item.width * item.height == high_resolution_area
+        )
         formats = tuple(
             PhotoThumbnailFormat(
                 item.format_id,
@@ -773,7 +795,7 @@ class SyncExecutor:
                 item.row_bytes,
                 PhotoPixelFormat(item.pixel_format.value),
             )
-            for item in request.source.profile.capabilities.artwork.photo_formats
+            for item in profile_formats
         )
         prepared: list[_PreparedPhoto] = []
         issues: list[WriteIssue] = []
@@ -819,6 +841,7 @@ class SyncExecutor:
                     formats=formats,
                     rotate_tall_photos=request.options.rotate_tall_photos,
                     fit_thumbnails=request.options.fit_thumbnails,
+                    always_fit_format_ids=always_fit_format_ids,
                     original=originals.get(identity),
                 )
                 # Check the retained album shape before this item can enter the batch.
@@ -881,6 +904,24 @@ def _validate_plan(request: SyncExecutionRequest) -> None:
         if item.ipod_id is not None
         and item.host_path is not None
         and item.action is not SyncPlanAction.ATTENTION
+    )
+    # Review may turn a Host-only Track with no acoustic identity into an
+    # explicit one-way Add. Keep execution validation aligned with that safe
+    # selection rule; it does not authorize a correlated or ambiguous item.
+    allowed.update(
+        replace(
+            item,
+            action=SyncPlanAction.ADD,
+            basis=SyncPlanBasis.HOST_ONLY,
+        )
+        for item in comparison.items
+        if (
+            item.action is SyncPlanAction.ATTENTION
+            and item.basis is SyncPlanBasis.MISSING_IDENTITY
+            and item.media_kind is SyncPlanMediaKind.TRACK
+            and item.host_path is not None
+            and item.ipod_id is None
+        )
     )
     hosts: set[str] = set()
     devices: set[tuple[SyncPlanMediaKind, int]] = set()

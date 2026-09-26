@@ -159,24 +159,49 @@ class PhotoRead:
 
 
 def encode_photo_thumbnail(
-    pixels: PhotoPixels, image_format: PhotoThumbnailFormat
+    pixels: PhotoPixels,
+    image_format: PhotoThumbnailFormat,
+    *,
+    horizontal_padding: int = 0,
+    vertical_padding: int = 0,
 ) -> bytes:
     """Encode and independently decode a device thumbnail through the public contract.
 
     The caller supplies semantic pixels and Device Profile capabilities; packed
-    iTHMB layout details and codec verification remain inside iPodDB.
+    iTHMB layout details and codec verification remain inside iPodDB. Padding is
+    the symmetric PhotosDB margin on one side of the stored raster.
     """
+    if horizontal_padding < 0 or vertical_padding < 0:
+        raise ValueError("Photo thumbnail padding must not be negative")
+    if horizontal_padding * 2 >= image_format.width or vertical_padding * 2 >= (
+        image_format.height
+    ):
+        raise ValueError("Photo thumbnail padding leaves no visible raster")
+    symmetric = bool(horizontal_padding or vertical_padding)
     layout = IthmbLayout(
-        image_format.width,
-        image_format.height,
+        image_format.width - horizontal_padding if symmetric else image_format.width,
+        image_format.height - vertical_padding if symmetric else image_format.height,
         image_format.row_bytes,
         image_format.pixel_format,
+        horizontal_padding=horizontal_padding,
+        vertical_padding=vertical_padding,
+        padding_mode=(
+            IthmbPaddingMode.SYMMETRIC if symmetric else IthmbPaddingMode.TRAILING
+        ),
     )
     encoded = encode_ithmb(
         DecodedImage(pixels.width, pixels.height, pixels.rgb888), layout
     )
     checked = decode_ithmb(encoded, layout)
-    if (checked.width, checked.height) != (image_format.width, image_format.height):
+    expected_size = (
+        image_format.width - 2 * horizontal_padding
+        if symmetric
+        else image_format.width,
+        image_format.height - 2 * vertical_padding
+        if symmetric
+        else image_format.height,
+    )
+    if (checked.width, checked.height) != expected_size:
         raise ValueError("Photo thumbnail verification returned unexpected dimensions.")
     return encoded
 

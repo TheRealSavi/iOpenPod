@@ -15,8 +15,8 @@ materials must remain available. See the [GNU guidance on selling free software]
 and [GPLv3 sections 4-6](https://www.gnu.org/licenses/gpl-3.0.html).
 
 DJShott's application icon uses the creator's separate permission in
-[`LICENSES/DJShott-icon.txt`](../LICENSES/DJShott-icon.txt). Dependencies and other
-separately licensed material keep their own terms; this decision does not relicense
+by it.
+Dependencies and other separately licensed material keep their own terms; this decision does not relicense
 them.
 
 ## Why GPLv3 fits the current bundle

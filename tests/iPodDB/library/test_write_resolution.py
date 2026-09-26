@@ -224,6 +224,33 @@ def test_resolution_exposes_derived_flags_and_quantization_before_writing() -> N
     assert sum(i.code == "track.quantized" for i in result.issues) == 1
 
 
+def test_normalization_gain_quantization_is_not_reported_as_a_warning() -> None:
+    source = library()
+    track = source.snapshot.tracks[0]
+    desired = replace(
+        source.snapshot,
+        tracks=(
+            replace(
+                track,
+                metadata=replace(track.metadata, normalization_gain_db=-11.1),
+            ),
+            source.snapshot.tracks[1],
+        ),
+    )
+
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+
+    assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.tracks[
+        0
+    ].metadata.normalization_gain_db == pytest.approx(-11.0998, abs=1e-4)
+    assert not any(
+        issue.code == "track.quantized"
+        and issue.field == "metadata.normalization_gain_db"
+        for issue in result.issues
+    )
+
+
 def test_noop_has_no_generated_consequences_and_measures_only_entered_stages() -> None:
     source = library()
     plan = source.analyze(source.begin_draft())

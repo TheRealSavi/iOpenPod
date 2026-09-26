@@ -212,7 +212,7 @@ class AlbumListModel(QAbstractListModel):
                 accumulators[track.album_key] = _AlbumAccumulator(
                     key=track.album_key,
                     title=track.album,
-                    artist=track.artist,
+                    artist=track.effective_album_artist,
                     year=track.year,
                     track_count=1,
                     duration_ms=max(0, track.length_ms),

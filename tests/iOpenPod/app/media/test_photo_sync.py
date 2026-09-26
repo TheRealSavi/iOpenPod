@@ -16,6 +16,7 @@ from iOpenPod.app.media.photo_sync import photo_library_with_asset, prepare_sync
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iPodDB.library import (
     IPodLibrary,
+    PhotoFileFormat,
     PhotoPixelFormat,
     PhotoRepresentationKind,
     PhotoThumbnailFormat,
@@ -37,12 +38,23 @@ from iPodDB.PhotosDB.writer.write_PhotosDB import write_PhotosDB
 if TYPE_CHECKING:
     from iPodDB.shared.chunk import ChunkHeader, ParsedChunk
 
-FORMATS = (PhotoThumbnailFormat(1024, 8, 4, 16, PhotoPixelFormat.RGB565_LE),)
+FORMATS = (
+    PhotoThumbnailFormat(1024, 8, 4, 16, PhotoPixelFormat.RGB565_LE),
+    PhotoThumbnailFormat(1025, 8, 8, 16, PhotoPixelFormat.RGB565_LE),
+)
 
 
 def _image() -> bytes:
     image = Image.new("RGB", (20, 40), "red")
     image.paste(Image.new("RGB", (20, 20), "blue"), (0, 20))
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
+def _wide_image() -> bytes:
+    image = Image.new("RGB", (40, 20), "red")
+    image.paste(Image.new("RGB", (20, 20), "blue"), (20, 0))
     output = BytesIO()
     image.save(output, format="PNG")
     return output.getvalue()
@@ -71,11 +83,64 @@ def test_photo_fit_and_rotation_change_only_verified_viewing_copies() -> None:
         == _image()
     )
     assert cropped.files[1].data != fitted.files[1].data != rotated.files[1].data
-    read = select_photo_thumbnail(fitted.photo, FORMATS, 8)
+    cropped_low = cropped.photo.representations[1]
+    assert (
+        cropped_low.width,
+        cropped_low.height,
+        cropped_low.horizontal_padding,
+        cropped_low.vertical_padding,
+    ) == (8, 4, 0, 0)
+    high_resolution = cropped.photo.representations[2]
+    assert (
+        high_resolution.width,
+        high_resolution.height,
+        high_resolution.horizontal_padding,
+        high_resolution.vertical_padding,
+    ) == (6, 8, 2, 0)
+    high_read = select_photo_thumbnail(cropped.photo, FORMATS, 8, format_id=1025)
+    assert high_read is not None
+    high_pixels = high_read.decode(cropped.files[2].data)
+    assert high_pixels.rgb888[:3] == b"\xff\x00\x00"
+    assert high_pixels.rgb888[-3:] == b"\x00\x00\xff"
+    assert (high_pixels.width, high_pixels.height) == (4, 8)
+    representation = fitted.photo.representations[1]
+    assert (
+        representation.width,
+        representation.height,
+        representation.horizontal_padding,
+        representation.vertical_padding,
+    ) == (5, 4, 3, 0)
+    read = select_photo_thumbnail(fitted.photo, FORMATS, 8, format_id=1024)
     assert read is not None
     pixels = read.decode(fitted.files[1].data)
-    assert pixels.rgb888[:3] == b"\x00\x00\x00"
-    assert (pixels.width, pixels.height) == (8, 4)
+    assert pixels.rgb888[:3] == b"\xff\x00\x00"
+    assert pixels.rgb888[-3:] == b"\x00\x00\xff"
+    assert (pixels.width, pixels.height) == (2, 4)
+
+
+def test_photo_fit_records_vertical_padding_for_a_wide_source() -> None:
+    image_format = PhotoThumbnailFormat(1026, 4, 8, 8, PhotoPixelFormat.RGB565_LE)
+    asset = prepare_sync_photo(
+        _wide_image(),
+        photo_id=101,
+        original_relative_path="Photos/Full Resolution/iOpenPod/1.png",
+        thumbnail_shard=1,
+        formats=(image_format,),
+    )
+
+    representation = asset.photo.representations[1]
+    assert (
+        representation.width,
+        representation.height,
+        representation.horizontal_padding,
+        representation.vertical_padding,
+    ) == (4, 5, 0, 3)
+    read = select_photo_thumbnail(asset.photo, (image_format,), 8)
+    assert read is not None
+    pixels = read.decode(asset.files[1].data)
+    assert pixels.rgb888[:3] == b"\xff\x00\x00"
+    assert pixels.rgb888[-3:] == b"\x00\x00\xff"
+    assert (pixels.width, pixels.height) == (4, 2)
 
 
 def test_first_photosdb_creation_and_explicit_photo_replacement_round_trip() -> None:
@@ -137,6 +202,65 @@ def test_photo_preparation_rejects_missing_or_changed_asset_evidence() -> None:
             thumbnail_shard=1,
             formats=FORMATS,
         )
+
+
+def test_photo_format_size_mismatch_reports_format_and_sizes() -> None:
+    source = library()
+    format_1013 = PhotoThumbnailFormat(
+        1013, 220, 176, 440, PhotoPixelFormat.RGB565_BE_90
+    )
+    asset = prepare_sync_photo(
+        _image(),
+        photo_id=101,
+        original_relative_path="Photos/Full Resolution/iOpenPod/1.png",
+        thumbnail_shard=1,
+        formats=(format_1013,),
+        rotate_tall_photos=True,
+    )
+    desired_photos = replace(
+        photo_library_with_asset(None, asset),
+        formats=(PhotoFileFormat(1013, 77_440),),
+    )
+    plan = source.analyze(
+        source.begin_draft(replace(source.snapshot, photos=desired_photos)),
+        WriteTarget(photo_formats=(format_1013,), photos_root_value=6),
+    )
+
+    result = source.prepare(plan, WriteResources(photos=(asset,)))
+
+    issue = next(
+        issue for issue in result.issues if issue.code == "resources.invalid_photo"
+    )
+    assert issue.message == (
+        "Photo format 1013 declares 77440 bytes, "
+        "but the prepared representation contains 96800 bytes."
+    )
+
+
+def test_f1067_photo_thumbnail_matches_its_two_byte_record_size() -> None:
+    source = library()
+    format_1067 = PhotoThumbnailFormat(1067, 720, 480, 1080, PhotoPixelFormat.I420_LE)
+    asset = prepare_sync_photo(
+        _image(),
+        photo_id=101,
+        original_relative_path="Photos/Full Resolution/iOpenPod/1.png",
+        thumbnail_shard=1,
+        formats=(format_1067,),
+        rotate_tall_photos=True,
+    )
+    desired_photos = replace(
+        photo_library_with_asset(None, asset),
+        formats=(PhotoFileFormat(1067, 691_200),),
+    )
+    plan = source.analyze(
+        source.begin_draft(replace(source.snapshot, photos=desired_photos)),
+        WriteTarget(photo_formats=(format_1067,), photos_root_value=6),
+    )
+
+    result = source.prepare(plan, WriteResources(photos=(asset,)))
+
+    assert result.prepared is not None, result.issues
+    assert asset.photo.representations[1].size_bytes == 691_200
 
 
 def test_photo_transaction_publishes_assets_before_database_and_reclaims_replacement(

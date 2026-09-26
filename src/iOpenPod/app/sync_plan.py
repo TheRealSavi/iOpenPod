@@ -209,14 +209,33 @@ def select_sync_plan(
     Host-only media is absent until selected. Correlated Host media that the user
     deselects becomes an explicit removal. iPod-only removal candidates are absent
     until the user opts into each one on the Review page. Attention items remain
-    visible because selection cannot make unsafe correlation evidence actionable.
+    visible because selection cannot make unsafe correlation evidence actionable;
+    a Host-only item with a missing identity is the one safe exception because an
+    explicit one-way Add does not require correlation.
     """
 
     items: list[SyncPlanItem] = []
     for item in comparison.items:
         if item.host_path is not None:
             if host_path_identity(item.host_path) in selected_host_paths:
-                items.append(item)
+                if (
+                    item.action is SyncPlanAction.ATTENTION
+                    and item.basis is SyncPlanBasis.MISSING_IDENTITY
+                    and item.media_kind is SyncPlanMediaKind.TRACK
+                    and item.ipod_id is None
+                ):
+                    items.append(
+                        SyncPlanItem(
+                            action=SyncPlanAction.ADD,
+                            media_kind=item.media_kind,
+                            basis=SyncPlanBasis.HOST_ONLY,
+                            name=item.name,
+                            detail=item.detail,
+                            host_path=item.host_path,
+                        )
+                    )
+                else:
+                    items.append(item)
                 continue
             if item.action is SyncPlanAction.ATTENTION:
                 items.append(item)

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from PIL import Image, UnidentifiedImageError
 
-from iPodDB.ArtworkDB.ithmb import IthmbLayout, decode_ithmb
+from iPodDB.ArtworkDB.ithmb import IthmbLayout, IthmbPaddingMode, decode_ithmb
 from iPodDB.library._artwork_writing import validated_path
 from iPodDB.library.photos import PhotoRepresentationKind
 from iPodDB.library.writing import WriteIssue
@@ -124,15 +124,19 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
             not 0 < representation.width <= 8192
             or not 0 < representation.height <= 8192
             or representation.width * representation.height > 32 * 1024 * 1024
-            or representation.horizontal_padding
-            or representation.vertical_padding
         ):
             raise ValueError(
                 "New Photo representations require bounded full-raster dimensions."
             )
         if representation.kind is PhotoRepresentationKind.FULL_RESOLUTION:
             if (
-                not representation.relative_path.startswith("Photos/Full Resolution/")
+                representation.horizontal_padding
+                or representation.vertical_padding
+                or representation.horizontal_padding < 0
+                or representation.vertical_padding < 0
+                or not representation.relative_path.startswith(
+                    "Photos/Full Resolution/"
+                )
                 or representation.format_id != 1
                 or photo.source_size_bytes != representation.size_bytes
                 or representation.size_bytes > 64 * 1024 * 1024
@@ -155,28 +159,47 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
                 raise ValueError("Photo original failed image verification.") from error
             continue
         image_format = formats[representation.format_id]
+        horizontal_padding = representation.horizontal_padding
+        vertical_padding = representation.vertical_padding
+        if (
+            horizontal_padding < 0
+            or vertical_padding < 0
+            or horizontal_padding * 2 >= image_format.width
+            or vertical_padding * 2 >= image_format.height
+        ):
+            raise ValueError("Photo thumbnail padding leaves no visible raster.")
         pattern = rf"Photos/Thumbs/F{image_format.format_id}_[1-9][0-9]*\.ithmb"
         if not re.fullmatch(pattern, representation.relative_path):
             raise ValueError(
                 "Photo thumbnails must use the device's F<format>_<shard>.ithmb namespace."
             )
         if (representation.width, representation.height) != (
-            image_format.width,
-            image_format.height,
+            image_format.width - horizontal_padding,
+            image_format.height - vertical_padding,
         ):
-            raise ValueError("Photo dimensions do not match the Device Profile format.")
+            raise ValueError(
+                "Photo dimensions do not match the Device Profile format and padding."
+            )
+        symmetric = bool(horizontal_padding or vertical_padding)
         decoded = decode_ithmb(
             source.data,
             IthmbLayout(
-                image_format.width,
-                image_format.height,
+                representation.width,
+                representation.height,
                 image_format.row_bytes,
                 image_format.pixel_format,
+                horizontal_padding=horizontal_padding,
+                vertical_padding=vertical_padding,
+                padding_mode=(
+                    IthmbPaddingMode.SYMMETRIC
+                    if symmetric
+                    else IthmbPaddingMode.TRAILING
+                ),
             ),
         )
         if (decoded.width, decoded.height) != (
-            representation.width,
-            representation.height,
+            representation.width - horizontal_padding,
+            representation.height - vertical_padding,
         ):
             raise ValueError("Decoded Photo thumbnail has unexpected dimensions.")
         desired = plan.draft.snapshot.photos
@@ -192,9 +215,16 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
                 None,
             )
         )
-        if declared is None or declared.image_size_bytes != representation.size_bytes:
+        if declared is None:
             raise ValueError(
-                "Photo file-format size does not match the prepared representation."
+                f"Photo format {representation.format_id} is missing from the "
+                "prepared PhotosDB metadata."
+            )
+        if declared.image_size_bytes != representation.size_bytes:
+            raise ValueError(
+                f"Photo format {representation.format_id} declares "
+                f"{declared.image_size_bytes} bytes, but the prepared "
+                f"representation contains {representation.size_bytes} bytes."
             )
 
 

@@ -371,6 +371,37 @@ def test_album_summary_uses_the_first_available_track_artwork_id() -> None:
     assert albums.index(0, 0).data(AlbumRole.ARTWORK_ID) == 64
 
 
+def test_album_summary_groups_tracks_by_album_artist() -> None:
+    tracks = TrackTableModel()
+    albums = AlbumListModel(tracks)
+    tracks.replace_tracks(
+        (
+            Track(
+                1,
+                "First",
+                "Featured Artist",
+                "Shared Album",
+                1,
+                album_artist="Album Artist",
+            ),
+            Track(
+                2,
+                "Second",
+                "Another Featured Artist",
+                "Shared Album",
+                1,
+                album_artist="Album Artist",
+            ),
+        )
+    )
+
+    assert albums.rowCount() == 1
+    summary = albums.album_at(0)
+    assert summary is not None
+    assert summary.artist == "Album Artist"
+    assert summary.track_ids == (1, 2)
+
+
 def test_collection_models_build_fixed_four_tile_artwork_collages() -> None:
     tracks = TrackTableModel()
     artists = CollectionListModel(tracks, CollectionKind.ARTIST)
