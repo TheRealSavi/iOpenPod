@@ -254,8 +254,12 @@ class DeviceController(QObject):
         return True
 
     def finish_library_save(self, active: ActiveIPod | None) -> None:
+        """Publish a committed Library before releasing the device reservation."""
+
         if active is not None:
             self._active_ipod = active
+            self._track_model.replace_tracks(active.library.tracks)
+            self.activeIPodChanged.emit(active)
             self.librarySaved.emit(active)
         self.finish_exclusive_operation()
 

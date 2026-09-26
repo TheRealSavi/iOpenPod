@@ -517,7 +517,6 @@ class MainWindow(QMainWindow):
             self._device_discovery_changed
         )
         context.device_controller.activeIPodChanged.connect(self._active_ipod_changed)
-        context.device_controller.librarySaved.connect(self._active_ipod_changed)
         context.device_controller.busyChanged.connect(self._device_busy_changed)
         context.device_controller.searchingChanged.connect(
             self._device_picker.set_searching

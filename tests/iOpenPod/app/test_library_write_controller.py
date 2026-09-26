@@ -55,9 +55,15 @@ from storage.testing import VirtualStoragePlatform
 
 
 # Pylance leaves pytest's optional ScopeName/Config annotations unresolved here.
+@pytest.fixture
+def track_model() -> TrackTableModel:
+    return TrackTableModel()
+
+
 @pytest.fixture  # pyright: ignore[reportUnknownMemberType]
 def session(
     tmp_path: Path,
+    track_model: TrackTableModel,
 ) -> Iterator[tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path]]:
     root = tmp_path / "ipod"
     metadata = root / "iPod_Control" / "Device"
@@ -82,7 +88,7 @@ def session(
     active = coordinator.select_device(discovery.candidates[0].id)
     devices = DeviceController(
         coordinator,
-        TrackTableModel(),
+        track_model,
         SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
     )
     workspace = LibraryWorkspace()
@@ -488,10 +494,12 @@ def test_save_commits_verified_playlist_output_and_adopts_new_source(
 
 def test_metadata_and_device_rename_save_together_with_recovery(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+    track_model: TrackTableModel,
 ) -> None:
     coordinator, devices, workspace, database = session
     original = database.read_bytes()
     before = workspace.tracks
+    track_model.reset_tracks(before)
     workspace.rename_device("Metadata Test iPod", workspace.edit_revision)
     workspace.apply_track_edits(
         (
@@ -522,6 +530,7 @@ def test_metadata_and_device_rename_save_together_with_recovery(
         assert controller.state is PreparationState.SAVED, controller.save_result
         reloaded = IPodLibrary.parse(database.read_bytes()).snapshot
         assert reloaded == workspace.snapshot
+        assert track_model.tracks == reloaded.tracks
         assert reloaded.device_name == "Metadata Test iPod"
         assert reloaded.tracks[0].title == "Edited title"
         assert reloaded.tracks[0].artist == "A different artist"
@@ -1098,10 +1107,12 @@ def test_source_recheck_failure_retains_analysis_for_inspection(
 
 def test_default_mode_saves_each_edit_and_adopts_verified_output(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+    track_model: TrackTableModel,
 ) -> None:
     coordinator, devices, workspace, database = session
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     workspace.reset_changes()
+    track_model.reset_tracks(workspace.tracks)
     controller = LibraryWriteController(coordinator, workspace, devices, settings)
     original = database.read_bytes()
     try:
@@ -1117,6 +1128,7 @@ def test_default_mode_saves_each_edit_and_adopts_verified_output(
         wait_for(lambda: controller.state is PreparationState.SAVED)
         saved = IPodLibrary.parse(database.read_bytes()).snapshot
         assert saved == workspace.snapshot
+        assert track_model.tracks == saved.tracks
         assert saved.playlists[0].name == "Automatic playlist"
         assert saved.tracks[0].rating == 80
         assert not workspace.dirty and not workspace.locked and not devices.busy

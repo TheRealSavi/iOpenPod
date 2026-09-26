@@ -132,7 +132,16 @@ show_error_codes = true
 show_error_code_links = true
 
 [tool.pyright]
-exclude = [".scratch", ".venv", "**/__pycache__", "**/.*", "**/node_modules"]
+exclude = [
+    ".scratch",
+    ".venv",
+    "build",
+    "dist",
+    "**/__pycache__",
+    "**/.*",
+    "**/node_modules",
+]
+ignore = ["build", "dist"]
 extraPaths = ["src"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"

@@ -5,13 +5,18 @@ from dataclasses import replace
 from pathlib import Path
 from threading import Event
 
+import pytest
 from PySide6.QtTest import QSignalSpy
 from tests.iOpenPod.app.test_library_write_controller import (
     session as session,
 )
 from tests.iOpenPod.app.test_library_write_controller import (
+    track_model as track_model,
+)
+from tests.iOpenPod.app.test_library_write_controller import (
     wait_for,
 )
+from tests.iOpenPod.GUI.application_shell_test_support import build_context
 
 from iOpenPod.app.core.settings.definitions import (
     COMPUTE_SOUND_CHECK,
@@ -26,6 +31,8 @@ from iOpenPod.app.library_sync_helper import IPodMediaCacheStats, IPodMediaLibra
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.library_write import WriteProgress
 from iOpenPod.app.models.device import ActiveIPod
+from iOpenPod.app.models.photo_list_model import PhotoListModel
+from iOpenPod.app.models.track_table_model import TrackTableModel
 from iOpenPod.app.services.device_coordinator import (
     DeviceCoordinator,
     SyncCleanupCompletedError,
@@ -46,7 +53,7 @@ from iOpenPod.app.sync_plan import (
     SyncPlanItem,
     SyncPlanMediaKind,
 )
-from iPodDB.library import LibrarySnapshot, Playlist
+from iPodDB.library import LibrarySnapshot, Photo, PhotoLibrary, Playlist
 
 
 class _Execution:
@@ -133,6 +140,95 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
         controller.shutdown()
 
 
+@pytest.mark.parametrize(
+    "status", [SyncExecutionStatus.SUCCESS, SyncExecutionStatus.PARTIAL]
+)
+@pytest.mark.parametrize("media", ["tracks", "photos", "artwork"])
+def test_committed_sync_refreshes_changed_media(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+    status: SyncExecutionStatus,
+    media: str,
+) -> None:
+    coordinator, _, _, _ = session
+    context = build_context(device_coordinator=coordinator)
+    devices = context.device_controller
+    workspace = context.library_workspace
+    track_model = context.track_model
+    active = coordinator.active_ipod
+    assert active is not None
+    workspace.load(active.library)
+    track_model.reset_tracks(active.library.tracks)
+    photos = PhotoListModel(workspace)
+    if media == "tracks":
+        first, *remaining = active.library.tracks
+        committed_tracks = (
+            replace(first, title="Updated Track", album="Updated Album"),
+            *remaining,
+            replace(
+                first,
+                track_id=max(t.track_id for t in active.library.tracks) + 1,
+                title="Added Track",
+            ),
+        )
+        committed = replace(
+            active, library=replace(active.library, tracks=committed_tracks)
+        )
+    elif media == "photos":
+        committed = replace(
+            active,
+            library=replace(active.library, photos=PhotoLibrary(photos=(Photo(101),))),
+            photos_database_fingerprint=replace(
+                active.database_fingerprint, sha256="a" * 64
+            ),
+        )
+    else:
+        # Cover pixels can change while retained Track/artwork identities stay the same.
+        committed = replace(
+            active,
+            artwork_database_fingerprint=replace(
+                active.database_fingerprint, sha256="b" * 64
+            ),
+        )
+    service = _Execution()
+    service.outcome = SyncExecutionResult(status, active=committed)
+    service.release.set()
+    controller = SyncController(
+        service,
+        workspace,
+        devices,
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
+    )
+    finished = QSignalSpy(controller.finished)
+    published = QSignalSpy(devices.activeIPodChanged)
+    artwork_generations = QSignalSpy(context.artwork_controller.generationChanged)
+    photo_generations = QSignalSpy(context.photo_controller.generationChanged)
+    try:
+        assert controller.start(*_inputs(), active)
+        wait_for(lambda: finished.count() == 1)
+        wait_for(lambda: not devices.busy and not context.podcast_controller.busy)
+        assert track_model.tracks == committed.library.tracks
+        assert workspace.snapshot is committed.library
+        assert devices.active_ipod is committed
+        assert published.count() == 1
+        assert artwork_generations.count() == photo_generations.count() == 1
+        if media == "tracks":
+            assert "Updated Album" in {
+                album.title
+                for row in range(context.album_model.album_count)
+                if (album := context.album_model.album_at(row)) is not None
+            }
+        elif media == "photos":
+            assert photos.rowCount() == 1 and photos.photo_at(0) == Photo(101)
+            assert committed.library.tracks is active.library.tracks
+        else:
+            assert committed.library is active.library
+        assert controller.result is not None and controller.result.status is status
+        assert not workspace.dirty and not workspace.locked and not devices.busy
+    finally:
+        controller.shutdown()
+        context.shutdown()
+
+
 def test_playlist_only_sync_requires_enabled_review_choice(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
 ) -> None:
@@ -190,11 +286,14 @@ def test_pending_edits_block_sync_without_discarding_them(
 
 def test_cancel_leaves_library_unchanged_and_releases_reservation(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+    track_model: TrackTableModel,
 ) -> None:
     coordinator, devices, workspace, _ = session
     active = coordinator.active_ipod
     assert active is not None
     workspace.load(active.library)
+    track_model.reset_tracks(active.library.tracks)
+    published = QSignalSpy(devices.activeIPodChanged)
     service = _Execution()
     controller = SyncController(
         service,
@@ -211,6 +310,8 @@ def test_cancel_leaves_library_unchanged_and_releases_reservation(
         assert controller.result is not None
         assert controller.result.status is SyncExecutionStatus.CANCELLED
         assert workspace.snapshot is active.library
+        assert track_model.tracks == active.library.tracks
+        assert published.count() == 0
         assert not workspace.locked and not devices.busy
     finally:
         service.release.set()

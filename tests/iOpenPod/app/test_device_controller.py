@@ -1,12 +1,14 @@
 """Qt-thread adapter tests for device discovery and library publication."""
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from threading import Event, get_ident
 from time import monotonic, sleep
+from typing import TYPE_CHECKING
 
 import pytest
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
 from iOpenPod.app.core.settings.definitions import LAST_SELECTED_IPOD_VOLUME_ID
@@ -37,6 +39,9 @@ from storage import Storage
 from storage.platform.base import ObservationDiscoveryResult
 from storage.testing import VirtualStoragePlatform
 
+if TYPE_CHECKING:
+    from iPodDB.library import Track
+
 
 def _application() -> QApplication:
     existing = QApplication.instance()
@@ -46,6 +51,61 @@ def _application() -> QApplication:
 
 
 APPLICATION = _application()
+
+
+@pytest.mark.parametrize("change", ["add", "update", "remove"])
+def test_committed_library_updates_visible_tracks_without_reselecting(
+    tmp_path: Path, change: str
+) -> None:
+    platform = VirtualStoragePlatform()
+    platform.add_volume(_device_root(tmp_path / "device"))
+    tracks = TrackTableModel()
+    controller = DeviceController(
+        DeviceCoordinator(Storage(platform)),
+        tracks,
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
+    )
+    try:
+        controller.refresh_devices()
+        _wait_until(lambda: not controller.busy)
+        controller.select_device(controller.discovery.candidates[0].id.value)
+        _wait_until(lambda: not controller.busy)
+        active = controller.active_ipod
+        assert active is not None
+        original = active.library.tracks[0]
+        committed_tracks: tuple[Track, ...]
+        if change == "add":
+            committed_tracks = (
+                original,
+                replace(original, track_id=2, title="Added Track"),
+            )
+        elif change == "update":
+            committed_tracks = (replace(original, title="Updated Track"),)
+        else:
+            committed_tracks = ()
+        committed = replace(
+            active, library=replace(active.library, tracks=committed_tracks)
+        )
+        resets = QSignalSpy(tracks.modelReset)
+        published: list[object] = []
+        visible_when_saved: list[object] = []
+
+        def record_saved_tracks(_active: object) -> None:
+            visible_when_saved.append(tracks.tracks)
+
+        controller.activeIPodChanged.connect(published.append)
+        controller.librarySaved.connect(record_saved_tracks)
+        assert controller.begin_library_save()
+        controller.finish_library_save(committed)
+
+        assert controller.active_ipod is committed
+        assert tracks.tracks == committed_tracks
+        assert published == [committed]
+        assert visible_when_saved == [committed_tracks]
+        assert resets.count() == 0
+        assert not controller.busy
+    finally:
+        controller.shutdown()
 
 
 class _ObservedPlatform(VirtualStoragePlatform):

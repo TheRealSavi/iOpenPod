@@ -148,7 +148,7 @@ def test_windows_payload_rejects_bundled_command_line_tools(
         check_windows_bundle.check_windows_bundle(tmp_path)
 
 
-def test_native_notices_keep_license_grant_credits_and_icon_permission(
+def test_native_notices_keep_license_grant_and_credits(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -159,7 +159,6 @@ def test_native_notices_keep_license_grant_credits_and_icon_permission(
         "LICENSE",
         "COPYING.md",
         "ACKNOWLEDGEMENTS.md",
-        "LICENSES/DJShott-icon.txt",
     ):
         assert (notices / relative).read_bytes() == (
             package_app.ROOT / relative

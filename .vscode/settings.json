@@ -13,11 +13,6 @@
 
   "python.analysis.diagnosticMode": "workspace",
   "python.analysis.languageServerMode": "full",
-  "python.analysis.exclude": [
-    "**/build/**",
-    "**/dist/**"
-  ],
-
   "python.analysis.indexing": true,
   "python.analysis.autoImportCompletions": true,
   "python.analysis.inlayHints.variableTypes": true,
