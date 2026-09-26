@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
+from queue import Empty, SimpleQueue
 from threading import Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from device_registry import ArtworkUsage
 from iOpenPod.app.host_media_library import HostMediaFileKind
 from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTrack
 from iOpenPod.app.library_write import (
@@ -30,6 +30,7 @@ from iOpenPod.app.media.music_paths import MusicPathAllocator
 from iOpenPod.app.media.photo_sync import (
     MAX_PHOTO_SOURCE_BYTES,
     photo_library_with_asset,
+    photo_still_from_stream,
     prepare_sync_photo,
 )
 from iOpenPod.app.media.sync_artwork import capture_sync_artwork
@@ -37,6 +38,7 @@ from iOpenPod.app.media.transcoding import MediaTranscoder, TranscodeSettings
 from iOpenPod.app.services.device_coordinator import (
     SyncCleanupCompletedError,
     SyncRecoveryRequiredError,
+    SyncRestoredCleanupPendingError,
 )
 from iOpenPod.app.sync_plan import (
     SyncPlanAction,
@@ -69,7 +71,7 @@ from storage.host_input import LocalHostFile
 from storage.media_processing import available_compute_threads
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Generator
     from threading import Event
 
     from iOpenPod.app.host_media_library import HostMediaLibrary, HostMediaSource
@@ -135,7 +137,7 @@ class SyncExecutionResult:
 class _PreparedTrack:
     item: SyncPlanItem
     song: ImportedSong
-    provenance: SyncedTrack | None
+    provenance: SyncedTrack
     resources: ExitStack
     warnings: tuple[str, ...]
 
@@ -193,12 +195,12 @@ class SyncExecutor:
                 if request.reconcile_playlists
                 else ()
             )
+            track_jobs = sum(
+                item.media_kind is SyncPlanMediaKind.TRACK
+                and item.action in (SyncPlanAction.ADD, SyncPlanAction.UPDATE)
+                for item in request.plan.items
+            )
             if self._default_transcoder:
-                track_jobs = sum(
-                    item.media_kind is SyncPlanMediaKind.TRACK
-                    and item.action in (SyncPlanAction.ADD, SyncPlanAction.UPDATE)
-                    for item in request.plan.items
-                )
                 self._transcoder = MediaTranscoder(
                     threads_per_job=max(
                         1,
@@ -206,12 +208,32 @@ class SyncExecutor:
                         // min(self._workers, track_jobs or 1),
                     )
                 )
-            tools = self._transcoder.preflight(checkpoint=checkpoint)
             with ExitStack() as resources:
-                prepared, failures = self._prepare_tracks(
-                    request, tools, resources, progress, checkpoint
-                )
-                issues.extend(failures)
+                prepared: list[_PreparedTrack] = []
+                if track_jobs:
+                    progress(
+                        WriteProgress(
+                            "sync.tools",
+                            "Checking tools needed to prepare the selected Tracks…",
+                        )
+                    )
+                    try:
+                        tools = self._transcoder.preflight(checkpoint=checkpoint)
+                    except PreparationCancelledError:
+                        raise
+                    except (OSError, StorageError) as error:
+                        issues.append(
+                            WriteIssue(
+                                "sync.tools_unavailable",
+                                f"{track_jobs:,} selected Tracks could not be prepared. Their existing iPod copies were kept; independent Photo and removal changes can continue.",
+                                detail=str(error),
+                            )
+                        )
+                    else:
+                        prepared, failures = self._prepare_tracks(
+                            request, tools, resources, progress, checkpoint
+                        )
+                        issues.extend(failures)
                 checkpoint()
                 issues.extend(_capture_artwork(request, prepared, checkpoint))
                 photos, photo_issues = self._prepare_photos(
@@ -312,7 +334,7 @@ class SyncExecutor:
                 issues.extend(saved.issues)
                 if saved.active is None:
                     return self._failed_save(
-                        request, saved.recovery_path, issues, cancelled
+                        request, saved.recovery_path, issues, cancelled, progress
                     )
                 if cancelled.is_set():
                     issues.append(
@@ -335,11 +357,7 @@ class SyncExecutor:
                     helper = self._coordinator.publish_sync_success(
                         saved.active,
                         request.ipod,
-                        tuple(
-                            item.provenance
-                            for item in prepared
-                            if item.provenance is not None
-                        ),
+                        tuple(item.provenance for item in prepared),
                         tuple(item.provenance for item in photos),
                     )
                     issues.extend(
@@ -472,10 +490,33 @@ class SyncExecutor:
         recovery_path: str,
         issues: list[WriteIssue],
         cancelled: Event,
+        progress: Callable[[WriteProgress], None],
     ) -> SyncExecutionResult:
         if recovery_path:
             try:
-                self._coordinator.recover_failed_sync(request.source, recovery_path)
+                progress(
+                    WriteProgress(
+                        "save.recovery.inspect",
+                        "Sync could not finish. Checking recovery files before restoring the previous Library…",
+                    )
+                )
+                self._coordinator.recover_failed_sync(
+                    request.source, recovery_path, progress
+                )
+            except SyncRestoredCleanupPendingError as error:
+                issues.append(
+                    WriteIssue(
+                        "sync.restored_cleanup_pending",
+                        "The previous Library was restored and verified. Recovery files could not all be removed; retry recovery to finish cleanup before another Sync.",
+                        detail=str(error),
+                        artifact=recovery_path,
+                    )
+                )
+                return SyncExecutionResult(
+                    SyncExecutionStatus.RECOVERY_REQUIRED,
+                    issues=tuple(issues),
+                    recovery_path=recovery_path,
+                )
             except SyncCleanupCompletedError as error:
                 issues.append(
                     WriteIssue(
@@ -518,9 +559,6 @@ class SyncExecutor:
     def _validate_sources(
         self, request: SyncExecutionRequest, checkpoint: Callable[[], None]
     ) -> None:
-        host = {
-            host_path_identity(str(item.path)): item for item in request.host.sources
-        }
         tracks = {item.track_id: item for item in request.ipod.tracks}
         images = {item.image_id: item for item in request.ipod.images}
         with self._coordinator.sync_session(request.source) as session:
@@ -528,12 +566,6 @@ class SyncExecutor:
                 checkpoint()
                 if item.action is SyncPlanAction.ATTENTION:
                     continue
-                if (
-                    item.host_path is not None
-                    and item.action is SyncPlanAction.UNCHANGED
-                ):
-                    source = host[host_path_identity(item.host_path)]
-                    _validate_host_source(source)
                 if item.ipod_id is not None:
                     recorded = (
                         tracks[item.ipod_id]
@@ -578,6 +610,18 @@ class SyncExecutor:
         prepared: list[_PreparedTrack] = []
         issues: list[WriteIssue] = []
         cleanup_lock = Lock()
+        activity: SimpleQueue[tuple[SyncPlanItem, str]] = SimpleQueue()
+        completed = 0
+
+        progress(
+            WriteProgress(
+                "sync.prepare",
+                f"Preparing {len(changes):,} selected Tracks on the Host…",
+                completed=0,
+                total=len(changes),
+                unit="Tracks",
+            )
+        )
 
         def prepare(item: SyncPlanItem) -> _PreparedTrack:
             result = self._prepare_one(
@@ -587,6 +631,7 @@ class SyncExecutor:
                 tracks[host_path_identity(item.host_path or "")],
                 tools,
                 checkpoint,
+                lambda message: activity.put((item, message)),
             )
             # Register ownership inside the worker before the result is delivered.
             # Even a failed progress callback then closes every successful capture.
@@ -603,7 +648,31 @@ class SyncExecutor:
         ) as pool:
             futures = {pool.submit(prepare, item): item for item in changes}
             was_cancelled = False
-            for future in as_completed(futures):
+
+            def finished() -> Generator[Future[_PreparedTrack]]:
+                pending = set(futures)
+                while pending:
+                    done, pending = wait(
+                        pending, timeout=0.1, return_when=FIRST_COMPLETED
+                    )
+                    while True:
+                        try:
+                            item, message = activity.get_nowait()
+                        except Empty:
+                            break
+                        progress(
+                            WriteProgress(
+                                "sync.prepare",
+                                message,
+                                completed=completed,
+                                total=len(changes),
+                                current_item=item.name,
+                                unit="Tracks",
+                            )
+                        )
+                    yield from done
+
+            for future in finished():
                 item = futures[future]
                 try:
                     result = future.result()
@@ -613,8 +682,13 @@ class SyncExecutor:
                     issues.append(
                         WriteIssue(
                             "sync.item_failed",
-                            f"{item.name} was skipped. Its existing iPod copy was kept. "
-                            "Correct the source or encoder settings and retry.",
+                            f"{item.name} was skipped. "
+                            + (
+                                "Its existing iPod copy was kept. "
+                                if item.ipod_id is not None
+                                else "No iPod copy was added. "
+                            )
+                            + "Correct the source or encoder settings and retry.",
                             subject="track",
                             record_id=item.ipod_id,
                             detail=str(error),
@@ -627,15 +701,30 @@ class SyncExecutor:
                         WriteIssue(
                             "sync.media_warning",
                             warning,
-                            severity=IssueSeverity.WARNING,
+                            severity=IssueSeverity.INFO
+                            if warning.startswith(
+                                (
+                                    "Re-encoding a lossy",
+                                    "Resampled ",
+                                    "Downmixed ",
+                                    "Reduced lossless",
+                                )
+                            )
+                            else IssueSeverity.WARNING,
                             artifact=item.host_path or "",
                         )
                         for warning in result.warnings
                     )
+                completed += 1
                 progress(
                     WriteProgress(
                         "sync.prepare",
-                        f"Prepared {len(prepared):,} of {len(changes):,} Tracks; {len(issues):,} messages.",
+                        f"Processed {completed:,} of {len(changes):,} Tracks; "
+                        f"{len(prepared):,} ready, {completed - len(prepared):,} skipped.",
+                        completed=completed,
+                        total=len(changes),
+                        current_item=item.name,
+                        unit="Tracks",
                     )
                 )
             if was_cancelled:
@@ -675,16 +764,13 @@ class SyncExecutor:
                         )
                     )
                 else:
-                    provenance = (
-                        None
-                        if result.provenance is None
-                        else replace(result.provenance, path=DevicePath(location))
-                    )
                     allocated.append(
                         replace(
                             result,
                             song=song,
-                            provenance=provenance,
+                            provenance=replace(
+                                result.provenance, path=DevicePath(location)
+                            ),
                         )
                     )
         return allocated, issues
@@ -697,6 +783,7 @@ class SyncExecutor:
         track: Track,
         tools: MediaTools,
         checkpoint: Callable[[], None],
+        activity: Callable[[str], None],
     ) -> _PreparedTrack:
         checkpoint()
         _validate_host_source(source)
@@ -714,6 +801,7 @@ class SyncExecutor:
                     rockbox_metadata=request.options.rockbox_metadata,
                     normalize_tags=request.options.normalize_tags,
                     compute_sound_check=request.options.compute_sound_check,
+                    progress=activity,
                 )
             )
             if (
@@ -724,22 +812,18 @@ class SyncExecutor:
                     "The Host file changed since its scan. Rescan before retrying."
                 )
             song = _song(request, track, result)
-            provenance = (
-                None
-                if not source.acoustic_fingerprint
-                else SyncedTrack(
-                    DevicePath(song.track.metadata.location),
-                    source.acoustic_fingerprint,
-                    SyncDetails(
-                        datetime.now(UTC).isoformat(),
-                        str(source.path),
-                        source.size_bytes,
-                        source.modified_ns,
-                        source.path.path.suffix.lstrip(".").casefold(),
-                        result.encoding.value,
-                        result.was_transcoded,
-                    ),
-                )
+            provenance = SyncedTrack(
+                DevicePath(song.track.metadata.location),
+                source.acoustic_fingerprint or "",
+                SyncDetails(
+                    datetime.now(UTC).isoformat(),
+                    str(source.path),
+                    source.size_bytes,
+                    source.modified_ns,
+                    source.path.path.suffix.lstrip(".").casefold(),
+                    result.encoding.value,
+                    result.was_transcoded,
+                ),
             )
             return _PreparedTrack(
                 item, song, provenance, lifetime.pop_all(), result.warnings
@@ -773,20 +857,6 @@ class SyncExecutor:
         if library is not None:
             used_ids.update(album.album_id for album in library.albums)
         next_id = max((100, *used_ids)) + 1
-        profile_formats = request.source.profile.capabilities.artwork.photo_formats
-        photo_formats = (
-            tuple(item for item in profile_formats if item.usage is ArtworkUsage.PHOTO)
-            or profile_formats
-        )
-        high_resolution_area = max(
-            (item.width * item.height for item in photo_formats),
-            default=0,
-        )
-        always_fit_format_ids = frozenset(
-            item.format_id
-            for item in photo_formats
-            if item.width * item.height == high_resolution_area
-        )
         formats = tuple(
             PhotoThumbnailFormat(
                 item.format_id,
@@ -795,32 +865,63 @@ class SyncExecutor:
                 item.row_bytes,
                 PhotoPixelFormat(item.pixel_format.value),
             )
-            for item in profile_formats
+            for item in request.source.profile.capabilities.artwork.photo_formats
         )
         prepared: list[_PreparedPhoto] = []
         issues: list[WriteIssue] = []
         retained_bytes = 0
+        progress(
+            WriteProgress(
+                "sync.photos",
+                f"Preparing {len(changes):,} selected Photos on the Host…",
+                completed=0,
+                total=len(changes),
+                unit="Photos",
+            )
+        )
         # Each photo has an independently bounded decoded image. Retaining at most
         # 512 MiB of verified output keeps large Photo libraries resumable in batches.
-        for item in changes:
+        for completed, item in enumerate(changes, 1):
             checkpoint()
             source = sources[host_path_identity(item.host_path or "")]
             try:
                 _validate_host_source(source)
+                progress(
+                    WriteProgress(
+                        "sync.photos",
+                        "Reading and preparing this Photo…",
+                        completed=completed - 1,
+                        total=len(changes),
+                        current_item=item.name,
+                        unit="Photos",
+                    )
+                )
+                observed = LocalHostFile.observe(source.path)
+                converted = source.size_bytes > MAX_PHOTO_SOURCE_BYTES
+                suffix = source.path.path.suffix.casefold()
+                if converted:
+                    with observed.open_read(checkpoint=checkpoint) as stream:
+                        hasher = hashlib.sha256()
+                        while chunk := stream.read(1024 * 1024):
+                            hasher.update(chunk)
+                        digest = hasher.hexdigest()
+                        stream.seek(0)
+                        data = photo_still_from_stream(stream)
+                    suffix = ".png"
+                else:
+                    data = observed.read_bytes(
+                        max_bytes=MAX_PHOTO_SOURCE_BYTES, checkpoint=checkpoint
+                    )
+                    digest = hashlib.sha256(data).hexdigest()
                 if (
                     retained_bytes
-                    + source.size_bytes
+                    + len(data)
                     + sum(fmt.row_bytes * fmt.height for fmt in formats)
                     > 512 * 1024 * 1024
                 ):
                     raise ValueError(
                         "The Photo preparation batch reached its 512 MiB limit. Sync the remaining Photos in another batch."
                     )
-                observed = LocalHostFile.observe(source.path)
-                data = observed.read_bytes(
-                    max_bytes=MAX_PHOTO_SOURCE_BYTES, checkpoint=checkpoint
-                )
-                digest = hashlib.sha256(data).hexdigest()
                 if digest != source.content_sha256:
                     raise ValueError(
                         "The Photo changed after scanning. Rescan this source before retrying."
@@ -832,7 +933,7 @@ class SyncExecutor:
                 if item.action is SyncPlanAction.ADD:
                     next_id += 1
                 unique = uuid4()
-                path = f"Photos/Full Resolution/iOpenPod/{unique.hex}{source.path.path.suffix.casefold()}"
+                path = f"Photos/Full Resolution/iOpenPod/{unique.hex}{suffix}"
                 asset = prepare_sync_photo(
                     data,
                     photo_id=identity,
@@ -841,7 +942,6 @@ class SyncExecutor:
                     formats=formats,
                     rotate_tall_photos=request.options.rotate_tall_photos,
                     fit_thumbnails=request.options.fit_thumbnails,
-                    always_fit_format_ids=always_fit_format_ids,
                     original=originals.get(identity),
                 )
                 # Check the retained album shape before this item can enter the batch.
@@ -853,27 +953,42 @@ class SyncExecutor:
                         asset,
                         SyncedImage(
                             DevicePath(path),
-                            digest,
+                            hashlib.sha256(data).hexdigest(),
                             SyncDetails(
                                 datetime.now(UTC).isoformat(),
                                 str(source.path),
                                 source.size_bytes,
                                 source.modified_ns,
                                 source.path.path.suffix.lstrip("."),
-                                source.path.path.suffix.lstrip("."),
-                                False,
+                                suffix.lstrip("."),
+                                converted,
+                                host_content_sha256=digest,
                             ),
                         ),
                     )
                 )
+                if converted:
+                    issues.append(
+                        WriteIssue(
+                            "sync.photo_converted",
+                            "Prepared a still PNG from the first image frame for the iPod Photo viewer. The Host original is unchanged.",
+                            severity=IssueSeverity.INFO,
+                            artifact=str(source.path),
+                        )
+                    )
             except PreparationCancelledError:
                 raise
             except Exception as error:
                 issues.append(
                     WriteIssue(
                         "sync.photo_failed",
-                        f"{item.name} was skipped. Its existing Photo was preserved. "
-                        "Correct the source or device format problem and retry.",
+                        f"{item.name} was skipped. "
+                        + (
+                            "Its existing Photo was preserved. "
+                            if item.ipod_id is not None
+                            else "No Photo was added. "
+                        )
+                        + "Correct the source or device format problem and retry.",
                         subject="photo",
                         record_id=item.ipod_id,
                         detail=str(error),
@@ -883,7 +998,12 @@ class SyncExecutor:
             progress(
                 WriteProgress(
                     "sync.photos",
-                    f"Prepared {len(prepared):,} of {len(changes):,} Photos…",
+                    f"Processed {completed:,} of {len(changes):,} Photos; "
+                    f"{len(issues):,} messages.",
+                    completed=completed,
+                    total=len(changes),
+                    current_item=item.name,
+                    unit="Photos",
                 )
             )
         return tuple(prepared), tuple(issues)
@@ -905,23 +1025,15 @@ def _validate_plan(request: SyncExecutionRequest) -> None:
         and item.host_path is not None
         and item.action is not SyncPlanAction.ATTENTION
     )
-    # Review may turn a Host-only Track with no acoustic identity into an
-    # explicit one-way Add. Keep execution validation aligned with that safe
-    # selection rule; it does not authorize a correlated or ambiguous item.
+    # Selection permits an explicit one-way Add when content matching is absent.
     allowed.update(
-        replace(
-            item,
-            action=SyncPlanAction.ADD,
-            basis=SyncPlanBasis.HOST_ONLY,
-        )
+        replace(item, action=SyncPlanAction.ADD, basis=SyncPlanBasis.HOST_ONLY)
         for item in comparison.items
-        if (
-            item.action is SyncPlanAction.ATTENTION
-            and item.basis is SyncPlanBasis.MISSING_IDENTITY
-            and item.media_kind is SyncPlanMediaKind.TRACK
-            and item.host_path is not None
-            and item.ipod_id is None
-        )
+        if item.action is SyncPlanAction.ATTENTION
+        and item.basis is SyncPlanBasis.MISSING_IDENTITY
+        and item.media_kind is SyncPlanMediaKind.TRACK
+        and item.host_path is not None
+        and item.ipod_id is None
     )
     hosts: set[str] = set()
     devices: set[tuple[SyncPlanMediaKind, int]] = set()
@@ -1109,15 +1221,17 @@ def _draft(
             else:
                 removed_photos.add(item.ipod_id)
             completed.append(item)
-        elif item.action is SyncPlanAction.ATTENTION:
-            issues.append(
-                WriteIssue(
-                    "sync.needs_attention",
-                    f"{item.name} needs attention and was left unchanged. "
-                    "Resolve missing or ambiguous matching evidence and rescan.",
-                    severity=IssueSeverity.WARNING,
-                )
+    unresolved = tuple(
+        item for item in request.plan.items if item.action is SyncPlanAction.ATTENTION
+    )
+    if unresolved:
+        issues.append(
+            WriteIssue(
+                "sync.needs_attention",
+                f"{len(unresolved):,} unmatched items were left unchanged. Their matching details remain available in Review.",
+                severity=IssueSeverity.INFO,
             )
+        )
     playlists, reconciled = _playlists(request, mapping, frozenset(tracks), issues)
     photos = original.photos
     removed_tracks = {track.track_id for track in original.tracks} - tracks.keys()
@@ -1453,8 +1567,16 @@ def _validate_playlist_sources(
 ) -> bool:
     valid = True
     if request.reconcile_playlists:
+        retained_paths = {
+            host_path_identity(item.host_path)
+            for item in request.plan.items
+            if item.host_path is not None and item.action is SyncPlanAction.UNCHANGED
+        }
         for source in request.host.sources:
-            if source.kind is not HostMediaFileKind.PLAYLIST:
+            if (
+                source.kind is not HostMediaFileKind.PLAYLIST
+                and host_path_identity(str(source.path)) not in retained_paths
+            ):
                 continue
             checkpoint()
             try:
@@ -1464,7 +1586,7 @@ def _validate_playlist_sources(
                 issues.append(
                     WriteIssue(
                         "sync.playlist_source_changed",
-                        "A Host Playlist changed or became unavailable after Review. "
+                        "A Host Playlist or one of its retained sources changed or became unavailable after Review. "
                         "Host Playlist reconciliation was skipped; rescan before retrying.",
                         severity=IssueSeverity.WARNING,
                         detail=str(error),

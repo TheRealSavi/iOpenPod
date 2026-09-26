@@ -10,6 +10,7 @@ import io
 import os
 import re
 import stat
+import sys
 import tempfile
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -51,7 +52,8 @@ def resolve_local_file_reference(
     """Normalize a local path without probing it or expanding shell syntax.
 
     URI paths are percent-decoded exactly once. Ordinary paths retain literal
-    percent signs. Both separator conventions work for relative references.
+    percent signs. Windows separators are normalized on Windows; POSIX
+    backslashes remain filename characters.
     """
 
     value = value.strip()
@@ -59,10 +61,12 @@ def resolve_local_file_reference(
         value = value[1:-1]
     if not value or len(value) > 32768:
         raise InvalidHostPathError("Empty or oversized file reference")
-    value = value.replace("\\", "/")
+    if os.name == "nt":
+        value = value.replace("\\", "/")
     if not _DRIVE.match(value):
         parsed = urlsplit(value)
-        if parsed.scheme or uri:
+        is_uri = uri or parsed.scheme.casefold() == "file" or "://" in value
+        if is_uri:
             if parsed.scheme.casefold() not in {"", "file"}:
                 raise InvalidHostPathError("Network and non-file URLs are not allowed")
             if parsed.netloc.casefold() not in {"", "localhost"}:
@@ -71,7 +75,9 @@ def resolve_local_file_reference(
                 raise InvalidHostPathError(
                     "File URLs cannot contain queries or fragments"
                 )
-            value = unquote(parsed.path, errors="strict").replace("\\", "/")
+            value = unquote(parsed.path, errors="strict")
+            if os.name == "nt":
+                value = value.replace("\\", "/")
             if re.match(r"^/[A-Za-z]:/", value):
                 value = value[1:]
             if parsed.scheme and not (value.startswith("/") or _DRIVE.match(value)):
@@ -83,15 +89,18 @@ def resolve_local_file_reference(
     if not path.is_absolute():
         path = Path(relative_to).parent / path
     result = HostPath(os.path.abspath(path))
-    _validate_spelling(os.fspath(result).replace("\\", "/"))
+    result_spelling = os.fspath(result)
+    if os.name == "nt":
+        result_spelling = result_spelling.replace("\\", "/")
+    _validate_spelling(result_spelling)
     return result
 
 
 def _validate_spelling(value: str) -> None:
-    if not value or value.startswith(("//", "/??/")):
+    if not value or value.startswith(("//", r"\\", "/??/")):
         raise InvalidHostPathError("Network and device paths are not allowed")
     tail = value[3:] if _DRIVE.match(value) else value
-    if any(ord(char) < 32 or char in '<>:"|?*' for char in tail):
+    if any(ord(char) < 32 or (os.name == "nt" and char in '<>:"|?*') for char in tail):
         raise InvalidHostPathError("File reference contains unsafe path characters")
     if any(
         _RESERVED.match(part)
@@ -114,7 +123,10 @@ class LocalHostFile:
     @classmethod
     def observe(cls, path: HostPath) -> LocalHostFile:
         source = Path(path)
-        _validate_spelling(os.fspath(source).replace("\\", "/"))
+        source_spelling = os.fspath(source)
+        if os.name == "nt":
+            source_spelling = source_spelling.replace("\\", "/")
+        _validate_spelling(source_spelling)
         _check_local_drive(source)
         for parent in reversed(source.parents):
             metadata = parent.lstat()
@@ -309,7 +321,7 @@ def _require_regular(value: os.stat_result) -> None:
 
 
 def _check_local_drive(path: Path) -> None:
-    if os.name == "nt":
+    if sys.platform == "win32":
         import ctypes
         from ctypes import wintypes
 
@@ -347,6 +359,8 @@ def _open_local_file(path: Path) -> Generator[BinaryIO]:
 
 @contextmanager
 def _open_windows_file(path: Path) -> Generator[BinaryIO]:
+    if sys.platform != "win32":
+        raise OSError("Windows file handles are unavailable on this Host")
     import ctypes
     import msvcrt
     from ctypes import wintypes

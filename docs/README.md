@@ -13,6 +13,7 @@ sessions.
 - [`gui-design-language.md`](gui-design-language.md) — working semantic color,
   typography, metric, and interaction foundations for the desktop GUI.
 - [`eta.md`](eta.md) — reusable stage ETA model, integration, and accuracy limits.
+- [`sync-workflow-audit-2026-09-26.md`](sync-workflow-audit-2026-09-26.md) — scan and Sync findings, fixes, and remaining limits.
 - [`packaging.md`](packaging.md) — native builds, store metadata, validation, and
   unresolved store-release requirements.
 - [`licensing.md`](licensing.md) — GPL distribution, corresponding source,

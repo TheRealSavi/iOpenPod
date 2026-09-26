@@ -38,6 +38,7 @@ from iOpenPod.app.library_sync_helper import (
     SyncedTrack,
     publish_sync_helper,
 )
+from iOpenPod.app.library_write import WriteProgress
 from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -91,6 +92,8 @@ from storage import (
     StorageCapacityError,
     StorageError,
     StorageTransaction,
+    TransactionActivity,
+    TransactionActivityPhase,
     TransactionDurabilityPendingError,
     TransactionProgress,
     TransactionState,
@@ -106,7 +109,6 @@ if TYPE_CHECKING:
         LibraryPreparationRequest,
         LibraryReview,
         LibrarySaveResult,
-        WriteProgress,
     )
     from iOpenPod.app.playback.backend import PlaybackSource
     from iPodDB.library import Hash72Material, LibraryWritePlan, Photo, PhotoRead, Track
@@ -184,6 +186,10 @@ class SyncRecoveryRestoredError(DeviceCoordinationError):
 
 class SyncCleanupCompletedError(DeviceCoordinationError):
     """Recovery files were removed, but final flush needs safe device ejection."""
+
+
+class SyncRestoredCleanupPendingError(DeviceCoordinationError):
+    """The original files verified; only recovery namespace cleanup remains."""
 
 
 class DeviceEjectError(DeviceCoordinationError):
@@ -445,7 +451,12 @@ class DeviceCoordinator:
                     "Safely eject before unplugging. " + flushed.detail
                 )
 
-    def recover_failed_sync(self, expected: ActiveIPod, recovery_path: str) -> None:
+    def recover_failed_sync(
+        self,
+        expected: ActiveIPod,
+        recovery_path: str,
+        progress: Callable[[WriteProgress], None] | None = None,
+    ) -> None:
         """Restore and clean a failed Sync while its selected device remains bound.
 
         Storage validates observed publication state before restoring any file. A
@@ -466,13 +477,44 @@ class DeviceCoordinator:
         with self._storage.open_session(
             mounted, access=AccessMode.READ_WRITE
         ) as session:
-            recovery = session.inspect_transaction(DevicePath(recovery_path))
-            restored = session.restore_transaction(recovery)
+
+            def activity(event: TransactionActivity) -> None:
+                if progress is not None:
+                    progress(_transaction_activity_progress(event, recovery=True))
+
+            def restoring(event: TransactionProgress) -> None:
+                if progress is not None:
+                    progress(
+                        WriteProgress(
+                            "save.recovery.restoring",
+                            "Restoring the previous Library. Keep the iPod connected.",
+                            completed=event.completed,
+                            total=event.total,
+                            current_item=str(event.path or ""),
+                            unit="files",
+                        )
+                    )
+
+            recovery = session.inspect_transaction(
+                DevicePath(recovery_path), activity=activity
+            )
+            restored = session.restore_transaction(
+                recovery, progress=restoring, activity=activity
+            )
+            if progress is not None:
+                progress(
+                    WriteProgress(
+                        "save.recovery.cleanup",
+                        "Previous Library restored. Removing recovery files…",
+                    )
+                )
             try:
                 flushed = session.finalize_transaction(restored.recovery)
             except TransactionDurabilityPendingError as error:
                 _raise_if_cleanup_completed(session, recovery.journal_path, error)
-                raise
+                raise SyncRestoredCleanupPendingError(str(error)) from error
+            except StorageError as error:
+                raise SyncRestoredCleanupPendingError(str(error)) from error
             if not flushed.complete:
                 raise SyncCleanupCompletedError(
                     "The previous Library was restored and Sync recovery files were removed. "
@@ -496,7 +538,7 @@ class DeviceCoordinator:
                     continue
                 with self._storage.open_session(mounted) as session:
                     if session.exists(path):
-                        session.inspect_transaction(path)
+                        session.read_transaction_state(path)
                         matches.append(mounted)
             if len(matches) != 1:
                 raise DeviceChangedError(
@@ -507,10 +549,18 @@ class DeviceCoordinator:
             with self._storage.open_session(
                 mounted, access=AccessMode.READ_WRITE
             ) as session:
-                recovery = session.inspect_transaction(path)
-                restored = session.restore_transaction(recovery)
+                # A previous restoration may have succeeded before cleanup failed.
+                # Its verified terminal state needs cleanup, not another rollback.
                 try:
-                    flushed = session.finalize_transaction(restored.recovery)
+                    if (
+                        session.read_transaction_state(path)
+                        is TransactionState.RESTORED
+                    ):
+                        flushed = session.finalize_restored_transaction(path)
+                    else:
+                        recovery = session.inspect_transaction(path)
+                        restored = session.restore_transaction(recovery)
+                        flushed = session.finalize_transaction(restored.recovery)
                 except TransactionDurabilityPendingError as error:
                     try:
                         _raise_if_cleanup_completed(session, path, error)
@@ -519,6 +569,16 @@ class DeviceCoordinator:
                         raise SyncRecoveryRestoredError(
                             "The previous Library was restored. " + str(completed)
                         ) from completed
+                    raise SyncRestoredCleanupPendingError(str(error)) from error
+                except StorageError as error:
+                    # Cleanup only runs after a verified RESTORED state above.
+                    # Failures during inspection/restoration must keep their own
+                    # recovery diagnosis, so confirm the journal before classifying.
+                    if (
+                        session.read_transaction_state(path)
+                        is TransactionState.RESTORED
+                    ):
+                        raise SyncRestoredCleanupPendingError(str(error)) from error
                     raise
                 if not flushed.complete:
                     self._deactivate_locked()
@@ -804,10 +864,27 @@ class DeviceCoordinator:
 
         expected, snapshot = request.source, request.snapshot
 
-        def checkpoint(phase: str, message: str) -> None:
+        def checkpoint(
+            phase: str,
+            message: str,
+            *,
+            completed: int | None = None,
+            total: int | None = None,
+            current_item: str = "",
+            unit: str = "",
+        ) -> None:
             if cancelled.is_set():
                 raise PreparationCancelledError
-            progress(WriteProgress(phase, message))
+            progress(
+                WriteProgress(
+                    phase,
+                    message,
+                    completed=completed,
+                    total=total,
+                    current_item=current_item,
+                    unit=unit,
+                )
+            )
 
         def database_progress(phase: WritePhase) -> None:
             labels = {
@@ -819,7 +896,14 @@ class DeviceCoordinator:
                 WritePhase.SIGNING: "Finalizing database signatures",
                 WritePhase.VERIFICATION: "Reparsing and verifying candidate output",
             }
-            checkpoint("database." + phase.value, labels[phase])
+            checkpoint(
+                "database." + phase.value,
+                labels[phase],
+                completed=tuple(labels).index(phase) + 1,
+                total=len(labels),
+                current_item=labels[phase],
+                unit="steps",
+            )
 
         with self._lock:
             active = self._active
@@ -1150,7 +1234,16 @@ class DeviceCoordinator:
                             )
                         if (
                             plan.requires_sidecar_inventory
-                            and library_resources.pending_sidecars(session)
+                            and library_resources.pending_sidecars(
+                                session,
+                                tuple(
+                                    file.path
+                                    for file in issued.transaction.dependencies
+                                )
+                                + tuple(
+                                    write.path for write in issued.transaction.writes
+                                ),
+                            )
                         ):
                             raise DeviceChangedError(
                                 "Playback sidecars appeared after review; reload before retrying"
@@ -1202,7 +1295,12 @@ class DeviceCoordinator:
                         progress(
                             WriteProgress(
                                 "save.storage." + event.state.value,
-                                f"Library files: {event.completed} of {event.total}",
+                                f"{event.state.value.title()} Library files: "
+                                f"{event.completed} of {event.total}",
+                                completed=event.completed,
+                                total=event.total,
+                                current_item=str(event.path or ""),
+                                unit="files",
                             )
                         )
                         if event.state is TransactionState.PREPARED:
@@ -1212,6 +1310,9 @@ class DeviceCoordinator:
                         issued.transaction,
                         checkpoint=cancel_checkpoint,
                         progress=transaction_progress,
+                        activity=lambda event: progress(
+                            _transaction_activity_progress(event)
+                        ),
                     )
                     # Storage verified the entire committed artifact by SHA-256.
                     fingerprints = {
@@ -3210,6 +3311,30 @@ def _track_device_path(track: Track) -> DevicePath:
     return path
 
 
+def _transaction_activity_progress(
+    event: TransactionActivity,
+    *,
+    recovery: bool = False,
+) -> WriteProgress:
+    labels = {
+        TransactionActivityPhase.VERIFYING_STAGED: "Verifying staged files before publication",
+        TransactionActivityPhase.VERIFYING_WRITES: "Verifying files on the iPod",
+        TransactionActivityPhase.VERIFYING_RECOVERY: "Verifying Library files and recovery copies",
+        TransactionActivityPhase.CHECKING_DEPENDENCIES: "Checking retained Library files",
+        TransactionActivityPhase.INSPECTING: "Reading transaction files for verification",
+        TransactionActivityPhase.RECHECKING: "Rechecking captured file contents",
+        TransactionActivityPhase.FLUSHING: "Waiting for the iPod to finish writing data",
+    }
+    return WriteProgress(
+        ("save.recovery." if recovery else "save.storage.") + event.phase.value,
+        labels[event.phase] + (" before completing recovery…" if recovery else "…"),
+        completed=event.completed,
+        total=event.total,
+        current_item=str(event.path or ""),
+        unit="files",
+    )
+
+
 __all__ = [
     "DeviceAccessError",
     "DeviceArtworkLoadError",
@@ -3225,4 +3350,5 @@ __all__ = [
     "SyncCleanupCompletedError",
     "SyncRecoveryRequiredError",
     "SyncRecoveryRestoredError",
+    "SyncRestoredCleanupPendingError",
 ]

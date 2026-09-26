@@ -1054,9 +1054,28 @@ new and changed files are inspected by a bounded pool of at most eight workers s
 independent metadata reads and fingerprint processes can overlap without moving
 progress publication, cache mutation, or final validation off the owning scan worker;
 the fingerprint is retained in the Host source adapter and its versioned cache for
-later Sync matching. A changed catalog rejects the scan rather than publishing a
-mixed-time result. This is the same metadata-first reuse and final tree-validation
-pattern used by Backup capture; the cache is not source authority.
+later Sync matching. A changed catalog becomes a scan diagnostic and the best-effort
+snapshot remains available for Review; Sync execution revalidates current source
+facts before any device write. This preserves the metadata-first reuse pattern
+without making cloud-backed folders fail on ordinary source churn. The cache is not
+source authority. See ADR-0082.
+
+Optional acoustic analysis does not gate explicit incoming Adds. Previously proven
+Sync paths match before missing acoustic evidence is classified. Helper v3 permits
+an empty fingerprint only alongside committed Sync Details and continues reading
+v1 and v2. Converted Photos retain separate Host and iPod content digests; oversized
+image containers are streamed into bounded PNG stills (ADR-0086).
+FFmpeg/FFprobe preflight applies only to incoming Tracks; fpcalc is a matching
+aid. Storage's explicit best-effort Host enumeration retains independent readable
+entries while checking directory identity. Inspection progress follows completion
+order, and preparation reports reading, inspecting, converting, and verifying.
+Artwork extraction streams the enclosing media, and FFprobe diagnostics alone do
+not reject successful structured output. See ADR-0084.
+
+Media preparation respects Host-native path spelling, selects a marked-default or
+first-probe-order motion-video and audio stream when a container carries multiple
+choices, and scopes FFmpeg options to the selected encoder. Removing extra streams
+forces a prepared output and reports the selected streams as warnings. See ADR-0083.
 
 Storage owns Host directory enumeration, file observations, and read-only stream
 lifetimes for metadata, Photos, and artwork. Media parsers receive seekable streams
@@ -1161,6 +1180,13 @@ further writes. Discovery checks unfinished journals before selection repairs
 metadata. Recovery can restore an unreadable Library through a freshly validated
 Storage session. Cleanup accepts only terminal transactions and preserves a
 successful committed Library.
+
+Track membership changes capture positional playback sidecars as transaction
+dependencies or replacement writes. iPodDB remaps Play Counts rows and On-The-Go
+indexes from original to desired Track order while retaining opaque record and
+header bytes. Appended Tracks need no invented history. Sidecar edits or new files
+after capture stop publication, and recovery restores sidecars with the Library.
+History remains in its sidecar; it is not applied twice or discarded. See ADR-0085.
 
 Select Media and Review share a storage bar above their content. It combines the
 Active iPod's last observed Volume capacity with the selected Sync Plan and captured

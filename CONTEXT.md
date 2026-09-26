@@ -88,7 +88,9 @@ excluded media types and subfolders. M3U/M3U8, PLS, XSPF, WPL, and ASX/WAX/WVX
 documents use bounded Storage reads; only explicitly accepted local audio/video
 references can extend the scan, through identity-checked private Storage captures.
 Network references, nested Playlists, links, and XML entity declarations cannot
-expand access. See ADR-0074. On completion,
+expand access. Host file and folder-artwork churn during scanning is retained as a
+diagnostic instead of failing the best-effort scan; Sync revalidates current source
+facts before writing. See ADR-0074 and ADR-0082. On completion,
 the workspace presents a read-only, source-isolated Host browser made from the same
 Album, collection, Track, Playlist, Photo, and media-category pages as the iPod
 browser. The normal sidebar stays iPod-focused, and the Active iPod Library Draft is
@@ -126,6 +128,20 @@ items can still commit. The verified Library and media publish through Storage;
 successful Sync Details follow the commit. Cancellation and interrupted publication
 have explicit cleanup/recovery results. See ADR-0065 through ADR-0067, ADR-0070,
 and ADR-0076.
+Optional acoustic analysis no longer gates readable Host media or explicit Adds.
+Sync checks media tools only for incoming Tracks and preserves committed Host-path
+provenance independently of Acoustic Fingerprints in Library Sync Helper v3.
+Embedded artwork uses seekable reads, including for large audiobooks. Successful
+FFprobe output remains usable with incidental metadata diagnostics. Preparation
+reports active phases and groups repeated informational conversion notices. Normal
+Play Counts and On-The-Go positional data is preserved or remapped in the same
+Storage Transaction as the Library, with unchanged bytes retained wherever possible.
+Oversized Photo containers become bounded PNG stills, with separate Host and iPod
+content digests. Publication verification and automatic recovery report their
+current files; verified restoration cleanup retries do not repeat media reads.
+macOS AppleDouble companions are excluded from artwork dependencies, and cleanup
+tolerates entries already removed by filesystem metadata maintenance.
+See ADR-0084 through ADR-0086 and `docs/sync-workflow-audit-2026-09-26.md`.
 Compressed iTunesCDB and SQLite-backed iPod Library variants are selected from the
 identified Device Profile. iPodDB unwraps and reproduces CDB framing and treats the
 CDB as the sole readable Library authority. It generates all five SQLite databases
@@ -322,8 +338,11 @@ tags independently of Library classification. Inspection has cancellation, proce
 and output limits, and content fingerprints. Music import applies a bounded audio
 compatibility policy and maps observed facts into native codec fields. The same
 reviewed transaction stages the song, thumbnails, ArtworkDB, and iTunesDB before
-publication. Exact gapless analysis, conversion, the Sync engine, video import, and
-document inspection such as PDF/EPUB remain future work. See ADR-0031 and ADR-0032.
+publication. Sync preparation accepts Host-native path spelling, chooses marked-
+default or first-probe-order streams from multi-stream video, and scopes encoder
+options to the selected FFmpeg encoder while reporting those choices as warnings.
+Exact gapless analysis, conversion, the Sync engine, video import, and document
+inspection such as PDF/EPUB remain future work. See ADR-0031, ADR-0032, and ADR-0083.
 
 Playback is an Application Layer workflow behind a typed, replaceable Playback
 Backend. `PlaybackController` owns runtime Queue, History, current Track, and

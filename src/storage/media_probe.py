@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import threading
@@ -144,9 +145,14 @@ def probe(
         )
     if stdout.failed.is_set() or stderr.failed.is_set():
         raise MediaInspectionError("media.probe_io", "Could not read FFprobe output")
-    if process.returncode != 0 or stderr.data.strip():
+    if process.returncode != 0:
         detail = bytes(stderr.data).decode("utf-8", errors="replace").strip()[:2000]
         raise MediaInspectionError(
             "media.probe_failed", f"FFprobe could not inspect the file: {detail}"
+        )
+    if stderr.data.strip():
+        logging.getLogger(__name__).debug(
+            "FFprobe returned usable output with diagnostics: %s",
+            bytes(stderr.data).decode("utf-8", errors="replace")[:2000],
         )
     return bytes(stdout.data)

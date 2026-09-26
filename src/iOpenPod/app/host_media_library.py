@@ -10,10 +10,11 @@ import math
 import os
 import re
 from collections.abc import Callable, Iterable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from io import BytesIO
+from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -24,7 +25,6 @@ from PIL import Image, ImageOps
 from iOpenPod.app.host_media_fingerprint import (
     FpcalcError,
     FpcalcFingerprinter,
-    FpcalcUnavailableError,
     normalize_fpcalc_fingerprint,
 )
 from iOpenPod.app.host_media_folders import HostMediaFolder, HostMediaType
@@ -59,7 +59,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 7
+_CACHE_VERSION = 8
 _MAX_CACHE_BYTES = 64 * 1024 * 1024
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
@@ -793,26 +793,32 @@ class HostMediaScanner:
             HostMediaScanStage.FINALIZING,
             total,
             total,
-            "Checking that the selected folders did not change…",
+            "Checking for files that changed during the scan…",
             cache_hits=reused,
         )
         after, final_issues = _enumerate(folders, checkpoint=checkpoint)
         after_artwork = _folder_artwork_catalog(after, checkpoint=checkpoint)
-        if tuple(item.state for item in before) != tuple(item.state for item in after):
-            raise HostMediaTreeChangedError(
-                "The Host Media Library changed while it was scanned. Try Sync again."
-            )
         if _folder_artwork_states(before_artwork) != _folder_artwork_states(
             after_artwork
         ):
-            raise HostMediaTreeChangedError(
-                "Host folder artwork changed while the Library was scanned. "
-                "Try Sync again."
+            records = _reconcile_folder_artwork(records, after_artwork)
+        if tuple(item.state for item in before) != tuple(item.state for item in after):
+            issues.append(
+                _scan_issue(
+                    folders,
+                    "The Host Media Library changed while it was scanned; "
+                    "the available files were kept for review. Sync will recheck "
+                    "source files before writing to the iPod.",
+                )
             )
         if enumeration_issues != final_issues:
-            raise HostMediaTreeChangedError(
-                "The selected folder availability changed while it was scanned. "
-                "Try Sync again."
+            issues.append(
+                _scan_issue(
+                    folders,
+                    "The availability of one or more selected folders changed "
+                    "while they were scanned; unavailable files were omitted. "
+                    "Sync will recheck source files before writing to the iPod.",
+                )
             )
 
         scanned_paths = {_path_identity(record.path.path) for record in records}
@@ -885,6 +891,7 @@ class HostMediaScanner:
         reused = pending.cache.reused
         inspected = pending.cache.inspected
         total = len(accepted_by_identity)
+        approved_external_files: list[LocalHostFile] = []
         for index, (identity, path) in enumerate(
             sorted(accepted_by_identity.items()),
             start=1,
@@ -953,12 +960,17 @@ class HostMediaScanner:
             try:
                 reviewed.validate()
             except (OSError, StorageError) as error:
-                raise HostMediaTreeChangedError(
-                    "An accepted playlist file changed while it was scanned. "
-                    "Try Sync again."
-                ) from error
+                issues.append(
+                    HostMediaScanIssue(
+                        path,
+                        "The accepted Playlist file changed while it was scanned "
+                        f"and was omitted: {error}",
+                    )
+                )
+                continue
             records.append(record)
             cached[identity] = record
+            approved_external_files.append(reviewed)
             if record.warning:
                 issues.append(HostMediaScanIssue(record.path, record.warning))
             _emit(
@@ -974,27 +986,25 @@ class HostMediaScanner:
         checkpoint()
         if pending.external_references:
             after, final_issues = _enumerate(pending.folders, checkpoint=checkpoint)
-            if (
-                after != pending.observations
-                or final_issues != pending.enumeration_issues
+            if tuple(item.state for item in after) != tuple(
+                item.state for item in pending.observations
             ):
-                raise HostMediaTreeChangedError(
-                    "The selected media changed during Playlist review. Try Sync again."
+                issues.append(
+                    _scan_issue(
+                        pending.folders,
+                        "The selected media changed during Playlist review; "
+                        "the original scan remains available. Sync will recheck "
+                        "source files before writing to the iPod.",
+                    )
                 )
-        # Check all accepted inputs again after the final inspection, not just each
-        # individual read, so publication cannot include an earlier stale source.
-        approved_external_files: list[LocalHostFile] = []
-        for record in records[len(pending.records) :]:
-            checkpoint()
-            reviewed = offered[_path_identity(record.path.path)].observation
-            assert reviewed is not None
-            try:
-                reviewed.validate()
-            except (OSError, StorageError) as error:
-                raise HostMediaTreeChangedError(
-                    "An accepted Playlist file changed before publication. Try Sync again."
-                ) from error
-            approved_external_files.append(reviewed)
+            if final_issues != pending.enumeration_issues:
+                issues.append(
+                    _scan_issue(
+                        pending.folders,
+                        "The availability of one or more selected folders changed "
+                        "during Playlist review; unavailable files were omitted.",
+                    )
+                )
         _emit(
             progress,
             HostMediaScanStage.FINALIZING,
@@ -1078,6 +1088,17 @@ def _emit(
         )
 
 
+def _scan_issue(
+    folders: tuple[HostMediaFolder, ...], detail: str
+) -> HostMediaScanIssue:
+    """Describe scan drift without making a best-effort scan unusable."""
+
+    # The folder dialog normally guarantees at least one folder. Keep the helper
+    # total for callers that construct a scanner directly in tests or integrations.
+    path = folders[0].path if folders else HostPath(Path.cwd())
+    return HostMediaScanIssue(path, detail)
+
+
 def _enumerate(
     folders: tuple[HostMediaFolder, ...],
     *,
@@ -1092,6 +1113,7 @@ def _enumerate(
                 LocalHostDirectory.observe(folder.path),
                 folder,
                 observations,
+                issues,
                 checkpoint=checkpoint,
             )
         except (OSError, StorageError) as error:
@@ -1111,11 +1133,25 @@ def _walk_folder(
     directory: LocalHostDirectory,
     folder: HostMediaFolder,
     observations: dict[str, _Observation],
+    issues: list[HostMediaScanIssue],
     *,
     checkpoint: CancellationCheck,
 ) -> None:
     checkpoint()
-    entries = directory.list_entries(checkpoint=checkpoint)
+
+    def report(path: HostPath, error: OSError | StorageError) -> None:
+        issues.append(
+            HostMediaScanIssue(
+                path,
+                f"Some folder contents were unavailable; scanning continued: {error}",
+            )
+        )
+
+    try:
+        entries = directory.list_entries(checkpoint=checkpoint, on_issue=report)
+    except (OSError, StorageError) as error:
+        report(directory.path, error)
+        return
     for entry in sorted(
         entries, key=lambda item: os.path.normcase(item.path.path.name)
     ):
@@ -1126,6 +1162,7 @@ def _walk_folder(
                     entry.directory,
                     folder,
                     observations,
+                    issues,
                     checkpoint=checkpoint,
                 )
             continue
@@ -1193,7 +1230,12 @@ def _folder_artwork_catalog(
     }
     for identity, observation in directories.items():
         checkpoint()
-        artwork = _folder_artwork_for(observation, checkpoint=checkpoint)
+        try:
+            artwork = _folder_artwork_for(observation, checkpoint=checkpoint)
+        except (OSError, StorageError):
+            # Folder artwork is optional presentation data. Cloud placeholders,
+            # evictions, and permission churn must not invalidate media discovery.
+            artwork = None
         if artwork is not None:
             catalog[identity] = artwork
     return catalog
@@ -1235,11 +1277,10 @@ def _folder_artwork_for(
                     source.seek(0)
                     with Image.open(source) as image:
                         image.verify()
-            except StorageError as error:
-                raise HostMediaTreeChangedError(
-                    "Host folder artwork changed or became unavailable while it was "
-                    "scanned. Try Sync again."
-                ) from error
+            except StorageError:
+                # A folder cover is a convenience, not part of the Host media
+                # catalog. Treat transient cloud-storage failures as no cover.
+                return None
             except (OSError, SyntaxError, ValueError):
                 continue
             return _ArtworkReference(
@@ -1258,6 +1299,37 @@ def _folder_artwork_states(
     return tuple(
         sorted((identity, artwork.state) for identity, artwork in catalog.items())
     )
+
+
+def _reconcile_folder_artwork(
+    records: list[_CachedRecord],
+    folder_artwork: dict[str, _ArtworkReference],
+) -> list[_CachedRecord]:
+    """Keep optional folder covers aligned with the final best-effort view."""
+
+    reconciled: list[_CachedRecord] = []
+    for record in records:
+        if not isinstance(record, _CachedTrackRecord):
+            reconciled.append(record)
+            continue
+        artwork = record.artwork
+        if artwork is not None and artwork.kind is HostArtworkKind.EMBEDDED:
+            reconciled.append(record)
+            continue
+        current = folder_artwork.get(_path_identity(record.path.path.parent))
+        reconciled.append(
+            replace(
+                record,
+                artwork_kind=None if current is None else current.kind,
+                artwork_path=None if current is None else current.path,
+                artwork_size_bytes=0 if current is None else current.size_bytes,
+                artwork_modified_ns=0 if current is None else current.modified_ns,
+                artwork_content_sha256=""
+                if current is None
+                else current.content_sha256,
+            )
+        )
+    return reconciled
 
 
 def _inspect_selected_files(
@@ -1309,30 +1381,43 @@ def _inspect_selected_files(
                     checkpoint=checkpoint,
                 )
 
-            for offset, observation in enumerate(batch):
+            _emit(
+                progress,
+                HostMediaScanStage.READING,
+                len(records),
+                total,
+                "Reading metadata and calculating matching fingerprints…",
+                path=batch[0].path,
+                cache_hits=reused,
+            )
+            # Publish finished work immediately, even when an earlier file is slow.
+            by_future = {future: index for index, future in pending.items()}
+            for index in chain(ready, (by_future[f] for f in as_completed(by_future))):
                 checkpoint()
-                index = batch_start + offset
+                observation = observations[index]
                 future = pending.get(index)
                 if future is None:
                     record = ready[index]
                     reused += 1
-                    label = f"Reusing unchanged file {index + 1:,} of {total:,}…"
+                    label = f"Reusing unchanged file {len(records) + 1:,} of {total:,}…"
                 else:
                     record = future.result()
                     inspected += 1
-                    label = f"Reading file {index + 1:,} of {total:,}…"
+                    label = f"Read file {len(records) + 1:,} of {total:,}…"
                 records.append(record)
                 if record.warning:
                     issues.append(HostMediaScanIssue(record.path, record.warning))
                 _emit(
                     progress,
                     HostMediaScanStage.READING,
-                    index + 1,
+                    len(records),
                     total,
                     label,
                     path=observation.path,
                     cache_hits=reused,
                 )
+    records.sort(key=lambda record: _path_identity(record.path.path))
+    issues.sort(key=lambda issue: _path_identity(issue.path.path))
     return records, issues, reused, inspected
 
 
@@ -1349,7 +1434,13 @@ def _inspect_file(
     ):
         try:
             record = _inspect_track(observation, folder_artwork, checkpoint=checkpoint)
-        except (OSError, StorageError, ValueError, mutagen.MutagenError) as error:
+        except (
+            HostMediaTreeChangedError,
+            OSError,
+            StorageError,
+            ValueError,
+            mutagen.MutagenError,
+        ) as error:
             fallback = _fallback_record(
                 observation,
                 "Metadata could not be read; the file was retained with basic "
@@ -1363,12 +1454,10 @@ def _inspect_file(
                 observation.path,
                 checkpoint=checkpoint,
             )
-        except FpcalcUnavailableError as error:
-            raise HostMediaScanError(str(error)) from error
         except FpcalcError as error:
             warning = _combine_warnings(
                 record.warning,
-                f"Acoustic fingerprint could not be calculated: {error}",
+                f"Acoustic fingerprint unavailable; this file can still be selected for Add: {error}",
             )
             return replace(record, warning=warning)
         return replace(record, acoustic_fingerprint=acoustic_fingerprint)
@@ -1376,7 +1465,13 @@ def _inspect_file(
         if observation.kind is HostMediaFileKind.PHOTO:
             return _inspect_photo(observation, checkpoint=checkpoint)
         return _inspect_playlist(observation, checkpoint=checkpoint)
-    except (OSError, ValueError, StorageError, mutagen.MutagenError) as error:
+    except (
+        HostMediaTreeChangedError,
+        OSError,
+        ValueError,
+        StorageError,
+        mutagen.MutagenError,
+    ) as error:
         return _fallback_record(
             observation,
             f"Metadata could not be read; the file was retained with basic facts: {error}",
@@ -1427,10 +1522,6 @@ def _read_track(
             size_bytes=observation.size_bytes,
             modified_ns=observation.modified_ns,
             title=observation.path.path.stem,
-            warning=(
-                "Metadata could not be identified; the file was retained with "
-                "basic facts."
-            ),
             artwork_kind=(None if folder_artwork is None else folder_artwork.kind),
             artwork_path=(None if folder_artwork is None else folder_artwork.path),
             artwork_size_bytes=(
@@ -1538,6 +1629,11 @@ def embedded_artwork_from_bytes(data: bytes) -> bytes | None:
     return _parsed_embedded_artwork(
         cast("_MutagenReader", mutagen).File(BytesIO(data), easy=False)
     )
+
+
+def embedded_artwork_from_stream(stream: BinaryIO) -> bytes | None:
+    """Read bounded image payloads without loading the enclosing media file."""
+    return _embedded_artwork(stream)
 
 
 def _parsed_embedded_artwork(
@@ -2102,10 +2198,25 @@ def _tag(tags: object, name: str) -> str:
         return ""
     values = cast("_TagReader", tags)
     value = values.get(name)
+    if value is None:
+        # WAVE/AIFF expose ID3 frames even when Mutagen is asked for easy tags.
+        frame = {
+            "title": "TIT2",
+            "artist": "TPE1",
+            "album": "TALB",
+            "albumartist": "TPE2",
+            "genre": "TCON",
+            "date": "TDRC",
+            "year": "TYER",
+            "tracknumber": "TRCK",
+            "discnumber": "TPOS",
+        }.get(name)
+        if frame is not None:
+            value = getattr(values.get(frame), "text", None)
     if isinstance(value, str):
         return value.strip()
-    if isinstance(value, list) and value and isinstance(value[0], str):
-        return value[0].strip()
+    if isinstance(value, list) and value:
+        return str(cast("list[object]", value)[0]).strip()
     return ""
 
 

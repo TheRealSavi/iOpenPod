@@ -29,8 +29,31 @@ from storage import DevicePath
 
 if TYPE_CHECKING:
     from collections.abc import Collection
+    from typing import BinaryIO
 
 MAX_PHOTO_SOURCE_BYTES = 64 * 1024 * 1024
+
+
+def photo_still_from_stream(source: BinaryIO) -> bytes:
+    """Decode the first display frame into a bounded PNG for oversized Photos.
+
+    Animated sources need only their first frame for the iPod Photo viewer. Read
+    it through a seekable Storage stream instead of retaining the animation.
+    """
+    with Image.open(source) as opened:
+        width, height = opened.size
+        if max(width, height) > 8192 or width * height > 32 * 1024 * 1024:
+            raise ValueError("Photo dimensions exceed safe decoding limits.")
+        opened.seek(0)
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+        # Bound the encoded full-resolution viewing copy as well as its raster.
+        image.thumbnail((4096, 4096), Image.Resampling.LANCZOS)
+        output = BytesIO()
+        image.save(output, format="PNG")
+    data = output.getvalue()
+    if len(data) > MAX_PHOTO_SOURCE_BYTES:
+        raise ValueError("Prepared Photo exceeds its bounded image size.")
+    return data
 
 
 def prepare_sync_photo(

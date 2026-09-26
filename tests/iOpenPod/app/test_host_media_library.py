@@ -13,11 +13,15 @@ from typing import BinaryIO, Protocol, cast
 
 import mutagen
 import pytest
-from mutagen.id3 import APIC, PictureType
+from mutagen.id3 import APIC, TIT2, TPE1, PictureType
 from mutagen.wave import WAVE
 from PIL import Image
 
-from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
+from iOpenPod.app.host_media_fingerprint import (
+    FpcalcError,
+    FpcalcFingerprinter,
+    FpcalcUnavailableError,
+)
 from iOpenPod.app.host_media_folders import (
     HostMediaFolder,
     HostMediaType,
@@ -28,12 +32,113 @@ from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,
     HostMediaPhotoLoader,
     HostMediaScanner,
+    HostMediaScanProgress,
     HostMediaTreeChangedError,
 )
 from iOpenPod.app.models.artwork import ArtworkRequest
 from iOpenPod.app.models.photos import PhotoRequest
 from iPodDB.library import LibrarySnapshot, MediaKind, MediaType
-from storage import AtomicHostFile, HostPath
+from storage import AtomicHostFile, HostPath, StorageError
+from storage.host_directory import HostDirectoryEntry, LocalHostDirectory
+
+
+def test_one_unreadable_subfolder_does_not_hide_later_siblings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("a-denied", "b-readable"):
+        directory = tmp_path / name
+        directory.mkdir()
+        _write_wav(directory / "song.wav")
+    native = LocalHostDirectory.list_entries
+
+    def listing(
+        self: LocalHostDirectory,
+        *,
+        checkpoint: Callable[[], None],
+        on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
+    ) -> tuple[HostDirectoryEntry, ...]:
+        if self.path.path.name == "a-denied":
+            raise PermissionError("folder unavailable")
+        return native(self, checkpoint=checkpoint, on_issue=on_issue)
+
+    monkeypatch.setattr(LocalHostDirectory, "list_entries", listing)
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (create_host_media_folder(tmp_path),), checkpoint=lambda: None
+    )
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert len(library.snapshot.tracks) == 1
+    assert "b-readable" in library.snapshot.tracks[0].metadata.location
+    assert any("folder unavailable" in issue.detail for issue in library.issues)
+
+
+def test_missing_fingerprinting_tool_keeps_readable_media(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_wav(tmp_path / "song.wav")
+
+    def unavailable(*args: object, **kwargs: object) -> str:
+        raise FpcalcUnavailableError("Install Chromaprint")
+
+    monkeypatch.setattr(FpcalcFingerprinter, "fingerprint", unavailable)
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (create_host_media_folder(tmp_path),), checkpoint=lambda: None
+    )
+    result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert len(result.snapshot.tracks) == 1
+    assert result.sources[0].acoustic_fingerprint is None
+
+
+def test_wave_id3_text_is_used_instead_of_the_filename(tmp_path: Path) -> None:
+    path = tmp_path / "filename.wav"
+    _write_wav(path)
+    tagged = cast("_MutableWave", WAVE(path))  # type: ignore[no-untyped-call]
+    tagged.add_tags()
+    assert tagged.tags is not None
+    tagged.tags.add(TIT2(encoding=3, text=["Real title"]))  # type: ignore[no-untyped-call]
+    tagged.tags.add(TPE1(encoding=3, text=["Real artist"]))  # type: ignore[no-untyped-call]
+    tagged.save()
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (create_host_media_folder(tmp_path),), checkpoint=lambda: None
+    )
+    result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert result.snapshot.tracks[0].title == "Real title"
+    assert result.snapshot.tracks[0].artist == "Real artist"
+
+
+def test_fast_file_progress_is_published_while_earlier_file_is_still_reading(
+    tmp_path: Path,
+) -> None:
+    for name in ("a-slow.wav", "b-fast.wav"):
+        _write_wav(tmp_path / name)
+    published = threading.Event()
+
+    class Fingerprinter:
+        def fingerprint(
+            self, source: HostPath, *, checkpoint: Callable[[], None]
+        ) -> str:
+            if source.path.name == "a-slow.wav":
+                assert published.wait(5), (
+                    "Finished files were hidden behind the slow file"
+                )
+            return "1,2,3"
+
+    def progress(event: HostMediaScanProgress) -> None:
+        if (
+            event.completed == 1
+            and event.path is not None
+            and event.path.path.name == "b-fast.wav"
+        ):
+            published.set()
+
+    HostMediaScanner(fingerprinter=Fingerprinter(), max_workers=2).scan(
+        (create_host_media_folder(tmp_path),),
+        checkpoint=lambda: None,
+        progress=progress,
+    )
+    assert published.is_set()
 
 
 class _FrameTags(Protocol):
@@ -416,6 +521,63 @@ def test_new_folder_cover_invalidates_an_unchanged_cached_track(tmp_path: Path) 
     assert second.snapshot.tracks[0].artwork_id > 0
 
 
+def test_unavailable_folder_artwork_does_not_abort_a_host_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    _write_wav(selected / "Track.wav")
+    Image.new("RGB", (12, 8), "#32c850").save(selected / "cover.png")
+    folder = HostMediaFolder(
+        HostPath(selected),
+        media_types=frozenset({HostMediaType.AUDIO}),
+    )
+
+    def unavailable(*_args: object, **_kwargs: object) -> object:
+        from storage import StorageError
+
+        raise StorageError("iCloud placeholder is unavailable")
+
+    monkeypatch.setattr(
+        "iOpenPod.app.host_media_library._folder_artwork_for", unavailable
+    )
+
+    pending = HostMediaScanner().scan((folder,), checkpoint=lambda: None)
+    result = HostMediaScanner().complete(pending, frozenset(), checkpoint=lambda: None)
+
+    assert result.audio_count == 1
+    assert result.snapshot.tracks[0].artwork_id == 0
+
+
+def test_scan_keeps_available_media_when_the_host_tree_changes(
+    tmp_path: Path,
+) -> None:
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    _write_wav(selected / "Track.wav")
+
+    class MutatingFingerprinter:
+        def fingerprint(
+            self,
+            source: HostPath,
+            *,
+            checkpoint: Callable[[], None],
+        ) -> str:
+            checkpoint()
+            _write_wav(selected / "Added.wav")
+            return "1,2,3"
+
+    pending = HostMediaScanner(fingerprinter=MutatingFingerprinter()).scan(
+        (create_host_media_folder(selected),),
+        checkpoint=lambda: None,
+    )
+
+    assert len(pending.records) == 1
+    assert any(
+        "changed while it was scanned" in issue.detail for issue in pending.issues
+    )
+
+
 def test_host_photo_loader_rejects_files_changed_after_the_scan(
     tmp_path: Path,
 ) -> None:
@@ -483,7 +645,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 7
+    assert document["version"] == 8
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {
@@ -878,8 +1040,12 @@ def test_selected_tree_is_revalidated_after_external_review(tmp_path: Path) -> N
         (create_host_media_folder(selected),), checkpoint=lambda: None
     )
     (selected / "Road Trip.m3u8").write_text("Changed.wav", encoding="utf-8")
-    with pytest.raises(HostMediaTreeChangedError, match="review"):
-        scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+
+    assert result.audio_count == 1
+    assert any(
+        "changed during Playlist review" in issue.detail for issue in result.issues
+    )
 
 
 @pytest.mark.parametrize("extension", ["pls", "xspf", "wpl", "asx"])

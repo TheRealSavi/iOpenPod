@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from device_registry import DeviceProfile
-    from iOpenPod.app.media.models import MediaInspection
+    from iOpenPod.app.media.models import MediaInspection, MediaStream
     from iPodDB.library import Track
     from storage import FileFingerprint, HostPath
 
@@ -258,7 +258,7 @@ def _lossy_arguments(
     )
     mode = BitrateMode.CBR if spoken or automatic else settings.bitrate_mode
     args = ["-c:a", encoder.value]
-    if encoder is not LossyEncoder.MP3:
+    if encoder in (LossyEncoder.FDK_AAC, LossyEncoder.AAC):
         args += ["-profile:a", "aac_low"]
     if encoder is LossyEncoder.AAC_AT:
         args += ["-aac_at_mode", mode.value]
@@ -320,15 +320,23 @@ def resolve_transcode(
         return _resolve_video(
             observed, profile, settings, available_encoders, spoken_word
         )
-    if len(observed.audio_streams) != 1 or any(
+    if not observed.audio_streams or any(
         s.kind is StreamKind.VIDEO and s.attached_picture is not True
         for s in observed.streams
     ):
         raise MediaInspectionError(
             "media.unsupported_streams",
-            "This item requires one audio stream and no motion video. Select an audio edition or exclude it from Review; the other selected items can still Sync.",
+            "No playable audio stream was found. This item will be skipped; the other selected items can still Sync.",
         )
-    audio = observed.audio_streams[0]
+    audio = _select_preferred_stream(observed.audio_streams)
+    warnings: list[str] = []
+    multiple_audio = len(observed.audio_streams) > 1
+    if multiple_audio:
+        choice = "default" if audio.default is True else "first"
+        warnings.append(
+            f"Source contains {len(observed.audio_streams)} audio streams; selected the {choice} audio stream."
+        )
+        observed = replace(observed, streams=(audio,))
     duration = audio.duration_seconds or observed.duration_seconds
     if (
         duration is None
@@ -369,8 +377,16 @@ def resolve_transcode(
         and rate == audio.sample_rate_hz
         and channels == audio.channels
     ):
-        return TranscodePlan(compatible, _SUFFIXES[compatible], (), rate, channels)
-    warnings: list[str] = []
+        return TranscodePlan(
+            compatible,
+            _SUFFIXES[compatible],
+            ("-map", f"0:{audio.index}", "-c:a", "copy", "-vn")
+            if multiple_audio
+            else (),
+            rate,
+            channels,
+            tuple(warnings),
+        )
     arguments: tuple[str, ...]
     if (
         lossless
@@ -495,6 +511,13 @@ def compatible_video(observed: MediaInspection, profile: DeviceProfile) -> bool:
     )
 
 
+def _select_preferred_stream(streams: tuple[MediaStream, ...]) -> MediaStream:
+    """Select the marked default stream, falling back to probe order."""
+    if not streams:
+        raise ValueError("At least one media stream is required")
+    return next((stream for stream in streams if stream.default is True), streams[0])
+
+
 def _resolve_video(
     observed: MediaInspection,
     profile: DeviceProfile,
@@ -508,12 +531,27 @@ def _resolve_video(
             "media.video_unsupported",
             "This iPod cannot play video. Choose an audio edition or exclude this item; the other selected items can still Sync.",
         )
-    if len(observed.video_streams) != 1 or len(observed.audio_streams) > 1:
-        raise MediaInspectionError(
-            "media.video_stream_selection",
-            "This video has multiple video or audio streams. Select an edition with one video and at most one audio stream, then rescan; no language or camera angle was silently removed.",
+    video_streams = observed.video_streams
+    audio_streams = observed.audio_streams
+    video = _select_preferred_stream(video_streams)
+    audio = _select_preferred_stream(audio_streams) if audio_streams else None
+    selected_streams = (
+        video,
+        *((audio,) if audio is not None else ()),
+        *(stream for stream in observed.streams if stream.kind is StreamKind.SUBTITLE),
+    )
+    selected = replace(observed, streams=selected_streams)
+    warnings: list[str] = []
+    if len(video_streams) > 1:
+        choice = "default" if video.default is True else "first"
+        warnings.append(
+            f"Source contains {len(video_streams)} video streams; selected the {choice} video stream."
         )
-    video = observed.video_streams[0]
+    if len(audio_streams) > 1:
+        choice = "default" if audio is not None and audio.default is True else "first"
+        warnings.append(
+            f"Source contains {len(audio_streams)} audio streams; selected the {choice} audio stream."
+        )
     if (
         not video.width
         or not video.height
@@ -524,7 +562,6 @@ def _resolve_video(
             "media.video_incomplete",
             "The video's dimensions, duration or frame rate could not be verified. Repair or replace the source and rescan it.",
         )
-    audio = next(iter(observed.audio_streams), None)
     rate = (
         min(
             audio.sample_rate_hz or 44100,
@@ -543,8 +580,10 @@ def _resolve_video(
     spoken = spoken and settings.smart_spoken_word
     if spoken and settings.spoken_word_mono and audio is not None:
         channels = 1
+    has_extra_streams = len(video_streams) > 1 or len(audio_streams) > 1
     if (
-        compatible_video(observed, profile)
+        not has_extra_streams
+        and compatible_video(selected, profile)
         and not settings.retranscode_lossy
         and not spoken
         and (
@@ -553,10 +592,9 @@ def _resolve_video(
         )
     ):
         return TranscodePlan(VideoEncoding.MP4, ".m4v", (), rate, channels)
-    warnings: list[str] = []
     args = ["-map", f"0:{video.index}"]
     # Check the motion stream independently so an audio repair can copy video.
-    video_only = replace(observed, streams=(video,))
+    video_only = replace(selected, streams=(video,))
     if compatible_video(video_only, profile):
         args += ["-c:v", "copy"]
     else:
@@ -632,7 +670,7 @@ def _resolve_video(
             )
             _, audio_args = _lossy_arguments(adjusted, available, spoken)
             args += [*audio_args, "-ar", str(rate), "-ac", str(channels)]
-    for stream in observed.streams:
+    for stream in selected.streams:
         if stream.kind is StreamKind.SUBTITLE:
             if (
                 caps.supports_tx3g_subtitles
@@ -677,11 +715,19 @@ class MediaTranscoder:
         rockbox_metadata: bool = False,
         normalize_tags: bool = False,
         compute_sound_check: bool = False,
+        progress: Callable[[str], None] | None = None,
     ) -> Generator[PreparedTranscode]:
+        def report(message: str) -> None:
+            checkpoint()
+            if progress is not None:
+                progress(message)
+
         tools = tools or self.preflight(checkpoint=checkpoint)
         inspector = MediaInspector(tools.ffprobe)
         with media_workspace(checkpoint=checkpoint) as workspace:
+            report("Reading the Host file into private staging")
             captured = workspace.capture(source, expected=expected_source)
+            report("Inspecting data streams and metadata")
             observed = inspector.inspect_captured(captured, checkpoint=checkpoint)
             if metadata is not None:
                 metadata = enrich_source_metadata(metadata, observed)
@@ -699,6 +745,7 @@ class MediaTranscoder:
             )
             output_path = captured.snapshot
             if plan.requires_transcode:
+                report("Preparing compatible media for this iPod")
                 output_path = workspace.output_path(plan.suffix)
                 args = plan.output_arguments
                 tags = (
@@ -756,6 +803,7 @@ class MediaTranscoder:
                         "The prepared audio duration differs from its source. Check or replace the source file; this item was not written to the iPod.",
                     )
             if rockbox_metadata:
+                report("Writing metadata to the prepared copy")
                 if metadata is None:
                     raise ValueError("Rockbox metadata requires the reviewed Track")
                 reviewed_track = metadata
@@ -770,7 +818,21 @@ class MediaTranscoder:
                 output_path = output.snapshot
                 result = inspector.inspect_captured(output, checkpoint=checkpoint)
             measure_sound_check = compute_sound_check and bool(result.audio_streams)
-            verification: tuple[str, ...] = ("-map", "0:a?", "-map", "0:v?", "-sn")
+            report(
+                "Verifying prepared media and measuring Sound Check"
+                if measure_sound_check
+                else "Verifying prepared media"
+            )
+            # Attached cover images are not playable video. A broken optional
+            # picture must not invalidate otherwise decodable audio.
+            verification = (
+                *(
+                    part
+                    for stream in (*result.audio_streams, *result.video_streams)
+                    for part in ("-map", f"0:{stream.index}")
+                ),
+                "-sn",
+            )
             if measure_sound_check:
                 verification += ("-af", "ebur128=framelog=verbose")
             verification_output = run_media_tool(
@@ -857,7 +919,8 @@ def _container_arguments(encoding: AudioEncoding | VideoEncoding) -> tuple[str, 
 
 
 def _duration(observed: MediaInspection) -> float | None:
-    stream = next(iter(observed.video_streams or observed.audio_streams), None)
+    streams = observed.video_streams or observed.audio_streams
+    stream = _select_preferred_stream(streams) if streams else None
     duration = (
         stream.duration_seconds if stream is not None else None
     ) or observed.duration_seconds
@@ -893,7 +956,11 @@ def enrich_source_metadata(track: Track, observed: MediaInspection) -> Track:
         tag.name.casefold(): tag.value
         for tag in (
             *observed.tags,
-            *(tag for stream in observed.audio_streams for tag in stream.tags),
+            *(
+                _select_preferred_stream(observed.audio_streams).tags
+                if observed.audio_streams
+                else ()
+            ),
         )
     }
     metadata = track.metadata

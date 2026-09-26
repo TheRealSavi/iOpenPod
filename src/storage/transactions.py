@@ -163,6 +163,26 @@ class TransactionProgress:
     path: DevicePath | None = None
 
 
+class TransactionActivityPhase(StrEnum):
+    VERIFYING_STAGED = "verifying_staged"
+    VERIFYING_WRITES = "verifying_writes"
+    VERIFYING_RECOVERY = "verifying_recovery"
+    CHECKING_DEPENDENCIES = "checking_dependencies"
+    INSPECTING = "inspecting"
+    RECHECKING = "rechecking"
+    FLUSHING = "flushing"
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionActivity:
+    """Read/flush progress, separate from durable journal state transitions."""
+
+    phase: TransactionActivityPhase
+    completed: int = 0
+    total: int | None = None
+    path: DevicePath | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class TransactionRecovery:
     """Read-only observation; restoration rechecks its journal and every file."""

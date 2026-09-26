@@ -193,8 +193,10 @@ def _xml_references(
                 checkpoint()
                 if value := node.get("src"):
                     # WMP commonly writes native paths here, including literal #
-                    # and percent characters. Explicit file URIs still decode.
-                    _append(references, _Reference(value))
+                    # and percent characters. Its backslash separators are
+                    # normalized before Storage resolves the local reference;
+                    # explicit file URIs still decode.
+                    _append(references, _Reference(value.replace("\\", "/")))
     else:
         if root.tag.casefold() != "asx":
             raise ValueError("ASX is missing its asx root")

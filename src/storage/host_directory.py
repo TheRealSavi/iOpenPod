@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -11,7 +12,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from storage._filesystem import is_link_or_reparse
-from storage.errors import ConcurrentModificationError, UnsafeFilesystemPathError
+from storage.errors import (
+    ConcurrentModificationError,
+    StorageError,
+    UnsafeFilesystemPathError,
+)
 from storage.host_input import (
     LocalHostFile,
     _check_local_drive,  # pyright: ignore[reportPrivateUsage]
@@ -66,20 +71,27 @@ class LocalHostDirectory:
         return cls(path, value.st_size, value.st_mtime_ns, value.st_dev, value.st_ino)
 
     def list_entries(
-        self, *, checkpoint: Callable[[], None]
+        self,
+        *,
+        checkpoint: Callable[[], None],
+        on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
     ) -> tuple[HostDirectoryEntry, ...]:
         """Stat each child once while pinning this directory and its parents.
 
         Returned file/directory observations reuse those exact stat identities.
         Links and special files have no readable observation. A replaced or
         concurrently edited directory fails instead of publishing a partial list.
+        Supplying on_issue permits best-effort enumeration of changing contents,
+        while directory identity and no-link checks remain mandatory.
         """
         checkpoint()
         entries: list[HostDirectoryEntry] = []
         with _pin_directory(Path(self.path)) as pinned:
             before = _directory_stat(pinned)
             _require_directory(before)
-            if self._from_stat(self.path, before) != self:
+            if (before.st_dev, before.st_ino) != (self.device, self.inode) or (
+                on_issue is None and self._from_stat(self.path, before) != self
+            ):
                 raise ConcurrentModificationError("The observed Host directory changed")
             with os.scandir(pinned) as iterator:
                 for entry in iterator:
@@ -88,11 +100,17 @@ class LocalHostDirectory:
                     # Windows DirEntry.stat() omits device/inode identity. Parent
                     # handles are already pinned, so one leaf lstat supplies it
                     # without rescanning the ancestor chain for each child.
-                    metadata = (
-                        Path(path).lstat()
-                        if os.name == "nt"
-                        else entry.stat(follow_symlinks=False)
-                    )
+                    try:
+                        metadata = (
+                            Path(path).lstat()
+                            if os.name == "nt"
+                            else entry.stat(follow_symlinks=False)
+                        )
+                    except OSError as error:
+                        if on_issue is None:
+                            raise
+                        on_issue(path, error)
+                        continue
                     kind = _entry_kind(metadata)
                     entries.append(
                         HostDirectoryEntry(
@@ -110,14 +128,25 @@ class LocalHostDirectory:
                     )
             checkpoint()
             after = _directory_stat(pinned)
+            current = self.observe(self.path)
+            if (after.st_dev, after.st_ino) != (self.device, self.inode) or (
+                current.device,
+                current.inode,
+            ) != (self.device, self.inode):
+                raise ConcurrentModificationError(
+                    "The observed Host directory was replaced"
+                )
             if (
                 self._from_stat(self.path, after) != self
                 or before.st_ctime_ns != after.st_ctime_ns
-                or self.observe(self.path) != self
+                or current != self
             ):
-                raise ConcurrentModificationError(
+                issue = ConcurrentModificationError(
                     "The Host directory changed while being listed"
                 )
+                if on_issue is None:
+                    raise issue
+                on_issue(self.path, issue)
         return tuple(sorted(entries, key=lambda item: str(item.path).casefold()))
 
 
@@ -166,6 +195,8 @@ def _pin_directory(path: Path) -> Generator[Path | int]:
 
 @contextmanager
 def _pin_windows_directory(path: Path) -> Generator[None]:
+    if sys.platform != "win32":
+        raise OSError("Windows directory handles are unavailable on this Host")
     import ctypes
     from ctypes import wintypes
 

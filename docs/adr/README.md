@@ -154,3 +154,8 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0079: Prepare native packages with explicit store gates](0079-prepare-native-packages-with-explicit-store-gates.md)
 - [ADR-0080: Distribute iOpenPod under GPLv3 or later](0080-distribute-iopenpod-under-gplv3-or-later.md)
 - [ADR-0081: Require user-installed command-line media tools](0081-require-user-installed-media-tools.md)
+- [ADR-0082: Tolerate Host Media Scan source churn](0082-tolerate-host-media-scan-source-churn.md)
+- [ADR-0083: Tolerate Host-native media variants during preparation](0083-tolerate-host-native-media-variants.md)
+- [ADR-0084: Keep optional media analysis out of Sync gates](0084-keep-optional-media-analysis-out-of-sync-gates.md)
+- [ADR-0085: Preserve positional playback sidecars during Sync](0085-preserve-positional-playback-sidecars-during-sync.md)
+- [ADR-0086: Prepare bounded stills for oversized Photos](0086-prepare-bounded-stills-for-oversized-photos.md)

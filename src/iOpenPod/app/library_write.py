@@ -49,10 +49,21 @@ class LibraryPreparationRequest:
 
 @dataclass(frozen=True, slots=True)
 class WriteProgress:
-    """An entered stage, not proof that the stage completed successfully."""
+    """An entered stage, not proof that the stage completed successfully.
+
+    ``completed`` and ``total`` describe the current stage only. They are
+    optional because validation and database phases do not always have a useful
+    item count. ``current_item`` is a human-readable identity for the item
+    most recently started or completed by the stage; it is deliberately not a
+    permission-bearing path.
+    """
 
     phase: str
     message: str
+    completed: int | None = None
+    total: int | None = None
+    current_item: str = ""
+    unit: str = ""
 
 
 @dataclass(frozen=True, slots=True)

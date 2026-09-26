@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from PySide6.QtCore import Qt
 
 from iOpenPod.app.host_media_library import (
@@ -191,6 +192,25 @@ def _sync(path: Path, *, size: int = 100, modified: int = 1_000) -> SyncDetails:
         source_format="mp3",
         ipod_format="mp3",
         was_transcoded=False,
+    )
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_prior_sync_path_still_matches_when_acoustic_analysis_is_unavailable(
+    tmp_path: Path, changed: bool
+) -> None:
+    path = tmp_path / "silent-video.mp4"
+    track, source = _host_track(
+        path, track_id=100, fingerprint=None, size=101 if changed else 100
+    )
+    plan = prepare_sync_plan(
+        _host_library((track,), (), (source,)),
+        _ipod_library((_ipod_track(track_id=1, fingerprint="", sync=_sync(path)),)),
+        _ipod_snapshot(1),
+    )
+    assert len(plan.items) == 1
+    assert plan.items[0].action is (
+        SyncPlanAction.UPDATE if changed else SyncPlanAction.UNCHANGED
     )
 
 

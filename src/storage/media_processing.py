@@ -50,7 +50,7 @@ class MediaToolError(StorageOperationError):
 class MediaTools:
     ffmpeg: HostPath
     ffprobe: HostPath
-    fpcalc: HostPath
+    fpcalc: HostPath | None
     encoders: frozenset[str]
 
 
@@ -227,7 +227,7 @@ def discover_media_tools(*, checkpoint: Callable[[], None]) -> MediaTools:
     """Resolve all required executables before beginning a Sync preparation batch."""
     found: dict[str, HostPath] = {}
     missing: list[str] = []
-    for name in ("ffmpeg", "ffprobe", "fpcalc"):
+    for name in ("ffmpeg", "ffprobe"):
         checkpoint()
         path = shutil.which(name)
         if path is None:
@@ -237,12 +237,11 @@ def discover_media_tools(*, checkpoint: Callable[[], None]) -> MediaTools:
     if missing:
         raise MediaToolError(
             "media.tools_missing",
-            f"Required media tools are missing: {', '.join(missing)}. Install FFmpeg (including FFprobe) and Chromaprint's fpcalc, add their executable folders to PATH, then restart iOpenPod and retry Sync. No device changes have been made.",
+            f"Required media tools are missing: {', '.join(missing)}. Install FFmpeg (including FFprobe), add its executable folder to PATH, then restart iOpenPod and retry these Tracks. No device changes have been made by media preparation.",
         )
-    for name in ("ffprobe", "fpcalc"):
-        run_media_tool(
-            found[name], ("-version",), checkpoint=checkpoint, timeout_seconds=15
-        )
+    run_media_tool(
+        found["ffprobe"], ("-version",), checkpoint=checkpoint, timeout_seconds=15
+    )
     output = run_media_tool(
         found["ffmpeg"],
         ("-hide_banner", "-encoders"),
@@ -254,7 +253,9 @@ def discover_media_tools(*, checkpoint: Callable[[], None]) -> MediaTools:
         for line in output.stdout.decode("utf-8", errors="replace").splitlines()
         if (match := re.match(r"\s*[VAS][A-Z.]{5}\s+(\S+)\s", line))
     )
-    return MediaTools(found["ffmpeg"], found["ffprobe"], found["fpcalc"], encoders)
+    return MediaTools(
+        found["ffmpeg"], found["ffprobe"], find_media_tool("fpcalc"), encoders
+    )
 
 
 def find_media_tool(name: str) -> HostPath | None:

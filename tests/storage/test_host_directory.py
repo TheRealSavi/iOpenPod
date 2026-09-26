@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from storage import ConcurrentModificationError, HostPath, UnsafeFilesystemPathError
+from storage import (
+    ConcurrentModificationError,
+    HostPath,
+    StorageError,
+    UnsafeFilesystemPathError,
+)
 from storage.host_directory import HostEntryKind, LocalHostDirectory
 from storage.host_input import LocalHostFile
 
@@ -109,6 +114,34 @@ def test_directory_change_during_listing_rejects_partial_results(
 
     with pytest.raises(ConcurrentModificationError):
         observed.list_entries(checkpoint=change)
+
+
+def test_best_effort_listing_reports_churn_without_losing_readable_entries(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "first.bin").write_bytes(b"first")
+    observed = LocalHostDirectory.observe(HostPath(tmp_path))
+    (tmp_path / "late.bin").write_bytes(b"late")
+    changed = observed.modified_ns + 2_000_000_000
+    os.utime(tmp_path, ns=(changed, changed))
+    issues: list[OSError | StorageError] = []
+    entries = observed.list_entries(
+        checkpoint=lambda: None, on_issue=lambda path, error: issues.append(error)
+    )
+    assert {entry.path.path.name for entry in entries} == {"first.bin", "late.bin"}
+    assert issues
+
+
+def test_best_effort_listing_still_rejects_a_replaced_directory(tmp_path: Path) -> None:
+    root = tmp_path / "selected"
+    root.mkdir()
+    observed = LocalHostDirectory.observe(HostPath(root))
+    root.rename(tmp_path / "original")
+    root.mkdir()
+    with pytest.raises(ConcurrentModificationError):
+        observed.list_entries(
+            checkpoint=lambda: None, on_issue=lambda path, error: None
+        )
 
 
 def test_listing_cannot_follow_directory_swap_after_pinning(tmp_path: Path) -> None:

@@ -29,7 +29,7 @@ iPod ecosystem this project learns from and hopes to continue.
 Thank you to **DJShott** for designing and contributing the application icon and
 offering it for future iOpenPod updates. It is used with permission; the creator's
 statement and asset-specific scope are preserved in
-[`DJShott-icon.txt`](src\iOpenPod\assets\icons\DJShott-icon.txt).
+[`DJShott-icon.txt`](src/iOpenPod/assets/icons/DJShott-icon.txt).
 
 ## The wider community
 

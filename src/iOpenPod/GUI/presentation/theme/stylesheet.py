@@ -578,7 +578,9 @@ QRadioButton:disabled {{
 }}
 
 QProgressDialog#libraryExportProgress QProgressBar,
-QProgressBar#syncScanProgress {{
+QProgressBar#syncScanProgress,
+QProgressBar#syncExecutionOverallProgress,
+QProgressBar#syncExecutionProgress {{
     min-height: 10px;
     max-height: 10px;
     color: {tokens.text};
@@ -589,9 +591,74 @@ QProgressBar#syncScanProgress {{
 }}
 
 QProgressDialog#libraryExportProgress QProgressBar::chunk,
-QProgressBar#syncScanProgress::chunk {{
+QProgressBar#syncScanProgress::chunk,
+QProgressBar#syncExecutionOverallProgress::chunk,
+QProgressBar#syncExecutionProgress::chunk {{
     background-color: {tokens.accent};
     border-radius: 4px;
+}}
+
+QFrame#syncExecutionStages,
+QFrame#syncExecutionPanel {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QLabel#syncExecutionStage1,
+QLabel#syncExecutionStage2,
+QLabel#syncExecutionStage3,
+QLabel#syncExecutionStage4,
+QLabel#syncExecutionStage5,
+QLabel#syncExecutionStage6 {{
+    color: {tokens.text_secondary};
+    font-size: {typography.small_pt:g}pt;
+    padding: {LAYOUT.space_2xs}px;
+}}
+
+QLabel#syncExecutionStage1[state="current"],
+QLabel#syncExecutionStage2[state="current"],
+QLabel#syncExecutionStage3[state="current"],
+QLabel#syncExecutionStage4[state="current"],
+QLabel#syncExecutionStage5[state="current"],
+QLabel#syncExecutionStage6[state="current"] {{
+    color: {tokens.accent};
+    font-weight: 700;
+}}
+
+QLabel#syncExecutionStage1[state="complete"],
+QLabel#syncExecutionStage2[state="complete"],
+QLabel#syncExecutionStage3[state="complete"],
+QLabel#syncExecutionStage4[state="complete"],
+QLabel#syncExecutionStage5[state="complete"],
+QLabel#syncExecutionStage6[state="complete"] {{
+    color: {tokens.success};
+}}
+
+QLabel#syncExecutionStage {{
+    color: {tokens.text};
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#syncExecutionStageSummary,
+QLabel#syncExecutionProgressSummary,
+QLabel#syncExecutionEta {{
+    color: {tokens.text_secondary};
+}}
+
+QLabel#syncExecutionItem {{
+    color: {tokens.text_secondary};
+    font-size: {typography.small_pt:g}pt;
+}}
+
+QPlainTextEdit#syncExecutionActivity {{
+    color: {tokens.text_secondary};
+    background-color: {tokens.surface_alt};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_control}px;
+    padding: {LAYOUT.space_xs}px;
 }}
 
 QMessageBox QLabel {{

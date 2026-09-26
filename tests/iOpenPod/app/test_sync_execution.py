@@ -10,7 +10,7 @@ import json
 import re
 import shutil
 from collections.abc import Callable
-from contextlib import AbstractContextManager, ExitStack, nullcontext
+from contextlib import ExitStack
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -60,16 +60,13 @@ from iOpenPod.app.sync_execution import (
     _draft,  # pyright: ignore[reportPrivateUsage]
     _PreparedTrack,  # pyright: ignore[reportPrivateUsage]
     _song,  # pyright: ignore[reportPrivateUsage]
-    _validate_plan,  # pyright: ignore[reportPrivateUsage]
     preview_playlist_sync,
 )
 from iOpenPod.app.sync_plan import (
     SyncPlan,
     SyncPlanAction,
     SyncPlanItem,
-    host_path_identity,
     prepare_sync_plan,
-    select_sync_plan,
 )
 from iPodDB.library import (
     AudioEncoding,
@@ -89,9 +86,18 @@ from iPodDB.library import (
     playlist_entries,
     prepared_audio,
 )
-from storage import DevicePath, HostPath, capture_host_file
+from storage import (
+    DevicePath,
+    FilesystemSession,
+    FlushResult,
+    HostPath,
+    StorageOperationError,
+    TransactionRecovery,
+    TransactionState,
+    capture_host_file,
+)
 from storage.host_input import LocalHostFile
-from storage.media_processing import MediaTools
+from storage.media_processing import MediaToolError, MediaTools
 
 
 class _AvailableTools(MediaTranscoder):
@@ -168,6 +174,153 @@ def test_photo_creates_verified_library_files_and_sync_provenance(
         device.coordinator.close()
 
 
+def test_large_animated_photo_converts_and_matches_again_after_reload(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        path = tmp_path / "animation.gif"
+        Image.new("RGB", (80, 60), "red").save(
+            path,
+            save_all=True,
+            append_images=[Image.new("RGB", (80, 60), "blue")],
+            duration=100,
+        )
+        # Oversized container without putting a large binary fixture in the repo.
+        with path.open("r+b") as stream:
+            stream.truncate(65 * 1024 * 1024)
+        facts = LocalHostFile.observe(HostPath(path))
+        with path.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        base = _photo_host(tmp_path)
+        host = replace(
+            base,
+            snapshot=replace(
+                base.snapshot,
+                photos=PhotoLibrary(
+                    photos=(
+                        Photo(
+                            1,
+                            representations=(
+                                PhotoRepresentation(
+                                    PhotoRepresentationKind.FULL_RESOLUTION,
+                                    0,
+                                    str(path),
+                                    0,
+                                    facts.size_bytes,
+                                    80,
+                                    60,
+                                ),
+                            ),
+                        ),
+                    )
+                ),
+            ),
+            sources=(
+                HostMediaSource(
+                    facts.path,
+                    HostMediaFileKind.PHOTO,
+                    facts.size_bytes,
+                    facts.modified_ns,
+                    content_sha256=digest,
+                ),
+            ),
+        )
+        result = _Executor(device.coordinator, transcoder=_MissingTools()).execute(
+            _request(device, host),
+            lambda _: None,
+            Event(),
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None and result.helper is not None
+        synced = result.helper.images[0]
+        assert synced.sync is not None and synced.sync.was_transcoded
+        assert synced.sync.host_content_sha256 == digest
+        assert synced.content_sha256 != digest
+        assert str(synced.path).endswith(".png")
+        with Image.open(device.root / str(synced.path)) as image:
+            assert image.size == (80, 60) and image.convert("RGB").getpixel((0, 0)) == (
+                255,
+                0,
+                0,
+            )
+        assert path.stat().st_size == facts.size_bytes
+        reloaded = device.coordinator.scan_ipod_media(
+            result.active, lambda _: None, Event()
+        )
+        plan = prepare_sync_plan(host, reloaded, result.active.library)
+        assert (
+            next(item for item in plan.items if item.host_path == str(path)).action
+            is SyncPlanAction.UNCHANGED
+        )
+        assert any(issue.code == "sync.photo_converted" for issue in result.issues)
+        changed = replace(
+            host, sources=(replace(host.sources[0], content_sha256="0" * 64),)
+        )
+        changed_plan = prepare_sync_plan(changed, reloaded, result.active.library)
+        assert (
+            next(
+                item for item in changed_plan.items if item.host_path == str(path)
+            ).action
+            is SyncPlanAction.ATTENTION
+        )
+    finally:
+        device.coordinator.close()
+
+
+def test_restoration_cleanup_failure_has_truthful_result_and_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        finalize = FilesystemSession.finalize_transaction
+
+        def fail_cleanup(
+            session: FilesystemSession, recovery: TransactionRecovery
+        ) -> FlushResult:
+            if recovery.state is TransactionState.RESTORED:
+                raise StorageOperationError("Simulated cleanup failure")
+            return finalize(session, recovery)
+
+        monkeypatch.setattr(FilesystemSession, "finalize_transaction", fail_cleanup)
+        events: list[WriteProgress] = []
+
+        def progress(event: WriteProgress) -> None:
+            events.append(event)
+            if event.phase == "save.storage.publishing":
+                raise RuntimeError("Simulated publication interruption")
+
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            _request(device, _host(tmp_path, "Good")),
+            progress,
+            Event(),
+        )
+        assert result.status is SyncExecutionStatus.RECOVERY_REQUIRED
+        assert any(
+            issue.code == "sync.restored_cleanup_pending" for issue in result.issues
+        )
+        assert not any(
+            issue.code == "sync.recovery_required" for issue in result.issues
+        )
+        assert any(event.phase == "save.recovery.inspect" for event in events)
+        assert any(event.phase == "save.recovery.restoring" for event in events)
+        assert any(event.phase == "save.recovery.cleanup" for event in events)
+        device.assert_original()
+        monkeypatch.setattr(FilesystemSession, "finalize_transaction", finalize)
+
+        def no_second_rollback(*args: object, **kwargs: object) -> None:
+            pytest.fail("Verified restoration must not be repeated for cleanup")
+
+        monkeypatch.setattr(
+            FilesystemSession, "restore_transaction", no_second_rollback
+        )
+        device.coordinator.recover_sync_journal(result.recovery_path)
+        assert not (device.root / result.recovery_path).exists()
+    finally:
+        device.coordinator.close()
+
+
 def test_photo_update_removes_unshared_old_original_after_library_publication(
     tmp_path: Path,
 ) -> None:
@@ -220,8 +373,9 @@ def test_photo_update_removes_unshared_old_original_after_library_publication(
 
 class _MissingTools(_AvailableTools):
     def preflight(self, *, checkpoint: Callable[[], None]) -> MediaTools:
-        raise ValueError(
-            "FFmpeg, FFprobe and fpcalc are missing. Install them and retry."
+        raise MediaToolError(
+            "media.tools_missing",
+            "FFmpeg and FFprobe are missing. Install them and retry.",
         )
 
 
@@ -236,6 +390,7 @@ class _Executor(SyncExecutor):
         track: Track,
         tools: MediaTools,
         checkpoint: Callable[[], None],
+        activity: Callable[[str], None],
     ) -> _PreparedTrack:
         del tools
         checkpoint()
@@ -417,9 +572,11 @@ def test_add_and_playlist_publish_before_successful_sync_history(
         request = _request(device, host)
         helper = device.root / str(LIBRARY_SYNC_HELPER_PATH)
         observed_phases: list[str] = []
+        observed_progress: list[WriteProgress] = []
 
         def progress(event: WriteProgress) -> None:
             observed_phases.append(event.phase)
+            observed_progress.append(event)
             if "sync.helper" not in observed_phases:
                 assert not helper.exists()
 
@@ -452,6 +609,20 @@ def test_add_and_playlist_publish_before_successful_sync_history(
         assert observed_phases.index("save.storage.committed") < observed_phases.index(
             "sync.helper"
         )
+        track_progress = [
+            event for event in observed_progress if event.phase == "sync.prepare"
+        ]
+        assert track_progress[0].completed == 0
+        assert track_progress[0].total == 1
+        assert track_progress[-1].completed == 1
+        assert track_progress[-1].current_item == "New song"
+        storage_progress = next(
+            event
+            for event in observed_progress
+            if event.phase == "save.storage.publishing"
+        )
+        assert storage_progress.total is not None
+        assert storage_progress.current_item
         assert result.recovery_path == ""
         assert not tuple(device.root.glob(".iopenpod-recovery/*/transaction.json"))
     finally:
@@ -544,9 +715,44 @@ def test_missing_tools_fail_before_device_mutation(tmp_path: Path) -> None:
             request, lambda _: None, Event()
         )
         assert result.status is SyncExecutionStatus.FAILED
-        assert "FFmpeg, FFprobe and fpcalc" in result.issues[-1].detail
+        assert "FFmpeg and FFprobe" in result.issues[-1].detail
         device.assert_original()
         assert not (device.root / str(LIBRARY_SYNC_HELPER_PATH)).exists()
+    finally:
+        device.coordinator.close()
+
+
+def test_missing_audio_tools_do_not_block_photo_only_sync(tmp_path: Path) -> None:
+    device = build_device(tmp_path)
+    try:
+        request = _request(device, _photo_host(tmp_path))
+        result = SyncExecutor(device.coordinator, transcoder=_MissingTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert len(result.completed) == 1
+    finally:
+        device.coordinator.close()
+
+
+def test_missing_audio_tools_allow_independent_photos_in_a_mixed_sync(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _host(tmp_path, "Unavailable audio")
+        photos = _photo_host(tmp_path)
+        host = replace(
+            host,
+            snapshot=replace(host.snapshot, photos=photos.snapshot.photos),
+            sources=(*host.sources, *photos.sources),
+        )
+        result = SyncExecutor(device.coordinator, transcoder=_MissingTools()).execute(
+            _request(device, host), lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.PARTIAL, result.issues
+        assert len(result.completed) == 1
+        assert result.active is not None and result.active.library.photos is not None
     finally:
         device.coordinator.close()
 
@@ -693,7 +899,10 @@ def test_duplicate_review_action_is_rejected_before_preparation(tmp_path: Path) 
     any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe", "fpcalc")),
     reason="Sync media tools required",
 )
-def test_real_aac_passes_through_full_sync_without_reencoding(tmp_path: Path) -> None:
+@pytest.mark.parametrize("fingerprint", ["100,2,3", None])
+def test_real_aac_passes_through_full_sync_without_reencoding(
+    tmp_path: Path, fingerprint: str | None
+) -> None:
     device = build_device(tmp_path)
     try:
         source = tmp_path / "real.m4a"
@@ -719,14 +928,32 @@ def test_real_aac_passes_through_full_sync_without_reencoding(tmp_path: Path) ->
                     HostMediaFileKind.AUDIO,
                     observed.size_bytes,
                     observed.modified_ns,
-                    "100,2,3",
+                    fingerprint,
                 ),
             ),
             (),
             HostMediaCacheStats(),
         )
+        from iOpenPod.app.sync_plan import host_path_identity, select_sync_plan
+
+        request = _request(device, host)
+        request = replace(
+            request,
+            plan=select_sync_plan(
+                request.plan,
+                selected_host_paths=frozenset({host_path_identity(str(source))}),
+                selected_ipod_removals=frozenset(),
+            ),
+        )
+        events: list[WriteProgress] = []
         result = SyncExecutor(device.coordinator).execute(
-            _request(device, host), lambda _: None, Event()
+            request, events.append, Event()
+        )
+        assert any(
+            e.current_item == "Real audio"
+            and "Inspecting" in e.message
+            and e.completed == 0
+            for e in events
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None
@@ -740,6 +967,18 @@ def test_real_aac_passes_through_full_sync_without_reencoding(tmp_path: Path) ->
         assert result.helper is not None
         synced = next(track for track in result.helper.tracks if track.sync is not None)
         assert synced.sync is not None and synced.sync.was_transcoded is False
+        assert synced.acoustic_fingerprint == (fingerprint or "")
+        reloaded = device.coordinator.scan_ipod_media(
+            result.active, lambda _: None, Event()
+        )
+        assert any(track.sync == synced.sync for track in reloaded.tracks)
+        repeated = prepare_sync_plan(host, reloaded, result.active.library)
+        assert (
+            next(
+                item for item in repeated.items if item.host_path == str(source)
+            ).action
+            is SyncPlanAction.UNCHANGED
+        )
     finally:
         device.coordinator.close()
 
@@ -855,8 +1094,11 @@ class _HostCleanupFailureExecutor(_Executor):
         track: Track,
         tools: MediaTools,
         checkpoint: Callable[[], None],
+        activity: Callable[[str], None],
     ) -> _PreparedTrack:
-        result = super()._prepare_one(request, item, source, track, tools, checkpoint)
+        result = super()._prepare_one(
+            request, item, source, track, tools, checkpoint, activity
+        )
 
         def cleanup_failure() -> None:
             raise OSError("Temporary Host staging was held open by another process")
@@ -899,7 +1141,11 @@ def test_completed_cleanup_with_unconfirmed_flush_does_not_offer_missing_recover
             else device.coordinator.finalize_sync_success
         )
 
-        def flush_pending(expected: object, path: str) -> None:
+        def flush_pending(
+            expected: object,
+            path: str,
+            _progress: Callable[[WriteProgress], None] | None = None,
+        ) -> None:
             assert expected is request.source or expected is device.active
             cleanup(device.active, path)
             raise SyncCleanupCompletedError(
@@ -1136,6 +1382,75 @@ def test_preview_preserves_excluded_update_correlation_and_duplicate_entries(
         device.coordinator.close()
 
 
+@pytest.mark.parametrize("playlists", [False, True])
+def test_unavailable_unchanged_host_source_does_not_block_independent_add(
+    tmp_path: Path, playlists: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _host(tmp_path, "Already synced", "New song", playlists=playlists)
+        request = _request(device, host, update=True)
+        retained = request.ipod.tracks[0]
+        assert retained.sync is not None
+        source = host.sources[0]
+        ipod = replace(
+            request.ipod,
+            tracks=(
+                replace(
+                    retained,
+                    acoustic_fingerprint=source.acoustic_fingerprint or "",
+                    sync=replace(
+                        retained.sync,
+                        host_size_bytes=source.size_bytes,
+                        host_modified_ns=source.modified_ns,
+                    ),
+                ),
+                *request.ipod.tracks[1:],
+            ),
+        )
+        plan = prepare_sync_plan(host, ipod, device.active.library)
+        request = replace(
+            request,
+            ipod=ipod,
+            reconcile_playlists=playlists,
+            plan=SyncPlan(
+                tuple(
+                    item
+                    for item in plan.items
+                    if item.action is not SyncPlanAction.REMOVE
+                )
+            ),
+        )
+        assert any(
+            item.action is SyncPlanAction.UNCHANGED for item in request.plan.items
+        )
+        Path(source.path).unlink()
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is (
+            SyncExecutionStatus.PARTIAL if playlists else SyncExecutionStatus.SUCCESS
+        ), result.issues
+        assert result.active is not None
+        assert any(track.title == "New song" for track in result.active.library.tracks)
+        assert next(
+            track
+            for track in result.active.library.tracks
+            if track.track_id == retained.track_id
+        ) == next(
+            track
+            for track in device.active.library.tracks
+            if track.track_id == retained.track_id
+        )
+        assert result.playlist_change_count == 0
+        assert (
+            any(issue.code == "sync.playlist_source_changed" for issue in result.issues)
+            is playlists
+        )
+    finally:
+        device.coordinator.close()
+
+
 @pytest.mark.parametrize("with_media", [False, True])
 def test_stale_playlist_source_skips_reviewed_playlist_but_allows_safe_media(
     tmp_path: Path, with_media: bool
@@ -1279,143 +1594,6 @@ def test_prepared_silent_video_uses_motion_duration_without_audio_sample_rate(
         assert song.source.media.content is MediaContent.VIDEO
         assert song.track.metadata.location.endswith(".m4v")
         assert len(Path(song.track.metadata.location).stem) == 4
-    finally:
-        device.coordinator.close()
-
-
-def test_selected_silent_video_add_survives_execution_plan_validation(
-    tmp_path: Path,
-) -> None:
-    device = build_device(tmp_path)
-    try:
-        path = tmp_path / "silent-video.mp4"
-        path.write_bytes(b"video without an audio stream")
-        observed = LocalHostFile.observe(HostPath(path))
-        track = Track(
-            1,
-            "Silent video",
-            "Artist",
-            "Videos",
-            1_000,
-            media_types=(MediaType.VIDEO,),
-            metadata=TrackMetadata(location=str(path)),
-        )
-        host = HostMediaLibrary(
-            LibrarySnapshot(tracks=(track,)),
-            (
-                HostMediaSource(
-                    observed.path,
-                    HostMediaFileKind.VIDEO,
-                    observed.size_bytes,
-                    observed.modified_ns,
-                    acoustic_fingerprint=None,
-                ),
-            ),
-            (),
-            HostMediaCacheStats(),
-        )
-        ipod = _ipod(device)
-        comparison = prepare_sync_plan(host, ipod, device.active.library)
-        plan = select_sync_plan(
-            comparison,
-            selected_host_paths=frozenset({host_path_identity(str(path))}),
-            selected_ipod_removals=frozenset(),
-        )
-        assert plan.items[0].action is SyncPlanAction.ADD
-
-        _validate_plan(SyncExecutionRequest(plan, host, ipod, device.active, 1, 1))
-    finally:
-        device.coordinator.close()
-
-
-def test_silent_video_add_does_not_require_unavailable_sync_provenance(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    device = build_device(tmp_path)
-    try:
-        path = tmp_path / "silent-video.mp4"
-        path.write_bytes(b"video without an audio stream")
-        observed = LocalHostFile.observe(HostPath(path))
-        track = Track(
-            1,
-            "Silent video",
-            "Artist",
-            "Videos",
-            1_000,
-            media_types=(MediaType.VIDEO,),
-            metadata=TrackMetadata(location=str(path)),
-        )
-        host = HostMediaLibrary(
-            LibrarySnapshot(tracks=(track,)),
-            (
-                HostMediaSource(
-                    observed.path,
-                    HostMediaFileKind.VIDEO,
-                    observed.size_bytes,
-                    observed.modified_ns,
-                    acoustic_fingerprint=None,
-                ),
-            ),
-            (),
-            HostMediaCacheStats(),
-        )
-        ipod = _ipod(device)
-        comparison = prepare_sync_plan(host, ipod, device.active.library)
-        plan = select_sync_plan(
-            comparison,
-            selected_host_paths=frozenset({host_path_identity(str(path))}),
-            selected_ipod_removals=frozenset(),
-        )
-        request = SyncExecutionRequest(plan, host, ipod, device.active, 1, 1)
-        with capture_host_file(HostPath(path), checkpoint=lambda: None) as captured:
-            inspection = _parse(
-                json.dumps(
-                    {
-                        "format": {
-                            "format_name": "mov",
-                            "size": str(observed.size_bytes),
-                        },
-                        "streams": [
-                            {
-                                "index": 0,
-                                "codec_type": "video",
-                                "codec_name": "h264",
-                                "duration": "1.5",
-                                "bit_rate": "800000",
-                                "disposition": {"attached_pic": 0},
-                            }
-                        ],
-                    }
-                ).encode(),
-                captured,
-            )
-            prepared = PreparedTranscode(
-                captured.snapshot,
-                inspection,
-                VideoEncoding.MP4,
-                captured.fingerprint,
-                True,
-            )
-
-            def prepare_for_test(
-                _self: MediaTranscoder,
-                *_args: object,
-                **_kwargs: object,
-            ) -> AbstractContextManager[PreparedTranscode]:
-                return nullcontext(prepared)
-
-            monkeypatch.setattr(MediaTranscoder, "prepare", prepare_for_test)
-            result = SyncExecutor(
-                device.coordinator, transcoder=MediaTranscoder()
-            )._prepare_one(  # pyright: ignore[reportPrivateUsage]
-                request,
-                plan.items[0],
-                host.sources[0],
-                track,
-                cast("MediaTools", None),
-                lambda: None,
-            )
-        assert result.provenance is None
     finally:
         device.coordinator.close()
 

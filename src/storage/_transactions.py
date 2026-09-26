@@ -44,6 +44,8 @@ from storage.transactions import (
     FileContent,
     FilePrecondition,
     StorageTransaction,
+    TransactionActivity,
+    TransactionActivityPhase,
     TransactionDurabilityPendingError,
     TransactionFailureFacts,
     TransactionInterruptedError,
@@ -66,6 +68,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _activity(
+    callback: Callable[[TransactionActivity], None] | None,
+    phase: TransactionActivityPhase,
+    completed: int = 0,
+    total: int | None = None,
+    path: DevicePath | None = None,
+) -> None:
+    if callback is not None:
+        callback(TransactionActivity(phase, completed, total, path))
+
+
 def _fingerprint(
     session: FilesystemSession, path: DevicePath
 ) -> FileFingerprint | None:
@@ -77,9 +90,15 @@ def _content(fingerprint: FileFingerprint | None) -> FileContent | None:
 
 
 def _check_preconditions(
-    session: FilesystemSession, files: tuple[FilePrecondition, ...]
+    session: FilesystemSession,
+    files: tuple[FilePrecondition, ...],
+    *,
+    activity: Callable[[TransactionActivity], None] | None = None,
 ) -> None:
-    for file in files:
+    for index, file in enumerate(files):
+        _activity(
+            activity, TransactionActivityPhase.RECHECKING, index, len(files), file.path
+        )
         if _fingerprint(session, file.path) != file.fingerprint:
             raise FilePreconditionError(
                 f"Transaction source or destination changed: {file.path}"
@@ -616,6 +635,7 @@ def execute(
     *,
     checkpoint: Callable[[], None] | None,
     progress: Callable[[TransactionProgress], None] | None,
+    activity: Callable[[TransactionActivity], None] | None = None,
 ) -> TransactionResult:
     if plan.recovery_material is not None:
         return _execute_external(
@@ -687,9 +707,10 @@ def execute(
                     checkpoint=checkpoint,
                 ).fingerprint
             )
-        _check_preconditions(session, _preconditions(plan))
+        _check_preconditions(session, _preconditions(plan), activity=activity)
         journal = replace(journal, state=TransactionState.PREPARED)
         fingerprint = _persist(session, path, journal, fingerprint)
+        _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
         notify(TransactionState.PREPARED, 0)
         if checkpoint is not None:
@@ -697,6 +718,13 @@ def execute(
         # Recheck the entire staged set after the final caller checkpoint, so a
         # changed later file cannot leave an earlier file already published.
         for index, write in enumerate(plan.writes):
+            _activity(
+                activity,
+                TransactionActivityPhase.VERIFYING_STAGED,
+                index,
+                len(plan.writes),
+                write.path,
+            )
             if write.expected is not None:
                 _expected_content(
                     session, _backup(root, index), _content(write.expected)
@@ -705,9 +733,10 @@ def execute(
                 raise FilePreconditionError(
                     "A transaction stage changed before publication"
                 )
-        _check_preconditions(session, _preconditions(plan))
+        _check_preconditions(session, _preconditions(plan), activity=activity)
         journal = replace(journal, state=TransactionState.PUBLISHING)
         fingerprint = _persist(session, path, journal, fingerprint)
+        _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
         started = True
         for index, write in enumerate(plan.writes):
@@ -725,7 +754,14 @@ def execute(
                 write.modified_ns,
             )
             notify(TransactionState.PUBLISHING, index + 1, write.path)
-        for write in plan.writes:
+        for index, write in enumerate(plan.writes):
+            _activity(
+                activity,
+                TransactionActivityPhase.VERIFYING_WRITES,
+                index,
+                len(plan.writes),
+                write.path,
+            )
             _expected_file(
                 session,
                 write.path,
@@ -742,8 +778,15 @@ def execute(
                 create_parents=False,
             )
             notify(TransactionState.PUBLISHING, index + 1, removal.path)
-        _check_preconditions(session, plan.dependencies)
+        _check_preconditions(session, plan.dependencies, activity=activity)
         for index, entry in enumerate(journal.entries):
+            _activity(
+                activity,
+                TransactionActivityPhase.VERIFYING_RECOVERY,
+                index,
+                len(journal.entries),
+                entry.path,
+            )
             _expected_file(
                 session,
                 entry.path,
@@ -752,12 +795,16 @@ def execute(
             )
             if entry.before is not None:
                 _expected_content(session, _backup(root, index), entry.before)
+        _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
         journal = replace(journal, state=TransactionState.COMMITTED)
         _persist(session, path, journal, fingerprint)
+        _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
         notify(TransactionState.COMMITTED, len(journal.entries))
-        return TransactionResult(inspect(session, path), _flush_result(flushes))
+        return TransactionResult(
+            inspect(session, path, activity=activity), _flush_result(flushes)
+        )
     except Exception as error:
         logger.debug(
             "Storage transaction interrupted journal=%s publication_started=%s",
@@ -807,10 +854,23 @@ def finalize_committed(session: FilesystemSession, path: DevicePath) -> FlushRes
     writer lease and exact journal fingerprint bind this cleanup to that marker.
     This is cleanup authority only; restoration still requires full inspection.
     """
+    return _finalize_terminal(session, path, TransactionState.COMMITTED)
+
+
+def finalize_restored(session: FilesystemSession, path: DevicePath) -> FlushResult:
+    """Clean a verified restoration marker without another media inspection."""
+    return _finalize_terminal(session, path, TransactionState.RESTORED)
+
+
+def _finalize_terminal(
+    session: FilesystemSession,
+    path: DevicePath,
+    state: TransactionState,
+) -> FlushResult:
     journal, fingerprint = _read(session, path)
-    if journal.state is not TransactionState.COMMITTED:
+    if journal.state is not state:
         raise FilePreconditionError(
-            "Only a verified committed transaction can be cleaned up"
+            f"Only a verified {state.value} transaction can be cleaned up"
         )
     _require_complete_flush(
         session.flush(),
@@ -831,18 +891,27 @@ def finalize_committed(session: FilesystemSession, path: DevicePath) -> FlushRes
     )
 
 
-def inspect(session: FilesystemSession, path: DevicePath) -> TransactionRecovery:
+def inspect(
+    session: FilesystemSession,
+    path: DevicePath,
+    *,
+    activity: Callable[[TransactionActivity], None] | None = None,
+) -> TransactionRecovery:
     journal, fingerprint = _read(session, path)
-    files = tuple(
-        FilePrecondition(p, _fingerprint(session, p))
-        for p in (
-            *(e.path for e in journal.entries),
-            *(d.path for d in journal.dependencies),
-        )
+    paths = (
+        *(e.path for e in journal.entries),
+        *(d.path for d in journal.dependencies),
     )
+    observed: list[FilePrecondition] = []
+    for index, target in enumerate(paths):
+        _activity(
+            activity, TransactionActivityPhase.INSPECTING, index, len(paths), target
+        )
+        observed.append(FilePrecondition(target, _fingerprint(session, target)))
+    files = tuple(observed)
     if session.fingerprint(path) != fingerprint:
         raise FilePreconditionError("Transaction journal changed during inspection")
-    _check_preconditions(session, files)
+    _check_preconditions(session, files, activity=activity)
     return TransactionRecovery(
         path,
         fingerprint,
@@ -1152,6 +1221,7 @@ def restore(
     recovery_material: TransactionRecoveryMaterial | None,
     checkpoint: Callable[[], None] | None,
     progress: Callable[[TransactionProgress], None] | None,
+    activity: Callable[[TransactionActivity], None] | None = None,
 ) -> TransactionResult:
     if checkpoint is not None:
         checkpoint()
@@ -1166,7 +1236,7 @@ def restore(
     )
     if tuple(f.path for f in recovery.files) != expected_paths:
         raise FilePreconditionError("Recovery must capture every target and dependency")
-    _check_preconditions(session, recovery.files)
+    _check_preconditions(session, recovery.files, activity=activity)
     if journal.recovery_material_identity:
         return _restore_external(
             session,
@@ -1190,6 +1260,13 @@ def restore(
                 f"An unchanged transaction dependency was modified: {dependency.path}"
             )
     for index, entry in enumerate(journal.entries):
+        _activity(
+            activity,
+            TransactionActivityPhase.VERIFYING_RECOVERY,
+            index,
+            len(journal.entries),
+            entry.path,
+        )
         observed = current[entry.path]
         if _matches_file(
             observed,
@@ -1217,7 +1294,7 @@ def restore(
             raise FilePreconditionError(
                 "Recovery destination for new content already exists"
             )
-    _check_preconditions(session, recovery.files)
+    _check_preconditions(session, recovery.files, activity=activity)
     observation = session._revalidate(write=True)  # pyright: ignore[reportPrivateUsage]
     unit = observation.volume.capabilities.allocation_unit_size
     required = max(
@@ -1234,6 +1311,7 @@ def restore(
     try:
         journal = replace(journal, state=TransactionState.RESTORING)
         fingerprint = _persist(session, path, journal, fingerprint)
+        _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes = [session.flush()]
         for completed, index in enumerate(reversed(range(len(journal.entries))), 1):
             entry = journal.entries[index]
@@ -1280,20 +1358,38 @@ def restore(
                         entry.path,
                     )
                 )
-        for entry in journal.entries:
+        for index, entry in enumerate(journal.entries):
+            _activity(
+                activity,
+                TransactionActivityPhase.VERIFYING_WRITES,
+                index,
+                len(journal.entries),
+                entry.path,
+            )
             _expected_file(
                 session,
                 entry.path,
                 entry.before,
                 entry.before_modified_ns,
             )
-        for dependency in journal.dependencies:
+        for index, dependency in enumerate(journal.dependencies):
+            _activity(
+                activity,
+                TransactionActivityPhase.CHECKING_DEPENDENCIES,
+                index,
+                len(journal.dependencies),
+                dependency.path,
+            )
             _expected_content(session, dependency.path, dependency.content)
+        _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
         journal = replace(journal, state=TransactionState.RESTORED)
         _persist(session, path, journal, fingerprint)
+        _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
-        return TransactionResult(inspect(session, path), _flush_result(flushes))
+        return TransactionResult(
+            inspect(session, path, activity=activity), _flush_result(flushes)
+        )
     except Exception as error:
         logger.debug(
             "Storage transaction restoration interrupted journal=%s",

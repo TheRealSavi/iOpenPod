@@ -79,11 +79,45 @@ def test_all_missing_tools_are_reported_together(
         return None
 
     monkeypatch.setattr(shutil, "which", missing_tool)
-    with pytest.raises(MediaToolError, match="ffmpeg, ffprobe, fpcalc") as error:
+    with pytest.raises(MediaToolError, match="ffmpeg, ffprobe") as error:
         MediaTranscoder().preflight(checkpoint=lambda: None)
     assert error.value.code == "media.tools_missing"
     assert "PATH" in str(error.value)
     assert "No device changes" in str(error.value)
+
+
+def test_fpcalc_is_not_a_dependency_of_media_preparation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native = shutil.which
+    if not native("ffmpeg") or not native("ffprobe"):
+        pytest.skip("FFmpeg and FFprobe are required")
+
+    def without_fpcalc(name: str) -> str | None:
+        return None if name == "fpcalc" else native(name)
+
+    monkeypatch.setattr(shutil, "which", without_fpcalc)
+    assert MediaTranscoder().preflight(checkpoint=lambda: None).fpcalc is None
+
+
+def test_multiple_audio_editions_select_default_and_remux_compatible_audio(
+    tmp_path: Path, profile: DeviceProfile
+) -> None:
+    observed = MediaInspector().inspect(
+        source(tmp_path, "tone.m4a"), checkpoint=lambda: None
+    )
+    audio = observed.audio_streams[0]
+    observed = replace(
+        observed,
+        streams=(
+            replace(audio, index=4, default=False),
+            replace(audio, index=8, default=True),
+        ),
+    )
+    assert compatible_audio(observed, profile) is None
+    plan = resolve_transcode(observed, profile, TranscodeSettings(), frozenset())
+    assert plan.output_arguments == ("-map", "0:8", "-c:a", "copy", "-vn")
+    assert "default" in plan.warnings[0]
 
 
 @pytest.mark.parametrize("filename", ["tone.mp3", "tone.m4a", "lossless.m4a"])
@@ -179,6 +213,29 @@ def test_encoder_options_and_auto_policy_use_only_available_encoders(
             ),
             frozenset(("aac",)),
         )
+
+
+def test_audio_toolbox_aac_does_not_receive_native_aac_profile_option(
+    tmp_path: Path, profile: DeviceProfile
+) -> None:
+    inspection = MediaInspector().inspect(
+        source(tmp_path, "tone.wav"), checkpoint=lambda: None
+    )
+
+    plan = resolve_transcode(
+        inspection,
+        profile,
+        TranscodeSettings(
+            lossless_to_lossy=True,
+            lossy_encoder=LossyEncoder.AAC_AT,
+            bitrate_mode=BitrateMode.CBR,
+        ),
+        frozenset(("aac_at",)),
+    )
+
+    assert "aac_at" in plan.output_arguments
+    assert "-aac_at_mode" in plan.output_arguments
+    assert "-profile:a" not in plan.output_arguments
 
 
 def test_normalization_only_downsamples_above_44100_and_wav_setting_controls_passthrough(
@@ -370,6 +427,40 @@ def test_video_and_audio_are_converted_together_and_fully_decoded(
             TranscodeSettings(),
             frozenset(),
         ).requires_transcode
+
+
+def test_video_with_multiple_streams_selects_marked_defaults(
+    tmp_path: Path, video_profile: DeviceProfile
+) -> None:
+    video_inspection = MediaInspector().inspect(
+        source(tmp_path, "source.mkv"), checkpoint=lambda: None
+    )
+    audio_inspection = MediaInspector().inspect(
+        source(tmp_path, "tone.wav"), checkpoint=lambda: None
+    )
+    video = video_inspection.video_streams[0]
+    audio = audio_inspection.audio_streams[0]
+    observed = replace(
+        video_inspection,
+        streams=(
+            replace(video, index=10, default=False),
+            replace(video, index=11, default=True),
+            replace(audio, index=12, default=False),
+            replace(audio, index=13, default=True),
+        ),
+    )
+
+    plan = resolve_transcode(
+        observed,
+        video_profile,
+        TranscodeSettings(),
+        frozenset(("libx264", "aac")),
+    )
+
+    assert plan.output_arguments[:2] == ("-map", "0:11")
+    assert "0:13" in plan.output_arguments
+    assert any("selected the default video stream" in w for w in plan.warnings)
+    assert any("selected the default audio stream" in w for w in plan.warnings)
 
 
 def test_video_is_rejected_for_an_ipod_without_video_support(

@@ -32,10 +32,20 @@ from storage.host_input import LocalHostFile, resolve_local_file_reference
         "file:///C:/song.mp3:secret",
         "file:///tmp/song%00.mp3",
         "file:///tmp/song.mp3?command=run",
-        "C:relative.mp3",
+        pytest.param(
+            "C:relative.mp3",
+            marks=pytest.mark.skipif(
+                os.name != "nt", reason="drive-relative syntax is Windows-specific"
+            ),
+        ),
         "NUL.mp3",
         "aux/song.mp3",
-        "nested/track.mp3:stream",
+        pytest.param(
+            "nested/track.mp3:stream",
+            marks=pytest.mark.skipif(
+                os.name != "nt", reason="colon is valid in a POSIX filename"
+            ),
+        ),
         "bad\x01.mp3",
         "file:relative.mp3",
     ],
@@ -58,14 +68,31 @@ def test_resolves_local_paths_and_uris_without_expanding_shell_syntax(
     source = HostPath(tmp_path / "Mix.m3u")
     target = tmp_path / "Artist Name" / "Song #1.mp3"
     assert resolve_local_file_reference(target.as_uri(), source) == HostPath(target)
-    assert resolve_local_file_reference(
+    windows_style_reference = resolve_local_file_reference(
         r'"Artist Name\Song #1.mp3"', source
-    ) == HostPath(target)
+    )
+    expected_windows_style_reference = (
+        tmp_path / "Artist Name" / "Song #1.mp3"
+        if os.name == "nt"
+        else tmp_path / "Artist Name\\Song #1.mp3"
+    )
+    assert windows_style_reference == HostPath(expected_windows_style_reference)
     assert resolve_local_file_reference("literal%20name.mp3", source) == HostPath(
         tmp_path / "literal%20name.mp3"
     )
     assert resolve_local_file_reference("$HOME/song.mp3", source) == HostPath(
         tmp_path / "$HOME/song.mp3"
+    )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="colon is not valid in a Windows filename")
+def test_resolves_colon_in_a_native_posix_filename(tmp_path: Path) -> None:
+    source = HostPath(tmp_path / "Mix.m3u")
+    target = tmp_path / "3. IGF ¯\\_(ツ)_:¯.wav"
+
+    assert resolve_local_file_reference(target.name, source) == HostPath(target)
+    assert resolve_local_file_reference("song:part.wav", source) == HostPath(
+        tmp_path / "song:part.wav"
     )
 
 

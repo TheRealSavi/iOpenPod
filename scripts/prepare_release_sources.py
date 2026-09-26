@@ -181,10 +181,12 @@ def main() -> None:
     sources = read_manifest(args.manifest)
     args.output.mkdir(parents=True, exist_ok=True)
     operation = fetch if args.download else verify
+
+    def prepare_source(source: Source) -> Path:
+        return operation(source, args.output)
+
     with ThreadPoolExecutor(max_workers=6) as executor:
-        archives = tuple(
-            executor.map(lambda source: operation(source, args.output), sources)
-        )
+        archives = tuple(executor.map(prepare_source, sources))
     if args.notices is not None:
         args.notices.mkdir(parents=True, exist_ok=True)
         records = [

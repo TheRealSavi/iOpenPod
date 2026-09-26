@@ -23,6 +23,7 @@ from iOpenPod.app.services.device_coordinator import (
     SyncCleanupCompletedError,
     SyncRecoveryRequiredError,
     SyncRecoveryRestoredError,
+    SyncRestoredCleanupPendingError,
 )
 from iOpenPod.app.sync_execution import (
     SyncExecutionRequest,
@@ -108,6 +109,18 @@ class _RecoveryWork(QRunnable):
     def run(self) -> None:
         try:
             active = self.recover(self.path)
+        except SyncRestoredCleanupPendingError as error:
+            result = SyncExecutionResult(
+                SyncExecutionStatus.RECOVERY_REQUIRED,
+                issues=(
+                    WriteIssue(
+                        "sync.restored_cleanup_pending",
+                        "The previous Library is restored. Retry recovery to finish cleaning its temporary files.",
+                        detail=str(error),
+                    ),
+                ),
+                recovery_path=self.path,
+            )
         except SyncRecoveryRestoredError as error:
             result = SyncExecutionResult(
                 SyncExecutionStatus.CANCELLED,

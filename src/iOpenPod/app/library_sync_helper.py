@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 LIBRARY_SYNC_HELPER_PATH = DevicePath("iPod_Control/iOpenPod/library-sync-helper.json")
 _IPOD_CONTROL_PATH = DevicePath("iPod_Control")
 _PHOTOS_PATH = DevicePath("Photos")
-_FORMAT_VERSION = 1
+_FORMAT_VERSION = 3
 _MAX_HELPER_BYTES = 64 * 1024 * 1024
 _MAX_RECORDS = 250_000
 
@@ -79,12 +79,15 @@ class SyncDetails:
     source_format: str
     ipod_format: str
     was_transcoded: bool
+    host_content_sha256: str = ""
 
     def __post_init__(self) -> None:
         if not self.last_synced_at.strip():
             raise ValueError("Sync Details require a last-synced timestamp")
         if self.host_size_bytes < 0 or self.host_modified_ns < 0:
             raise ValueError("Sync Details require non-negative Host file facts")
+        if self.host_content_sha256:
+            _require_sha256(self.host_content_sha256, "Host content fingerprint")
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +105,12 @@ class IPodTrackFingerprint:
             raise ValueError("An iPod Track fingerprint needs valid Track identities")
         if self.size_bytes < 0 or self.modified_ns < 0:
             raise ValueError("An iPod Track fingerprint needs non-negative file facts")
-        normalize_fpcalc_fingerprint(self.acoustic_fingerprint)
+        if self.acoustic_fingerprint:
+            normalize_fpcalc_fingerprint(self.acoustic_fingerprint)
+        elif self.sync is None:
+            raise ValueError(
+                "A Track without an acoustic fingerprint needs committed Sync Details"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,6 +350,7 @@ class IPodMediaScanner:
         fingerprinted = 0
         copied_fingerprints: dict[tuple[str, int, int], str] = {}
         image_fingerprints: dict[tuple[str, int, int], str] = {}
+        fingerprinting_unavailable = False
 
         for index, track in enumerate(library.tracks, start=1):
             checkpoint()
@@ -364,6 +373,8 @@ class IPodMediaScanner:
                     identity = (str(track_path), entry.size, entry.modified_ns)
                     acoustic = copied_fingerprints.get(identity)
                     if acoustic is None:
+                        if fingerprinting_unavailable:
+                            continue
                         acoustic = self._fingerprint_track(
                             session,
                             track_path,
@@ -394,9 +405,18 @@ class IPodMediaScanner:
                     entry.modified_ns,
                 ):
                     tracks.pop()
-                    raise LibrarySyncHelperError(
+                    raise ValueError(
                         "the media file changed while it was fingerprinted"
                     )
+            except FpcalcUnavailableError as error:
+                fingerprinting_unavailable = True
+                issues.append(
+                    IPodMediaScanIssue(
+                        "Acoustic matching",
+                        f"Acoustic matching is unavailable; existing Sync Details and independent items remain usable. {error}",
+                    )
+                )
+                label = "Continuing without acoustic matching…"
             except (FpcalcError, OSError, StorageError, ValueError) as error:
                 issues.append(
                     IPodMediaScanIssue(
@@ -458,7 +478,7 @@ class IPodMediaScanner:
                     entry.modified_ns,
                 ):
                     images.pop()
-                    raise LibrarySyncHelperError(
+                    raise ValueError(
                         "the image file changed while it was fingerprinted"
                     )
             except (OSError, StorageError, ValueError) as error:
@@ -527,7 +547,7 @@ class IPodMediaScanner:
         _emit(
             progress,
             IPodMediaScanStage.COMPLETE,
-            len(tracks) + len(images),
+            len(library.tracks) + len(photos),
             len(library.tracks)
             + (0 if library.photos is None else len(library.photos.photos)),
             "iPod media scan complete.",
@@ -548,23 +568,17 @@ class IPodMediaScanner:
         path: DevicePath,
         checkpoint: CancellationCheck,
     ) -> str:
-        try:
-            with capture_device_file(
-                session,
-                path,
-                checkpoint=checkpoint,
-                temporary_directory=(
-                    HostPath(self._temporary_directory)
-                    if self._temporary_directory is not None
-                    else None
-                ),
-            ) as captured:
-                return self._fingerprinter.fingerprint(
-                    captured,
-                    checkpoint=checkpoint,
-                )
-        except FpcalcUnavailableError as error:
-            raise LibrarySyncHelperError(str(error)) from error
+        with capture_device_file(
+            session,
+            path,
+            checkpoint=checkpoint,
+            temporary_directory=(
+                HostPath(self._temporary_directory)
+                if self._temporary_directory is not None
+                else None
+            ),
+        ) as captured:
+            return self._fingerprinter.fingerprint(captured, checkpoint=checkpoint)
 
 
 def _load_helper(
@@ -739,7 +753,7 @@ def _decode_helper(payload: bytes) -> _LoadedHelper:
         "images",
         "catalog_sha256",
     }
-    if set(document) != expected or document["version"] != _FORMAT_VERSION:
+    if set(document) != expected or document["version"] not in (1, 2, _FORMAT_VERSION):
         raise ValueError("Sync helper fields or version are unsupported")
     tracks_raw = _array(document["tracks"], "tracks")
     images_raw = _array(document["images"], "images")
@@ -800,6 +814,7 @@ def _sync_document(value: SyncDetails | None) -> dict[str, object] | None:
         "source_format": value.source_format,
         "ipod_format": value.ipod_format,
         "was_transcoded": value.was_transcoded,
+        "host_content_sha256": value.host_content_sha256,
     }
 
 
@@ -820,15 +835,14 @@ def _track_from_document(value: object) -> IPodTrackFingerprint:
     database_track_id = _decimal_identifier(
         row["database_track_id"], "database_track_id"
     )
+    acoustic = _text(row["acoustic_fingerprint"], "acoustic_fingerprint")
     return IPodTrackFingerprint(
         database_track_id=database_track_id,
         track_id=_positive_integer(row["track_id"], "track_id"),
         path=DevicePath(_text(row["path"], "path")),
         size_bytes=_nonnegative_integer(row["size_bytes"], "size_bytes"),
         modified_ns=_nonnegative_integer(row["modified_ns"], "modified_ns"),
-        acoustic_fingerprint=normalize_fpcalc_fingerprint(
-            _text(row["acoustic_fingerprint"], "acoustic_fingerprint")
-        ),
+        acoustic_fingerprint=normalize_fpcalc_fingerprint(acoustic) if acoustic else "",
         sync=_sync_from_document(row["sync"]),
     )
 
@@ -870,6 +884,11 @@ def _sync_from_document(value: object) -> SyncDetails | None:
             "source_format",
             "ipod_format",
             "was_transcoded",
+            *(
+                {"host_content_sha256"}
+                if isinstance(value, dict) and "host_content_sha256" in value
+                else set()
+            ),
         },
     )
     was_transcoded = row["was_transcoded"]
@@ -885,6 +904,9 @@ def _sync_from_document(value: object) -> SyncDetails | None:
         source_format=_text(row["source_format"], "source_format"),
         ipod_format=_text(row["ipod_format"], "ipod_format"),
         was_transcoded=was_transcoded,
+        host_content_sha256=_text(
+            row.get("host_content_sha256", ""), "host_content_sha256"
+        ),
     )
 
 

@@ -356,6 +356,51 @@ def test_new_sidecar_blocks_removal_before_publication(
     device.assert_original()
 
 
+def test_pending_play_counts_are_remapped_with_the_library_and_restored(
+    device: Device,
+) -> None:
+    from tests.iPodDB.library.test_playback_sidecars import play_counts
+
+    tracks = device.active.library.tracks
+    rows = tuple(bytes([i + 1]) * 28 for i in range(len(tracks)))
+    sidecar = device.root / "iPod_Control/iTunes/Play Counts"
+    original = play_counts(rows)
+    sidecar.write_bytes(original)
+    review = device.prepare(_without_first(device), delete=True)
+    assert review.result.prepared is not None, review.result.issues
+    assert sidecar.read_bytes() == original
+    saved = device.save(review)
+    assert saved.active is not None, saved.issues
+    assert sidecar.read_bytes()[96:] == b"".join(rows[1:])
+    device.restore(saved.recovery_path)
+    assert sidecar.read_bytes() == original
+
+
+@pytest.mark.parametrize("phase", ["after_review", "save.storage.prepared"])
+def test_changed_captured_play_counts_stop_publication(
+    device: Device, phase: str
+) -> None:
+    from tests.iPodDB.library.test_playback_sidecars import play_counts
+
+    sidecar = device.root / "iPod_Control/iTunes/Play Counts"
+    original = play_counts(tuple(b"\x01" * 28 for _ in device.active.library.tracks))
+    sidecar.write_bytes(original)
+    review = device.prepare(_without_first(device), delete=True)
+    assert review.result.prepared is not None, review.result.issues
+    changed = original[:-1] + b"\x02"
+    if phase == "after_review":
+        sidecar.write_bytes(changed)
+
+    def progress(event: WriteProgress) -> None:
+        if event.phase == phase:
+            sidecar.write_bytes(changed)
+
+    saved = device.save(review, progress)
+    assert saved.active is None
+    assert sidecar.read_bytes() == changed
+    device.assert_original()
+
+
 def test_changed_thumbnail_blocks_whole_save(device: Device) -> None:
     review = device.prepare(_cover_snapshot(device), cover=True)
     assert review.result.prepared is not None, review.result.issues
@@ -370,6 +415,24 @@ def test_changed_thumbnail_blocks_whole_save(device: Device) -> None:
     assert (
         device.root / "iPod_Control/iTunes/iTunesDB"
     ).read_bytes() == device.original["iPod_Control/iTunes/iTunesDB"]
+
+
+def test_appledouble_artwork_churn_is_not_a_library_dependency(device: Device) -> None:
+    name = next(name for name in device.original if name.endswith(".ithmb"))
+    actual = device.root / name
+    companion = actual.with_name("._" + actual.name)
+    companion.write_bytes(b"macOS metadata before publication")
+    review = device.prepare(_cover_snapshot(device), cover=True)
+    assert review.result.prepared is not None, review.result.issues
+
+    def progress(event: WriteProgress) -> None:
+        if event.phase == "save.storage.publishing":
+            companion.write_bytes(b"macOS metadata replaced during publication")
+
+    saved = device.save(review, progress)
+    assert saved.active is not None, saved.issues
+    assert companion.read_bytes() == b"macOS metadata replaced during publication"
+    device.restore(saved.recovery_path)
 
 
 def test_copied_review_has_no_save_authority(device: Device) -> None:

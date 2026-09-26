@@ -128,6 +128,22 @@ def test_embedded_cover_is_not_a_movie_and_chapters_keep_exact_positions(
     ] == ["Opening", "Closing"]
 
 
+def test_missing_quicktime_chapter_reference_does_not_hide_valid_audio(
+    tmp_path: Path, inspector: MediaInspector
+) -> None:
+    data = bytearray(
+        base64.decodebytes((FIXTURES / "chapters-cover.m4a.b64").read_bytes())
+    )
+    # Author a stale tref/chap reference like chapter-split M4B containers.
+    marker = data.index(b"chap")
+    data[marker + 4 : marker + 8] = (9999).to_bytes(4, "big")
+    path = tmp_path / "stale-chapter.m4b"
+    path.write_bytes(data)
+    result = inspector.inspect(HostPath(path), checkpoint=lambda: None)
+    assert result.audio_streams[0].codec == "aac"
+    assert result.audio_streams[0].duration_seconds is not None
+
+
 @pytest.mark.parametrize(
     ("filename", "sample_entry"),
     [("multi-track.mov", "text"), ("multi-track.m4v", "tx3g")],
@@ -288,7 +304,12 @@ def test_malformed_inspection_output_is_rejected(
             5,
             4096,
         ),
-        ("import sys; sys.stderr.write('decode error')", "media.probe_failed", 5, 4096),
+        (
+            "import sys; sys.stderr.write('decode error'); sys.exit(1)",
+            "media.probe_failed",
+            5,
+            4096,
+        ),
         ("raise SystemExit(3)", "media.probe_failed", 5, 4096),
     ],
 )

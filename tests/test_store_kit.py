@@ -152,7 +152,7 @@ def test_old_msix_cannot_borrow_new_license_material(
     hashab = tmp_path / "src/iPodDB/iTunesDB/writer/calcHashAB.NOTICE"
     hashab.parent.mkdir(parents=True)
     hashab.write_bytes(b"current HASHAB notice")
-    packaged = dict.fromkeys(files, b"current")
+    packaged: dict[str, bytes] = dict.fromkeys(files, b"current")
     packaged["calcHashAB.NOTICE"] = b"current HASHAB notice"
     if changed == "LICENSES/DJShott-icon.txt":
         del packaged[changed]

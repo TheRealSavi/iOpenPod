@@ -32,6 +32,8 @@ from storage import (
     StorageError,
     StorageOperationError,
     StorageTransaction,
+    TransactionActivity,
+    TransactionActivityPhase,
     TransactionDurabilityPendingError,
     TransactionInterruptedError,
     TransactionPreparedError,
@@ -178,6 +180,110 @@ def test_transaction_publishes_in_order_and_restores_all_originals(
         3,
         4,
     ]
+
+
+def test_verification_and_recovery_report_files_before_reading_them(
+    tmp_path: Path,
+) -> None:
+    root, _, session = _session(tmp_path)
+    plan = _plan(root, session)
+    events: list[TransactionActivity] = []
+    published = False
+
+    def progress(event: TransactionProgress) -> None:
+        nonlocal published
+        if event.state is TransactionState.PUBLISHING and event.completed == len(
+            plan.writes
+        ):
+            published = True
+
+    def activity(event: TransactionActivity) -> None:
+        events.append(event)
+        if event.phase is TransactionActivityPhase.VERIFYING_WRITES:
+            assert published
+            assert event.path is not None
+            assert session.exists(event.path)
+
+    result = session.execute_transaction(plan, progress=progress, activity=activity)
+    verified = [
+        event
+        for event in events
+        if event.phase is TransactionActivityPhase.VERIFYING_WRITES
+    ]
+    assert tuple(event.path for event in verified) == tuple(
+        write.path for write in plan.writes
+    )
+    assert verified[0].completed == 0
+    assert verified[0].total == len(plan.writes)
+    assert any(
+        event.phase is TransactionActivityPhase.FLUSHING and event.total is None
+        for event in events
+    )
+    events.clear()
+    observed = session.inspect_transaction(
+        result.recovery.journal_path, activity=events.append
+    )
+    assert any(event.phase is TransactionActivityPhase.INSPECTING for event in events)
+    assert any(event.phase is TransactionActivityPhase.RECHECKING for event in events)
+    events.clear()
+    session.restore_transaction(observed, activity=events.append)
+    assert any(
+        event.phase is TransactionActivityPhase.VERIFYING_RECOVERY for event in events
+    )
+    _assert_original(session)
+
+
+def test_cleanup_tolerates_companion_deleted_with_its_data_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _, session = _session(tmp_path)
+    result = session.execute_transaction(_plan(root, session))
+    namespace = root / str(result.recovery.journal_path.parent)
+    data = namespace / "retired-test.bin"
+    companion = namespace / "._retired-test.bin"
+    data.write_bytes(b"retired")
+    companion.write_bytes(b"AppleDouble")
+    unlink = Path.unlink
+
+    def remove_with_companion(path: Path, missing_ok: bool = False) -> None:
+        unlink(path, missing_ok=missing_ok)
+        if path == data:
+            unlink(companion, missing_ok=True)
+
+    # Make the companion appear later in the already captured directory listing.
+    enumerate_entries = session._transaction_namespace_entries  # pyright: ignore[reportPrivateUsage]
+
+    def entries(directory: Path, *, preserved: Path) -> tuple[tuple[Path, bool], ...]:
+        found = enumerate_entries(directory, preserved=preserved)
+        return tuple(sorted(found, key=lambda item: item[0] == companion))
+
+    monkeypatch.setattr(session, "_transaction_namespace_entries", entries)
+    monkeypatch.setattr(Path, "unlink", remove_with_companion)
+    assert session.finalize_transaction(result.recovery).complete
+    assert not namespace.exists()
+
+
+def test_restored_cleanup_uses_verified_marker_and_never_rehashes_media(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _, session = _session(tmp_path)
+    result = session.execute_transaction(_plan(root, session))
+    with pytest.raises(FilePreconditionError, match="verified restored"):
+        session.finalize_restored_transaction(result.recovery.journal_path)
+    restored = session.restore_transaction(result.recovery)
+    fingerprint = session.fingerprint
+
+    def only_journal(path: DevicePath) -> FileFingerprint:
+        assert path == restored.recovery.journal_path
+        return fingerprint(path)
+
+    monkeypatch.setattr(session, "fingerprint", only_journal)
+    assert session.finalize_restored_transaction(
+        restored.recovery.journal_path
+    ).complete
+    _assert_original(session)
 
 
 def test_external_recovery_transaction_restores_verified_host_originals(

@@ -71,6 +71,7 @@ if TYPE_CHECKING:
     from storage.transactions import (
         FileContent,
         StorageTransaction,
+        TransactionActivity,
         TransactionProgress,
         TransactionRecovery,
         TransactionRecoveryMaterial,
@@ -671,19 +672,27 @@ class FilesystemSession:
         *,
         checkpoint: Callable[[], None] | None = None,
         progress: Callable[[TransactionProgress], None] | None = None,
+        activity: Callable[[TransactionActivity], None] | None = None,
     ) -> TransactionResult:
         """Stage, verify and publish one recoverable ordered transaction."""
         from storage._transactions import execute
 
         with self._writer_lease():
             self._revalidate(write=True)
-            return execute(self, plan, checkpoint=checkpoint, progress=progress)
+            return execute(
+                self, plan, checkpoint=checkpoint, progress=progress, activity=activity
+            )
 
-    def inspect_transaction(self, journal_path: DevicePath) -> TransactionRecovery:
+    def inspect_transaction(
+        self,
+        journal_path: DevicePath,
+        *,
+        activity: Callable[[TransactionActivity], None] | None = None,
+    ) -> TransactionRecovery:
         """Capture a read-only observation for explicit, revalidated recovery."""
         from storage._transactions import inspect
 
-        return inspect(self, journal_path)
+        return inspect(self, journal_path, activity=activity)
 
     def read_transaction_state(self, journal_path: DevicePath) -> TransactionState:
         """Read validated journal state without streaming the transaction's files."""
@@ -699,6 +708,14 @@ class FilesystemSession:
             self._revalidate(write=True)
             return finalize_committed(self, journal_path)
 
+    def finalize_restored_transaction(self, journal_path: DevicePath) -> FlushResult:
+        """Clean a durable verified restoration without repeating media reads."""
+        from storage._transactions import finalize_restored
+
+        with self._writer_lease():
+            self._revalidate(write=True)
+            return finalize_restored(self, journal_path)
+
     def restore_transaction(
         self,
         recovery: TransactionRecovery,
@@ -706,6 +723,7 @@ class FilesystemSession:
         recovery_material: TransactionRecoveryMaterial | None = None,
         checkpoint: Callable[[], None] | None = None,
         progress: Callable[[TransactionProgress], None] | None = None,
+        activity: Callable[[TransactionActivity], None] | None = None,
     ) -> TransactionResult:
         """Restore original state only over the exact inspected transaction."""
         from storage._transactions import restore
@@ -718,6 +736,7 @@ class FilesystemSession:
                 recovery_material=recovery_material,
                 checkpoint=checkpoint,
                 progress=progress,
+                activity=activity,
             )
 
     def finalize_transaction(self, recovery: TransactionRecovery) -> FlushResult:
@@ -789,6 +808,12 @@ class FilesystemSession:
                         "A transaction recovery namespace contains an unsafe entry"
                     )
                 flush_parent_directory(child)
+            except FileNotFoundError:
+                # macOS may remove an AppleDouble companion as its data file is
+                # removed. An already absent cleanup entry needs no deletion.
+                # Revalidate the session just as after a successful deletion.
+                self._revalidate(write=True)
+                continue
             except StorageError:
                 raise
             except OSError as error:
@@ -851,6 +876,9 @@ class FilesystemSession:
                     raise UnsafeFilesystemPathError(
                         "A transaction recovery namespace contains an unsafe entry"
                     )
+            except FileNotFoundError:
+                # Enumeration and deletion can race host metadata maintenance.
+                continue
             except StorageError:
                 raise
             except OSError as error:

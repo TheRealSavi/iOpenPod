@@ -46,6 +46,7 @@ from iPodDB.library.photos import (
     encode_photo_thumbnail,
     select_photo_thumbnail,
 )
+from iPodDB.library.playback_sidecars import remap_playback_sidecar
 from iPodDB.library.playlists import (
     Playlist,
     PlaylistEntry,
@@ -200,6 +201,7 @@ __all__ = [
     "prepared_audio",
     "prepared_video",
     "recover_hash72_material",
+    "remap_playback_sidecar",
     "select_photo_thumbnail",
     "smart_operators",
     "smart_playlist_references",

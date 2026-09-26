@@ -3,6 +3,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+from iOpenPod.app.host_media_fingerprint import FpcalcUnavailableError
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
     IPodMediaScanner,
@@ -19,6 +20,43 @@ from iPodDB.library import (
 )
 from storage import AccessMode, FilesystemSession, HostPath, Storage
 from storage.testing import VirtualStoragePlatform
+
+
+def test_missing_fingerprinting_tool_does_not_abort_photos_or_repeat_the_failure(
+    tmp_path: Path,
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    library = _library()
+    second = replace(
+        library.tracks[0],
+        track_id=8,
+        ipod=replace(library.tracks[0].ipod, db_track_id=8)
+        if library.tracks[0].ipod is not None
+        else None,
+    )
+    library = replace(library, tracks=(*library.tracks, second))
+
+    class Missing:
+        calls = 0
+
+        def fingerprint(self, source: HostPath, *, checkpoint: object) -> str:
+            self.calls += 1
+            raise FpcalcUnavailableError("Install fpcalc")
+
+    missing = Missing()
+    with session:
+        result = IPodMediaScanner(missing).scan(
+            session,
+            library,
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+            report_read_only=False,
+        )
+    assert len(result.images) == 1
+    assert len(result.issues) == 1
+    assert missing.calls == 1
 
 
 class _Fingerprinter:

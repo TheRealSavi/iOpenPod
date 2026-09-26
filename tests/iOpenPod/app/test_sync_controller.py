@@ -31,6 +31,7 @@ from iOpenPod.app.services.device_coordinator import (
     SyncCleanupCompletedError,
     SyncRecoveryRequiredError,
     SyncRecoveryRestoredError,
+    SyncRestoredCleanupPendingError,
 )
 from iOpenPod.app.sync_controller import SyncController
 from iOpenPod.app.sync_execution import (
@@ -363,6 +364,31 @@ def test_completed_cleanup_flush_warning_does_not_leave_missing_journal_retry(
         assert controller.result is not None
         assert controller.result.status is SyncExecutionStatus.SUCCESS
         assert "Safely eject" in controller.result.issues[-1].message
+    finally:
+        controller.shutdown()
+
+
+def test_restored_cleanup_failure_keeps_journal_and_reports_restoration_truthfully(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+) -> None:
+    _coordinator, devices, workspace, _ = session
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    path = ".iopenpod-recovery/" + "e" * 32 + "/transaction.json"
+    settings.set_global(PENDING_SYNC_RECOVERY, path)
+
+    def recover(_path: str) -> ActiveIPod:
+        raise SyncRestoredCleanupPendingError("A recovery entry is still in use")
+
+    controller = SyncController(
+        _Execution(), workspace, devices, settings, recovery=recover
+    )
+    try:
+        assert controller.recover()
+        wait_for(lambda: not controller.busy)
+        assert controller.needs_recovery and workspace.locked
+        assert settings.get(PENDING_SYNC_RECOVERY) == path
+        assert controller.result is not None
+        assert controller.result.issues[-1].code == "sync.restored_cleanup_pending"
     finally:
         controller.shutdown()
 

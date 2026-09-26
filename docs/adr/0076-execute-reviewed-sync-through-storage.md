@@ -1,5 +1,9 @@
 # ADR-0076: Execute reviewed Sync through Storage
 
+> ADR-0084 narrows media-tool requirements to affected operations and makes acoustic
+> matching optional for explicit Adds. ADR-0085 preserves positional playback
+> sidecars in the Library transaction.
+
 - Status: Accepted
 - Date: 2026-09-25
 - Extends: ADR-0029, ADR-0030, ADR-0034, ADR-0065, ADR-0066 and ADR-0070
@@ -84,7 +88,8 @@ an interrupted transaction must be recovered first.
 The application persists an outstanding recovery journal location across restarts
 and prevents further device writes until it is restored. Storage still verifies
 device identity and journal contents; a saved location never grants write authority.
-Photos are bounded to 64 MiB source images and a 512 MiB prepared batch, and optional
+Prepared Photo images are bounded to 64 MiB and a 512 MiB prepared batch. ADR-0086
+allows larger Host containers to supply a bounded still image. Optional
 full Rockbox metadata transformations are bounded to 256 MiB per file. Exceeding a
 bound skips the affected item with a remedy rather than risking unbounded memory.
 
@@ -94,6 +99,21 @@ terminal journal and cannot restore the previous Library. An unconfirmed final
 flush after cleanup reports safe-eject guidance without retaining a retry for a
 deleted journal. Discovery checks unfinished journals before selection can repair
 device metadata, including when an interrupted Library is not parseable.
+
+Verified RESTORED markers grant the same narrowly scoped terminal cleanup authority
+as COMMITTED markers. Retrying cleanup after a successful restoration validates the
+device identity, exact journal fingerprint, terminal state, writer lease, and flush;
+it does not repeat restoration or hash all media again. Missing cleanup entries
+are already cleaned, including AppleDouble companions removed by macOS alongside
+their data files. Links, unsafe entries, changed journals, and disconnects still
+fail closed. Artwork capture excludes `._` companions from Library dependencies.
+
+Storage reports file verification, dependency checks, recovery inspection, and
+flush activity separately from durable journal-state events. Sync forwards these
+activities and automatic restoration progress to the GUI, including after a
+cancellation request. Elapsed time and time since the last progress update remain
+visible. A restored Library with pending cleanup is distinguished from a failed
+restoration.
 
 Auto lossy encoding prefers available FDK AAC, AudioToolbox AAC, LAME MP3, then
 native AAC. Manual controls expose supported bitrate modes and codec options.

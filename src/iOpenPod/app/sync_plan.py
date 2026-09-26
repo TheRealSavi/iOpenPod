@@ -162,15 +162,6 @@ def prepare_sync_plan(
     pairs: list[tuple[int, int]] = []
     attention: list[SyncPlanItem] = []
 
-    for index, candidate in enumerate(host_candidates):
-        if candidate.fingerprint is None:
-            host_remaining.discard(index)
-            attention.append(_attention_item(candidate, SyncPlanBasis.MISSING_IDENTITY))
-    for index, candidate in enumerate(ipod_candidates):
-        if candidate.fingerprint is None:
-            ipod_remaining.discard(index)
-            attention.append(_attention_item(candidate, SyncPlanBasis.MISSING_IDENTITY))
-
     _pair_by_prior_path(
         host_candidates,
         ipod_candidates,
@@ -179,6 +170,18 @@ def prepare_sync_plan(
         pairs,
         attention,
     )
+
+    for index in tuple(host_remaining):
+        candidate = host_candidates[index]
+        if candidate.fingerprint is None:
+            host_remaining.discard(index)
+            attention.append(_attention_item(candidate, SyncPlanBasis.MISSING_IDENTITY))
+    for index in tuple(ipod_remaining):
+        candidate = ipod_candidates[index]
+        if candidate.fingerprint is None:
+            ipod_remaining.discard(index)
+            attention.append(_attention_item(candidate, SyncPlanBasis.MISSING_IDENTITY))
+
     _pair_by_content(
         host_candidates,
         ipod_candidates,
@@ -387,7 +390,16 @@ def _paired_item(host: _Candidate, ipod: _Candidate) -> SyncPlanItem:
     same_prior_path = host.path is not None and (
         host_path_identity(host.path) == host_path_identity(sync.host_path_hint)
     )
-    fingerprints_conflict = host.fingerprint != ipod.fingerprint
+    expected_fingerprint = (
+        sync.host_content_sha256
+        if host.media_kind is SyncPlanMediaKind.PHOTO and sync.host_content_sha256
+        else ipod.fingerprint
+    )
+    fingerprints_conflict = (
+        host.fingerprint is not None
+        and expected_fingerprint is not None
+        and host.fingerprint != expected_fingerprint
+    )
     if (
         same_prior_path
         and fingerprints_conflict

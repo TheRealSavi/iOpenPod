@@ -16,6 +16,7 @@ from iPodDB.library import (
     PreparedLyrics,
     SourceFile,
     WriteResources,
+    remap_playback_sidecar,
 )
 from storage import (
     DeviceEntryKind,
@@ -87,13 +88,60 @@ class CapturedLibraryResources:
     media_writes: tuple[TransactionWrite, ...] = ()
 
 
-def pending_sidecars(session: FilesystemSession) -> bool:
+def pending_sidecars(
+    session: FilesystemSession, preserved: tuple[DevicePath, ...] = ()
+) -> bool:
     return any(
-        entry.path.name.casefold().startswith(
-            ("play counts", "otgplaylist", "on-the-go", "itunesstats")
-        )
+        _is_pending_sidecar(entry.path) and entry.path not in preserved
         for entry in session.list_directory(_ITUNES)
     )
+
+
+def _is_pending_sidecar(path: DevicePath) -> bool:
+    name = path.name.casefold()
+    # Backups are not active firmware input.
+    return not name.endswith((".bak", ".backup")) and name.startswith(
+        ("play counts", "otgplaylist", "on-the-go", "itunesstats")
+    )
+
+
+def _capture_sidecars(
+    session: FilesystemSession,
+    request: LibraryPreparationRequest,
+    checkpoint: Callable[[], None],
+) -> tuple[tuple[FilePrecondition, ...], tuple[TransactionWrite, ...]]:
+    original = tuple(t.track_id for t in request.source.library.tracks)
+    desired = tuple(t.track_id for t in request.snapshot.tracks)
+    files: list[FilePrecondition] = []
+    writes: list[TransactionWrite] = []
+    for entry in session.list_directory(_ITUNES):
+        if not _is_pending_sidecar(entry.path):
+            continue
+        checkpoint()
+        snapshot = session.read_snapshot(entry.path, max_bytes=16 * 1024 * 1024)
+        name = entry.path.name.casefold()
+        if name == "play counts" or re.fullmatch(r"otgplaylistinfo(?:_[0-9]+)?", name):
+            try:
+                output = remap_playback_sidecar(snapshot.data, original, desired)
+            except ValueError as error:
+                raise ValueError(
+                    f"Could not preserve {entry.path.name}: {error}"
+                ) from error
+        elif desired[: len(original)] == original:
+            # Appending new Tracks leaves every existing positional reference intact.
+            output = snapshot.data
+        else:
+            raise ValueError(
+                f"{entry.path.name} has an unsupported playback format. Existing Track positions must be retained to preserve it."
+            )
+        files.append(FilePrecondition(entry.path, snapshot.fingerprint))
+        if output != snapshot.data:
+            writes.append(
+                TransactionWrite(
+                    entry.path, output, _content(output), snapshot.fingerprint
+                )
+            )
+    return tuple(files), tuple(writes)
 
 
 def recheck(session: FilesystemSession, files: tuple[FilePrecondition, ...]) -> None:
@@ -138,6 +186,10 @@ def capture(
     inventory: list[FileDependency] = []
     sources: list[SourceFile] = []
     media_writes: list[TransactionWrite] = []
+    if plan.requires_sidecar_inventory:
+        sidecar_files, sidecar_writes = _capture_sidecars(session, request, checkpoint)
+        files.extend(sidecar_files)
+        media_writes.extend(sidecar_writes)
     if len({m.media.track_id for m in request.media}) != len(request.media):
         raise ValueError("Incoming media repeats a Track identity.")
     for incoming in request.media:
@@ -214,7 +266,12 @@ def capture(
     cover_prefixes = tuple(f"f{f.format_id}_" for f in plan.target.cover_formats)
     if plan.requires_artwork_inventory and session.exists(_ARTWORK):
         for entry in session.list_directory(_ARTWORK):
-            if not entry.path.name.casefold().endswith(".ithmb"):
+            if entry.path.name.startswith(
+                "._"
+            ) or not entry.path.name.casefold().endswith(".ithmb"):
+                # AppleDouble companions belong to the host filesystem. macOS
+                # may replace them when we publish their corresponding artwork.
+                # They are neither thumbnail payloads nor Library dependencies.
                 continue
             checkpoint()
             if entry.kind is not DeviceEntryKind.FILE:
@@ -342,9 +399,7 @@ def capture(
         photos=request.photos,
         files=tuple(sources),
         file_inventory=tuple(inventory) if plan.requires_artwork_inventory else None,
-        pending_playback_sidecars=pending_sidecars(session)
-        if plan.requires_sidecar_inventory
-        else None,
+        pending_playback_sidecars=False if plan.requires_sidecar_inventory else None,
     )
     logger.debug(
         "Captured Library resources files=%d artwork_bytes=%d removals=%d",

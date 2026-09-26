@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 
 class IssueSeverity(StrEnum):
+    INFO = "info"
     ERROR = "error"
     WARNING = "warning"
 
@@ -204,8 +205,9 @@ class WriteResources:
     artwork: tuple[ArtworkAsset, ...] = ()
     files: tuple[SourceFile, ...] = ()
     file_inventory: tuple[FileDependency, ...] | None = None
-    # False means there are no pending positional sidecars, established by the
-    # caller's captured inventory. None means the caller has not checked.
+    # False means no unhandled positional sidecars remain: the caller captured
+    # their absence or bound their preservation/remapping to the same transaction.
+    # None means the caller has not checked.
     pending_playback_sidecars: bool | None = None
     lyrics: tuple[PreparedLyrics, ...] = field(default=(), kw_only=True)
     photos: tuple[PreparedPhoto, ...] = field(default=(), kw_only=True)
