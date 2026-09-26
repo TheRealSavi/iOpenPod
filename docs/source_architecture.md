@@ -1174,12 +1174,16 @@ The Library Sync Helper is updated only after verified publication. Device write
 remain sequential; the USB bus is not used for parallel transcoding. See ADR-0066,
 ADR-0067, ADR-0070, and ADR-0076.
 
-The result page exposes item diagnostics, safe cancellation, and distinct Retry
-Recovery and Retry Cleanup actions. Pending recovery survives restarts and blocks
-further writes. Discovery checks unfinished journals before selection repairs
-metadata. Recovery can restore an unreadable Library through a freshly validated
-Storage session. Cleanup accepts only terminal transactions and preserves a
-successful committed Library.
+The result page exposes item diagnostics, safe cancellation, Restore Previous
+Library, Retry Cleanup, and Keep Current Contents. Pending recovery survives
+restarts in device journals, with no Host setting. Discovery lists affected iPods
+without preventing selection of other devices. Selecting an affected iPod requires
+a restore-or-keep choice before metadata repair or Library loading. Recovery can
+restore an unreadable Library through a freshly validated Storage session. Keeping
+current contents retires the journal through Storage after explicit confirmation,
+retains recovery copies, and reloads without metadata repair. An unreadable current
+Library is reported separately from recovery. Cleanup accepts only terminal
+transactions and preserves current contents. See ADR-0089.
 
 Track membership changes capture positional playback sidecars as transaction
 dependencies or replacement writes. iPodDB remaps Play Counts rows and On-The-Go

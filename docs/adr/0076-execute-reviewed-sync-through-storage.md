@@ -3,6 +3,8 @@
 > ADR-0084 narrows media-tool requirements to affected operations and makes acoustic
 > matching optional for explicit Adds. ADR-0085 preserves positional playback
 > sidecars in the Library transaction.
+> ADR-0089 replaces Host recovery hints and mandatory restoration with device-scoped
+> restore-or-keep choices.
 
 - Status: Accepted
 - Date: 2026-09-25

@@ -128,6 +128,11 @@ items can still commit. The verified Library and media publish through Storage;
 successful Sync Details follow the commit. Cancellation and interrupted publication
 have explicit cleanup/recovery results. See ADR-0065 through ADR-0067, ADR-0070,
 and ADR-0076.
+Interrupted Sync recovery is a choice for the selected iPod: restore the previous
+Library or explicitly keep current contents after a warning about incomplete
+changes. Recovery and cleanup are discovered from device journals, never persisted
+as Host settings. Declining restoration retains recovery copies and leaves media
+and databases untouched; unrelated iPods remain usable. See ADR-0089.
 Optional acoustic analysis no longer gates readable Host media or explicit Adds.
 Sync checks media tools only for incoming Tracks and preserves committed Host-path
 provenance independently of Acoustic Fingerprints in Library Sync Helper v3.
@@ -501,6 +506,8 @@ them through narrow interfaces.
   directory.
 - Global settings remember the previously selected iPod by stable Volume Identity.
   This behavior has no separate visible preference.
+- Sync recovery records and retained originals stay on the iPod. They are
+  operational data and do not belong in global settings.
 - Backup Snapshots use the configured backup location, with a platform-appropriate
   application data location as the default.
 - Device-specific settings intended to travel with an iPod are associated with its

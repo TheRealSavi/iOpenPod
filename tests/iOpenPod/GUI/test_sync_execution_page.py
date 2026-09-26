@@ -384,6 +384,41 @@ def test_committed_cleanup_retry_is_distinct_from_restoring_previous_library() -
         APPLICATION.processEvents()
 
 
+@pytest.mark.parametrize(
+    "status", [SyncExecutionStatus.RECOVERY_REQUIRED, SyncExecutionStatus.SUCCESS]
+)
+def test_user_can_keep_current_contents_instead_of_recovery_or_cleanup(
+    status: SyncExecutionStatus,
+) -> None:
+    page = SyncExecutionPage()
+    try:
+        page.show_result(
+            SyncExecutionResult(
+                status,
+                recovery_path=".iopenpod-recovery/" + "a" * 32 + "/transaction.json",
+            )
+        )
+        keep = page.findChild(QPushButton, "keepSyncContents")
+        recover = page.findChild(QPushButton, "recoverSyncExecution")
+        assert keep is not None and recover is not None
+        assert not keep.isHidden() and keep.text() == "Keep Current Contents"
+        requested = QSignalSpy(page.keepContentsRequested)
+        keep.click()
+        assert requested.count() == 1
+        page.begin_keep_contents()
+        assert keep.isHidden() and recover.isHidden()
+        page.show_result(
+            SyncExecutionResult(
+                SyncExecutionStatus.FAILED,
+                issues=(WriteIssue("sync.kept_current", "Current contents kept."),),
+            )
+        )
+        assert keep.isHidden() and recover.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
 def test_playlist_only_completion_reports_the_applied_playlist_count() -> None:
     page = SyncExecutionPage()
     try:

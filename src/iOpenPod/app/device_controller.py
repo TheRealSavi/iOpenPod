@@ -11,7 +11,6 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, 
 
 from iOpenPod.app.core.settings.definitions import (
     LAST_SELECTED_IPOD_VOLUME_ID,
-    PENDING_SYNC_RECOVERY,
 )
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -97,6 +96,7 @@ class DeviceController(QObject):
     ejectStarted = Signal()
     ejectCompleted = Signal(object)
     recoveryRequired = Signal(str)
+    cleanupAvailable = Signal(str)
 
     def __init__(
         self,
@@ -418,7 +418,10 @@ class DeviceController(QObject):
         if operation == DeviceOperation.SELECT and isinstance(result, ActiveIPod):
             self._discovery = self._coordinator.discovery
             self.discoveryChanged.emit(self._discovery)
+            self.set_recovery_required(False)
             self._replace_active_ipod(result)
+            if self._coordinator.sync_cleanup_path:
+                self.cleanupAvailable.emit(self._coordinator.sync_cleanup_path)
             active_volume_id = self._coordinator.active_volume_id
             if active_volume_id is not None:
                 self._settings.set_global(
@@ -446,11 +449,8 @@ class DeviceController(QObject):
             return
         if isinstance(error, SyncRecoveryRequiredError):
             self._pending_automatic_selection = None
+            self._replace_active_ipod(None)
             self.set_recovery_required(True)
-            try:
-                self._settings.set_global(PENDING_SYNC_RECOVERY, error.recovery_path)
-            except Exception:
-                logger.exception("Could not persist the interrupted Sync recovery path")
             self.recoveryRequired.emit(error.recovery_path)
             return
         resolved_operation = (

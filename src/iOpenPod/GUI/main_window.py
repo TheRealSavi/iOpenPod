@@ -159,6 +159,7 @@ class MainWindow(QMainWindow):
             context.settings,
             self,
             recovery=context.device_coordinator.recover_sync_journal,
+            keep_contents=context.device_coordinator.keep_sync_contents,
             cleanup=context.device_coordinator.cleanup_sync_journal,
         )
         context.host_media_controller.progressChanged.connect(
@@ -459,6 +460,9 @@ class MainWindow(QMainWindow):
         self._sync_controller.progressChanged.connect(self._sync_progress_changed)
         self._sync_controller.finished.connect(self._sync_finished)
         self._sync_workspace.execution.recoveryRequested.connect(self._recover_sync)
+        self._sync_workspace.execution.keepContentsRequested.connect(
+            self._keep_sync_contents
+        )
         self._sync_controller.changed.connect(self._refresh_sync_availability)
         self._sync_workspace.selection.changed.connect(self._refresh_playlist_preview)
         self._sync_workspace.playlistReconciliationChanged.connect(
@@ -1411,6 +1415,7 @@ class MainWindow(QMainWindow):
             value.status is SyncExecutionStatus.RECOVERY_REQUIRED
             and self._sync_workspace.stage is not SyncStage.SYNC
         ):
+            self._device_picker.close()
             self._workspaces.setCurrentWidget(self._sync_workspace)
             self._sync_workspace.show_execution()
         self._sync_workspace.execution.show_result(value)
@@ -1424,6 +1429,28 @@ class MainWindow(QMainWindow):
             else self._sync_controller.recover()
         ):
             self._sync_workspace.execution.begin_recovery(cleanup=cleanup)
+        else:
+            QMessageBox.warning(
+                self, self.tr("Recovery Unavailable"), self._sync_controller.last_error
+            )
+
+    def _keep_sync_contents(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            self.tr("Keep Current iPod Contents?"),
+            self.tr(
+                "Keep the iPod's media and databases exactly as they are and stop offering "
+                "this recovery? An interrupted Sync may have left missing files or incomplete "
+                "Library changes. Recovery copies will remain on the iPod for manual recovery, "
+                "but automatic restoration of this transaction will no longer be offered."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if self._sync_controller.keep_current_contents():
+            self._sync_workspace.execution.begin_keep_contents()
         else:
             QMessageBox.warning(
                 self, self.tr("Recovery Unavailable"), self._sync_controller.last_error

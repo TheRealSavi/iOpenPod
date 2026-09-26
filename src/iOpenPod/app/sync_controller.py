@@ -13,14 +13,13 @@ from iOpenPod.app.core.settings.definitions import (
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
     NORMALIZE_TAGS_AFTER_SYNC,
-    PENDING_SYNC_CLEANUP,
-    PENDING_SYNC_RECOVERY,
     ROCKBOX_METADATA_SUPPORT,
     ROTATE_TALL_PHOTOS,
 )
 from iOpenPod.app.core.settings.transcoding import read_transcoder_settings
 from iOpenPod.app.services.device_coordinator import (
     SyncCleanupCompletedError,
+    SyncRecoveryDeclinedError,
     SyncRecoveryRequiredError,
     SyncRecoveryRestoredError,
     SyncRestoredCleanupPendingError,
@@ -166,6 +165,48 @@ class _RecoveryWork(QRunnable):
         self.signals.finished.emit(result)
 
 
+class _KeepContentsWork(QRunnable):
+    def __init__(self, keep: Callable[[str], ActiveIPod], path: str) -> None:
+        super().__init__()
+        self.keep = keep
+        self.path = path
+        self.result: SyncExecutionResult | None = None
+        self.cancelled = Event()
+        self.signals = _Signals()
+
+    def run(self) -> None:
+        active = None
+        path = ""
+        status = SyncExecutionStatus.FAILED
+        code = "sync.kept_current"
+        message = (
+            "Current contents were kept. The interrupted Sync may be incomplete. "
+            "Recovery copies remain beside declined-transaction.json on the iPod. "
+            "Scan again before starting another Sync."
+        )
+        try:
+            active = self.keep(self.path)
+        except SyncRecoveryDeclinedError as error:
+            message = str(error)
+        except Exception as error:
+            status = SyncExecutionStatus.RECOVERY_REQUIRED
+            code = "sync.keep_failed"
+            message = "Could not finish keeping current contents. " + str(error)
+            path = (
+                error.recovery_path
+                if isinstance(error, SyncRecoveryRequiredError)
+                else self.path
+            )
+        result = SyncExecutionResult(
+            status,
+            active=active,
+            recovery_path=path,
+            issues=(WriteIssue(code, message, severity=IssueSeverity.WARNING),),
+        )
+        self.result = result
+        self.signals.finished.emit(result)
+
+
 class _CleanupWork(QRunnable):
     def __init__(
         self, cleanup: Callable[[str], None], previous: SyncExecutionResult
@@ -263,6 +304,7 @@ class SyncController(QObject):
         *,
         recovery: Callable[[str], ActiveIPod] | None = None,
         cleanup: Callable[[str], None] | None = None,
+        keep_contents: Callable[[str], ActiveIPod] | None = None,
     ) -> None:
         super().__init__(parent)
         self._service = service
@@ -271,42 +313,18 @@ class SyncController(QObject):
         self._settings = settings
         self._recover = recovery
         self._cleanup = cleanup
+        self._keep_contents = keep_contents
         self._pool = QThreadPool(self)
         self._pool.setMaxThreadCount(1)
-        self._job: _SyncWork | _RecoveryWork | _CleanupWork | None = None
+        self._job: (
+            _SyncWork | _RecoveryWork | _CleanupWork | _KeepContentsWork | None
+        ) = None
         self._closed = False
         self.result: SyncExecutionResult | None = None
         self.last_error = ""
         devices.activeIPodChanged.connect(self._source_changed)
         devices.recoveryRequired.connect(self._recovery_discovered)
-        pending = settings.get(PENDING_SYNC_RECOVERY)
-        if pending:
-            self.result = SyncExecutionResult(
-                SyncExecutionStatus.RECOVERY_REQUIRED,
-                issues=(
-                    WriteIssue(
-                        "sync.pending_recovery",
-                        "A previous Sync was interrupted. "
-                        "Reconnect the same iPod and choose Retry Recovery before making further changes.",
-                    ),
-                ),
-                recovery_path=pending,
-            )
-            devices.set_recovery_required(True)
-            workspace.set_locked(True)
-        elif cleanup_path := settings.get(PENDING_SYNC_CLEANUP):
-            self.result = SyncExecutionResult(
-                SyncExecutionStatus.SUCCESS,
-                issues=(
-                    WriteIssue(
-                        "sync.cleanup_pending",
-                        "A previous Sync completed but recovery-file cleanup is pending. "
-                        "Reconnect the same iPod and choose Retry Cleanup.",
-                        severity=IssueSeverity.WARNING,
-                    ),
-                ),
-                recovery_path=cleanup_path,
-            )
+        devices.cleanupAvailable.connect(self._cleanup_discovered)
 
     @property
     def busy(self) -> bool:
@@ -339,9 +357,7 @@ class SyncController(QObject):
     ) -> bool:
         self.last_error = ""
         if self.needs_recovery:
-            self.last_error = (
-                "Recover the interrupted Sync before starting another one."
-            )
+            self.last_error = "Restore the interrupted Sync or choose Keep Current Contents before starting another one."
             return False
         if self.needs_cleanup:
             self.last_error = "Choose Retry Cleanup for the previous Sync before starting another one."
@@ -461,8 +477,62 @@ class SyncController(QObject):
         return True
 
     @Slot(object)
-    def _source_changed(self, _value: object) -> None:
+    def _source_changed(self, value: object) -> None:
         self.cancel()
+        if (
+            not self.busy
+            and value is not None
+            and (self.needs_recovery or self.needs_cleanup)
+        ):
+            # A recovery choice belongs to one iPod, not to the whole app.
+            if self.needs_recovery:
+                self._workspace.set_locked(False)
+                self._devices.set_recovery_required(False)
+            self.result = None
+            self.changed.emit()
+
+    def keep_current_contents(self) -> bool:
+        """Apply the user's explicit decision to decline restoration/cleanup."""
+        result = self.result
+        if (
+            self._closed
+            or self.busy
+            or result is None
+            or not result.recovery_path
+            or self._keep_contents is None
+        ):
+            self.last_error = "No recovery choice is available."
+            return False
+        if not self._devices.begin_recovery_operation():
+            self.last_error = "Wait for the current iPod operation to finish."
+            return False
+        self._workspace.set_locked(True)
+        job = _KeepContentsWork(self._keep_contents, result.recovery_path)
+        self._job = job
+        job.signals.finished.connect(
+            self._completed, Qt.ConnectionType.QueuedConnection
+        )
+        self.changed.emit()
+        self._pool.start(job)
+        return True
+
+    @Slot(str)
+    def _cleanup_discovered(self, path: str) -> None:
+        if self.busy or self.needs_recovery:
+            return
+        self.result = SyncExecutionResult(
+            SyncExecutionStatus.SUCCESS,
+            issues=(
+                WriteIssue(
+                    "sync.cleanup_pending",
+                    "A finished transaction has retained recovery files. Retry Cleanup to reclaim space, "
+                    "or keep the current contents and recovery copies.",
+                    severity=IssueSeverity.WARNING,
+                ),
+            ),
+            recovery_path=path,
+        )
+        self.changed.emit()
 
     @Slot(str)
     def _recovery_discovered(self, path: str) -> None:
@@ -473,11 +543,13 @@ class SyncController(QObject):
                 WriteIssue(
                     "sync.pending_recovery",
                     "An interrupted transaction was found. "
-                    "Reconnect the same iPod and choose Retry Recovery before making further changes.",
+                    "Restore the previous Library or choose Keep Current Contents. "
+                    "Keeping current contents may leave the interrupted Sync incomplete.",
                 ),
             ),
             recovery_path=path,
         )
+        self._devices.set_recovery_required(True)
         self._workspace.set_locked(True)
         self.changed.emit()
         if not self._closed:
@@ -508,19 +580,7 @@ class SyncController(QObject):
             )
         self.result = value
         self._devices.set_recovery_required(self.needs_recovery)
-        try:
-            self._settings.set_global(
-                PENDING_SYNC_RECOVERY,
-                value.recovery_path if self.needs_recovery else "",
-            )
-            self._settings.set_global(
-                PENDING_SYNC_CLEANUP,
-                value.recovery_path if self.needs_cleanup else "",
-            )
-            self._settings.sync()
-        except Exception:
-            logger.exception("Could not persist the pending Sync recovery location")
-        if isinstance(job, _RecoveryWork):
+        if isinstance(job, (_RecoveryWork, _KeepContentsWork)):
             self._workspace.active_ipod_changed(value.active)
             self._devices.finish_sync_recovery(value.active)
         elif current and value.active is not None:
@@ -542,7 +602,7 @@ class SyncController(QObject):
         self._pool.waitForDone()
         if self._job is not None and self._job.result is not None:
             # The GUI loop is blocked while waiting, so the queued completion may
-            # not have run. Persist its recovery location before closing the app.
+            # not have run. Publish its final state before closing the app.
             self._completed(self._job.result)
         if self._job is not None:
             self._job = None

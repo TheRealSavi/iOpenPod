@@ -72,6 +72,28 @@ def test_default_global_and_reset_resolution() -> None:
     assert service.source(APPEARANCE_MODE) is SettingSource.DEFAULT
 
 
+def test_legacy_recovery_hints_are_removed_without_changing_preferences(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "settings-v2.json"
+    path.write_text(
+        json.dumps(
+            {
+                APPEARANCE_MODE.key: "dark",
+                "sync/pending-recovery-journal": ".iopenpod-recovery/"
+                + "a" * 32
+                + "/transaction.json",
+                "sync/pending-cleanup-journal": "invalid stale value",
+            }
+        )
+    )
+    store = JsonSettingsStore(AtomicHostFile(path))
+    assert not store.has("sync/pending-recovery-journal")
+    assert not store.has("sync/pending-cleanup-journal")
+    store.sync()
+    assert json.loads(path.read_text()) == {APPEARANCE_MODE.key: "dark"}
+
+
 def test_invalid_persisted_value_falls_back_without_poisoning_settings() -> None:
     store = GlobalSettingsStore()
     store.set(APPEARANCE_MODE.key, "sepia")

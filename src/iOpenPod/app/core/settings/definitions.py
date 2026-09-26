@@ -257,23 +257,6 @@ SPOKEN_WORD_BITRATE = SettingDefinition[int](
 COMPUTE_SOUND_CHECK = SettingDefinition[bool](
     key="sync/compute-sound-check", value_type=bool, default=False
 )
-PENDING_SYNC_RECOVERY = SettingDefinition[str](
-    key="sync/pending-recovery-journal",
-    value_type=str,
-    default="",
-    validator=lambda value: (
-        value == ""
-        or bool(
-            re.fullmatch(r"\.iopenpod-recovery/[0-9a-f]{32}/transaction\.json", value)
-        )
-    ),
-)
-PENDING_SYNC_CLEANUP = SettingDefinition[str](
-    key="sync/pending-cleanup-journal",
-    value_type=str,
-    default="",
-    validator=PENDING_SYNC_RECOVERY.validator,
-)
 NORMALIZE_TAGS_AFTER_SYNC = SettingDefinition[bool](
     key="sync/normalize-tags-after-sync", value_type=bool, default=False
 )

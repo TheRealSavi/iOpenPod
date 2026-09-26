@@ -307,6 +307,9 @@ def _readiness_text(
 ) -> str:
     return {
         DeviceReadiness.READY: dialog.tr("Ready to load"),
+        DeviceReadiness.SYNC_RECOVERY_REQUIRED: dialog.tr(
+            "Select to restore interrupted changes or keep current contents"
+        ),
         DeviceReadiness.UNKNOWN: dialog.tr("Not recognized as a supported iPod"),
         DeviceReadiness.AMBIGUOUS: dialog.tr("More identity information is needed"),
         DeviceReadiness.CONFLICTING: dialog.tr("Device identity information conflicts"),

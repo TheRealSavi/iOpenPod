@@ -1,12 +1,11 @@
 """Execution reserves the UI state, snapshots settings, and publishes safe outcomes."""
 
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from threading import Event
 
 import pytest
 from PySide6.QtTest import QSignalSpy
+from tests.iOpenPod.app.sync_test_support import SyncExecutionStub
 from tests.iOpenPod.app.test_library_write_controller import (
     session as session,
 )
@@ -20,8 +19,6 @@ from tests.iOpenPod.GUI.application_shell_test_support import build_context
 
 from iOpenPod.app.core.settings.definitions import (
     COMPUTE_SOUND_CHECK,
-    PENDING_SYNC_CLEANUP,
-    PENDING_SYNC_RECOVERY,
 )
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
@@ -29,7 +26,6 @@ from iOpenPod.app.device_controller import DeviceController
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
 from iOpenPod.app.library_sync_helper import IPodMediaCacheStats, IPodMediaLibrary
 from iOpenPod.app.library_workspace import LibraryWorkspace
-from iOpenPod.app.library_write import WriteProgress
 from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.models.photo_list_model import PhotoListModel
 from iOpenPod.app.models.track_table_model import TrackTableModel
@@ -42,7 +38,6 @@ from iOpenPod.app.services.device_coordinator import (
 )
 from iOpenPod.app.sync_controller import SyncController
 from iOpenPod.app.sync_execution import (
-    SyncExecutionRequest,
     SyncExecutionResult,
     SyncExecutionStatus,
 )
@@ -54,40 +49,6 @@ from iOpenPod.app.sync_plan import (
     SyncPlanMediaKind,
 )
 from iPodDB.library import LibrarySnapshot, Photo, PhotoLibrary, Playlist
-
-
-class _Execution:
-    def __init__(self) -> None:
-        self.entered = Event()
-        self.release = Event()
-        self.request: SyncExecutionRequest | None = None
-        self.crash = False
-        self.outcome: SyncExecutionResult | None = None
-
-    def execute(
-        self,
-        request: SyncExecutionRequest,
-        progress: Callable[[WriteProgress], None],
-        cancelled: Event,
-    ) -> SyncExecutionResult:
-        self.request = request
-        self.entered.set()
-        progress(WriteProgress("sync.prepare", "Preparing on Host"))
-        assert self.release.wait(5)
-        if self.outcome is not None:
-            return self.outcome
-        if self.crash:
-            raise RuntimeError("fixture failure")
-        if cancelled.is_set():
-            return SyncExecutionResult(SyncExecutionStatus.CANCELLED)
-        return SyncExecutionResult(
-            SyncExecutionStatus.SUCCESS,
-            active=replace(
-                request.source,
-                library=replace(request.source.library, device_name="Synced"),
-            ),
-            completed=request.plan.items,
-        )
 
 
 def _inputs() -> tuple[SyncPlan, HostMediaLibrary, IPodMediaLibrary]:
@@ -117,7 +78,7 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
     workspace.load(active.library)
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     settings.set_global(COMPUTE_SOUND_CHECK, True)
-    service = _Execution()
+    service = SyncExecutionStub()
     controller = SyncController(service, workspace, devices, settings)
     finished = QSignalSpy(controller.finished)
     try:
@@ -189,7 +150,7 @@ def test_committed_sync_refreshes_changed_media(
                 active.database_fingerprint, sha256="b" * 64
             ),
         )
-    service = _Execution()
+    service = SyncExecutionStub()
     service.outcome = SyncExecutionResult(status, active=committed)
     service.release.set()
     controller = SyncController(
@@ -240,7 +201,7 @@ def test_playlist_only_sync_requires_enabled_review_choice(
     host = replace(
         host, snapshot=LibrarySnapshot(playlists=(Playlist(9, "New empty playlist"),))
     )
-    service = _Execution()
+    service = SyncExecutionStub()
     service.release.set()
     controller = SyncController(
         service,
@@ -269,7 +230,7 @@ def test_pending_edits_block_sync_without_discarding_them(
     coordinator, devices, workspace, _ = session
     active = coordinator.active_ipod
     assert active is not None
-    service = _Execution()
+    service = SyncExecutionStub()
     controller = SyncController(
         service,
         workspace,
@@ -294,7 +255,7 @@ def test_cancel_leaves_library_unchanged_and_releases_reservation(
     workspace.load(active.library)
     track_model.reset_tracks(active.library.tracks)
     published = QSignalSpy(devices.activeIPodChanged)
-    service = _Execution()
+    service = SyncExecutionStub()
     controller = SyncController(
         service,
         workspace,
@@ -325,7 +286,7 @@ def test_worker_exception_becomes_visible_failure(
     active = coordinator.active_ipod
     assert active is not None
     workspace.load(active.library)
-    service = _Execution()
+    service = SyncExecutionStub()
     service.crash = True
     service.release.set()
     controller = SyncController(
@@ -345,7 +306,7 @@ def test_worker_exception_becomes_visible_failure(
         controller.shutdown()
 
 
-def test_pending_recovery_survives_restart_and_blocks_writes_until_restored(
+def test_discovered_recovery_blocks_writes_until_restored(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
 ) -> None:
     coordinator, devices, workspace, _ = session
@@ -354,7 +315,7 @@ def test_pending_recovery_survives_restart_and_blocks_writes_until_restored(
     workspace.load(active.library)
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     path = ".iopenpod-recovery/" + "a" * 32 + "/transaction.json"
-    settings.set_global(PENDING_SYNC_RECOVERY, path)
+    pending_recovery = path
     recovered: list[str] = []
 
     def recover(journal: str) -> ActiveIPod:
@@ -362,8 +323,9 @@ def test_pending_recovery_survives_restart_and_blocks_writes_until_restored(
         return active
 
     controller = SyncController(
-        _Execution(), workspace, devices, settings, recovery=recover
+        SyncExecutionStub(), workspace, devices, settings, recovery=recover
     )
+    devices.recoveryRequired.emit(pending_recovery)
     try:
         assert controller.needs_recovery and workspace.locked
         assert not devices.device_writes_allowed
@@ -373,12 +335,11 @@ def test_pending_recovery_survives_restart_and_blocks_writes_until_restored(
         assert recovered == [path]
         assert not controller.needs_recovery and not workspace.locked
         assert devices.device_writes_allowed
-        assert settings.get(PENDING_SYNC_RECOVERY) == ""
     finally:
         controller.shutdown()
 
 
-def test_closing_during_sync_persists_queued_recovery_result(
+def test_closing_during_sync_publishes_queued_recovery_result(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
 ) -> None:
     coordinator, devices, workspace, _ = session
@@ -386,7 +347,7 @@ def test_closing_during_sync_persists_queued_recovery_result(
     assert active is not None
     workspace.load(active.library)
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
-    service = _Execution()
+    service = SyncExecutionStub()
     journal = ".iopenpod-recovery/" + "b" * 32 + "/transaction.json"
     service.outcome = SyncExecutionResult(
         SyncExecutionStatus.RECOVERY_REQUIRED, recovery_path=journal
@@ -396,18 +357,18 @@ def test_closing_during_sync_persists_queued_recovery_result(
     wait_for(service.entered.is_set)
     service.release.set()
     controller.shutdown()
-    assert settings.get(PENDING_SYNC_RECOVERY) == journal
+    assert controller.result is not None and controller.result.recovery_path == journal
     assert controller.needs_recovery and workspace.locked
     assert not devices.busy and not devices.device_writes_allowed
 
 
-def test_cleanup_retry_preserves_success_and_survives_restart(
+def test_discovered_cleanup_retry_preserves_success(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
 ) -> None:
     _coordinator, devices, workspace, _ = session
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     journal = ".iopenpod-recovery/" + "c" * 32 + "/transaction.json"
-    settings.set_global(PENDING_SYNC_CLEANUP, journal)
+    pending_cleanup = journal
     attempts: list[str] = []
 
     def cleanup(path: str) -> None:
@@ -416,22 +377,22 @@ def test_cleanup_retry_preserves_success_and_survives_restart(
             raise OSError("Reconnect the iPod")
 
     controller = SyncController(
-        _Execution(), workspace, devices, settings, cleanup=cleanup
+        SyncExecutionStub(), workspace, devices, settings, cleanup=cleanup
     )
+    devices.cleanupAvailable.emit(pending_cleanup)
     try:
         assert controller.needs_cleanup and not controller.needs_recovery
         assert controller.cleanup()
         wait_for(lambda: not controller.busy)
         assert controller.needs_cleanup
-        assert settings.get(PENDING_SYNC_CLEANUP) == journal
-        assert controller.result is not None
+        assert (
+            controller.result is not None and controller.result.recovery_path == journal
+        )
         assert controller.result.status is SyncExecutionStatus.SUCCESS
         assert "Reconnect" in controller.result.issues[-1].detail
         assert controller.cleanup()
         wait_for(lambda: not controller.busy)
         assert not controller.needs_cleanup and not controller.needs_recovery
-        assert settings.get(PENDING_SYNC_CLEANUP) == ""
-        assert settings.get(PENDING_SYNC_RECOVERY) == ""
         assert controller.result is not None
         assert controller.result.status is SyncExecutionStatus.SUCCESS
         assert not workspace.locked and not devices.busy
@@ -445,9 +406,7 @@ def test_completed_cleanup_flush_warning_does_not_leave_missing_journal_retry(
 ) -> None:
     _coordinator, devices, workspace, _ = session
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
-    settings.set_global(
-        PENDING_SYNC_CLEANUP, ".iopenpod-recovery/" + "d" * 32 + "/transaction.json"
-    )
+    pending_cleanup = ".iopenpod-recovery/" + "d" * 32 + "/transaction.json"
 
     def cleanup(_path: str) -> None:
         raise SyncCleanupCompletedError(
@@ -455,13 +414,13 @@ def test_completed_cleanup_flush_warning_does_not_leave_missing_journal_retry(
         )
 
     controller = SyncController(
-        _Execution(), workspace, devices, settings, cleanup=cleanup
+        SyncExecutionStub(), workspace, devices, settings, cleanup=cleanup
     )
+    devices.cleanupAvailable.emit(pending_cleanup)
     try:
         assert controller.cleanup()
         wait_for(lambda: not controller.busy)
         assert not controller.needs_cleanup
-        assert settings.get(PENDING_SYNC_CLEANUP) == ""
         assert controller.result is not None
         assert controller.result.status is SyncExecutionStatus.SUCCESS
         assert "Safely eject" in controller.result.issues[-1].message
@@ -475,20 +434,20 @@ def test_restored_cleanup_failure_keeps_journal_and_reports_restoration_truthful
     _coordinator, devices, workspace, _ = session
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     path = ".iopenpod-recovery/" + "e" * 32 + "/transaction.json"
-    settings.set_global(PENDING_SYNC_RECOVERY, path)
+    pending_recovery = path
 
     def recover(_path: str) -> ActiveIPod:
         raise SyncRestoredCleanupPendingError("A recovery entry is still in use")
 
     controller = SyncController(
-        _Execution(), workspace, devices, settings, recovery=recover
+        SyncExecutionStub(), workspace, devices, settings, recovery=recover
     )
+    devices.recoveryRequired.emit(pending_recovery)
     try:
         assert controller.recover()
         wait_for(lambda: not controller.busy)
         assert controller.needs_recovery and workspace.locked
-        assert settings.get(PENDING_SYNC_RECOVERY) == path
-        assert controller.result is not None
+        assert controller.result is not None and controller.result.recovery_path == path
         assert controller.result.issues[-1].code == "sync.restored_cleanup_pending"
     finally:
         controller.shutdown()
@@ -499,9 +458,7 @@ def test_restored_library_reload_failure_unblocks_recovery(
 ) -> None:
     _coordinator, devices, workspace, _ = session
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
-    settings.set_global(
-        PENDING_SYNC_RECOVERY, ".iopenpod-recovery/" + "e" * 32 + "/transaction.json"
-    )
+    pending_recovery = ".iopenpod-recovery/" + "e" * 32 + "/transaction.json"
 
     def recover(_path: str) -> ActiveIPod:
         raise SyncRecoveryRestoredError(
@@ -509,13 +466,14 @@ def test_restored_library_reload_failure_unblocks_recovery(
         )
 
     controller = SyncController(
-        _Execution(), workspace, devices, settings, recovery=recover
+        SyncExecutionStub(), workspace, devices, settings, recovery=recover
     )
+    devices.recoveryRequired.emit(pending_recovery)
     try:
         assert controller.recover()
         wait_for(lambda: not controller.busy)
         assert not controller.needs_recovery and not workspace.locked
-        assert settings.get(PENDING_SYNC_RECOVERY) == ""
+        assert not controller.needs_recovery
         assert devices.active_ipod is None and workspace.snapshot is None
         assert not devices.device_writes_allowed
         assert controller.result is not None
@@ -529,21 +487,23 @@ def test_recovery_discovers_another_journal_and_keeps_its_path(
 ) -> None:
     _coordinator, devices, workspace, _ = session
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
-    settings.set_global(
-        PENDING_SYNC_RECOVERY, ".iopenpod-recovery/" + "e" * 32 + "/transaction.json"
-    )
+    pending_recovery = ".iopenpod-recovery/" + "e" * 32 + "/transaction.json"
     next_path = ".iopenpod-recovery/" + "f" * 32 + "/transaction.json"
 
     def recover(_path: str) -> ActiveIPod:
         raise SyncRecoveryRequiredError(next_path)
 
     controller = SyncController(
-        _Execution(), workspace, devices, settings, recovery=recover
+        SyncExecutionStub(), workspace, devices, settings, recovery=recover
     )
+    devices.recoveryRequired.emit(pending_recovery)
     try:
         assert controller.recover()
         wait_for(lambda: not controller.busy)
         assert controller.needs_recovery and workspace.locked
-        assert settings.get(PENDING_SYNC_RECOVERY) == next_path
+        assert (
+            controller.result is not None
+            and controller.result.recovery_path == next_path
+        )
     finally:
         controller.shutdown()

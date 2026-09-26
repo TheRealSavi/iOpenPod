@@ -71,6 +71,10 @@ class JsonSettingsStore:
         self._host_file = host_file
         self._values = _read_json_settings(host_file)
         self._dirty = False
+        # Recovery belongs to the device journal, never to Host preferences.
+        # Remove legacy hints even when their values are malformed or stale.
+        for key in ("sync/pending-recovery-journal", "sync/pending-cleanup-journal"):
+            self.remove(key)
 
     def has(self, key: str) -> bool:
         return key in self._values

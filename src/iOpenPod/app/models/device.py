@@ -30,6 +30,7 @@ class DeviceReadiness(StrEnum):
     DATABASE_MISSING = "database_missing"
     DATABASE_UNSUPPORTED = "database_unsupported"
     INSPECTION_FAILED = "inspection_failed"
+    SYNC_RECOVERY_REQUIRED = "sync_recovery_required"
 
 
 class DeviceCandidateIssueCode(StrEnum):
@@ -70,7 +71,10 @@ class DeviceCandidate:
 
     @property
     def selectable(self) -> bool:
-        return self.readiness is DeviceReadiness.READY
+        return self.readiness in (
+            DeviceReadiness.READY,
+            DeviceReadiness.SYNC_RECOVERY_REQUIRED,
+        )
 
     @property
     def profile_name(self) -> str:

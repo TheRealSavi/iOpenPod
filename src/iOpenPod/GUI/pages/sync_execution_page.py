@@ -38,6 +38,7 @@ class SyncExecutionPage(QWidget):
 
     cancelRequested = Signal()
     recoveryRequested = Signal()
+    keepContentsRequested = Signal()
     exitRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -118,10 +119,15 @@ class SyncExecutionPage(QWidget):
         self._recover.setObjectName("recoverSyncExecution")
         self._recover.clicked.connect(self.recoveryRequested.emit)
         self._recover.hide()
+        self._keep = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
+        self._keep.setObjectName("keepSyncContents")
+        self._keep.clicked.connect(self.keepContentsRequested.emit)
+        self._keep.hide()
         actions = QHBoxLayout()
         actions.addStretch()
         actions.addWidget(self._cancel)
         actions.addWidget(self._recover)
+        actions.addWidget(self._keep)
         actions.addWidget(self._done)
 
         stages = QFrame(self)
@@ -203,6 +209,7 @@ class SyncExecutionPage(QWidget):
         self._cancel.show()
         self._done.hide()
         self._recover.hide()
+        self._keep.hide()
         self._stage.setText(self.tr("Waiting to validate the selected Sync Plan"))
         self._stage_summary.setText(
             self.tr("Step 1 of %1").replace("%1", str(len(self._STAGES)))
@@ -324,6 +331,7 @@ class SyncExecutionPage(QWidget):
                 and bool(result.recovery_path)
             )
         )
+        self._keep.setVisible(bool(result.recovery_path))
         self.retranslate_ui()
 
     def begin_recovery(self, *, cleanup: bool = False) -> None:
@@ -349,12 +357,23 @@ class SyncExecutionPage(QWidget):
         self._preparation.set_items(())
         self._preparation_summary.hide()
         self._recover.hide()
+        self._keep.hide()
         self._done.hide()
+
+    def begin_keep_contents(self) -> None:
+        self.begin_recovery()
+        self._title.setText(self.tr("Keeping current iPod contents"))
+        self._detail.setText(
+            self.tr(
+                "Retiring the recovery journal and reloading the current Library. Keep the iPod connected."
+            )
+        )
 
     def retranslate_ui(self) -> None:
         self._cancel.setText(self.tr("Cancel Sync"))
         self._done.setText(self.tr("Return to Library"))
-        self._recover.setText(self.tr("Retry Recovery"))
+        self._recover.setText(self.tr("Restore Previous Library"))
+        self._keep.setText(self.tr("Keep Current Contents"))
         self._issues.setAccessibleName(
             self.tr("Sync warnings, errors, and recovery steps")
         )
@@ -370,11 +389,13 @@ class SyncExecutionPage(QWidget):
             SyncExecutionStatus.PARTIAL: self.tr("Sync partially completed"),
             SyncExecutionStatus.CANCELLED: self.tr("Sync cancelled"),
             SyncExecutionStatus.FAILED: self.tr("Sync could not complete"),
-            SyncExecutionStatus.RECOVERY_REQUIRED: self.tr("Sync needs recovery"),
+            SyncExecutionStatus.RECOVERY_REQUIRED: self.tr("Sync was interrupted"),
         }
         self._title.setText(titles[result.status])
         if any(issue.code == "sync.recovered" for issue in result.issues):
             self._title.setText(self.tr("Previous Library restored"))
+        if any(issue.code == "sync.kept_current" for issue in result.issues):
+            self._title.setText(self.tr("Current contents kept"))
         restored_cleanup = any(
             issue.code == "sync.restored_cleanup_pending" for issue in result.issues
         )
@@ -400,9 +421,15 @@ class SyncExecutionPage(QWidget):
                 "The previous Library was restored and verified. Keep the journal and retry recovery to finish removing its temporary files."
             )
         elif result.status is SyncExecutionStatus.RECOVERY_REQUIRED:
-            detail += " " + self.tr(
-                "Keep the recovery journal. Reconnect the same iPod and restore the "
-                "interrupted Storage transaction before trying another Sync."
+            detail = self.tr(
+                "Sync was interrupted. Restore Previous Library puts back the files from before "
+                "the interrupted changes. Keep Current Contents leaves the iPod as it is and "
+                "stops asking to restore. Some changes may be incomplete. Recovery copies are retained."
+            )
+        if any(issue.code == "sync.kept_current" for issue in result.issues):
+            detail = self.tr(
+                "The iPod was left as it is. The interrupted Sync may be incomplete. "
+                "Review the Library and scan again before making further changes."
             )
         self._detail.setText(detail)
         grouped: dict[tuple[str, str, str, str], list[str]] = {}

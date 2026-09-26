@@ -170,14 +170,18 @@ class DeviceAccessError(DeviceCoordinationError):
 
 
 class SyncRecoveryRequiredError(DeviceCoordinationError):
-    """A previous interrupted transaction must be recovered before another Sync."""
+    """An interrupted transaction needs the user's restore-or-keep decision."""
 
     def __init__(self, recovery_path: str) -> None:
         self.recovery_path = recovery_path
         super().__init__(
-            "An interrupted transaction is still present on this iPod. Recover it "
-            "before another Sync: " + recovery_path
+            "An interrupted transaction is still present on this iPod. Restore it "
+            "or choose Keep Current Contents before another Sync: " + recovery_path
         )
+
+
+class SyncRecoveryDeclinedError(DeviceCoordinationError):
+    """Recovery was declined, but reloading or flushing needs user attention."""
 
 
 class SyncRecoveryRestoredError(DeviceCoordinationError):
@@ -301,6 +305,26 @@ class DeviceCoordinator:
         self._ithmb_bytes: OrderedDict[_IthmbByteCacheKey, bytes] = OrderedDict()
         self._podcast_store = PodcastDeviceStore()
         self._ipod_media_scanner = ipod_media_scanner or IPodMediaScanner()
+        self._recovery_observations: dict[
+            str, tuple[MountedVolume, FileFingerprint]
+        ] = {}
+        self._sync_cleanup_path = ""
+
+    @property
+    def sync_cleanup_path(self) -> str:
+        """Terminal cleanup found while selecting the current iPod."""
+        with self._lock:
+            return self._sync_cleanup_path
+
+    def _check_sync_recovery(self, session: FilesystemSession) -> str:
+        try:
+            return _require_no_pending_transaction(session)
+        except SyncRecoveryRequiredError as error:
+            self._recovery_observations[error.recovery_path] = (
+                session.mounted_volume,
+                session.fingerprint(DevicePath(error.recovery_path)),
+            )
+            raise
 
     @property
     def discovery(self) -> DeviceDiscovery:
@@ -412,7 +436,7 @@ class DeviceCoordinator:
                     )
 
             validate()
-            _require_no_pending_transaction(session)
+            self._check_sync_recovery(session)
             yield session
             validate()
 
@@ -601,6 +625,85 @@ class DeviceCoordinator:
                 raise SyncRecoveryRestoredError(
                     "The previous Library was restored and temporary files were cleaned up. "
                     "The iPod could not be reloaded. Refresh the Device Picker and select it again. "
+                    + str(error)
+                ) from error
+
+    def keep_sync_contents(self, recovery_path: str) -> ActiveIPod:
+        """Retire one journal without restoring or deleting any Library files.
+
+        The journal is renamed beside its retained payloads. Its original bytes
+        remain available for manual diagnosis, but discovery no longer treats it
+        as an unresolved operation. This does not certify a successful Sync.
+        """
+        path = DevicePath(recovery_path)
+        if (
+            re.fullmatch(
+                r"\.iopenpod-recovery/[0-9a-f]{32}/transaction\.json", str(path)
+            )
+            is None
+        ):
+            raise DeviceAccessError("The Sync recovery journal path is invalid.")
+        namespace = path.parent
+        assert namespace is not None
+        retired = namespace.joinpath("declined-transaction.json")
+        with self._lock:
+            observed = self._recovery_observations.get(recovery_path)
+            matches: list[tuple[MountedVolume, FileFingerprint | None]] = []
+            for mounted in self._storage.discover().volumes:
+                if not mounted.volume.capabilities.safe_for_writes:
+                    continue
+                if observed is not None and (
+                    mounted.physical_device.id != observed[0].physical_device.id
+                    or mounted.volume.id != observed[0].volume.id
+                ):
+                    continue
+                with self._storage.open_session(mounted) as session:
+                    if observed is not None:
+                        # A corrupt journal can be declined because its location
+                        # and bytes were observed on this exact Physical Device.
+                        matches.append(
+                            (mounted, observed[1] if session.exists(path) else None)
+                        )
+                    elif session.exists(path):
+                        # Results from this run may precede discovery. Validate
+                        # their journal identity before accepting a path alone.
+                        session.read_transaction_state(path)
+                        matches.append((mounted, session.fingerprint(path)))
+            if len(matches) != 1:
+                raise DeviceChangedError(
+                    "Reconnect the same writable iPod before keeping its current contents."
+                )
+            mounted, expected = matches[0]
+            if expected is not None:
+                self._recovery_observations[recovery_path] = (mounted, expected)
+            with self._storage.open_session(
+                mounted, access=AccessMode.READ_WRITE
+            ) as session:
+                if expected is not None:
+                    session.move(path, retired, expected_source=expected)
+                flushed = session.flush()
+            self._recovery_observations.pop(recovery_path, None)
+            self._deactivate_locked()
+            if not flushed.complete:
+                raise SyncRecoveryDeclinedError(
+                    "Current contents were kept and recovery was declined. "
+                    "Safely eject before unplugging; device flushing could not be confirmed. "
+                    + flushed.detail
+                )
+            try:
+                self.discover_devices()
+                candidate = self.candidate_id_for_volume(mounted.volume.id)
+                if candidate is None:
+                    raise DeviceChangedError("The iPod is not ready to load.")
+                return self.select_device(candidate, reconcile_metadata=False)
+            except SyncRecoveryRequiredError:
+                raise
+            except Exception as error:
+                raise SyncRecoveryDeclinedError(
+                    "Current contents were kept and recovery was declined. "
+                    "The current Library could not be loaded; the interrupted Sync may "
+                    "be incomplete. Recovery copies remain beside declined-transaction.json. "
+                    "Refresh the Device Picker after repairing the Library. "
                     + str(error)
                 ) from error
 
@@ -1424,18 +1527,39 @@ class DeviceCoordinator:
         previous = self._records.get(
             DeviceCandidateId(mounted.connection_generation.value)
         )
-        if (
-            not refresh_known
-            and previous is not None
-            and previous.candidate.selectable
-            and self._discovery_volumes.get(previous.candidate.id) == mounted
-        ):
-            with self._storage.open_session(mounted) as session:
-                _require_no_pending_transaction(session)
-            return previous
-        return self._inspect_mounted_volume(mounted)
+        try:
+            if (
+                not refresh_known
+                and previous is not None
+                and previous.candidate.readiness is DeviceReadiness.READY
+                and self._discovery_volumes.get(previous.candidate.id) == mounted
+            ):
+                with self._storage.open_session(mounted) as session:
+                    self._check_sync_recovery(session)
+                return previous
+            return self._inspect_mounted_volume(mounted)
+        except SyncRecoveryRequiredError as error:
+            # Discovery must still list every other iPod. Selection opens the
+            # recovery choice before parsing this iPod's interrupted Library.
+            hardware = _hardware_evidence(mounted)
+            record = previous or _inspection_failed_record(
+                mounted,
+                self._registry.identify(hardware),
+                hardware,
+                StorageError(str(error)),
+            )
+            return replace(
+                record,
+                candidate=replace(
+                    record.candidate,
+                    readiness=DeviceReadiness.SYNC_RECOVERY_REQUIRED,
+                    issues=(),
+                ),
+            )
 
-    def select_device(self, candidate_id: DeviceCandidateId) -> ActiveIPod:
+    def select_device(
+        self, candidate_id: DeviceCandidateId, *, reconcile_metadata: bool = True
+    ) -> ActiveIPod:
         """Load one candidate after ending any previous Filesystem Session."""
 
         with self._lock:
@@ -1455,10 +1579,13 @@ class DeviceCoordinator:
                 with self._storage.open_session(
                     record.mounted_volume
                 ) as preflight_session:
-                    _require_no_pending_transaction(preflight_session)
+                    self._sync_cleanup_path = self._check_sync_recovery(
+                        preflight_session
+                    )
             except StorageError as error:
                 raise DeviceAccessError(str(error)) from error
-            record = self._reconcile_device_metadata(record)
+            if reconcile_metadata:
+                record = self._reconcile_device_metadata(record)
             self._records[candidate_id] = record
 
             try:
@@ -2172,7 +2299,7 @@ class DeviceCoordinator:
             ) as preflight_session:
                 if not preflight_session.exists(_IPOD_CONTROL_PATH):
                     return None
-                _require_no_pending_transaction(preflight_session)
+                self._check_sync_recovery(preflight_session)
                 if not _hardware_probe_required(
                     preflight_session,
                     self._registry,
@@ -2439,7 +2566,7 @@ class DeviceCoordinator:
         current = self._records.get(candidate_id)
         same_profile = (
             current is not None
-            and current.candidate.selectable
+            and current.candidate.readiness is DeviceReadiness.READY
             and current.candidate.model_number == active.record.candidate.model_number
         )
         if not active.session.is_active or not same_profile or current is None:
@@ -2456,6 +2583,7 @@ class DeviceCoordinator:
     def _deactivate_locked(self) -> None:
         active = self._active
         self._active = None
+        self._sync_cleanup_path = ""
         self._prepared_for_save = None
         self._ithmb_bytes.clear()
         self._ithmb_cache_bytes = 0
@@ -3280,13 +3408,17 @@ def _raise_if_cleanup_completed(
         ) from error
 
 
-def _require_no_pending_transaction(session: FilesystemSession) -> None:
+def _require_no_pending_transaction(session: FilesystemSession) -> str:
     """Recognize crash recovery from durable device journals before any mutation."""
     recovery_root = DevicePath(".iopenpod-recovery")
     if not session.exists(recovery_root):
-        return
+        return ""
+    cleanup_path = ""
     for entry in session.list_directory(recovery_root):
-        if entry.kind is not DeviceEntryKind.DIRECTORY:
+        if (
+            entry.kind is not DeviceEntryKind.DIRECTORY
+            or re.fullmatch(r"[0-9a-f]{32}", entry.path.name) is None
+        ):
             continue
         journal = entry.path.joinpath("transaction.json")
         if not session.exists(journal):
@@ -3297,6 +3429,9 @@ def _require_no_pending_transaction(session: FilesystemSession) -> None:
             raise SyncRecoveryRequiredError(str(journal)) from error
         if state not in (TransactionState.COMMITTED, TransactionState.RESTORED):
             raise SyncRecoveryRequiredError(str(journal))
+        if not cleanup_path:
+            cleanup_path = str(journal)
+    return cleanup_path
 
 
 def _track_device_path(track: Track) -> DevicePath:
@@ -3348,6 +3483,7 @@ __all__ = [
     "DevicePhotoLoadError",
     "DeviceTrackExportError",
     "SyncCleanupCompletedError",
+    "SyncRecoveryDeclinedError",
     "SyncRecoveryRequiredError",
     "SyncRecoveryRestoredError",
     "SyncRestoredCleanupPendingError",
