@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.sync_execution import SyncExecutionResult, SyncExecutionStatus
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.eta_label import EtaLabel
+from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
 if TYPE_CHECKING:
@@ -83,6 +84,11 @@ class SyncExecutionPage(QWidget):
         self._progress_summary.setWordWrap(True)
         self._eta = EtaLabel(self)
         self._eta.setObjectName("syncExecutionEta")
+        self._preparation = SyncPreparationProgress(self)
+        self._preparation_summary = QLabel(self)
+        self._preparation_summary.setObjectName("syncPreparationSummary")
+        self._preparation_summary.setWordWrap(True)
+        self._preparation_summary.hide()
         self._elapsed = QLabel(self)
         self._elapsed.setObjectName("syncExecutionElapsed")
         self._elapsed.setWordWrap(True)
@@ -151,6 +157,8 @@ class SyncExecutionPage(QWidget):
         panel_layout.addWidget(self._progress)
         panel_layout.addWidget(self._progress_summary)
         panel_layout.addWidget(self._eta)
+        panel_layout.addWidget(self._preparation_summary)
+        panel_layout.addWidget(self._preparation, 1)
         panel_layout.addWidget(self._elapsed)
 
         layout = QVBoxLayout(self)
@@ -188,6 +196,8 @@ class SyncExecutionPage(QWidget):
         self._item.clear()
         self._item.hide()
         self._eta.reset()
+        self._preparation.set_items(())
+        self._preparation_summary.hide()
         self._progress.show()
         self._cancel.setEnabled(True)
         self._cancel.show()
@@ -247,7 +257,20 @@ class SyncExecutionPage(QWidget):
                 self.tr("This stage is working; its total is not item-counted.")
             )
             self._eta.reset()
-        if progress.current_item:
+        preparing = progress.phase == "sync.prepare"
+        self._activity.setVisible(not preparing and self._result is None)
+        self._preparation.set_items(progress.active_items if preparing else ())
+        self._preparation_summary.setVisible(preparing)
+        if preparing:
+            active = len(progress.active_items)
+            waiting = max(0, (progress.total or 0) - (progress.completed or 0) - active)
+            self._preparation_summary.setText(
+                self.tr("%1 active · %2 waiting · %3 processed")
+                .replace("%1", str(active))
+                .replace("%2", str(waiting))
+                .replace("%3", str(progress.completed or 0))
+            )
+        if progress.current_item and not (preparing and progress.active_items):
             label = (
                 self.tr("Item: %1")
                 if progress.phase in ("sync.prepare", "sync.photos")
@@ -285,6 +308,8 @@ class SyncExecutionPage(QWidget):
         self._result = result
         self._progress.hide()
         self._eta.reset()
+        self._preparation.set_items(())
+        self._preparation_summary.hide()
         self._item.hide()
         self._activity.hide()
         if result.status in (SyncExecutionStatus.SUCCESS, SyncExecutionStatus.PARTIAL):
@@ -321,6 +346,8 @@ class SyncExecutionPage(QWidget):
         self._item.hide()
         self._activity.hide()
         self._eta.reset()
+        self._preparation.set_items(())
+        self._preparation_summary.hide()
         self._recover.hide()
         self._done.hide()
 

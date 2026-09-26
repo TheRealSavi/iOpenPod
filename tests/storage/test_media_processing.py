@@ -6,11 +6,132 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from threading import get_ident
 
 import pytest
 
 from storage import ConcurrentModificationError, HostPath, UnsafeFilesystemPathError
-from storage.media_processing import MediaToolError, media_workspace, run_media_tool
+from storage.media_processing import (
+    MediaToolError,
+    MediaToolProgress,
+    media_workspace,
+    run_media_tool,
+)
+
+
+def test_progress_is_delivered_while_tool_runs_on_the_calling_thread(
+    tmp_path: Path,
+) -> None:
+    acknowledgement = tmp_path / "progress-received"
+    caller = get_ident()
+    updates: list[MediaToolProgress] = []
+
+    def progress(update: MediaToolProgress) -> None:
+        assert get_ident() == caller
+        updates.append(update)
+        acknowledgement.touch()
+
+    result = run_media_tool(
+        HostPath(sys.executable),
+        (
+            "-c",
+            "import sys, time; from pathlib import Path; "
+            "sys.stdout.write('out_t'); sys.stdout.flush(); "
+            "sys.stdout.write('ime_us=2500000\\nspeed=2.50x\\nprogress=continue\\n'); sys.stdout.flush(); "
+            "ack = Path(sys.argv[1]); "
+            "exec('while not ack.exists(): time.sleep(0.01)'); "
+            "print('out_time_us=5000000\\nspeed=3.0x\\nprogress=end'); "
+            "sys.stderr.write('retained diagnostics')",
+            str(acknowledgement),
+        ),
+        checkpoint=lambda: None,
+        progress=progress,
+        timeout_seconds=3,
+    )
+    assert updates[0] == MediaToolProgress(2.5, 2.5, False)
+    assert updates[-1] == MediaToolProgress(5, 3, True)
+    assert result.stdout == b""
+    assert result.stderr == b"retained diagnostics"
+
+
+def test_progress_records_are_bounded_without_accumulating_the_full_stream() -> None:
+    updates: list[MediaToolProgress] = []
+    run_media_tool(
+        HostPath(sys.executable),
+        (
+            "-c",
+            "print('out_time_us=1000\\nprogress=continue\\n' * 10000, end=''); print('out_time_us=2000\\nprogress=end')",
+        ),
+        checkpoint=lambda: None,
+        progress=updates.append,
+        max_output_bytes=64,
+    )
+    assert updates[-1] == MediaToolProgress(0.002, None, True)
+    with pytest.raises(MediaToolError) as error:
+        run_media_tool(
+            HostPath(sys.executable),
+            ("-c", "print('x' * 1000)"),
+            checkpoint=lambda: None,
+            progress=updates.append,
+            max_output_bytes=64,
+        )
+    assert error.value.code == "media.tool_output_limit"
+
+
+@pytest.mark.parametrize("value", ["N/A", "nan", "inf", "invalid"])
+def test_unknown_progress_measurements_do_not_claim_completion(value: str) -> None:
+    updates: list[MediaToolProgress] = []
+    run_media_tool(
+        HostPath(sys.executable),
+        ("-c", f"print('out_time_us={value}\\nspeed={value}\\nprogress=end')"),
+        checkpoint=lambda: None,
+        progress=updates.append,
+    )
+    assert updates == [MediaToolProgress(None, None, True)]
+
+
+def test_progress_callback_failure_kills_and_reaps_the_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = subprocess.Popen
+    processes: list[subprocess.Popen[bytes]] = []
+
+    def launch(
+        args: list[str],
+        *,
+        stdin: int,
+        stdout: int,
+        stderr: int,
+        creationflags: int,
+        pass_fds: tuple[int, ...],
+    ) -> subprocess.Popen[bytes]:
+        process = original(
+            args,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            creationflags=creationflags,
+            pass_fds=pass_fds,
+        )
+        processes.append(process)
+        return process
+
+    def progress(_update: MediaToolProgress) -> None:
+        raise RuntimeError("progress consumer stopped")
+
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    with pytest.raises(RuntimeError, match="progress consumer stopped"):
+        run_media_tool(
+            HostPath(sys.executable),
+            (
+                "-c",
+                "import time; print('out_time_us=1000\\nprogress=continue', flush=True); time.sleep(30)",
+            ),
+            checkpoint=lambda: None,
+            progress=progress,
+            timeout_seconds=3,
+        )
+    assert len(processes) == 1 and processes[0].poll() is not None
 
 
 @pytest.mark.parametrize(

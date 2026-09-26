@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from iOpenPod.app.media.importing import LibraryMediaSource
+    from iOpenPod.app.media.progress import MediaPreparationProgress
     from iOpenPod.app.models.device import ActiveIPod
     from iPodDB.library import (
         ArtworkAsset,
@@ -48,6 +49,15 @@ class LibraryPreparationRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class WriteItemProgress:
+    """One active item's display identity and activity; confers no file authority."""
+
+    item_id: str
+    name: str
+    progress: MediaPreparationProgress
+
+
+@dataclass(frozen=True, slots=True)
 class WriteProgress:
     """An entered stage, not proof that the stage completed successfully.
 
@@ -56,6 +66,10 @@ class WriteProgress:
     item count. ``current_item`` is a human-readable identity for the item
     most recently started or completed by the stage; it is deliberately not a
     permission-bearing path.
+
+    ``active_items`` is the complete immutable snapshot of currently running Host
+    preparations. It excludes waiting and finished items; measurements describe
+    each item's current phase rather than readiness for publication.
     """
 
     phase: str
@@ -64,6 +78,7 @@ class WriteProgress:
     total: int | None = None
     current_item: str = ""
     unit: str = ""
+    active_items: tuple[WriteItemProgress, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

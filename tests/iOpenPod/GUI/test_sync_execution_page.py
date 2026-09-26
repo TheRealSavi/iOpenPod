@@ -1,14 +1,172 @@
 """Sync outcomes expose actual diagnostics, cancellation, and recovery actions."""
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QLabel, QPlainTextEdit, QProgressBar, QPushButton
+from PySide6.QtWidgets import QFrame, QLabel, QPlainTextEdit, QProgressBar, QPushButton
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
-from iOpenPod.app.library_write import WriteProgress
+from iOpenPod.app.library_write import WriteItemProgress, WriteProgress
+from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.sync_execution import SyncExecutionResult, SyncExecutionStatus
 from iOpenPod.GUI.pages.sync_execution_page import SyncExecutionPage
+from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
 from iPodDB.library import IssueSeverity, WriteIssue
+
+
+def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_titles() -> (
+    None
+):
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        converting = WriteItemProgress(
+            "source-a",
+            "Same title",
+            MediaPreparationProgress(
+                MediaPreparationPhase.CONVERTING, "Converting media", 30, 120, 2
+            ),
+        )
+        verifying = WriteItemProgress(
+            "source-b",
+            "Same title",
+            MediaPreparationProgress(
+                MediaPreparationPhase.VERIFYING, "Verifying media", 75, 100, 10
+            ),
+        )
+        page.update_progress(
+            WriteProgress(
+                "sync.prepare",
+                "Preparing selected Tracks",
+                completed=1,
+                total=6,
+                unit="Tracks",
+                active_items=(converting, verifying),
+            )
+        )
+        workers = page.findChild(SyncPreparationProgress, "syncPreparationProgressList")
+        summary = page.findChild(QLabel, "syncPreparationSummary")
+        assert workers is not None and summary is not None
+        assert summary.text() == "2 active · 3 waiting · 1 processed"
+        rows = workers.findChildren(QFrame, "syncPreparationRow")
+        assert len(rows) == 2
+        bars = workers.findChildren(QProgressBar, "syncPreparationProgress")
+        assert [bar.value() for bar in bars] == [250, 750]
+        details = [
+            label.text()
+            for label in workers.findChildren(QLabel, "syncPreparationDetail")
+        ]
+        assert "Converting media · 25% · 0:30 / 2:00 · 2.00x speed" in details
+        assert "Verifying media · 75% · 1:15 / 1:40 · 10.00x speed" in details
+        # A new phase has no invented percentage, even after conversion reaches 100%.
+        reading = WriteItemProgress(
+            "source-a",
+            "Same title",
+            MediaPreparationProgress(
+                MediaPreparationPhase.METADATA, "Writing metadata"
+            ),
+        )
+        page.update_progress(
+            WriteProgress(
+                "sync.prepare",
+                "Preparing selected Tracks",
+                completed=2,
+                total=6,
+                active_items=(reading,),
+            )
+        )
+        bars = workers.findChildren(QProgressBar, "syncPreparationProgress")
+        assert len(bars) == 1 and bars[0].maximum() == 0
+        assert summary.text() == "1 active · 3 waiting · 2 processed"
+        page.update_progress(WriteProgress("database.build", "Building Library"))
+        assert workers.isHidden() and not workers.findChildren(
+            QFrame, "syncPreparationRow"
+        )
+        assert summary.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_active_rows_remain_visible_when_workers_are_replaced_and_can_scroll() -> None:
+    page = SyncExecutionPage()
+    page.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    page.resize(950, 650)
+    try:
+        page.begin()
+        page.show()
+        activity = MediaPreparationProgress(
+            MediaPreparationPhase.CONVERTING, "Converting media", 30, 120
+        )
+        page.update_progress(
+            WriteProgress(
+                "sync.prepare",
+                "Preparing",
+                completed=0,
+                total=20,
+                active_items=(WriteItemProgress("first", "First Track", activity),),
+            )
+        )
+        APPLICATION.processEvents()
+        items = tuple(
+            WriteItemProgress(str(index), f"Track {index}", activity)
+            for index in range(16)
+        )
+        page.update_progress(
+            WriteProgress(
+                "sync.prepare", "Preparing", completed=1, total=20, active_items=items
+            )
+        )
+        APPLICATION.processEvents()
+        workers = page.findChild(SyncPreparationProgress, "syncPreparationProgressList")
+        assert workers is not None
+        rows = workers.findChildren(QFrame, "syncPreparationRow")
+        assert len(rows) == 16 and all(row.isVisible() for row in rows)
+        assert workers.verticalScrollBar().maximum() > 0
+        workers.ensureWidgetVisible(rows[-1])
+        APPLICATION.processEvents()
+        position = rows[-1].mapTo(workers.viewport(), rows[-1].rect().center())
+        assert workers.viewport().rect().contains(position)
+    finally:
+        page.close()
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_measured_time_without_duration_is_indeterminate_and_result_clears_workers() -> (
+    None
+):
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        item = WriteItemProgress(
+            "source",
+            "Track",
+            MediaPreparationProgress(
+                MediaPreparationPhase.VERIFYING, "Verifying media", 45, None, 3
+            ),
+        )
+        page.update_progress(
+            WriteProgress(
+                "sync.prepare", "Preparing", completed=0, total=1, active_items=(item,)
+            )
+        )
+        workers = page.findChild(SyncPreparationProgress, "syncPreparationProgressList")
+        assert workers is not None
+        bar = workers.findChild(QProgressBar, "syncPreparationProgress")
+        detail = workers.findChild(QLabel, "syncPreparationDetail")
+        assert bar is not None and detail is not None
+        assert bar.maximum() == 0
+        assert "0:45 processed" in detail.text() and "%" not in detail.text()
+        page.show_result(SyncExecutionResult(SyncExecutionStatus.CANCELLED))
+        assert workers.isHidden() and not workers.findChildren(
+            QProgressBar, "syncPreparationProgress"
+        )
+        page.begin()
+        assert workers.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
 
 
 def test_cancel_reports_safe_checkpoint_and_prevents_double_request() -> None:

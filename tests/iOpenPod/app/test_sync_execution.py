@@ -45,6 +45,7 @@ from iOpenPod.app.library_write import LibraryReview, LibrarySaveResult, WritePr
 from iOpenPod.app.media.importing import ImportedSong, LibraryMediaSource
 from iOpenPod.app.media.inspection import _parse  # pyright: ignore[reportPrivateUsage]
 from iOpenPod.app.media.music_paths import MusicPathAllocator
+from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.media.transcoding import (
     MediaTranscoder,
     PreparedTranscode,
@@ -390,7 +391,7 @@ class _Executor(SyncExecutor):
         track: Track,
         tools: MediaTools,
         checkpoint: Callable[[], None],
-        activity: Callable[[str], None],
+        activity: Callable[[MediaPreparationProgress], None],
     ) -> _PreparedTrack:
         del tools
         checkpoint()
@@ -561,6 +562,80 @@ def _request(
         )
     )
     return SyncExecutionRequest(plan, host, ipod, device.active, 1, 1)
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "cancel"])
+def test_preparation_reports_all_concurrent_tracks(
+    tmp_path: Path, outcome: str
+) -> None:
+    release = Event()
+    cancellation = Event()
+    second_title = "Failure" if outcome == "failure" else "Second song"
+
+    class ConcurrentExecutor(_Executor):
+        def _prepare_one(
+            self,
+            request: SyncExecutionRequest,
+            item: SyncPlanItem,
+            source: HostMediaSource,
+            track: Track,
+            tools: MediaTools,
+            checkpoint: Callable[[], None],
+            activity: Callable[[MediaPreparationProgress], None],
+        ) -> _PreparedTrack:
+            activity(
+                MediaPreparationProgress(
+                    MediaPreparationPhase.CONVERTING,
+                    "Preparing compatible media for this iPod",
+                    30,
+                    120,
+                    2,
+                )
+            )
+            assert release.wait(5), "Both active workers must be reported while running"
+            return super()._prepare_one(
+                request, item, source, track, tools, checkpoint, activity
+            )
+
+    device = build_device(tmp_path)
+    observed: list[WriteProgress] = []
+    started: set[str] = set()
+
+    def progress(event: WriteProgress) -> None:
+        observed.append(event)
+        if event.current_item:
+            started.add(event.current_item)
+        started.update(item.name for item in event.active_items)
+        if len(started) == 2:
+            if outcome == "cancel":
+                cancellation.set()
+            release.set()
+
+    try:
+        host = _host(tmp_path, "First song", second_title)
+        result = ConcurrentExecutor(
+            device.coordinator, transcoder=_AvailableTools(), workers=2
+        ).execute(_request(device, host), progress, cancellation)
+        expected_status = {
+            "success": SyncExecutionStatus.SUCCESS,
+            "failure": SyncExecutionStatus.PARTIAL,
+            "cancel": SyncExecutionStatus.CANCELLED,
+        }
+        assert result.status is expected_status[outcome], result.issues
+        concurrent = next(event for event in observed if len(event.active_items) == 2)
+        assert {item.name for item in concurrent.active_items} == {
+            "First song",
+            second_title,
+        }
+        assert all(
+            item.progress.processed_seconds == 30 for item in concurrent.active_items
+        )
+        preparation = [event for event in observed if event.phase == "sync.prepare"]
+        assert preparation[-1].active_items == ()
+        assert preparation[-1].completed == 2
+    finally:
+        release.set()
+        device.coordinator.close()
 
 
 def test_add_and_playlist_publish_before_successful_sync_history(
@@ -950,8 +1025,10 @@ def test_real_aac_passes_through_full_sync_without_reencoding(
             request, events.append, Event()
         )
         assert any(
-            e.current_item == "Real audio"
-            and "Inspecting" in e.message
+            any(
+                item.name == "Real audio" and "Inspecting" in item.progress.message
+                for item in e.active_items
+            )
             and e.completed == 0
             for e in events
         )
@@ -1094,7 +1171,7 @@ class _HostCleanupFailureExecutor(_Executor):
         track: Track,
         tools: MediaTools,
         checkpoint: Callable[[], None],
-        activity: Callable[[str], None],
+        activity: Callable[[MediaPreparationProgress], None],
     ) -> _PreparedTrack:
         result = super()._prepare_one(
             request, item, source, track, tools, checkpoint, activity

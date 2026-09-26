@@ -61,6 +61,19 @@ class ToolOutput:
     returncode: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class MediaToolProgress:
+    """Measured output time and processing speed from an FFmpeg progress record.
+
+    Finishing the process is not proof that its output has been verified.
+    Missing or unusable measurements remain unknown.
+    """
+
+    processed_seconds: float | None = None
+    speed: float | None = None
+    finished: bool = False
+
+
 @dataclass(slots=True)
 class _Pipe:
     limit: int
@@ -82,6 +95,63 @@ class _Pipe:
             self.failed.set()
 
 
+@dataclass(slots=True)
+class _ProgressPipe(_Pipe):
+    """Bound each record and retain only the latest sample, never the full stream."""
+
+    latest: MediaToolProgress | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def take(self) -> MediaToolProgress | None:
+        with self.lock:
+            latest, self.latest = self.latest, None
+        return latest
+
+    def read(self, pipe: object) -> None:
+        from typing import BinaryIO
+
+        stream = cast("BinaryIO", pipe)
+        values: dict[bytes, bytes] = {}
+        size = 0
+        try:
+            while line := stream.readline(self.limit + 1):
+                size += len(line)
+                if size > self.limit:
+                    self.exceeded.set()
+                    return
+                key, separator, value = line.strip().partition(b"=")
+                if not separator:
+                    continue
+                if key in (b"out_time_us", b"speed"):
+                    values[key] = value
+                elif key == b"progress":
+                    if value in (b"continue", b"end"):
+                        processed = _progress_number(values.get(b"out_time_us", b""))
+                        speed = _progress_number(
+                            values.get(b"speed", b"").removesuffix(b"x")
+                        )
+                        with self.lock:
+                            self.latest = MediaToolProgress(
+                                None
+                                if processed is None
+                                else max(0, processed / 1_000_000),
+                                speed if speed is not None and speed > 0 else None,
+                                value == b"end",
+                            )
+                    values.clear()
+                    size = 0
+        except OSError:
+            self.failed.set()
+
+
+def _progress_number(value: bytes) -> float | None:
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
+
+
 def run_media_tool(
     executable: HostPath,
     arguments: tuple[str, ...],
@@ -93,8 +163,14 @@ def run_media_tool(
     low_priority: bool = False,
     check: bool = True,
     input_file: HostPath | None = None,
+    progress: Callable[[MediaToolProgress], None] | None = None,
 ) -> ToolOutput:
     """Run a bounded tool, optionally appending one pinned, seekable Host input.
+
+    With ``progress``, stdout must contain FFmpeg's ``-progress pipe:1`` protocol.
+    Records are bounded individually and callbacks run on the calling thread during
+    processing, with the final sample drained after exit. Progress stdout is
+    consumed rather than returned.
 
     The input handle remains open until the child is reaped. On Windows its file
     and ancestor handles prevent replacement; POSIX passes the verified descriptor
@@ -125,6 +201,7 @@ def run_media_tool(
                 low_priority=low_priority,
                 check=check,
                 inherited_fds=inherited_fds,
+                progress=progress,
             )
     return _run_media_tool(
         executable,
@@ -136,6 +213,7 @@ def run_media_tool(
         low_priority=low_priority,
         check=check,
         inherited_fds=(),
+        progress=progress,
     )
 
 
@@ -150,6 +228,7 @@ def _run_media_tool(
     low_priority: bool,
     check: bool,
     inherited_fds: tuple[int, ...],
+    progress: Callable[[MediaToolProgress], None] | None,
 ) -> ToolOutput:
     flags = cast("int", vars(subprocess).get("CREATE_NO_WINDOW", 0))
     if low_priority:
@@ -170,7 +249,9 @@ def _run_media_tool(
         ) from error
     assert process.stdout is not None and process.stderr is not None
     stdout, stderr = (
-        _Pipe(max_output_bytes),
+        _Pipe(max_output_bytes)
+        if progress is None
+        else _ProgressPipe(min(max_output_bytes, 65536)),
         _Pipe(max_stderr_bytes if max_stderr_bytes is not None else max_output_bytes),
     )
     readers = (
@@ -183,6 +264,10 @@ def _run_media_tool(
             reader.start()
         while process.poll() is None:
             checkpoint()
+            if isinstance(stdout, _ProgressPipe) and progress is not None:
+                sample = stdout.take()
+                if sample is not None:
+                    progress(sample)
             if stdout.exceeded.is_set() or stderr.exceeded.is_set():
                 raise MediaToolError(
                     "media.tool_output_limit",
@@ -220,6 +305,10 @@ def _run_media_tool(
             "media.tool_failed",
             f"{executable.path.name} failed (exit {process.returncode}): {detail or 'No diagnostic was returned'}. Check the source file and encoder settings, then retry this item.",
         )
+    if isinstance(stdout, _ProgressPipe) and progress is not None:
+        sample = stdout.take()
+        if sample is not None:
+            progress(sample)
     return ToolOutput(bytes(stdout.data), bytes(stderr.data), process.returncode)
 
 

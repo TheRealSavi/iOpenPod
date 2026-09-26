@@ -580,7 +580,8 @@ QRadioButton:disabled {{
 QProgressDialog#libraryExportProgress QProgressBar,
 QProgressBar#syncScanProgress,
 QProgressBar#syncExecutionOverallProgress,
-QProgressBar#syncExecutionProgress {{
+QProgressBar#syncExecutionProgress,
+QProgressBar#syncPreparationProgress {{
     min-height: 10px;
     max-height: 10px;
     color: {tokens.text};
@@ -593,7 +594,8 @@ QProgressBar#syncExecutionProgress {{
 QProgressDialog#libraryExportProgress QProgressBar::chunk,
 QProgressBar#syncScanProgress::chunk,
 QProgressBar#syncExecutionOverallProgress::chunk,
-QProgressBar#syncExecutionProgress::chunk {{
+QProgressBar#syncExecutionProgress::chunk,
+QProgressBar#syncPreparationProgress::chunk {{
     background-color: {tokens.accent};
     border-radius: 4px;
 }}
@@ -644,13 +646,25 @@ QLabel#syncExecutionStage {{
 
 QLabel#syncExecutionStageSummary,
 QLabel#syncExecutionProgressSummary,
-QLabel#syncExecutionEta {{
+QLabel#syncExecutionEta,
+QLabel#syncPreparationSummary {{
     color: {tokens.text_secondary};
 }}
 
-QLabel#syncExecutionItem {{
+QLabel#syncExecutionItem,
+QLabel#syncPreparationDetail {{
     color: {tokens.text_secondary};
     font-size: {typography.small_pt:g}pt;
+}}
+
+QScrollArea#syncPreparationProgressList,
+QScrollArea#syncPreparationProgressList > QWidget > QWidget {{
+    background-color: transparent;
+    border: none;
+}}
+
+QLabel#syncPreparationName {{
+    font-weight: 600;
 }}
 
 QPlainTextEdit#syncExecutionActivity {{

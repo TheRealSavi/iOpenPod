@@ -133,7 +133,8 @@ Sync checks media tools only for incoming Tracks and preserves committed Host-pa
 provenance independently of Acoustic Fingerprints in Library Sync Helper v3.
 Embedded artwork uses seekable reads, including for large audiobooks. Successful
 FFprobe output remains usable with incidental metadata diagnostics. Preparation
-reports active phases and groups repeated informational conversion notices. Normal
+reports all concurrent Tracks with separate phase progress measured from FFmpeg's
+output time and speed, and groups repeated informational conversion notices. Normal
 Play Counts and On-The-Go positional data is preserved or remapped in the same
 Storage Transaction as the Library, with unchanged bytes retained wherever possible.
 Oversized Photo containers become bounded PNG stills, with separate Host and iPod
@@ -141,7 +142,7 @@ content digests. Publication verification and automatic recovery report their
 current files; verified restoration cleanup retries do not repeat media reads.
 macOS AppleDouble companions are excluded from artwork dependencies, and cleanup
 tolerates entries already removed by filesystem metadata maintenance.
-See ADR-0084 through ADR-0086 and `docs/sync-workflow-audit-2026-09-26.md`.
+See ADR-0084 through ADR-0087 and `docs/sync-workflow-audit-2026-09-26.md`.
 Compressed iTunesCDB and SQLite-backed iPod Library variants are selected from the
 identified Device Profile. iPodDB unwraps and reproduces CDB framing and treats the
 CDB as the sole readable Library authority. It generates all five SQLite databases

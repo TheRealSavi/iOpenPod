@@ -15,6 +15,7 @@ from mutagen.mp3 import MP3
 
 from device_registry.data.catalog import DEFAULT_CATALOG
 from iOpenPod.app.media import MediaInspectionError, MediaInspector, MediaTag
+from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.media.transcoding import (
     BitrateMode,
     LossyEncoder,
@@ -156,6 +157,30 @@ def test_high_resolution_surround_lossless_becomes_verified_stereo_alac(
             16,
         )
         assert len(result.warnings) == 3
+
+
+def test_preparation_reports_ffmpeg_time_for_conversion_and_verification(
+    tmp_path: Path, profile: DeviceProfile, transcoder: MediaTranscoder
+) -> None:
+    updates: list[MediaPreparationProgress] = []
+    with transcoder.prepare(
+        source(tmp_path, "surround.flac"),
+        profile,
+        TranscodeSettings(normalize_44100=True),
+        checkpoint=lambda: None,
+        progress=updates.append,
+    ):
+        pass
+    measured = [event for event in updates if event.processed_seconds is not None]
+    assert measured, "FFmpeg progress must reach callers before preparation completes"
+    assert {event.phase for event in measured} == {
+        MediaPreparationPhase.CONVERTING,
+        MediaPreparationPhase.VERIFYING,
+    }
+    assert all(
+        event.duration_seconds is not None and event.duration_seconds > 0
+        for event in measured
+    )
 
 
 def test_spoken_word_overrides_lossless_and_encodes_mono_at_selected_bitrate(

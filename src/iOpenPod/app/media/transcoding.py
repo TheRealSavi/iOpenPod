@@ -12,6 +12,7 @@ from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.media.content_type import classify_content_type
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.models import StreamKind
+from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iPodDB.library import AudioEncoding, MediaKind, MediaType, TrackChapter
 from storage.media_processing import (
     MediaToolError,
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.media.models import MediaInspection, MediaStream
     from iPodDB.library import Track
     from storage import FileFingerprint, HostPath
+    from storage.media_processing import MediaToolProgress
 
 
 class LossyEncoder(StrEnum):
@@ -715,19 +717,37 @@ class MediaTranscoder:
         rockbox_metadata: bool = False,
         normalize_tags: bool = False,
         compute_sound_check: bool = False,
-        progress: Callable[[str], None] | None = None,
+        progress: Callable[[MediaPreparationProgress], None] | None = None,
     ) -> Generator[PreparedTranscode]:
-        def report(message: str) -> None:
+        def report(
+            phase: MediaPreparationPhase,
+            message: str,
+            sample: MediaToolProgress | None = None,
+            duration: float | None = None,
+        ) -> None:
             checkpoint()
             if progress is not None:
-                progress(message)
+                progress(
+                    MediaPreparationProgress(
+                        phase,
+                        message,
+                        sample.processed_seconds if sample is not None else None,
+                        duration,
+                        sample.speed if sample is not None else None,
+                    )
+                )
 
         tools = tools or self.preflight(checkpoint=checkpoint)
         inspector = MediaInspector(tools.ffprobe)
         with media_workspace(checkpoint=checkpoint) as workspace:
-            report("Reading the Host file into private staging")
+            report(
+                MediaPreparationPhase.READING,
+                "Reading the Host file into private staging",
+            )
             captured = workspace.capture(source, expected=expected_source)
-            report("Inspecting data streams and metadata")
+            report(
+                MediaPreparationPhase.INSPECTING, "Inspecting data streams and metadata"
+            )
             observed = inspector.inspect_captured(captured, checkpoint=checkpoint)
             if metadata is not None:
                 metadata = enrich_source_metadata(metadata, observed)
@@ -745,7 +765,8 @@ class MediaTranscoder:
             )
             output_path = captured.snapshot
             if plan.requires_transcode:
-                report("Preparing compatible media for this iPod")
+                conversion_message = "Converting media for this iPod"
+                report(MediaPreparationPhase.CONVERTING, conversion_message)
                 output_path = workspace.output_path(plan.suffix)
                 args = plan.output_arguments
                 tags = (
@@ -757,6 +778,10 @@ class MediaTranscoder:
                     tools.ffmpeg,
                     (
                         *_input_arguments(captured.snapshot, self.threads_per_job),
+                        "-progress",
+                        "pipe:1",
+                        "-stats_period",
+                        "0.5",
                         *args,
                         "-map_metadata",
                         "0" if rockbox_metadata else "-1",
@@ -770,6 +795,15 @@ class MediaTranscoder:
                     ),
                     checkpoint=checkpoint,
                     timeout_seconds=max(120, float(observed.duration_seconds or 0) * 4),
+                    progress=lambda sample: report(
+                        MediaPreparationPhase.CONVERTING,
+                        conversion_message,
+                        sample,
+                        _duration(observed),
+                    ),
+                )
+                report(
+                    MediaPreparationPhase.INSPECTING, "Inspecting the converted media"
                 )
                 output = workspace.inspect_output(output_path)
                 result = inspector.inspect_captured(output, checkpoint=checkpoint)
@@ -803,7 +837,10 @@ class MediaTranscoder:
                         "The prepared audio duration differs from its source. Check or replace the source file; this item was not written to the iPod.",
                     )
             if rockbox_metadata:
-                report("Writing metadata to the prepared copy")
+                report(
+                    MediaPreparationPhase.METADATA,
+                    "Writing metadata to the prepared copy",
+                )
                 if metadata is None:
                     raise ValueError("Rockbox metadata requires the reviewed Track")
                 reviewed_track = metadata
@@ -818,11 +855,12 @@ class MediaTranscoder:
                 output_path = output.snapshot
                 result = inspector.inspect_captured(output, checkpoint=checkpoint)
             measure_sound_check = compute_sound_check and bool(result.audio_streams)
-            report(
+            verification_message = (
                 "Verifying prepared media and measuring Sound Check"
                 if measure_sound_check
                 else "Verifying prepared media"
             )
+            report(MediaPreparationPhase.VERIFYING, verification_message)
             # Attached cover images are not playable video. A broken optional
             # picture must not invalidate otherwise decodable audio.
             verification = (
@@ -841,6 +879,10 @@ class MediaTranscoder:
                     *_input_arguments(
                         output_path, self.threads_per_job, info=measure_sound_check
                     ),
+                    "-progress",
+                    "pipe:1",
+                    "-stats_period",
+                    "0.5",
                     *verification,
                     "-xerror",
                     "-f",
@@ -849,6 +891,12 @@ class MediaTranscoder:
                 ),
                 checkpoint=checkpoint,
                 timeout_seconds=max(120, float(result.duration_seconds or 0) * 2),
+                progress=lambda sample: report(
+                    MediaPreparationPhase.VERIFYING,
+                    verification_message,
+                    sample,
+                    _duration(result),
+                ),
             )
             gain: float | None = None
             warnings = plan.warnings

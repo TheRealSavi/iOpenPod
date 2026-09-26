@@ -9,8 +9,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from queue import Empty, SimpleQueue
-from threading import Lock
+from threading import Event, Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -19,6 +18,7 @@ from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTra
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
     PreparationCancelledError,
+    WriteItemProgress,
     WriteProgress,
 )
 from iOpenPod.app.media.importing import (
@@ -33,6 +33,7 @@ from iOpenPod.app.media.photo_sync import (
     photo_still_from_stream,
     prepare_sync_photo,
 )
+from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.media.sync_artwork import capture_sync_artwork
 from iOpenPod.app.media.transcoding import MediaTranscoder, TranscodeSettings
 from iOpenPod.app.services.device_coordinator import (
@@ -72,7 +73,6 @@ from storage.media_processing import available_compute_threads
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
-    from threading import Event
 
     from iOpenPod.app.host_media_library import HostMediaLibrary, HostMediaSource
     from iOpenPod.app.library_sync_helper import IPodMediaLibrary
@@ -610,8 +610,34 @@ class SyncExecutor:
         prepared: list[_PreparedTrack] = []
         issues: list[WriteIssue] = []
         cleanup_lock = Lock()
-        activity: SimpleQueue[tuple[SyncPlanItem, str]] = SimpleQueue()
+        activity_lock = Lock()
+        activity_updated = Event()
+        active: dict[SyncPlanItem, MediaPreparationProgress] = {}
+        activity_changed = False
+        preparation_order = {item: index for index, item in enumerate(changes)}
         completed = 0
+
+        def snapshot() -> tuple[WriteItemProgress, ...]:
+            with activity_lock:
+                return tuple(
+                    WriteItemProgress(
+                        host_path_identity(item.host_path or ""),
+                        item.name,
+                        active[item],
+                    )
+                    for item in sorted(active, key=preparation_order.__getitem__)
+                )
+
+        def report_activity(
+            item: SyncPlanItem, update: MediaPreparationProgress
+        ) -> None:
+            nonlocal activity_changed
+            # Coalesce samples from each worker so slow consumers cannot accumulate
+            # an unbounded queue. Only the executor thread publishes GUI messages.
+            with activity_lock:
+                active[item] = update
+                activity_changed = True
+                activity_updated.set()
 
         progress(
             WriteProgress(
@@ -624,21 +650,34 @@ class SyncExecutor:
         )
 
         def prepare(item: SyncPlanItem) -> _PreparedTrack:
-            result = self._prepare_one(
-                request,
+            nonlocal activity_changed
+            report_activity(
                 item,
-                sources[host_path_identity(item.host_path or "")],
-                tracks[host_path_identity(item.host_path or "")],
-                tools,
-                checkpoint,
-                lambda message: activity.put((item, message)),
+                MediaPreparationProgress(
+                    MediaPreparationPhase.READING, "Starting Host media preparation"
+                ),
             )
-            # Register ownership inside the worker before the result is delivered.
-            # Even a failed progress callback then closes every successful capture.
-            # The executor joins workers before the outer ExitStack can close.
-            with cleanup_lock:
-                resources.callback(result.resources.close)
-            return result
+            try:
+                result = self._prepare_one(
+                    request,
+                    item,
+                    sources[host_path_identity(item.host_path or "")],
+                    tracks[host_path_identity(item.host_path or "")],
+                    tools,
+                    checkpoint,
+                    lambda update: report_activity(item, update),
+                )
+                # Register ownership inside the worker before the result is delivered.
+                # Even a failed progress callback then closes every successful capture.
+                # The executor joins workers before the outer ExitStack can close.
+                with cleanup_lock:
+                    resources.callback(result.resources.close)
+                return result
+            finally:
+                with activity_lock:
+                    active.pop(item, None)
+                    activity_changed = True
+                    activity_updated.set()
 
         # Independent preparation runs concurrently; publication uses the single
         # ordered Storage transaction, avoiding competing USB writers.
@@ -650,24 +689,28 @@ class SyncExecutor:
             was_cancelled = False
 
             def finished() -> Generator[Future[_PreparedTrack]]:
+                nonlocal activity_changed
                 pending = set(futures)
                 while pending:
+                    activity_updated.wait(timeout=0.1)
+                    activity_updated.clear()
                     done, pending = wait(
-                        pending, timeout=0.1, return_when=FIRST_COMPLETED
+                        pending, timeout=0, return_when=FIRST_COMPLETED
                     )
-                    while True:
-                        try:
-                            item, message = activity.get_nowait()
-                        except Empty:
-                            break
+                    with activity_lock:
+                        changed = activity_changed
+                        activity_changed = False
+                    if changed:
+                        items = snapshot()
                         progress(
                             WriteProgress(
                                 "sync.prepare",
-                                message,
+                                "Preparing selected Tracks on the Host…",
                                 completed=completed,
                                 total=len(changes),
-                                current_item=item.name,
+                                current_item=items[-1].name if items else "",
                                 unit="Tracks",
+                                active_items=items,
                             )
                         )
                     yield from done
@@ -725,6 +768,7 @@ class SyncExecutor:
                         total=len(changes),
                         current_item=item.name,
                         unit="Tracks",
+                        active_items=snapshot(),
                     )
                 )
             if was_cancelled:
@@ -783,7 +827,7 @@ class SyncExecutor:
         track: Track,
         tools: MediaTools,
         checkpoint: Callable[[], None],
-        activity: Callable[[str], None],
+        activity: Callable[[MediaPreparationProgress], None],
     ) -> _PreparedTrack:
         checkpoint()
         _validate_host_source(source)
