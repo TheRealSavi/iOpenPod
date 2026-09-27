@@ -5,6 +5,8 @@
 > sidecars in the Library transaction.
 > ADR-0089 replaces Host recovery hints and mandatory restoration with device-scoped
 > restore-or-keep choices.
+> ADR-0093 extends automatic terminal cleanup to ordinary Library saves and
+> selected-device loading, reserving cleanup reminders for actual failures.
 
 - Status: Accepted
 - Date: 2026-09-25

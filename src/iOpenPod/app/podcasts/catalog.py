@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections import Counter
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -39,8 +40,16 @@ def reconcile_device_podcasts(
     history = {
         (item.subscription_id, item.episode_id): item for item in snapshot.history
     }
+    history_guids = _history_guid_index(history.values())
+    device_tracks = tuple(tracks)
+    guid_counts = Counter(
+        track.episode.strip()
+        for track in device_tracks
+        if track.episode.strip()
+        and (track.media_kind is MediaKind.PODCAST or track.metadata.podcast)
+    )
 
-    for track in tracks:
+    for track in device_tracks:
         if track.media_kind is not MediaKind.PODCAST and not track.metadata.podcast:
             continue
         title = (
@@ -74,6 +83,17 @@ def reconcile_device_podcasts(
 
         retained = {item.episode_id: item for item in subscription.episodes}
         existing = retained.get(episode.episode_id)
+        if existing is None and guid_counts[episode.guid] == 1:
+            existing = _episode_matching_guid(subscription.episodes, episode.guid)
+        observed = _matching_history(
+            history,
+            history_guids,
+            subscription_id,
+            episode,
+            allow_guid=guid_counts[episode.guid] == 1,
+        )
+        if existing is None and observed is not None:
+            episode = replace(episode, episode_id=observed.episode_id)
         if existing is not None:
             episode = replace(
                 existing,
@@ -92,7 +112,13 @@ def reconcile_device_podcasts(
         retained[episode.episode_id] = episode
 
         history_key = (subscription_id, episode.episode_id)
-        observed = history.get(history_key)
+        observed = _matching_history(
+            history,
+            history_guids,
+            subscription_id,
+            episode,
+            allow_guid=guid_counts[episode.guid] == 1,
+        )
         play_count = max(
             track.play_count,
             track.metadata.unscrobbled_play_count,
@@ -117,6 +143,13 @@ def reconcile_device_podcasts(
                 ),
                 observed_play_count=play_count,
                 last_played=last_played,
+                published_at=episode.published_at
+                or (observed.published_at if observed else 0),
+                episode_number=episode.episode_number
+                or (observed.episode_number if observed else None),
+                automatically_cleared=observed.automatically_cleared
+                if observed
+                else False,
             )
         subscriptions[subscription_id] = replace(
             subscription,
@@ -175,27 +208,44 @@ def merge_fetched_subscription(
         (record.subscription_id, record.episode_id): record
         for record in snapshot.history
     }
+    history_guids = _history_guid_index(history.values())
+    guid_counts = Counter(episode.guid for episode in fetched.episodes if episode.guid)
     for episode in fetched.episodes:
         old = retained.pop(episode.episode_id, None)
+        unique_guid = guid_counts[episode.guid] == 1
+        if old is None and unique_guid and current is not None:
+            match = _episode_matching_guid(current.episodes, episode.guid)
+            if match is not None:
+                old = retained.pop(match.episode_id, None)
+        record = (
+            _matching_history(history, history_guids, subscription_id, episode)
+            if unique_guid
+            else history.get((subscription_id, episode.episode_id))
+        )
         if old is not None:
             episode = replace(
                 episode,
+                episode_id=old.episode_id,
                 on_device=old.on_device,
                 track_id=old.track_id,
                 listened=old.listened,
                 listened_override=old.listened_override,
                 play_count=old.play_count,
                 last_played=old.last_played,
+                automatically_cleared=old.automatically_cleared,
             )
-        merged.append(
-            _with_history(
-                episode,
-                history.get((subscription_id, episode.episode_id)),
-            )
-        )
+        elif record is not None:
+            episode = replace(episode, episode_id=record.episode_id)
+        record = history.get((subscription_id, episode.episode_id)) or record
+        if record is not None:
+            record = _enrich_history(record, episode)
+            history[(subscription_id, record.episode_id)] = record
+        merged.append(_with_history(episode, record))
     for episode in retained.values():
         record = history.get((subscription_id, episode.episode_id))
-        if episode.on_device or record is not None:
+        # Independent history survives, but a vanished feed Episode must not
+        # become a fresh automatic download candidate from stale metadata.
+        if episode.on_device:
             merged.append(_with_history(episode, record))
 
     subscription = replace(
@@ -203,6 +253,9 @@ def merge_fetched_subscription(
         subscription_id=subscription_id,
         source=source or (current.source if current is not None else fetched.source),
         artwork_id=current.artwork_id if current is not None else fetched.artwork_id,
+        sync_settings=(
+            current.sync_settings if current is not None else fetched.sync_settings
+        ),
         episodes=_ordered_episodes(merged),
     )
     subscriptions = {item.subscription_id: item for item in snapshot.subscriptions}
@@ -210,6 +263,7 @@ def merge_fetched_subscription(
     return replace(
         snapshot,
         subscriptions=_ordered_subscriptions(subscriptions.values()),
+        history=_ordered_history(history.values()),
     )
 
 
@@ -270,6 +324,12 @@ def mark_episodes_listened(
                 old.last_played if old else episode.last_played,
                 timestamp if listened else 0,
             ),
+            published_at=episode.published_at or (old.published_at if old else 0),
+            episode_number=episode.episode_number
+            or (old.episode_number if old else None),
+            automatically_cleared=(
+                old.automatically_cleared if old else episode.automatically_cleared
+            ),
         )
     updated = replace(snapshot, history=_ordered_history(records.values()))
     return _project_history(updated)
@@ -303,6 +363,51 @@ def mark_episode_selection_listened(
             changed_at=timestamp,
         )
     return updated
+
+
+def mark_episodes_automatically_cleared(
+    snapshot: PodcastSnapshot,
+    selections: tuple[tuple[str, str], ...],
+) -> PodcastSnapshot:
+    """Remember automatic removals without inventing a listened/unlistened choice.
+
+    The caller publishes this desired history with the Library transaction that
+    removes these Episodes. Manual additions may still select cleared Episodes.
+    """
+    selected = frozenset(selections)
+    if not selected:
+        raise ValueError("No Podcast Episodes were selected")
+    episodes = {
+        (subscription.subscription_id, episode.episode_id): episode
+        for subscription in snapshot.subscriptions
+        for episode in subscription.episodes
+    }
+    if not selected <= episodes.keys():
+        raise ValueError("The selected Podcast Episodes are no longer available")
+    records = {
+        (record.subscription_id, record.episode_id): record
+        for record in snapshot.history
+    }
+    for identity in selected:
+        episode = episodes[identity]
+        record = records.get(identity)
+        if record is None:
+            record = ListeningRecord(
+                identity[0],
+                identity[1],
+                listened_override=episode.listened_override,
+                observed_play_count=episode.play_count,
+                last_played=episode.last_played,
+            )
+        records[identity] = replace(
+            _enrich_history(record, episode),
+            observed_play_count=max(record.observed_play_count, episode.play_count),
+            last_played=max(record.last_played, episode.last_played),
+            automatically_cleared=True,
+        )
+    return _project_history(
+        replace(snapshot, history=_ordered_history(records.values()))
+    )
 
 
 def _project_history(snapshot: PodcastSnapshot) -> PodcastSnapshot:
@@ -372,6 +477,7 @@ def _clear_device_projection(subscription: PodcastSubscription) -> PodcastSubscr
                 listened_override=None,
                 play_count=0,
                 last_played=0,
+                automatically_cleared=False,
             )
             for episode in subscription.episodes
         ),
@@ -429,7 +535,58 @@ def _with_history(
         listened_override=history.listened_override,
         play_count=max(episode.play_count, history.observed_play_count),
         last_played=max(episode.last_played, history.last_played),
+        published_at=episode.published_at or history.published_at,
+        episode_number=episode.episode_number or history.episode_number,
+        automatically_cleared=history.automatically_cleared,
     )
+
+
+def _enrich_history(
+    record: ListeningRecord, episode: PodcastEpisode
+) -> ListeningRecord:
+    """Retain publisher ordering facts even after the Episode leaves its feed."""
+    return replace(
+        record,
+        guid=episode.guid or record.guid,
+        enclosure_url=episode.enclosure_url or record.enclosure_url,
+        title=episode.title or record.title,
+        published_at=episode.published_at or record.published_at,
+        episode_number=episode.episode_number or record.episode_number,
+    )
+
+
+def _episode_matching_guid(
+    episodes: Iterable[PodcastEpisode], guid: str
+) -> PodcastEpisode | None:
+    if not guid:
+        return None
+    matches = tuple(episode for episode in episodes if episode.guid == guid)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _matching_history(
+    records: dict[tuple[str, str], ListeningRecord],
+    by_guid: dict[tuple[str, str], ListeningRecord | None],
+    subscription_id: str,
+    episode: PodcastEpisode,
+    *,
+    allow_guid: bool = True,
+) -> ListeningRecord | None:
+    exact = records.get((subscription_id, episode.episode_id))
+    if exact is not None or not episode.guid or not allow_guid:
+        return exact
+    return by_guid.get((subscription_id, episode.guid))
+
+
+def _history_guid_index(
+    records: Iterable[ListeningRecord],
+) -> dict[tuple[str, str], ListeningRecord | None]:
+    result: dict[tuple[str, str], ListeningRecord | None] = {}
+    for record in records:
+        if record.guid:
+            key = (record.subscription_id, record.guid)
+            result[key] = None if key in result else record
+    return result
 
 
 def _ordered_episodes(episodes: Iterable[PodcastEpisode]) -> tuple[PodcastEpisode, ...]:
@@ -465,6 +622,7 @@ def _ordered_history(records: Iterable[ListeningRecord]) -> tuple[ListeningRecor
 
 __all__ = [
     "mark_episode_selection_listened",
+    "mark_episodes_automatically_cleared",
     "mark_episodes_listened",
     "merge_fetched_subscription",
     "reconcile_device_podcasts",

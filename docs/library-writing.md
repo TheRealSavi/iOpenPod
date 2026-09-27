@@ -583,8 +583,10 @@ is known. Storage stages and verifies file writes, retains originals and a journ
 publishes thumbnail files followed by ArtworkDB, PhotosDB, and iTunesDB, then moves obsolete
 media into recovery. Files referenced by surviving Tracks remain. Only success
 adopts a new source and clears the draft. Failed or stale
-results cannot overwrite current draft state. The review displays save diagnostics
-and the retained recovery path. General Sync remains disabled.
+results cannot overwrite current draft state. Successful saves automatically clean
+their committed recovery files. The review displays save diagnostics and a retained
+recovery path only when recovery or cleanup is still needed. See
+[ADR-0093](adr/0093-complete-terminal-transaction-cleanup-automatically.md).
 
 The workspace retains artwork assets and explicit deletion intent in each captured
 request. The Track metadata editor exposes artwork clearing, while shared context
@@ -596,10 +598,17 @@ or fabricated review.
 
 Saving revalidates all retained database fingerprints, signing identity, captured file
 preconditions, and any required positional sidecar inventory before publication.
-Storage recovery copies remain beneath `.iopenpod-recovery`, independently of
-Backup Snapshots. `inspect_transaction` and `restore_transaction` verify the entire
+Storage recovery copies are retained beneath `.iopenpod-recovery` through commit,
+independently of Backup Snapshots. `inspect_transaction` and `restore_transaction` verify the entire
 observation and original files before restoration; unrelated later edits block it.
-There is no recovery UI or automatic recovery-copy cleanup yet. The Track metadata
+Terminal cleanup follows verified saves; Sync defers it until its Library Sync
+Helper update has been attempted. Selection automatically cleans matching completed
+transactions only after all active journals have been checked for unfinished
+recovery. Interrupted publication requires the existing restore-or-keep choice,
+while an actual cleanup failure preserves its reason and journal location.
+Automatic Library saves open warning diagnostics while retaining the saved Library
+and clean draft; reloading automatically retries cleanup. Sync and selection
+failures expose Retry Cleanup for remaining recovery files. The Track metadata
 editor can choose, orient, square-crop, replace, or clear artwork and submits its
 bounded RGB888 asset in the same revision-checked batch as metadata. For mixed
 artwork, it can also consolidate the selection onto one existing cover from a grid

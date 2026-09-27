@@ -4,6 +4,7 @@
 - Date: 2026-09-26
 - Supersedes: ADR-0036's restriction on metadata-editor classification changes
 - Extends: ADR-0026
+- Amended by: ADR-0092 for mandatory Podcast and video playback flags
 
 ## Context
 

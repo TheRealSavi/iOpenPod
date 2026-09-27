@@ -1,5 +1,8 @@
 # ADR-0089: Make interrupted Sync recovery a device-scoped choice
 
+> ADR-0093 replaces routine terminal cleanup reminders with automatic cleanup on
+> selection; interrupted, foreign, and declined journals retain the policy below.
+
 - Status: Accepted
 - Date: 2026-09-26
 - Supersedes: ADR-0076's Host recovery hints and mandatory-restoration policy

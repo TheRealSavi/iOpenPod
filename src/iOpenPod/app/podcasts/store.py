@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
@@ -20,7 +21,14 @@ from iOpenPod.app.podcasts.models import (
     PodcastSnapshot,
     PodcastSubscription,
 )
-from storage import DevicePath, FileFingerprint
+from storage import (
+    DevicePath,
+    FileContent,
+    FileFingerprint,
+    FilePrecondition,
+    StorageTransaction,
+    TransactionWrite,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -49,6 +57,27 @@ class LoadedPodcastState:
 
 class PodcastDeviceStore:
     """Hide document paths, validation, reconciliation, and safe replacement."""
+
+    @staticmethod
+    def history_transaction(state: LoadedPodcastState) -> StorageTransaction:
+        """Prepare history for the same recoverable commit as Episode removal."""
+        if not state.snapshot.writable:
+            raise ValueError("Podcast state is not safely writable")
+        payload = encode_history(state.snapshot.history)
+        _validate_document_size(payload, "Listening History")
+        return StorageTransaction(
+            writes=(
+                TransactionWrite(
+                    HISTORY_PATH,
+                    payload,
+                    FileContent(len(payload), hashlib.sha256(payload).hexdigest()),
+                    state.revision.history,
+                ),
+            ),
+            dependencies=(
+                FilePrecondition(SUBSCRIPTIONS_PATH, state.revision.subscriptions),
+            ),
+        )
 
     def load(
         self,
@@ -135,6 +164,8 @@ class PodcastDeviceStore:
             raise ValueError("Podcast state is not safely writable")
         history = encode_history(state.snapshot.history)
         subscriptions = encode_subscriptions(state.snapshot.subscriptions)
+        _validate_document_size(history, "Listening History")
+        _validate_document_size(subscriptions, "Podcast Subscriptions")
         history_fingerprint = self._write_if_changed(
             session,
             HISTORY_PATH,
@@ -171,8 +202,6 @@ class PodcastDeviceStore:
         payload: bytes,
         expected: FileFingerprint | None,
     ) -> FileFingerprint:
-        import hashlib
-
         digest = hashlib.sha256(payload).hexdigest()
         if (
             expected is not None
@@ -187,6 +216,14 @@ class PodcastDeviceStore:
             create_parents=True,
         )
         return result.fingerprint
+
+
+def _validate_document_size(payload: bytes, name: str) -> None:
+    if len(payload) > _MAX_DOCUMENT_BYTES:
+        raise ValueError(
+            f"{name} exceeds the supported 8 MiB document size. "
+            "Podcast changes were not saved; existing history and episodes were kept."
+        )
 
 
 __all__ = [

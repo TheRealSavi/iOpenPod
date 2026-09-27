@@ -7,13 +7,24 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import (
+    QAbstractItemModel,
+    QEvent,
     QModelIndex,
     QPersistentModelIndex,
     QRectF,
     QSize,
     Qt,
+    Signal,
 )
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPen,
+)
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
 from iOpenPod.app.models.artwork_seed import stable_artwork_seed
@@ -208,6 +219,8 @@ class PodcastShowDelegate(QStyledItemDelegate):
 class PodcastEpisodeDelegate(QStyledItemDelegate):
     """Paint editorial episode rows with metadata, synopsis, and device state."""
 
+    actionRequested = Signal(QModelIndex)
+
     def __init__(
         self,
         theme_manager: ThemeManager,
@@ -215,6 +228,64 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
     ) -> None:
         super().__init__(parent)
         self._theme_manager = theme_manager
+        self._add_enabled = False
+        self._pressed_action = QPersistentModelIndex()
+
+    def set_add_enabled(self, enabled: bool) -> None:
+        self._add_enabled = enabled
+        if not enabled:
+            self._pressed_action = QPersistentModelIndex()
+
+    def action_rect(
+        self,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> QRectF:
+        """Return the same action bounds used to paint this Episode's control."""
+        episode = index.data(PodcastListRole.RECORD)
+        if not isinstance(episode, PodcastEpisode):
+            return QRectF()
+        row = QRectF(option.rect).adjusted(8, 4, -8, -4)
+        if episode.on_device:
+            return _episode_play_rect(row)
+        if not episode.enclosure_url:
+            return QRectF()
+        return _episode_state_rect(
+            row, episode, option.font, self._theme_manager.typography
+        )
+
+    def editorEvent(
+        self,
+        event: QEvent,
+        model: QAbstractItemModel,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> bool:
+        if not isinstance(event, QMouseEvent):
+            return False
+        if event.button() is not Qt.MouseButton.LeftButton:
+            return False
+        episode = index.data(PodcastListRole.RECORD)
+        actionable = (
+            bool(index.flags() & Qt.ItemFlag.ItemIsEnabled)
+            and isinstance(episode, PodcastEpisode)
+            and (episode.on_device or self._add_enabled)
+            and self.action_rect(option, index).contains(event.position())
+        )
+        if event.type() is QEvent.Type.MouseButtonPress:
+            self._pressed_action = (
+                QPersistentModelIndex(index) if actionable else QPersistentModelIndex()
+            )
+            return actionable
+        if event.type() is QEvent.Type.MouseButtonRelease:
+            pressed = self._pressed_action
+            self._pressed_action = QPersistentModelIndex()
+            if actionable and pressed.isValid() and pressed == index:
+                self.actionRequested.emit(
+                    model.index(index.row(), index.column(), index.parent())
+                )
+                return True
+        return False
 
     def sizeHint(
         self,
@@ -303,7 +374,15 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
             body_metrics,
             max_lines=2,
         )
-        _paint_episode_state(painter, row, episode, option.font, typography, tokens)
+        _paint_episode_state(
+            painter,
+            row,
+            episode,
+            option.font,
+            typography,
+            tokens,
+            add_enabled=self._add_enabled,
+        )
         if focused:
             _paint_focus(painter, row, tokens)
         painter.restore()
@@ -420,31 +499,41 @@ def _paint_episode_state(
     base_font: QFont,
     typography: TypographyTokens,
     tokens: ThemeTokens,
+    *,
+    add_enabled: bool,
 ) -> None:
     font = _font(base_font, typography.small_pt, QFont.Weight.DemiBold)
     painter.setFont(font)
-    metrics = QFontMetrics(font)
     state_text = episode_status_text(episode)
-    width = min(132, metrics.horizontalAdvance(state_text) + LAYOUT.space_lg)
-    rect = QRectF(
-        row.right() - width - LAYOUT.space_md,
-        row.top() + LAYOUT.space_md,
-        width,
-        LAYOUT.control_height_compact,
-    )
+    rect = _episode_state_rect(row, episode, base_font, typography)
+    addable = add_enabled and bool(episode.enclosure_url)
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(
-        QColor(tokens.surface_selected if episode.on_device else tokens.accent)
+        QColor(
+            tokens.surface_selected
+            if episode.on_device
+            else tokens.accent
+            if addable
+            else tokens.surface_alt
+        )
     )
     painter.drawRoundedRect(
         rect,
         rect.height() / 2,
         rect.height() / 2,
     )
-    painter.setPen(QColor(tokens.accent if episode.on_device else tokens.accent_ink))
+    painter.setPen(
+        QColor(
+            tokens.accent
+            if episode.on_device
+            else tokens.accent_ink
+            if addable
+            else tokens.text_disabled
+        )
+    )
     painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, state_text)
     if episode.on_device:
-        circle = QRectF(row.right() - 56, row.bottom() - 56, 40, 40)
+        circle = _episode_play_rect(row)
         painter.setBrush(QColor(tokens.accent))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(circle)
@@ -457,11 +546,35 @@ def _paint_episode_state(
         painter.drawPath(path)
 
 
+def _episode_state_rect(
+    row: QRectF,
+    episode: PodcastEpisode,
+    base_font: QFont,
+    typography: TypographyTokens,
+) -> QRectF:
+    font = _font(base_font, typography.small_pt, QFont.Weight.DemiBold)
+    width = min(
+        132,
+        QFontMetrics(font).horizontalAdvance(episode_status_text(episode))
+        + LAYOUT.space_lg,
+    )
+    return QRectF(
+        row.right() - width - LAYOUT.space_md,
+        row.top() + LAYOUT.space_md,
+        width,
+        LAYOUT.control_height_compact,
+    )
+
+
+def _episode_play_rect(row: QRectF) -> QRectF:
+    return QRectF(row.right() - 56, row.bottom() - 56, 40, 40)
+
+
 def episode_status_text(episode: PodcastEpisode) -> str:
     """Return the concise device action or state shown beside an Episode."""
 
     if not episode.on_device:
-        return "Add to iPod"
+        return "Add to iPod" if episode.enclosure_url else "Unavailable"
     states = ["ON IPOD"]
     if episode.listened:
         states.append("LISTENED")

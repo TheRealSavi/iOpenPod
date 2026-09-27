@@ -133,6 +133,10 @@ _ARTWORK_DATABASE_LIMIT = 128 * 1024 * 1024
 _PHOTOS_DATABASE_LIMIT = 128 * 1024 * 1024
 _ARTWORK_PAYLOAD_LIMIT = 32 * 1024 * 1024
 _PHOTO_PAYLOAD_LIMIT = 32 * 1024 * 1024
+_TRANSACTION_CLEANUP_ISSUE_CODES = {
+    DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING,
+    DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING,
+}
 _IPOD_SYSINFO_VPD_PLAN = ScsiVpdPagePlan(
     index_page=0xC0,
     first_data_page=0xC2,
@@ -342,8 +346,14 @@ class DeviceCoordinator:
             return self._sync_cleanup_path
 
     def _check_sync_recovery(self, session: FilesystemSession) -> str:
+        journals = self._terminal_sync_journals(session)
+        return str(journals[0][0]) if journals else ""
+
+    def _terminal_sync_journals(
+        self, session: FilesystemSession
+    ) -> tuple[tuple[DevicePath, TransactionState], ...]:
         try:
-            return _require_no_pending_transaction(session)
+            return _terminal_transaction_journals(session)
         except SyncRecoveryRequiredError as error:
             self._recovery_observations[error.recovery_path] = (
                 session.mounted_volume,
@@ -488,17 +498,7 @@ class DeviceCoordinator:
         """Remove recovery payloads only after the committed Library was verified."""
 
         with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
-            path = DevicePath(recovery_path)
-            try:
-                flushed = session.finalize_committed_transaction(path)
-            except TransactionDurabilityPendingError as error:
-                _raise_if_cleanup_completed(session, path, error)
-                raise
-            if not flushed.complete:
-                raise SyncCleanupCompletedError(
-                    "Sync recovery files were removed, but device flushing could not be confirmed. "
-                    "Safely eject before unplugging. " + flushed.detail
-                )
+            _finalize_committed_transaction(session, DevicePath(recovery_path))
 
     def recover_failed_sync(
         self,
@@ -783,10 +783,7 @@ class DeviceCoordinator:
                     ):
                         flushed = session.finalize_committed_transaction(path)
                     else:
-                        recovery = session.inspect_transaction(path)
-                        if recovery.state is not TransactionState.RESTORED:
-                            raise SyncRecoveryRequiredError(str(path))
-                        flushed = session.finalize_transaction(recovery)
+                        flushed = session.finalize_restored_transaction(path)
                 except TransactionDurabilityPendingError as error:
                     _raise_if_cleanup_completed(session, path, error)
                     raise
@@ -974,6 +971,8 @@ class DeviceCoordinator:
         request: LibraryPreparationRequest,
         progress: Callable[[WriteProgress], None],
         cancelled: threading.Event,
+        *,
+        podcast_state: LoadedPodcastState | None = None,
     ) -> LibraryReview:
         """Prepare an in-memory review using only reads from the selected session."""
         from iOpenPod.app.library_write import (
@@ -1210,6 +1209,14 @@ class DeviceCoordinator:
                         expected.database_name
                     ),
                 )
+                if podcast_state is not None:
+                    history = self._podcast_store.history_transaction(podcast_state)
+                    write = replace(
+                        write,
+                        writes=(*write.writes, *history.writes),
+                        dependencies=(*write.dependencies, *history.dependencies),
+                    )
+                    active.session.validate_transaction(write)
             review = LibraryReview(
                 plan,
                 result,
@@ -1267,8 +1274,14 @@ class DeviceCoordinator:
         expected: ActiveIPod,
         progress: Callable[[WriteProgress], None],
         cancelled: threading.Event,
+        *,
+        retain_recovery: bool = False,
     ) -> LibrarySaveResult:
-        """Publish only the captured transaction belonging to this issued review."""
+        """Publish the issued review and clean its verified transaction by default.
+
+        Sync explicitly retains recovery until its post-commit provenance step,
+        then owns finalization. Ordinary saves must not leave that work to callers.
+        """
         from iOpenPod.app.library_write import (
             LibrarySaveResult,
             PreparationCancelledError,
@@ -1499,9 +1512,47 @@ class DeviceCoordinator:
                                     detail="\n".join(details),
                                 ),
                             )
-                    return LibrarySaveResult(
-                        issues, updated, str(committed.recovery.journal_path)
-                    )
+                    recovery_path = str(committed.recovery.journal_path)
+                    if not retain_recovery:
+                        try:
+                            progress(
+                                WriteProgress(
+                                    "save.cleanup",
+                                    "Cleaning verified Library recovery files…",
+                                )
+                            )
+                            _finalize_committed_transaction(
+                                session, committed.recovery.journal_path
+                            )
+                            recovery_path = ""
+                        except SyncCleanupCompletedError as error:
+                            recovery_path = ""
+                            issues += (
+                                WriteIssue(
+                                    "save.cleanup_flush_pending",
+                                    "Library changes were saved and recovery files were removed, "
+                                    "but the final device flush could not be confirmed. "
+                                    "Safely eject before unplugging.",
+                                    severity=IssueSeverity.WARNING,
+                                    phase="save",
+                                    detail=str(error),
+                                ),
+                            )
+                        except Exception as error:
+                            # Publication is already verified. A cleanup failure
+                            # must never turn the accepted Library into a failed save.
+                            issues += (
+                                WriteIssue(
+                                    "save.cleanup_pending",
+                                    "Library changes were saved, but recovery-file cleanup "
+                                    "could not finish. Reload the iPod to retry cleanup.",
+                                    severity=IssueSeverity.WARNING,
+                                    phase="save",
+                                    detail=str(error),
+                                    artifact=recovery_path,
+                                ),
+                            )
+                    return LibrarySaveResult(issues, updated, recovery_path)
             except RecoverableWriteError as error:
                 self._prepared_for_save = None
                 if not error.publication_started and isinstance(
@@ -1575,6 +1626,7 @@ class DeviceCoordinator:
         previous = self._records.get(
             DeviceCandidateId(mounted.connection_generation.value)
         )
+        current: _CandidateRecord | None
         try:
             if (
                 not refresh_known
@@ -1584,8 +1636,49 @@ class DeviceCoordinator:
             ):
                 with self._storage.open_session(mounted) as session:
                     self._check_sync_recovery(session)
-                return previous
-            return self._inspect_mounted_volume(mounted)
+                current = previous
+            else:
+                current = self._inspect_mounted_volume(mounted)
+            active = self._active
+            if (
+                current is not None
+                and previous is not None
+                and active is not None
+                and active.record.mounted_volume.connection_generation
+                == mounted.connection_generation
+            ):
+                with self._storage.open_session(mounted) as session:
+                    self._sync_cleanup_path = self._check_sync_recovery(session)
+                cleanup_issues = tuple(
+                    issue
+                    for issue in previous.persistent_issues
+                    if issue.code
+                    is DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING
+                    or (
+                        issue.code
+                        is DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING
+                        and self._sync_cleanup_path
+                    )
+                )
+                current = replace(
+                    current,
+                    candidate=replace(
+                        current.candidate,
+                        issues=tuple(
+                            issue
+                            for issue in current.candidate.issues
+                            if issue.code not in _TRANSACTION_CLEANUP_ISSUE_CODES
+                        )
+                        + cleanup_issues,
+                    ),
+                    persistent_issues=tuple(
+                        issue
+                        for issue in current.persistent_issues
+                        if issue.code not in _TRANSACTION_CLEANUP_ISSUE_CODES
+                    )
+                    + cleanup_issues,
+                )
+            return current
         except SyncRecoveryRequiredError as error:
             # Discovery must still list every other iPod. Selection opens the
             # recovery choice before parsing this iPod's interrupted Library.
@@ -1617,6 +1710,22 @@ class DeviceCoordinator:
                 raise DeviceCandidateNotFoundError(
                     "This device is no longer connected. Refresh the Device Picker."
                 )
+            record = replace(
+                record,
+                candidate=replace(
+                    record.candidate,
+                    issues=tuple(
+                        issue
+                        for issue in record.candidate.issues
+                        if issue.code not in _TRANSACTION_CLEANUP_ISSUE_CODES
+                    ),
+                ),
+                persistent_issues=tuple(
+                    issue
+                    for issue in record.persistent_issues
+                    if issue.code not in _TRANSACTION_CLEANUP_ISSUE_CODES
+                ),
+            )
             if not record.candidate.selectable:
                 raise DeviceNotSelectableError(
                     f"{record.candidate.display_name} is not ready to load "
@@ -1633,6 +1742,9 @@ class DeviceCoordinator:
             except StorageError as error:
                 raise DeviceAccessError(str(error)) from error
             if reconcile_metadata:
+                cleanup_issues = self._cleanup_selected_transactions(record)
+                for issue in cleanup_issues:
+                    record = _with_persistent_issue(record, issue)
                 record = self._reconcile_device_metadata(record)
             self._records[candidate_id] = record
 
@@ -1708,7 +1820,9 @@ class DeviceCoordinator:
                             ),
                         )
                         active_ipod = replace(active_ipod, candidate=current.candidate)
-                    self._sync_cleanup_path = self._check_sync_recovery(session)
+                    remaining_cleanup = self._check_sync_recovery(session)
+                    if not self._sync_cleanup_path:
+                        self._sync_cleanup_path = remaining_cleanup
                     if session.fingerprint(database_path) != current_fingerprint:
                         raise DeviceChangedError(
                             "The iTunesDB changed while desktop presentation was updated. Reload the iPod."
@@ -1735,6 +1849,75 @@ class DeviceCoordinator:
             except StorageError as error:
                 session.close()
                 raise DeviceAccessError(str(error)) from error
+
+    def _cleanup_selected_transactions(
+        self, record: _CandidateRecord
+    ) -> tuple[DeviceCandidateIssue, ...]:
+        """Reclaim verified terminal transactions only for the selected iPod."""
+        if not self._sync_cleanup_path:
+            return ()
+        if not record.mounted_volume.volume.capabilities.safe_for_writes:
+            return (
+                DeviceCandidateIssue(
+                    DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING,
+                    "Recovery files could not be cleaned because the Volume is read-only or unsafe for writes.",
+                ),
+            )
+        issues: list[DeviceCandidateIssue] = []
+        pending = ""
+        try:
+            with self._storage.open_session(
+                record.mounted_volume, access=AccessMode.READ_WRITE
+            ) as session:
+                # Examine every journal before deleting any recovery copies. An
+                # unfinished or malformed transaction still requires a decision.
+                journals = self._terminal_sync_journals(session)
+                for path, state in journals:
+                    self._sync_cleanup_path = pending or str(path)
+                    try:
+                        flushed = (
+                            session.finalize_committed_transaction(path)
+                            if state is TransactionState.COMMITTED
+                            else session.finalize_restored_transaction(path)
+                        )
+                    except StorageError as error:
+                        if not session.is_active:
+                            raise
+                        remains = session.exists(path)
+                        if remains and not pending:
+                            pending = str(path)
+                        issues.append(
+                            DeviceCandidateIssue(
+                                DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING
+                                if remains
+                                else DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING,
+                                (
+                                    f"Recovery-file cleanup could not finish for {path}: {error}"
+                                    if remains
+                                    else "Recovery files were removed, but device flushing could not be confirmed. "
+                                    f"Safely eject before unplugging. {error}"
+                                ),
+                            )
+                        )
+                    else:
+                        if not flushed.complete:
+                            issues.append(
+                                DeviceCandidateIssue(
+                                    DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING,
+                                    "Recovery files were removed, but device flushing could not be confirmed. "
+                                    "Safely eject before unplugging. " + flushed.detail,
+                                )
+                            )
+        except StorageError as error:
+            return (
+                *issues,
+                DeviceCandidateIssue(
+                    DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING,
+                    f"Recovery-file cleanup could not finish: {error}",
+                ),
+            )
+        self._sync_cleanup_path = pending
+        return tuple(issues)
 
     def _reconcile_volume_presentation(
         self, record: _CandidateRecord, active: ActiveIPod
@@ -2704,7 +2887,18 @@ class DeviceCoordinator:
             return None
 
         active.record = current
-        if refresh_candidate and active.active_ipod.candidate != current.candidate:
+        cleanup_changed = tuple(
+            issue
+            for issue in active.active_ipod.candidate.issues
+            if issue.code in _TRANSACTION_CLEANUP_ISSUE_CODES
+        ) != tuple(
+            issue
+            for issue in current.candidate.issues
+            if issue.code in _TRANSACTION_CLEANUP_ISSUE_CODES
+        )
+        if (
+            refresh_candidate or cleanup_changed
+        ) and active.active_ipod.candidate != current.candidate:
             active.active_ipod = replace(
                 active.active_ipod, candidate=current.candidate
             )
@@ -3522,6 +3716,21 @@ def _display_cover_formats(profile: DeviceProfile) -> tuple[ArtworkFormat, ...]:
     return native or (_DISPLAY_ONLY_F1060,)
 
 
+def _finalize_committed_transaction(
+    session: FilesystemSession, path: DevicePath
+) -> None:
+    try:
+        flushed = session.finalize_committed_transaction(path)
+    except TransactionDurabilityPendingError as error:
+        _raise_if_cleanup_completed(session, path, error)
+        raise
+    if not flushed.complete:
+        raise SyncCleanupCompletedError(
+            "Recovery files were removed, but device flushing could not be confirmed. "
+            "Safely eject before unplugging. " + flushed.detail
+        )
+
+
 def _raise_if_cleanup_completed(
     session: FilesystemSession,
     path: DevicePath,
@@ -3538,12 +3747,14 @@ def _raise_if_cleanup_completed(
         ) from error
 
 
-def _require_no_pending_transaction(session: FilesystemSession) -> str:
+def _terminal_transaction_journals(
+    session: FilesystemSession,
+) -> tuple[tuple[DevicePath, TransactionState], ...]:
     """Recognize crash recovery from durable device journals before any mutation."""
     recovery_root = DevicePath(".iopenpod-recovery")
     if not session.exists(recovery_root):
-        return ""
-    cleanup_path = ""
+        return ()
+    cleanup: list[tuple[DevicePath, TransactionState]] = []
     for entry in session.list_directory(recovery_root):
         if (
             entry.kind is not DeviceEntryKind.DIRECTORY
@@ -3561,9 +3772,9 @@ def _require_no_pending_transaction(session: FilesystemSession) -> str:
             raise SyncRecoveryRequiredError(str(journal))
         # Host identities can change across reconnects. Completed journals are
         # not interrupted work, but only matching identities may offer cleanup.
-        if status.identity_matches and not cleanup_path:
-            cleanup_path = str(journal)
-    return cleanup_path
+        if status.identity_matches:
+            cleanup.append((journal, status.state))
+    return tuple(cleanup)
 
 
 def _track_device_path(track: Track) -> DevicePath:

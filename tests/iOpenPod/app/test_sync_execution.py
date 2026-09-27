@@ -1668,6 +1668,8 @@ def test_prepared_silent_video_uses_motion_duration_without_audio_sample_rate(
         assert song.track.length_ms == 1500
         assert song.track.metadata.sample_rate_hz == 0
         assert song.track.bitrate_kbps == 800
+        assert song.track.metadata.remember_position
+        assert song.track.metadata.skip_shuffle
         assert song.source.media.content is MediaContent.VIDEO
         assert song.track.metadata.location.endswith(".m4v")
         assert len(Path(song.track.metadata.location).stem) == 4
@@ -1839,6 +1841,8 @@ def test_short_filename_appearing_after_review_is_never_overwritten(
             expected: ActiveIPod,
             progress: Callable[[WriteProgress], None],
             cancelled: Event,
+            *,
+            retain_recovery: bool = False,
         ) -> LibrarySaveResult:
             location = next(
                 item.path
@@ -1850,7 +1854,9 @@ def test_short_filename_appearing_after_review_is_never_overwritten(
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"external file appeared after Review")
             unexpected.append(path)
-            return save(review, expected, progress, cancelled)
+            return save(
+                review, expected, progress, cancelled, retain_recovery=retain_recovery
+            )
 
         monkeypatch.setattr(device.coordinator, "save_library", collide_after_review)
         result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(

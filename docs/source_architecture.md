@@ -563,11 +563,13 @@ the journal and every target/dependency fingerprint. `restore_transaction` reche
 that exact observation, every required original, and available restoration space
 before changing any target. A later unrelated edit blocks the entire restoration.
 Recovery can resume with a new Filesystem Session after reconnecting to the same
-Physical Device and Volume. Generic transaction recovery content remains retained,
-and rolling an interrupted publication forward is not implemented. Backup restore is
-the explicit exception: after it verifies either the selected target or the Host
-safety snapshot, it finalizes only that exact terminal transaction namespace. See
-ADR-0029 and ADR-0039.
+Physical Device and Volume. Generic transaction recovery content remains retained
+until the owning Application Layer workflow requests terminal cleanup. Successful
+Library saves do this automatically after commit; Sync defers it until its Library
+Sync Helper update has been attempted. Backup restore finalizes only its exact
+terminal transaction namespace after verifying either the selected target or the
+Host safety snapshot. Rolling an interrupted publication forward is not implemented.
+See ADR-0029, ADR-0039, and ADR-0093.
 
 The application now captures artwork inventories/prefixes and removed-media
 dependencies, and privately binds their Storage Transaction to the exact issued
@@ -1196,7 +1198,12 @@ restore an unreadable Library through a freshly validated Storage session. Keepi
 current contents retires the journal through Storage after explicit confirmation,
 retains recovery copies, and reloads without metadata repair. An unreadable current
 Library is reported separately from recovery. Cleanup accepts only terminal
-transactions and preserves current contents. See ADR-0089.
+transactions and preserves current contents. Selection first classifies all active
+journals, then automatically cleans matching committed or restored transactions
+only when no malformed or unfinished journal requires recovery attention. Discovery
+remains read-only, and foreign or declined journals remain untouched. An actual
+cleanup failure reports its cause and journal location with Retry Cleanup;
+successful cleanup needs no reminder. See ADR-0089 and ADR-0093.
 
 Track membership changes capture positional playback sidecars as transaction
 dependencies or replacement writes. iPodDB remaps Play Counts rows and On-The-Go
@@ -1396,6 +1403,10 @@ Review Changes and Save to iPod. The sidebar hides Review Changes while off.
 Both modes use `DeviceCoordinator` for background preparation and a verified,
 recoverable file transaction through Storage. Failed attempts retain the draft,
 open diagnostics, and wait for correction or an explicit retry. See ADR-0073.
+Successful saves automatically clean their committed transaction's recovery files.
+A cleanup failure reports the retained journal and underlying reason while keeping
+the Library saved. Automatic saves open warning diagnostics, and reloading the iPod
+automatically retries cleanup without reapplying the draft. See ADR-0093.
 The exact issued review binds captured resources and dependencies to song,
 thumbnail, ArtworkDB, PhotosDB,
 iTunesDB/iTunesCDB, and SQLite companion publication followed by obsolete-media
@@ -1455,8 +1466,45 @@ two independent versioned documents under
 are preserved and make Podcast state read-only. See ADR-0037.
 
 Podcast media download, retention, and device publication do not belong to this
-module's document writer. They must enter the common Library Draft, review, and
-Storage Transaction workflow before changing iPod media or iTunesDB.
+module's document writer. Typed Podcast Sync intent now enters the common Sync
+executor, Library Draft, review, and Storage Transaction workflow before changing
+iPod media or iTunesDB. Normal Sync includes all subscriptions' saved settings;
+dedicated all-show, per-show, and selected-Episode actions use the same reservation,
+cancellation, result, and recovery lifecycle. The worker refreshes scoped feeds,
+reconciles membership, and persists observed Listening History before publication.
+Failed feeds cannot authorize retention changes. Storage owns bounded temporary
+downloads, and the common media pipeline prepares audio or video Podcast Tracks for
+the Device Profile. The worker reuses bounded publisher artwork loading and submits
+owned cover pixels to the same ArtworkDB and thumbnail preparation as Host media.
+Successfully refreshed subscriptions can also fill missing covers on retained
+Episodes without downloading their media. Existing covers survive, and cover
+failures produce warnings rather than dropping otherwise valid Episodes.
+
+The shared Application Layer playback policy enables Remember position and Skip
+when shuffling for all Podcast and video Tracks during import, editing, and Library
+Draft preparation. Sync repairs retained Tracks with those flags off even when
+their media remains unchanged. Audio and video Podcasts also require the Podcast
+Now Playing marker; enabling it uses the existing native `0x01` mapping, while
+already-enabled retained native values remain untouched. Raw iPodDB reads and
+unchanged round-trips preserve
+the original flags. See ADR-0092.
+
+Episode slots limit automatic filling, not manual additions or retained membership.
+Both fill modes clear by listened state or time on the iPod. Newest fills vacancies
+or replaces clear-eligible Episodes with newer publications; durable chronology of
+automatic clears prevents later older backfill. Next starts after the furthest
+listened publication, or with the oldest available Episode when no listened
+publication is known. Automatically cleared identities are skipped without marking
+them listened or advancing that position. Explicit additions bypass those
+exclusions. Remove clears eligible Episodes independently; Replace retains them
+until a successful one-for-one replacement, even above the slot target.
+
+Listening History retains publication dates, episode numbers, and automatic-clear
+exclusions. New exclusions are staged only for actual automatic removals in the final
+Library Draft and publish in the same verified Storage Transaction as media and
+Library changes. Failed replacements and interrupted publication cannot leave an
+exclusion without its removal. Both Podcast documents now encode version 2 at their
+existing filenames and read version 1 with defaults. See ADR-0091.
 
 #### `app/synesthesia`
 

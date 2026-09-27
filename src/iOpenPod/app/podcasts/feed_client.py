@@ -32,7 +32,7 @@ from iOpenPod.app.podcasts.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
 _USER_AGENT = "iOpenPod/2 Podcast Browser"
 _FEED_LIMIT = 16 * 1024 * 1024
@@ -41,6 +41,8 @@ _ARTWORK_LIMIT = 8 * 1024 * 1024
 _ARTWORK_PIXEL_LIMIT = 40_000_000
 _ARTWORK_TARGET_LIMIT = 1200
 _TIMEOUT_SECONDS = 20
+_REQUEST_DEADLINE_SECONDS = 60
+_READ_CHUNK_BYTES = 64 * 1024
 _DIRECTORY_URL = "https://itunes.apple.com/search"
 _MEDIA_EXTENSIONS = (
     ".aac",
@@ -218,6 +220,7 @@ class HttpPodcastArtworkLoader:
     """Fetch and safely normalize Podcast cover art for GUI presentation."""
 
     timeout_seconds: int = _TIMEOUT_SECONDS
+    checkpoint: Callable[[], None] | None = None
 
     def load_artwork(
         self,
@@ -231,6 +234,7 @@ class HttpPodcastArtworkLoader:
             limit=_ARTWORK_LIMIT,
             timeout_seconds=self.timeout_seconds,
             accept="image/avif, image/webp, image/png, image/jpeg, image/*",
+            checkpoint=self.checkpoint,
         )
         target_px = min(request.target_px, _ARTWORK_TARGET_LIMIT)
         try:
@@ -265,7 +269,16 @@ def _request_bytes(
     limit: int,
     timeout_seconds: int,
     accept: str,
+    checkpoint: Callable[[], None] | None = None,
 ) -> tuple[bytes, str]:
+    deadline = time.monotonic() + _REQUEST_DEADLINE_SECONDS
+
+    def check() -> None:
+        if checkpoint is not None:
+            checkpoint()
+        if time.monotonic() >= deadline:
+            raise PodcastFeedError("The podcast request exceeded its download deadline")
+
     request = Request(
         url,
         headers={
@@ -275,14 +288,30 @@ def _request_bytes(
         },
     )
     try:
+        check()
         with urlopen(request, timeout=timeout_seconds) as response:
+            check()
             final_url = normalize_feed_url(response.geturl())
             if not final_url:
                 raise PodcastFeedError("The request redirected outside HTTP or HTTPS")
             length = response.headers.get("Content-Length")
             if length and length.isascii() and length.isdigit() and int(length) > limit:
                 raise PodcastFeedError("The response is larger than iOpenPod accepts")
-            payload = response.read(limit + 1)
+            # HTTPResponse.read can wait for the whole requested amount while
+            # a server trickles bytes. read1 returns after one underlying read,
+            # making cancellation and the total deadline observable between chunks.
+            read = cast(
+                "Callable[[int], bytes]", getattr(response, "read1", response.read)
+            )
+            captured = bytearray()
+            while len(captured) <= limit:
+                check()
+                chunk = read(min(_READ_CHUNK_BYTES, limit + 1 - len(captured)))
+                check()
+                if not chunk:
+                    break
+                captured.extend(chunk)
+            payload = bytes(captured)
     except (HTTPError, URLError, TimeoutError, OSError) as error:
         raise PodcastFeedError(f"The podcast request failed: {error}") from error
     if len(payload) > limit:

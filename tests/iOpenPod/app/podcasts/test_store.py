@@ -1,9 +1,10 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from iOpenPod.app.podcasts.models import PodcastIssueCode
+from iOpenPod.app.podcasts.models import ListeningRecord, PodcastIssueCode
 from iOpenPod.app.podcasts.store import (
     HISTORY_PATH,
     SUBSCRIPTIONS_PATH,
@@ -80,3 +81,27 @@ def test_store_never_overwrites_an_invalid_existing_document(tmp_path: Path) -> 
     assert subscriptions.read_bytes() == b"broken"
     assert loaded.snapshot.writable is False
     assert loaded.snapshot.issues[0].code is PodcastIssueCode.SUBSCRIPTIONS_UNREADABLE
+
+
+def test_oversized_history_cannot_be_saved_or_join_media_removal(
+    tmp_path: Path,
+) -> None:
+    root, session = _session(tmp_path)
+    store = PodcastDeviceStore()
+    with session:
+        loaded = store.load(session, (_track(),), writable=True)
+        oversized = replace(
+            loaded,
+            snapshot=replace(
+                loaded.snapshot,
+                history=(
+                    ListeningRecord("show", "episode", title="x" * (8 * 1024 * 1024)),
+                ),
+            ),
+        )
+        with pytest.raises(ValueError, match="Listening History exceeds"):
+            store.history_transaction(oversized)
+        with pytest.raises(ValueError, match="Listening History exceeds"):
+            store.save(session, oversized)
+    assert not (root / str(HISTORY_PATH)).exists()
+    assert not (root / str(SUBSCRIPTIONS_PATH)).exists()

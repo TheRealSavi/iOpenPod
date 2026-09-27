@@ -14,13 +14,16 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import QAction, QColor, QImage, QPainter, QPixmap
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFrame,
     QLabel,
     QListView,
     QMenu,
     QPushButton,
+    QSpinBox,
     QSplitter,
     QStackedWidget,
     QStyleOptionViewItem,
@@ -39,10 +42,14 @@ from iOpenPod.app.podcasts.artwork_controller import PodcastArtworkController
 from iOpenPod.app.podcasts.models import (
     PodcastArtworkImage,
     PodcastArtworkRequest,
+    PodcastClearAge,
+    PodcastClearMethod,
     PodcastEpisode,
+    PodcastFillMode,
     PodcastSearchResult,
     PodcastSnapshot,
     PodcastSubscription,
+    PodcastSyncSettings,
     SubscriptionSource,
 )
 from iOpenPod.GUI.delegates.podcast_delegates import (
@@ -50,6 +57,7 @@ from iOpenPod.GUI.delegates.podcast_delegates import (
     episode_status_text,
 )
 from iOpenPod.GUI.dialogs.podcast_search import PodcastSearchDialog
+from iOpenPod.GUI.dialogs.podcast_sync_settings import PodcastSyncSettingsDialog
 from iOpenPod.GUI.pages.podcast_page import PodcastPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.podcast_artwork_provider import (
@@ -88,15 +96,34 @@ class _Controller(QObject):
         self.tracks = {track.track_id: track for track in tracks}
         self.busy = False
         self.can_edit = True
+        self.can_sync = True
         self.listened_calls: list[tuple[tuple[tuple[str, str], ...], bool]] = []
         self.refresh_calls: list[str | None] = []
         self.subscribe_calls: list[str] = []
+        self.sync_calls: list[str | None] = []
+        self.add_episode_calls: list[tuple[tuple[str, str], ...]] = []
+        self.remove_episode_calls: list[tuple[tuple[str, str], ...]] = []
+        self.settings_calls: list[tuple[str, PodcastSyncSettings]] = []
 
     def refresh(self, subscription_id: str | None = None) -> None:
         self.refresh_calls.append(subscription_id)
 
     def unsubscribe(self, _subscription_id: str) -> None:
         pass
+
+    def sync(self, subscription_id: str | None = None) -> None:
+        self.sync_calls.append(subscription_id)
+
+    def add_episodes(self, identities: tuple[tuple[str, str], ...]) -> None:
+        self.add_episode_calls.append(identities)
+
+    def remove_episodes(self, identities: tuple[tuple[str, str], ...]) -> None:
+        self.remove_episode_calls.append(identities)
+
+    def set_sync_settings(
+        self, subscription_id: str, settings: PodcastSyncSettings
+    ) -> None:
+        self.settings_calls.append((subscription_id, settings))
 
     def search(self, _query: str) -> None:
         pass
@@ -273,6 +300,7 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
                 "episode-one",
                 title="The weight of a good interface",
                 description="A thoughtful look at rhythm, hierarchy, and restraint.",
+                enclosure_url="https://example.test/interface.mp3",
                 published_at=1_700_000_000,
                 duration_seconds=2_940,
             ),
@@ -430,7 +458,16 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         assert (
             episode_list.contextMenuPolicy() is Qt.ContextMenuPolicy.CustomContextMenu
         )
-        assert episode_menu.actions() == [mark_listened, mark_unlistened]
+        assert [
+            None if action.isSeparator() else action.text()
+            for action in episode_menu.actions()
+        ] == [
+            "Add to iPod",
+            "Remove from iPod",
+            None,
+            "Mark Listened",
+            "Mark Unlistened",
+        ]
         assert show_shelf.viewMode() is QListView.ViewMode.ListMode
         assert show_shelf.flow() is QListView.Flow.TopToBottom
         assert (
@@ -502,7 +539,15 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         assert [
             None if action.isSeparator() else action.text()
             for action in track_menu.actions()
-        ] == ["Edit Metadata…", None, "Mark Listened", "Mark Unlistened"]
+        ] == [
+            "Edit Metadata…",
+            None,
+            "Add to iPod",
+            "Remove from iPod",
+            None,
+            "Mark Listened",
+            "Mark Unlistened",
+        ]
         assert track_actions.calls == [(device_track,)]
         assert [index.row() for index in episode_selection.selectedRows()] == [0, 1]
         mark_listened.trigger()
@@ -661,4 +706,309 @@ def test_episode_delegate_paints_resting_rows_on_surface() -> None:
     try:
         assert image.pixelColor(12, size.height() // 2) == QColor(theme.tokens.surface)
     finally:
+        theme.close()
+
+
+def test_podcast_sync_actions_preserve_show_identity_and_filter_membership() -> None:
+    subscriptions = tuple(
+        PodcastSubscription(
+            show_id,
+            f"https://example.test/{show_id}.xml",
+            show_id,
+            SubscriptionSource.USER,
+            episodes=(
+                PodcastEpisode(
+                    "new",
+                    title=f"New {show_id}",
+                    enclosure_url=f"https://example.test/{show_id}.mp3",
+                    published_at=200,
+                ),
+                PodcastEpisode(
+                    "saved",
+                    title=f"Saved {show_id}",
+                    on_device=True,
+                    track_id=track_id,
+                    published_at=100,
+                ),
+                PodcastEpisode("no-media", title="No media URL"),
+            ),
+        )
+        for show_id, track_id in (("First", 1), ("Second", 2))
+    )
+    controller = _Controller(
+        PodcastSnapshot(subscriptions=subscriptions, writable=True)
+    )
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    theme = ThemeManager(APPLICATION, settings)
+    artwork_controller = PodcastArtworkController(_NoArtwork())
+    provider = PodcastArtworkPixmapProvider(artwork_controller)
+    page = PodcastPage(
+        cast("PodcastController", controller),
+        ApplicationStatus(APPLICATION),
+        theme,
+        provider,
+    )
+    try:
+        page.resize(1180, 900)
+        page.show()
+        APPLICATION.processEvents()
+        episodes = page.findChild(QListView, "podcastEpisodeList")
+        shows = page.findChild(QListView, "podcastShowShelf")
+        add = page.findChild(QPushButton, "podcastAddEpisodes")
+        remove = page.findChild(QPushButton, "podcastRemoveEpisodes")
+        sync_all = page.findChild(QPushButton, "podcastsSyncAll")
+        sync_show = page.findChild(QPushButton, "podcastSyncShow")
+        sync_settings = page.findChild(QPushButton, "podcastSyncSettings")
+        assert episodes is not None and shows is not None
+        assert add is not None and remove is not None
+        assert sync_all is not None and sync_show is not None
+        assert sync_settings is not None
+        assert not add.isEnabled() and not remove.isEnabled()
+        assert not sync_show.isVisible() and not sync_settings.isVisible()
+        sync_all.click()
+        assert controller.sync_calls == [None]
+
+        episodes.selectAll()
+        assert add.isEnabled() and remove.isEnabled()
+        add.click()
+        remove.click()
+        assert controller.add_episode_calls == [(("First", "new"), ("Second", "new"))]
+        assert controller.remove_episode_calls == [
+            (("First", "saved"), ("Second", "saved"))
+        ]
+        controller.can_sync = False
+        controller.busyChanged.emit(True)
+        assert not add.isEnabled() and not remove.isEnabled()
+        assert not sync_all.isEnabled()
+        controller.can_sync = True
+        controller.busyChanged.emit(False)
+
+        shows.setCurrentIndex(shows.model().index(1, 0))
+        APPLICATION.processEvents()
+        assert sync_show.isVisible() and sync_show.isEnabled()
+        assert sync_settings.isVisible() and sync_settings.isEnabled()
+        sync_show.click()
+        assert controller.sync_calls == [None, "First"]
+        model = cast("PodcastEpisodeListModel", episodes.model())
+        no_media_row = next(
+            row
+            for row in range(model.rowCount())
+            if model.identity_at(row) == ("First", "no-media")
+        )
+        episodes.setCurrentIndex(model.index(no_media_row, 0))
+        assert not add.isEnabled() and not remove.isEnabled()
+
+        sync_settings.click()
+        APPLICATION.processEvents()
+        dialog = page.findChild(PodcastSyncSettingsDialog)
+        assert dialog is not None and dialog.isVisible()
+        slots = dialog.findChild(QSpinBox, "podcastSyncEpisodeSlots")
+        assert slots is not None
+        slots.setValue(7)
+        dialog.reject()
+        assert controller.settings_calls == []
+        sync_settings.click()
+        APPLICATION.processEvents()
+        dialogs = page.findChildren(PodcastSyncSettingsDialog)
+        dialog = next(item for item in dialogs if item.isVisible())
+        slots = dialog.findChild(QSpinBox, "podcastSyncEpisodeSlots")
+        assert slots is not None
+        assert slots.value() == 3
+        slots.setValue(8)
+        dialog.accept()
+        assert controller.settings_calls == [
+            ("First", PodcastSyncSettings(episode_slots=8))
+        ]
+
+        sync_settings.click()
+        APPLICATION.processEvents()
+        dialog = next(
+            item
+            for item in page.findChildren(PodcastSyncSettingsDialog)
+            if item.isVisible()
+        )
+        controller.snapshot = PodcastSnapshot()
+        controller.changed.emit()
+        assert not dialog.isVisible()
+        assert len(controller.settings_calls) == 1
+    finally:
+        page.close()
+        page.deleteLater()
+        APPLICATION.processEvents()
+        provider.shutdown()
+        artwork_controller.shutdown()
+        theme.close()
+
+
+def test_podcast_sync_settings_retain_policy_and_explain_age_selection() -> None:
+    policy = PodcastSyncSettings(
+        episode_slots=12,
+        fill_mode=PodcastFillMode.NEXT,
+        clear_when_listened=False,
+        clear_older_than=PodcastClearAge.TWO_WEEKS,
+        clear_method=PodcastClearMethod.REPLACE,
+    )
+    dialog = PodcastSyncSettingsDialog("Example Podcast", policy)
+    try:
+        dialog.show()
+        APPLICATION.processEvents()
+        assert dialog.selected_settings == policy
+        slots = dialog.findChild(QSpinBox, "podcastSyncEpisodeSlots")
+        fill = dialog.findChild(QComboBox, "podcastSyncFillMode")
+        age = dialog.findChild(QComboBox, "podcastSyncClearAge")
+        method = dialog.findChild(QComboBox, "podcastSyncClearMethod")
+        listened = dialog.findChild(QCheckBox, "podcastSyncClearListened")
+        assert slots is not None and (slots.minimum(), slots.maximum()) == (1, 50)
+        assert slots.accessibleName() == "Episodes to keep"
+        assert slots.text() == "12 episodes"
+        assert "extra episodes yourself" in slots.toolTip()
+        assert fill is not None and age is not None and method is not None
+        assert listened is not None and not listened.isChecked()
+        assert age.isEnabled() and age.count() == 9
+        descriptions = dialog.findChildren(QLabel, "pageDescription")
+        explanation = " ".join(label.text() for label in descriptions)
+        assert fill.currentText() == "Next in order"
+        assert age.currentText() == "2 weeks on iPod"
+        assert method.currentText() == "Only when replaced"
+        assert "Unlistened episodes removed after this time are skipped" in explanation
+        assert "Automatic target" not in explanation
+        assert "Starts with the oldest" in fill.toolTip()
+        assert "replacements are ready" in method.toolTip()
+        fill.setCurrentIndex(fill.findData("newest"))
+        assert age.isEnabled()
+        assert dialog.selected_settings.clear_older_than is PodcastClearAge.TWO_WEEKS
+        explanation = " ".join(label.text() for label in descriptions)
+        assert fill.currentText() == "Newest episodes"
+        assert "when there's room" in fill.toolTip()
+        assert "skipped" not in explanation
+        fill.setCurrentIndex(fill.findData("next"))
+        age.setCurrentIndex(age.findData("never"))
+        explanation = " ".join(label.text() for label in descriptions)
+        assert "skipped" not in explanation
+        slots.setValue(1)
+        assert slots.text() == "1 episode"
+        slots.setValue(12)
+        age.setCurrentIndex(age.findData("immediate"))
+        method.setCurrentIndex(method.findData("remove"))
+        listened.setChecked(True)
+        explanation = " ".join(label.text() for label in descriptions)
+        assert "Unlistened episodes removed after this time are skipped" in explanation
+        assert age.currentText() == "Every sync"
+        assert method.currentText() == "At next sync"
+        assert "even if there isn't another" in method.toolTip()
+        assert dialog.selected_settings == PodcastSyncSettings(
+            episode_slots=12,
+            fill_mode=PodcastFillMode.NEXT,
+            clear_older_than=PodcastClearAge.IMMEDIATE,
+        )
+        assert not dialog.grab().isNull()
+    finally:
+        dialog.close()
+
+
+def test_episode_badge_click_adds_only_that_episode_and_play_circle_plays() -> None:
+    incoming = PodcastEpisode(
+        "incoming", title="Incoming", enclosure_url="https://example.test/episode.mp3"
+    )
+    unavailable = PodcastEpisode("unavailable", title="No media")
+    saved = PodcastEpisode("saved", title="Saved", on_device=True, track_id=42)
+    subscriptions = (
+        PodcastSubscription(
+            "first",
+            "https://example.test/first.xml",
+            "First",
+            SubscriptionSource.USER,
+            episodes=(incoming, unavailable),
+        ),
+        PodcastSubscription(
+            "second",
+            "https://example.test/second.xml",
+            "Second",
+            SubscriptionSource.USER,
+            episodes=(saved,),
+        ),
+    )
+    track = Track(42, "Saved", "", "", 1)
+    controller = _Controller(
+        PodcastSnapshot(subscriptions=subscriptions, writable=True), (track,)
+    )
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    theme = ThemeManager(APPLICATION, settings)
+    artwork_controller = PodcastArtworkController(_NoArtwork())
+    provider = PodcastArtworkPixmapProvider(artwork_controller)
+    page = PodcastPage(
+        cast("PodcastController", controller),
+        ApplicationStatus(APPLICATION),
+        theme,
+        provider,
+    )
+    activated: list[object] = []
+    page.trackActivated.connect(activated.append)
+    try:
+        page.resize(1180, 900)
+        page.show()
+        APPLICATION.processEvents()
+        episodes = page.findChild(QListView, "podcastEpisodeList")
+        assert episodes is not None
+        model = cast("PodcastEpisodeListModel", episodes.model())
+        delegate = episodes.itemDelegate()
+        assert isinstance(delegate, PodcastEpisodeDelegate)
+        episodes.selectAll()
+        incoming_row = next(
+            row
+            for row in range(model.rowCount())
+            if model.identity_at(row) == ("first", "incoming")
+        )
+        saved_row = next(
+            row
+            for row in range(model.rowCount())
+            if model.identity_at(row) == ("second", "saved")
+        )
+        option = QStyleOptionViewItem()
+        option.initFrom(episodes)
+        option.rect = episodes.visualRect(model.index(incoming_row, 0))
+        badge = delegate.action_rect(option, model.index(incoming_row, 0))
+        assert not badge.isEmpty()
+        QTest.mouseClick(
+            episodes.viewport(), Qt.MouseButton.LeftButton, pos=badge.center().toPoint()
+        )
+        assert controller.add_episode_calls == [(("first", "incoming"),)]
+
+        # The body keeps ordinary selection, even if a drag ends over the badge.
+        body = option.rect.topLeft() + QPoint(40, 45)
+        QTest.mousePress(episodes.viewport(), Qt.MouseButton.LeftButton, pos=body)
+        QTest.mouseRelease(
+            episodes.viewport(), Qt.MouseButton.LeftButton, pos=badge.center().toPoint()
+        )
+        assert len(controller.add_episode_calls) == 1
+        assert episodes.currentIndex().row() == incoming_row
+
+        controller.can_sync = False
+        controller.busyChanged.emit(True)
+        QTest.mouseClick(
+            episodes.viewport(), Qt.MouseButton.LeftButton, pos=badge.center().toPoint()
+        )
+        assert len(controller.add_episode_calls) == 1
+        option.rect = episodes.visualRect(model.index(saved_row, 0))
+        circle = delegate.action_rect(option, model.index(saved_row, 0))
+        QTest.mouseClick(
+            episodes.viewport(),
+            Qt.MouseButton.LeftButton,
+            pos=circle.center().toPoint(),
+        )
+        assert activated == [track]
+        assert episode_status_text(unavailable) == "Unavailable"
+        missing_row = next(
+            row
+            for row in range(model.rowCount())
+            if model.identity_at(row) == ("first", "unavailable")
+        )
+        option.rect = episodes.visualRect(model.index(missing_row, 0))
+        assert delegate.action_rect(option, model.index(missing_row, 0)).isEmpty()
+    finally:
+        page.close()
+        page.deleteLater()
+        APPLICATION.processEvents()
+        provider.shutdown()
+        artwork_controller.shutdown()
         theme.close()

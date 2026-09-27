@@ -23,6 +23,7 @@ from iOpenPod.app.media import music_paths
 from iOpenPod.app.media.importing import ImportedSong, MusicImporter, relocate_song
 from iOpenPod.app.models.track_table_model import TrackTableModel
 from iOpenPod.app.music_import_controller import MusicImportController
+from iPodDB.library import IPodLibrary
 from storage import HostPath
 
 type ImportSession = tuple[Device, DeviceController, LibraryWorkspace, HostPath]
@@ -227,9 +228,16 @@ def test_import_draft_uses_the_selected_save_policy(
         assert writer.save_result is not None and writer.save_result.active is not None
         added = writer.save_result.active.library.tracks[-1]
         assert added.title == "Chapter test" and added.artwork_id > 0
-        assert (device.root / added.metadata.location).is_file()
+        assert (device.root / added.metadata.location).read_bytes() == Path(
+            path.path
+        ).read_bytes()
+        parsed = IPodLibrary(
+            (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
+        ).with_artwork((device.root / "iPod_Control/Artwork/ArtworkDB").read_bytes())
+        assert parsed.snapshot == writer.save_result.active.library
         assert not context.library_workspace.dirty
-        device.restore(writer.save_result.recovery_path)
+        assert not writer.save_result.recovery_path
+        assert not tuple(device.root.glob(".iopenpod-recovery/*/transaction.json"))
     finally:
         controller.shutdown()
         context.shutdown()

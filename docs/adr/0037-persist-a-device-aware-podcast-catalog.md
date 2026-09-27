@@ -1,5 +1,11 @@
 # ADR-0037: Persist a device-aware Podcast Catalog
 
+> ADR-0091 extends this catalog with per-Subscription Sync settings and shared media
+> publication. Subscription and Listening History documents now encode version 2 at
+> their existing paths. History retains publication chronology and automatic-clear
+> exclusions, committed with the corresponding media removals and separate from
+> listened state.
+
 - Status: Accepted
 - Date: 2026-09-12
 - Extends: ADR-0005, ADR-0011, ADR-0019, and ADR-0029

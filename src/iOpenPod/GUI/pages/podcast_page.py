@@ -48,6 +48,7 @@ from iOpenPod.GUI.delegates.podcast_delegates import (
     PodcastShowDelegate,
 )
 from iOpenPod.GUI.dialogs.podcast_search import PodcastSearchDialog
+from iOpenPod.GUI.dialogs.podcast_sync_settings import PodcastSyncSettingsDialog
 from iOpenPod.GUI.presentation.theme.podcast_styles import render_podcast_page_style
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.artwork_view import ArtworkView
@@ -119,6 +120,9 @@ class PodcastPage(QWidget):
         self._title.setObjectName("podcastsTitle")
         self._add = ActionButton(parent=toolbar, kind=ActionButtonKind.PRIMARY)
         self._add.setObjectName("podcastsAdd")
+        self._sync_all = ActionButton(parent=toolbar)
+        self._sync_all.setObjectName("podcastsSyncAll")
+        toolbar.add_action(self._sync_all)
         toolbar.add_action(self._add)
 
         self._content = QStackedWidget(self)
@@ -135,11 +139,20 @@ class PodcastPage(QWidget):
         layout.addWidget(self._content, 1)
 
         self._dialog: PodcastSearchDialog | None = None
+        self._settings_dialog: PodcastSyncSettingsDialog | None = None
+        self._settings_subscription_id: str | None = None
         self._search.queryChanged.connect(self._filter)
         for option in self._episode_filter_options:
             option.toggled.connect(self._episode_filters_changed)
         self._add.clicked.connect(self._show_add_dialog)
         self._empty_add.clicked.connect(self._show_add_dialog)
+        self._sync_all.clicked.connect(self._sync_podcasts)
+        self._sync_show.clicked.connect(self._sync_selected)
+        self._sync_settings.clicked.connect(self._show_sync_settings)
+        self._add_episodes.clicked.connect(self._add_selected_episodes)
+        self._remove_episodes.clicked.connect(self._remove_selected_episodes)
+        self._add_episode_action.triggered.connect(self._add_selected_episodes)
+        self._remove_episode_action.triggered.connect(self._remove_selected_episodes)
         self._refresh_show.clicked.connect(self._refresh_selected)
         self._unsubscribe.clicked.connect(self._unsubscribe_selected)
         self._shows.selectionModel().currentChanged.connect(self._subscription_changed)
@@ -360,9 +373,11 @@ class PodcastPage(QWidget):
         self._episodes = QListView(episodes_section)
         self._episodes.setObjectName("podcastEpisodeList")
         self._episodes.setModel(self._episode_model)
-        self._episodes.setItemDelegate(
-            PodcastEpisodeDelegate(self._theme_manager, self._episodes)
+        self._episode_delegate = PodcastEpisodeDelegate(
+            self._theme_manager, self._episodes
         )
+        self._episodes.setItemDelegate(self._episode_delegate)
+        self._episode_delegate.actionRequested.connect(self._episode_action_requested)
         self._episodes.setSelectionMode(
             QAbstractItemView.SelectionMode.ExtendedSelection
         )
@@ -379,6 +394,13 @@ class PodcastPage(QWidget):
 
         self._episode_menu = QMenu(self._episodes)
         self._episode_menu.setObjectName("podcastEpisodeContextMenu")
+        self._add_episode_action = QAction(self._episode_menu)
+        self._add_episode_action.setObjectName("podcastAddEpisodesAction")
+        self._episode_menu.addAction(self._add_episode_action)
+        self._remove_episode_action = QAction(self._episode_menu)
+        self._remove_episode_action.setObjectName("podcastRemoveEpisodesAction")
+        self._episode_menu.addAction(self._remove_episode_action)
+        self._episode_menu.addSeparator()
         self._mark_listened = QAction(self._episode_menu)
         self._mark_listened.setObjectName("podcastMarkListened")
         self._episode_menu.addAction(self._mark_listened)
@@ -393,9 +415,32 @@ class PodcastPage(QWidget):
             LAYOUT.space_lg,
             0,
         )
+        self._add_episodes = ActionButton(parent=episodes_section)
+        self._add_episodes.setObjectName("podcastAddEpisodes")
+        self._remove_episodes = ActionButton(
+            parent=episodes_section, kind=ActionButtonKind.DANGER
+        )
+        self._remove_episodes.setObjectName("podcastRemoveEpisodes")
+        self._sync_show = ActionButton(parent=episodes_section)
+        self._sync_show.setObjectName("podcastSyncShow")
+        self._sync_settings = ActionButton(parent=episodes_section)
+        self._sync_settings.setObjectName("podcastSyncSettings")
+        episode_actions = QHBoxLayout()
+        episode_actions.setSpacing(LAYOUT.space_xs)
+        episode_actions.addWidget(self._add_episodes)
+        episode_actions.addWidget(self._remove_episodes)
+        episode_actions.addStretch(1)
+        sync_actions = QHBoxLayout()
+        sync_actions.setSpacing(LAYOUT.space_xs)
+        sync_actions.addWidget(self._sync_show)
+        sync_actions.addWidget(self._sync_settings)
+        sync_actions.addStretch(1)
         episodes_layout.setSpacing(LAYOUT.space_sm)
+        episodes_layout.addLayout(sync_actions)
         episodes_layout.addLayout(episode_heading)
         episodes_layout.addWidget(self._episodes, 1)
+        episodes_layout.addLayout(episode_actions)
+        episodes_layout.addSpacing(LAYOUT.space_sm)
 
         detail_layout = QVBoxLayout(detail)
         detail_layout.setContentsMargins(0, 0, 0, 0)
@@ -428,6 +473,14 @@ class PodcastPage(QWidget):
         self._search.setPlaceholderText(self.tr("Search episodes"))
         self._search.setAccessibleName(self.tr("Search Podcast episodes"))
         self._add.setText(self.tr("Add Podcast"))
+        self._sync_all.setText(self.tr("Sync Podcasts"))
+        self._sync_all.setToolTip(self.tr("Sync every Podcast using its settings."))
+        self._sync_show.setText(self.tr("Sync Podcast"))
+        self._sync_settings.setText(self.tr("Sync Settings…"))
+        self._add_episodes.setText(self.tr("Add to iPod"))
+        self._remove_episodes.setText(self.tr("Remove from iPod"))
+        self._add_episode_action.setText(self.tr("Add to iPod"))
+        self._remove_episode_action.setText(self.tr("Remove from iPod"))
         self._empty_title.setText(self.tr("Your Podcast library starts here"))
         self._empty_detail.setText(
             self.tr(
@@ -450,7 +503,7 @@ class PodcastPage(QWidget):
         self._filter_unlistened.setText(self.tr("Unlistened"))
         self._filter_on_ipod.setText(self.tr("On iPod"))
         self._filter_not_on_ipod.setText(self.tr("Not on iPod"))
-        self._episode_menu.setAccessibleName(self.tr("Episode status"))
+        self._episode_menu.setAccessibleName(self.tr("Episode actions"))
         self._mark_listened.setText(self.tr("Mark Listened"))
         self._mark_unlistened.setText(self.tr("Mark Unlistened"))
         self._render_status()
@@ -520,6 +573,52 @@ class PodcastPage(QWidget):
             return
         if subscription_id := self._selected_subscription_id():
             self._controller.refresh(subscription_id)
+
+    @Slot()
+    def _sync_podcasts(self) -> None:
+        self._controller.sync()
+
+    @Slot()
+    def _sync_selected(self) -> None:
+        if subscription_id := self._selected_subscription_id():
+            self._controller.sync(subscription_id)
+
+    @Slot()
+    def _show_sync_settings(self) -> None:
+        subscription = self._selected_subscription()
+        if subscription is None or not self._controller.can_edit:
+            return
+        if self._settings_dialog is not None:
+            self._settings_dialog.close()
+            self._settings_dialog.deleteLater()
+        self._settings_subscription_id = subscription.subscription_id
+        self._settings_dialog = PodcastSyncSettingsDialog(
+            subscription.title, subscription.sync_settings, self
+        )
+        self._settings_dialog.accepted.connect(self._save_sync_settings)
+        self._settings_dialog.open()
+
+    @Slot()
+    def _save_sync_settings(self) -> None:
+        if (
+            self._settings_dialog is not None
+            and self._settings_subscription_id is not None
+            and self._controller.can_edit
+        ):
+            self._controller.set_sync_settings(
+                self._settings_subscription_id,
+                self._settings_dialog.selected_settings,
+            )
+
+    @Slot()
+    def _add_selected_episodes(self) -> None:
+        if identities := self._selected_sync_identities(on_device=False):
+            self._controller.add_episodes(identities)
+
+    @Slot()
+    def _remove_selected_episodes(self) -> None:
+        if identities := self._selected_sync_identities(on_device=True):
+            self._controller.remove_episodes(identities)
 
     @Slot()
     def _unsubscribe_selected(self) -> None:
@@ -606,10 +705,33 @@ class PodcastPage(QWidget):
     @Slot(bool)
     def _availability_changed(self, _busy: bool | None = None) -> None:
         editable = self._controller.can_edit
+        syncable = self._controller.can_sync
+        self._episode_delegate.set_add_enabled(syncable)
+        self._episodes.viewport().update()
         subscription = self._selected_subscription()
         selected_episodes = bool(self._selected_episode_identities())
         self._add.setEnabled(editable)
         self._empty_add.setEnabled(editable)
+        self._sync_all.setEnabled(syncable and bool(self._snapshot.subscriptions))
+        self._sync_show.setVisible(subscription is not None)
+        self._sync_show.setEnabled(syncable and subscription is not None)
+        self._sync_settings.setVisible(subscription is not None)
+        self._sync_settings.setEnabled(editable and subscription is not None)
+        addable = syncable and bool(self._selected_sync_identities(on_device=False))
+        removable = syncable and bool(self._selected_sync_identities(on_device=True))
+        self._add_episodes.setEnabled(addable)
+        self._remove_episodes.setEnabled(removable)
+        self._add_episode_action.setEnabled(addable)
+        self._remove_episode_action.setEnabled(removable)
+        if (
+            self._settings_dialog is not None
+            and self._settings_subscription_id is not None
+            and (
+                not editable
+                or self._snapshot.subscription(self._settings_subscription_id) is None
+            )
+        ):
+            self._settings_dialog.reject()
         device_backed = subscription is not None and subscription.on_device_count > 0
         self._unsubscribe.setEnabled(
             editable and subscription is not None and not device_backed
@@ -647,6 +769,18 @@ class PodcastPage(QWidget):
         if track is not None:
             self.trackActivated.emit(track)
 
+    @Slot(QModelIndex)
+    def _episode_action_requested(self, index: QModelIndex) -> None:
+        episode = self._episode_model.episode_at(index.row())
+        if episode is None:
+            return
+        if episode.on_device:
+            self._episode_activated(index)
+        elif self._controller.can_sync and episode.enclosure_url:
+            identity = self._episode_model.identity_at(index.row())
+            if identity is not None:
+                self._controller.add_episodes((identity,))
+
     @Slot(QPoint)
     def _show_episode_context_menu(self, position: QPoint) -> None:
         index = self._episodes.indexAt(position)
@@ -667,6 +801,9 @@ class PodcastPage(QWidget):
                 self._selected_device_tracks()
             )
             if track_menu is not None:
+                track_menu.addSeparator()
+                track_menu.addAction(self._add_episode_action)
+                track_menu.addAction(self._remove_episode_action)
                 track_menu.addSeparator()
                 track_menu.addAction(self._mark_listened)
                 track_menu.addAction(self._mark_unlistened)
@@ -844,6 +981,21 @@ class PodcastPage(QWidget):
             episode
             for index in sorted(selection.selectedRows(), key=lambda value: value.row())
             if (episode := self._episode_model.episode_at(index.row())) is not None
+        )
+
+    def _selected_sync_identities(
+        self, *, on_device: bool
+    ) -> tuple[tuple[str, str], ...]:
+        return tuple(
+            sorted(
+                identity
+                for index in self._episodes.selectionModel().selectedRows()
+                if (episode := self._episode_model.episode_at(index.row())) is not None
+                and episode.on_device == on_device
+                and (on_device or bool(episode.enclosure_url))
+                and (identity := self._episode_model.identity_at(index.row()))
+                is not None
+            )
         )
 
     def _selected_device_tracks(self) -> tuple[Track, ...]:

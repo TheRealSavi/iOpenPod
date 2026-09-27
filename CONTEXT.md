@@ -132,7 +132,12 @@ Interrupted Sync recovery is a choice for the selected iPod: restore the previou
 Library or explicitly keep current contents after a warning about incomplete
 changes. Recovery and cleanup are discovered from device journals, never persisted
 as Host settings. Declining restoration retains recovery copies and leaves media
-and databases untouched; unrelated iPods remain usable. See ADR-0089.
+and databases untouched; unrelated iPods remain usable. Successful Library saves
+automatically clean their committed recovery files; Sync does so after attempting
+its Library Sync Helper update. Selection also cleans matching completed
+transactions after checking all journals for unfinished recovery. Discovery stays
+read-only, and foreign or declined journals remain untouched. Only actual cleanup
+failures require a cleanup warning and retry. See ADR-0089 and ADR-0093.
 Optional acoustic analysis no longer gates readable Host media or explicit Adds.
 Sync checks media tools only for incoming Tracks and preserves committed Host-path
 provenance independently of Acoustic Fingerprints in Library Sync Helper v3.
@@ -308,8 +313,27 @@ every subscription's Episodes newest-first while retaining each Episode's source
 identity; it is a runtime projection, not another persisted Podcast Subscription.
 Device files use
 fingerprint-checked Storage writes under
-`iPod_Control/iOpenPod/Podcasts`. Podcast downloads and add/remove publication remain
-part of future reviewed Sync/import work. See ADR-0037.
+`iPod_Control/iOpenPod/Podcasts`. Podcast Episodes can be added or removed manually,
+and per-show Sync settings select and retain Episodes during ordinary Sync or the
+Sync Podcast and Sync Podcasts actions. These operations refresh feeds, preserve
+Listening History, prepare compatible media on the Host, and publish through the
+shared verified Library and Storage Transaction workflow. Failed feed refreshes
+leave that show's media unchanged. Publisher covers use the shared ArtworkDB and
+thumbnail preparation; Podcast Sync also fills missing covers on retained Episodes
+without downloading their media again. Episode slots are an automatic filling target;
+manual additions may exceed it. Episode count alone never authorizes removal.
+Both Newest and Next clear by listened state or time on the iPod. Newest replaces
+only clear-eligible Episodes with newer publications. Next starts after the furthest listened
+publication, or with the oldest available Episode when no listened publication is
+known. Replace waits for successful one-for-one replacement, including above the
+target; Remove clears eligible Episodes even without replacements.
+Listening History retains publication chronology and separate automatic-clear
+exclusions. These exclusions prevent automatic re-addition without marking an
+unlistened Episode listened; explicit additions bypass them. Pre-Sync reconciliation
+saves observed history, while new exclusions commit in the same verified Storage
+Transaction as successful media and Library removals. Subscription and Listening
+History documents encode version 2 at their existing paths and still read version 1.
+See ADR-0037 and ADR-0091.
 
 The Library Workspace now holds Track metadata, the device name, Playlists, and
 Photos in one session draft. Sidebar naming, shared Track and collection context
@@ -339,7 +363,11 @@ Podcasts Playlist consequences. The metadata editor's Media type selector also
 reclassifies retained audio or video within its current media family, including
 Movie to TV Show, atomically with explicit metadata and artwork edits. Mixed and
 retained compound classifications stay unchanged until selected for replacement.
-See ADR-0026, ADR-0030, ADR-0032, ADR-0036, and ADR-0088.
+Podcasts and videos always use Remember position and Skip when shuffling in
+application imports, edits, and prepared Library Drafts. Save and Sync repair
+retained Tracks with those flags off. Audio and video Podcasts also enable the
+native Podcast Now Playing marker. Merely loading an iPod preserves its raw
+database state. See ADR-0026, ADR-0030, ADR-0032, ADR-0036, ADR-0088, and ADR-0092.
 
 The application can now inspect real incoming audio/video files through FFprobe
 over a temporary Host snapshot captured by Storage. Typed Media Inspection preserves
@@ -524,8 +552,9 @@ them through narrow interfaces.
 - Device-specific settings intended to travel with an iPod are associated with its
   stable Device Identity and stored in an application-owned Device Path on that iPod.
   iOpenPod coordinates their access through Storage. Podcast Subscriptions and
-  Listening History use separate version-1 JSON documents under
-  `iPod_Control/iOpenPod/Podcasts/`; other settings retain their own formats.
+  Listening History use separate version-2 JSON documents under
+  `iPod_Control/iOpenPod/Podcasts/`, retaining the existing `-v1.json` filenames and
+  backward reads of version 1; other settings retain their own formats.
 
 ## Core device workflow
 

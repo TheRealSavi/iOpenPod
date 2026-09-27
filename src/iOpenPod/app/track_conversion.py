@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 
+from iOpenPod.app.track_playback_policy import enforce_track_playback_policy
 from iPodDB.library import MediaType, Track
 
 _VIDEO_TYPES = frozenset(
@@ -47,7 +48,7 @@ def reclassify_track(track: Track, media_type: MediaType) -> Track:
             f"Track {track.track_id}: choose a media type compatible with its "
             "retained audio or video."
         )
-    return replace(track, media_types=(media_type,))
+    return enforce_track_playback_policy(replace(track, media_types=(media_type,)))
 
 
 def podcast_conversion_needed(track: Track) -> bool:
@@ -89,7 +90,7 @@ def convert_track_to_podcast(track: Track) -> Track:
         "Podcasts",
     )
     metadata = track.metadata
-    return replace(
+    converted = replace(
         track,
         album=track.album if track.album.strip() else show_title,
         genre=track.genre if track.genre.strip() else "Podcast",
@@ -103,8 +104,7 @@ def convert_track_to_podcast(track: Track) -> Track:
                 else track.genre.strip() or "Podcast"
             ),
             podcast=True,
-            skip_shuffle=True,
-            remember_position=True,
             played=track.play_count > 0,
         ),
     )
+    return enforce_track_playback_policy(converted)

@@ -8,6 +8,7 @@ from iOpenPod.app.media.importing import ImportedSong, LibraryMediaSource
 from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.smart_playlist_preview import preview_smart_playlist
 from iOpenPod.app.track_conversion import convert_track_to_podcast, reclassify_track
+from iOpenPod.app.track_playback_policy import enforce_track_playback_policy
 from iPodDB.library import (
     ArtworkAsset,
     ArtworkPixels,
@@ -501,7 +502,9 @@ class LibraryWorkspace(QObject):
                 )
                 assets[cover_id] = ArtworkAsset(cover_id, song.artwork)
             tracks[identity] = replace(
-                song.track, track_id=identity, artwork_id=cover_id
+                enforce_track_playback_policy(song.track),
+                track_id=identity,
+                artwork_id=cover_id,
             )
             media[identity] = replace(
                 song.source, media=replace(song.source.media, track_id=identity)
@@ -606,6 +609,9 @@ class LibraryWorkspace(QObject):
                     replacements[track.track_id] = reclassify_track(
                         replacements[track.track_id], media_type
                     )
+                replacements[track.track_id] = enforce_track_playback_policy(
+                    replacements[track.track_id]
+                )
             except TrackEditError as error:
                 issues.extend(error.issues)
         if issues:

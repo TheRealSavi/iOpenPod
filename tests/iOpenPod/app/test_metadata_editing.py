@@ -112,6 +112,43 @@ def test_editor_fields_cover_the_writer_metadata_policy() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "kind",
+    (
+        MediaType.PODCAST,
+        MediaType.VIDEO,
+        MediaType.TV_SHOW,
+        MediaType.MUSIC_VIDEO,
+        MediaType.VIDEO_PODCAST,
+    ),
+)
+def test_app_metadata_edit_repairs_required_playback_flags(kind: MediaType) -> None:
+    original = Track(1, "Episode", "", "", 1_000, media_types=(kind,))
+    workspace = LibraryWorkspace()
+    workspace.load(LibrarySnapshot((original,)))
+
+    workspace.apply_track_edits(
+        (
+            TrackUpdate(
+                1,
+                (
+                    TrackFieldEdit("title", "Edited"),
+                    TrackFieldEdit("metadata.skip_shuffle", False),
+                    TrackFieldEdit("metadata.remember_position", False),
+                ),
+            ),
+        ),
+        workspace.edit_revision,
+    )
+
+    updated = workspace.desired_snapshot().tracks[0]
+    assert updated.title == "Edited"
+    assert updated.metadata.skip_shuffle
+    assert updated.metadata.remember_position
+    assert not original.metadata.skip_shuffle
+    assert not original.metadata.remember_position
+
+
 def test_video_to_tv_show_prepares_without_replacing_retained_media() -> None:
     source = video_source(video=True)
     original = source.serialize()

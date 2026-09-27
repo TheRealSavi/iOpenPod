@@ -25,7 +25,13 @@ from iPodDB.library import (
     LibrarySnapshot,
     WriteResources,
 )
-from storage import AccessMode, DevicePath, HardwareIdentifiers, Storage
+from storage import (
+    AccessMode,
+    DevicePath,
+    FilesystemSession,
+    HardwareIdentifiers,
+    Storage,
+)
 from storage.testing import VirtualStoragePlatform
 
 
@@ -64,7 +70,10 @@ class Device:
         review: LibraryReview,
         progress: Callable[[WriteProgress], None] = lambda _: None,
     ) -> LibrarySaveResult:
-        return self.coordinator.save_library(review, self.active, progress, Event())
+        """Keep recovery files so resource tests can verify complete restoration."""
+        return self.coordinator.save_library(
+            review, self.active, progress, Event(), retain_recovery=True
+        )
 
     def restore(self, recovery: str) -> None:
         self.coordinator.close()
@@ -197,6 +206,67 @@ def _without_first(device: Device) -> LibrarySnapshot:
             for playlist in device.active.library.playlists
         ),
     )
+
+
+def test_ordinary_library_save_cleans_recovery_and_keeps_saved_contents(
+    device: Device,
+) -> None:
+    desired = _cover_snapshot(device)
+    review = device.prepare(desired, cover=True)
+    assert review.result.prepared is not None, review.result.issues
+
+    saved = device.coordinator.save_library(
+        review, device.active, lambda _: None, Event()
+    )
+
+    assert saved.active is not None, saved.issues
+    assert not saved.recovery_path
+    assert not tuple((device.root / ".iopenpod-recovery").glob("*/transaction.json"))
+    source = IPodLibrary(
+        (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
+    ).with_artwork((device.root / "iPod_Control/Artwork/ArtworkDB").read_bytes())
+    assert source.snapshot == saved.active.library
+    assert source.snapshot.tracks[0].artwork_id == (
+        review.result.prepared.snapshot.tracks[0].artwork_id
+    )
+    for file in review.result.prepared.artwork_files:
+        assert (device.root / file.relative_path).read_bytes() == file.data
+
+    reselected = device.coordinator.select_device(
+        device.coordinator.discover_devices().candidates[0].id
+    )
+    assert reselected.library == saved.active.library
+    assert not device.coordinator.sync_cleanup_path
+
+
+def test_ordinary_library_save_cleanup_failure_keeps_success_and_retries_on_selection(
+    device: Device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    desired = _cover_snapshot(device)
+    review = device.prepare(desired, cover=True)
+    assert review.result.prepared is not None, review.result.issues
+
+    def fail_cleanup(_session: FilesystemSession, _journal_path: DevicePath) -> None:
+        raise OSError("Recovery directory is temporarily unavailable")
+
+    with monkeypatch.context() as fault:
+        fault.setattr(FilesystemSession, "finalize_committed_transaction", fail_cleanup)
+        saved = device.coordinator.save_library(
+            review, device.active, lambda _: None, Event()
+        )
+
+    assert saved.active is not None, saved.issues
+    assert saved.active.library == review.result.prepared.snapshot
+    assert {issue.code for issue in saved.issues} == {"save.cleanup_pending"}
+    assert saved.recovery_path
+    assert (device.root / saved.recovery_path).exists()
+
+    reselected = device.coordinator.select_device(
+        device.coordinator.discover_devices().candidates[0].id
+    )
+    assert reselected.library == saved.active.library
+    assert not device.coordinator.sync_cleanup_path
+    assert not (device.root / saved.recovery_path).exists()
 
 
 def test_cover_replacement_publishes_all_formats_then_restores(device: Device) -> None:

@@ -1,5 +1,8 @@
 # ADR-0029: Publish file transactions with retained recovery
 
+> ADR-0093 makes terminal cleanup automatic after successful Library saves and
+> during selected-device loading; the Storage recovery checks remain required.
+
 - Status: Accepted
 - Date: 2026-09-11
 - Extends: ADR-0011 and ADR-0022

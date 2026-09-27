@@ -249,6 +249,7 @@ class SyncWorkspace(QWidget):
         super().__init__(parent)
         self.setObjectName("syncWorkspace")
         self._stage = SyncStage.SCANNING
+        self._podcast_execution = False
         self._settings = settings
         self._theme_manager = theme_manager
         self._artwork_provider = artwork_provider
@@ -331,6 +332,7 @@ class SyncWorkspace(QWidget):
         self._review = SyncPlanPage(self)
         self.execution = SyncExecutionPage(self)
         self._execution_available = False
+        self._podcast_count = 0
         self._back = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
         self._back.setObjectName("backToSyncSelection")
         self._execute = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
@@ -345,6 +347,10 @@ class SyncWorkspace(QWidget):
         self._playlist_detail = QLabel(self)
         self._playlist_detail.setObjectName("syncPlaylistReviewDetail")
         self._playlist_detail.setWordWrap(True)
+        self._podcast_detail = QLabel(self)
+        self._podcast_detail.setObjectName("syncPodcastReviewDetail")
+        self._podcast_detail.setWordWrap(True)
+        self._podcast_detail.setVisible(False)
         self._playlist_changes = QPlainTextEdit(self)
         self._playlist_changes.setObjectName("syncPlaylistReviewChanges")
         self._playlist_changes.setReadOnly(True)
@@ -364,6 +370,7 @@ class SyncWorkspace(QWidget):
         playlist_heading.addWidget(self._playlist_detail, 1)
         playlist_layout.addLayout(playlist_heading)
         playlist_layout.addWidget(self._playlist_changes)
+        playlist_layout.addWidget(self._podcast_detail)
         self._review_cancel = ActionButton(parent=self)
         self._review_cancel.setObjectName("cancelSyncReview")
         review_footer = self._footer(
@@ -439,6 +446,8 @@ class SyncWorkspace(QWidget):
         )
 
     def show_scan(self, detail: str) -> None:
+        self._podcast_execution = False
+        self.retranslate_ui()
         self.stop_scan()
         self._reset_playlist_preview()
         self._scan.set_progress(detail)
@@ -492,6 +501,11 @@ class SyncWorkspace(QWidget):
         self._execution_available = available
         self._refresh_review_summary()
 
+    def set_podcast_count(self, count: int) -> None:
+        """Make automatic Podcast retention visible alongside the Host review."""
+        self._podcast_count = count
+        self._refresh_review_summary()
+
     def set_playlist_preview(self, changes: tuple[PlaylistSyncChange, ...]) -> None:
         """Present the exact playlist effects computed for the selected Sync Plan."""
         if changes == self._playlist_preview:
@@ -500,7 +514,9 @@ class SyncWorkspace(QWidget):
         self._refresh_playlist_preview()
         self._refresh_review_summary()
 
-    def show_execution(self) -> None:
+    def show_execution(self, *, podcasts: bool = False) -> None:
+        self._podcast_execution = podcasts
+        self.retranslate_ui()
         self.execution.begin()
         self._set_stage(SyncStage.SYNC)
 
@@ -519,8 +535,13 @@ class SyncWorkspace(QWidget):
             self.browser.shutdown()
 
     def retranslate_ui(self) -> None:
-        self._title.setText(self.tr("Sync with Host"))
+        self._title.setText(
+            self.tr("Sync Podcasts")
+            if self._podcast_execution
+            else self.tr("Sync with Host")
+        )
         for stage, number, label in _STAGES:
+            self._stage_labels[stage].setVisible(not self._podcast_execution)
             self._stage_labels[stage].setText(
                 self.tr("%1  %2").replace("%1", number).replace("%2", self.tr(label))
             )
@@ -645,7 +666,11 @@ class SyncWorkspace(QWidget):
         self._execute.setEnabled(
             self._execution_available
             and self._stage is SyncStage.REVIEW
-            and (self.selection.selected_plan.change_count > 0 or playlist_count > 0)
+            and (
+                self.selection.selected_plan.change_count > 0
+                or playlist_count > 0
+                or self._podcast_count > 0
+            )
         )
         summary = (
             self.tr("%1 of %2 selected")
@@ -659,6 +684,13 @@ class SyncWorkspace(QWidget):
                 else self.tr(" · %1 Playlist changes")
             ).replace("%1", f"{playlist_count:,}")
         self._review_summary.setText(summary)
+        self._podcast_detail.setVisible(self._podcast_count > 0)
+        self._podcast_detail.setText(
+            self.tr(
+                "%1 Podcasts will sync using their saved settings. "
+                "Episodes may be added or removed."
+            ).replace("%1", str(self._podcast_count))
+        )
         self._review_summary.setToolTip(
             self.tr(
                 "Selected media changes across all groups, including items hidden by filters, "

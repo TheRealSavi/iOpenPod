@@ -424,6 +424,8 @@ class DeviceController(QObject):
             elif self._active_ipod is not None and active is not self._active_ipod:
                 self._active_ipod = active
                 self.activeIPodChanged.emit(active)
+                if self._coordinator.sync_cleanup_path:
+                    self.cleanupAvailable.emit(self._coordinator.sync_cleanup_path)
             return
         if operation == DeviceOperation.SELECT and isinstance(result, ActiveIPod):
             self._discovery = self._coordinator.discovery

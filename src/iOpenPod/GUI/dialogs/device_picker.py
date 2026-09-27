@@ -358,6 +358,12 @@ def _issue_text(
         DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE: dialog.tr(
             "The iPod's desktop name or icon could not be fully updated."
         ),
+        DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING: dialog.tr(
+            "Recovery-file cleanup could not finish."
+        ),
+        DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING: dialog.tr(
+            "Recovery files were removed. Safely eject before unplugging."
+        ),
         DeviceCandidateIssueCode.INSPECTION_FAILED: dialog.tr(
             "The device filesystem could not be inspected."
         ),

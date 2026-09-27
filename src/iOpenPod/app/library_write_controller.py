@@ -24,6 +24,7 @@ from iOpenPod.app.library_write import (
     WriteTraceEvent,
 )
 from iOpenPod.app.models.device import ActiveIPod
+from iOpenPod.app.track_playback_policy import enforce_library_playback_policy
 from iPodDB.library import (
     IssueSeverity,
     LibraryWriteResult,
@@ -104,6 +105,7 @@ class LibraryWriteController(QObject):
     changed = Signal()
     progressChanged = Signal(str)
     automaticSaveFailed = Signal()
+    automaticSaveWarning = Signal()
 
     def __init__(
         self,
@@ -341,7 +343,7 @@ class LibraryWriteController(QObject):
         self._attempted_revision = self._workspace.edit_revision
         self._token += 1
         self._request = LibraryPreparationRequest(
-            self._workspace.desired_snapshot(),
+            enforce_library_playback_policy(self._workspace.desired_snapshot()),
             active,
             self._workspace.generation,
             self._workspace.revision,
@@ -490,6 +492,11 @@ class LibraryWriteController(QObject):
         self.changed.emit()
         if result.active is None:
             self._report_automatic_failure()
+        elif not self.draft_all_changes and any(
+            issue.code in ("save.cleanup_pending", "save.cleanup_flush_pending")
+            for issue in result.issues
+        ):
+            self.automaticSaveWarning.emit()
 
     @Slot(int, object)
     def _progress(self, token: int, progress: object) -> None:

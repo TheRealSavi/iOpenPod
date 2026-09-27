@@ -29,6 +29,8 @@ from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.models.photo_list_model import PhotoListModel
 from iOpenPod.app.models.track_table_model import TrackTableModel
+from iOpenPod.app.podcasts.models import PodcastSnapshot
+from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 from iOpenPod.app.services.device_coordinator import (
     DeviceCoordinator,
     SyncCleanupCompletedError,
@@ -221,6 +223,37 @@ def test_playlist_only_sync_requires_enabled_review_choice(
         assert controller.result is not None
         assert controller.result.status is SyncExecutionStatus.SUCCESS
     finally:
+        controller.shutdown()
+
+
+def test_podcast_sync_uses_shared_reservation_without_host_scans(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+) -> None:
+    coordinator, devices, workspace, _ = session
+    active = coordinator.active_ipod
+    assert active is not None
+    workspace.load(active.library)
+    service = SyncExecutionStub()
+    controller = SyncController(
+        service,
+        workspace,
+        devices,
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
+    )
+    podcasts = PodcastSyncRequest(PodcastSnapshot(writable=True))
+    try:
+        assert controller.start_podcasts(podcasts, active)
+        wait_for(service.entered.is_set)
+        assert workspace.locked and devices.busy
+        assert service.request is not None and service.request.podcasts is podcasts
+        assert not service.request.reconcile_playlists
+        assert not service.request.plan.items and not service.request.host.sources
+        assert not controller.start_podcasts(podcasts, active)
+        service.release.set()
+        wait_for(lambda: not controller.busy)
+        assert not workspace.locked and not devices.busy
+    finally:
+        service.release.set()
         controller.shutdown()
 
 

@@ -22,7 +22,7 @@ from iPodDB.library import MediaType, Track, TrackMetadata
         (MediaType.AUDIOBOOK, MediaType.AUDIO),
     ],
 )
-def test_reclassification_changes_only_media_types(
+def test_reclassification_preserves_unrelated_metadata(
     before: MediaType, after: MediaType
 ) -> None:
     track = Track(
@@ -36,7 +36,23 @@ def test_reclassification_changes_only_media_types(
         metadata=TrackMetadata(location="iPod_Control/Music/F00/media.mp4"),
     )
 
-    assert reclassify_track(track, after) == replace(track, media_types=(after,))
+    required = after in (
+        MediaType.PODCAST,
+        MediaType.VIDEO,
+        MediaType.TV_SHOW,
+        MediaType.MUSIC_VIDEO,
+        MediaType.VIDEO_PODCAST,
+    )
+    assert reclassify_track(track, after) == replace(
+        track,
+        media_types=(after,),
+        metadata=replace(
+            track.metadata,
+            skip_shuffle=required,
+            remember_position=required,
+            podcast=after in (MediaType.PODCAST, MediaType.VIDEO_PODCAST),
+        ),
+    )
 
 
 @pytest.mark.parametrize(
@@ -101,3 +117,27 @@ def test_podcast_readiness_requires_all_firmware_facing_flags() -> None:
             ),
         )
     )
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    (
+        (MediaType.AUDIO, MediaType.PODCAST),
+        (MediaType.VIDEO, MediaType.VIDEO),
+        (MediaType.VIDEO, MediaType.TV_SHOW),
+        (MediaType.VIDEO, MediaType.MUSIC_VIDEO),
+        (MediaType.VIDEO, MediaType.VIDEO_PODCAST),
+    ),
+)
+def test_podcast_and_video_reclassification_enforces_playback_flags(
+    before: MediaType,
+    after: MediaType,
+) -> None:
+    track = Track(1, "Episode", "", "", 1_000, media_types=(before,))
+
+    updated = reclassify_track(track, after)
+
+    assert updated.metadata.remember_position
+    assert updated.metadata.skip_shuffle
+    assert not track.metadata.remember_position
+    assert not track.metadata.skip_shuffle

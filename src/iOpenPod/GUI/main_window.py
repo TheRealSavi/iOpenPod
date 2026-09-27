@@ -57,6 +57,7 @@ from iOpenPod.app.library_write_controller import PreparationState
 from iOpenPod.app.models.device import ActiveIPod, DeviceDiscovery
 from iOpenPod.app.photo_controller import PhotoLoadFailure
 from iOpenPod.app.playback.backend import PlaybackFailure
+from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 from iOpenPod.app.sync_controller import SyncController
 from iOpenPod.app.sync_execution import (
     SyncExecutionResult,
@@ -230,6 +231,9 @@ class MainWindow(QMainWindow):
             self._review_availability_changed
         )
         context.library_write_controller.automaticSaveFailed.connect(
+            self._show_library_review
+        )
+        context.library_write_controller.automaticSaveWarning.connect(
             self._show_library_review
         )
         self._pages = QStackedWidget(body)
@@ -464,6 +468,11 @@ class MainWindow(QMainWindow):
             self._keep_sync_contents
         )
         self._sync_controller.changed.connect(self._refresh_sync_availability)
+        context.podcast_controller.changed.connect(self._refresh_sync_availability)
+        context.podcast_controller.syncRequested.connect(self._execute_podcast_sync)
+        self._sync_controller.podcastStateInvalidated.connect(
+            context.podcast_controller.reload
+        )
         self._sync_workspace.selection.changed.connect(self._refresh_playlist_preview)
         self._sync_workspace.playlistReconciliationChanged.connect(
             self._refresh_sync_availability
@@ -1372,6 +1381,10 @@ class MainWindow(QMainWindow):
         self._sync_workspace.set_playlist_preview(changes)
 
     def _refresh_sync_availability(self) -> None:
+        podcasts = self._context.podcast_controller
+        self._sync_workspace.set_podcast_count(
+            len(podcasts.snapshot.subscriptions) if podcasts.snapshot.writable else 0
+        )
         self._sync_workspace.set_execution_available(
             not self._sync_controller.busy
             and self._review_host is not None
@@ -1380,6 +1393,7 @@ class MainWindow(QMainWindow):
             and self._context.device_controller.device_writes_allowed
             and not self._context.library_workspace.dirty
             and not self._context.library_workspace.locked
+            and not podcasts.busy
         )
 
     def _execute_sync(self) -> None:
@@ -1392,12 +1406,34 @@ class MainWindow(QMainWindow):
             ipod,
             active,
             reconcile_playlists=self._sync_workspace.reconcile_playlists,
+            podcasts=(
+                self._context.podcast_controller.sync_request()
+                if self._context.podcast_controller.snapshot.writable
+                and self._context.podcast_controller.snapshot.subscriptions
+                else None
+            ),
         ):
             QMessageBox.warning(
                 self, self.tr("Sync Unavailable"), self._sync_controller.last_error
             )
             return
         self._sync_workspace.show_execution()
+        self.retranslate_ui()
+
+    def _execute_podcast_sync(self, value: object) -> None:
+        active = self._context.device_controller.active_ipod
+        if not isinstance(value, PodcastSyncRequest) or active is None:
+            return
+        if not self._sync_controller.start_podcasts(value, active):
+            QMessageBox.warning(
+                self, self.tr("Sync Unavailable"), self._sync_controller.last_error
+            )
+            return
+        self._review_host = None
+        self._review_ipod = None
+        self._review_active = None
+        self._workspaces.setCurrentWidget(self._sync_workspace)
+        self._sync_workspace.show_execution(podcasts=True)
         self.retranslate_ui()
 
     def _sync_progress_changed(self, value: object) -> None:

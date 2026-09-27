@@ -32,6 +32,7 @@ from storage import (
     FileFingerprint,
     FilePreconditionError,
     FilesystemSession,
+    FlushResult,
     HardwareIdentifiers,
     StorageOperationError,
     TransactionState,
@@ -319,9 +320,17 @@ def test_keep_can_retry_after_journal_move_succeeded_but_reported_failure(
 
 def test_terminal_cleanup_is_rediscovered_from_device_without_host_settings(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = build_device(tmp_path)
     path = create_transaction_journal(device, TransactionState.RESTORED)
+
+    def failed_cleanup(_session: FilesystemSession, _path: DevicePath) -> FlushResult:
+        raise StorageOperationError("Recovery file is in use")
+
+    monkeypatch.setattr(
+        FilesystemSession, "finalize_restored_transaction", failed_cleanup
+    )
     store = GlobalSettingsStore()
     settings = SettingsService(store, DeviceSettingsStore())
     coordinator = DeviceCoordinator(device.storage)
@@ -340,6 +349,7 @@ def test_terminal_cleanup_is_rediscovered_from_device_without_host_settings(
         wait_for(lambda: not devices.busy)
         assert controller.needs_cleanup and not controller.needs_recovery
         assert controller.result is not None and controller.result.recovery_path == path
+        assert "Recovery file is in use" in controller.result.issues[-1].detail
         assert devices.device_writes_allowed
         assert controller.keep_current_contents()
         wait_for(lambda: not controller.busy)

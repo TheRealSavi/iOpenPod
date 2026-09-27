@@ -46,6 +46,8 @@ class DeviceCandidateIssueCode(StrEnum):
     ARTWORK_DATABASE_UNREADABLE = "artwork_database_unreadable"
     PHOTOS_DATABASE_UNREADABLE = "photos_database_unreadable"
     VOLUME_PRESENTATION_INCOMPLETE = "volume_presentation_incomplete"
+    TRANSACTION_CLEANUP_PENDING = "transaction_cleanup_pending"
+    TRANSACTION_CLEANUP_FLUSH_PENDING = "transaction_cleanup_flush_pending"
     INSPECTION_FAILED = "inspection_failed"
 
 

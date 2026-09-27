@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 from iOpenPod.app.podcasts.catalog import (
     mark_episode_selection_listened,
     merge_fetched_subscription,
+    reconcile_device_podcasts,
     remove_subscription,
 )
 from iOpenPod.app.podcasts.feed_client import (
@@ -26,9 +27,11 @@ from iOpenPod.app.podcasts.models import (
     PodcastIssueCode,
     PodcastSearchResult,
     PodcastSnapshot,
+    PodcastSyncSettings,
     SubscriptionSource,
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastStateRevision
+from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -46,6 +49,8 @@ class PodcastOperation(StrEnum):
     REFRESH = "refresh"
     UNSUBSCRIBE = "unsubscribe"
     LISTENED = "listened"
+    SETTINGS = "settings"
+    SYNC = "sync"
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +107,7 @@ class PodcastController(QObject):
     busyChanged = Signal(bool)
     operationFailed = Signal(object)
     searchFinished = Signal(object)
+    syncRequested = Signal(object)
 
     def __init__(
         self,
@@ -147,6 +153,101 @@ class PodcastController(QObject):
             and self.snapshot.writable
             and self._devices.device_writes_allowed
         )
+
+    @property
+    def can_sync(self) -> bool:
+        return (
+            self.can_edit
+            and self._source is not None
+            and self._source.profile.capabilities.audio.supports_podcasts
+        )
+
+    def sync_request(self, subscription_id: str | None = None) -> PodcastSyncRequest:
+        """Capture immutable Podcast intent for the shared Sync worker."""
+        return PodcastSyncRequest(
+            self.snapshot,
+            subscription_ids=(subscription_id,)
+            if subscription_id is not None
+            else None,
+        )
+
+    @Slot()
+    def reload(self) -> None:
+        """Refresh document revisions after another workflow updates Podcast state."""
+        if self._closed or self._source is None:
+            return
+        self._pending_load_source = self._source
+        self._start_pending_load()
+
+    def sync(self, subscription_id: str | None = None) -> None:
+        if not self.can_sync:
+            return
+        if (
+            subscription_id is not None
+            and self.snapshot.subscription(subscription_id) is None
+        ):
+            self._fail(
+                PodcastOperation.SYNC,
+                "The Podcast Subscription is no longer available.",
+            )
+            return
+        self.syncRequested.emit(self.sync_request(subscription_id))
+
+    def add_episodes(self, identities: Iterable[tuple[str, str]]) -> None:
+        """Explicit additions bypass automatic episode selection and retention."""
+        self._request_episode_sync(identities, remove=False)
+
+    def remove_episodes(self, identities: Iterable[tuple[str, str]]) -> None:
+        self._request_episode_sync(identities, remove=True)
+
+    def _request_episode_sync(
+        self, identities: Iterable[tuple[str, str]], *, remove: bool
+    ) -> None:
+        if not self.can_sync:
+            return
+        selected = tuple(dict.fromkeys(identities))
+        if not selected:
+            return
+        self.syncRequested.emit(
+            PodcastSyncRequest(
+                self.snapshot,
+                additions=() if remove else selected,
+                removals=selected if remove else (),
+                automatic=False,
+            )
+        )
+
+    def set_sync_settings(
+        self, subscription_id: str, settings: PodcastSyncSettings
+    ) -> None:
+        source = self._require_editable_source()
+        if source is None:
+            return
+        loaded = self._loaded
+        if loaded.snapshot.subscription(subscription_id) is None:
+            self._fail(
+                PodcastOperation.SETTINGS,
+                "The Podcast Subscription is no longer available.",
+            )
+            return
+
+        def action() -> _StateResult:
+            snapshot = replace(
+                loaded.snapshot,
+                subscriptions=tuple(
+                    replace(item, sync_settings=settings)
+                    if item.subscription_id == subscription_id
+                    else item
+                    for item in loaded.snapshot.subscriptions
+                ),
+            )
+            return _StateResult(
+                self._coordinator.save_podcast_state(
+                    source, replace(loaded, snapshot=snapshot)
+                )
+            )
+
+        self._begin_device_write(PodcastOperation.SETTINGS, action)
 
     def track_for_episode(self, track_id: int | None) -> Track | None:
         source = self._source
@@ -451,9 +552,30 @@ class PodcastController(QObject):
         ):
             return
         self._pending_load_source = None
+        previous = self.snapshot
+
+        def action() -> _StateResult:
+            loaded = self._coordinator.load_podcast_state(source)
+            if not previous.subscriptions:
+                return _StateResult(loaded)
+            # Reload fresh document revisions without hiding the feed Episodes
+            # already being browsed after a failed or cancelled media transfer.
+            subscriptions = tuple(
+                replace(item, episodes=prior.episodes)
+                if (prior := previous.subscription(item.subscription_id)) is not None
+                and prior.feed_url == item.feed_url
+                else item
+                for item in loaded.snapshot.subscriptions
+            )
+            snapshot = reconcile_device_podcasts(
+                replace(loaded.snapshot, subscriptions=subscriptions),
+                source.library.tracks,
+            )
+            return _StateResult(replace(loaded, snapshot=snapshot))
+
         self._begin_device_write(
             PodcastOperation.LOAD,
-            lambda: _StateResult(self._coordinator.load_podcast_state(source)),
+            action,
         )
 
     def _release_device_reservation(self) -> None:

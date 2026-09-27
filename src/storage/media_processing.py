@@ -36,6 +36,7 @@ _TRANSFORM_LOCK = threading.BoundedSemaphore(1)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
+    from typing import BinaryIO
 
     from storage.models import FileFingerprint
 
@@ -82,8 +83,6 @@ class _Pipe:
     failed: threading.Event = field(default_factory=threading.Event)
 
     def read(self, pipe: object) -> None:
-        from typing import BinaryIO
-
         stream = cast("BinaryIO", pipe)
         try:
             while chunk := stream.read(65536):
@@ -108,8 +107,6 @@ class _ProgressPipe(_Pipe):
         return latest
 
     def read(self, pipe: object) -> None:
-        from typing import BinaryIO
-
         stream = cast("BinaryIO", pipe)
         values: dict[bytes, bytes] = {}
         size = 0
@@ -381,6 +378,50 @@ class MediaWorkspace:
         if re.fullmatch(r"\.[a-z0-9]{1,8}", suffix) is None:
             raise ValueError("A processed file needs a safe extension")
         return HostPath(self._directory / f"processed{suffix}")
+
+    def capture_stream(
+        self,
+        stream: BinaryIO,
+        suffix: str,
+        *,
+        max_bytes: int,
+        expected_size: int | None = None,
+        progress: Callable[[int], None] | None = None,
+    ) -> CapturedHostFile:
+        """Retain a bounded incoming stream in this private Host workspace."""
+        if max_bytes <= 0 or (
+            expected_size is not None and not 0 <= expected_size <= max_bytes
+        ):
+            raise ValueError("Incoming content exceeds the permitted size")
+        path = self.output_path(suffix)
+        digest = hashlib.sha256()
+        size = 0
+        # HTTP buffered streams can otherwise wait for the entire requested block
+        # while receiving occasional bytes. Return after one underlying read so
+        # the caller's cancellation/deadline checkpoint remains observable.
+        read = cast("Callable[[int], bytes]", getattr(stream, "read1", stream.read))
+        self._checkpoint()
+        with Path(path).open("xb") as output:
+            while True:
+                self._checkpoint()
+                block = read(min(COPY_CHUNK_SIZE, max_bytes - size + 1))
+                if not block:
+                    break
+                size += len(block)
+                if size > max_bytes or (
+                    expected_size is not None and size > expected_size
+                ):
+                    raise ValueError("Incoming content exceeded its permitted size")
+                output.write(block)
+                digest.update(block)
+                if progress is not None:
+                    progress(size)
+        self._checkpoint()
+        if size == 0 or (expected_size is not None and size != expected_size):
+            raise ValueError("Incoming content is empty or incomplete")
+        return CapturedHostFile(
+            path, path, fingerprint_from_stat(Path(path).stat(), digest.hexdigest())
+        )
 
     def snapshot_fingerprint(self, captured: CapturedHostFile) -> FileFingerprint:
         """Bind already-hashed captured bytes to their actual temporary identity."""

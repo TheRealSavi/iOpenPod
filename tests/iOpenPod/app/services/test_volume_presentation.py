@@ -63,9 +63,11 @@ def test_saved_rename_can_be_ejected_and_reconnected_without_recovery(
         candidate = coordinator.discover_devices().candidates[0]
         selected = coordinator.select_device(candidate.id)
         assert selected.library.device_name == "HappyPod :)"
-        assert journal.read_bytes() == committed_journal
         if host_identity_changed:
-            assert coordinator.sync_cleanup_path == ""
+            assert journal.read_bytes() == committed_journal
+        else:
+            assert not journal.exists()
+        assert coordinator.sync_cleanup_path == ""
     finally:
         coordinator.close()
         device.coordinator.close()

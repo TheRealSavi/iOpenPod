@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, cast
 
 from iOpenPod.app.podcasts.models import (
     ListeningRecord,
+    PodcastClearAge,
+    PodcastClearMethod,
+    PodcastFillMode,
     PodcastSubscription,
+    PodcastSyncSettings,
     SubscriptionSource,
 )
 
@@ -17,6 +21,25 @@ if TYPE_CHECKING:
 _SUBSCRIPTIONS_SCHEMA = "iopenpod.podcast-subscriptions"
 _HISTORY_SCHEMA = "iopenpod.podcast-listening-history"
 _VERSION = 1
+_HISTORY_VERSION = 2
+_HISTORY_FIELDS = frozenset(
+    (
+        "subscription_id",
+        "episode_id",
+        "guid",
+        "enclosure_url",
+        "title",
+        "listened_override",
+        "observed_play_count",
+        "last_played",
+        "published_at",
+        "episode_number",
+        "automatically_cleared",
+    )
+)
+# Keep the established path, but older apps must reject documents whose retention
+# choices they cannot preserve. Version 1 loads with Original iOpenPod defaults.
+_SUBSCRIPTIONS_VERSION = 2
 _MAX_SUBSCRIPTIONS = 500
 _MAX_HISTORY_RECORDS = 250_000
 
@@ -28,7 +51,7 @@ class PodcastDocumentError(ValueError):
 def encode_subscriptions(subscriptions: Sequence[PodcastSubscription]) -> bytes:
     document: dict[str, object] = {
         "schema": _SUBSCRIPTIONS_SCHEMA,
-        "version": _VERSION,
+        "version": _SUBSCRIPTIONS_VERSION,
         "subscriptions": [
             {
                 "id": item.subscription_id,
@@ -41,6 +64,13 @@ def encode_subscriptions(subscriptions: Sequence[PodcastSubscription]) -> bytes:
                 "category": item.category,
                 "language": item.language,
                 "last_refreshed": item.last_refreshed,
+                "sync_settings": {
+                    "episode_slots": item.sync_settings.episode_slots,
+                    "fill_mode": item.sync_settings.fill_mode.value,
+                    "clear_when_listened": item.sync_settings.clear_when_listened,
+                    "clear_older_than": item.sync_settings.clear_older_than.value,
+                    "clear_method": item.sync_settings.clear_method.value,
+                },
             }
             for item in subscriptions
         ],
@@ -49,7 +79,7 @@ def encode_subscriptions(subscriptions: Sequence[PodcastSubscription]) -> bytes:
 
 
 def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
-    root = _root(payload, _SUBSCRIPTIONS_SCHEMA)
+    root = _root(payload, _SUBSCRIPTIONS_SCHEMA, versions=(1, _SUBSCRIPTIONS_VERSION))
     rows = _sequence(root.get("subscriptions", ()), "subscriptions")
     if len(rows) > _MAX_SUBSCRIPTIONS:
         raise PodcastDocumentError("The subscriptions file contains too many shows")
@@ -70,6 +100,11 @@ def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
                     category=_text(row, "category"),
                     language=_text(row, "language"),
                     last_refreshed=_integer(row, "last_refreshed"),
+                    sync_settings=(
+                        _decode_settings(row.get("sync_settings"))
+                        if root.get("version") == _SUBSCRIPTIONS_VERSION
+                        else PodcastSyncSettings()
+                    ),
                 )
             )
         except (TypeError, ValueError) as error:
@@ -89,7 +124,7 @@ def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
 def encode_history(records: Sequence[ListeningRecord]) -> bytes:
     document: dict[str, object] = {
         "schema": _HISTORY_SCHEMA,
-        "version": _VERSION,
+        "version": _HISTORY_VERSION,
         "records": [
             {
                 "subscription_id": item.subscription_id,
@@ -100,6 +135,9 @@ def encode_history(records: Sequence[ListeningRecord]) -> bytes:
                 "listened_override": item.listened_override,
                 "observed_play_count": item.observed_play_count,
                 "last_played": item.last_played,
+                "published_at": item.published_at,
+                "episode_number": item.episode_number,
+                "automatically_cleared": item.automatically_cleared,
             }
             for item in records
         ],
@@ -108,13 +146,18 @@ def encode_history(records: Sequence[ListeningRecord]) -> bytes:
 
 
 def decode_history(payload: bytes) -> tuple[ListeningRecord, ...]:
-    root = _root(payload, _HISTORY_SCHEMA)
+    root = _root(payload, _HISTORY_SCHEMA, versions=(1, _HISTORY_VERSION))
     rows = _sequence(root.get("records", ()), "records")
     if len(rows) > _MAX_HISTORY_RECORDS:
         raise PodcastDocumentError("The listening-history file is too large")
     records: list[ListeningRecord] = []
     for index, value in enumerate(rows):
         row = _mapping(value, f"records[{index}]")
+        version_two = root.get("version") == _HISTORY_VERSION
+        if version_two and frozenset(row) != _HISTORY_FIELDS:
+            raise PodcastDocumentError(
+                f"records[{index}] must contain exactly the version 2 history fields"
+            )
         override = row.get("listened_override")
         if override is not None and not isinstance(override, bool):
             raise PodcastDocumentError(
@@ -131,6 +174,15 @@ def decode_history(payload: bytes) -> tuple[ListeningRecord, ...]:
                     listened_override=override,
                     observed_play_count=_integer(row, "observed_play_count"),
                     last_played=_integer(row, "last_played"),
+                    published_at=_integer(row, "published_at") if version_two else 0,
+                    episode_number=(
+                        _optional_integer(row, "episode_number")
+                        if version_two
+                        else None
+                    ),
+                    automatically_cleared=(
+                        _boolean(row, "automatically_cleared") if version_two else False
+                    ),
                 )
             )
         except (TypeError, ValueError) as error:
@@ -143,7 +195,26 @@ def decode_history(payload: bytes) -> tuple[ListeningRecord, ...]:
     return tuple(records)
 
 
-def _root(payload: bytes, expected_schema: str) -> Mapping[str, object]:
+def _decode_settings(value: object) -> PodcastSyncSettings:
+    row = _mapping(value, "sync_settings")
+    listened = row.get("clear_when_listened")
+    if not isinstance(listened, bool):
+        raise PodcastDocumentError("clear_when_listened must be true or false")
+    return PodcastSyncSettings(
+        episode_slots=_integer(row, "episode_slots"),
+        fill_mode=PodcastFillMode(_text(row, "fill_mode", required=True)),
+        clear_when_listened=listened,
+        clear_older_than=PodcastClearAge(_text(row, "clear_older_than", required=True)),
+        clear_method=PodcastClearMethod(_text(row, "clear_method", required=True)),
+    )
+
+
+def _root(
+    payload: bytes,
+    expected_schema: str,
+    *,
+    versions: tuple[int, ...] = (_VERSION,),
+) -> Mapping[str, object]:
     try:
         value: object = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -153,7 +224,12 @@ def _root(payload: bytes, expected_schema: str) -> Mapping[str, object]:
     root = _mapping(value, "document")
     if root.get("schema") != expected_schema:
         raise PodcastDocumentError("The file has an unexpected schema identifier")
-    if root.get("version") != _VERSION:
+    version = root.get("version")
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version not in versions
+    ):
         raise PodcastDocumentError("The file uses an unsupported schema version")
     return root
 
@@ -187,6 +263,17 @@ def _integer(row: Mapping[str, object], name: str) -> int:
     value = row.get(name, 0)
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise PodcastDocumentError(f"{name} must be a non-negative integer")
+    return value
+
+
+def _optional_integer(row: Mapping[str, object], name: str) -> int | None:
+    return None if row.get(name) is None else _integer(row, name)
+
+
+def _boolean(row: Mapping[str, object], name: str) -> bool:
+    value = row.get(name)
+    if not isinstance(value, bool):
+        raise PodcastDocumentError(f"{name} must be true or false")
     return value
 
 

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import fields, replace
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -32,7 +33,9 @@ from iOpenPod.app.metadata_fields import (
     metadata_fields,
 )
 from iOpenPod.app.track_conversion import media_type_choices
+from iOpenPod.app.track_playback_policy import requires_track_playback_policy
 from iOpenPod.GUI.dialogs.artwork_editor import ArtworkEditor
+from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.metadata_field_editor import FieldEditor
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
@@ -167,6 +170,7 @@ class MetadataEditorDialog(QDialog):
         self._group_items: dict[str, QListWidgetItem] = {}
         self._page_indices: dict[str, int] = {}
         self._section_rows: list[tuple[QFrame, list[FieldEditor]]] = []
+        self._updating_playback_policy = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(16, 16, 16, 16)
@@ -250,6 +254,77 @@ class MetadataEditorDialog(QDialog):
         apply_button.clicked.connect(self.accept)
         footer.addWidget(apply_button)
         outer.addLayout(footer)
+        for path in ("metadata.skip_shuffle", "metadata.remember_position"):
+            editor = self.rows[path].editor
+            if isinstance(editor, AppComboBox):
+                editor.currentIndexChanged.connect(self._update_playback_flag_policy)
+        for path in ("media_types", "metadata.podcast"):
+            editor = self.rows[path].editor
+            if isinstance(editor, AppComboBox):
+                editor.currentIndexChanged.connect(self._classification_changed)
+        self._update_playback_flag_policy()
+
+    def _classification_changed(self, _index: int) -> None:
+        self._update_playback_flag_policy(
+            stage=any(
+                self.rows[path].is_modified()
+                for path in ("media_types", "metadata.podcast")
+            )
+        )
+
+    def _update_playback_flag_policy(
+        self, _index: int | None = None, *, stage: bool = False
+    ) -> None:
+        if self._updating_playback_policy:
+            return
+        media_editor = self.rows["media_types"].editor
+        podcast_editor = self.rows["metadata.podcast"].editor
+        if not isinstance(media_editor, AppComboBox) or not isinstance(
+            podcast_editor, AppComboBox
+        ):
+            return
+        media_type = media_editor.currentData()
+        podcast = podcast_editor.currentData()
+        required = all(
+            requires_track_playback_policy(
+                replace(
+                    track,
+                    media_types=(MediaType(media_type),)
+                    if isinstance(media_type, str)
+                    else track.media_types,
+                    metadata=replace(
+                        track.metadata,
+                        podcast=podcast
+                        if isinstance(podcast, bool)
+                        else track.metadata.podcast,
+                    ),
+                )
+            )
+            for track in self._tracks
+        )
+        self._updating_playback_policy = True
+        try:
+            for path in ("metadata.skip_shuffle", "metadata.remember_position"):
+                editor = self.rows[path].editor
+                if not isinstance(editor, AppComboBox):
+                    continue
+                if stage and required:
+                    editor.setCurrentIndex(editor.findData(True))
+                choices = editor.model()
+                if isinstance(choices, QStandardItemModel):
+                    no = choices.item(editor.findData(False))
+                    no.setEnabled(not required)
+                editor.setEnabled(not required or editor.currentData() is not True)
+                editor.setToolTip(
+                    self.tr(
+                        "Podcasts and videos keep their place and are skipped "
+                        "when shuffling."
+                    )
+                    if required
+                    else ""
+                )
+        finally:
+            self._updating_playback_policy = False
 
     def _add_group_page(self, group: str, specs: list[MetadataField]) -> None:
         page = QWidget(self)

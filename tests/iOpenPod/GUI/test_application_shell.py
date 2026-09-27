@@ -117,7 +117,10 @@ def test_draft_all_changes_setting_controls_review_visibility_immediately() -> N
         APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
 
 
-def test_automatic_save_failure_opens_diagnostics_with_review_button_hidden() -> None:
+@pytest.mark.parametrize("warning", [False, True])
+def test_automatic_save_issue_opens_diagnostics_with_review_button_hidden(
+    warning: bool,
+) -> None:
     context = _context()
     window = MainWindow(context, auto_discover=False)
     try:
@@ -126,7 +129,10 @@ def test_automatic_save_failure_opens_diagnostics_with_review_button_hidden() ->
         assert review is not None and review.isHidden()
         assert dialog is not None and not dialog.isVisible()
 
-        context.library_write_controller.automaticSaveFailed.emit()
+        if warning:
+            context.library_write_controller.automaticSaveWarning.emit()
+        else:
+            context.library_write_controller.automaticSaveFailed.emit()
 
         assert dialog.isVisible()
         assert review.isHidden()

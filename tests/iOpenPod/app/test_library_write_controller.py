@@ -14,6 +14,7 @@ from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QDialog, QLabel, QPlainTextEdit, QPushButton, QTreeWidget
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iPodDB.library.test_video_flags import video_source
 from tests.iPodDB.library.test_writing import library
 
 from iOpenPod.app.core.settings.definitions import (
@@ -54,7 +55,17 @@ from iPodDB.library import (
     TrackFieldEdit,
 )
 from iPodDB.library.writing import IssueSeverity, LibraryWriteResult, WriteIssue
-from storage import HardwareIdentifiers, Storage
+from storage import (
+    DevicePath,
+    FilesystemSession,
+    FlushResult,
+    HardwareIdentifiers,
+    Storage,
+    StorageOperationError,
+    TransactionDurabilityPendingError,
+    TransactionFailureFacts,
+    TransactionState,
+)
 from storage.testing import VirtualStoragePlatform
 
 
@@ -87,7 +98,9 @@ def session(
             transport_serial="000A270012345678",
         ),
     )
-    coordinator = DeviceCoordinator(Storage(platform))
+    coordinator = DeviceCoordinator(
+        Storage(platform, writer_lock_directory=tmp_path / "locks")
+    )
     discovery = coordinator.discover_devices()
     active = coordinator.select_device(discovery.candidates[0].id)
     devices = DeviceController(
@@ -108,6 +121,113 @@ def manual_settings() -> SettingsService:
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     settings.set_global(DRAFT_ALL_CHANGES, True)
     return settings
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+def test_successful_save_does_not_offer_cleanup_after_reload(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+    automatic: bool,
+) -> None:
+    coordinator, devices, workspace, database = session
+    settings = (
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+        if automatic
+        else manual_settings()
+    )
+    controller = LibraryWriteController(coordinator, workspace, devices, settings)
+    try:
+        if not automatic:
+            controller.prepare()
+            wait_for(lambda: controller.state is PreparationState.READY)
+            controller.save()
+            wait_for(lambda: controller.state is not PreparationState.SAVING)
+            assert controller.state is PreparationState.SAVED, controller.save_result
+        else:
+            wait_for(lambda: controller.state is PreparationState.SAVED)
+        assert not workspace.dirty
+        assert controller.save_result is not None
+        assert controller.save_result.recovery_path == ""
+        assert not tuple(
+            database.parents[2].glob(".iopenpod-recovery/*/transaction.json")
+        )
+        saved_bytes = database.read_bytes()
+        active = coordinator.active_ipod
+        assert active is not None
+        coordinator.select_device(active.candidate.id)
+        assert coordinator.sync_cleanup_path == ""
+        assert database.read_bytes() == saved_bytes
+    finally:
+        controller.shutdown()
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+@pytest.mark.parametrize("failure", ["delete", "before_flush", "after_flush"])
+def test_cleanup_failure_preserves_successful_library_save(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    automatic: bool,
+) -> None:
+    coordinator, devices, workspace, database = session
+    original = database.read_bytes()
+    finalize = FilesystemSession.finalize_committed_transaction
+
+    def fail_cleanup(storage: FilesystemSession, path: DevicePath) -> FlushResult:
+        if failure == "delete":
+            raise StorageOperationError("Recovery file is locked")
+        if failure == "after_flush":
+            finalize(storage, path)
+        raise TransactionDurabilityPendingError(
+            "Device flush failed",
+            TransactionFailureFacts(path, TransactionState.COMMITTED, True, True),
+        )
+
+    monkeypatch.setattr(
+        FilesystemSession, "finalize_committed_transaction", fail_cleanup
+    )
+    settings = (
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+        if automatic
+        else manual_settings()
+    )
+    controller = LibraryWriteController(coordinator, workspace, devices, settings)
+    warnings = QSignalSpy(controller.automaticSaveWarning)
+    failures = QSignalSpy(controller.automaticSaveFailed)
+    try:
+        if automatic:
+            wait_for(lambda: controller.state is PreparationState.SAVED)
+        else:
+            controller.prepare()
+            wait_for(lambda: controller.state is PreparationState.READY)
+            controller.save()
+            wait_for(lambda: controller.state is not PreparationState.SAVING)
+        assert controller.state is PreparationState.SAVED, controller.save_result
+        assert warnings.count() == int(automatic)
+        assert failures.count() == 0
+        assert not workspace.dirty and not workspace.locked and not devices.busy
+        assert database.read_bytes() != original
+        result = controller.save_result
+        assert result is not None and result.active is not None
+        assert (
+            result.active.library == IPodLibrary.parse(database.read_bytes()).snapshot
+        )
+        issue = result.issues[-1]
+        assert issue.severity is IssueSeverity.WARNING
+        if failure == "after_flush":
+            assert issue.code == "save.cleanup_flush_pending"
+            assert result.recovery_path == ""
+            assert not tuple(
+                database.parents[2].glob(".iopenpod-recovery/*/transaction.json")
+            )
+        else:
+            assert issue.code == "save.cleanup_pending"
+            journal = database.parents[2] / result.recovery_path
+            assert json.loads(journal.read_bytes())["state"] == "committed"
+        assert (
+            "Recovery file is locked" if failure == "delete" else "Device flush failed"
+        ) in issue.detail
+    finally:
+        controller.shutdown()
 
 
 def wait_for(predicate: Callable[[], bool]) -> None:
@@ -197,6 +317,47 @@ def test_read_only_device_reservation_blocks_save_but_not_review_preparation(
         assert controller.can_save is True
     finally:
         devices.finish_read_only_operation()
+        controller.shutdown()
+
+
+def test_save_repairs_existing_video_playback_flags_in_the_reviewed_request(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+) -> None:
+    coordinator, devices, workspace, database = session
+    original = video_source(video=True).serialize().itunes
+    database.write_bytes(original)
+    assert devices.reload_active_ipod()
+    wait_for(lambda: not devices.busy)
+    active = devices.active_ipod
+    assert active is not None
+    workspace.load(active.library)
+    workspace.rename(10, "Reviewed")
+    controller = LibraryWriteController(
+        coordinator, workspace, devices, manual_settings()
+    )
+    try:
+        assert not workspace.tracks[0].metadata.skip_shuffle
+        assert not workspace.tracks[0].metadata.remember_position
+
+        controller.prepare()
+        wait_for(lambda: controller.state is not PreparationState.PREPARING)
+
+        assert controller.state is PreparationState.READY, controller.review
+        assert controller.request is not None
+        reviewed = controller.request.snapshot.tracks[0]
+        assert reviewed.metadata.skip_shuffle and reviewed.metadata.remember_position
+        assert database.read_bytes() == original
+        assert not workspace.tracks[0].metadata.skip_shuffle
+
+        controller.save()
+        wait_for(lambda: controller.state is not PreparationState.SAVING)
+
+        assert str(controller.state) == PreparationState.SAVED.value, (
+            controller.save_result
+        )
+        saved = IPodLibrary(database.read_bytes()).snapshot.tracks[0]
+        assert saved.metadata.skip_shuffle and saved.metadata.remember_position
+    finally:
         controller.shutdown()
 
 
@@ -510,9 +671,10 @@ def test_save_commits_verified_playlist_output_and_adopts_new_source(
         assert devices.active_ipod is not None
         assert workspace.snapshot is devices.active_ipod.library
         assert controller.save_result is not None
-        journal = database.parents[2] / controller.save_result.recovery_path
-        assert journal.is_file()
-        assert journal.with_name("original-0.bin").read_bytes() == original
+        assert controller.save_result.recovery_path == ""
+        assert not tuple(
+            database.parents[2].glob(".iopenpod-recovery/*/transaction.json")
+        )
         # The next edit is bound to the newly committed source.
         workspace.rename(10, "Saved twice")
         controller.prepare()
@@ -525,7 +687,7 @@ def test_save_commits_verified_playlist_output_and_adopts_new_source(
         controller.shutdown()
 
 
-def test_metadata_and_device_rename_save_together_with_recovery(
+def test_metadata_and_device_rename_save_together_and_clean_recovery(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
     track_model: TrackTableModel,
 ) -> None:
@@ -574,8 +736,10 @@ def test_metadata_and_device_rename_save_together_with_recovery(
         assert reloaded.tracks[1:] == before[1:]
         assert not workspace.dirty
         assert controller.save_result is not None
-        journal = database.parents[2] / controller.save_result.recovery_path
-        assert journal.with_name("original-0.bin").read_bytes() == original
+        assert controller.save_result.recovery_path == ""
+        assert not tuple(
+            database.parents[2].glob(".iopenpod-recovery/*/transaction.json")
+        )
     finally:
         controller.shutdown()
 
@@ -1166,8 +1330,11 @@ def test_default_mode_saves_each_edit_and_adopts_verified_output(
         assert saved.tracks[0].rating == 80
         assert not workspace.dirty and not workspace.locked and not devices.busy
         assert controller.save_result is not None
-        journal = database.parents[2] / controller.save_result.recovery_path
-        assert journal.with_name("original-0.bin").read_bytes() == original
+        assert database.read_bytes() != original
+        assert controller.save_result.recovery_path == ""
+        assert not tuple(
+            database.parents[2].glob(".iopenpod-recovery/*/transaction.json")
+        )
 
         workspace.rename(10, "Automatic again")
         wait_for(lambda: not workspace.dirty)

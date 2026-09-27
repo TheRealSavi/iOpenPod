@@ -22,6 +22,69 @@ class PodcastIssueCode(StrEnum):
     FEED_REFRESH_FAILED = "feed_refresh_failed"
 
 
+class PodcastFillMode(StrEnum):
+    NEWEST = "newest"
+    NEXT = "next"
+
+
+class PodcastClearAge(StrEnum):
+    IMMEDIATE = "immediate"
+    DAY = "1_day"
+    THREE_DAYS = "3_days"
+    WEEK = "1_week"
+    TWO_WEEKS = "2_weeks"
+    MONTH = "1_month"
+    TWO_MONTHS = "2_months"
+    THREE_MONTHS = "3_months"
+    NEVER = "never"
+
+    @property
+    def seconds(self) -> int | None:
+        """Elapsed time on the iPod, independent of publication time."""
+        days = {
+            PodcastClearAge.IMMEDIATE: 0,
+            PodcastClearAge.DAY: 1,
+            PodcastClearAge.THREE_DAYS: 3,
+            PodcastClearAge.WEEK: 7,
+            PodcastClearAge.TWO_WEEKS: 14,
+            PodcastClearAge.MONTH: 30,
+            PodcastClearAge.TWO_MONTHS: 60,
+            PodcastClearAge.THREE_MONTHS: 90,
+        }
+        value = days.get(self)
+        return None if value is None else value * 86_400
+
+
+class PodcastClearMethod(StrEnum):
+    REMOVE = "remove"
+    REPLACE = "replace"
+
+
+@dataclass(frozen=True, slots=True)
+class PodcastSyncSettings:
+    """Per-show retention policy matching the Original iOpenPod controls."""
+
+    episode_slots: int = 3
+    fill_mode: PodcastFillMode = PodcastFillMode.NEWEST
+    clear_when_listened: bool = True
+    clear_older_than: PodcastClearAge = PodcastClearAge.NEVER
+    clear_method: PodcastClearMethod = PodcastClearMethod.REMOVE
+
+    def __post_init__(self) -> None:
+        if type(self.episode_slots) is not int:
+            raise ValueError("Podcast episode slots must be an integer")
+        if not 1 <= self.episode_slots <= 50:
+            raise ValueError("Podcast episode slots must be between 1 and 50")
+        if type(self.fill_mode) is not PodcastFillMode:
+            raise ValueError("Podcast fill mode must be a supported value")
+        if type(self.clear_when_listened) is not bool:
+            raise ValueError("Podcast clear-when-listened must be true or false")
+        if type(self.clear_older_than) is not PodcastClearAge:
+            raise ValueError("Podcast clear age must be a supported value")
+        if type(self.clear_method) is not PodcastClearMethod:
+            raise ValueError("Podcast clear method must be a supported value")
+
+
 @dataclass(frozen=True, slots=True)
 class PodcastIssue:
     code: PodcastIssueCode
@@ -49,6 +112,7 @@ class PodcastEpisode:
     listened_override: bool | None = None
     play_count: int = 0
     last_played: int = 0
+    automatically_cleared: bool = False
 
     def __post_init__(self) -> None:
         if not self.episode_id.strip():
@@ -66,6 +130,8 @@ class PodcastEpisode:
             raise ValueError("An on-device Podcast Track ID must not be zero")
         if self.on_device != (self.track_id is not None):
             raise ValueError("Podcast on-device state and Track ID must agree")
+        if type(self.automatically_cleared) is not bool:
+            raise ValueError("Podcast automatic-clear state must be true or false")
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +150,7 @@ class PodcastSubscription:
     language: str = ""
     last_refreshed: int = 0
     episodes: tuple[PodcastEpisode, ...] = ()
+    sync_settings: PodcastSyncSettings = PodcastSyncSettings()
 
     def __post_init__(self) -> None:
         if not self.subscription_id.strip():
@@ -109,7 +176,7 @@ class PodcastSubscription:
 
 @dataclass(frozen=True, slots=True)
 class ListeningRecord:
-    """Durable listening state independent of current device membership."""
+    """Durable listening and automatic-clear state independent of membership."""
 
     subscription_id: str
     episode_id: str
@@ -119,12 +186,25 @@ class ListeningRecord:
     listened_override: bool | None = None
     observed_play_count: int = 0
     last_played: int = 0
+    published_at: int = 0
+    episode_number: int | None = None
+    automatically_cleared: bool = False
 
     def __post_init__(self) -> None:
         if not self.subscription_id.strip() or not self.episode_id.strip():
             raise ValueError("Listening records require subscription and episode IDs")
         if self.observed_play_count < 0 or self.last_played < 0:
             raise ValueError("Listening history values must not be negative")
+        if type(self.published_at) is not int or self.published_at < 0:
+            raise ValueError("Podcast publication time must be a non-negative integer")
+        if self.episode_number is not None and (
+            type(self.episode_number) is not int or self.episode_number < 0
+        ):
+            raise ValueError(
+                "Podcast episode number must be a non-negative integer or null"
+            )
+        if type(self.automatically_cleared) is not bool:
+            raise ValueError("Podcast automatic-clear state must be true or false")
 
     @property
     def listened(self) -> bool:

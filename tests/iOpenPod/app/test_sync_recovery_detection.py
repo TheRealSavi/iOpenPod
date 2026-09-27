@@ -209,11 +209,16 @@ def test_restoration_final_flush_failure_reports_removed_recovery_files(
     "state", [TransactionState.COMMITTED, TransactionState.RESTORED]
 )
 def test_retry_cleanup_preserves_terminal_library_and_requires_connected_journal(
-    tmp_path: Path, state: TransactionState
+    tmp_path: Path, state: TransactionState, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     device = build_device(tmp_path)
     path = create_transaction_journal(device, state)
     expected = (device.root / str(DATABASE_PATH)).read_bytes()
+
+    def forbidden_inspect(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("Terminal cleanup must not reinspect or hash Library media")
+
+    monkeypatch.setattr(FilesystemSession, "inspect_transaction", forbidden_inspect)
     try:
         device.coordinator.cleanup_sync_journal(path)
         assert (device.root / str(DATABASE_PATH)).read_bytes() == expected

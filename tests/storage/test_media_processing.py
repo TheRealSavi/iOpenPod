@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import sys
@@ -17,6 +18,50 @@ from storage.media_processing import (
     media_workspace,
     run_media_tool,
 )
+
+
+@pytest.mark.parametrize(
+    ("payload", "limit", "expected"),
+    [(b"oversized", 3, None), (b"short", 20, 10), (b"long", 20, 2), (b"", 20, None)],
+)
+def test_incoming_stream_limits_reject_and_clean_partial_files(
+    payload: bytes,
+    limit: int,
+    expected: int | None,
+) -> None:
+    path: Path | None = None
+    with (
+        pytest.raises(ValueError),
+        media_workspace(checkpoint=lambda: None) as workspace,
+    ):
+        path = Path(workspace.output_path(".mp3"))
+        workspace.capture_stream(
+            io.BytesIO(payload), ".mp3", max_bytes=limit, expected_size=expected
+        )
+    assert path is not None and not path.exists()
+
+
+def test_incoming_stream_cancellation_cleans_partial_capture() -> None:
+    cancelled = False
+    path: Path | None = None
+
+    def checkpoint() -> None:
+        if cancelled:
+            raise InterruptedError("cancelled")
+
+    def progress(_size: int) -> None:
+        nonlocal cancelled
+        cancelled = True
+
+    with (
+        pytest.raises(InterruptedError),
+        media_workspace(checkpoint=checkpoint) as workspace,
+    ):
+        path = Path(workspace.output_path(".mp3"))
+        workspace.capture_stream(
+            io.BytesIO(b"bytes"), ".mp3", max_bytes=100, progress=progress
+        )
+    assert path is not None and not path.exists()
 
 
 def test_progress_is_delivered_while_tool_runs_on_the_calling_thread(

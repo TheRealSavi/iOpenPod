@@ -72,6 +72,34 @@ def test_playlist_only_changes_require_checked_option_and_executable_review(
     assert not execute.isEnabled()
 
 
+def test_podcast_settings_are_disclosed_and_allow_sync_without_host_changes(
+    workspace: SyncWorkspace,
+) -> None:
+    execute = workspace.findChild(QPushButton, "executeSync")
+    detail = workspace.findChild(QLabel, "syncPodcastReviewDetail")
+    assert execute is not None and detail is not None
+    workspace.set_podcast_count(2)
+    assert execute.isEnabled()
+    assert "2 Podcasts" in detail.text() and "removed" in detail.text()
+    assert not detail.isHidden()
+    workspace.set_execution_available(False)
+    assert not execute.isEnabled()
+    workspace.set_execution_available(True)
+    workspace.set_podcast_count(0)
+    assert not execute.isEnabled() and detail.isHidden()
+
+
+def test_dedicated_podcast_execution_has_its_own_title(
+    workspace: SyncWorkspace,
+) -> None:
+    title = workspace.findChild(QLabel, "syncWorkspaceTitle")
+    assert title is not None
+    workspace.show_execution(podcasts=True)
+    assert title.text() == "Sync Podcasts"
+    workspace.show_scan("Scanning")
+    assert title.text() == "Sync with Host"
+
+
 def test_media_changes_can_sync_with_playlist_reconciliation_off(
     workspace: SyncWorkspace,
 ) -> None:

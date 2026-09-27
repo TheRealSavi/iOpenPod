@@ -17,6 +17,7 @@ from iOpenPod.app.core.settings.definitions import (
     ROTATE_TALL_PHOTOS,
 )
 from iOpenPod.app.core.settings.transcoding import read_transcoder_settings
+from iOpenPod.app.models.device import DeviceCandidateIssueCode
 from iOpenPod.app.services.device_coordinator import (
     SyncCleanupCompletedError,
     SyncRecoveryDeclinedError,
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.library_workspace import LibraryWorkspace
     from iOpenPod.app.library_write import WriteProgress
     from iOpenPod.app.models.device import ActiveIPod
+    from iOpenPod.app.podcasts.sync import PodcastSyncRequest
     from iOpenPod.app.sync_plan import SyncPlan
 
 logger = logging.getLogger(__name__)
@@ -293,6 +295,7 @@ class SyncController(QObject):
     changed = Signal()
     progressChanged = Signal(object)
     finished = Signal(object)
+    podcastStateInvalidated = Signal()
 
     def __init__(
         self,
@@ -354,6 +357,7 @@ class SyncController(QObject):
         source: ActiveIPod,
         *,
         reconcile_playlists: bool = True,
+        podcasts: PodcastSyncRequest | None = None,
     ) -> bool:
         self.last_error = ""
         if self.needs_recovery:
@@ -378,8 +382,12 @@ class SyncController(QObject):
                 "The Active iPod or Library changed. Scan again before Sync."
             )
             return False
-        if not plan.change_count and not (
-            reconcile_playlists and preview_playlist_sync(plan, host, ipod, source)
+        if (
+            podcasts is None
+            and not plan.change_count
+            and not (
+                reconcile_playlists and preview_playlist_sync(plan, host, ipod, source)
+            )
         ):
             self.last_error = "Select at least one change in Review."
             return False
@@ -400,6 +408,7 @@ class SyncController(QObject):
                     rockbox_metadata=self._settings.get(ROCKBOX_METADATA_SUPPORT),
                 ),
                 reconcile_playlists=reconcile_playlists,
+                podcasts=podcasts,
             )
         except ValueError as error:
             self.last_error = f"Check the transcoding settings: {error}"
@@ -422,6 +431,28 @@ class SyncController(QObject):
         self.changed.emit()
         self._pool.start(job)
         return True
+
+    def start_podcasts(self, podcasts: PodcastSyncRequest, source: ActiveIPod) -> bool:
+        """Run Podcast intent through the same reservation and execution lifecycle."""
+        from iOpenPod.app.host_media_library import (
+            HostMediaCacheStats,
+            HostMediaLibrary,
+        )
+        from iOpenPod.app.library_sync_helper import (
+            IPodMediaCacheStats,
+            IPodMediaLibrary,
+        )
+        from iOpenPod.app.sync_plan import SyncPlan
+        from iPodDB.library import LibrarySnapshot
+
+        return self.start(
+            SyncPlan(()),
+            HostMediaLibrary(LibrarySnapshot(), (), (), HostMediaCacheStats()),
+            IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False),
+            source,
+            reconcile_playlists=False,
+            podcasts=podcasts,
+        )
 
     @Slot()
     def cancel(self) -> None:
@@ -520,6 +551,16 @@ class SyncController(QObject):
     def _cleanup_discovered(self, path: str) -> None:
         if self.busy or self.needs_recovery:
             return
+        active = self._devices.active_ipod
+        detail = (
+            "\n".join(
+                issue.detail
+                for issue in active.candidate.issues
+                if issue.code is DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING
+            )
+            if active is not None
+            else ""
+        )
         self.result = SyncExecutionResult(
             SyncExecutionStatus.SUCCESS,
             issues=(
@@ -528,6 +569,8 @@ class SyncController(QObject):
                     "A finished transaction has retained recovery files. Retry Cleanup to reclaim space, "
                     "or keep the current contents and recovery copies.",
                     severity=IssueSeverity.WARNING,
+                    detail=detail,
+                    artifact=path,
                 ),
             ),
             recovery_path=path,
@@ -590,6 +633,18 @@ class SyncController(QObject):
             self._devices.finish_library_save(None)
         self._workspace.set_locked(self.needs_recovery)
         self._job = None
+        if (
+            not self._closed
+            and current
+            and isinstance(job, _SyncWork)
+            and job.request.podcasts is not None
+            and value.active is None
+            and value.status
+            in (SyncExecutionStatus.FAILED, SyncExecutionStatus.CANCELLED)
+        ):
+            # Refresh/history publication can succeed before media preparation fails.
+            # Reload their revisions even when no replacement Library is published.
+            self.podcastStateInvalidated.emit()
         self.changed.emit()
         if not self._closed:
             self.finished.emit(value)

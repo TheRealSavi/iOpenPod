@@ -49,6 +49,7 @@ from iOpenPod.app.models.collection_list_model import (
 from iOpenPod.app.models.track_order import album_track_sort_key
 from iOpenPod.app.models.track_table_model import TrackRole
 from iOpenPod.app.track_conversion import podcast_conversion_needed
+from iOpenPod.app.track_playback_policy import requires_track_playback_policy
 from iOpenPod.GUI.dialogs.metadata_editor import MetadataEditorDialog
 from iOpenPod.GUI.dialogs.playlist_editor import PlaylistEditorDialog
 from iOpenPod.GUI.presentation.icons import glyph_icon
@@ -513,7 +514,18 @@ class TrackActions(QObject):
             )
             item.setCheckable(True)
             item.setChecked(bool(values) and all(values))
-            item.setEnabled(editable)
+            required_playback_flag = path in (
+                "metadata.skip_shuffle",
+                "metadata.remember_position",
+            ) and all(requires_track_playback_policy(t) for t in selection.tracks)
+            item.setEnabled(editable and not (required_playback_flag and all(values)))
+            if required_playback_flag:
+                item.setToolTip(
+                    self.tr(
+                        "Podcasts and videos keep their place and are skipped "
+                        "when shuffling."
+                    )
+                )
             new_value = not all(values)
             item.triggered.connect(
                 lambda _checked=False, p=path, v=new_value: self._guard(

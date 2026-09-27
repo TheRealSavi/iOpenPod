@@ -7,15 +7,9 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtTest import QTest
+from tests.iOpenPod.app.podcasts.podcast_test_support import active_ipod as _active_ipod
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
-from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
-from iOpenPod.app.models.device import (
-    ActiveIPod,
-    DeviceCandidate,
-    DeviceCandidateId,
-    DeviceReadiness,
-)
 from iOpenPod.app.podcasts.controller import (
     PodcastController,
     PodcastOperation,
@@ -26,16 +20,17 @@ from iOpenPod.app.podcasts.models import (
     PodcastSearchResult,
     PodcastSnapshot,
     PodcastSubscription,
+    PodcastSyncSettings,
     SubscriptionSource,
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastStateRevision
-from iPodDB.library import LibrarySnapshot
-from storage import FileFingerprint
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from iOpenPod.app.device_controller import DeviceController
+    from iOpenPod.app.models.device import ActiveIPod
+    from iOpenPod.app.podcasts.sync import PodcastSyncRequest
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 
 
@@ -120,32 +115,6 @@ class _Directory:
                 "https://example.test/feed",
             ),
         )
-
-
-def _active_ipod() -> ActiveIPod:
-    profile = next(
-        profile
-        for profile in DEFAULT_DEVICE_REGISTRY.profiles
-        if profile.model_number == "MB565"
-    )
-    candidate = DeviceCandidate(
-        DeviceCandidateId("podcast-test"),
-        "Test iPod",
-        "USB iPod",
-        "usb",
-        IdentificationStatus.EXACT,
-        DeviceReadiness.READY,
-        profile,
-        80_000_000_000,
-        40_000_000_000,
-    )
-    return ActiveIPod(
-        candidate,
-        profile,
-        LibrarySnapshot(),
-        "iTunesDB",
-        FileFingerprint(1, 0, 0, 0, "0" * 64),
-    )
 
 
 def _controller(
@@ -378,5 +347,113 @@ def test_controller_does_not_unsubscribe_a_device_backed_show() -> None:
 
         assert coordinator.saved == []
         assert failures[-1].operation is PodcastOperation.UNSUBSCRIBE
+    finally:
+        controller.shutdown()
+
+
+def test_sync_intent_is_captured_and_manual_selection_does_not_apply_retention() -> (
+    None
+):
+    feed = PodcastSubscription(
+        "feed-1",
+        "https://example.test/feed",
+        "Show",
+        SubscriptionSource.USER,
+        episodes=(
+            PodcastEpisode("episode-1", enclosure_url="https://example.test/e.mp3"),
+        ),
+    )
+    coordinator = _Coordinator(
+        LoadedPodcastState(
+            PodcastSnapshot((feed,), writable=True), PodcastStateRevision()
+        )
+    )
+    devices = _Devices()
+    controller = _controller(coordinator, devices, feed)
+    requests: list[PodcastSyncRequest] = []
+    controller.syncRequested.connect(requests.append)
+    try:
+        devices.activeIPodChanged.emit(_active_ipod())
+        _wait_until(lambda: controller.can_sync)
+        controller.sync()
+        controller.sync("feed-1")
+        controller.add_episodes((("feed-1", "episode-1"),) * 2)
+        controller.remove_episodes((("feed-1", "episode-1"),))
+        assert len(requests) == 4
+        assert requests[0].snapshot is controller.snapshot
+        assert requests[0].automatic and requests[0].subscription_ids is None
+        assert requests[1].subscription_ids == ("feed-1",)
+        assert requests[2].additions == (("feed-1", "episode-1"),)
+        assert requests[3].removals == (("feed-1", "episode-1"),)
+        assert not requests[2].automatic and not requests[3].automatic
+        assert not coordinator.saved
+        assert devices.begin_read_only_operation()
+        controller.sync()
+        controller.add_episodes((("feed-1", "episode-1"),))
+        assert len(requests) == 4
+    finally:
+        devices.finish_read_only_operation()
+        controller.shutdown()
+
+
+def test_sync_settings_are_saved_for_only_the_selected_show() -> None:
+    feed = PodcastSubscription(
+        "feed-1", "https://example.test/feed", "Show", SubscriptionSource.USER
+    )
+    other = replace(
+        feed, subscription_id="feed-2", feed_url="https://example.test/other"
+    )
+    coordinator = _Coordinator(
+        LoadedPodcastState(
+            PodcastSnapshot((feed, other), writable=True), PodcastStateRevision()
+        )
+    )
+    devices = _Devices()
+    controller = _controller(coordinator, devices, feed)
+    try:
+        devices.activeIPodChanged.emit(_active_ipod())
+        _wait_until(lambda: controller.can_edit)
+        settings = PodcastSyncSettings(episode_slots=7)
+        controller.set_sync_settings("feed-1", settings)
+        _wait_until(lambda: not controller.busy and bool(coordinator.saved))
+        selected = controller.snapshot.subscription("feed-1")
+        assert selected is not None and selected.sync_settings == settings
+        assert controller.snapshot.subscription("feed-2") == other
+    finally:
+        controller.shutdown()
+
+
+def test_reload_preserves_browsed_feed_episodes_with_fresh_document_settings() -> None:
+    feed = PodcastSubscription(
+        "feed-1",
+        "https://example.test/feed",
+        "Show",
+        SubscriptionSource.USER,
+        episodes=(
+            PodcastEpisode("episode-1", enclosure_url="https://example.test/e.mp3"),
+        ),
+    )
+    coordinator = _Coordinator(
+        LoadedPodcastState(
+            PodcastSnapshot((feed,), writable=True), PodcastStateRevision()
+        )
+    )
+    devices = _Devices()
+    controller = _controller(coordinator, devices, feed)
+    try:
+        devices.activeIPodChanged.emit(_active_ipod())
+        _wait_until(lambda: controller.can_edit)
+        settings = PodcastSyncSettings(episode_slots=8)
+        coordinator.loaded = replace(
+            coordinator.loaded,
+            snapshot=replace(
+                coordinator.loaded.snapshot,
+                subscriptions=(replace(feed, episodes=(), sync_settings=settings),),
+            ),
+        )
+        controller.reload()
+        _wait_until(lambda: controller.can_edit)
+        assert controller.snapshot.subscriptions[0].episodes == feed.episodes
+        assert controller.snapshot.subscriptions[0].sync_settings == settings
     finally:
         controller.shutdown()

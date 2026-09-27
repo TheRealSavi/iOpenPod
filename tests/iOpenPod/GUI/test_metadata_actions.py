@@ -7,7 +7,7 @@ from time import monotonic, sleep
 
 import pytest
 from PySide6.QtCore import QItemSelectionModel, QPoint, Qt, QTimer
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QKeySequence, QShortcut, QStandardItemModel
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QToolButton,
+    QWidget,
     QWidgetAction,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
@@ -159,6 +160,146 @@ def test_context_menu_converts_tracks_to_podcasts_and_keeps_chapter_placeholder(
         assert not convert.isEnabled()
     finally:
         window.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize("media_type", (MediaType.PODCAST, MediaType.VIDEO))
+@pytest.mark.parametrize("saved_value", (False, True))
+def test_track_playback_flags_show_saved_values_in_editor_and_context_menu(
+    media_type: MediaType,
+    saved_value: bool,
+) -> None:
+    context = build_context()
+    track = Track(
+        1,
+        "Episode",
+        "Host",
+        "Show",
+        120_000,
+        media_types=(media_type,),
+        metadata=TrackMetadata(skip_shuffle=saved_value, remember_position=saved_value),
+    )
+    workspace = context.library_workspace
+    workspace.load(LibrarySnapshot((track,)))
+    parent = QWidget()
+    actions = TrackActions(workspace, context.playback_controller, parent)
+    dialog = MetadataEditorDialog(workspace, (track.track_id,))
+    try:
+        menu = actions.build_menu(TrackSelection((track,), workspace.edit_revision))
+        for field, label in (
+            ("metadata.skip_shuffle", "Skip When Shuffling"),
+            ("metadata.remember_position", "Remember Playback Position"),
+        ):
+            editor = dialog.rows[field].editor
+            assert isinstance(editor, AppComboBox)
+            assert editor.currentData() is saved_value
+            action = next(action for action in menu.actions() if action.text() == label)
+            assert action.isCheckable()
+            assert action.isChecked() is saved_value
+            assert action.isEnabled() is not saved_value
+            assert editor.isEnabled() is not saved_value
+            choices = editor.model()
+            assert isinstance(choices, QStandardItemModel)
+            no = choices.item(editor.findData(False))
+            assert not no.isEnabled()
+        if not saved_value:
+            assert not workspace.dirty
+            for path in ("metadata.skip_shuffle", "metadata.remember_position"):
+                editor = dialog.rows[path].editor
+                assert isinstance(editor, AppComboBox)
+                editor.setCurrentIndex(editor.findData(True))
+                assert not editor.isEnabled()
+            dialog.accept()
+            assert workspace.tracks[0].metadata.skip_shuffle
+            assert workspace.tracks[0].metadata.remember_position
+    finally:
+        dialog.close()
+        parent.close()
+        context.shutdown()
+
+
+def test_editor_stages_required_flags_and_updates_guard_after_each_media_change() -> (
+    None
+):
+    context = build_context()
+    workspace = context.library_workspace
+    workspace.load(
+        LibrarySnapshot(
+            (Track(1, "Audio", "", "", 1000, media_types=(MediaType.AUDIO,)),)
+        )
+    )
+    dialog = MetadataEditorDialog(workspace, (1,))
+    try:
+        media = dialog.rows["media_types"].editor
+        assert isinstance(media, AppComboBox)
+        flags = tuple(
+            dialog.rows[path].editor
+            for path in ("metadata.skip_shuffle", "metadata.remember_position")
+        )
+        for editor in flags:
+            assert isinstance(editor, AppComboBox)
+            assert editor.currentData() is False and editor.isEnabled()
+        media.setCurrentIndex(media.findData(MediaType.PODCAST))
+        for editor in flags:
+            assert isinstance(editor, AppComboBox)
+            assert editor.currentData() is True and not editor.isEnabled()
+        media.setCurrentIndex(media.findData(MediaType.AUDIO))
+        for editor in flags:
+            assert isinstance(editor, AppComboBox)
+            assert editor.isEnabled()
+            editor.setCurrentIndex(editor.findData(False))
+        media.setCurrentIndex(media.findData(MediaType.PODCAST))
+        for editor in flags:
+            assert isinstance(editor, AppComboBox)
+            assert editor.currentData() is True and not editor.isEnabled()
+        dialog.accept()
+        assert workspace.tracks[0].metadata.skip_shuffle
+        assert workspace.tracks[0].metadata.remember_position
+    finally:
+        dialog.close()
+        context.shutdown()
+
+
+def test_mixed_music_and_podcast_flags_still_allow_music_edits() -> None:
+    context = build_context()
+    tracks = tuple(
+        Track(
+            identity,
+            media_type.value,
+            "",
+            "",
+            1000,
+            media_types=(media_type,),
+            metadata=TrackMetadata(skip_shuffle=True, remember_position=True),
+        )
+        for identity, media_type in ((1, MediaType.PODCAST), (2, MediaType.AUDIO))
+    )
+    workspace = context.library_workspace
+    workspace.load(LibrarySnapshot(tracks))
+    parent = QWidget()
+    actions = TrackActions(workspace, context.playback_controller, parent)
+    dialog = MetadataEditorDialog(workspace, (1, 2))
+    try:
+        menu = actions.build_menu(TrackSelection(tracks, workspace.edit_revision))
+        shuffle = next(a for a in menu.actions() if a.text() == "Skip When Shuffling")
+        assert shuffle.isEnabled() and shuffle.isChecked()
+        for path in ("metadata.skip_shuffle", "metadata.remember_position"):
+            editor = dialog.rows[path].editor
+            assert isinstance(editor, AppComboBox)
+            assert editor.isEnabled()
+            choices = editor.model()
+            assert isinstance(choices, QStandardItemModel)
+            no = choices.item(editor.findData(False))
+            assert no.isEnabled()
+            editor.setCurrentIndex(editor.findData(False))
+        dialog.accept()
+        assert workspace.tracks[0].metadata.skip_shuffle
+        assert workspace.tracks[0].metadata.remember_position
+        assert not workspace.tracks[1].metadata.skip_shuffle
+        assert not workspace.tracks[1].metadata.remember_position
+    finally:
+        dialog.close()
+        parent.close()
         context.shutdown()
 
 
@@ -602,7 +743,15 @@ def test_metadata_editor_reclassifies_video_and_edits_show_in_one_revision() -> 
         assert dialog.result() == QDialog.DialogCode.Accepted
         assert workspace.revision == revision + 1
         assert all(
-            track == replace(prior, media_types=(MediaType.TV_SHOW,), show="Series")
+            track
+            == replace(
+                prior,
+                media_types=(MediaType.TV_SHOW,),
+                show="Series",
+                metadata=replace(
+                    prior.metadata, skip_shuffle=True, remember_position=True
+                ),
+            )
             for track, prior in zip(workspace.tracks[:2], tracks[:2], strict=True)
         )
         assert workspace.tracks[2] == tracks[2]
@@ -647,7 +796,19 @@ def test_media_type_selector_preserves_current_values_until_changed(
 
         dialog.accept()
 
-        assert workspace.tracks == (replace(track, title="New title"),)
+        expected_metadata = (
+            replace(
+                track.metadata,
+                skip_shuffle=True,
+                remember_position=True,
+                podcast=MediaType.PODCAST in types,
+            )
+            if MediaType.VIDEO in types
+            else track.metadata
+        )
+        assert workspace.tracks == (
+            replace(track, title="New title", metadata=expected_metadata),
+        )
     finally:
         dialog.close()
         context.shutdown()
@@ -671,8 +832,15 @@ def test_mixed_audio_and_video_keep_classification_while_editing_other_fields() 
 
         dialog.accept()
 
-        assert workspace.tracks == tuple(
-            replace(track, title="New title") for track in tracks
+        assert workspace.tracks == (
+            replace(tracks[0], title="New title"),
+            replace(
+                tracks[1],
+                title="New title",
+                metadata=replace(
+                    tracks[1].metadata, skip_shuffle=True, remember_position=True
+                ),
+            ),
         )
     finally:
         dialog.close()
