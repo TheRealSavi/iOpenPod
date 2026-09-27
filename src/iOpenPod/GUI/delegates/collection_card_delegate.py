@@ -6,6 +6,7 @@
 
 from PySide6.QtCore import (
     QAbstractItemModel,
+    QCoreApplication,
     QEvent,
     QModelIndex,
     QPersistentModelIndex,
@@ -78,7 +79,8 @@ class CollectionCardDelegate(QStyledItemDelegate):
         paint_library_card(
             painter,
             option,
-            title=str(index.data()) or self.tr("Unknown Collection"),
+            title=str(index.data())
+            or QCoreApplication.translate("LibraryLabels", "Unknown Collection"),
             detail=collection_summary_text(summary),
             tint=tint,
             tokens=self._theme_manager.tokens,

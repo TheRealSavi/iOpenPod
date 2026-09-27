@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, Slot
+from PySide6.QtCore import QCoreApplication, QEvent, Qt, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -183,7 +183,7 @@ class PodcastSyncSettingsDialog(QDialog):
         for combo in (self._fill, self._age, self._method):
             for index in range(combo.count()):
                 combo.setItemText(index, labels[str(combo.itemData(index))])
-        self._cancel.setText(self.tr("Cancel"))
+        self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._save.setText(self.tr("Save"))
         self._update_help()
 

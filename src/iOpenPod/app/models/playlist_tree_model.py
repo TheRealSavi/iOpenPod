@@ -150,6 +150,23 @@ class PlaylistTreeModel(QAbstractItemModel):
             flags |= Qt.ItemFlag.ItemIsDropEnabled
         return flags
 
+    def retranslate(self) -> None:
+        """Refresh fallback labels without resetting hierarchy or selection."""
+
+        for node in self._nodes.values():
+            if node.playlist.name:
+                continue
+            index = self.index_for_id(node.playlist.playlist_id)
+            self.dataChanged.emit(
+                index,
+                index,
+                [
+                    Qt.ItemDataRole.DisplayRole.value,
+                    Qt.ItemDataRole.ToolTipRole.value,
+                    Qt.ItemDataRole.AccessibleTextRole.value,
+                ],
+            )
+
     def index_for_id(self, playlist_id: int) -> QModelIndex:
         node = self._nodes.get(playlist_id)
         if node is None:

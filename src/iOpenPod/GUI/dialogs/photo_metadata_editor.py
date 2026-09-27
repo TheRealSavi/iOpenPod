@@ -1,6 +1,6 @@
 """Photo metadata editing over one revision-bound Library Draft."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, Qt
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -19,13 +19,33 @@ from PySide6.QtWidgets import (
 
 from iOpenPod.app.library_workspace import LibraryWorkspace, PhotoUpdate
 from iOpenPod.app.metadata_fields import FieldKind, MetadataField
+from iOpenPod.GUI.presentation.i18n.text import (
+    changed_field_count_text,
+    english_count_fallback,
+)
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.widgets.metadata_field_editor import FieldEditor
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
 _PHOTO_FIELDS = (
-    MetadataField("rating", "Rating (0-100)", "Photo", FieldKind.INTEGER),
-    MetadataField("original_date", "Original date", "Dates", FieldKind.DATE),
-    MetadataField("taken_date", "Taken date", "Dates", FieldKind.DATE),
+    MetadataField(
+        "rating",
+        str(QT_TRANSLATE_NOOP("MetadataFields", "Rating (0-100)")),
+        "Photo",
+        FieldKind.INTEGER,
+    ),
+    MetadataField(
+        "original_date",
+        str(QT_TRANSLATE_NOOP("MetadataFields", "Original date")),
+        "Dates",
+        FieldKind.DATE,
+    ),
+    MetadataField(
+        "taken_date",
+        str(QT_TRANSLATE_NOOP("MetadataFields", "Taken date")),
+        "Dates",
+        FieldKind.DATE,
+    ),
 )
 
 
@@ -55,7 +75,9 @@ class PhotoMetadataEditorDialog(QDialog):
         self.setWindowTitle(
             self.tr("Edit Photo")
             if count == 1
-            else self.tr("Edit %1 Photos").replace("%1", str(count))
+            else english_count_fallback(
+                "Edit %n Photo(s)", self.tr("Edit %n Photo(s)", "", count), count
+            )
         )
         self.resize(820, 620)
         self.setMinimumSize(700, 520)
@@ -93,20 +115,28 @@ class PhotoMetadataEditorDialog(QDialog):
         footer = QHBoxLayout()
         footer.setContentsMargins(0, 0, 0, 0)
         footer.setSpacing(8)
-        self._change_label = QLabel(self.tr("No changes"), self)
+        self._change_label = QLabel(
+            QCoreApplication.translate("EditorLabels", "No changes"), self
+        )
         self._change_label.setObjectName("metadataChangeSummary")
         footer.addWidget(self._change_label)
-        self._reset_button = ActionButton(self.tr("Reset Changes"), self)
+        self._reset_button = ActionButton(
+            QCoreApplication.translate("CommonActions", "Reset Changes"), self
+        )
         self._reset_button.setObjectName("resetPhotoMetadataChanges")
         self._reset_button.setEnabled(False)
         self._reset_button.clicked.connect(self._reset)
         footer.addWidget(self._reset_button)
         footer.addStretch(1)
-        cancel = ActionButton(self.tr("Cancel"), self)
+        cancel = ActionButton(
+            QCoreApplication.translate("CommonActions", "Cancel"), self
+        )
         cancel.clicked.connect(self.reject)
         footer.addWidget(cancel)
         apply_button = ActionButton(
-            self.tr("Apply"), self, kind=ActionButtonKind.PRIMARY
+            QCoreApplication.translate("CommonActions", "Apply"),
+            self,
+            kind=ActionButtonKind.PRIMARY,
         )
         apply_button.setObjectName("applyPhotoMetadataChanges")
         apply_button.setDefault(True)
@@ -185,13 +215,18 @@ class PhotoMetadataEditorDialog(QDialog):
         layout.setSpacing(12)
         layout.addWidget(
             self._page_header(
-                self.tr("Technical details"),
+                QCoreApplication.translate("EditorLabels", "Technical details"),
                 self.tr("Read-only source and representation facts"),
             )
         )
         technical = QTreeWidget(page)
         technical.setObjectName("metadataTechnicalDetails")
-        technical.setHeaderLabels([self.tr("Read-only field"), self.tr("Value")])
+        technical.setHeaderLabels(
+            [
+                QCoreApplication.translate("EditorLabels", "Read-only field"),
+                self.tr("Value"),
+            ]
+        )
         for label, values in (
             (self.tr("Photo ID"), tuple(photo.photo_id for photo in self._photos)),
             (
@@ -209,7 +244,11 @@ class PhotoMetadataEditorDialog(QDialog):
         technical.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(technical, 1)
         self._pages.addWidget(page)
-        self._nav.addItem(QListWidgetItem(self.tr("Technical details")))
+        self._nav.addItem(
+            QListWidgetItem(
+                QCoreApplication.translate("EditorLabels", "Technical details")
+            )
+        )
 
     def _page_header(self, title_text: str, description_text: str) -> QFrame:
         header = QFrame(self)
@@ -252,8 +291,14 @@ class PhotoMetadataEditorDialog(QDialog):
 
     def _selection_summary(self) -> str:
         if len(self._photos) == 1:
-            return self.tr("Photo %1").replace("%1", str(self._photos[0].photo_id))
-        return self.tr("%1 selected Photos").replace("%1", str(len(self._photos)))
+            return QCoreApplication.translate("LibraryLabels", "Photo %1").replace(
+                "%1", str(self._photos[0].photo_id)
+            )
+        return english_count_fallback(
+            "%n selected Photo(s)",
+            self.tr("%n selected Photo(s)", "", len(self._photos)),
+            len(self._photos),
+        )
 
     def _reset(self) -> None:
         for row in self.rows.values():
@@ -264,11 +309,9 @@ class PhotoMetadataEditorDialog(QDialog):
     def _update_change_summary(self) -> None:
         count = sum(row.is_modified() for row in self.rows.values())
         self._change_label.setText(
-            self.tr("No changes")
+            QCoreApplication.translate("EditorLabels", "No changes")
             if count == 0
-            else self.tr("1 changed field")
-            if count == 1
-            else self.tr("%1 changed fields").replace("%1", str(count))
+            else changed_field_count_text(count)
         )
         self._reset_button.setEnabled(count > 0)
 
@@ -282,14 +325,17 @@ class PhotoMetadataEditorDialog(QDialog):
             try:
                 value = row.value()
                 if type(value) is not int:
-                    raise ValueError("Use a whole number.")
+                    raise ValueError(self.tr("Use a whole number."))
                 if spec.path == "rating" and not 0 <= value <= 100:
-                    raise ValueError("Use a rating from 0 to 100.")
+                    raise ValueError(self.tr("Use a rating from 0 to 100."))
                 if spec.kind is FieldKind.DATE and not 0 <= value <= 0xFFFFFFFF:
-                    raise ValueError("Use a date supported by this Photo Database.")
+                    raise ValueError(
+                        self.tr("Use a date supported by this Photo Database.")
+                    )
                 values[spec.path] = value
             except (ValueError, OverflowError, OSError) as error:
-                errors.append(f"{spec.label}: {error}")
+                label = QCoreApplication.translate("MetadataFields", spec.label)
+                errors.append(f"{label}: {workflow_text(str(error))}")
         if errors:
             self._error.setText("\n".join(errors))
             return
@@ -308,7 +354,7 @@ class PhotoMetadataEditorDialog(QDialog):
                 self._revision,
             )
         except ValueError as error:
-            self._error.setText(str(error))
+            self._error.setText(workflow_text(str(error)))
             return
         super().accept()
 
@@ -316,7 +362,7 @@ class PhotoMetadataEditorDialog(QDialog):
         return (
             str(values[0])
             if all(value == values[0] for value in values[1:])
-            else self.tr("Mixed values")
+            else QCoreApplication.translate("EditorLabels", "Mixed values")
         )
 
 

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QEvent, QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -239,7 +239,9 @@ class LibraryToolbar(PageHeader):
     def _refresh_mode_copy(self) -> None:
         if self._view_mode == "list":
             title = self._list_title or self.tr("Tracks")
-            search_label = self._list_search_label or self.tr("Search Tracks")
+            search_label = self._list_search_label or QCoreApplication.translate(
+                "LibraryLabels", "Search Tracks"
+            )
         else:
             title = self._grid_title or self.tr("Albums")
             search_label = self._grid_search_label or self.tr("Search Albums")

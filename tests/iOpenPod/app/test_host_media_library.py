@@ -17,6 +17,7 @@ from mutagen.id3 import APIC, TIT2, TPE1, PictureType
 from mutagen.wave import WAVE
 from PIL import Image
 
+from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.host_media_fingerprint import (
     FpcalcError,
     FpcalcFingerprinter,
@@ -70,6 +71,12 @@ def test_one_unreadable_subfolder_does_not_hide_later_siblings(
     assert len(library.snapshot.tracks) == 1
     assert "b-readable" in library.snapshot.tracks[0].metadata.location
     assert any("folder unavailable" in issue.detail for issue in library.issues)
+    diagnostic = next(
+        issue.detail for issue in library.issues if "folder unavailable" in issue.detail
+    )
+    assert isinstance(diagnostic, SourceText)
+    assert diagnostic.source.endswith("scanning continued: {error}")
+    assert dict(diagnostic.parameters)["error"] == "folder unavailable"
 
 
 def test_missing_fingerprinting_tool_keeps_readable_media(
@@ -114,6 +121,7 @@ def test_fast_file_progress_is_published_while_earlier_file_is_still_reading(
     for name in ("a-slow.wav", "b-fast.wav"):
         _write_wav(tmp_path / name)
     published = threading.Event()
+    events: list[HostMediaScanProgress] = []
 
     class Fingerprinter:
         def fingerprint(
@@ -126,6 +134,7 @@ def test_fast_file_progress_is_published_while_earlier_file_is_still_reading(
             return "1,2,3"
 
     def progress(event: HostMediaScanProgress) -> None:
+        events.append(event)
         if (
             event.completed == 1
             and event.path is not None
@@ -139,6 +148,10 @@ def test_fast_file_progress_is_published_while_earlier_file_is_still_reading(
         progress=progress,
     )
     assert published.is_set()
+    finished = next(event for event in events if event.completed == 1)
+    assert isinstance(finished.message, SourceText)
+    assert finished.message.source == "Read file {index} of {total}…"
+    assert dict(finished.message.parameters) == {"index": "1", "total": "2"}
 
 
 class _FrameTags(Protocol):

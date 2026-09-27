@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 if TYPE_CHECKING:
@@ -25,6 +26,7 @@ class _PreparationRow(QFrame):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
         self.setObjectName("syncPreparationRow")
+        self._item: WriteItemProgress | None = None
         self._name = QLabel(self)
         self._name.setObjectName("syncPreparationName")
         self._detail = QLabel(self)
@@ -43,10 +45,11 @@ class _PreparationRow(QFrame):
         layout.addWidget(self._bar)
 
     def update_item(self, item: WriteItemProgress) -> None:
+        self._item = item
         self.setToolTip(item.item_id)
         self._name.setText(item.name)
         update = item.progress
-        parts = [self.tr(update.message)]
+        parts = [workflow_text(update.message)]
         processed, duration = update.processed_seconds, update.duration_seconds
         measured = processed is not None and math.isfinite(processed) and processed >= 0
         known_duration = (
@@ -74,6 +77,11 @@ class _PreparationRow(QFrame):
             parts.append(self.tr("%1x speed").replace("%1", f"{update.speed:.2f}"))
         self._detail.setText(" · ".join(parts))
         self._bar.setAccessibleName(item.name + ": " + self._detail.text())
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.Type.LanguageChange and self._item is not None:
+            self.update_item(self._item)
+        super().changeEvent(event)
 
 
 def _media_time(seconds: float) -> str:

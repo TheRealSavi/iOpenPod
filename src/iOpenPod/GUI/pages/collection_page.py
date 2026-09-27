@@ -1,6 +1,6 @@
 """Collection browsers for Artists, Genres, TV Shows, and Music Videos."""
 
-from PySide6.QtCore import QEvent, QModelIndex, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QModelIndex, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -477,9 +477,13 @@ class CollectionPage(QWidget):
     def _refresh_track_context(self) -> None:
         title = None
         if self._selected_album is not None:
-            title = self._selected_album.title or self.tr("Unknown Album")
+            title = self._selected_album.title or QCoreApplication.translate(
+                "LibraryLabels", "Unknown Album"
+            )
         elif self._selected_collection is not None:
-            title = self._selected_collection.title or self.tr("Unknown Collection")
+            title = self._selected_collection.title or QCoreApplication.translate(
+                "LibraryLabels", "Unknown Collection"
+            )
         artwork_id = 0
         if self._selected_album is not None:
             artwork_id = self._selected_album.artwork_id

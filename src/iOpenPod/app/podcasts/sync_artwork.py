@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.library_write import PreparationCancelledError, WriteProgress
 from iOpenPod.app.podcasts.feed_client import HttpPodcastArtworkLoader
 from iOpenPod.app.podcasts.models import PodcastArtworkRequest
@@ -54,7 +55,9 @@ def prepare_podcast_covers(
             progress(
                 WriteProgress(
                     "sync.podcast_artwork",
-                    f"Preparing artwork for {subscription.title}…",
+                    source_text(
+                        "Preparing artwork for {title}…", title=subscription.title
+                    ),
                     current_item=subscription.title,
                 )
             )
@@ -79,8 +82,11 @@ def prepare_podcast_covers(
                 issues.append(
                     WriteIssue(
                         "sync.podcast_artwork_skipped",
-                        f"Artwork for {subscription.title} could not be prepared. "
-                        "Episodes can still sync. Sync this Podcast again to retry its artwork.",
+                        source_text(
+                            "Artwork for {title} could not be prepared. "
+                            "Episodes can still sync. Sync this Podcast again to retry its artwork.",
+                            title=subscription.title,
+                        ),
                         severity=IssueSeverity.WARNING,
                         detail=str(error),
                         artifact=url,

@@ -2,6 +2,7 @@
 
 from PySide6.QtCore import (
     QAbstractItemModel,
+    QCoreApplication,
     QEvent,
     QModelIndex,
     QPersistentModelIndex,
@@ -18,6 +19,7 @@ from iOpenPod.GUI.presentation.artwork import (
     paint_artwork_placeholder,
 )
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.i18n.text import track_count_text
 from iOpenPod.GUI.presentation.library_card import (
     library_card_size,
     paint_library_card,
@@ -74,7 +76,8 @@ class AlbumCardDelegate(QStyledItemDelegate):
         paint_library_card(
             painter,
             option,
-            title=summary.title or self.tr("Unknown Album"),
+            title=summary.title
+            or QCoreApplication.translate("LibraryLabels", "Unknown Album"),
             detail=self._detail_text(summary),
             tint=tint,
             tokens=self._theme_manager.tokens,
@@ -142,12 +145,11 @@ class AlbumCardDelegate(QStyledItemDelegate):
         )
 
     def _detail_text(self, summary: AlbumSummary) -> str:
-        artist = summary.artist or self.tr("Unknown Artist")
+        artist = summary.artist or QCoreApplication.translate(
+            "LibraryLabels", "Unknown Artist"
+        )
         parts = [artist]
         if summary.year > 0:
             parts.append(str(summary.year))
-        if summary.track_count == 1:
-            parts.append(self.tr("1 track"))
-        else:
-            parts.append(self.tr("%n tracks", None, summary.track_count))
+        parts.append(track_count_text(summary.track_count))
         return " · ".join(parts)

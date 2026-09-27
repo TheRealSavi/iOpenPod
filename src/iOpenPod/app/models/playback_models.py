@@ -7,6 +7,7 @@ from enum import IntEnum
 from PySide6.QtCore import (
     QAbstractListModel,
     QByteArray,
+    QCoreApplication,
     QMimeData,
     QModelIndex,
     QObject,
@@ -76,23 +77,39 @@ class _PlaybackListModel(QAbstractListModel):
             return None
         track = entry.track
         if role == Qt.ItemDataRole.DisplayRole:
-            return track.title or self.tr("Untitled Track")
+            return track.title or QCoreApplication.translate(
+                "LibraryLabels", "Untitled Track"
+            )
         if role == Qt.ItemDataRole.AccessibleTextRole:
-            title = track.title or self.tr("Untitled Track")
+            title = track.title or QCoreApplication.translate(
+                "LibraryLabels", "Untitled Track"
+            )
             return (
                 self.tr("%1 — %2 — %3")
                 .replace("%1", title)
-                .replace("%2", track.artist or self.tr("Unknown Artist"))
-                .replace("%3", track.album or self.tr("Unknown Album"))
+                .replace(
+                    "%2",
+                    track.artist
+                    or QCoreApplication.translate("LibraryLabels", "Unknown Artist"),
+                )
+                .replace(
+                    "%3",
+                    track.album
+                    or QCoreApplication.translate("LibraryLabels", "Unknown Album"),
+                )
             )
         if role == PlaybackRole.ENTRY_ID:
             return entry.entry_id
         if role == PlaybackRole.TRACK:
             return track
         if role == PlaybackRole.ARTIST:
-            return track.artist or self.tr("Unknown Artist")
+            return track.artist or QCoreApplication.translate(
+                "LibraryLabels", "Unknown Artist"
+            )
         if role == PlaybackRole.ALBUM:
-            return track.album or self.tr("Unknown Album")
+            return track.album or QCoreApplication.translate(
+                "LibraryLabels", "Unknown Album"
+            )
         if role == PlaybackRole.IS_CURRENT:
             return entry.entry_id == self._current_entry_id
         return None
@@ -177,7 +194,9 @@ class PlaybackQueueModel(_PlaybackListModel):
     ) -> object | None:
         entry = self.entry_at(index.row()) if index.isValid() else None
         if role == Qt.ItemDataRole.AccessibleDescriptionRole and entry is not None:
-            title = entry.track.title or self.tr("Untitled Track")
+            title = entry.track.title or QCoreApplication.translate(
+                "LibraryLabels", "Untitled Track"
+            )
             return self.tr("Remove {title} from Playback Queue").format(title=title)
         return super().data(index, role)
 

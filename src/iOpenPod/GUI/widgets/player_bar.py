@@ -4,6 +4,7 @@ from time import monotonic_ns
 
 from PySide6.QtCore import (
     Property,
+    QCoreApplication,
     QEasingCurve,
     QEvent,
     QMimeData,
@@ -570,7 +571,9 @@ class PlayerBar(QFrame):
             return
 
         self._set_idle_presentation(False)
-        self._title.set_full_text(track.title or self.tr("Untitled Track"))
+        self._title.set_full_text(
+            track.title or QCoreApplication.translate("LibraryLabels", "Untitled Track")
+        )
         detail = " · ".join(part for part in (track.artist, track.album) if part)
         self._detail.set_full_text(detail or "—")
         stars = min(5, max(0, round(track.rating / 20)))
@@ -737,7 +740,9 @@ class PlayerBar(QFrame):
             self._title.set_full_text(self.tr("Nothing playing"))
             self._detail.set_full_text(self.tr("Drop a Track or Playlist to play it"))
         elif not self._track.title:
-            self._title.set_full_text(self.tr("Untitled Track"))
+            self._title.set_full_text(
+                QCoreApplication.translate("LibraryLabels", "Untitled Track")
+            )
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
@@ -987,9 +992,12 @@ class PlayerBar(QFrame):
             return
         pixmap = render_single_track_drag_preview(
             track,
-            title=track.title or self.tr("Untitled Track"),
-            artist=track.artist or self.tr("Unknown Artist"),
-            album=track.album or self.tr("Unknown Album"),
+            title=track.title
+            or QCoreApplication.translate("LibraryLabels", "Untitled Track"),
+            artist=track.artist
+            or QCoreApplication.translate("LibraryLabels", "Unknown Artist"),
+            album=track.album
+            or QCoreApplication.translate("LibraryLabels", "Unknown Album"),
             base_font=self.font(),
             tokens=self._theme_manager.tokens,
             artwork_provider=self._artwork_provider,

@@ -1,6 +1,6 @@
 """Dialog for managing selected-Photo membership across user Photo Albums."""
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -114,7 +114,7 @@ class PhotoAlbumManagerDialog(QDialog):
             )
         )
         self._empty.setText(self.tr("This iPod has no user Photo Albums."))
-        self._done.setText(self.tr("Done"))
+        self._done.setText(QCoreApplication.translate("CommonActions", "Done"))
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:

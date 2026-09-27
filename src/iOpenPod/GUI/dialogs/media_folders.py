@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -334,7 +334,7 @@ class MediaFoldersDialog(QDialog):
         self._empty.setText(
             self.tr("No media folders selected. Add a folder to get started.")
         )
-        self._cancel.setText(self.tr("Cancel"))
+        self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._sync.setText(self.tr("Sync"))
         for row in self._rows:
             row.retranslate_ui()

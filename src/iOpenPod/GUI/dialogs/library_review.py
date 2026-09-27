@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QCoreApplication, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.library_write import LibraryFileChange
 from iOpenPod.app.library_write_controller import PreparationState
 from iOpenPod.app.library_write_inspection import inspect_change
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
@@ -44,6 +45,7 @@ class LibraryReviewDialog(QDialog):
         self.resize(760, 540)
         self._controller = controller
         self._status = QLabel(self)
+        self._status.setObjectName("libraryReviewStatus")
         self._status.setWordWrap(True)
         self._progress = QProgressBar(self)
         self._progress.setRange(0, 0)
@@ -101,8 +103,13 @@ class LibraryReviewDialog(QDialog):
         layout.addWidget(self._details)
         layout.addWidget(buttons)
         controller.changed.connect(self.refresh)
-        controller.progressChanged.connect(self._status.setText)
+        controller.progressChanged.connect(self._progress_changed)
         self.refresh()
+
+    @Slot(object)
+    def _progress_changed(self, message: object) -> None:
+        if isinstance(message, str):
+            self._status.setText(workflow_text(message))
 
     def refresh(self) -> None:
         state = self._controller.state
@@ -170,10 +177,8 @@ class LibraryReviewDialog(QDialog):
                     item = QTreeWidgetItem(
                         generated,
                         (
-                            effect.reason,
-                            effect.subject
-                            if effect.record_id is None
-                            else f"{effect.subject} {effect.record_id}",
+                            workflow_text(effect.reason),
+                            self._record_label(effect.subject, effect.record_id),
                         ),
                     )
                     item.setData(0, Qt.ItemDataRole.UserRole, effect)
@@ -212,14 +217,10 @@ class LibraryReviewDialog(QDialog):
                 continue
             group = QTreeWidgetItem(self._items, (f"{label} ({len(issues)})",))
             for issue in issues:
-                subject = (
-                    issue.subject
-                    if issue.record_id is None
-                    else f"{issue.subject} {issue.record_id}"
-                )
-                item = QTreeWidgetItem(group, (issue.message, subject))
+                subject = self._record_label(issue.subject, issue.record_id)
+                item = QTreeWidgetItem(group, (workflow_text(issue.message), subject))
                 item.setData(0, Qt.ItemDataRole.UserRole, issue)
-                item.setToolTip(0, issue.message)
+                item.setToolTip(0, workflow_text(issue.message))
             group.setExpanded(True)
 
     def _change_label(self, change: LibraryChange) -> str:
@@ -228,7 +229,31 @@ class LibraryReviewDialog(QDialog):
             "edit": self.tr("Edit"),
             "delete": self.tr("Delete"),
         }
-        return f"{actions[change.action]} {change.subject}"
+        return self.tr("{action} · {subject}").format(
+            action=actions[change.action],
+            subject=self._subject_label(change.subject),
+        )
+
+    def _subject_label(self, subject: str) -> str:
+        return {
+            "library": self.tr("Library"),
+            "media": self.tr("Media"),
+            "track": self.tr("Track"),
+            "playlist": self.tr("Playlist"),
+            "photo": self.tr("Photo"),
+            "photo_album": self.tr("Photo Album"),
+            "photos": self.tr("Photos"),
+            "artwork": self.tr("Artwork"),
+            "podcast": self.tr("Podcast"),
+        }.get(subject, subject)
+
+    def _record_label(self, subject: str, record_id: int | None) -> str:
+        label = self._subject_label(subject)
+        if record_id is None:
+            return label
+        return self.tr("{subject} {record_id}").format(
+            subject=label, record_id=record_id
+        )
 
     def _selection_changed(
         self, current: QTreeWidgetItem | None, _previous: QTreeWidgetItem | None
@@ -246,8 +271,10 @@ class LibraryReviewDialog(QDialog):
                     for part in (
                         value.artifact,
                         value.field,
-                        value.detail,
-                        f"Chunk {value.chunk_path} at {value.offset}"
+                        workflow_text(value.detail),
+                        self.tr("Chunk {path} at {offset}").format(
+                            path=value.chunk_path, offset=value.offset
+                        )
                         if value.offset is not None
                         else "",
                     )
@@ -256,9 +283,8 @@ class LibraryReviewDialog(QDialog):
             )
 
         elif isinstance(value, LibraryFileChange):
-            self._details.setPlainText(
-                f"{value.path}\n{value.size_bytes:,} bytes\nSHA-256: {value.sha256}"
-            )
+            size = self.tr("%1 bytes").replace("%1", f"{value.size_bytes:,}")
+            self._details.setPlainText(f"{value.path}\n{size}\nSHA-256: {value.sha256}")
         elif isinstance(value, LibraryChange):
             request, review = self._controller.request, self._controller.review
             self._details.setPlainText(
@@ -281,10 +307,14 @@ class LibraryReviewDialog(QDialog):
                 "\n".join(
                     (
                         value.code,
-                        value.reason,
+                        workflow_text(value.reason),
                         ", ".join(value.fields),
                         *tuple(
-                            f"Requested {c.action}: {c.name} ({', '.join(c.fields)})"
+                            self.tr("Requested: {change} — {name} ({fields})").format(
+                                change=self._change_label(c),
+                                name=c.name,
+                                fields=", ".join(c.fields),
+                            )
                             for c in causes
                         ),
                     )
@@ -317,7 +347,8 @@ class LibraryReviewDialog(QDialog):
             ActionButtonKind.SECONDARY,
         )
         refresh = buttons.addButton(
-            self.tr("Refresh"), QDialogButtonBox.ButtonRole.ActionRole
+            QCoreApplication.translate("CommonActions", "Refresh"),
+            QDialogButtonBox.ButtonRole.ActionRole,
         )
         copy = buttons.addButton(
             self.tr("Copy report"), QDialogButtonBox.ButtonRole.ActionRole

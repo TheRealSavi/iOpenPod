@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import (
     QAbstractTableModel,
+    QCoreApplication,
     QEvent,
     QModelIndex,
     QPersistentModelIndex,
@@ -28,6 +29,8 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.metadata_fields import field_value, metadata_fields
 from iOpenPod.app.tag_normalization_controller import TagNormalizationController
 from iOpenPod.app.tag_normalizer import TagProfile, TagSuggestion
+from iOpenPod.GUI.presentation.i18n.text import english_count_fallback
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.icons import glyph_icon
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
@@ -238,7 +241,7 @@ class TagNormalizerDialog(QDialog):
         outer.addWidget(self._status)
         self._scan = ActionButton(self.tr("Scan again"), self)
         self._apply = ActionButton(
-            self.tr("Apply"),
+            QCoreApplication.translate("CommonActions", "Apply"),
             self,
             kind=ActionButtonKind.PRIMARY,
         )
@@ -246,7 +249,7 @@ class TagNormalizerDialog(QDialog):
         self._apply.setEnabled(False)
         self._apply.setAutoDefault(False)
         self._scan.setAutoDefault(False)
-        close = ActionButton(self.tr("Close"), self)
+        close = ActionButton(QCoreApplication.translate("CommonActions", "Close"), self)
         close.setAutoDefault(False)
         self._clear_filters.setAutoDefault(False)
         buttons = QHBoxLayout()
@@ -271,14 +274,14 @@ class TagNormalizerDialog(QDialog):
         try:
             self.controller.ensure_scan(profile)
         except ValueError as error:
-            self._status.setText(str(error))
+            self._status.setText(workflow_text(str(error)))
         self._refresh()
 
     def _rescan(self) -> None:
         try:
             self.controller.start(self._profile)
         except ValueError as error:
-            self._status.setText(str(error))
+            self._status.setText(workflow_text(str(error)))
 
     def _refresh(self) -> None:
         # A background badge refresh should not build a hidden table of field edits.
@@ -300,7 +303,7 @@ class TagNormalizerDialog(QDialog):
             and bool(suggestion.updates)
             and not controller.workspace.locked
         )
-        self._status.setText(controller.message)
+        self._status.setText(workflow_text(controller.message))
         self._status.setVisible(
             bool(controller.message) and suggestion is None and not controller.scanning
         )
@@ -310,7 +313,7 @@ class TagNormalizerDialog(QDialog):
             summary = self.tr("Checking your Library…")
         elif suggestion is not None and suggestion.updates:
             summary = (
-                self.tr("%1 tag changes across %2 tracks")
+                self.tr("Tag changes: %1 · Tracks: %2")
                 .replace("%1", f"{suggestion.field_count:,}")
                 .replace("%2", f"{len(suggestion.updates):,}")
             )
@@ -324,12 +327,18 @@ class TagNormalizerDialog(QDialog):
             self.tr("Tailored to %1").replace("%1", profile.label)
         )
         self._apply.setText(
-            self.tr("Apply all %1 changes").replace("%1", f"{suggestion.field_count:,}")
+            english_count_fallback(
+                "Apply all %Ln change(s)",
+                self.tr("Apply all %Ln change(s)", "", suggestion.field_count),
+                suggestion.field_count,
+            )
             if suggestion is not None and suggestion.updates
-            else self.tr("Apply")
+            else QCoreApplication.translate("CommonActions", "Apply")
         )
         self._warnings.setText(
-            "" if suggestion is None else "\n".join(suggestion.warnings)
+            ""
+            if suggestion is None
+            else "\n".join(workflow_text(warning) for warning in suggestion.warnings)
         )
         self._warnings.setVisible(bool(self._warnings.text()))
         if suggestion is not self._shown:
@@ -340,7 +349,10 @@ class TagNormalizerDialog(QDialog):
     def _populate(self, suggestion: TagSuggestion | None) -> None:
         controller = self.controller
         rows: list[_Row] = []
-        labels = {f.path: f.label for f in metadata_fields()}
+        labels = {
+            f.path: QCoreApplication.translate("MetadataFields", f.label)
+            for f in metadata_fields()
+        }
         tracks = {t.track_id: t for t in controller.tracks}
         if suggestion is not None:
             for update in suggestion.updates:
@@ -392,9 +404,15 @@ class TagNormalizerDialog(QDialog):
         visible = self.model.rowCount()
         self._results.setVisible(total > 0)
         self._results.setText(
-            self.tr("Showing %1 of %2 changes. Applying includes all %2 changes.")
-            .replace("%1", f"{visible:,}")
-            .replace("%2", f"{total:,}")
+            english_count_fallback(
+                "Showing %1 of %Ln change(s). Applying includes all %Ln change(s).",
+                self.tr(
+                    "Showing %1 of %Ln change(s). Applying includes all %Ln change(s).",
+                    "",
+                    total,
+                ),
+                total,
+            ).replace("%1", f"{visible:,}")
         )
         self._content.setCurrentWidget(self.table if visible else self._empty)
         self._clear_filters.setVisible(total > 0 and visible == 0)
@@ -462,7 +480,7 @@ class TagNormalizerDialog(QDialog):
         try:
             self.controller.apply()
         except ValueError as error:
-            self._status.setText(str(error))
+            self._status.setText(workflow_text(str(error)))
 
     def reject(self) -> None:
         # The shell owns a monitored scan; closing its preview does not stop the badge.

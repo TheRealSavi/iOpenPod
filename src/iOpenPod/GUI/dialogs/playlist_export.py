@@ -1,6 +1,6 @@
 """Playlist export choices before the native Host folder picker opens."""
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -39,11 +39,9 @@ class PlaylistExportDialog(QDialog):
         self.device_references.setProperty(
             "exportMode", PlaylistExportMode.DEVICE_REFERENCES.value
         )
-        self.device_references.setAccessibleName("Reference Tracks on iPod")
         self.copy_tracks = QRadioButton(self)
         self.copy_tracks.setObjectName("copyTrackExport")
         self.copy_tracks.setProperty("exportMode", PlaylistExportMode.COPY_TRACKS.value)
-        self.copy_tracks.setAccessibleName("Copy Tracks")
         self.copy_tracks.setChecked(True)
         modes = QButtonGroup(self)
         modes.addButton(self.device_references)
@@ -51,14 +49,15 @@ class PlaylistExportDialog(QDialog):
 
         self.file_type = AppComboBox(self)
         self.file_type.setObjectName("playlistFileType")
-        self.file_type.setAccessibleName("Playlist file type")
         for value in PlaylistFileType:
-            self.file_type.addItem(value.label, value.value)
+            self.file_type.addItem(self._file_type_text(value), value.value)
 
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(LAYOUT.space_sm)
-        form.addRow(self.tr("Playlist file type"), self.file_type)
+        self._file_type_label = QLabel(self)
+        self._file_type_label.setBuddy(self.file_type)
+        form.addRow(self._file_type_label, self.file_type)
 
         self._cancel = ActionButton(parent=self)
         self._cancel.clicked.connect(self.reject)
@@ -101,6 +100,13 @@ class PlaylistExportDialog(QDialog):
     def retranslate_ui(self) -> None:
         self.setWindowTitle(self.tr("Export Playlist"))
         self._title.setText(self.tr("Export Playlist"))
+        self.device_references.setAccessibleName(self.tr("Reference Tracks on iPod"))
+        self.copy_tracks.setAccessibleName(self.tr("Copy Tracks"))
+        self.file_type.setAccessibleName(self.tr("Playlist file type"))
+        self._file_type_label.setText(self.tr("Playlist file type"))
+        for index in range(self.file_type.count()):
+            value = PlaylistFileType(self.file_type.itemData(index))
+            self.file_type.setItemText(index, self._file_type_text(value))
         self._description.setText(
             self.tr(
                 "Choose whether the Playlist should keep pointing to the mounted "
@@ -121,18 +127,22 @@ class PlaylistExportDialog(QDialog):
                 "metadata and cover artwork beside the Playlist"
             )
         )
-        self._cancel.setText(self.tr("Cancel"))
+        self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._continue.setText(self.tr("Choose Folder…"))
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
-            selected = self.selected_file_type
-            self.file_type.clear()
-            for value in PlaylistFileType:
-                self.file_type.addItem(value.label, value.value)
-            self.file_type.setCurrentIndex(self.file_type.findData(selected.value))
             self.retranslate_ui()
         super().changeEvent(event)
+
+    def _file_type_text(self, value: PlaylistFileType) -> str:
+        return {
+            PlaylistFileType.M3U8: self.tr("M3U8 — UTF-8 Extended M3U"),
+            PlaylistFileType.M3U: self.tr("M3U — Extended M3U"),
+            PlaylistFileType.PLS: "PLS",
+            PlaylistFileType.XSPF: "XSPF",
+            PlaylistFileType.WPL: "WPL — Windows Media Player",
+        }[value]
 
 
 __all__ = ["PlaylistExportDialog"]

@@ -1,6 +1,6 @@
 """Primary iPod Library page for album discovery and Track browsing."""
 
-from PySide6.QtCore import QEvent, QModelIndex, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QModelIndex, Qt, Signal
 from PySide6.QtWidgets import QApplication, QFrame, QVBoxLayout, QWidget
 
 from iOpenPod.app.core.settings.definitions import (
@@ -204,7 +204,9 @@ class LibraryPage(QWidget):
     def _refresh_track_context(self) -> None:
         title = None
         if self._selected_album is not None:
-            title = self._selected_album.title or self.tr("Unknown Album")
+            title = self._selected_album.title or QCoreApplication.translate(
+                "LibraryLabels", "Unknown Album"
+            )
         artwork_id = (
             self._selected_album.artwork_id if self._selected_album is not None else 0
         )

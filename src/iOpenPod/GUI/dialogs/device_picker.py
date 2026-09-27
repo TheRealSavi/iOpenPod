@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -164,9 +164,9 @@ class DevicePickerDialog(QDialog):
                 "again before it becomes active."
             )
         )
-        self._refresh.setText(self.tr("Refresh"))
+        self._refresh.setText(QCoreApplication.translate("CommonActions", "Refresh"))
         self._linux_setup.setText(self.tr("Set Up Linux"))
-        self._cancel.setText(self.tr("Cancel"))
+        self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._select.setText(self.tr("Use This iPod"))
         self._refresh_search_status()
         self._refresh_candidates(self._selected_candidate_id())
@@ -302,69 +302,87 @@ def _needs_linux_identity_setup(candidate: DeviceCandidate) -> bool:
 
 
 def _readiness_text(
-    dialog: DevicePickerDialog,
+    _dialog: DevicePickerDialog,
     readiness: DeviceReadiness,
 ) -> str:
     return {
-        DeviceReadiness.READY: dialog.tr("Ready to load"),
-        DeviceReadiness.SYNC_RECOVERY_REQUIRED: dialog.tr(
-            "Select to restore interrupted changes or keep current contents"
+        DeviceReadiness.READY: QCoreApplication.translate(
+            "DevicePickerDialog", "Ready to load"
         ),
-        DeviceReadiness.UNKNOWN: dialog.tr("Not recognized as a supported iPod"),
-        DeviceReadiness.AMBIGUOUS: dialog.tr("More identity information is needed"),
-        DeviceReadiness.CONFLICTING: dialog.tr("Device identity information conflicts"),
-        DeviceReadiness.RECOVERY_MODE: dialog.tr("Recovery mode is not loadable"),
-        DeviceReadiness.DATABASE_MISSING: dialog.tr("No iTunesDB was found"),
-        DeviceReadiness.DATABASE_UNSUPPORTED: dialog.tr(
-            "This iPod database format is not supported yet"
+        DeviceReadiness.SYNC_RECOVERY_REQUIRED: QCoreApplication.translate(
+            "DevicePickerDialog",
+            "Select to restore interrupted changes or keep current contents",
         ),
-        DeviceReadiness.INSPECTION_FAILED: dialog.tr(
-            "The device filesystem could not be inspected"
+        DeviceReadiness.UNKNOWN: QCoreApplication.translate(
+            "DevicePickerDialog", "Not recognized as a supported iPod"
+        ),
+        DeviceReadiness.AMBIGUOUS: QCoreApplication.translate(
+            "DevicePickerDialog", "More identity information is needed"
+        ),
+        DeviceReadiness.CONFLICTING: QCoreApplication.translate(
+            "DevicePickerDialog", "Device identity information conflicts"
+        ),
+        DeviceReadiness.RECOVERY_MODE: QCoreApplication.translate(
+            "DevicePickerDialog", "Recovery mode is not loadable"
+        ),
+        DeviceReadiness.DATABASE_MISSING: QCoreApplication.translate(
+            "DevicePickerDialog", "No iTunesDB was found"
+        ),
+        DeviceReadiness.DATABASE_UNSUPPORTED: QCoreApplication.translate(
+            "DevicePickerDialog", "This iPod database format is not supported yet"
+        ),
+        DeviceReadiness.INSPECTION_FAILED: QCoreApplication.translate(
+            "DevicePickerDialog", "The device filesystem could not be inspected"
         ),
     }[readiness]
 
 
 def _issue_text(
-    dialog: DevicePickerDialog,
+    _dialog: DevicePickerDialog,
     issue: DeviceCandidateIssue,
 ) -> str:
     return {
-        DeviceCandidateIssueCode.METADATA_UNREADABLE: dialog.tr(
-            "Some device identity metadata could not be read."
+        DeviceCandidateIssueCode.METADATA_UNREADABLE: QCoreApplication.translate(
+            "DevicePickerDialog", "Some device identity metadata could not be read."
         ),
-        DeviceCandidateIssueCode.METADATA_RECONCILIATION_SKIPPED: dialog.tr(
-            "Device identity metadata needs repair, but this Volume is read-only."
+        DeviceCandidateIssueCode.METADATA_RECONCILIATION_SKIPPED: QCoreApplication.translate(
+            "DevicePickerDialog",
+            "Device identity metadata needs repair, but this Volume is read-only.",
         ),
-        DeviceCandidateIssueCode.METADATA_RECONCILIATION_FAILED: dialog.tr(
-            "Device identity metadata could not be repaired safely."
+        DeviceCandidateIssueCode.METADATA_RECONCILIATION_FAILED: QCoreApplication.translate(
+            "DevicePickerDialog",
+            "Device identity metadata could not be repaired safely.",
         ),
-        DeviceCandidateIssueCode.HARDWARE_PROBE_SETUP_REQUIRED: dialog.tr(
+        DeviceCandidateIssueCode.HARDWARE_PROBE_SETUP_REQUIRED: QCoreApplication.translate(
+            "DevicePickerDialog",
             "Linux needs the bundled identity rule before iOpenPod can verify "
             "this model. Install 61-iopenpod.rules in /etc/udev/rules.d, reload "
-            "udev rules, then reconnect the iPod."
+            "udev rules, then reconnect the iPod.",
         ),
-        DeviceCandidateIssueCode.HARDWARE_PROBE_FAILED: dialog.tr(
-            "Current hardware identity could not be verified."
+        DeviceCandidateIssueCode.HARDWARE_PROBE_FAILED: QCoreApplication.translate(
+            "DevicePickerDialog", "Current hardware identity could not be verified."
         ),
-        DeviceCandidateIssueCode.DATABASE_EMPTY: dialog.tr(
-            "The iPod database is empty."
+        DeviceCandidateIssueCode.DATABASE_EMPTY: QCoreApplication.translate(
+            "DevicePickerDialog", "The iPod database is empty."
         ),
-        DeviceCandidateIssueCode.DATABASE_FALLBACK: dialog.tr(
-            "iOpenPod loaded the fallback database copy."
+        DeviceCandidateIssueCode.DATABASE_FALLBACK: QCoreApplication.translate(
+            "DevicePickerDialog", "iOpenPod loaded the fallback database copy."
         ),
-        DeviceCandidateIssueCode.ARTWORK_DATABASE_UNREADABLE: dialog.tr(
-            "Album artwork could not be loaded."
+        DeviceCandidateIssueCode.ARTWORK_DATABASE_UNREADABLE: QCoreApplication.translate(
+            "DevicePickerDialog", "Album artwork could not be loaded."
         ),
-        DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE: dialog.tr(
-            "The iPod's desktop name or icon could not be fully updated."
+        DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE: QCoreApplication.translate(
+            "DevicePickerDialog",
+            "The iPod's desktop name or icon could not be fully updated.",
         ),
-        DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING: dialog.tr(
-            "Recovery-file cleanup could not finish."
+        DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING: QCoreApplication.translate(
+            "DevicePickerDialog", "Recovery-file cleanup could not finish."
         ),
-        DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING: dialog.tr(
-            "Recovery files were removed. Safely eject before unplugging."
+        DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING: QCoreApplication.translate(
+            "DevicePickerDialog",
+            "Recovery files were removed. Safely eject before unplugging.",
         ),
-        DeviceCandidateIssueCode.INSPECTION_FAILED: dialog.tr(
-            "The device filesystem could not be inspected."
+        DeviceCandidateIssueCode.INSPECTION_FAILED: QCoreApplication.translate(
+            "DevicePickerDialog", "The device filesystem could not be inspected."
         ),
     }[issue.code]

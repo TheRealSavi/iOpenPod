@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from time import monotonic
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.sync_execution import SyncExecutionResult, SyncExecutionStatus
+from iOpenPod.GUI.presentation.i18n.text import english_count_fallback, item_count_text
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.eta_label import EtaLabel
 from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
@@ -28,12 +30,12 @@ if TYPE_CHECKING:
 
 class SyncExecutionPage(QWidget):
     _STAGES = (
-        ("sync.validate", "Validate Sync Plan"),
-        ("sync.media", "Prepare media on Host"),
-        ("database.", "Build and verify iPod Library"),
-        ("save.", "Publish to iPod"),
-        ("sync.helper", "Record Sync details"),
-        ("sync.cleanup", "Clean up recovery files"),
+        "sync.validate",
+        "sync.media",
+        "database.",
+        "save.",
+        "sync.helper",
+        "sync.cleanup",
     )
 
     cancelRequested = Signal()
@@ -46,6 +48,10 @@ class SyncExecutionPage(QWidget):
         self.setObjectName("syncExecutionPage")
         self._result: SyncExecutionResult | None = None
         self._cancel_requested = False
+        self._cancel_notice = False
+        self._last_write_progress: WriteProgress | None = None
+        self._completed_stages: list[int] = []
+        self._recovery_mode: Literal["restore", "cleanup", "keep"] | None = None
         self._title = QLabel(self)
         self._title.setObjectName("syncExecutionTitle")
         self._overall = QProgressBar(self)
@@ -190,6 +196,10 @@ class SyncExecutionPage(QWidget):
         self._clock.start()
         self._result = None
         self._cancel_requested = False
+        self._cancel_notice = False
+        self._last_write_progress = None
+        self._completed_stages.clear()
+        self._recovery_mode = None
         self._issues.clear()
         self._issues.hide()
         self._activity.clear()
@@ -198,7 +208,6 @@ class SyncExecutionPage(QWidget):
         self._overall_progress_reset()
         self._progress.setRange(0, 0)
         self._progress.setFormat("")
-        self._progress_summary.setText(self.tr("Waiting for the first action…"))
         self._item.clear()
         self._item.hide()
         self._eta.reset()
@@ -210,42 +219,42 @@ class SyncExecutionPage(QWidget):
         self._done.hide()
         self._recover.hide()
         self._keep.hide()
-        self._stage.setText(self.tr("Waiting to validate the selected Sync Plan"))
-        self._stage_summary.setText(
-            self.tr("Step 1 of %1").replace("%1", str(len(self._STAGES)))
-        )
-        self._detail.setText(self.tr("The Sync is starting. Keep the iPod connected."))
         self.retranslate_ui()
 
     def update_progress(self, progress: WriteProgress) -> None:
-        stage_index = self._stage_index(progress.phase)
-        self._set_stage(stage_index)
-        title = self._STAGES[stage_index][1]
-        if progress.phase.startswith("save.recovery."):
-            title = "Recover previous Library"
-        self._stage.setText(self.tr(title))
-        self._stage_summary.setText(
-            self.tr("Step %1 of %2")
-            .replace("%1", str(stage_index + 1))
-            .replace("%2", str(len(self._STAGES)))
-        )
-        message = progress.message
-        if self._cancel_requested:
-            message += " " + self.tr(
-                "Cancellation requested; waiting for a safe stopping point. Keep the iPod connected."
-            )
-        self._detail.setText(message)
+        self._last_write_progress = progress
+        self._cancel_notice = False
         now = monotonic()
         if self._progress_phase != progress.phase:
             self._progress_phase = progress.phase
             self._phase_started = now
         self._last_progress = now
+        self._render_progress(progress)
+
+    def _render_progress(self, progress: WriteProgress) -> None:
+        stage_index = self._stage_index(progress.phase)
+        self._set_stage(stage_index)
+        title = self._stage_titles()[stage_index]
+        if progress.phase.startswith("save.recovery."):
+            title = self.tr("Recover previous Library")
+        self._stage.setText(title)
+        self._stage_summary.setText(
+            self.tr("Step %1 of %2")
+            .replace("%1", str(stage_index + 1))
+            .replace("%2", str(len(self._STAGES)))
+        )
+        message = workflow_text(progress.message)
+        if self._cancel_requested:
+            message += " " + self.tr(
+                "Cancellation requested; waiting for a safe stopping point. Keep the iPod connected."
+            )
+        self._detail.setText(message)
         self._refresh_elapsed()
         if progress.total is not None and progress.total > 0:
             completed = max(0, min(progress.completed or 0, progress.total))
             self._progress.setRange(0, progress.total)
             self._progress.setValue(completed)
-            unit = progress.unit or self.tr("items")
+            unit = workflow_text(progress.unit) if progress.unit else self.tr("items")
             self._progress_summary.setText(
                 self.tr("%1 of %2 %3")
                 .replace("%1", f"{completed:,}")
@@ -283,7 +292,12 @@ class SyncExecutionPage(QWidget):
                 if progress.phase in ("sync.prepare", "sync.photos")
                 else self.tr("Current file: %1")
             )
-            self._item.setText(label.replace("%1", progress.current_item))
+            item = (
+                workflow_text(progress.current_item)
+                if progress.phase.startswith("database.")
+                else progress.current_item
+            )
+            self._item.setText(label.replace("%1", item))
             self._item.show()
         else:
             self._item.clear()
@@ -299,7 +313,12 @@ class SyncExecutionPage(QWidget):
 
     def _request_cancel(self) -> None:
         self._cancel_requested = True
+        self._cancel_notice = True
         self._cancel.setEnabled(False)
+        self._render_cancel_notice()
+        self.cancelRequested.emit()
+
+    def _render_cancel_notice(self) -> None:
         self._detail.setText(
             self.tr(
                 "Cancellation requested. Waiting for a safe stopping point. "
@@ -307,9 +326,9 @@ class SyncExecutionPage(QWidget):
                 "Keep the iPod connected."
             )
         )
-        self.cancelRequested.emit()
 
     def show_result(self, result: SyncExecutionResult) -> None:
+        self._recovery_mode = None
         self._clock.stop()
         self._elapsed.clear()
         self._result = result
@@ -335,6 +354,23 @@ class SyncExecutionPage(QWidget):
         self.retranslate_ui()
 
     def begin_recovery(self, *, cleanup: bool = False) -> None:
+        self._recovery_mode = "cleanup" if cleanup else "restore"
+        self._last_write_progress = None
+        self._render_recovery()
+        self._progress.show()
+        self._progress.setRange(0, 0)
+        self._progress.setFormat("")
+        self._item.hide()
+        self._activity.hide()
+        self._eta.reset()
+        self._preparation.set_items(())
+        self._preparation_summary.hide()
+        self._recover.hide()
+        self._keep.hide()
+        self._done.hide()
+
+    def _render_recovery(self) -> None:
+        cleanup = self._recovery_mode == "cleanup"
         self._title.setText(
             self.tr("Cleaning up completed Sync")
             if cleanup
@@ -347,27 +383,19 @@ class SyncExecutionPage(QWidget):
                 "Checking the journal and restoring the interrupted changes. Keep the iPod connected."
             )
         )
-        self._progress.show()
-        self._progress.setRange(0, 0)
-        self._progress.setFormat("")
         self._progress_summary.setText(self.tr("Working through the recovery journal…"))
-        self._item.hide()
-        self._activity.hide()
-        self._eta.reset()
-        self._preparation.set_items(())
-        self._preparation_summary.hide()
-        self._recover.hide()
-        self._keep.hide()
-        self._done.hide()
+        if self._recovery_mode == "keep":
+            self._title.setText(self.tr("Keeping current iPod contents"))
+            self._detail.setText(
+                self.tr(
+                    "Retiring the recovery journal and reloading the current Library. Keep the iPod connected."
+                )
+            )
 
     def begin_keep_contents(self) -> None:
         self.begin_recovery()
-        self._title.setText(self.tr("Keeping current iPod contents"))
-        self._detail.setText(
-            self.tr(
-                "Retiring the recovery journal and reloading the current Library. Keep the iPod connected."
-            )
-        )
+        self._recovery_mode = "keep"
+        self._render_recovery()
 
     def retranslate_ui(self) -> None:
         self._cancel.setText(self.tr("Cancel Sync"))
@@ -378,9 +406,31 @@ class SyncExecutionPage(QWidget):
             self.tr("Sync warnings, errors, and recovery steps")
         )
         self._set_stage(self._active_stage)
+        if self._recovery_mode is not None:
+            self._render_recovery()
+            if self._last_write_progress is not None:
+                self._render_progress(self._last_write_progress)
+            return
         result = self._result
         if result is None:
             self._title.setText(self.tr("Syncing the selected changes"))
+            if self._last_write_progress is not None:
+                self._render_progress(self._last_write_progress)
+            else:
+                self._stage.setText(
+                    self.tr("Waiting to validate the selected Sync Plan")
+                )
+                self._stage_summary.setText(
+                    self.tr("Step %1 of %2")
+                    .replace("%1", "1")
+                    .replace("%2", str(len(self._STAGES)))
+                )
+                self._progress_summary.setText(self.tr("Waiting for the first action…"))
+                self._detail.setText(
+                    self.tr("The Sync is starting. Keep the iPod connected.")
+                )
+            if self._cancel_notice:
+                self._render_cancel_notice()
             return
         if result.status in (SyncExecutionStatus.SUCCESS, SyncExecutionStatus.PARTIAL):
             self._recover.setText(self.tr("Retry Cleanup"))
@@ -401,12 +451,16 @@ class SyncExecutionPage(QWidget):
         )
         if restored_cleanup:
             self._title.setText(self.tr("Previous Library restored — cleanup remains"))
-        detail = self.tr("%1 selected changes committed.").replace(
-            "%1", f"{len(result.completed):,}"
+        detail = english_count_fallback(
+            "%n selected change(s) committed.",
+            self.tr("%n selected change(s) committed.", "", len(result.completed)),
+            len(result.completed),
         )
         if result.playlist_change_count:
-            detail += " " + self.tr("%1 Playlists reconciled.").replace(
-                "%1", f"{result.playlist_change_count:,}"
+            detail += " " + english_count_fallback(
+                "%n Playlist(s) reconciled.",
+                self.tr("%n Playlist(s) reconciled.", "", result.playlist_change_count),
+                result.playlist_change_count,
             )
         if result.status is SyncExecutionStatus.PARTIAL:
             detail += " " + self.tr(
@@ -438,39 +492,60 @@ class SyncExecutionPage(QWidget):
             grouped.setdefault(key, []).append(issue.artifact)
         lines: list[str] = []
         for (severity, code, message, diagnostic), artifacts in grouped.items():
-            count = f" ({len(artifacts):,} items)" if len(artifacts) > 1 else ""
-            line = f"{severity.upper()} [{code}] {message}{count}"
+            count = (
+                self.tr(" (%1)").replace("%1", item_count_text(len(artifacts)))
+                if len(artifacts) > 1
+                else ""
+            )
+            severity_label = {
+                "info": self.tr("INFO"),
+                "warning": self.tr("WARNING"),
+                "error": self.tr("ERROR"),
+            }.get(severity, severity)
+            line = f"{severity_label} [{code}] {workflow_text(message)}{count}"
             if diagnostic:
-                line += "\n" + diagnostic
+                line += "\n" + workflow_text(diagnostic)
             paths = [path for path in artifacts if path]
             if paths:
                 line += "\n" + "\n".join(paths[:3])
                 if len(paths) > 3:
-                    line += "\n" + self.tr("…and %1 more files").replace(
-                        "%1", str(len(paths) - 3)
+                    line += "\n" + english_count_fallback(
+                        "…and %n more file(s)",
+                        self.tr("…and %n more file(s)", "", len(paths) - 3),
+                        len(paths) - 3,
                     )
             lines.append(line)
         if result.recovery_path:
-            lines.append(self.tr("Recovery journal: ") + result.recovery_path)
+            lines.append(
+                self.tr("Recovery journal: %1").replace("%1", result.recovery_path)
+            )
         self._issues.setPlainText("\n\n".join(lines))
         self._issues.setVisible(bool(lines))
 
     def _stage_index(self, phase: str) -> int:
         if phase == "sync.prepare" or phase == "sync.photos":
             return 1
-        for index, (prefix, _title) in enumerate(self._STAGES):
+        for index, prefix in enumerate(self._STAGES):
             if phase == prefix or phase.startswith(prefix):
                 return index
         return self._active_stage if self._active_stage is not None else 0
 
     def _set_stage(self, stage_index: int | None) -> None:
         previous = self._active_stage
-        if stage_index is not None and previous is not None and stage_index != previous:
-            self._activity.appendPlainText(
-                self.tr("Completed: %1").replace(
-                    "%1", self.tr(self._STAGES[previous][1])
-                )
-            )
+        if (
+            stage_index is not None
+            and previous is not None
+            and stage_index != previous
+            and previous < len(self._STAGES)
+        ):
+            self._completed_stages.append(previous)
+        titles = self._stage_titles()
+        activity = "\n".join(
+            self.tr("Completed: %1").replace("%1", titles[index])
+            for index in self._completed_stages
+        )
+        if self._activity.toPlainText() != activity:
+            self._activity.setPlainText(activity)
         self._active_stage = stage_index
         for index, label in enumerate(self._stage_steps):
             if stage_index is None:
@@ -482,11 +557,21 @@ class SyncExecutionPage(QWidget):
             else:
                 state, marker = "pending", "○"
             label.setProperty("state", state)
-            label.setText(f"{marker} {index + 1}\n{self.tr(self._STAGES[index][1])}")
+            label.setText(f"{marker} {index + 1}\n{titles[index]}")
             label.style().unpolish(label)
             label.style().polish(label)
         if stage_index is not None:
             self._overall.setValue(min(stage_index, len(self._STAGES)))
+
+    def _stage_titles(self) -> tuple[str, ...]:
+        return (
+            self.tr("Validate Sync Plan"),
+            self.tr("Prepare media on Host"),
+            self.tr("Build and verify iPod Library"),
+            self.tr("Publish to iPod"),
+            self.tr("Record Sync details"),
+            self.tr("Clean up recovery files"),
+        )
 
     def _overall_progress_reset(self) -> None:
         self._overall.setRange(0, len(self._STAGES))

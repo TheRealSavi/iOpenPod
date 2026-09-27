@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import fields, replace
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QEvent, Qt
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QDialog,
@@ -35,6 +35,11 @@ from iOpenPod.app.metadata_fields import (
 from iOpenPod.app.track_conversion import media_type_choices
 from iOpenPod.app.track_playback_policy import requires_track_playback_policy
 from iOpenPod.GUI.dialogs.artwork_editor import ArtworkEditor
+from iOpenPod.GUI.presentation.i18n.text import (
+    changed_field_count_text,
+    english_count_fallback,
+)
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.metadata_field_editor import FieldEditor
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -47,27 +52,74 @@ if TYPE_CHECKING:
     from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 
 _GROUP_DESCRIPTIONS = {
-    "Metadata": "Titles, artists, albums, genres, and tags",
-    "Sorting": "Sort overrides used by the iPod Library",
-    "Playback": "Rating, counts, timing, and playback position",
-    "Options": "Media type, advisory, shuffle, resume, and gapless settings",
-    "Video": "Show, episode, and TV metadata",
-    "Podcast": "Podcast feeds, categories, and playback markers",
-    "Dates": "Added, modified, released, played, and skipped timestamps",
-    "Chapters": "Chapter markers stored in the iPod database",
-    "Store": "Store and purchase metadata preserved from the database",
-    "Artwork": "Choose, crop, replace, or clear the Track cover image",
-    "Technical details": "Read-only values retained with the selected Track data",
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Metadata")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog", "Titles, artists, albums, genres, and tags"
+        )
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Sorting")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog", "Sort overrides used by the iPod Library"
+        )
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Playback")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog", "Rating, counts, timing, and playback position"
+        )
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Options")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog",
+            "Media type, advisory, shuffle, resume, and gapless settings",
+        )
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Video")): str(
+        QT_TRANSLATE_NOOP("MetadataEditorDialog", "Show, episode, and TV metadata")
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Podcast")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog", "Podcast feeds, categories, and playback markers"
+        )
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Dates")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog",
+            "Added, modified, released, played, and skipped timestamps",
+        )
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Chapters")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog", "Chapter markers stored in the iPod database"
+        )
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Store")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog",
+            "Store and purchase metadata preserved from the database",
+        )
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Artwork")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog",
+            "Choose, crop, replace, or clear the Track cover image",
+        )
+    ),
+    str(QT_TRANSLATE_NOOP("EditorLabels", "Technical details")): str(
+        QT_TRANSLATE_NOOP(
+            "MetadataEditorDialog",
+            "Read-only values retained with the selected Track data",
+        )
+    ),
 }
 
 _SUBGROUPS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
-    "Metadata": (
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Metadata")): (
         (
-            "Core Metadata",
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Core Metadata")),
             ("title", "artist", "album", "album_artist", "genre", "metadata.composer"),
         ),
         (
-            "Track & Disc",
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Track & Disc")),
             (
                 "year",
                 "track_number",
@@ -76,13 +128,21 @@ _SUBGROUPS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
                 "metadata.total_discs",
             ),
         ),
-        ("Tags", ("metadata.grouping", "metadata.bpm")),
-        ("Notes & Lyrics", ("metadata.comment", "metadata.lyrics")),
-    ),
-    "Sorting": (("Sort Overrides", ()),),
-    "Playback": (
         (
-            "Rating & Counts",
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Tags")),
+            ("metadata.grouping", "metadata.bpm"),
+        ),
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Notes & Lyrics")),
+            ("metadata.comment", "metadata.lyrics"),
+        ),
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Sorting")): (
+        (str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Sort Overrides")), ()),
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Playback")): (
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Rating & Counts")),
             (
                 "rating",
                 "play_count",
@@ -90,29 +150,44 @@ _SUBGROUPS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
                 "metadata.unscrobbled_play_count",
             ),
         ),
-        ("Timing", ("metadata.start_time_ms", "metadata.stop_time_ms")),
-        ("Resume Position", ("metadata.bookmark_time_ms",)),
         (
-            "Volume & Sound Check",
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Timing")),
+            ("metadata.start_time_ms", "metadata.stop_time_ms"),
+        ),
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Resume Position")),
+            ("metadata.bookmark_time_ms",),
+        ),
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Volume & Sound Check")),
             ("metadata.volume_adjustment_percent", "metadata.normalization_gain_db"),
         ),
-        ("Equalizer", ("metadata.equalizer",)),
-    ),
-    "Options": (
-        ("Media Type", ("media_types",)),
         (
-            "Advisory & Library",
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Equalizer")),
+            ("metadata.equalizer",),
+        ),
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Options")): (
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Media Type")),
+            ("media_types",),
+        ),
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Advisory & Library")),
             ("metadata.compilation", "metadata.checked", "metadata.content_advisory"),
         ),
         (
-            "Playback Flags",
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Playback Flags")),
             ("metadata.skip_shuffle", "metadata.remember_position"),
         ),
-        ("Gapless", ("metadata.gapless_album",)),
-    ),
-    "Video": (
         (
-            "Show Details",
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Gapless")),
+            ("metadata.gapless_album",),
+        ),
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Video")): (
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Show Details")),
             (
                 "show",
                 "episode",
@@ -123,19 +198,34 @@ _SUBGROUPS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
                 "metadata.show_locale",
             ),
         ),
-        ("Descriptions", ("metadata.subtitle", "metadata.description")),
-    ),
-    "Podcast": (
         (
-            "Feed",
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Descriptions")),
+            ("metadata.subtitle", "metadata.description"),
+        ),
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Podcast")): (
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Feed")),
             ("metadata.podcast_enclosure_url", "metadata.podcast_rss_url"),
         ),
-        ("Category & Display", ("metadata.category", "metadata.podcast")),
-        ("Playback", ("metadata.played",)),
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Category & Display")),
+            ("metadata.category", "metadata.podcast"),
+        ),
+        (
+            str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Playback")),
+            ("metadata.played",),
+        ),
     ),
-    "Dates": (("Dates", ()),),
-    "Chapters": (("Chapter Timeline", ()),),
-    "Store": (("Store", ()),),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Dates")): (
+        (str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Dates")), ()),
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Chapters")): (
+        (str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Chapter Timeline")), ()),
+    ),
+    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Store")): (
+        (str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Store")), ()),
+    ),
 }
 
 
@@ -161,7 +251,9 @@ class MetadataEditorDialog(QDialog):
         self.setWindowTitle(
             self.tr("Edit Track")
             if count == 1
-            else self.tr("Edit %1 Tracks").replace("%1", str(count))
+            else english_count_fallback(
+                "Edit %n Track(s)", self.tr("Edit %n Track(s)", "", count), count
+            )
         )
         self.resize(980, 740)
         self.setMinimumSize(860, 660)
@@ -170,6 +262,8 @@ class MetadataEditorDialog(QDialog):
         self._group_items: dict[str, QListWidgetItem] = {}
         self._page_indices: dict[str, int] = {}
         self._section_rows: list[tuple[QFrame, list[FieldEditor]]] = []
+        self._translated_labels: list[tuple[QLabel, str]] = []
+        self._technical_mixed_items: list[QTreeWidgetItem] = []
         self._updating_playback_policy = False
 
         outer = QVBoxLayout(self)
@@ -185,13 +279,16 @@ class MetadataEditorDialog(QDialog):
         title_wrap.setContentsMargins(0, 0, 0, 0)
         title_wrap.setSpacing(3)
         heading = QLabel(self.windowTitle(), header)
+        self._heading = heading
         heading.setObjectName("metadataEditorTitle")
         title_wrap.addWidget(heading)
         subtitle = QLabel(self._selection_summary(), header)
+        self._subtitle = subtitle
         subtitle.setObjectName("metadataEditorSubtitle")
         title_wrap.addWidget(subtitle)
         header_layout.addLayout(title_wrap, 1)
         search = QLineEdit(self)
+        self._search = search
         search.setObjectName("metadataFieldSearch")
         search.setPlaceholderText(self.tr("Filter fields"))
         search.setClearButtonEnabled(True)
@@ -234,21 +331,31 @@ class MetadataEditorDialog(QDialog):
         footer = QHBoxLayout()
         footer.setContentsMargins(0, 0, 0, 0)
         footer.setSpacing(8)
-        self._change_label = QLabel(self.tr("No changes"), self)
+        self._change_label = QLabel(
+            QCoreApplication.translate("EditorLabels", "No changes"), self
+        )
         self._change_label.setObjectName("metadataChangeSummary")
         footer.addWidget(self._change_label)
-        self._reset_button = ActionButton(self.tr("Reset Changes"), self)
+        self._reset_button = ActionButton(
+            QCoreApplication.translate("CommonActions", "Reset Changes"), self
+        )
         self._reset_button.setObjectName("resetMetadataChanges")
         self._reset_button.setEnabled(False)
         self._reset_button.clicked.connect(self._reset)
         footer.addWidget(self._reset_button)
         footer.addStretch(1)
-        cancel = ActionButton(self.tr("Cancel"), self)
+        cancel = ActionButton(
+            QCoreApplication.translate("CommonActions", "Cancel"), self
+        )
+        self._cancel_button = cancel
         cancel.clicked.connect(self.reject)
         footer.addWidget(cancel)
         apply_button = ActionButton(
-            self.tr("Apply"), self, kind=ActionButtonKind.PRIMARY
+            QCoreApplication.translate("CommonActions", "Apply"),
+            self,
+            kind=ActionButtonKind.PRIMARY,
         )
+        self._apply_button = apply_button
         apply_button.setObjectName("applyMetadataChanges")
         apply_button.setDefault(True)
         apply_button.clicked.connect(self.accept)
@@ -263,6 +370,52 @@ class MetadataEditorDialog(QDialog):
             if isinstance(editor, AppComboBox):
                 editor.currentIndexChanged.connect(self._classification_changed)
         self._update_playback_flag_policy()
+
+    def retranslate_ui(self) -> None:
+        count = len(self._tracks)
+        self.setWindowTitle(
+            self.tr("Edit Track")
+            if count == 1
+            else english_count_fallback(
+                "Edit %n Track(s)", self.tr("Edit %n Track(s)", "", count), count
+            )
+        )
+        self._heading.setText(self.windowTitle())
+        self._subtitle.setText(self._selection_summary())
+        self._search.setPlaceholderText(self.tr("Filter fields"))
+        for label, source in self._translated_labels:
+            label.setText(self._label_text(source))
+        for group, item in self._group_items.items():
+            item.setText(self.tr(group))
+        self._artwork_item.setText(self.tr("Artwork"))
+        self._technical_item.setText(
+            QCoreApplication.translate("EditorLabels", "Technical details")
+        )
+        self._technical.setHeaderLabels(
+            [
+                QCoreApplication.translate("EditorLabels", "Read-only field"),
+                self.tr("Value"),
+            ]
+        )
+        for technical_item in self._technical_mixed_items:
+            technical_item.setText(
+                1, QCoreApplication.translate("EditorLabels", "Mixed values")
+            )
+        self._reset_button.setText(
+            QCoreApplication.translate("CommonActions", "Reset Changes")
+        )
+        self._cancel_button.setText(
+            QCoreApplication.translate("CommonActions", "Cancel")
+        )
+        self._apply_button.setText(QCoreApplication.translate("CommonActions", "Apply"))
+        self._update_change_summary()
+        self._update_playback_flag_policy()
+        self._filter(self._search.text())
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.Type.LanguageChange:
+            self.retranslate_ui()
+        super().changeEvent(event)
 
     def _classification_changed(self, _index: int) -> None:
         self._update_playback_flag_policy(
@@ -391,7 +544,11 @@ class MetadataEditorDialog(QDialog):
         ]
         if remaining:
             page_rows.extend(remaining)
-            body_layout.addWidget(self._section_panel(self.tr("Other"), remaining))
+            body_layout.addWidget(
+                self._section_panel(
+                    str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Other")), remaining
+                )
+            )
         body_layout.addStretch(1)
 
         scroll = QScrollArea(page)
@@ -403,10 +560,15 @@ class MetadataEditorDialog(QDialog):
         index = self._pages.addWidget(page)
         self._page_indices[group] = index
         self._group_rows[group] = page_rows
-        item = QListWidgetItem(group)
+        item = QListWidgetItem(self.tr(group))
         item.setData(Qt.ItemDataRole.UserRole, group)
         self._nav.addItem(item)
         self._group_items[group] = item
+
+    def _label_text(self, source: str) -> str:
+        if source == "Technical details":
+            return QCoreApplication.translate("EditorLabels", "Technical details")
+        return self.tr(source)
 
     def _page_header(self, group: str) -> QFrame:
         header = QFrame(self)
@@ -414,10 +576,14 @@ class MetadataEditorDialog(QDialog):
         layout = QVBoxLayout(header)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(3)
-        title = QLabel(group, header)
+        title = QLabel(self._label_text(group), header)
+        self._translated_labels.append((title, group))
         title.setObjectName("metadataGroupTitle")
         layout.addWidget(title)
-        description = QLabel(_GROUP_DESCRIPTIONS.get(group, ""), header)
+        description = QLabel(self.tr(_GROUP_DESCRIPTIONS.get(group, "")), header)
+        self._translated_labels.append(
+            (description, _GROUP_DESCRIPTIONS.get(group, ""))
+        )
         description.setObjectName("metadataGroupDescription")
         description.setWordWrap(True)
         layout.addWidget(description)
@@ -429,7 +595,8 @@ class MetadataEditorDialog(QDialog):
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(12, 10, 12, 12)
         panel_layout.setSpacing(10)
-        heading = QLabel(title, panel)
+        heading = QLabel(self.tr(title), panel)
+        self._translated_labels.append((heading, title))
         heading.setObjectName("metadataSectionTitle")
         panel_layout.addWidget(heading)
         grid = QGridLayout()
@@ -455,10 +622,16 @@ class MetadataEditorDialog(QDialog):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        layout.addWidget(self._page_header(self.tr("Technical details")))
+        layout.addWidget(self._page_header("Technical details"))
         technical = QTreeWidget(page)
+        self._technical = technical
         technical.setObjectName("metadataTechnicalDetails")
-        technical.setHeaderLabels([self.tr("Read-only field"), self.tr("Value")])
+        technical.setHeaderLabels(
+            [
+                QCoreApplication.translate("EditorLabels", "Read-only field"),
+                self.tr("Value"),
+            ]
+        )
         editable = set(self.rows)
         track = self._tracks[0]
         for owner, prefix in (
@@ -483,13 +656,18 @@ class MetadataEditorDialog(QDialog):
                 text = (
                     str(technical_values[0])
                     if all(v == technical_values[0] for v in technical_values)
-                    else self.tr("Mixed values")
+                    else QCoreApplication.translate("EditorLabels", "Mixed values")
                 )
-                technical.addTopLevelItem(QTreeWidgetItem([path, text]))
+                item = QTreeWidgetItem([path, text])
+                if any(v != technical_values[0] for v in technical_values):
+                    self._technical_mixed_items.append(item)
+                technical.addTopLevelItem(item)
         technical.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(technical, 1)
         self._pages.addWidget(page)
-        self._technical_item = QListWidgetItem(self.tr("Technical details"))
+        self._technical_item = QListWidgetItem(
+            QCoreApplication.translate("EditorLabels", "Technical details")
+        )
         self._nav.addItem(self._technical_item)
 
     def _add_artwork_page(self, provider: ArtworkPixmapProvider | None) -> None:
@@ -503,7 +681,7 @@ class MetadataEditorDialog(QDialog):
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(12)
-        body_layout.addWidget(self._page_header(self.tr("Artwork")))
+        body_layout.addWidget(self._page_header("Artwork"))
 
         panel = QFrame(body)
         panel.setObjectName("metadataSectionPanel")
@@ -533,7 +711,11 @@ class MetadataEditorDialog(QDialog):
 
     def _selection_summary(self) -> str:
         if len(self._tracks) != 1:
-            return self.tr("%1 selected tracks").replace("%1", str(len(self._tracks)))
+            return english_count_fallback(
+                "%n selected track(s)",
+                self.tr("%n selected track(s)", "", len(self._tracks)),
+                len(self._tracks),
+            )
         track = self._tracks[0]
         return " • ".join(
             value
@@ -552,21 +734,11 @@ class MetadataEditorDialog(QDialog):
         count = sum(row.is_modified() for row in self.rows.values())
         artwork_changed = self._artwork_editor.is_modified()
         if count == 0 and not artwork_changed:
-            summary = self.tr("No changes")
+            summary = QCoreApplication.translate("EditorLabels", "No changes")
         elif count == 0:
             summary = self.tr("Artwork changed")
-        elif artwork_changed:
-            summary = (
-                self.tr("1 changed field + artwork")
-                if count == 1
-                else self.tr("%1 changed fields + artwork").replace("%1", str(count))
-            )
         else:
-            summary = (
-                self.tr("1 changed field")
-                if count == 1
-                else self.tr("%1 changed fields").replace("%1", str(count))
-            )
+            summary = changed_field_count_text(count, artwork=artwork_changed)
         self._change_label.setText(summary)
         self._reset_button.setEnabled(count > 0 or artwork_changed)
 
@@ -575,7 +747,8 @@ class MetadataEditorDialog(QDialog):
         visible_groups: set[str] = set()
         for row in self.rows.values():
             visible = (
-                query in f"{row.spec.label} {row.spec.path} {row.spec.group}".casefold()
+                query
+                in f"{QCoreApplication.translate('MetadataFields', row.spec.label)} {row.spec.path} {self.tr(row.spec.group)}".casefold()
             )
             row.setVisible(visible)
             if visible:
@@ -619,12 +792,13 @@ class MetadataEditorDialog(QDialog):
                     value = row.value()
                     if row.spec.kind is FieldKind.MEDIA_TYPE:
                         if not isinstance(value, MediaType):
-                            raise ValueError("Choose a media type.")
+                            raise ValueError(self.tr("Choose a media type."))
                         media_type = value
                     else:
                         edits.append(TrackFieldEdit(row.spec.path, value))
                 except (ValueError, OverflowError, OSError) as error:
-                    errors.append(f"{row.spec.label}: {error}")
+                    label = QCoreApplication.translate("MetadataFields", row.spec.label)
+                    errors.append(f"{label}: {workflow_text(str(error))}")
         if errors:
             self._error.setText("\n".join(errors))
             return
@@ -636,7 +810,7 @@ class MetadataEditorDialog(QDialog):
                 media_type=media_type,
             )
         except ValueError as error:
-            self._error.setText(str(error))
+            self._error.setText(workflow_text(str(error)))
             return
         super().accept()
 

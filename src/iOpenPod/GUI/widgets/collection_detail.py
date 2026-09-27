@@ -1,6 +1,6 @@
 """Full-page Album and collection context around the shared Track table."""
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QLocale, Qt, Signal
 from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QBoxLayout,
@@ -15,6 +15,10 @@ from iOpenPod.app.models.album_list_model import AlbumSummary
 from iOpenPod.app.models.collection_list_model import CollectionSummary
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.i18n.text import (
+    track_count_text,
+    visible_track_count_text,
+)
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.artwork_view import ArtworkView
@@ -184,17 +188,23 @@ class CollectionDetailPage(QWidget):
         self._refresh_context()
 
     def retranslate_ui(self) -> None:
-        self._back.setText(self.tr("Back"))
+        self._back.setText(QCoreApplication.translate("CommonActions", "Back"))
         self._back.setAccessibleName(self.tr("Back to collections"))
-        self._select_all.setText(self.tr("Select All"))
-        self._deselect_all.setText(self.tr("Deselect All"))
+        self._select_all.setText(
+            QCoreApplication.translate("CommonActions", "Select All")
+        )
+        self._deselect_all.setText(
+            QCoreApplication.translate("CommonActions", "Deselect All")
+        )
         self._select_all.setToolTip(
             self.tr("Select every Track in this collection for Sync")
         )
         self._deselect_all.setToolTip(
             self.tr("Deselect every Track in this collection from Sync")
         )
-        self._search.setPlaceholderText(self.tr("Search Tracks"))
+        self._search.setPlaceholderText(
+            QCoreApplication.translate("LibraryLabels", "Search Tracks")
+        )
         self._search.setAccessibleName(self.tr("Search Tracks in this collection"))
         self._refresh_context()
         self._arrange_header()
@@ -270,15 +280,20 @@ class CollectionDetailPage(QWidget):
         album = isinstance(summary, AlbumSummary)
         self._title.setText(
             summary.title
-            or (self.tr("Unknown Album") if album else self.tr("Unknown Collection"))
+            or (
+                QCoreApplication.translate("LibraryLabels", "Unknown Album")
+                if album
+                else QCoreApplication.translate("LibraryLabels", "Unknown Collection")
+            )
         )
         self._artist.setVisible(album)
         self._artist.setText(
-            summary.artist or self.tr("Unknown Artist")
+            summary.artist
+            or QCoreApplication.translate("LibraryLabels", "Unknown Artist")
             if isinstance(summary, AlbumSummary)
             else ""
         )
-        count = self.tr("%n Tracks", None, len(self._track_ids))
+        count = track_count_text(len(self._track_ids))
         self._metadata.setText(
             f"{summary.year} · {count}"
             if isinstance(summary, AlbumSummary) and summary.year
@@ -294,14 +309,13 @@ class CollectionDetailPage(QWidget):
         shown = self._proxy.rowCount()
         total = len(self._track_ids)
         self._count.setText(
-            self.tr("%n Tracks", None, total)
+            track_count_text(total)
             if shown == total
-            else self.tr("%1 of %n Tracks", None, total).replace("%1", str(shown))
+            else visible_track_count_text(shown, total)
         )
 
 
 def _format_size(size_bytes: int) -> str:
-    for unit, divisor in (("GB", 1_000_000_000), ("MB", 1_000_000), ("KB", 1_000)):
-        if size_bytes >= divisor:
-            return f"{size_bytes / divisor:.1f} {unit}"
-    return f"{size_bytes} B"
+    return QLocale().formattedDataSize(
+        size_bytes, 1, QLocale.DataSizeFormat.DataSizeSIFormat
+    )

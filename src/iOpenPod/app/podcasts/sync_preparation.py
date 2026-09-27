@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.podcasts.catalog import (
     mark_episodes_automatically_cleared,
     merge_fetched_subscription,
@@ -98,8 +99,11 @@ def prepare_podcast_sync(
                 issues.append(
                     WriteIssue(
                         "podcast.refresh_failed",
-                        f"Could not refresh {subscription.title}. Its episodes were "
-                        "kept unchanged; check the feed and retry Sync.",
+                        source_text(
+                            "Could not refresh {title}. Its episodes were "
+                            "kept unchanged; check the feed and retry Sync.",
+                            title=subscription.title,
+                        ),
                         detail=str(error),
                     )
                 )

@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QSignalBlocker, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QLocale,
+    QSignalBlocker,
+    Qt,
+    QTimer,
+    QUrl,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QDesktopServices, QShowEvent
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -72,6 +82,8 @@ from iOpenPod.GUI.presentation.backup_messages import (
     backup_message_for,
 )
 from iOpenPod.GUI.presentation.device_images import device_pixmap
+from iOpenPod.GUI.presentation.i18n.text import english_count_fallback
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.backup_styles import render_backup_page_style
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader, SourceListPanel
@@ -95,8 +107,9 @@ def _format_size(size: int) -> str:
             break
         value /= 1024
     if unit == "bytes":
-        return f"{int(value):,} {unit}"
-    return f"{value:.1f} {unit}"
+        unit = QCoreApplication.translate("BackupPage", "bytes")
+        return f"{QLocale().toString(int(value))} {unit}"
+    return f"{QLocale().toString(value, 'f', 1)} {unit}"
 
 
 def _terminal_outcome(value: object) -> BackupTerminalOutcome | None:
@@ -341,15 +354,18 @@ class BackupSnapshotCard(QFrame):
         dialog.setTextFormat(Qt.TextFormat.PlainText)
         dialog.setText(snapshot.display_date)
         dialog.setInformativeText(
-            self.tr("%1\n%2 files · %3\n%4")
+            english_count_fallback(
+                "%1\n%Ln file(s) · %3\n%4",
+                self.tr("%1\n%Ln file(s) · %3\n%4", "", snapshot.file_count),
+                snapshot.file_count,
+            )
             .replace("%1", self._reason_label(snapshot))
-            .replace("%2", f"{snapshot.file_count:,}")
             .replace("%3", _format_size(snapshot.total_size))
             .replace("%4", self._delta_label(snapshot))
         )
         diagnostic = self.tr("Backup ID: %1").replace("%1", snapshot.id)
         if snapshot.validation_error:
-            diagnostic += "\n\n" + snapshot.validation_error
+            diagnostic += "\n\n" + workflow_text(snapshot.validation_error)
         dialog.setDetailedText(diagnostic)
         dialog.exec()
         dialog.deleteLater()
@@ -377,6 +393,7 @@ class BackupPage(QWidget):
         self._pending_catalog_id = ""
         self._cards: list[BackupSnapshotCard] = []
         self._pending_recovery_id = ""
+        self._progress_message = ""
         self._has_loaded = False
         self.setObjectName("backupsPage")
 
@@ -387,7 +404,9 @@ class BackupPage(QWidget):
         self._title.setObjectName("backupsTitle")
         self._page_header.set_title(self.tr("Backups"))
         self._refresh = ActionButton(
-            self.tr("Refresh"), toolbar, kind=ActionButtonKind.QUIET
+            QCoreApplication.translate("CommonActions", "Refresh"),
+            toolbar,
+            kind=ActionButtonKind.QUIET,
         )
         self._refresh.setObjectName("backupRefresh")
         self._import_button = ActionButton(
@@ -605,7 +624,9 @@ class BackupPage(QWidget):
         self._progress_eta = EtaLabel(self._progress_panel)
         self._progress_eta.setObjectName("backupProgressEta")
         self._cancel = ActionButton(
-            self.tr("Cancel"), self._progress_panel, kind=ActionButtonKind.SECONDARY
+            QCoreApplication.translate("CommonActions", "Cancel"),
+            self._progress_panel,
+            kind=ActionButtonKind.SECONDARY,
         )
         progress_copy = QVBoxLayout()
         progress_copy.setContentsMargins(0, 0, 0, 0)
@@ -677,7 +698,9 @@ class BackupPage(QWidget):
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
             self._page_header.set_title(self.tr("Backups"))
-            self._refresh.setText(self.tr("Refresh"))
+            self._refresh.setText(
+                QCoreApplication.translate("CommonActions", "Refresh")
+            )
             self._import_button.setText(self.tr("Import Backups…"))
             self._import_button.setToolTip(
                 self.tr("Import backups from Original iOpenPod")
@@ -686,7 +709,7 @@ class BackupPage(QWidget):
             self._backup_now.setText(self.tr("Back Up Now"))
             self._open_folder.setText(self.tr("Open Folder"))
             self._snapshots_label.setText(self.tr("Saved backups"))
-            self._cancel.setText(self.tr("Cancel"))
+            self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
             self._device_rail.set_title(self.tr("Your iPods"))
             self._empty_title.setText(self.tr("Your first backup starts here"))
             self._empty_detail.setText(
@@ -696,6 +719,8 @@ class BackupPage(QWidget):
                 )
             )
             self._empty_backup.setText(self.tr("Back Up Now"))
+            if self._controller.busy and self._progress_message:
+                self._progress_title.setText(workflow_text(self._progress_message))
             self._render_inventory()
             self._render_recovery()
             self._render_catalog()
@@ -848,7 +873,7 @@ class BackupPage(QWidget):
             snapshot_can_restore = (
                 snapshot.identity_state is not SnapshotIdentityState.UNSTABLE
             )
-            snapshot_hint = restore_hint or snapshot.validation_error
+            snapshot_hint = restore_hint or workflow_text(snapshot.validation_error)
             if not snapshot_can_restore:
                 snapshot_hint = self.tr(
                     "iOpenPod can't confirm which iPod this backup belongs to. "
@@ -972,7 +997,8 @@ class BackupPage(QWidget):
         if not isinstance(value, BackupProgress):
             return
         self._progress_panel.show()
-        self._progress_title.setText(value.message)
+        self._progress_message = value.message
+        self._progress_title.setText(workflow_text(value.message))
         self._progress_file.setText(value.current_file)
         if value.stage in {
             BackupStage.FINALIZING,
@@ -1058,15 +1084,15 @@ class BackupPage(QWidget):
     def _operation_failed(self, value: object) -> None:
         if not isinstance(value, BackupOperationFailure) or not self.isVisible():
             return
-        diagnostic = f"Code: {value.failure.code.value}"
+        diagnostic = self.tr("Code: %1").replace("%1", value.failure.code.value)
         if value.failure.detail:
-            diagnostic = f"{diagnostic}\n{value.failure.detail}"
+            diagnostic = f"{diagnostic}\n{workflow_text(value.failure.detail)}"
         self._show_backup_message(
             BackupMessage(
                 BackupMessageSeverity.ERROR,
                 self.tr("Backup Operation Failed"),
-                value.failure.summary,
-                value.failure.action,
+                workflow_text(value.failure.summary),
+                workflow_text(value.failure.action),
                 diagnostic,
             )
         )
@@ -1145,9 +1171,11 @@ class BackupPage(QWidget):
             QMessageBox.information(
                 self,
                 self.tr("Backup Export Complete"),
-                self.tr("Exported %1 files to:\n\n%2")
-                .replace("%1", f"{result.file_count:,}")
-                .replace("%2", str(result.destination)),
+                english_count_fallback(
+                    "Exported %Ln file(s) to:\n\n%1",
+                    self.tr("Exported %Ln file(s) to:\n\n%1", "", result.file_count),
+                    result.file_count,
+                ).replace("%1", str(result.destination)),
             )
 
     def _show_backup_message(self, message: BackupMessage) -> None:

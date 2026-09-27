@@ -1,14 +1,21 @@
 """Sync outcomes expose actual diagnostics, cancellation, and recovery actions."""
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QFrame, QLabel, QPlainTextEdit, QProgressBar, QPushButton
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.library_write import WriteItemProgress, WriteProgress
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.sync_execution import SyncExecutionResult, SyncExecutionStatus
+from iOpenPod.app.sync_plan import (
+    SyncPlanAction,
+    SyncPlanBasis,
+    SyncPlanItem,
+    SyncPlanMediaKind,
+)
 from iOpenPod.GUI.pages.sync_execution_page import SyncExecutionPage
 from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
 from iPodDB.library import IssueSeverity, WriteIssue
@@ -419,15 +426,137 @@ def test_user_can_keep_current_contents_instead_of_recovery_or_cleanup(
         APPLICATION.processEvents()
 
 
-def test_playlist_only_completion_reports_the_applied_playlist_count() -> None:
+@pytest.mark.parametrize("count", [1, 2])
+def test_completion_reports_the_applied_media_and_playlist_counts(count: int) -> None:
     page = SyncExecutionPage()
     try:
+        item = SyncPlanItem(
+            SyncPlanAction.REMOVE,
+            SyncPlanMediaKind.TRACK,
+            SyncPlanBasis.IPOD_ONLY,
+            "Track",
+            ipod_id=1,
+        )
         page.show_result(
-            SyncExecutionResult(SyncExecutionStatus.SUCCESS, playlist_change_count=2)
+            SyncExecutionResult(
+                SyncExecutionStatus.SUCCESS,
+                completed=(item,) * count,
+                playlist_change_count=count,
+            )
         )
         detail = page.findChild(QLabel, "syncExecutionDetail")
         assert detail is not None
-        assert "2 Playlists reconciled" in detail.text()
+        suffix = "" if count == 1 else "s"
+        assert f"{count} selected change{suffix} committed." in detail.text()
+        assert f"{count} Playlist{suffix} reconciled." in detail.text()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_language_change_retranslates_retained_progress_without_restarting_timing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = 100.0
+    monkeypatch.setattr("iOpenPod.GUI.pages.sync_execution_page.monotonic", lambda: now)
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        page.update_progress(WriteProgress("sync.validate", "Validate"))
+        page.update_progress(
+            WriteProgress(
+                "sync.prepare",
+                "Preparing",
+                completed=2,
+                total=5,
+                current_item="Track A",
+            )
+        )
+        now += 10
+
+        def translate(_page: SyncExecutionPage, text: str) -> str:
+            return "Translated: " + text
+
+        monkeypatch.setattr(SyncExecutionPage, "tr", translate)
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        stage = page.findChild(QLabel, "syncExecutionStage")
+        item = page.findChild(QLabel, "syncExecutionItem")
+        elapsed = page.findChild(QLabel, "syncExecutionElapsed")
+        activity = page.findChild(QPlainTextEdit, "syncExecutionActivity")
+        progress = page.findChild(QProgressBar, "syncExecutionProgress")
+        assert stage is not None and item is not None and elapsed is not None
+        assert activity is not None and progress is not None
+        assert stage.text() == "Translated: Prepare media on Host"
+        assert item.text() == "Translated: Item: Track A"
+        assert "10 s since the last progress update" in elapsed.text()
+        assert activity.toPlainText() == (
+            "Translated: Completed: Translated: Validate Sync Plan"
+        )
+        assert progress.value() == 2 and progress.maximum() == 5
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize("operation", ["restore", "cleanup", "keep"])
+def test_language_change_preserves_the_running_recovery_operation(
+    monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    page = SyncExecutionPage()
+    try:
+        page.show_result(SyncExecutionResult(SyncExecutionStatus.RECOVERY_REQUIRED))
+        if operation == "keep":
+            page.begin_keep_contents()
+        else:
+            page.begin_recovery(cleanup=operation == "cleanup")
+        title = page.findChild(QLabel, "syncExecutionTitle")
+        detail = page.findChild(QLabel, "syncExecutionDetail")
+        assert title is not None and detail is not None
+        original_title, original_detail = title.text(), detail.text()
+
+        def translate(_page: SyncExecutionPage, text: str) -> str:
+            return "Translated: " + text
+
+        monkeypatch.setattr(SyncExecutionPage, "tr", translate)
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert title.text() == "Translated: " + original_title
+        assert detail.text() == "Translated: " + original_detail
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_formatted_progress_translates_template_before_inserting_user_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    language = "first"
+
+    def translate(context: str, source: str, *_args: object) -> str:
+        if context == "Workflow" and source == "Downloading {title}…":
+            return "{title} — " + language
+        if context == "Workflow" and source == "bytes":
+            return "octets"
+        return source
+
+    monkeypatch.setattr(QCoreApplication, "translate", translate)
+    page = SyncExecutionPage()
+    try:
+        message = source_text("Downloading {title}…", title="My {Podcast}")
+        page.begin()
+        page.update_progress(
+            WriteProgress(
+                "sync.podcast_download", message, completed=2, total=5, unit="bytes"
+            )
+        )
+        detail = page.findChild(QLabel, "syncExecutionDetail")
+        summary = page.findChild(QLabel, "syncExecutionProgressSummary")
+        assert detail is not None and summary is not None
+        assert detail.text() == "My {Podcast} — first"
+        assert summary.text() == "2 of 5 octets"
+        assert message == "Downloading My {Podcast}…"
+        language = "second"
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert detail.text() == "My {Podcast} — second"
     finally:
         page.deleteLater()
         APPLICATION.processEvents()

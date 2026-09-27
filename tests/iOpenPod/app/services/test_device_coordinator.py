@@ -13,6 +13,7 @@ import pytest
 from PIL import Image
 
 from iOpenPod.app.backups import BackupIdentityClaimKind
+from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.library_write import LibraryPreparationRequest
 from iOpenPod.app.models.artwork import ArtworkRequest
 from iOpenPod.app.models.device import DeviceCandidateIssueCode, DeviceReadiness
@@ -257,6 +258,29 @@ def test_poll_retries_a_candidate_whose_database_is_not_ready(tmp_path: Path) ->
         ready = coordinator.discover_devices(refresh_known=False).candidates[0]
         assert ready.id == candidate.id
         assert ready.selectable
+    finally:
+        coordinator.close()
+
+
+def test_empty_database_issue_retains_the_translatable_source_name(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    (root / "iPod_Control" / "iTunes" / "iTunesDB").write_bytes(b"")
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        candidate = coordinator.discover_devices(refresh_known=False).candidates[0]
+        issue = next(
+            issue
+            for issue in candidate.issues
+            if issue.code is DeviceCandidateIssueCode.DATABASE_EMPTY
+        )
+        assert isinstance(issue.detail, SourceText)
+        assert issue.detail == "iTunesDB is empty or is not a regular file."
+        assert issue.detail.source == "{name} is empty or is not a regular file."
+        assert dict(issue.detail.parameters) == {"name": "iTunesDB"}
     finally:
         coordinator.close()
 
@@ -1640,8 +1664,11 @@ def test_playback_source_streams_track_bytes_until_active_ipod_changes(
 
     coordinator.deactivate()
 
-    with pytest.raises(PlaybackSourceError, match="Active iPod changed"):
+    with pytest.raises(PlaybackSourceError, match="Active iPod changed") as caught:
         source.read_at(0, 1)
+    message = caught.value.args[0]
+    assert isinstance(message, SourceText)
+    assert message.source == "Playback stopped because the Active iPod changed."
 
 
 def test_track_export_references_and_copies_through_the_active_session(

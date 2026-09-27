@@ -76,6 +76,7 @@ from iOpenPod.app.backups.scope import (
     UnsupportedBackupEntryError,
     enumerate_backup_files,
 )
+from iOpenPod.app.display_text import source_text
 from storage import (
     AtomicHostFile,
     DeviceEntry,
@@ -492,7 +493,11 @@ class BackupRepository:
                             BackupStage.CAPTURING,
                             index,
                             total,
-                            f"Reusing unchanged file {index:,} of {total:,}…",
+                            source_text(
+                                "Reusing unchanged file {index} of {total}…",
+                                index=f"{index:,}",
+                                total=f"{total:,}",
+                            ),
                             label,
                             completed_bytes=completed_bytes,
                             total_bytes=total_bytes,
@@ -503,7 +508,11 @@ class BackupRepository:
                         BackupStage.CAPTURING,
                         index - 1,
                         total,
-                        f"Capturing {index:,} of {total:,} files…",
+                        source_text(
+                            "Capturing {index} of {total} files…",
+                            index=f"{index:,}",
+                            total=f"{total:,}",
+                        ),
                         label,
                         completed_bytes=completed_bytes,
                         total_bytes=total_bytes,
@@ -529,7 +538,11 @@ class BackupRepository:
                             BackupStage.CAPTURING,
                             file_index - 1,
                             total,
-                            f"Capturing {file_index:,} of {total:,} files…",
+                            source_text(
+                                "Capturing {index} of {total} files…",
+                                index=f"{file_index:,}",
+                                total=f"{total:,}",
+                            ),
                             file_label,
                             completed_bytes=bytes_before + file_bytes,
                             total_bytes=total_bytes,
@@ -633,7 +646,9 @@ class BackupRepository:
                     BackupStage.COMPLETE,
                     total,
                     total,
-                    f"Backup complete — {total:,} files protected.",
+                    source_text(
+                        "Backup complete — {total} files protected.", total=f"{total:,}"
+                    ),
                     can_cancel=False,
                     completed_bytes=completed_bytes,
                     total_bytes=total_bytes,
@@ -1362,7 +1377,11 @@ class BackupRepository:
                         BackupStage.EXPORTING,
                         index,
                         total,
-                        f"Exporting {index:,} of {total:,} files…",
+                        source_text(
+                            "Exporting {index} of {total} files…",
+                            index=f"{index:,}",
+                            total=f"{total:,}",
+                        ),
                         "/".join(entry.path_parts),
                     )
                 return BackupExportResult(export_root, total, total_size)

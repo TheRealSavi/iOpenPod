@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QLocale, QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -21,6 +21,12 @@ from iOpenPod.app.library_workspace import EditRevision, LibraryWorkspace
 from iOpenPod.app.models.device import ActiveIPod, DeviceDiscovery
 from iOpenPod.GUI.navigation import PageId, page_label
 from iOpenPod.GUI.presentation.device_images import device_pixmap
+from iOpenPod.GUI.presentation.i18n.text import (
+    device_count_text,
+    tag_changes_available_text,
+    track_count_text,
+)
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -284,7 +290,7 @@ class DeviceCard(QFrame):
                 self._model.setText(self.tr("Looking for connected iPods…"))
             elif self._discovery.candidates:
                 count = len(self._discovery.candidates)
-                self._model.setText(self.tr("%n device(s) found", None, count))
+                self._model.setText(device_count_text(count))
             else:
                 self._model.setText(self.tr("Connect an iPod to get started"))
             self._summary.setText(self.tr("Choose a device to load its library."))
@@ -305,7 +311,7 @@ class DeviceCard(QFrame):
             .replace("%2", active.profile.model_number)
         )
         track_count = len(active.library.tracks)
-        track_text = self.tr("%n Tracks", None, track_count)
+        track_text = track_count_text(track_count)
         duration_ms = sum(track.length_ms for track in active.library.tracks)
         hours = duration_ms / 3_600_000
         self._summary.setText(
@@ -419,7 +425,7 @@ class DeviceCard(QFrame):
         try:
             workspace.rename_device(name, revision)
         except ValueError as error:
-            self._set_rename_error(str(error))
+            self._set_rename_error(workflow_text(str(error)))
             self._name_edit.setFocus()
             return
         self._cancel_rename()
@@ -627,7 +633,7 @@ class Sidebar(QFrame):
         self._normalization_badge.setVisible(count > 0)
         button = self._buttons[PageId.NORMALIZE_TAGS]
         detail = (
-            self.tr("%1 tag changes available").replace("%1", f"{count:,}")
+            tag_changes_available_text(count)
             if count > 0
             else self.tr("Check your Library for more consistent tags.")
         )
@@ -660,16 +666,9 @@ class Sidebar(QFrame):
 
 
 def _format_bytes(byte_count: int) -> str:
-    value = float(max(0, byte_count))
-    units = ("B", "KB", "MB", "GB", "TB")
-    unit = units[0]
-    for candidate in units:
-        unit = candidate
-        if value < 1024 or candidate == units[-1]:
-            break
-        value /= 1024
-    precision = 0 if unit == "B" else 1
-    return f"{value:.{precision}f} {unit}"
+    return QLocale().formattedDataSize(
+        max(0, byte_count), 1, QLocale.DataSizeFormat.DataSizeTraditionalFormat
+    )
 
 
 def _page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:

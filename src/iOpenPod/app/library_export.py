@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Protocol
 from urllib.parse import quote
 
+from iOpenPod.app.display_text import source_text
 from iPodDB.library import PhotoRepresentationKind
 from storage import AtomicHostFile, HostPath
 
@@ -181,7 +182,7 @@ class LibraryExporter:
     ) -> ExportResult:
         unique = _unique_tracks(tracks)
         if not unique:
-            raise ValueError("Select at least one Track to export.")
+            raise ValueError(source_text("Select at least one Track to export."))
         references = self._references(unique, checkpoint)
         destinations = _media_destinations(directory, unique, references, set())
         self._require_taggable(destinations)
@@ -239,7 +240,7 @@ class LibraryExporter:
                 ExportProgress(
                     len(unique) + 1,
                     len(unique) + 1,
-                    f"Created {playlist_path.path.name}",
+                    source_text("Created {name}", name=str(playlist_path.path.name)),
                 )
             )
         return ExportResult(playlist_path, tuple(media_paths))
@@ -272,7 +273,9 @@ class LibraryExporter:
                     ExportProgress(
                         index - 1,
                         total,
-                        f"Exporting {destination.path.name}",
+                        source_text(
+                            "Exporting {name}", name=str(destination.path.name)
+                        ),
                     )
                 )
             artwork = self._source.artwork_for_track(track)
@@ -328,7 +331,7 @@ class PhotoExporter:
     ) -> PhotoExportResult:
         unique = _unique_photos(photos)
         if not unique:
-            raise ValueError("Select at least one Photo to export.")
+            raise ValueError(source_text("Select at least one Photo to export."))
         self._source.require_photo_export_directory(directory)
         references = self._references(unique, checkpoint)
         photo_directories, photo_files = self._copy_photos(
@@ -355,7 +358,7 @@ class PhotoExporter:
     ) -> PhotoExportResult:
         unique = _unique_photos(photos)
         if not unique:
-            raise ValueError("The Photo Album has no Photos to export.")
+            raise ValueError(source_text("The Photo Album has no Photos to export."))
         self._source.require_photo_export_directory(directory)
         references = self._references(unique, checkpoint)
         album_directory = _create_available_directory(
@@ -403,8 +406,10 @@ class PhotoExporter:
         ):
             if reference is None and not photo_format_ids:
                 raise ValueError(
-                    f"Photo {photo.photo_id} has no readable full-resolution "
-                    "file or iTHMB rendition."
+                    source_text(
+                        "Photo {photo_id} has no readable full-resolution file or iTHMB rendition.",
+                        photo_id=str(photo.photo_id),
+                    )
                 )
 
         total = sum(
@@ -458,8 +463,11 @@ class PhotoExporter:
                 )
                 if image is None:
                     raise ValueError(
-                        f"Photo {photo.photo_id} iTHMB format {format_id} "
-                        "could not be decoded for export."
+                        source_text(
+                            "Photo {photo_id} iTHMB format {format_id} could not be decoded for export.",
+                            photo_id=str(photo.photo_id),
+                            format_id=str(format_id),
+                        )
                     )
                 destination = _available_child(
                     photo_directory,
@@ -613,7 +621,7 @@ def _report_photo_progress(
             ExportProgress(
                 completed,
                 total,
-                f"Exporting {destination.path.name}",
+                source_text("Exporting {name}", name=str(destination.path.name)),
             )
         )
 
@@ -622,7 +630,10 @@ def _create_available_directory(parent: HostPath, name: str) -> HostPath:
     parent_path = Path(os.fspath(parent))
     if not parent_path.is_dir():
         raise ValueError(
-            f"The Host destination directory does not exist: {parent_path}"
+            source_text(
+                "The Host destination directory does not exist: {parent_path}",
+                parent_path=str(parent_path),
+            )
         )
     number = 0
     while True:

@@ -45,6 +45,10 @@ def test_preview_explains_empty_values_filters_and_the_full_apply_scope() -> Non
         dialog.start(TagProfile())
         _wait(lambda: not controller.scanning)
         assert dialog.model.rowCount() == 3
+        assert any(
+            label.text() == "Tag changes: 3 · Tracks: 1"
+            for label in dialog.findChildren(QLabel)
+        )
         values = [dialog.model.index(i, 2).data() for i in range(3)]
         assert "Not set" in values and "“ Song ”" in values
         search = dialog.findChild(QLineEdit)

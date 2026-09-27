@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QAbstractItemView, QWidget
 
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.library_drag import TrackSelectionMimeData
+from iOpenPod.GUI.presentation.i18n.text import track_count_text
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.track_drag_preview import (
     drag_preview_hot_spot,
@@ -60,7 +61,7 @@ class LibraryDragGridView(SelectionGridView):
             return
 
         pixmap = render_count_drag_preview(
-            self.tr("%n Tracks", None, len(tracks)),
+            track_count_text(len(tracks)),
             base_font=self.font(),
             tokens=self._theme_manager.tokens,
             device_pixel_ratio=self.devicePixelRatioF(),

@@ -28,19 +28,19 @@ if TYPE_CHECKING:
 _ROOT_INDEX = QModelIndex()
 _UNKNOWN_ARTIST_SOURCE = cast(
     "str",
-    QT_TRANSLATE_NOOP("CollectionListModel", "Unknown Artist"),
+    QT_TRANSLATE_NOOP("LibraryLabels", "Unknown Artist"),
 )
 _UNKNOWN_GENRE_SOURCE = cast(
     "str",
-    QT_TRANSLATE_NOOP("CollectionListModel", "Unknown Genre"),
+    QT_TRANSLATE_NOOP("LibraryLabels", "Unknown Genre"),
 )
 _UNKNOWN_SHOW_SOURCE = cast(
     "str",
-    QT_TRANSLATE_NOOP("CollectionListModel", "Unknown Show"),
+    QT_TRANSLATE_NOOP("LibraryLabels", "Unknown Show"),
 )
 _UNKNOWN_ALBUM_SOURCE = cast(
     "str",
-    QT_TRANSLATE_NOOP("CollectionListModel", "Unknown Album"),
+    QT_TRANSLATE_NOOP("LibraryLabels", "Unknown Album"),
 )
 
 
@@ -320,7 +320,7 @@ def _unknown_title(kind: CollectionKind) -> str:
         CollectionKind.TV_SHOW: _UNKNOWN_SHOW_SOURCE,
         CollectionKind.MUSIC_VIDEO_ALBUM: _UNKNOWN_ALBUM_SOURCE,
     }[kind]
-    return QCoreApplication.translate("CollectionListModel", source)
+    return QCoreApplication.translate("LibraryLabels", source)
 
 
 __all__ = [

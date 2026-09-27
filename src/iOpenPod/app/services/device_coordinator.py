@@ -29,6 +29,7 @@ from device_registry import (
     parse_sysinfo_extended,
     reconcile_device_metadata,
 )
+from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.library_sync_helper import (
     IPodMediaLibrary,
     IPodMediaScanner,
@@ -179,8 +180,11 @@ class SyncRecoveryRequiredError(DeviceCoordinationError):
     def __init__(self, recovery_path: str) -> None:
         self.recovery_path = recovery_path
         super().__init__(
-            "An interrupted transaction is still present on this iPod. Restore it "
-            "or choose Keep Current Contents before another Sync: " + recovery_path
+            source_text(
+                "An interrupted transaction is still present on this iPod. Restore it "
+                "or choose Keep Current Contents before another Sync: {path}",
+                path=recovery_path,
+            )
         )
 
 
@@ -566,9 +570,11 @@ class DeviceCoordinator:
                 raise SyncRestoredCleanupPendingError(str(error)) from error
             if not flushed.complete:
                 raise SyncCleanupCompletedError(
-                    "The previous Library was restored and Sync recovery files were removed. "
-                    "Safely eject before unplugging; device flushing could not be confirmed. "
-                    + flushed.detail
+                    source_text(
+                        "The previous Library was restored and Sync recovery files were removed. "
+                        "Safely eject before unplugging; device flushing could not be confirmed. {detail}",
+                        detail=flushed.detail,
+                    )
                 )
 
     def recover_sync_journal(self, recovery_path: str) -> ActiveIPod:
@@ -616,7 +622,11 @@ class DeviceCoordinator:
                     except SyncCleanupCompletedError as completed:
                         self._deactivate_locked()
                         raise SyncRecoveryRestoredError(
-                            "The previous Library was restored. " + str(completed)
+                            source_text(
+                                "The previous Library was restored. Sync recovery files were removed, "
+                                "but device flushing could not be confirmed. Safely eject before unplugging. {detail}",
+                                detail=str(error),
+                            )
                         ) from completed
                     raise SyncRestoredCleanupPendingError(str(error)) from error
                 except StorageError as error:
@@ -632,9 +642,11 @@ class DeviceCoordinator:
                 if not flushed.complete:
                     self._deactivate_locked()
                     raise SyncRecoveryRestoredError(
-                        "The previous Library was restored and Sync recovery files were removed. "
-                        "Safely eject before unplugging; device flushing could not be confirmed. "
-                        + flushed.detail
+                        source_text(
+                            "The previous Library was restored and Sync recovery files were removed. "
+                            "Safely eject before unplugging; device flushing could not be confirmed. {detail}",
+                            detail=flushed.detail,
+                        )
                     )
             self._deactivate_locked()
             try:
@@ -648,9 +660,11 @@ class DeviceCoordinator:
                 raise
             except Exception as error:
                 raise SyncRecoveryRestoredError(
-                    "The previous Library was restored and temporary files were cleaned up. "
-                    "The iPod could not be reloaded. Refresh the Device Picker and select it again. "
-                    + str(error)
+                    source_text(
+                        "The previous Library was restored and temporary files were cleaned up. "
+                        "The iPod could not be reloaded. Refresh the Device Picker and select it again. {detail}",
+                        detail=str(error),
+                    )
                 ) from error
 
     def keep_sync_contents(self, recovery_path: str) -> ActiveIPod:
@@ -711,9 +725,11 @@ class DeviceCoordinator:
             self._deactivate_locked()
             if not flushed.complete:
                 raise SyncRecoveryDeclinedError(
-                    "Current contents were kept and recovery was declined. "
-                    "Safely eject before unplugging; device flushing could not be confirmed. "
-                    + flushed.detail
+                    source_text(
+                        "Current contents were kept and recovery was declined. "
+                        "Safely eject before unplugging; device flushing could not be confirmed. {detail}",
+                        detail=flushed.detail,
+                    )
                 )
             try:
                 self.discover_devices()
@@ -725,11 +741,13 @@ class DeviceCoordinator:
                 raise
             except Exception as error:
                 raise SyncRecoveryDeclinedError(
-                    "Current contents were kept and recovery was declined. "
-                    "The current Library could not be loaded; the interrupted Sync may "
-                    "be incomplete. Recovery copies remain beside declined-transaction.json. "
-                    "Refresh the Device Picker after repairing the Library. "
-                    + str(error)
+                    source_text(
+                        "Current contents were kept and recovery was declined. "
+                        "The current Library could not be loaded; the interrupted Sync may "
+                        "be incomplete. Recovery copies remain beside declined-transaction.json. "
+                        "Refresh the Device Picker after repairing the Library. {detail}",
+                        detail=str(error),
+                    )
                 ) from error
 
     def cleanup_sync_journal(self, recovery_path: str) -> None:
@@ -789,8 +807,11 @@ class DeviceCoordinator:
                     raise
                 if not flushed.complete:
                     raise SyncCleanupCompletedError(
-                        "Sync recovery files were removed, but device flushing could not be "
-                        "confirmed. Safely eject before unplugging. " + flushed.detail
+                        source_text(
+                            "Sync recovery files were removed, but device flushing could not be "
+                            "confirmed. Safely eject before unplugging. {detail}",
+                            detail=flushed.detail,
+                        )
                     )
 
     def backup_device_context(self) -> BackupDeviceContext | None:
@@ -818,8 +839,10 @@ class DeviceCoordinator:
                     )
                 except StorageError as error:
                     raise DeviceAccessError(
-                        "A selected backup path could not be proven to be on "
-                        f"another Physical Device: {error}"
+                        source_text(
+                            "A selected backup path could not be proven to be on another Physical Device: {detail}",
+                            detail=str(error),
+                        )
                     ) from error
 
     @contextlib.contextmanager
@@ -845,8 +868,10 @@ class DeviceCoordinator:
                 )
             except StorageError as error:
                 raise DeviceAccessError(
-                    "The backup location could not be proven to be on another "
-                    f"Physical Device: {error}"
+                    source_text(
+                        "The backup location could not be proven to be on another Physical Device: {detail}",
+                        detail=str(error),
+                    )
                 ) from error
             context = _backup_device_context(active)
 
@@ -1015,13 +1040,19 @@ class DeviceCoordinator:
 
         def database_progress(phase: WritePhase) -> None:
             labels = {
-                WritePhase.VALIDATION: "Validating Library changes",
-                WritePhase.RESOURCES: "Validating required resources",
-                WritePhase.RECONCILIATION: "Reconciling retained database records",
-                WritePhase.ARTWORK: "Preparing artwork relationships and assets",
-                WritePhase.SERIALIZATION: "Serializing database artifacts",
-                WritePhase.SIGNING: "Finalizing database signatures",
-                WritePhase.VERIFICATION: "Reparsing and verifying candidate output",
+                WritePhase.VALIDATION: source_text("Validating Library changes"),
+                WritePhase.RESOURCES: source_text("Validating required resources"),
+                WritePhase.RECONCILIATION: source_text(
+                    "Reconciling retained database records"
+                ),
+                WritePhase.ARTWORK: source_text(
+                    "Preparing artwork relationships and assets"
+                ),
+                WritePhase.SERIALIZATION: source_text("Serializing database artifacts"),
+                WritePhase.SIGNING: source_text("Finalizing database signatures"),
+                WritePhase.VERIFICATION: source_text(
+                    "Reparsing and verifying candidate output"
+                ),
             }
             checkpoint(
                 "database." + phase.value,
@@ -1442,8 +1473,7 @@ class DeviceCoordinator:
                         progress(
                             WriteProgress(
                                 "save.storage." + event.state.value,
-                                f"{event.state.value.title()} Library files: "
-                                f"{event.completed} of {event.total}",
+                                _transaction_progress_text(event),
                                 completed=event.completed,
                                 total=event.total,
                                 current_item=str(event.path or ""),
@@ -1728,8 +1758,11 @@ class DeviceCoordinator:
             )
             if not record.candidate.selectable:
                 raise DeviceNotSelectableError(
-                    f"{record.candidate.display_name} is not ready to load "
-                    f"({record.candidate.readiness.value})."
+                    source_text(
+                        "{name} is not ready to load ({readiness}).",
+                        name=record.candidate.display_name,
+                        readiness=record.candidate.readiness.value,
+                    )
                 )
 
             try:
@@ -1892,10 +1925,17 @@ class DeviceCoordinator:
                                 if remains
                                 else DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING,
                                 (
-                                    f"Recovery-file cleanup could not finish for {path}: {error}"
+                                    source_text(
+                                        "Recovery-file cleanup could not finish for {path}: {error}",
+                                        path=str(path),
+                                        error=str(error),
+                                    )
                                     if remains
-                                    else "Recovery files were removed, but device flushing could not be confirmed. "
-                                    f"Safely eject before unplugging. {error}"
+                                    else source_text(
+                                        "Recovery files were removed, but device flushing could not be confirmed. "
+                                        "Safely eject before unplugging. {error}",
+                                        error=str(error),
+                                    )
                                 ),
                             )
                         )
@@ -1904,8 +1944,11 @@ class DeviceCoordinator:
                             issues.append(
                                 DeviceCandidateIssue(
                                     DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING,
-                                    "Recovery files were removed, but device flushing could not be confirmed. "
-                                    "Safely eject before unplugging. " + flushed.detail,
+                                    source_text(
+                                        "Recovery files were removed, but device flushing could not be confirmed. "
+                                        "Safely eject before unplugging. {detail}",
+                                        detail=flushed.detail,
+                                    ),
                                 )
                             )
         except StorageError as error:
@@ -1913,7 +1956,10 @@ class DeviceCoordinator:
                 *issues,
                 DeviceCandidateIssue(
                     DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING,
-                    f"Recovery-file cleanup could not finish: {error}",
+                    source_text(
+                        "Recovery-file cleanup could not finish: {error}",
+                        error=str(error),
+                    ),
                 ),
             )
         self._sync_cleanup_path = pending
@@ -2204,7 +2250,10 @@ class DeviceCoordinator:
             raise
         except (StorageError, ValueError) as error:
             raise DevicePhotoExportError(
-                f"The selected Photo cannot be referenced on the iPod: {error}"
+                source_text(
+                    "The selected Photo cannot be referenced on the iPod: {error}",
+                    error=str(error),
+                )
             ) from error
 
     def require_photo_export_directory(self, directory: HostPath) -> None:
@@ -2215,7 +2264,7 @@ class DeviceCoordinator:
                 active = self._active
                 if active is None:
                     raise DevicePhotoExportError(
-                        "Select an Active iPod before exporting Photos."
+                        source_text("Select an Active iPod before exporting Photos.")
                     )
                 self._storage.require_host_path_off_physical_device(
                     directory,
@@ -2225,8 +2274,10 @@ class DeviceCoordinator:
             raise
         except StorageError as error:
             raise DevicePhotoExportError(
-                "The Photo export folder could not be proven to be on another "
-                f"Physical Device: {error}"
+                source_text(
+                    "The Photo export folder could not be proven to be on another Physical Device: {error}",
+                    error=str(error),
+                )
             ) from error
 
     def copy_photo_to_host(
@@ -2243,25 +2294,34 @@ class DeviceCoordinator:
                 active, _current, path = self._photo_export_source(photo)
                 if path is None:
                     raise DevicePhotoExportError(
-                        "The Photo's full-resolution file is no longer readable."
+                        source_text(
+                            "The Photo's full-resolution file is no longer readable."
+                        )
                     )
                 root = active.session.mounted_volume.mount_point.path
                 if HostPath(root.joinpath(*path.parts)) != source:
                     raise DevicePhotoExportError(
-                        "The Photo's full-resolution file changed before export."
+                        source_text(
+                            "The Photo's full-resolution file changed before export."
+                        )
                     )
             result = active.session.copy_to_host(path, destination)
             with self._lock:
                 if self._active is not active or not active.session.is_active:
                     raise DevicePhotoExportError(
-                        "The Active iPod changed while the Photo was exported."
+                        source_text(
+                            "The Active iPod changed while the Photo was exported."
+                        )
                     )
             return result
         except DevicePhotoExportError:
             raise
         except (StorageError, ValueError) as error:
             raise DevicePhotoExportError(
-                f"The selected Photo could not be exported: {error}"
+                source_text(
+                    "The selected Photo could not be exported: {error}",
+                    error=str(error),
+                )
             ) from error
 
     def image_for_photo_export(
@@ -2281,14 +2341,19 @@ class DeviceCoordinator:
             with self._lock:
                 if self._active is not active or not active.session.is_active:
                     raise DevicePhotoExportError(
-                        "The Active iPod changed while the Photo was exported."
+                        source_text(
+                            "The Active iPod changed while the Photo was exported."
+                        )
                     )
             return image
         except DevicePhotoExportError:
             raise
         except (DevicePhotoLoadError, StorageError, ValueError) as error:
             raise DevicePhotoExportError(
-                f"The selected Photo could not be decoded for export: {error}"
+                source_text(
+                    "The selected Photo could not be decoded for export: {error}",
+                    error=str(error),
+                )
             ) from error
 
     def _photo_export_source(
@@ -2298,7 +2363,7 @@ class DeviceCoordinator:
         active = self._active
         if active is None:
             raise DevicePhotoExportError(
-                "Select an Active iPod before exporting Photos."
+                source_text("Select an Active iPod before exporting Photos.")
             )
         photos = active.active_ipod.library.photos
         current = (
@@ -2315,7 +2380,9 @@ class DeviceCoordinator:
         )
         if current is None:
             raise DevicePhotoExportError(
-                "This Photo is not stored in the Active iPod Photo Library."
+                source_text(
+                    "This Photo is not stored in the Active iPod Photo Library."
+                )
             )
         return active, current, self._full_resolution_path(active, current)
 
@@ -2327,7 +2394,7 @@ class DeviceCoordinator:
                 active = self._active
                 if active is None:
                     raise PlaybackSourceError(
-                        "Select an Active iPod before starting playback."
+                        source_text("Select an Active iPod before starting playback.")
                     )
                 current_track = next(
                     (
@@ -2339,18 +2406,24 @@ class DeviceCoordinator:
                 )
                 if current_track is None:
                     raise PlaybackSourceError(
-                        "This Track is no longer part of the Active iPod Library."
+                        source_text(
+                            "This Track is no longer part of the Active iPod Library."
+                        )
                     )
                 path = _track_device_path(current_track)
                 entry = active.session.stat(path)
                 if entry.kind is not DeviceEntryKind.FILE:
                     raise PlaybackSourceError(
-                        "The selected Track does not reference a readable media file."
+                        source_text(
+                            "The selected Track does not reference a readable media file."
+                        )
                     )
                 identity = active.session.file_identity(path)
                 if identity.size <= 0:
                     raise PlaybackSourceError(
-                        "The selected Track does not reference a readable media file."
+                        source_text(
+                            "The selected Track does not reference a readable media file."
+                        )
                     )
 
                 def read_payload(offset: int, length: int) -> bytes:
@@ -2371,7 +2444,10 @@ class DeviceCoordinator:
             raise
         except (StorageError, ValueError) as error:
             raise PlaybackSourceError(
-                f"The selected Track's media could not be opened: {error}"
+                source_text(
+                    "The selected Track's media could not be opened: {error}",
+                    error=str(error),
+                )
             ) from error
 
     def reference_for_track(self, track: Track) -> HostPath:
@@ -2386,7 +2462,10 @@ class DeviceCoordinator:
             raise
         except (StorageError, ValueError) as error:
             raise DeviceTrackExportError(
-                f"The selected Track cannot be referenced on the iPod: {error}"
+                source_text(
+                    "The selected Track cannot be referenced on the iPod: {error}",
+                    error=str(error),
+                )
             ) from error
 
     def copy_track_to_host(
@@ -2409,14 +2488,19 @@ class DeviceCoordinator:
             with self._lock:
                 if self._active is not active or not active.session.is_active:
                     raise DeviceTrackExportError(
-                        "The Active iPod changed while the Track was exported."
+                        source_text(
+                            "The Active iPod changed while the Track was exported."
+                        )
                     )
             return result
         except DeviceTrackExportError:
             raise
         except (StorageError, ValueError) as error:
             raise DeviceTrackExportError(
-                f"The selected Track could not be exported: {error}"
+                source_text(
+                    "The selected Track could not be exported: {error}",
+                    error=str(error),
+                )
             ) from error
 
     def artwork_for_track(self, track: Track) -> ArtworkImage | None:
@@ -2440,7 +2524,7 @@ class DeviceCoordinator:
         active = self._active
         if active is None:
             raise DeviceTrackExportError(
-                "Select an Active iPod before exporting Tracks."
+                source_text("Select an Active iPod before exporting Tracks.")
             )
         current_track = next(
             (
@@ -2452,16 +2536,18 @@ class DeviceCoordinator:
         )
         if current_track is None:
             raise DeviceTrackExportError(
-                "This Track is not stored in the Active iPod Library."
+                source_text("This Track is not stored in the Active iPod Library.")
             )
         try:
             path = _track_device_path(current_track)
         except PlaybackSourceError as error:
-            raise DeviceTrackExportError(str(error)) from error
+            raise DeviceTrackExportError(exception_text(error)) from error
         entry = active.session.stat(path)
         if entry.kind is not DeviceEntryKind.FILE or entry.size <= 0:
             raise DeviceTrackExportError(
-                "The selected Track does not reference a readable media file."
+                source_text(
+                    "The selected Track does not reference a readable media file."
+                )
             )
         return active, path
 
@@ -2493,9 +2579,11 @@ class DeviceCoordinator:
                 except StorageError:
                     self._forget_ejected_physical_device_locked(active)
                     raise DeviceEjectError(
-                        f"{error} iOpenPod can no longer verify this connection; "
-                        "refresh after completing safe removal in the operating "
-                        "system."
+                        source_text(
+                            "{detail} iOpenPod can no longer verify this connection; "
+                            "refresh after completing safe removal in the operating system.",
+                            detail=str(error),
+                        )
                     ) from error
                 active.session = restored_session
                 raise DeviceEjectError(str(error)) from error
@@ -2836,8 +2924,11 @@ class DeviceCoordinator:
                     else (
                         DeviceCandidateIssue(
                             DeviceCandidateIssueCode.METADATA_RECONCILIATION_FAILED,
-                            f"Metadata was verified but the Host could not confirm "
-                            f"its flush: {flush.detail}",
+                            source_text(
+                                "Metadata was verified but the Host could not confirm "
+                                "its flush: {detail}",
+                                detail=flush.detail,
+                            ),
                         ),
                     )
                 )
@@ -2993,7 +3084,7 @@ class DeviceCoordinator:
         with self._lock:
             if self._active is not active:
                 raise PlaybackSourceError(
-                    "Playback stopped because the Active iPod changed."
+                    source_text("Playback stopped because the Active iPod changed.")
                 )
         try:
             snapshot = active.session.read_range_snapshot(
@@ -3003,16 +3094,21 @@ class DeviceCoordinator:
             )
         except StorageError as error:
             raise PlaybackSourceError(
-                f"Playback could not read the selected Track: {error}"
+                source_text(
+                    "Playback could not read the selected Track: {error}",
+                    error=str(error),
+                )
             ) from error
         with self._lock:
             if self._active is not active:
                 raise PlaybackSourceError(
-                    "Playback stopped because the Active iPod changed."
+                    source_text("Playback stopped because the Active iPod changed.")
                 )
         if snapshot.identity != identity:
             raise PlaybackSourceError(
-                "Playback stopped because the selected Track changed on the iPod."
+                source_text(
+                    "Playback stopped because the selected Track changed on the iPod."
+                )
             )
         return snapshot.data
 
@@ -3591,7 +3687,9 @@ def _locate_database(
         issues.append(
             DeviceCandidateIssue(
                 DeviceCandidateIssueCode.DATABASE_EMPTY,
-                f"{primary.name} is empty or is not a regular file.",
+                source_text(
+                    "{name} is empty or is not a regular file.", name=primary.name
+                ),
             )
         )
     if not compressed and session.exists(_ITUNESCDB_PATH):
@@ -3726,8 +3824,11 @@ def _finalize_committed_transaction(
         raise
     if not flushed.complete:
         raise SyncCleanupCompletedError(
-            "Recovery files were removed, but device flushing could not be confirmed. "
-            "Safely eject before unplugging. " + flushed.detail
+            source_text(
+                "Recovery files were removed, but device flushing could not be confirmed. "
+                "Safely eject before unplugging. {detail}",
+                detail=flushed.detail,
+            )
         )
 
 
@@ -3742,8 +3843,11 @@ def _raise_if_cleanup_completed(
         return
     if removed:
         raise SyncCleanupCompletedError(
-            "Sync recovery files were removed, but device flushing could not be confirmed. "
-            "Safely eject before unplugging. " + str(error)
+            source_text(
+                "Sync recovery files were removed, but device flushing could not be confirmed. "
+                "Safely eject before unplugging. {detail}",
+                detail=str(error),
+            )
         ) from error
 
 
@@ -3780,13 +3884,40 @@ def _terminal_transaction_journals(
 def _track_device_path(track: Track) -> DevicePath:
     location = track.metadata.location.strip()
     if not location:
-        raise PlaybackSourceError("The selected Track has no media location.")
+        raise PlaybackSourceError(
+            source_text("The selected Track has no media location.")
+        )
     path = DevicePath(location)
     if not path.is_relative_to(_IPOD_CONTROL_PATH):
         raise PlaybackSourceError(
-            "The selected Track's media location is outside iPod_Control."
+            source_text("The selected Track's media location is outside iPod_Control.")
         )
     return path
+
+
+def _transaction_progress_text(event: TransactionProgress) -> str:
+    parameters = {"completed": str(event.completed), "total": str(event.total)}
+    labels = {
+        TransactionState.STAGING: source_text(
+            "Staging Library files: {completed} of {total}", **parameters
+        ),
+        TransactionState.PREPARED: source_text(
+            "Prepared Library files: {completed} of {total}", **parameters
+        ),
+        TransactionState.PUBLISHING: source_text(
+            "Publishing Library files: {completed} of {total}", **parameters
+        ),
+        TransactionState.COMMITTED: source_text(
+            "Committed Library files: {completed} of {total}", **parameters
+        ),
+        TransactionState.RESTORING: source_text(
+            "Restoring Library files: {completed} of {total}", **parameters
+        ),
+        TransactionState.RESTORED: source_text(
+            "Restored Library files: {completed} of {total}", **parameters
+        ),
+    }
+    return labels[event.state]
 
 
 def _transaction_activity_progress(
@@ -3794,18 +3925,58 @@ def _transaction_activity_progress(
     *,
     recovery: bool = False,
 ) -> WriteProgress:
-    labels = {
-        TransactionActivityPhase.VERIFYING_STAGED: "Verifying staged files before publication",
-        TransactionActivityPhase.VERIFYING_WRITES: "Verifying files on the iPod",
-        TransactionActivityPhase.VERIFYING_RECOVERY: "Verifying Library files and recovery copies",
-        TransactionActivityPhase.CHECKING_DEPENDENCIES: "Checking retained Library files",
-        TransactionActivityPhase.INSPECTING: "Reading transaction files for verification",
-        TransactionActivityPhase.RECHECKING: "Rechecking captured file contents",
-        TransactionActivityPhase.FLUSHING: "Waiting for the iPod to finish writing data",
-    }
+    labels = (
+        {
+            TransactionActivityPhase.VERIFYING_STAGED: source_text(
+                "Verifying staged files before publication before completing recovery…"
+            ),
+            TransactionActivityPhase.VERIFYING_WRITES: source_text(
+                "Verifying files on the iPod before completing recovery…"
+            ),
+            TransactionActivityPhase.VERIFYING_RECOVERY: source_text(
+                "Verifying Library files and recovery copies before completing recovery…"
+            ),
+            TransactionActivityPhase.CHECKING_DEPENDENCIES: source_text(
+                "Checking retained Library files before completing recovery…"
+            ),
+            TransactionActivityPhase.INSPECTING: source_text(
+                "Reading transaction files for verification before completing recovery…"
+            ),
+            TransactionActivityPhase.RECHECKING: source_text(
+                "Rechecking captured file contents before completing recovery…"
+            ),
+            TransactionActivityPhase.FLUSHING: source_text(
+                "Waiting for the iPod to finish writing data before completing recovery…"
+            ),
+        }
+        if recovery
+        else {
+            TransactionActivityPhase.VERIFYING_STAGED: source_text(
+                "Verifying staged files before publication…"
+            ),
+            TransactionActivityPhase.VERIFYING_WRITES: source_text(
+                "Verifying files on the iPod…"
+            ),
+            TransactionActivityPhase.VERIFYING_RECOVERY: source_text(
+                "Verifying Library files and recovery copies…"
+            ),
+            TransactionActivityPhase.CHECKING_DEPENDENCIES: source_text(
+                "Checking retained Library files…"
+            ),
+            TransactionActivityPhase.INSPECTING: source_text(
+                "Reading transaction files for verification…"
+            ),
+            TransactionActivityPhase.RECHECKING: source_text(
+                "Rechecking captured file contents…"
+            ),
+            TransactionActivityPhase.FLUSHING: source_text(
+                "Waiting for the iPod to finish writing data…"
+            ),
+        }
+    )
     return WriteProgress(
         ("save.recovery." if recovery else "save.storage.") + event.phase.value,
-        labels[event.phase] + (" before completing recovery…" if recovery else "…"),
+        labels[event.phase],
         completed=event.completed,
         total=event.total,
         current_item=str(event.path or ""),

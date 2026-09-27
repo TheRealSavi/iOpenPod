@@ -72,15 +72,20 @@ def test_playlist_only_changes_require_checked_option_and_executable_review(
     assert not execute.isEnabled()
 
 
+@pytest.mark.parametrize(
+    ("count", "label"), [(1, "1 Podcast will"), (2, "2 Podcasts will")]
+)
 def test_podcast_settings_are_disclosed_and_allow_sync_without_host_changes(
     workspace: SyncWorkspace,
+    count: int,
+    label: str,
 ) -> None:
     execute = workspace.findChild(QPushButton, "executeSync")
     detail = workspace.findChild(QLabel, "syncPodcastReviewDetail")
     assert execute is not None and detail is not None
-    workspace.set_podcast_count(2)
+    workspace.set_podcast_count(count)
     assert execute.isEnabled()
-    assert "2 Podcasts" in detail.text() and "removed" in detail.text()
+    assert label in detail.text() and "removed" in detail.text()
     assert not detail.isHidden()
     workspace.set_execution_available(False)
     assert not execute.isEnabled()

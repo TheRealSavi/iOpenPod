@@ -2,6 +2,7 @@
 
 from PySide6.QtCore import (
     QAbstractItemModel,
+    QCoreApplication,
     QEvent,
     QModelIndex,
     QPersistentModelIndex,
@@ -58,7 +59,9 @@ class PhotoCardDelegate(QStyledItemDelegate):
         photo = index.data(PhotoRole.PHOTO)
         if not isinstance(photo, Photo):
             return
-        title = self.tr("Photo %1").replace("%1", str(photo.photo_id))
+        title = QCoreApplication.translate("LibraryLabels", "Photo %1").replace(
+            "%1", str(photo.photo_id)
+        )
         count = len(photo.representations)
         detail = (
             self.tr("%n format", None, count)

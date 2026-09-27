@@ -395,7 +395,7 @@ def test_multi_track_drag_preview_shows_only_the_selection_count(
         table.startDrag(Qt.DropAction.CopyAction)
 
         drag = _RecordingDrag.instances[-1]
-        assert labels == ["2 Tracks"]
+        assert labels == ["2 tracks"]
         assert isinstance(drag.mime_data, TrackSelectionMimeData)
         assert drag.mime_data.track_ids == (1, 2)
         assert not drag.pixmap.isNull()

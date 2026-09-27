@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import (
     QAbstractTableModel,
+    QEvent,
     QModelIndex,
     QPersistentModelIndex,
     Qt,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
@@ -79,11 +81,11 @@ class _ExternalPlaylistFilesModel(QAbstractTableModel):
                 return (
                     self.tr("Available")
                     if reference.available
-                    else reference.detail or self.tr("Unavailable")
+                    else workflow_text(reference.detail) or self.tr("Unavailable")
                 )
         if role == Qt.ItemDataRole.ToolTipRole:
             if not reference.available:
-                return reference.detail or self.tr(
+                return workflow_text(reference.detail) or self.tr(
                     "This file is currently unavailable and cannot be scanned."
                 )
             playlists = "\n".join(os.fspath(path) for path in reference.playlists)
@@ -267,6 +269,18 @@ class ExternalPlaylistFilesDialog(QDialog):
         self._deny_all.setText(self.tr("Deny All"))
         self._cancel.setText(self.tr("Cancel Scan"))
         self._continue.setText(self.tr("Finish Scan"))
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.Type.LanguageChange:
+            self.retranslate_ui()
+            self._model.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, 3)
+            if self._model.rowCount():
+                self._model.dataChanged.emit(
+                    self._model.index(0, 0),
+                    self._model.index(self._model.rowCount() - 1, 3),
+                    [],
+                )
+        super().changeEvent(event)
 
 
 __all__ = ["ExternalPlaylistFilesDialog"]

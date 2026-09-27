@@ -1,6 +1,6 @@
 """Playlist browsing and session editing without database details or device I/O."""
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -20,6 +20,8 @@ from iOpenPod.GUI.dialogs.playlist_editor import (
     kind_label,
 )
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.i18n.text import track_count_text
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
@@ -350,14 +352,7 @@ class PlaylistPage(QWidget):
             self._summary.setText(
                 self.tr("%1 · %2 · %3 min")
                 .replace("%1", kind_label(playlist.kind))
-                .replace(
-                    "%2",
-                    self.tr(
-                        "%n track" if len(tracks) == 1 else "%n tracks",
-                        None,
-                        len(tracks),
-                    ),
-                )
+                .replace("%2", track_count_text(len(tracks)))
                 .replace("%3", f"{minutes:,.0f}")
             )
         else:
@@ -462,20 +457,24 @@ class PlaylistPage(QWidget):
         )
 
     def _show_error(self, error: ValueError) -> None:
-        QMessageBox.information(self, self.tr("Could Not Update Playlist"), str(error))
+        QMessageBox.information(
+            self, self.tr("Could Not Update Playlist"), workflow_text(str(error))
+        )
 
     def retranslate_ui(self) -> None:
         self._toolbar.retranslate_ui()
         self._toolbar.configure(
             grid_title=self.tr("Playlists"),
-            grid_search_label=self.tr("Search tracks"),
+            grid_search_label=QCoreApplication.translate(
+                "LibraryLabels", "Search Tracks"
+            ),
             supports_list=False,
         )
         self._edit.setText(self.tr("Edit…"))
         self._evaluate.setText(self.tr("Evaluate now"))
         self._remove.setText(self.tr("Remove Playlist…"))
         self._export.setText(self.tr("Export…"))
-        self._queue.setText(self.tr("Add to Queue"))
+        self._queue.setText(QCoreApplication.translate("CommonActions", "Add to Queue"))
         self._queue.setToolTip(self.tr("Add tracks to the end of the Queue"))
         self._play_next.setText(self.tr("Play Next"))
         self._play_next.setToolTip(self.tr("Add tracks to the top of the Queue"))

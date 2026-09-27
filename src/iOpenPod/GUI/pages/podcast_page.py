@@ -49,6 +49,12 @@ from iOpenPod.GUI.delegates.podcast_delegates import (
 )
 from iOpenPod.GUI.dialogs.podcast_search import PodcastSearchDialog
 from iOpenPod.GUI.dialogs.podcast_sync_settings import PodcastSyncSettingsDialog
+from iOpenPod.GUI.presentation.i18n.text import (
+    episode_count_text,
+    result_count_text,
+    show_count_text,
+)
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.podcast_styles import render_podcast_page_style
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.artwork_view import ArtworkView
@@ -469,6 +475,7 @@ class PodcastPage(QWidget):
         return page
 
     def retranslate_ui(self) -> None:
+        self._subscription_model.retranslate()
         self._page_header.set_title(self.tr("Podcasts"))
         self._search.setPlaceholderText(self.tr("Search episodes"))
         self._search.setAccessibleName(self.tr("Search Podcast episodes"))
@@ -758,7 +765,7 @@ class PodcastPage(QWidget):
     @Slot(object)
     def _operation_failed(self, value: object) -> None:
         if isinstance(value, PodcastOperationFailure):
-            self._set_status_message(value.message)
+            self._set_status_message(workflow_text(value.message))
 
     @Slot(QModelIndex)
     def _episode_activated(self, index: QModelIndex) -> None:
@@ -820,7 +827,9 @@ class PodcastPage(QWidget):
         if self._controller.busy:
             message = self.tr("Updating Podcasts…")
         elif self._snapshot.issues:
-            message = "  ".join(issue.message for issue in self._snapshot.issues)
+            message = "  ".join(
+                workflow_text(issue.message) for issue in self._snapshot.issues
+            )
         elif self._snapshot.subscriptions and not self._snapshot.writable:
             message = self.tr("Podcast state is read-only for this Active iPod.")
         else:
@@ -873,7 +882,7 @@ class PodcastPage(QWidget):
             for part in (
                 subscription.author,
                 subscription.category,
-                self.tr("%n episode(s)", None, len(subscription.episodes)),
+                episode_count_text(len(subscription.episodes)),
                 self.tr("%n on iPod", None, subscription.on_device_count)
                 if subscription.on_device_count
                 else "",
@@ -894,7 +903,7 @@ class PodcastPage(QWidget):
         visible = self._episode_model.rowCount()
         filters_active = self._episode_filter().active
         self._episode_count.setText(
-            self.tr("%n result(s)", None, visible)
+            result_count_text(visible)
             if self._query or filters_active
             else str(visible)
         )
@@ -911,8 +920,8 @@ class PodcastPage(QWidget):
             " · ".join(
                 part
                 for part in (
-                    self.tr("%n show(s)", None, len(subscriptions)),
-                    self.tr("%n episode(s)", None, episode_count),
+                    show_count_text(len(subscriptions)),
+                    episode_count_text(episode_count),
                     self.tr("%n on iPod", None, on_device_count)
                     if on_device_count
                     else "",
@@ -932,7 +941,7 @@ class PodcastPage(QWidget):
         visible = self._episode_model.rowCount()
         filters_active = self._episode_filter().active
         self._episode_count.setText(
-            self.tr("%n result(s)", None, visible)
+            result_count_text(visible)
             if self._query or filters_active
             else str(visible)
         )

@@ -608,6 +608,7 @@ class PlaylistTree(QWidget):
         self._selected_id = None
 
     def retranslate_ui(self) -> None:
+        self._model.retranslate()
         self._heading.setText(self.tr("Playlists"))
         self._add.setAccessibleName(self.tr("New Playlist"))
         self._add.setToolTip(self.tr("New Playlist"))

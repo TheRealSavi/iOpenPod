@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -30,6 +30,8 @@ from iOpenPod.GUI.host_library_browser import HostLibraryBrowser
 from iOpenPod.GUI.navigation import PageId, page_label
 from iOpenPod.GUI.pages.sync_execution_page import SyncExecutionPage
 from iOpenPod.GUI.pages.sync_plan_page import SyncPlanPage
+from iOpenPod.GUI.presentation.i18n.text import english_count_fallback
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.eta_label import EtaLabel
 from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
@@ -60,10 +62,10 @@ class SyncStage(StrEnum):
 
 
 _STAGES = (
-    (SyncStage.SOURCES, "1", "Sources"),
-    (SyncStage.SELECT, "2", "Select Media"),
-    (SyncStage.REVIEW, "3", "Review"),
-    (SyncStage.SYNC, "4", "Sync"),
+    (SyncStage.SOURCES, "1"),
+    (SyncStage.SELECT, "2"),
+    (SyncStage.REVIEW, "3"),
+    (SyncStage.SYNC, "4"),
 )
 
 _LIBRARY_NAVIGATION = (
@@ -90,6 +92,8 @@ class _ScanPage(QWidget):
         self._title = QLabel(self)
         self._title.setObjectName("syncScanTitle")
         self._detail = QLabel(self)
+        self._progress_detail = ""
+        self._progress_path = ""
         self._detail.setObjectName("syncScanDetail")
         self._detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._detail.setWordWrap(True)
@@ -137,11 +141,14 @@ class _ScanPage(QWidget):
         self,
         detail: str,
         *,
+        path: str = "",
         completed: int = 0,
         total: int = 0,
         phase: str = "scan",
     ) -> None:
-        self._detail.setText(detail)
+        self._progress_detail = detail
+        self._progress_path = path
+        self._render_detail()
         self.eta.set_progress(phase, completed, total if total > 0 else None)
         if total > 0:
             self._progress.setRange(0, total)
@@ -152,6 +159,13 @@ class _ScanPage(QWidget):
     def retranslate_ui(self) -> None:
         self._title.setText(self.tr("Scanning the Host Media Library"))
         self._cancel.setText(self.tr("Cancel Scan"))
+        self._render_detail()
+
+    def _render_detail(self) -> None:
+        detail = workflow_text(self._progress_detail)
+        if self._progress_path:
+            detail += "\n" + self._progress_path
+        self._detail.setText(detail)
 
 
 class _SyncLibraryNavigation(QFrame):
@@ -269,7 +283,7 @@ class SyncWorkspace(QWidget):
         stage_row.setSpacing(LAYOUT.space_xs)
         stage_row.addWidget(self._title)
         stage_row.addStretch(1)
-        for stage, number, _label in _STAGES:
+        for stage, number in _STAGES:
             indicator = QLabel(self)
             indicator.setObjectName("syncStageIndicator")
             indicator.setProperty("stage", stage.value)
@@ -457,11 +471,14 @@ class SyncWorkspace(QWidget):
         self,
         detail: str,
         *,
+        path: str = "",
         completed: int = 0,
         total: int = 0,
         phase: str = "scan",
     ) -> None:
-        self._scan.set_progress(detail, completed=completed, total=total, phase=phase)
+        self._scan.set_progress(
+            detail, path=path, completed=completed, total=total, phase=phase
+        )
 
     def stop_scan(self) -> None:
         """Discard scan timing on exit, cancellation, failure or user review."""
@@ -540,10 +557,18 @@ class SyncWorkspace(QWidget):
             if self._podcast_execution
             else self.tr("Sync with Host")
         )
-        for stage, number, label in _STAGES:
+        stage_labels = {
+            SyncStage.SOURCES: self.tr("Sources"),
+            SyncStage.SELECT: self.tr("Select Media"),
+            SyncStage.REVIEW: self.tr("Review"),
+            SyncStage.SYNC: self.tr("Sync"),
+        }
+        for stage, number in _STAGES:
             self._stage_labels[stage].setVisible(not self._podcast_execution)
             self._stage_labels[stage].setText(
-                self.tr("%1  %2").replace("%1", number).replace("%2", self.tr(label))
+                self.tr("%1  %2")
+                .replace("%1", number)
+                .replace("%2", stage_labels[stage])
             )
         self._library_navigation.retranslate_ui()
         self._scan.retranslate_ui()
@@ -555,7 +580,9 @@ class SyncWorkspace(QWidget):
         self._review_button.setText(self.tr("Review Sync"))
         self._selection_exit.setText(self.tr("Exit Sync"))
         self._back.setText(self.tr("Edit Selection"))
-        self._review_cancel.setText(self.tr("Cancel"))
+        self._review_cancel.setText(
+            QCoreApplication.translate("CommonActions", "Cancel")
+        )
         self._execute.setText(self.tr("Sync Selected"))
         self._reconcile_playlists.setText(self.tr("Reconcile Playlists"))
         self._reconcile_playlists.setToolTip(
@@ -678,18 +705,25 @@ class SyncWorkspace(QWidget):
             .replace("%2", f"{self.selection.review_plan.change_count:,}")
         )
         if self._playlist_preview:
-            summary += (
-                self.tr(" · %1 Playlist change")
-                if playlist_count == 1
-                else self.tr(" · %1 Playlist changes")
-            ).replace("%1", f"{playlist_count:,}")
+            summary += english_count_fallback(
+                " · %Ln Playlist change(s)",
+                self.tr(" · %Ln Playlist change(s)", "", playlist_count),
+                playlist_count,
+            )
         self._review_summary.setText(summary)
         self._podcast_detail.setVisible(self._podcast_count > 0)
         self._podcast_detail.setText(
-            self.tr(
-                "%1 Podcasts will sync using their saved settings. "
-                "Episodes may be added or removed."
-            ).replace("%1", str(self._podcast_count))
+            english_count_fallback(
+                "%n Podcast(s) will sync using their saved settings. "
+                "Episodes may be added or removed.",
+                self.tr(
+                    "%n Podcast(s) will sync using their saved settings. "
+                    "Episodes may be added or removed.",
+                    "",
+                    self._podcast_count,
+                ),
+                self._podcast_count,
+            )
         )
         self._review_summary.setToolTip(
             self.tr(

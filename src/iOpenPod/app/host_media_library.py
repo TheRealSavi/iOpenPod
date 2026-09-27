@@ -22,6 +22,7 @@ import mutagen
 from mutagen.flac import Picture
 from PIL import Image, ImageOps
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.host_media_fingerprint import (
     FpcalcError,
     FpcalcFingerprinter,
@@ -806,18 +807,18 @@ class HostMediaScanner:
             issues.append(
                 _scan_issue(
                     folders,
-                    "The Host Media Library changed while it was scanned; "
-                    "the available files were kept for review. Sync will recheck "
-                    "source files before writing to the iPod.",
+                    source_text(
+                        "The Host Media Library changed while it was scanned; the available files were kept for review. Sync will recheck source files before writing to the iPod."
+                    ),
                 )
             )
         if enumeration_issues != final_issues:
             issues.append(
                 _scan_issue(
                     folders,
-                    "The availability of one or more selected folders changed "
-                    "while they were scanned; unavailable files were omitted. "
-                    "Sync will recheck source files before writing to the iPod.",
+                    source_text(
+                        "The availability of one or more selected folders changed while they were scanned; unavailable files were omitted. Sync will recheck source files before writing to the iPod."
+                    ),
                 )
             )
 
@@ -907,7 +908,10 @@ class HostMediaScanner:
                 issues.append(
                     HostMediaScanIssue(
                         path,
-                        f"The accepted playlist file could not be read: {error}",
+                        source_text(
+                            "The accepted playlist file could not be read: {error}",
+                            error=str(error),
+                        ),
                     )
                 )
                 continue
@@ -923,7 +927,11 @@ class HostMediaScanner:
             if previous is not None and previous.matches(observation, None):
                 record = previous
                 reused += 1
-                label = f"Reusing external file {index:,} of {total:,}…"
+                label = source_text(
+                    "Reusing external file {index} of {total}…",
+                    index=f"{index:,}",
+                    total=f"{total:,}",
+                )
             else:
                 try:
                     # Decoders receive a private Storage capture, never an untrusted
@@ -951,20 +959,29 @@ class HostMediaScanner:
                     issues.append(
                         HostMediaScanIssue(
                             path,
-                            f"The accepted Playlist file could not be safely read: {error}",
+                            source_text(
+                                "The accepted Playlist file could not be safely read: {error}",
+                                error=str(error),
+                            ),
                         )
                     )
                     continue
                 inspected += 1
-                label = f"Reading external file {index:,} of {total:,}…"
+                label = source_text(
+                    "Reading external file {index} of {total}…",
+                    index=f"{index:,}",
+                    total=f"{total:,}",
+                )
             try:
                 reviewed.validate()
             except (OSError, StorageError) as error:
                 issues.append(
                     HostMediaScanIssue(
                         path,
-                        "The accepted Playlist file changed while it was scanned "
-                        f"and was omitted: {error}",
+                        source_text(
+                            "The accepted Playlist file changed while it was scanned and was omitted: {error}",
+                            error=str(error),
+                        ),
                     )
                 )
                 continue
@@ -992,17 +1009,18 @@ class HostMediaScanner:
                 issues.append(
                     _scan_issue(
                         pending.folders,
-                        "The selected media changed during Playlist review; "
-                        "the original scan remains available. Sync will recheck "
-                        "source files before writing to the iPod.",
+                        source_text(
+                            "The selected media changed during Playlist review; the original scan remains available. Sync will recheck source files before writing to the iPod."
+                        ),
                     )
                 )
             if final_issues != pending.enumeration_issues:
                 issues.append(
                     _scan_issue(
                         pending.folders,
-                        "The availability of one or more selected folders changed "
-                        "during Playlist review; unavailable files were omitted.",
+                        source_text(
+                            "The availability of one or more selected folders changed during Playlist review; unavailable files were omitted."
+                        ),
                     )
                 )
         _emit(
@@ -1120,7 +1138,10 @@ def _enumerate(
             issues.append(
                 HostMediaScanIssue(
                     folder.path,
-                    f"The selected folder could not be fully scanned: {error}",
+                    source_text(
+                        "The selected folder could not be fully scanned: {error}",
+                        error=str(error),
+                    ),
                 )
             )
     return (
@@ -1143,7 +1164,10 @@ def _walk_folder(
         issues.append(
             HostMediaScanIssue(
                 path,
-                f"Some folder contents were unavailable; scanning continued: {error}",
+                source_text(
+                    "Some folder contents were unavailable; scanning continued: {error}",
+                    error=str(error),
+                ),
             )
         )
 
@@ -1212,7 +1236,10 @@ def _review_reference(
         observation = LocalHostFile.observe(path)
     except (OSError, StorageError) as error:
         return PlaylistExternalReference(
-            path, playlists, False, f"Unavailable or unsafe file: {error}"
+            path,
+            playlists,
+            False,
+            source_text("Unavailable or unsafe file: {error}", error=str(error)),
         )
     return PlaylistExternalReference(path, playlists, True, observation=observation)
 
@@ -1399,11 +1426,19 @@ def _inspect_selected_files(
                 if future is None:
                     record = ready[index]
                     reused += 1
-                    label = f"Reusing unchanged file {len(records) + 1:,} of {total:,}…"
+                    label = source_text(
+                        "Reusing unchanged file {index} of {total}…",
+                        index=f"{len(records) + 1:,}",
+                        total=f"{total:,}",
+                    )
                 else:
                     record = future.result()
                     inspected += 1
-                    label = f"Read file {len(records) + 1:,} of {total:,}…"
+                    label = source_text(
+                        "Read file {index} of {total}…",
+                        index=f"{len(records) + 1:,}",
+                        total=f"{total:,}",
+                    )
                 records.append(record)
                 if record.warning:
                     issues.append(HostMediaScanIssue(record.path, record.warning))

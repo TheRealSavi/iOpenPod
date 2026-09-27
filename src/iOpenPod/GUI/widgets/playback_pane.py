@@ -1,6 +1,7 @@
 """Runtime Playback Queue, Playback History, and current Track lyrics."""
 
 from PySide6.QtCore import (
+    QCoreApplication,
     QEasingCurve,
     QEvent,
     QModelIndex,
@@ -432,9 +433,12 @@ class _HistoryListView(_PlaybackListView):
             return
         pixmap = render_single_track_drag_preview(
             track,
-            title=track.title or self.tr("Untitled Track"),
-            artist=track.artist or self.tr("Unknown Artist"),
-            album=track.album or self.tr("Unknown Album"),
+            title=track.title
+            or QCoreApplication.translate("LibraryLabels", "Untitled Track"),
+            artist=track.artist
+            or QCoreApplication.translate("LibraryLabels", "Unknown Artist"),
+            album=track.album
+            or QCoreApplication.translate("LibraryLabels", "Unknown Album"),
             base_font=self.font(),
             tokens=self._theme_manager.tokens,
             artwork_provider=self._artwork_provider,

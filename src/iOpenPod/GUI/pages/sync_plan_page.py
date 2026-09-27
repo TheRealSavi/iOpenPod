@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -21,6 +21,11 @@ from iOpenPod.app.models.sync_plan_table_model import (
     SyncPlanTableModel,
 )
 from iOpenPod.app.sync_plan import SyncPlan, SyncPlanAction, SyncPlanMediaKind
+from iOpenPod.GUI.presentation.i18n.text import (
+    english_count_fallback,
+    item_count_text,
+    planned_change_count_text,
+)
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
@@ -189,11 +194,15 @@ class SyncPlanPage(QWidget):
     @property
     def selection_summary(self) -> str:
         selected = self._plan.change_count if self._plan is not None else 0
-        return (
-            self.tr("%1 of %2 media changes selected")
-            .replace("%1", f"{selected:,}")
-            .replace("%2", f"{self._model.plan.change_count:,}")
-        )
+        return english_count_fallback(
+            "%1 of %Ln media change(s) selected",
+            self.tr(
+                "%1 of %Ln media change(s) selected",
+                "",
+                self._model.plan.change_count,
+            ),
+            self._model.plan.change_count,
+        ).replace("%1", f"{selected:,}")
 
     def load_plan(self, plan: SyncPlan) -> None:
         self._set_selection(None)
@@ -245,7 +254,9 @@ class SyncPlanPage(QWidget):
             self._media_filter.addItem(label, value)
         self._restore_filter(self._action_filter, action_data, "changes")
         self._restore_filter(self._media_filter, media_data, "all")
-        self._select_all.setText(self.tr("Select All"))
+        self._select_all.setText(
+            QCoreApplication.translate("CommonActions", "Select All")
+        )
         self._select_none.setText(self.tr("Select None"))
         self._select_all.setToolTip(
             self.tr("Select all changes, including removals hidden by filters")
@@ -271,11 +282,7 @@ class SyncPlanPage(QWidget):
         self._state.setText(
             self.selection_summary
             if self._selection is not None
-            else self._count_text(
-                plan.change_count,
-                self.tr("1 planned change"),
-                self.tr("%1 planned changes"),
-            )
+            else planned_change_count_text(plan.change_count)
             if self._plan is not None
             else self.tr("No plan prepared")
         )
@@ -358,9 +365,7 @@ class SyncPlanPage(QWidget):
 
     def _filtered(self) -> None:
         count = self._proxy.rowCount()
-        self._results.setText(
-            self._count_text(count, self.tr("1 item"), self.tr("%1 items"))
-        )
+        self._results.setText(item_count_text(count))
         for group in self._groups:
             group.refresh()
         self._expand_all.setEnabled(count > 0)

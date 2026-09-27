@@ -8,7 +8,16 @@ from math import floor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal, Slot
+from PySide6.QtCore import (
+    QCoreApplication,
+    QPoint,
+    QPointF,
+    QRectF,
+    QSize,
+    Qt,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import (
     QColor,
     QIcon,
@@ -36,6 +45,7 @@ from PySide6.QtWidgets import (
 
 from iOpenPod.app.artwork_import import ArtworkImportController
 from iOpenPod.app.library_workspace import TrackArtworkEdit
+from iOpenPod.GUI.presentation.i18n.text import english_count_fallback
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
@@ -284,7 +294,9 @@ class ArtworkCropDialog(QDialog):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        cancel = ActionButton(self.tr("Cancel"), self)
+        cancel = ActionButton(
+            QCoreApplication.translate("CommonActions", "Cancel"), self
+        )
         cancel.clicked.connect(self.reject)
         footer.addWidget(cancel)
         use = ActionButton(self.tr("Use Artwork"), self, kind=ActionButtonKind.PRIMARY)
@@ -313,7 +325,9 @@ class ConsolidateArtworkDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("consolidateArtworkDialog")
-        self.setWindowTitle(self.tr("Consolidate Artwork"))
+        self.setWindowTitle(
+            QCoreApplication.translate("CommonActions", "Consolidate Artwork")
+        )
         self.resize(720, 560)
         self.setMinimumSize(520, 420)
         self._artwork_ids = artwork_ids
@@ -326,7 +340,9 @@ class ConsolidateArtworkDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
-        title = QLabel(self.tr("Consolidate artwork"), self)
+        title = QLabel(
+            QCoreApplication.translate("CommonActions", "Consolidate Artwork"), self
+        )
         title.setObjectName("dialogTitle")
         layout.addWidget(title)
         explanation = QLabel(
@@ -359,7 +375,9 @@ class ConsolidateArtworkDialog(QDialog):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        cancel = ActionButton(self.tr("Cancel"), self)
+        cancel = ActionButton(
+            QCoreApplication.translate("CommonActions", "Cancel"), self
+        )
         cancel.clicked.connect(self.reject)
         footer.addWidget(cancel)
         layout.addLayout(footer)
@@ -398,10 +416,10 @@ class ConsolidateArtworkDialog(QDialog):
 
         self._grid.clear()
         for artwork_id, icon, use_count in groups.values():
-            label = (
-                self.tr("Used by 1 Track")
-                if use_count == 1
-                else self.tr("Used by %1 Tracks").replace("%1", str(use_count))
+            label = english_count_fallback(
+                "Used by %n Track(s)",
+                self.tr("Used by %n Track(s)", "", use_count),
+                use_count,
             )
             if icon is None:
                 label = f"{self.tr('Preview unavailable')}\n{label}"
@@ -416,11 +434,7 @@ class ConsolidateArtworkDialog(QDialog):
         unique_count = len(groups)
         selected_count = len(self._artwork_ids)
         self._status.setText(
-            self.tr("%1 unique artwork across %2 selected Tracks.")
-            .replace("%1", str(unique_count))
-            .replace("%2", str(selected_count))
-            if unique_count == 1
-            else self.tr("%1 unique artworks across %2 selected Tracks.")
+            self.tr("Unique artwork: %1 · Selected Tracks: %2")
             .replace("%1", str(unique_count))
             .replace("%2", str(selected_count))
         )

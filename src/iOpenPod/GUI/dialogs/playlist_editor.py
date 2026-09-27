@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, DecimalException
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -58,110 +59,256 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 
-def _tr(text: str) -> str:
-    return QCoreApplication.translate("PlaylistEditorDialog", text)
-
-
 def kind_label(kind: PlaylistKind) -> str:
     return {
-        PlaylistKind.PLAYLIST: _tr("Playlist"),
-        PlaylistKind.SMART: _tr("Smart Playlist"),
-        PlaylistKind.FOLDER: _tr("Playlist Folder"),
+        PlaylistKind.PLAYLIST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Playlist"
+        ),
+        PlaylistKind.SMART: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Smart Playlist"
+        ),
+        PlaylistKind.FOLDER: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Playlist Folder"
+        ),
     }[kind]
 
 
 def playlist_sort_label(order: PlaylistSortOrder) -> str:
     return {
-        PlaylistSortOrder.DEFAULT: _tr("Default"),
-        PlaylistSortOrder.MANUAL: _tr("Manual"),
-        PlaylistSortOrder.TITLE: _tr("Title"),
-        PlaylistSortOrder.ALBUM: _tr("Album"),
-        PlaylistSortOrder.ARTIST: _tr("Artist"),
-        PlaylistSortOrder.BITRATE: _tr("Bitrate"),
-        PlaylistSortOrder.GENRE: _tr("Genre"),
-        PlaylistSortOrder.KIND: _tr("Kind"),
-        PlaylistSortOrder.DATE_MODIFIED: _tr("Date modified"),
-        PlaylistSortOrder.TRACK_NUMBER: _tr("Track number"),
-        PlaylistSortOrder.SIZE: _tr("Size"),
-        PlaylistSortOrder.DURATION: _tr("Time"),
-        PlaylistSortOrder.YEAR: _tr("Year"),
-        PlaylistSortOrder.SAMPLE_RATE: _tr("Sample rate"),
-        PlaylistSortOrder.COMMENT: _tr("Comment"),
-        PlaylistSortOrder.DATE_ADDED: _tr("Date added"),
-        PlaylistSortOrder.EQUALIZER: _tr("Equalizer"),
-        PlaylistSortOrder.COMPOSER: _tr("Composer"),
-        PlaylistSortOrder.PLAY_COUNT: _tr("Play count"),
-        PlaylistSortOrder.LAST_PLAYED: _tr("Last played"),
-        PlaylistSortOrder.DISC_NUMBER: _tr("Disc number"),
-        PlaylistSortOrder.RATING: _tr("Rating"),
-        PlaylistSortOrder.RELEASE_DATE: _tr("Release date"),
-        PlaylistSortOrder.BPM: _tr("BPM"),
-        PlaylistSortOrder.GROUPING: _tr("Grouping"),
-        PlaylistSortOrder.CATEGORY: _tr("Category"),
-        PlaylistSortOrder.DESCRIPTION: _tr("Description"),
+        PlaylistSortOrder.DEFAULT: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Default"
+        ),
+        PlaylistSortOrder.MANUAL: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Manual"
+        ),
+        PlaylistSortOrder.TITLE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Title"
+        ),
+        PlaylistSortOrder.ALBUM: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Album"
+        ),
+        PlaylistSortOrder.ARTIST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Artist"
+        ),
+        PlaylistSortOrder.BITRATE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Bitrate"
+        ),
+        PlaylistSortOrder.GENRE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Genre"
+        ),
+        PlaylistSortOrder.KIND: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Kind"
+        ),
+        PlaylistSortOrder.DATE_MODIFIED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Date modified"
+        ),
+        PlaylistSortOrder.TRACK_NUMBER: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Track number"
+        ),
+        PlaylistSortOrder.SIZE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Size"
+        ),
+        PlaylistSortOrder.DURATION: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Time"
+        ),
+        PlaylistSortOrder.YEAR: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Year"
+        ),
+        PlaylistSortOrder.SAMPLE_RATE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Sample rate"
+        ),
+        PlaylistSortOrder.COMMENT: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Comment"
+        ),
+        PlaylistSortOrder.DATE_ADDED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Date added"
+        ),
+        PlaylistSortOrder.EQUALIZER: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Equalizer"
+        ),
+        PlaylistSortOrder.COMPOSER: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Composer"
+        ),
+        PlaylistSortOrder.PLAY_COUNT: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Play count"
+        ),
+        PlaylistSortOrder.LAST_PLAYED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Last played"
+        ),
+        PlaylistSortOrder.DISC_NUMBER: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Disc number"
+        ),
+        PlaylistSortOrder.RATING: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Rating"
+        ),
+        PlaylistSortOrder.RELEASE_DATE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Release date"
+        ),
+        PlaylistSortOrder.BPM: QCoreApplication.translate(
+            "PlaylistEditorDialog", "BPM"
+        ),
+        PlaylistSortOrder.GROUPING: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Grouping"
+        ),
+        PlaylistSortOrder.CATEGORY: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Category"
+        ),
+        PlaylistSortOrder.DESCRIPTION: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Description"
+        ),
     }[order]
 
 
 def field_label(field: SmartField) -> str:
     labels = {
-        SmartField.TITLE: _tr("Title"),
-        SmartField.ARTIST: _tr("Artist"),
-        SmartField.ALBUM: _tr("Album"),
-        SmartField.GENRE: _tr("Genre"),
-        SmartField.YEAR: _tr("Year"),
-        SmartField.PLAY_COUNT: _tr("Play count"),
-        SmartField.RATING: _tr("Rating (stars)"),
-        SmartField.BITRATE: _tr("Bitrate (kbps)"),
-        SmartField.SAMPLE_RATE: _tr("Sample rate (Hz)"),
-        SmartField.DURATION: _tr("Duration (milliseconds)"),
-        SmartField.SIZE: _tr("Size (bytes)"),
-        SmartField.ARTWORK: _tr("Has artwork"),
-        SmartField.BPM: _tr("BPM"),
-        SmartField.FILE_FORMAT: _tr("File format"),
-        SmartField.TRACK_NUMBER: _tr("Track number"),
-        SmartField.COMMENT: _tr("Comment"),
-        SmartField.COMPOSER: _tr("Composer"),
-        SmartField.DISC_NUMBER: _tr("Disc number"),
-        SmartField.CHECKED: _tr("Checked"),
-        SmartField.COMPILATION: _tr("Compilation"),
-        SmartField.GROUPING: _tr("Grouping"),
-        SmartField.DESCRIPTION: _tr("Description"),
-        SmartField.CATEGORY: _tr("Category"),
-        SmartField.SKIP_COUNT: _tr("Skip count"),
-        SmartField.ALBUM_ARTIST: _tr("Album artist"),
-        SmartField.SORT_TITLE: _tr("Sort title"),
-        SmartField.SORT_ALBUM: _tr("Sort album"),
-        SmartField.SORT_ARTIST: _tr("Sort artist"),
-        SmartField.SORT_ALBUM_ARTIST: _tr("Sort album artist"),
-        SmartField.SORT_COMPOSER: _tr("Sort composer"),
-        SmartField.SORT_SHOW: _tr("Sort show"),
-        SmartField.PLAYLIST: _tr("Playlist"),
-        SmartField.PURCHASED: _tr("Purchased"),
-        SmartField.MEDIA_KIND: _tr("Media kind"),
-        SmartField.LOCATION: _tr("Location"),
-        SmartField.DATE_MODIFIED: _tr("Date modified"),
-        SmartField.DATE_ADDED: _tr("Date added"),
-        SmartField.LAST_PLAYED: _tr("Last played"),
-        SmartField.LAST_SKIPPED: _tr("Last skipped"),
+        SmartField.TITLE: QCoreApplication.translate("PlaylistEditorDialog", "Title"),
+        SmartField.ARTIST: QCoreApplication.translate("PlaylistEditorDialog", "Artist"),
+        SmartField.ALBUM: QCoreApplication.translate("PlaylistEditorDialog", "Album"),
+        SmartField.GENRE: QCoreApplication.translate("PlaylistEditorDialog", "Genre"),
+        SmartField.YEAR: QCoreApplication.translate("PlaylistEditorDialog", "Year"),
+        SmartField.PLAY_COUNT: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Play count"
+        ),
+        SmartField.RATING: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Rating (stars)"
+        ),
+        SmartField.BITRATE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Bitrate (kbps)"
+        ),
+        SmartField.SAMPLE_RATE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Sample rate (Hz)"
+        ),
+        SmartField.DURATION: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Duration (milliseconds)"
+        ),
+        SmartField.SIZE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Size (bytes)"
+        ),
+        SmartField.ARTWORK: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Has artwork"
+        ),
+        SmartField.BPM: QCoreApplication.translate("PlaylistEditorDialog", "BPM"),
+        SmartField.FILE_FORMAT: QCoreApplication.translate(
+            "PlaylistEditorDialog", "File format"
+        ),
+        SmartField.TRACK_NUMBER: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Track number"
+        ),
+        SmartField.COMMENT: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Comment"
+        ),
+        SmartField.COMPOSER: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Composer"
+        ),
+        SmartField.DISC_NUMBER: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Disc number"
+        ),
+        SmartField.CHECKED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Checked"
+        ),
+        SmartField.COMPILATION: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Compilation"
+        ),
+        SmartField.GROUPING: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Grouping"
+        ),
+        SmartField.DESCRIPTION: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Description"
+        ),
+        SmartField.CATEGORY: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Category"
+        ),
+        SmartField.SKIP_COUNT: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Skip count"
+        ),
+        SmartField.ALBUM_ARTIST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Album artist"
+        ),
+        SmartField.SORT_TITLE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Sort title"
+        ),
+        SmartField.SORT_ALBUM: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Sort album"
+        ),
+        SmartField.SORT_ARTIST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Sort artist"
+        ),
+        SmartField.SORT_ALBUM_ARTIST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Sort album artist"
+        ),
+        SmartField.SORT_COMPOSER: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Sort composer"
+        ),
+        SmartField.SORT_SHOW: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Sort show"
+        ),
+        SmartField.PLAYLIST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Playlist"
+        ),
+        SmartField.PURCHASED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Purchased"
+        ),
+        SmartField.MEDIA_KIND: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Media kind"
+        ),
+        SmartField.LOCATION: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Location"
+        ),
+        SmartField.DATE_MODIFIED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Date modified"
+        ),
+        SmartField.DATE_ADDED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Date added"
+        ),
+        SmartField.LAST_PLAYED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Last played"
+        ),
+        SmartField.LAST_SKIPPED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Last skipped"
+        ),
     }
     return labels[field]
 
 
 def operator_label(operator: SmartOperator) -> str:
     return {
-        SmartOperator.IS: _tr("is"),
-        SmartOperator.IS_NOT: _tr("is not"),
-        SmartOperator.CONTAINS: _tr("contains"),
-        SmartOperator.NOT_CONTAINS: _tr("does not contain"),
-        SmartOperator.BEGINS_WITH: _tr("begins with"),
-        SmartOperator.ENDS_WITH: _tr("ends with"),
-        SmartOperator.GREATER_THAN: _tr("is greater than"),
-        SmartOperator.LESS_THAN: _tr("is less than"),
-        SmartOperator.BETWEEN: _tr("is between"),
-        SmartOperator.IS_TRUE: _tr("is true"),
-        SmartOperator.IS_FALSE: _tr("is false"),
-        SmartOperator.IN_LAST: _tr("in the last"),
-        SmartOperator.NOT_IN_LAST: _tr("not in the last"),
+        SmartOperator.IS: QCoreApplication.translate("PlaylistEditorDialog", "is"),
+        SmartOperator.IS_NOT: QCoreApplication.translate(
+            "PlaylistEditorDialog", "is not"
+        ),
+        SmartOperator.CONTAINS: QCoreApplication.translate(
+            "PlaylistEditorDialog", "contains"
+        ),
+        SmartOperator.NOT_CONTAINS: QCoreApplication.translate(
+            "PlaylistEditorDialog", "does not contain"
+        ),
+        SmartOperator.BEGINS_WITH: QCoreApplication.translate(
+            "PlaylistEditorDialog", "begins with"
+        ),
+        SmartOperator.ENDS_WITH: QCoreApplication.translate(
+            "PlaylistEditorDialog", "ends with"
+        ),
+        SmartOperator.GREATER_THAN: QCoreApplication.translate(
+            "PlaylistEditorDialog", "is greater than"
+        ),
+        SmartOperator.LESS_THAN: QCoreApplication.translate(
+            "PlaylistEditorDialog", "is less than"
+        ),
+        SmartOperator.BETWEEN: QCoreApplication.translate(
+            "PlaylistEditorDialog", "is between"
+        ),
+        SmartOperator.IS_TRUE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "is true"
+        ),
+        SmartOperator.IS_FALSE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "is false"
+        ),
+        SmartOperator.IN_LAST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "in the last"
+        ),
+        SmartOperator.NOT_IN_LAST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "not in the last"
+        ),
     }[operator]
 
 
@@ -177,8 +324,9 @@ def smart_summary(
     smart: SmartPlaylist, playlist_names: Mapping[int, str] | None = None
 ) -> str:
     if not rules_editable(smart):
-        return _tr(
-            "This Smart Playlist uses rules that cannot be edited yet. Its saved tracks are available below."
+        return QCoreApplication.translate(
+            "PlaylistEditorDialog",
+            "This Smart Playlist uses rules that cannot be edited yet. Its saved tracks are available below.",
         )
 
     def describe(group: SmartRuleGroup) -> str:
@@ -198,7 +346,9 @@ def smart_summary(
                     )
                 )
                 if rule.upper_value is not None:
-                    value += _tr(" and %1").replace(
+                    value += QCoreApplication.translate(
+                        "PlaylistEditorDialog", " and %1"
+                    ).replace(
                         "%1",
                         _rule_value_text(
                             rule.field,
@@ -212,25 +362,33 @@ def smart_summary(
                     SmartOperator.NOT_IN_LAST,
                 ) and isinstance(rule.value, int):
                     quantity, unit = _relative_period(rule.value)
-                    value = f"{quantity} {_tr(unit)}"
+                    value = f"{quantity} {QCoreApplication.translate('PlaylistEditorDialog', unit)}"
                 parts.append(
                     f"{field_label(rule.field)} {operator_label(rule.operator)} {value}".strip()
                 )
-        joiner = _tr(" AND ") if group.match is SmartMatch.ALL else _tr(" OR ")
+        joiner = (
+            QCoreApplication.translate("PlaylistEditorDialog", " AND ")
+            if group.match is SmartMatch.ALL
+            else QCoreApplication.translate("PlaylistEditorDialog", " OR ")
+        )
         return joiner.join(parts) or (
-            _tr("All tracks") if group.match is SmartMatch.ALL else _tr("No tracks")
+            QCoreApplication.translate("PlaylistEditorDialog", "All tracks")
+            if group.match is SmartMatch.ALL
+            else QCoreApplication.translate("PlaylistEditorDialog", "No tracks")
         )
 
     summary = (
         describe(smart.rules)
         if smart.match_rules and smart.rules.rules
-        else _tr("All tracks")
+        else QCoreApplication.translate("PlaylistEditorDialog", "All tracks")
     )
     if smart.checked_only:
-        summary += _tr(" · Checked tracks only")
+        summary += QCoreApplication.translate(
+            "PlaylistEditorDialog", " · Checked tracks only"
+        )
     if smart.limit is not None:
         summary += (
-            _tr(" · Limit: %1 %2")
+            QCoreApplication.translate("PlaylistEditorDialog", " · Limit: %1 %2")
             .replace("%1", str(smart.limit.value))
             .replace("%2", limit_unit_label(smart.limit.unit))
         )
@@ -239,25 +397,53 @@ def smart_summary(
 
 def limit_unit_label(unit: SmartLimitUnit) -> str:
     return {
-        SmartLimitUnit.TRACKS: _tr("tracks"),
-        SmartLimitUnit.MINUTES: _tr("minutes"),
-        SmartLimitUnit.HOURS: _tr("hours"),
-        SmartLimitUnit.MEGABYTES: _tr("MB"),
-        SmartLimitUnit.GIGABYTES: _tr("GB"),
+        SmartLimitUnit.TRACKS: QCoreApplication.translate(
+            "PlaylistEditorDialog", "tracks"
+        ),
+        SmartLimitUnit.MINUTES: QCoreApplication.translate(
+            "PlaylistEditorDialog", "minutes"
+        ),
+        SmartLimitUnit.HOURS: QCoreApplication.translate(
+            "PlaylistEditorDialog", "hours"
+        ),
+        SmartLimitUnit.MEGABYTES: QCoreApplication.translate(
+            "PlaylistEditorDialog", "MB"
+        ),
+        SmartLimitUnit.GIGABYTES: QCoreApplication.translate(
+            "PlaylistEditorDialog", "GB"
+        ),
     }[unit]
 
 
 def limit_sort_label(sort: SmartLimitSort) -> str:
     return {
-        SmartLimitSort.RANDOM: _tr("Random"),
-        SmartLimitSort.TITLE: _tr("Title"),
-        SmartLimitSort.ALBUM: _tr("Album"),
-        SmartLimitSort.ARTIST: _tr("Artist"),
-        SmartLimitSort.GENRE: _tr("Genre"),
-        SmartLimitSort.DATE_ADDED: _tr("Date added"),
-        SmartLimitSort.PLAY_COUNT: _tr("Play count"),
-        SmartLimitSort.LAST_PLAYED: _tr("Last played"),
-        SmartLimitSort.RATING: _tr("Rating"),
+        SmartLimitSort.RANDOM: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Random"
+        ),
+        SmartLimitSort.TITLE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Title"
+        ),
+        SmartLimitSort.ALBUM: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Album"
+        ),
+        SmartLimitSort.ARTIST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Artist"
+        ),
+        SmartLimitSort.GENRE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Genre"
+        ),
+        SmartLimitSort.DATE_ADDED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Date added"
+        ),
+        SmartLimitSort.PLAY_COUNT: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Play count"
+        ),
+        SmartLimitSort.LAST_PLAYED: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Last played"
+        ),
+        SmartLimitSort.RATING: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Rating"
+        ),
     }[sort]
 
 
@@ -272,7 +458,9 @@ def _rule_value_text(
             playlist_names.get(value.playlist_id)
             if playlist_names is not None
             else None
-        ) or _tr("Playlist %1").replace("%1", str(value.playlist_id))
+        ) or QCoreApplication.translate("PlaylistEditorDialog", "Playlist %1").replace(
+            "%1", str(value.playlist_id)
+        )
     if isinstance(value, SmartMediaKind):
         return _media_kind_label(value)
     if isinstance(value, SmartLocation):
@@ -290,30 +478,50 @@ def _rule_value_text(
 
 def _media_kind_label(kind: SmartMediaKind) -> str:
     return {
-        SmartMediaKind.MUSIC: _tr("Music"),
-        SmartMediaKind.MUSIC_VIDEO: _tr("Music video"),
-        SmartMediaKind.MOVIE: _tr("Movie"),
-        SmartMediaKind.TV_SHOW: _tr("TV show"),
-        SmartMediaKind.PODCAST: _tr("Podcast"),
-        SmartMediaKind.AUDIOBOOK: _tr("Audiobook"),
-        SmartMediaKind.VOICE_MEMO: _tr("Voice memo"),
-        SmartMediaKind.ITUNES_EXTRA: _tr("iTunes Extras"),
+        SmartMediaKind.MUSIC: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Music"
+        ),
+        SmartMediaKind.MUSIC_VIDEO: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Music video"
+        ),
+        SmartMediaKind.MOVIE: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Movie"
+        ),
+        SmartMediaKind.TV_SHOW: QCoreApplication.translate(
+            "PlaylistEditorDialog", "TV show"
+        ),
+        SmartMediaKind.PODCAST: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Podcast"
+        ),
+        SmartMediaKind.AUDIOBOOK: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Audiobook"
+        ),
+        SmartMediaKind.VOICE_MEMO: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Voice memo"
+        ),
+        SmartMediaKind.ITUNES_EXTRA: QCoreApplication.translate(
+            "PlaylistEditorDialog", "iTunes Extras"
+        ),
     }[kind]
 
 
 def _location_label(location: SmartLocation) -> str:
     return {
-        SmartLocation.LOCAL: _tr("On this device"),
-        SmartLocation.CLOUD: _tr("In iCloud"),
+        SmartLocation.LOCAL: QCoreApplication.translate(
+            "PlaylistEditorDialog", "On this device"
+        ),
+        SmartLocation.CLOUD: QCoreApplication.translate(
+            "PlaylistEditorDialog", "In iCloud"
+        ),
     }[location]
 
 
 _PERIOD_UNITS = (
-    ("seconds", 1),
-    ("minutes", 60),
-    ("hours", 3600),
-    ("days", 86400),
-    ("weeks", 604800),
+    (str(QT_TRANSLATE_NOOP("PlaylistEditorDialog", "seconds")), 1),
+    (str(QT_TRANSLATE_NOOP("PlaylistEditorDialog", "minutes")), 60),
+    (str(QT_TRANSLATE_NOOP("PlaylistEditorDialog", "hours")), 3600),
+    (str(QT_TRANSLATE_NOOP("PlaylistEditorDialog", "days")), 86400),
+    (str(QT_TRANSLATE_NOOP("PlaylistEditorDialog", "weeks")), 604800),
 )
 
 
@@ -363,7 +571,9 @@ class _RuleRow(QWidget):
         self.period_unit = AppComboBox(self)
         self.period_unit.setAccessibleName(self.tr("Rule time unit"))
         for name, factor in _PERIOD_UNITS:
-            self.period_unit.addItem(_tr(name), factor)
+            self.period_unit.addItem(
+                QCoreApplication.translate("PlaylistEditorDialog", name), factor
+            )
         if rule.operator in (
             SmartOperator.IN_LAST,
             SmartOperator.NOT_IN_LAST,
@@ -668,7 +878,9 @@ class PlaylistEditorDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("playlistEditor")
         self.setWindowTitle(
-            self.tr("Edit %1" if playlist else "New %1").replace("%1", kind_label(kind))
+            (self.tr("Edit %1") if playlist else self.tr("New %1")).replace(
+                "%1", kind_label(kind)
+            )
         )
         self.resize(
             900 if kind is PlaylistKind.SMART else 480,
@@ -846,7 +1058,7 @@ class PlaylistEditorDialog(QDialog):
                 )
                 validate_smart_playlist(smart)
             except ValueError as error:
-                self._error.setText(str(error))
+                self._error.setText(workflow_text(str(error)))
                 return
             self.smart = self._smart if smart == self._smart else smart
         super().accept()

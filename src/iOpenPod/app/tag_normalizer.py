@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Literal
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.library_workspace import TrackUpdate
 from iPodDB.library import Track, TrackFieldEdit
 
@@ -300,10 +301,14 @@ def normalize_tags(
     warnings: list[str] = []
     if not profile.album_artist_aware:
         warnings.append(
-            "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+            source_text(
+                "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+            )
         )
     if profile.has_cover_flow:
         warnings.append(
-            "Cover Flow devices are sensitive to Artist+Album differences and same-name albums."
+            source_text(
+                "Cover Flow devices are sensitive to Artist+Album differences and same-name albums."
+            )
         )
     return TagSuggestion(profile, tuple(updates), tuple(warnings))

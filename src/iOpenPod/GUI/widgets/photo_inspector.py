@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from PySide6.QtCore import QEvent, QRectF, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QLocale, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from iOpenPod.app.models.photos import FULL_RESOLUTION_REQUEST_ID
 from iOpenPod.GUI.presentation.artwork import paint_artwork_placeholder
+from iOpenPod.GUI.presentation.i18n.text import album_count_text, format_count_text
 from iOpenPod.GUI.presentation.photo import paint_photo_pixmap
 from iOpenPod.GUI.presentation.photo_provider import (
     PhotoPixmapProvider,
@@ -118,7 +119,9 @@ class _PhotoPreview(QWidget):
 
     def _refresh_accessible_name(self) -> None:
         if self._photo_id is None:
-            self.setAccessibleName(self.tr("No Photo selected"))
+            self.setAccessibleName(
+                QCoreApplication.translate("LibraryLabels", "No Photo Selected")
+            )
             return
         name = self.tr("Photo %1 preview").replace("%1", str(self._photo_id))
         if self._format_id is not None:
@@ -385,19 +388,25 @@ class PhotoInspector(QFrame):
     def _refresh_copy(self) -> None:
         photo = self._photo
         if photo is None:
-            self._title.setText(self.tr("No Photo Selected"))
+            self._title.setText(
+                QCoreApplication.translate("LibraryLabels", "No Photo Selected")
+            )
             self._summary.setText(
                 self.tr("Choose a Photo from the grid to inspect it.")
             )
             return
-        self._title.setText(self.tr("Photo %1").replace("%1", str(photo.photo_id)))
+        self._title.setText(
+            QCoreApplication.translate("LibraryLabels", "Photo %1").replace(
+                "%1", str(photo.photo_id)
+            )
+        )
         album_count = len(self._album_names(photo.photo_id))
         format_count = len(photo.representations)
         total_bytes = sum(item.size_bytes for item in photo.representations)
         self._summary.setText(
-            self.tr("%1 albums · %2 formats · %3")
-            .replace("%1", str(album_count))
-            .replace("%2", str(format_count))
+            self.tr("%1 · %2 · %3")
+            .replace("%1", album_count_text(album_count))
+            .replace("%2", format_count_text(format_count))
             .replace("%3", _format_bytes(total_bytes))
         )
 
@@ -595,7 +604,9 @@ class PhotoInspector(QFrame):
 
 
 def _format_bytes(value: int) -> str:
-    return f"{max(0, value):,} bytes"
+    return QCoreApplication.translate("PhotoInspector", "%1 bytes").replace(
+        "%1", QLocale().toString(max(0, value))
+    )
 
 
 __all__ = ["PhotoInspector"]

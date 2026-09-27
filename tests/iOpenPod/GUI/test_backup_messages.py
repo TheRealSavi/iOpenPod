@@ -103,7 +103,7 @@ def test_import_reports_new_and_already_present_legacy_snapshots() -> None:
     assert message.severity is BackupMessageSeverity.SUCCESS
     assert message.title == "Legacy Backups Imported"
     assert "3 Backup Snapshots" in message.body
-    assert "2 were already present" in message.body
+    assert "2 Backup Snapshots already present" in message.body
     assert "Original iOpenPod backup was not changed" in message.body
 
 

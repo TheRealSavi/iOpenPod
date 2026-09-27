@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import (
     QAbstractItemModel,
+    QCoreApplication,
+    QDate,
     QEvent,
+    QLocale,
     QModelIndex,
     QPersistentModelIndex,
     QRectF,
@@ -38,6 +41,7 @@ from iOpenPod.GUI.presentation.artwork import (
     paint_artwork_pixmap,
     paint_artwork_placeholder,
 )
+from iOpenPod.GUI.presentation.i18n.text import episode_count_text
 from iOpenPod.GUI.presentation.podcast_collection_artwork import (
     paint_podcast_collection_artwork,
 )
@@ -91,7 +95,10 @@ class PodcastShowDelegate(QStyledItemDelegate):
         if not isinstance(subscription, PodcastSubscription) and not is_aggregate:
             return
         title = (
-            str(index.data(Qt.ItemDataRole.DisplayRole) or "All Podcasts")
+            str(
+                index.data(Qt.ItemDataRole.DisplayRole)
+                or QCoreApplication.translate("PodcastPresentation", "All Podcasts")
+            )
             if is_aggregate
             else subscription.title
         )
@@ -188,12 +195,15 @@ class PodcastShowDelegate(QStyledItemDelegate):
         )
         if is_aggregate:
             episode_count = int(index.data(PodcastListRole.EPISODE_COUNT) or 0)
-            detail = f"{episode_count} episodes"
+            detail = episode_count_text(episode_count)
         else:
             detail = (
-                f"{subscription.on_device_count} on iPod"
+                QCoreApplication.translate("PodcastPresentation", "%1 on iPod").replace(
+                    "%1", QLocale().toString(subscription.on_device_count)
+                )
                 if subscription.on_device_count
-                else subscription.author or "Subscribed"
+                else subscription.author
+                or QCoreApplication.translate("PodcastPresentation", "Subscribed")
             )
         painter.setFont(detail_font)
         painter.setPen(QColor(tokens.text_secondary))
@@ -354,7 +364,10 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
             QRectF(left, title_y, text_width, title_metrics.height()),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             title_metrics.elidedText(
-                episode.title or "Untitled Episode",
+                episode.title
+                or QCoreApplication.translate(
+                    "PodcastPresentation", "Untitled Episode"
+                ),
                 Qt.TextElideMode.ElideRight,
                 round(text_width),
             ),
@@ -364,7 +377,10 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
         painter.setPen(QColor(tokens.text_secondary))
         _draw_wrapped_text(
             painter,
-            episode.description or "No episode notes are available.",
+            episode.description
+            or QCoreApplication.translate(
+                "PodcastPresentation", "No episode notes are available."
+            ),
             QRectF(
                 left,
                 description_y,
@@ -463,7 +479,10 @@ class PodcastSearchResultDelegate(QStyledItemDelegate):
             ),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             detail_metrics.elidedText(
-                result.author or "Unknown publisher",
+                result.author
+                or QCoreApplication.translate(
+                    "PodcastPresentation", "Unknown publisher"
+                ),
                 Qt.TextElideMode.ElideRight,
                 round(width),
             ),
@@ -472,7 +491,9 @@ class PodcastSearchResultDelegate(QStyledItemDelegate):
             part
             for part in (
                 result.category,
-                f"{result.episode_count} episodes" if result.episode_count else "",
+                episode_count_text(result.episode_count)
+                if result.episode_count
+                else "",
             )
             if part
         )
@@ -574,10 +595,14 @@ def episode_status_text(episode: PodcastEpisode) -> str:
     """Return the concise device action or state shown beside an Episode."""
 
     if not episode.on_device:
-        return "Add to iPod" if episode.enclosure_url else "Unavailable"
-    states = ["ON IPOD"]
+        return (
+            QCoreApplication.translate("PodcastPresentation", "Add to iPod")
+            if episode.enclosure_url
+            else QCoreApplication.translate("PodcastPresentation", "Unavailable")
+        )
+    states = [QCoreApplication.translate("PodcastPresentation", "ON IPOD")]
     if episode.listened:
-        states.append("LISTENED")
+        states.append(QCoreApplication.translate("PodcastPresentation", "LISTENED"))
     return " · ".join(states)
 
 
@@ -585,16 +610,34 @@ def _episode_meta(episode: PodcastEpisode, subscription_title: str = "") -> str:
     parts = [subscription_title] if subscription_title else []
     if episode.published_at:
         with suppress(OSError, OverflowError, ValueError):
+            published = datetime.fromtimestamp(episode.published_at, UTC)
             parts.append(
-                datetime.fromtimestamp(episode.published_at, UTC).strftime("%b %d, %Y")
+                QLocale().toString(
+                    QDate(published.year, published.month, published.day),
+                    QLocale.FormatType.ShortFormat,
+                )
             )
     if episode.duration_seconds > 0:
         hours, remainder = divmod(episode.duration_seconds, 3600)
         minutes = remainder // 60
-        parts.append(f"{hours} hr {minutes} min" if hours else f"{minutes} min")
+        parts.append(
+            QCoreApplication.translate("PodcastPresentation", "%1 hr %2 min")
+            .replace("%1", QLocale().toString(hours))
+            .replace("%2", QLocale().toString(minutes))
+            if hours
+            else QCoreApplication.translate("PodcastPresentation", "%1 min").replace(
+                "%1", QLocale().toString(minutes)
+            )
+        )
     if episode.episode_number is not None:
-        parts.append(f"Episode {episode.episode_number}")
-    return " · ".join(parts) or "Episode"
+        parts.append(
+            QCoreApplication.translate("PodcastPresentation", "Episode %1").replace(
+                "%1", QLocale().toString(episode.episode_number)
+            )
+        )
+    return " · ".join(parts) or QCoreApplication.translate(
+        "PodcastPresentation", "Episode"
+    )
 
 
 def _draw_wrapped_text(

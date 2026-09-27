@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.core.status import ApplicationStatus
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
 
@@ -232,9 +233,10 @@ class StatusListButton(IconButton):
                 item.setData(Qt.ItemDataRole.UserRole, message.source)
             else:
                 item = self._list.item(row)
-            if item.text() != message.message:
-                item.setText(message.message)
-                item.setToolTip(message.message)
+            text = workflow_text(message.message)
+            if item.text() != text:
+                item.setText(text)
+                item.setToolTip(text)
         self._list.setVisible(bool(messages))
         self._empty.setVisible(not messages)
         self.retranslate_ui()
@@ -263,7 +265,7 @@ class StatusListButton(IconButton):
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
         if event.type() == QEvent.Type.LanguageChange:
-            self.retranslate_ui()
+            self._refresh()
         elif event.type() == QEvent.Type.FontChange:
             self._resize_button()
 

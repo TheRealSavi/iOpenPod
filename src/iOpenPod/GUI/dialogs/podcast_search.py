@@ -26,6 +26,8 @@ from iOpenPod.app.podcasts.controller import (
 )
 from iOpenPod.app.podcasts.models import PodcastSearchResult
 from iOpenPod.GUI.delegates.podcast_delegates import PodcastSearchResultDelegate
+from iOpenPod.GUI.presentation.i18n.text import podcasts_found_text
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.podcast_styles import render_podcast_search_style
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -226,7 +228,7 @@ class PodcastSearchDialog(QDialog):
         self._results_model.replace(results)
         if results:
             self._results.setCurrentIndex(self._results_model.index(0, 0))
-            self._status.setText(self.tr("%n Podcast(s) found.", None, len(results)))
+            self._status.setText(podcasts_found_text(len(results)))
         else:
             self._status.setText(
                 self.tr(
@@ -269,7 +271,7 @@ class PodcastSearchDialog(QDialog):
             isinstance(value, PodcastOperationFailure)
             and value.operation is PodcastOperation.SEARCH
         ):
-            self._status.setText(value.message)
+            self._status.setText(workflow_text(value.message))
 
     @Slot()
     def _availability_changed(self) -> None:

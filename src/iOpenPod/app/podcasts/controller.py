@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.podcasts.catalog import (
     mark_episode_selection_listened,
     merge_fetched_subscription,
@@ -341,7 +342,10 @@ class PodcastController(QObject):
                         *issues,
                         PodcastIssue(
                             PodcastIssueCode.FEED_REFRESH_FAILED,
-                            f"{subscription.title} has no RSS feed URL and cannot be refreshed.",
+                            source_text(
+                                "{title} has no RSS feed URL and cannot be refreshed.",
+                                title=subscription.title,
+                            ),
                             subscription.subscription_id,
                         ),
                     )
@@ -353,7 +357,11 @@ class PodcastController(QObject):
                         *issues,
                         PodcastIssue(
                             PodcastIssueCode.FEED_REFRESH_FAILED,
-                            f"Could not refresh {subscription.title}: {error}",
+                            source_text(
+                                "Could not refresh {title}: {error}",
+                                title=subscription.title,
+                                error=str(error),
+                            ),
                             subscription.subscription_id,
                         ),
                     )

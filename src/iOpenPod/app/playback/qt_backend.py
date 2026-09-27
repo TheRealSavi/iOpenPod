@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QIODevice, QObject, QUrl, Signal, Slot
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
+from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.playback._qt_logging import quiet_qt_ffmpeg_initialization
 from iOpenPod.app.playback.backend import (
     PlaybackAttemptId,
@@ -110,7 +111,9 @@ class _QtPlaybackEventRelay(QObject):
             else type(error).__name__
         )
         self.report_failure(
-            RuntimeError(message or "The selected Track could not be played."),
+            RuntimeError(
+                message or source_text("The selected Track could not be played.")
+            ),
             error_type=str(error_name),
         )
 
@@ -133,7 +136,8 @@ class _QtPlaybackEventRelay(QObject):
             PlaybackFailure(
                 attempt_id=self._attempt_id,
                 track_id=self._track_id,
-                message=str(error) or "The selected Track could not be played.",
+                message=exception_text(error)
+                or source_text("The selected Track could not be played."),
                 error_type=error_type or type(error).__name__,
             )
         )
@@ -200,7 +204,9 @@ class QtPlaybackBackend(QObject):
             source = self._source_provider.open_playback_source(track)
             device = _QtPlaybackIODevice(source, self)
             if not device.open(QIODevice.OpenModeFlag.ReadOnly):
-                raise OSError(device.errorString() or "Could not open playback data")
+                raise OSError(
+                    device.errorString() or source_text("Could not open playback data")
+                )
             self._player.playbackStateChanged.connect(relay.playback_state_changed)
             self._player.positionChanged.connect(relay.position_changed)
             self._player.mediaStatusChanged.connect(relay.media_status_changed)

@@ -42,6 +42,7 @@ from iOpenPod.GUI.delegates.selection_group_delegate import SelectionGroupDelega
 from iOpenPod.GUI.dialogs.photo_album_editor import PhotoAlbumEditorDialog
 from iOpenPod.GUI.dialogs.photo_album_manager import PhotoAlbumManagerDialog
 from iOpenPod.GUI.dialogs.photo_metadata_editor import PhotoMetadataEditorDialog
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.photo_provider import PhotoPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
@@ -480,7 +481,7 @@ class PhotoPage(QWidget):
             QMessageBox.warning(
                 self,
                 self.tr("Could Not Edit Photo Metadata"),
-                str(error),
+                workflow_text(str(error)),
             )
             return
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -510,7 +511,7 @@ class PhotoPage(QWidget):
             QMessageBox.warning(
                 self,
                 self.tr("Could Not Rename Photo Album"),
-                str(error),
+                workflow_text(str(error)),
             )
         finally:
             dialog.deleteLater()
@@ -539,7 +540,7 @@ class PhotoPage(QWidget):
             QMessageBox.warning(
                 self,
                 self.tr("Could Not Delete Photo Album"),
-                str(error),
+                workflow_text(str(error)),
             )
 
     def _open_album_manager(self) -> None:
@@ -597,7 +598,7 @@ class PhotoPage(QWidget):
             QMessageBox.warning(
                 self,
                 self.tr("Could Not Delete Photos"),
-                str(error),
+                workflow_text(str(error)),
             )
 
     def _create_photo_album(self) -> None:
@@ -613,7 +614,7 @@ class PhotoPage(QWidget):
             QMessageBox.warning(
                 self,
                 self.tr("Could Not Create Photo Album"),
-                str(error),
+                workflow_text(str(error)),
             )
             return
         finally:

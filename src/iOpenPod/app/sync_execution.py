@@ -13,6 +13,7 @@ from threading import Event, Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaFileKind
 from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTrack
@@ -313,8 +314,11 @@ class SyncExecutor:
                         issues.append(
                             WriteIssue(
                                 "sync.tools_unavailable",
-                                f"{track_jobs:,} selected Tracks could not be prepared. Their existing iPod copies were kept; independent Photo and removal changes can continue.",
-                                detail=str(error),
+                                source_text(
+                                    "{count} selected Tracks could not be prepared. Their existing iPod copies were kept; independent Photo and removal changes can continue.",
+                                    count=f"{track_jobs:,}",
+                                ),
+                                detail=exception_text(error),
                             )
                         )
                     else:
@@ -374,9 +378,12 @@ class SyncExecutor:
                         issues.append(
                             WriteIssue(
                                 "sync.source_changed",
-                                f"{result.item.name} changed during preparation "
-                                "and was skipped. Rescan this source before retrying.",
-                                detail=str(error),
+                                source_text(
+                                    "{name} changed during preparation "
+                                    "and was skipped. Rescan this source before retrying.",
+                                    name=result.item.name,
+                                ),
+                                detail=exception_text(error),
                             )
                         )
                     else:
@@ -423,9 +430,12 @@ class SyncExecutor:
                     issues.append(
                         WriteIssue(
                             "sync.playlist_changes_skipped",
-                            f"{len(skipped_playlists)} reviewed Playlist change(s) could not "
-                            "be applied. Resolve the reported source or Track problem, "
-                            "then rescan and review the remaining Playlist changes.",
+                            source_text(
+                                "{count} reviewed Playlist change(s) could not "
+                                "be applied. Resolve the reported source or Track problem, "
+                                "then rescan and review the remaining Playlist changes.",
+                                count=str(len(skipped_playlists)),
+                            ),
                             severity=IssueSeverity.WARNING,
                         )
                     )
@@ -532,7 +542,7 @@ class SyncExecutor:
                             "Library changes were saved, but Sync history could not be updated. "
                             "Keep the iPod connected and rescan before another Sync.",
                             severity=IssueSeverity.WARNING,
-                            detail=str(error),
+                            detail=exception_text(error),
                         )
                     )
                 partial = (
@@ -560,7 +570,7 @@ class SyncExecutor:
                                 "Sync succeeded and recovery files were removed, but the final "
                                 "device flush could not be confirmed. Safely eject before unplugging.",
                                 severity=IssueSeverity.WARNING,
-                                detail=str(error),
+                                detail=exception_text(error),
                             )
                         )
                     except Exception as error:
@@ -570,7 +580,7 @@ class SyncExecutor:
                                 "Sync succeeded, but recovery-file cleanup could not finish. "
                                 "Keep the iPod connected and choose Retry Cleanup before unplugging.",
                                 severity=IssueSeverity.WARNING,
-                                detail=str(error),
+                                detail=exception_text(error),
                                 artifact=recovery_path,
                             )
                         )
@@ -594,7 +604,7 @@ class SyncExecutor:
                     *issues,
                     WriteIssue(
                         "sync.recovery_required",
-                        str(error),
+                        exception_text(error),
                         artifact=error.recovery_path,
                     ),
                 ),
@@ -624,7 +634,7 @@ class SyncExecutor:
                             "Sync succeeded, but temporary Host files could not all be removed. "
                             "Close applications using the reported temporary files before removing them.",
                             severity=IssueSeverity.WARNING,
-                            detail=str(error),
+                            detail=exception_text(error),
                         ),
                     ),
                 )
@@ -636,7 +646,7 @@ class SyncExecutor:
                         "sync.failed",
                         "Sync could not continue. Correct the reported problem "
                         "and rescan before trying again.",
-                        detail=str(error),
+                        detail=exception_text(error),
                     ),
                 ),
             )
@@ -665,7 +675,7 @@ class SyncExecutor:
                     WriteIssue(
                         "sync.restored_cleanup_pending",
                         "The previous Library was restored and verified. Recovery files could not all be removed; retry recovery to finish cleanup before another Sync.",
-                        detail=str(error),
+                        detail=exception_text(error),
                         artifact=recovery_path,
                     )
                 )
@@ -681,7 +691,7 @@ class SyncExecutor:
                         "The previous Library was restored and recovery files were removed, "
                         "but the final device flush could not be confirmed. Safely eject before unplugging.",
                         severity=IssueSeverity.WARNING,
-                        detail=str(error),
+                        detail=exception_text(error),
                     )
                 )
             except Exception as error:
@@ -690,7 +700,7 @@ class SyncExecutor:
                         "sync.recovery_required",
                         "Sync was interrupted and its previous Library could not be restored. "
                         "Reconnect the same iPod and recover this transaction before further writes.",
-                        detail=str(error),
+                        detail=exception_text(error),
                         artifact=recovery_path,
                     )
                 )
@@ -738,7 +748,10 @@ class SyncExecutor:
                         )
                     ):
                         raise ValueError(
-                            f"{item.name}: the iPod file changed after scanning. Rescan the iPod before Sync."
+                            source_text(
+                                "{name}: the iPod file changed after scanning. Rescan the iPod before Sync.",
+                                name=item.name,
+                            )
                         )
 
     def _prepare_tracks(
@@ -799,7 +812,10 @@ class SyncExecutor:
         progress(
             WriteProgress(
                 "sync.prepare",
-                f"Preparing {len(changes):,} selected Tracks on the Host…",
+                source_text(
+                    "Preparing {count} selected Tracks on the Host…",
+                    count=f"{len(changes):,}",
+                ),
                 completed=0,
                 total=len(changes),
                 unit="Tracks",
@@ -882,16 +898,20 @@ class SyncExecutor:
                     issues.append(
                         WriteIssue(
                             "sync.item_failed",
-                            f"{item.name} was skipped. "
-                            + (
-                                "Its existing iPod copy was kept. "
-                                if item.ipod_id is not None
-                                else "No iPod copy was added. "
+                            source_text(
+                                "{name} was skipped. Its existing iPod copy was kept. "
+                                "Correct the source or encoder settings and retry.",
+                                name=item.name,
                             )
-                            + "Correct the source or encoder settings and retry.",
+                            if item.ipod_id is not None
+                            else source_text(
+                                "{name} was skipped. No iPod copy was added. "
+                                "Correct the source or encoder settings and retry.",
+                                name=item.name,
+                            ),
                             subject="track",
                             record_id=item.ipod_id,
-                            detail=str(error),
+                            detail=exception_text(error),
                             artifact=item.host_path or "",
                         )
                     )
@@ -919,8 +939,13 @@ class SyncExecutor:
                 progress(
                     WriteProgress(
                         "sync.prepare",
-                        f"Processed {completed:,} of {len(changes):,} Tracks; "
-                        f"{len(prepared):,} ready, {completed - len(prepared):,} skipped.",
+                        source_text(
+                            "Processed {completed} of {total} Tracks; {ready} ready, {skipped} skipped.",
+                            completed=f"{completed:,}",
+                            total=f"{len(changes):,}",
+                            ready=f"{len(prepared):,}",
+                            skipped=f"{completed - len(prepared):,}",
+                        ),
                         completed=completed,
                         total=len(changes),
                         current_item=item.name,
@@ -955,12 +980,15 @@ class SyncExecutor:
                     issues.append(
                         WriteIssue(
                             "sync.filename_failed",
-                            f"{result.item.name} was skipped because an unused four-character "
-                            "media filename could not be reserved. Its existing iPod copy was kept. "
-                            "Resolve the reported Music-folder problem, then rescan and retry.",
+                            source_text(
+                                "{name} was skipped because an unused four-character "
+                                "media filename could not be reserved. Its existing iPod copy was kept. "
+                                "Resolve the reported Music-folder problem, then rescan and retry.",
+                                name=result.item.name,
+                            ),
                             subject="track",
                             record_id=result.item.ipod_id,
-                            detail=str(error),
+                            detail=exception_text(error),
                             artifact=result.item.host_path or "",
                         )
                     )
@@ -1011,7 +1039,9 @@ class SyncExecutor:
                     progress(
                         WriteProgress(
                             "sync.podcast_download",
-                            f"Downloading {episode.title or 'Podcast Episode'}…",
+                            source_text("Downloading {title}…", title=episode.title)
+                            if episode.title
+                            else source_text("Downloading Podcast Episode…"),
                             completed=size,
                             total=total,
                             current_item=episode.title,
@@ -1043,7 +1073,9 @@ class SyncExecutor:
                 progress(
                     WriteProgress(
                         "sync.podcast_download",
-                        f"Downloading {episode.title or 'Podcast Episode'}…",
+                        source_text("Downloading {title}…", title=episode.title)
+                        if episode.title
+                        else source_text("Downloading Podcast Episode…"),
                         completed=0,
                         current_item=episode.title,
                         unit="bytes",
@@ -1113,11 +1145,18 @@ class SyncExecutor:
                             issues.append(
                                 WriteIssue(
                                     "sync.podcast_fingerprint_unavailable",
-                                    f"{episode.title or 'Podcast Episode'} could not be "
-                                    "fingerprinted. The Episode can still be added, "
-                                    "but its acoustic matching evidence is unavailable.",
+                                    source_text(
+                                        "{title} could not be fingerprinted. The Episode can still be added, "
+                                        "but its acoustic matching evidence is unavailable.",
+                                        title=episode.title,
+                                    )
+                                    if episode.title
+                                    else source_text(
+                                        "Podcast Episode could not be fingerprinted. The Episode can still be added, "
+                                        "but its acoustic matching evidence is unavailable."
+                                    ),
                                     severity=IssueSeverity.WARNING,
-                                    detail=str(error),
+                                    detail=exception_text(error),
                                     artifact=episode.enclosure_url,
                                 )
                             )
@@ -1146,14 +1185,11 @@ class SyncExecutor:
                     issues.append(
                         WriteIssue(
                             "sync.podcast_failed",
-                            f"{episode.title or 'Podcast Episode'} could not be added. "
-                            + (
-                                "The Episode awaiting replacement was kept. "
-                                if addition.replaces_track_id is not None
-                                else ""
-                            )
-                            + "Refresh the Podcast and retry.",
-                            detail=str(error),
+                            _podcast_add_failure_message(
+                                episode.title,
+                                replacing=addition.replaces_track_id is not None,
+                            ),
+                            detail=exception_text(error),
                             artifact=episode.enclosure_url,
                         )
                     )
@@ -1257,7 +1293,10 @@ class SyncExecutor:
         progress(
             WriteProgress(
                 "sync.photos",
-                f"Preparing {len(changes):,} selected Photos on the Host…",
+                source_text(
+                    "Preparing {count} selected Photos on the Host…",
+                    count=f"{len(changes):,}",
+                ),
                 completed=0,
                 total=len(changes),
                 unit="Photos",
@@ -1304,11 +1343,15 @@ class SyncExecutor:
                     > 512 * 1024 * 1024
                 ):
                     raise ValueError(
-                        "The Photo preparation batch reached its 512 MiB limit. Sync the remaining Photos in another batch."
+                        source_text(
+                            "The Photo preparation batch reached its 512 MiB limit. Sync the remaining Photos in another batch."
+                        )
                     )
                 if digest != source.content_sha256:
                     raise ValueError(
-                        "The Photo changed after scanning. Rescan this source before retrying."
+                        source_text(
+                            "The Photo changed after scanning. Rescan this source before retrying."
+                        )
                     )
                 identity = (
                     item.ipod_id if item.action is SyncPlanAction.UPDATE else next_id
@@ -1366,24 +1409,32 @@ class SyncExecutor:
                 issues.append(
                     WriteIssue(
                         "sync.photo_failed",
-                        f"{item.name} was skipped. "
-                        + (
-                            "Its existing Photo was preserved. "
-                            if item.ipod_id is not None
-                            else "No Photo was added. "
+                        source_text(
+                            "{name} was skipped. Its existing Photo was preserved. "
+                            "Correct the source or device format problem and retry.",
+                            name=item.name,
                         )
-                        + "Correct the source or device format problem and retry.",
+                        if item.ipod_id is not None
+                        else source_text(
+                            "{name} was skipped. No Photo was added. "
+                            "Correct the source or device format problem and retry.",
+                            name=item.name,
+                        ),
                         subject="photo",
                         record_id=item.ipod_id,
-                        detail=str(error),
+                        detail=exception_text(error),
                         artifact=item.host_path or "",
                     )
                 )
             progress(
                 WriteProgress(
                     "sync.photos",
-                    f"Processed {completed:,} of {len(changes):,} Photos; "
-                    f"{len(issues):,} messages.",
+                    source_text(
+                        "Processed {completed} of {total} Photos; {messages} messages.",
+                        completed=f"{completed:,}",
+                        total=f"{len(changes):,}",
+                        messages=f"{len(issues):,}",
+                    ),
                     completed=completed,
                     total=len(changes),
                     current_item=item.name,
@@ -1391,6 +1442,27 @@ class SyncExecutor:
                 )
             )
         return tuple(prepared), tuple(issues)
+
+
+def _podcast_add_failure_message(title: str, *, replacing: bool) -> str:
+    if replacing:
+        if title:
+            return source_text(
+                "{title} could not be added. The Episode awaiting replacement was kept. "
+                "Refresh the Podcast and retry.",
+                title=title,
+            )
+        return source_text(
+            "Podcast Episode could not be added. The Episode awaiting replacement was kept. "
+            "Refresh the Podcast and retry."
+        )
+    if title:
+        return source_text(
+            "{title} could not be added. Refresh the Podcast and retry.", title=title
+        )
+    return source_text(
+        "Podcast Episode could not be added. Refresh the Podcast and retry."
+    )
 
 
 def _validate_plan(request: SyncExecutionRequest) -> None:
@@ -1658,7 +1730,10 @@ def _draft(
         issues.append(
             WriteIssue(
                 "sync.needs_attention",
-                f"{len(unresolved):,} unmatched items were left unchanged. Their matching details remain available in Review.",
+                source_text(
+                    "{count} unmatched items were left unchanged. Their matching details remain available in Review.",
+                    count=f"{len(unresolved):,}",
+                ),
                 severity=IssueSeverity.INFO,
             )
         )
@@ -1931,9 +2006,12 @@ def _playlists(
             issues.append(
                 WriteIssue(
                     "sync.playlist_incomplete",
-                    f"Playlist {host.name} was preserved because some source entries were excluded "
-                    "or could not be read. Resolve its missing or declined references and rescan "
-                    "before updating this Playlist.",
+                    source_text(
+                        "Playlist {name} was preserved because some source entries were excluded "
+                        "or could not be read. Resolve its missing or declined references and rescan "
+                        "before updating this Playlist.",
+                        name=host.name,
+                    ),
                     severity=IssueSeverity.WARNING,
                 )
             )
@@ -1959,7 +2037,10 @@ def _playlists(
             issues.append(
                 WriteIssue(
                     "sync.playlist_ambiguous",
-                    f"Playlist {host.name} was preserved because its name matches an ambiguous or managed Playlist. Rename the Host Playlist and retry.",
+                    source_text(
+                        "Playlist {name} was preserved because its name matches an ambiguous or managed Playlist. Rename the Host Playlist and retry.",
+                        name=host.name,
+                    ),
                     severity=IssueSeverity.WARNING,
                 )
             )
@@ -1971,7 +2052,10 @@ def _playlists(
             issues.append(
                 WriteIssue(
                     "sync.playlist_incomplete",
-                    f"Playlist {host.name} was preserved because one of its selected Tracks failed. Retry those Tracks to update this Playlist.",
+                    source_text(
+                        "Playlist {name} was preserved because one of its selected Tracks failed. Retry those Tracks to update this Playlist.",
+                        name=host.name,
+                    ),
                     severity=IssueSeverity.WARNING,
                 )
             )
@@ -1998,7 +2082,10 @@ def _validate_host_source(source: HostMediaSource) -> None:
         source.modified_ns,
     ):
         raise ValueError(
-            f"The Host source {source.path.path.name} changed after scanning. Rescan before Sync."
+            source_text(
+                "The Host source {name} changed after scanning. Rescan before Sync.",
+                name=source.path.path.name,
+            )
         )
 
 
@@ -2031,7 +2118,7 @@ def _validate_playlist_sources(
                         "A Host Playlist or one of its retained sources changed or became unavailable after Review. "
                         "Host Playlist reconciliation was skipped; rescan before retrying.",
                         severity=IssueSeverity.WARNING,
-                        detail=str(error),
+                        detail=exception_text(error),
                     )
                 )
     return valid
@@ -2072,10 +2159,13 @@ def _capture_artwork(
             issues.append(
                 WriteIssue(
                     "sync.artwork_skipped",
-                    f"Artwork for {group[0].item.name} was skipped. "
-                    "Media can still Sync; any existing iPod artwork was preserved.",
+                    source_text(
+                        "Artwork for {name} was skipped. "
+                        "Media can still Sync; any existing iPod artwork was preserved.",
+                        name=group[0].item.name,
+                    ),
                     severity=IssueSeverity.WARNING,
-                    detail=str(error),
+                    detail=exception_text(error),
                 )
             )
         else:

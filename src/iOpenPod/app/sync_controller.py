@@ -17,6 +17,7 @@ from iOpenPod.app.core.settings.definitions import (
     ROTATE_TALL_PHOTOS,
 )
 from iOpenPod.app.core.settings.transcoding import read_transcoder_settings
+from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.models.device import DeviceCandidateIssueCode
 from iOpenPod.app.services.device_coordinator import (
     SyncCleanupCompletedError,
@@ -117,7 +118,7 @@ class _RecoveryWork(QRunnable):
                     WriteIssue(
                         "sync.restored_cleanup_pending",
                         "The previous Library is restored. Retry recovery to finish cleaning its temporary files.",
-                        detail=str(error),
+                        detail=exception_text(error),
                     ),
                 ),
                 recovery_path=self.path,
@@ -127,7 +128,9 @@ class _RecoveryWork(QRunnable):
                 SyncExecutionStatus.CANCELLED,
                 issues=(
                     WriteIssue(
-                        "sync.recovered", str(error), severity=IssueSeverity.WARNING
+                        "sync.recovered",
+                        exception_text(error),
+                        severity=IssueSeverity.WARNING,
                     ),
                 ),
             )
@@ -140,7 +143,7 @@ class _RecoveryWork(QRunnable):
                         "sync.recovery_failed",
                         "Recovery could not finish. "
                         "Keep the journal and reconnect the same iPod before retrying.",
-                        detail=str(error),
+                        detail=exception_text(error),
                     ),
                 ),
                 recovery_path=(
@@ -189,11 +192,14 @@ class _KeepContentsWork(QRunnable):
         try:
             active = self.keep(self.path)
         except SyncRecoveryDeclinedError as error:
-            message = str(error)
+            message = exception_text(error)
         except Exception as error:
             status = SyncExecutionStatus.RECOVERY_REQUIRED
             code = "sync.keep_failed"
-            message = "Could not finish keeping current contents. " + str(error)
+            message = source_text(
+                "Could not finish keeping current contents. {detail}",
+                detail=exception_text(error),
+            )
             path = (
                 error.recovery_path
                 if isinstance(error, SyncRecoveryRequiredError)
@@ -236,7 +242,7 @@ class _CleanupWork(QRunnable):
                     WriteIssue(
                         "sync.recovery_required",
                         "The transaction is unfinished and requires recovery before further changes.",
-                        detail=str(error),
+                        detail=exception_text(error),
                     ),
                 ),
                 recovery_path=error.recovery_path,
@@ -250,7 +256,7 @@ class _CleanupWork(QRunnable):
                     *issues,
                     WriteIssue(
                         "sync.cleanup_flush_pending",
-                        str(error),
+                        exception_text(error),
                         severity=IssueSeverity.WARNING,
                     ),
                 ),
@@ -267,7 +273,7 @@ class _CleanupWork(QRunnable):
                         "Sync remains committed. Reconnect the same iPod and choose Retry Cleanup. "
                         "Safely eject before unplugging.",
                         severity=IssueSeverity.WARNING,
-                        detail=str(error),
+                        detail=exception_text(error),
                     ),
                 ),
             )

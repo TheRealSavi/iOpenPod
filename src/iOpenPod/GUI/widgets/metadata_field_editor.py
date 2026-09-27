@@ -1,6 +1,6 @@
 """Reusable directly editable metadata field controls."""
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QEvent, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -26,13 +26,21 @@ from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iPodDB.library import ContentAdvisory, MediaType, MetadataValue, TrackChapter
 
 _MEDIA_TYPE_LABELS = {
-    MediaType.AUDIO: "Music",
-    MediaType.VIDEO: "Movie",
-    MediaType.AUDIOBOOK: "Audiobook",
-    MediaType.PODCAST: "Podcast",
-    MediaType.VIDEO_PODCAST: "Video Podcast",
-    MediaType.TV_SHOW: "TV Show",
-    MediaType.MUSIC_VIDEO: "Music Video",
+    MediaType.AUDIO: str(QT_TRANSLATE_NOOP("FieldEditor", "Music")),
+    MediaType.VIDEO: str(QT_TRANSLATE_NOOP("FieldEditor", "Movie")),
+    MediaType.AUDIOBOOK: str(QT_TRANSLATE_NOOP("FieldEditor", "Audiobook")),
+    MediaType.PODCAST: str(QT_TRANSLATE_NOOP("FieldEditor", "Podcast")),
+    MediaType.VIDEO_PODCAST: str(QT_TRANSLATE_NOOP("FieldEditor", "Video Podcast")),
+    MediaType.TV_SHOW: str(QT_TRANSLATE_NOOP("FieldEditor", "TV Show")),
+    MediaType.MUSIC_VIDEO: str(QT_TRANSLATE_NOOP("FieldEditor", "Music Video")),
+    MediaType.AUDIO_VIDEO: str(QT_TRANSLATE_NOOP("FieldEditor", "Audio and video")),
+    MediaType.RINGTONE: str(QT_TRANSLATE_NOOP("FieldEditor", "Ringtone")),
+    MediaType.RENTAL: str(QT_TRANSLATE_NOOP("FieldEditor", "Rental")),
+    MediaType.ITUNES_EXTRA: str(QT_TRANSLATE_NOOP("FieldEditor", "iTunes Extras")),
+    MediaType.MEMO: str(QT_TRANSLATE_NOOP("FieldEditor", "Voice Memo")),
+    MediaType.ITUNES_U: "iTunes U",
+    MediaType.EPUB_BOOK: str(QT_TRANSLATE_NOOP("FieldEditor", "EPUB Book")),
+    MediaType.PDF_BOOK: str(QT_TRANSLATE_NOOP("FieldEditor", "PDF Book")),
 }
 
 
@@ -48,27 +56,37 @@ class ChapterEditor(QWidget):
         )
         self.table.setMinimumHeight(230)
         self.set_chapters(chapters)
-        add = ActionButton(self.tr("Add chapter"), self)
-        remove = ActionButton(
+        self._add_button = ActionButton(self.tr("Add chapter"), self)
+        self._remove_button = ActionButton(
             self.tr("Remove selected"),
             self,
             kind=ActionButtonKind.DANGER,
         )
-        sort = ActionButton(
+        self._sort_button = ActionButton(
             self.tr("Sort by time"),
             self,
             kind=ActionButtonKind.QUIET,
         )
-        add.clicked.connect(self._add)
-        remove.clicked.connect(self._remove)
-        sort.clicked.connect(self._sort)
+        self._add_button.clicked.connect(self._add)
+        self._remove_button.clicked.connect(self._remove)
+        self._sort_button.clicked.connect(self._sort)
         actions = QHBoxLayout()
-        for button in (add, remove, sort):
+        for button in (self._add_button, self._remove_button, self._sort_button):
             actions.addWidget(button)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.table)
         layout.addLayout(actions)
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.Type.LanguageChange:
+            self.table.setHorizontalHeaderLabels(
+                [self.tr("Start (ms)"), self.tr("Title")]
+            )
+            self._add_button.setText(self.tr("Add chapter"))
+            self._remove_button.setText(self.tr("Remove selected"))
+            self._sort_button.setText(self.tr("Sort by time"))
+        super().changeEvent(event)
 
     def set_chapters(self, chapters: tuple[TrackChapter, ...]) -> None:
         self.table.setRowCount(len(chapters))
@@ -81,7 +99,7 @@ class ChapterEditor(QWidget):
         for row in range(self.table.rowCount()):
             start, title = self.table.item(row, 0), self.table.item(row, 1)
             if start is None or title is None:
-                raise ValueError("Each chapter needs a start time and title.")
+                raise ValueError(self.tr("Each chapter needs a start time and title."))
             result.append(TrackChapter(title.text(), int(start.text())))
         return tuple(result)
 
@@ -124,12 +142,16 @@ class FieldEditor(QFrame):
     ) -> None:
         super().__init__(parent)
         self.spec, self.initial, self.mixed = spec, value, mixed
+        self._media_type_choices = media_type_choices
         self._modified_state = False
         self._syncing = True
         self.setObjectName("metadataFieldRow")
         self.setProperty("modified", False)
 
-        field_label = QLabel(spec.label, self)
+        field_label = QLabel(
+            QCoreApplication.translate("MetadataFields", spec.label), self
+        )
+        self._field_label = field_label
         field_label.setObjectName("metadataFieldLabel")
         if spec.kind is FieldKind.MEDIA_TYPE:
             media_editor = AppComboBox(self)
@@ -139,7 +161,9 @@ class FieldEditor(QFrame):
                 else None
             )
             if mixed:
-                media_editor.addItem(self.tr("Mixed values"), None)
+                media_editor.addItem(
+                    QCoreApplication.translate("EditorLabels", "Mixed values"), None
+                )
             elif current not in media_type_choices:
                 retained = (
                     " + ".join(
@@ -174,13 +198,16 @@ class FieldEditor(QFrame):
         elif spec.kind in (FieldKind.BOOLEAN, FieldKind.ADVISORY):
             editor = AppComboBox(self)
             if mixed:
-                editor.addItem(self.tr("Mixed values"), None)
+                editor.addItem(
+                    QCoreApplication.translate("EditorLabels", "Mixed values"), None
+                )
             options = (
-                (("No", False), ("Yes", True))
+                ((self.tr("No"), False), (self.tr("Yes"), True))
                 if spec.kind is FieldKind.BOOLEAN
-                else tuple(
-                    (advisory.value.capitalize(), advisory)
-                    for advisory in ContentAdvisory
+                else (
+                    (self.tr("Unspecified"), ContentAdvisory.UNSPECIFIED),
+                    (self.tr("Explicit"), ContentAdvisory.EXPLICIT),
+                    (self.tr("Clean"), ContentAdvisory.CLEAN),
                 )
             )
             for option_label, data in options:
@@ -242,6 +269,68 @@ class FieldEditor(QFrame):
         layout.addLayout(header)
         layout.addWidget(self.editor)
         self._syncing = False
+
+    def retranslate_ui(self) -> None:
+        self._field_label.setText(
+            QCoreApplication.translate("MetadataFields", self.spec.label)
+        )
+        self.reset_button.setText(self.tr("Reset"))
+        editor = self.editor
+        if isinstance(editor, AppComboBox):
+            advisory_labels = {
+                ContentAdvisory.UNSPECIFIED: self.tr("Unspecified"),
+                ContentAdvisory.EXPLICIT: self.tr("Explicit"),
+                ContentAdvisory.CLEAN: self.tr("Clean"),
+            }
+            for index in range(editor.count()):
+                value = editor.itemData(index)
+                if value is None:
+                    if self.mixed:
+                        label = QCoreApplication.translate(
+                            "EditorLabels", "Mixed values"
+                        )
+                    else:
+                        retained = (
+                            " + ".join(
+                                self.tr(_MEDIA_TYPE_LABELS.get(kind, kind.value))
+                                for kind in self.initial
+                                if isinstance(kind, MediaType)
+                            )
+                            if isinstance(self.initial, tuple)
+                            else str(self.initial)
+                        )
+                        label = self.tr("Current (%1)").replace("%1", retained)
+                elif self.spec.kind is FieldKind.BOOLEAN:
+                    label = self.tr("Yes") if value else self.tr("No")
+                elif self.spec.kind is FieldKind.ADVISORY:
+                    label = advisory_labels[ContentAdvisory(value)]
+                else:
+                    label = self.tr(_MEDIA_TYPE_LABELS[MediaType(value)])
+                editor.setItemText(index, label)
+            if self.spec.kind is FieldKind.MEDIA_TYPE:
+                editor.setToolTip(
+                    self.tr(
+                        "Changes Library classification; keeps the existing media file."
+                    )
+                    if self._media_type_choices
+                    else self.tr(
+                        "Select audio Tracks or video Tracks with a known media type "
+                        "to change their classification together."
+                    )
+                )
+        elif isinstance(editor, QLineEdit | QPlainTextEdit):
+            editor.setPlaceholderText(
+                self.tr("Mixed values — unchanged")
+                if self.mixed
+                else self.tr("ISO date or Unix seconds; blank to clear")
+                if self.spec.kind is FieldKind.DATE
+                else ""
+            )
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.Type.LanguageChange:
+            self.retranslate_ui()
+        super().changeEvent(event)
 
     def _modified(self, *_args: object) -> None:
         if self._syncing:
@@ -320,8 +409,8 @@ class FieldEditor(QFrame):
                 return MediaType(value)
             if isinstance(value, bool | ContentAdvisory):
                 return value
-            raise ValueError("Choose a value to replace mixed values.")
-        raise ValueError("This field cannot be edited.")
+            raise ValueError(self.tr("Choose a value to replace mixed values."))
+        raise ValueError(self.tr("This field cannot be edited."))
 
 
 __all__ = ["ChapterEditor", "FieldEditor"]

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QByteArray, QEvent, QSize, Qt, QTimer
+from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QSize, Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDialog,
@@ -36,6 +36,7 @@ from iOpenPod.app.device_controller import (
     DeviceOperation,
     DeviceOperationFailure,
 )
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.host_media_library import (
     HostMediaLibrary,
     HostMediaScanProgress,
@@ -88,6 +89,13 @@ from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.pages.synesthesia_page import SynesthesiaPage
 from iOpenPod.GUI.pages.track_page import TrackPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.i18n.text import (
+    device_count_text,
+    english_count_fallback,
+    planned_change_count_text,
+    track_count_text,
+)
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.photo_provider import PhotoPixmapProvider
 from iOpenPod.GUI.presentation.podcast_artwork_provider import (
     PodcastArtworkPixmapProvider,
@@ -618,13 +626,7 @@ class MainWindow(QMainWindow):
             and self._sync_workspace.stage is SyncStage.REVIEW
             and plan is not None
         ):
-            changes = (
-                self.tr("1 planned change")
-                if plan.change_count == 1
-                else self.tr("%1 planned changes").replace(
-                    "%1", f"{plan.change_count:,}"
-                )
-            )
+            changes = planned_change_count_text(plan.change_count)
             if plan.attention_count:
                 attention = (
                     self.tr("1 item needs attention")
@@ -646,12 +648,12 @@ class MainWindow(QMainWindow):
                 )
             if self._sync_workspace.stage is SyncStage.SELECT:
                 count = self._sync_workspace.selection.selected_host_count
-                return self.tr("%n Host items selected for Sync", None, count)
+                return self.tr("Host items selected for Sync: %n", None, count)
             if self._sync_workspace.stage is SyncStage.SCANNING:
                 return self.tr("Scanning the Host Media Library…")
             return self.tr("Configure Sync with Host")
         count = self._context.track_model.track_count
-        count_text = self.tr("%n Tracks", None, count)
+        count_text = track_count_text(count)
         active_ipod = self._context.device_controller.active_ipod
         if active_ipod is not None:
             message = (
@@ -666,7 +668,7 @@ class MainWindow(QMainWindow):
             message = self.tr("Loading iPod…")
         else:
             candidate_count = len(self._context.device_controller.discovery.candidates)
-            devices = self.tr("%n device(s) found", None, candidate_count)
+            devices = device_count_text(candidate_count)
             message = self.tr("No Active iPod · %1").replace("%1", devices)
         return message
 
@@ -687,7 +689,7 @@ class MainWindow(QMainWindow):
             progress.setValue(min(value.current, value.total))
         progress.setToolTip(value.current_file)
         progress.show()
-        self._context.status.show(_BACKUP_STATUS_SOURCE, value.message)
+        self._context.status.show(_BACKUP_STATUS_SOURCE, workflow_text(value.message))
 
     def _backup_busy_changed(self, busy: bool) -> None:
         if busy:
@@ -805,7 +807,9 @@ class MainWindow(QMainWindow):
                 workspace.edit_revision,
             )
         except ValueError as error:
-            QMessageBox.warning(self, self.tr("Library action unavailable"), str(error))
+            QMessageBox.warning(
+                self, self.tr("Library action unavailable"), workflow_text(str(error))
+            )
 
     def _open_synesthesia(self) -> None:
         if self._context.playback_controller.current_track is None:
@@ -818,7 +822,7 @@ class MainWindow(QMainWindow):
         if isinstance(value, AnalysisProgress):
             self._context.status.show(
                 _SYNESTHESIA_PROGRESS_STATUS_SOURCE,
-                value.detail,
+                workflow_text(value.detail),
             )
 
     def _toggle_synesthesia_fullscreen(self) -> None:
@@ -987,7 +991,9 @@ class MainWindow(QMainWindow):
         return HostPath(Path(selected)) if selected else None
 
     def _show_export_progress(self, label: str) -> None:
-        progress = QProgressDialog(label, self.tr("Cancel"), 0, 0, self)
+        progress = QProgressDialog(
+            label, QCoreApplication.translate("CommonActions", "Cancel"), 0, 0, self
+        )
         progress.setObjectName("libraryExportProgress")
         progress.setWindowTitle(self.tr("Exporting"))
         progress.setWindowModality(Qt.WindowModality.WindowModal)
@@ -1001,20 +1007,26 @@ class MainWindow(QMainWindow):
     def _export_progress_changed(self, value: object) -> None:
         if not isinstance(value, ExportProgress) or self._export_progress is None:
             return
-        self._export_progress.setLabelText(value.message)
+        self._export_progress.setLabelText(workflow_text(value.message))
         self._export_progress.setRange(0, max(1, value.total))
         self._export_progress.setValue(min(value.completed, value.total))
 
     def _export_finished(self, value: object) -> None:
         self._close_export_progress()
         if isinstance(value, PhotoExportResult):
-            detail = self.tr(
-                "%n Photo(s) were exported into individual folders.",
-                None,
+            detail = english_count_fallback(
+                "Exported %n Photo(s) into individual folders.",
+                self.tr(
+                    "Exported %n Photo(s) into individual folders.",
+                    None,
+                    len(value.photo_directories),
+                ),
                 len(value.photo_directories),
             )
-            detail += "\n" + self.tr(
-                "%n image file(s) were written.", None, len(value.photo_files)
+            detail += "\n" + english_count_fallback(
+                "Wrote %n image file(s).",
+                self.tr("Wrote %n image file(s).", None, len(value.photo_files)),
+                len(value.photo_files),
             )
             if value.album_directory is not None:
                 detail += "\n" + self.tr("Created %1").replace(
@@ -1023,14 +1035,20 @@ class MainWindow(QMainWindow):
         elif isinstance(value, ExportResult) and value.playlist_file is not None:
             detail = self.tr("Created %1").replace("%1", value.playlist_file.path.name)
             if value.track_files:
-                detail += "\n" + self.tr(
-                    "%n Track file(s) were exported beside it.",
-                    None,
+                detail += "\n" + english_count_fallback(
+                    "Exported %n Track file(s) beside it.",
+                    self.tr(
+                        "Exported %n Track file(s) beside it.",
+                        None,
+                        len(value.track_files),
+                    ),
                     len(value.track_files),
                 )
         elif isinstance(value, ExportResult):
-            detail = self.tr(
-                "%n Track file(s) were exported.", None, len(value.track_files)
+            detail = english_count_fallback(
+                "Exported %n Track file(s).",
+                self.tr("Exported %n Track file(s).", None, len(value.track_files)),
+                len(value.track_files),
             )
         else:
             return
@@ -1040,14 +1058,16 @@ class MainWindow(QMainWindow):
             detail,
         )
 
-    def _export_failed(self, detail: str) -> None:
+    def _export_failed(self, detail: object) -> None:
+        if not isinstance(detail, str):
+            return
         self._close_export_progress()
         QMessageBox.warning(
             self,
             self.tr("Export Failed"),
             self.tr("The export could not be completed.")
             + "\n\n"
-            + detail
+            + workflow_text(detail)
             + "\n\n"
             + self.tr(
                 "Any completed copies were left in the selected folder. Existing "
@@ -1235,7 +1255,7 @@ class MainWindow(QMainWindow):
         self._sync_workspace.set_available_pages(available)
         self._workspaces.setCurrentWidget(self._sync_workspace)
         self._show_media_scan_progress(
-            self.tr("Finding media in the selected folders…")
+            source_text("Finding media in the selected folders…")
         )
         self.retranslate_ui()
 
@@ -1264,15 +1284,16 @@ class MainWindow(QMainWindow):
             return
         if self._sync_workspace.stage is not SyncStage.SCANNING:
             self._show_media_scan_progress(value.message)
-        detail = value.message
+        path = ""
         if value.path is not None:
-            detail += "\n" + (
+            path = (
                 value.path.path.name
                 if isinstance(value, HostMediaScanProgress)
                 else value.path.name
             )
         self._sync_workspace.update_scan(
-            detail,
+            value.message,
+            path=path,
             completed=value.completed,
             total=value.total,
             phase=f"{type(value).__name__}:{value.stage.value}",
@@ -1292,7 +1313,7 @@ class MainWindow(QMainWindow):
                 dialog.accepted_paths
             ):
                 self._show_media_scan_progress(
-                    self.tr("Reading accepted playlist files…")
+                    source_text("Reading accepted playlist files…")
                 )
         finally:
             dialog.deleteLater()
@@ -1304,7 +1325,7 @@ class MainWindow(QMainWindow):
             self._pending_host_media_library = value
             if self._context.ipod_media_controller.start():
                 self._show_media_scan_progress(
-                    self.tr("Comparing the iPod media with its Sync helper…")
+                    source_text("Comparing the iPod media with its Sync helper…")
                 )
                 return
             self._pending_host_media_library = None
@@ -1531,7 +1552,7 @@ class MainWindow(QMainWindow):
             self.tr("iPod Ejected"),
             self.tr("%1 is safe to disconnect.").replace("%1", value.display_name)
             + "\n\n"
-            + value.detail,
+            + workflow_text(value.detail),
         )
 
     def _device_discovery_changed(self, value: object) -> None:
@@ -1587,7 +1608,7 @@ class MainWindow(QMainWindow):
                 if value.operation is DeviceOperation.EJECT
                 else self.tr("Could Not Load iPod")
             ),
-            value.message,
+            workflow_text(value.message),
         )
 
     def _artwork_load_failed(self, value: object) -> None:
@@ -1620,7 +1641,9 @@ class MainWindow(QMainWindow):
             value.error_type,
             value.message,
         )
-        self._context.status.show("playback", value.message, timeout_ms=8_000)
+        self._context.status.show(
+            "playback", workflow_text(value.message), timeout_ms=8_000
+        )
 
 
 def _tracks_from_signal(value: object) -> tuple[Track, ...] | None:

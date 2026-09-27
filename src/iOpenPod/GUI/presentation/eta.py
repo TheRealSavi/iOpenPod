@@ -20,40 +20,42 @@ def eta_text(estimate: EtaEstimate) -> str:
         case EtaState.UNKNOWN_TOTAL:
             return ""
         case EtaState.WARMING_UP:
-            return _tr("Estimating time for this stage…")
+            return QCoreApplication.translate("Eta", "Estimating time for this stage…")
         case EtaState.STALLED:
-            return _tr("Waiting for progress…")
+            return QCoreApplication.translate("Eta", "Waiting for progress…")
         case EtaState.PAUSED:
-            return _tr("Paused")
+            return QCoreApplication.translate("Eta", "Paused")
         case EtaState.COMPLETE:
-            return _tr("Finishing this stage…")
+            return QCoreApplication.translate("Eta", "Finishing this stage…")
         case EtaState.ESTIMATING:
             remaining = estimate.remaining_seconds
             lower, upper = estimate.lower_seconds, estimate.upper_seconds
             assert remaining is not None and lower is not None and upper is not None
             if upper / lower >= 1.75 and _duration(lower) != _duration(upper):
-                return _tr("About {lower} to {upper} left in this stage").format(
-                    lower=_duration(lower), upper=_duration(upper)
-                )
-            return _tr("About {duration} left in this stage").format(
-                duration=_duration(remaining)
-            )
+                return QCoreApplication.translate(
+                    "Eta", "About {lower} to {upper} left in this stage"
+                ).format(lower=_duration(lower), upper=_duration(upper))
+            return QCoreApplication.translate(
+                "Eta", "About {duration} left in this stage"
+            ).format(duration=_duration(remaining))
 
 
 def _duration(seconds: float) -> str:
     if seconds < 60:
         rounded = max(5, math.ceil(seconds / 5) * 5)
         if rounded < 60:
-            return _tr("{seconds}s").format(seconds=rounded)
+            return QCoreApplication.translate("Eta", "{seconds}s").format(
+                seconds=rounded
+            )
     minutes = math.ceil(seconds / 60)
     if minutes < 60:
-        return _tr("{minutes}m").format(minutes=minutes)
+        return QCoreApplication.translate("Eta", "{minutes}m").format(minutes=minutes)
     hours, minutes = divmod(minutes, 60)
     if hours >= 24:
         days, hours = divmod(hours, 24)
-        return _tr("{days}d {hours}h").format(days=days, hours=hours)
-    return _tr("{hours}h {minutes}m").format(hours=hours, minutes=minutes)
-
-
-def _tr(text: str) -> str:
-    return QCoreApplication.translate("Eta", text)
+        return QCoreApplication.translate("Eta", "{days}d {hours}h").format(
+            days=days, hours=hours
+        )
+    return QCoreApplication.translate("Eta", "{hours}h {minutes}m").format(
+        hours=hours, minutes=minutes
+    )

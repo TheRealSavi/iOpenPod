@@ -475,10 +475,10 @@ class TranscodingSettings(QWidget):
         self._vbr.setVisible(vbr)
         self._vbr.set_copy(
             self.tr("VBR Quality"),
-            self.tr(
-                "Lower values mean higher quality and larger files for LAME MP3."
-                if encoder is LossyEncoder.MP3
-                else "Higher values mean higher quality and larger files for this AAC encoder."
+            self.tr("Lower values mean higher quality and larger files for LAME MP3.")
+            if encoder is LossyEncoder.MP3
+            else self.tr(
+                "Higher values mean higher quality and larger files for this AAC encoder."
             ),
         )
         self._cutoff.setVisible(manual)

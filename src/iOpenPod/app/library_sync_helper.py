@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, cast
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.host_media_fingerprint import (
     FpcalcError,
     FpcalcFingerprinter,
@@ -232,8 +233,10 @@ def publish_sync_helper(
             issues.append(
                 IPodMediaScanIssue(
                     f"Track {track.track_id}",
-                    f"Retained Sync helper evidence was omitted because its media "
-                    f"file could not be checked: {error}",
+                    source_text(
+                        "Retained Sync helper evidence was omitted because its media file could not be checked: {error}",
+                        error=str(error),
+                    ),
                 )
             )
             continue
@@ -304,8 +307,10 @@ def publish_sync_helper(
                 issues.append(
                     IPodMediaScanIssue(
                         f"Image {photo.photo_id}",
-                        "Retained Sync helper evidence was omitted because its media "
-                        f"file could not be checked: {error}",
+                        source_text(
+                            "Retained Sync helper evidence was omitted because its media file could not be checked: {error}",
+                            error=str(error),
+                        ),
                     )
                 )
     revision = _save_helper(
@@ -316,9 +321,11 @@ def publish_sync_helper(
         issues.append(
             IPodMediaScanIssue(
                 "Sync helper",
-                "The helper was verified, but complete device flushing "
-                "could not be confirmed. Safely eject before unplugging. "
-                + flush.detail,
+                source_text(
+                    "The helper was verified, but complete device flushing "
+                    "could not be confirmed. Safely eject before unplugging. {detail}",
+                    detail=flush.detail,
+                ),
             )
         )
     return IPodMediaLibrary(
@@ -412,7 +419,11 @@ class IPodMediaScanner:
                         database_track_id=_database_track_id(track),
                     )
                     reused += 1
-                    label = f"Reusing iPod Track {index:,} of {len(library.tracks):,}…"
+                    label = source_text(
+                        "Reusing iPod Track {index} of {total}…",
+                        index=f"{index:,}",
+                        total=f"{len(library.tracks):,}",
+                    )
                 else:
                     identity = (str(track_path), entry.size, entry.modified_ns)
                     acoustic = copied_fingerprints.get(identity)
@@ -441,7 +452,11 @@ class IPodMediaScanner:
                         sync=sync,
                     )
                     fingerprinted += 1
-                    label = f"Fingerprinting iPod Track {index:,} of {len(library.tracks):,}…"
+                    label = source_text(
+                        "Fingerprinting iPod Track {index} of {total}…",
+                        index=f"{index:,}",
+                        total=f"{len(library.tracks):,}",
+                    )
                 tracks.append(track_record)
                 current = session.stat(track_path)
                 if current.size != entry.size or not session.modified_time_matches(
@@ -457,10 +472,13 @@ class IPodMediaScanner:
                 issues.append(
                     IPodMediaScanIssue(
                         "Acoustic matching",
-                        f"Acoustic matching is unavailable; existing Sync Details and independent items remain usable. {error}",
+                        source_text(
+                            "Acoustic matching is unavailable; existing Sync Details and independent items remain usable. {error}",
+                            error=str(error),
+                        ),
                     )
                 )
-                label = "Continuing without acoustic matching…"
+                label = source_text("Continuing without acoustic matching…")
             except (FpcalcError, OSError, StorageError, ValueError) as error:
                 issues.append(
                     IPodMediaScanIssue(
@@ -468,7 +486,11 @@ class IPodMediaScanner:
                         str(error),
                     )
                 )
-                label = f"Could not fingerprint iPod Track {index:,} of {len(library.tracks):,}."
+                label = source_text(
+                    "Could not fingerprint iPod Track {index} of {total}.",
+                    index=f"{index:,}",
+                    total=f"{len(library.tracks):,}",
+                )
             _emit(
                 progress,
                 IPodMediaScanStage.TRACKS,
@@ -492,7 +514,11 @@ class IPodMediaScanner:
                 ):
                     image_record = image_previous
                     reused += 1
-                    label = f"Reusing iPod image {index:,} of {len(photos):,}…"
+                    label = source_text(
+                        "Reusing iPod image {index} of {total}…",
+                        index=f"{index:,}",
+                        total=f"{len(photos):,}",
+                    )
                 else:
                     identity = (str(image_path), entry.size, entry.modified_ns)
                     digest = image_fingerprints.get(identity)
@@ -514,7 +540,11 @@ class IPodMediaScanner:
                         sync=sync,
                     )
                     fingerprinted += 1
-                    label = f"Fingerprinting iPod image {index:,} of {len(photos):,}…"
+                    label = source_text(
+                        "Fingerprinting iPod image {index} of {total}…",
+                        index=f"{index:,}",
+                        total=f"{len(photos):,}",
+                    )
                 images.append(image_record)
                 current = session.stat(image_path)
                 if current.size != entry.size or not session.modified_time_matches(
@@ -527,8 +557,10 @@ class IPodMediaScanner:
                     )
             except (OSError, StorageError, ValueError) as error:
                 issues.append(IPodMediaScanIssue(f"Image {photo.photo_id}", str(error)))
-                label = (
-                    f"Could not fingerprint iPod image {index:,} of {len(photos):,}."
+                label = source_text(
+                    "Could not fingerprint iPod image {index} of {total}.",
+                    index=f"{index:,}",
+                    total=f"{len(photos):,}",
                 )
             _emit(
                 progress,
@@ -567,8 +599,10 @@ class IPodMediaScanner:
                 issues.append(
                     IPodMediaScanIssue(
                         "Sync helper",
-                        "The helper was verified, but the operating system did not "
-                        f"confirm a complete device flush: {flush.detail}",
+                        source_text(
+                            "The helper was verified, but the operating system did not confirm a complete device flush: {detail}",
+                            detail=str(flush.detail),
+                        ),
                     )
                 )
         elif persist and not loaded.writable:
@@ -656,7 +690,10 @@ def _load_helper(
         return (
             _LoadedHelper(revision=source.fingerprint, writable=False),
             IPodMediaScanIssue(
-                "Sync helper", f"The existing helper is invalid: {error}"
+                "Sync helper",
+                source_text(
+                    "The existing helper is invalid: {error}", error=str(error)
+                ),
             ),
         )
     return replace(loaded, revision=source.fingerprint), None

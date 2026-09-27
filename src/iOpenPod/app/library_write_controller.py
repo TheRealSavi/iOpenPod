@@ -103,7 +103,7 @@ class _Work(QRunnable):
 
 class LibraryWriteController(QObject):
     changed = Signal()
-    progressChanged = Signal(str)
+    progressChanged = Signal(object)
     automaticSaveFailed = Signal()
     automaticSaveWarning = Signal()
 

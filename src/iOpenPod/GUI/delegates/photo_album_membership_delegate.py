@@ -21,6 +21,7 @@ from iOpenPod.app.models.photo_album_membership_model import (
     PhotoAlbumMembershipSummary,
 )
 from iOpenPod.GUI.presentation.artwork import paint_artwork_placeholder
+from iOpenPod.GUI.presentation.i18n.text import photo_count_text
 from iOpenPod.GUI.presentation.library_card import (
     library_card_size,
     paint_library_card,
@@ -75,11 +76,7 @@ class PhotoAlbumMembershipDelegate(QStyledItemDelegate):
         if not isinstance(summary, PhotoAlbumMembershipSummary):
             return
         count = summary.photo_count
-        detail = (
-            self.tr("%n Photo", None, count)
-            if count == 1
-            else self.tr("%n Photos", None, count)
-        )
+        detail = photo_count_text(count)
         card_option = QStyleOptionViewItem(option)
         card_option.state = option.state & ~QStyle.StateFlag.State_HasFocus
         paint_library_card(

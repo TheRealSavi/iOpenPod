@@ -51,7 +51,7 @@ def test_setting_options_apply_and_survive_retranslation(
         assert library is not None
         assert library.findChild(AppComboBox, combo.objectName()) is combo
         assert [combo.itemText(i) for i in range(combo.count())] == [
-            "Add to queue",
+            "Add to Queue",
             "Play next",
             "Play now",
             "Edit",

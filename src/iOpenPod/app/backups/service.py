@@ -61,6 +61,7 @@ from iOpenPod.app.backups.repository import (
     BackupRepository,
 )
 from iOpenPod.app.backups.scope import enumerate_backup_files
+from iOpenPod.app.display_text import SourceText, exception_text, source_text
 from iOpenPod.app.services.device_coordinator import (
     DeviceAccessError,
     DeviceChangedError,
@@ -1103,14 +1104,21 @@ def _import_outcome(result: LegacyImportResult) -> ImportCompleted:
     diagnostics = tuple(
         BackupDiagnostic(
             "legacy.import_failed",
-            f"Could not import {item.legacy_device_id}/{item.snapshot_id}.",
+            source_text(
+                "Could not import {device_id}/{snapshot_id}.",
+                device_id=item.legacy_device_id,
+                snapshot_id=item.snapshot_id,
+            ),
             item.detail,
         )
         for item in result.failures
     ) + tuple(
         BackupDiagnostic(
             "legacy.identity_unproven",
-            f"{item.device_name or item.device_id} requires confirmation before restore.",
+            source_text(
+                "{device_name} requires confirmation before restore.",
+                device_name=item.device_name or item.device_id,
+            ),
         )
         for item in (*result.imported, *result.already_imported)
         if item.requires_restore_confirmation
@@ -1154,7 +1162,9 @@ def _emit(
 
 
 def backup_failure_for(error: Exception, *, operation: str) -> BackupFailure:
-    detail = str(error).strip() or type(error).__name__
+    detail = exception_text(error)
+    if not isinstance(detail, SourceText):
+        detail = detail.strip() or type(error).__name__
     if isinstance(error, DeviceBusyError):
         return BackupFailure(
             BackupFailureCode.ARCHIVE_BUSY,

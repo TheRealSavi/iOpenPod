@@ -127,11 +127,11 @@ class PodcastSubscriptionListModel(QAbstractListModel):
             return None
         if self.is_all_at(index.row()):
             if role == Qt.ItemDataRole.DisplayRole:
-                return "All Podcasts"
+                return self.tr("All Podcasts")
             if role == PodcastListRole.IDENTITY:
                 return ALL_PODCASTS_SOURCE_ID
             if role == PodcastListRole.SEARCH_TEXT:
-                return "all podcasts"
+                return self.tr("All Podcasts").casefold()
             if role == PodcastListRole.IS_AGGREGATE:
                 return True
             if role == PodcastListRole.EPISODE_COUNT:
@@ -159,6 +159,17 @@ class PodcastSubscriptionListModel(QAbstractListModel):
         if role == PodcastListRole.ON_DEVICE_COUNT:
             return item.on_device_count
         return None
+
+    def retranslate(self) -> None:
+        """Refresh the aggregate label and its localized search text."""
+
+        if self._include_all:
+            aggregate = self.index(0, 0)
+            self.dataChanged.emit(
+                aggregate,
+                aggregate,
+                [Qt.ItemDataRole.DisplayRole.value, PodcastListRole.SEARCH_TEXT.value],
+            )
 
 
 class PodcastEpisodeListModel(QAbstractListModel):

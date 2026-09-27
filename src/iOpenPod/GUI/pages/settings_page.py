@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSignalBlocker, Qt, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -440,7 +440,7 @@ class SettingsPage(QWidget):
             self.tr("The currently running iOpenPod version."),
         )
         self._report_issue_row.set_copy(
-            self.tr("Report an issue"),
+            QCoreApplication.translate("CommonActions", "Report an Issue"),
             self.tr("Open the iOpenPod issue tracker on GitHub."),
         )
         self._donation_row.set_copy(
@@ -452,7 +452,9 @@ class SettingsPage(QWidget):
         self._choose_backup_location.setText(self.tr("Choose…"))
         self._check_udev_rule.setText(self.tr("Check Again"))
         self._uninstall_udev_rule.setText(self.tr("Uninstall Rule"))
-        self._report_issue.setText(self.tr("Report an Issue"))
+        self._report_issue.setText(
+            QCoreApplication.translate("CommonActions", "Report an Issue")
+        )
         self._donate.setText(self.tr("Donate"))
         self._saved_note.setText(self.tr("Changes are saved automatically."))
         self._rebuild_appearance_options()
@@ -486,7 +488,9 @@ class SettingsPage(QWidget):
                 "and the references this project learned from.</p>"
                 "<p>Application icon by DJShott, used with permission.</p>"
             ).format(
-                license='<a href="https://www.gnu.org/licenses/gpl-3.0.html">GPLv3 or later</a>',
+                license='<a href="https://www.gnu.org/licenses/gpl-3.0.html">'
+                + self.tr("GPLv3 or later")
+                + "</a>",
                 hashab='<a href="https://github.com/dstaley/hashab">Dylan Staley (@dstaley)</a>',
                 libgpod='<a href="https://github.com/gtkpod/libgpod">libgpod</a>',
                 gtkpod='<a href="https://github.com/gtkpod/gtkpod">gtkpod</a>',
@@ -606,7 +610,10 @@ class SettingsPage(QWidget):
         blocker = QSignalBlocker(self._double_click_combo)
         self._double_click_combo.clear()
         for label, action in (
-            (self.tr("Add to queue"), LibraryDoubleClickShortcut.ADD_TO_QUEUE),
+            (
+                QCoreApplication.translate("CommonActions", "Add to Queue"),
+                LibraryDoubleClickShortcut.ADD_TO_QUEUE,
+            ),
             (self.tr("Play next"), LibraryDoubleClickShortcut.PLAY_NEXT),
             (self.tr("Play now"), LibraryDoubleClickShortcut.PLAY_NOW),
             (self.tr("Edit"), LibraryDoubleClickShortcut.EDIT),

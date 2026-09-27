@@ -13,6 +13,7 @@ from iOpenPod.app.core.settings.definitions import (
     LAST_SELECTED_IPOD_VOLUME_ID,
     MANAGE_VOLUME_PRESENTATION,
 )
+from iOpenPod.app.display_text import exception_text
 from iOpenPod.app.models.device import (
     ActiveIPod,
     DeviceCandidateId,
@@ -476,7 +477,7 @@ class DeviceController(QObject):
         if resolved_operation is DeviceOperation.EJECT:
             self._replace_active_ipod(self._coordinator.active_ipod)
         message = (
-            str(error)
+            exception_text(error)
             if isinstance(error, Exception)
             else self.tr("The device operation failed.")
         )

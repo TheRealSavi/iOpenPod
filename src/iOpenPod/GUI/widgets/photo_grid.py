@@ -13,6 +13,7 @@ from iOpenPod.app.models.photo_list_model import (
 )
 from iOpenPod.app.models.selection_grouping import SelectionGroupingProxyModel
 from iOpenPod.GUI.delegates.photo_card_delegate import PhotoCardDelegate
+from iOpenPod.GUI.presentation.i18n.text import photo_count_text
 from iOpenPod.GUI.presentation.photo_provider import PhotoPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.track_drag_preview import (
@@ -83,7 +84,7 @@ class PhotoGridView(SelectionGridView):
             return
 
         pixmap = render_count_drag_preview(
-            self.tr("%n Photos", None, len(photo_ids)),
+            photo_count_text(len(photo_ids)),
             base_font=self.font(),
             tokens=self._theme_manager.tokens,
             device_pixel_ratio=self.devicePixelRatioF(),

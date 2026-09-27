@@ -1,6 +1,6 @@
 """Themed name editor for creating or renaming one Photo Album."""
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -108,7 +108,7 @@ class PhotoAlbumEditorDialog(QDialog):
         self._create.setText(
             self.tr("Rename Album") if self._renaming else self.tr("Create Album")
         )
-        self._cancel.setText(self.tr("Cancel"))
+        self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:

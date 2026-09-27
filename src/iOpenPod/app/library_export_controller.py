@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 
+from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.library_export import (
     ExportCancelledError,
     ExportProgress,
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 class _Signals(QObject):
     progress = Signal(int, object)
-    completed = Signal(int, object, str, bool)
+    completed = Signal(int, object, object, bool)
 
 
 class _ExportWork(QRunnable):
@@ -108,7 +109,7 @@ class _ExportWork(QRunnable):
             self.signals.completed.emit(self.token, None, "", True)
         except Exception as error:
             logger.exception("Library export failed")
-            self.signals.completed.emit(self.token, None, str(error), False)
+            self.signals.completed.emit(self.token, None, exception_text(error), False)
         else:
             self.signals.completed.emit(self.token, result, "", False)
 
@@ -118,7 +119,7 @@ class LibraryExportController(QObject):
 
     progressChanged = Signal(object)
     finished = Signal(object)
-    failed = Signal(str)
+    failed = Signal(object)
     cancelled = Signal()
     busyChanged = Signal(bool)
 
@@ -240,9 +241,9 @@ class LibraryExportController(QObject):
         if token == self._token and self.busy and isinstance(value, ExportProgress):
             self.progressChanged.emit(value)
 
-    @Slot(int, object, str, bool)
+    @Slot(int, object, object, bool)
     def _completed(
-        self, token: int, value: object, error: str, was_cancelled: bool
+        self, token: int, value: object, error: object, was_cancelled: bool
     ) -> None:
         self._jobs.pop(token, None)
         if self._closed or token != self._token:
@@ -254,7 +255,10 @@ class LibraryExportController(QObject):
         elif was_cancelled:
             self.cancelled.emit()
         else:
-            self.failed.emit(error or "The export could not be completed.")
+            detail = error if isinstance(error, str) else ""
+            self.failed.emit(
+                detail or source_text("The export could not be completed.")
+            )
 
     def shutdown(self) -> None:
         self._closed = True

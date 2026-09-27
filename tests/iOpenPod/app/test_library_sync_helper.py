@@ -5,10 +5,12 @@ from pathlib import Path
 
 import pytest
 
+from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.host_media_fingerprint import FpcalcUnavailableError
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
     IPodMediaScanner,
+    IPodMediaScanProgress,
     LibrarySyncHelperError,
     SyncDetails,
     SyncedImage,
@@ -157,6 +159,7 @@ def test_scan_fingerprints_uncached_media_and_persists_helper(tmp_path: Path) ->
     _write_media(root)
     fingerprinter = _Fingerprinter()
     scanner = IPodMediaScanner(fingerprinter)
+    progress: list[IPodMediaScanProgress] = []
 
     with session:
         result = scanner.scan(
@@ -165,6 +168,7 @@ def test_scan_fingerprints_uncached_media_and_persists_helper(tmp_path: Path) ->
             library_sha256="a" * 64,
             persist=True,
             checkpoint=lambda: None,
+            progress=progress.append,
         )
 
     helper_path = root / Path(str(LIBRARY_SYNC_HELPER_PATH))
@@ -181,6 +185,14 @@ def test_scan_fingerprints_uncached_media_and_persists_helper(tmp_path: Path) ->
     assert document["images"][0]["image_id"] == 91
     assert len(fingerprinter.calls) == 1
     assert not fingerprinter.calls[0].exists()
+    fingerprinted = next(
+        event.message
+        for event in progress
+        if event.message.startswith("Fingerprinting iPod Track")
+    )
+    assert isinstance(fingerprinted, SourceText)
+    assert fingerprinted.source == "Fingerprinting iPod Track {index} of {total}…"
+    assert dict(fingerprinted.parameters) == {"index": "1", "total": "1"}
 
 
 def test_scan_releases_each_device_capture_before_copying_the_next(

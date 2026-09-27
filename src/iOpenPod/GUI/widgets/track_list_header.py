@@ -1,6 +1,6 @@
 """Draggable context and search surface between Library item views."""
 
-from PySide6.QtCore import QByteArray, QEvent, QRectF, Qt, Signal
+from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QLinearGradient,
@@ -88,8 +88,12 @@ class TrackListHeader(QSplitterHandle):
     def retranslate_ui(self) -> None:
         self.setAccessibleName(self.tr("Resize Track list"))
         self.setToolTip(self.tr("Drag to resize the Track list"))
-        self._search.setPlaceholderText(self.tr("Search Tracks"))
-        self._search.setAccessibleName(self.tr("Search Tracks"))
+        self._search.setPlaceholderText(
+            QCoreApplication.translate("LibraryLabels", "Search Tracks")
+        )
+        self._search.setAccessibleName(
+            QCoreApplication.translate("LibraryLabels", "Search Tracks")
+        )
         self._search.setToolTip(self.tr("Search within the Tracks shown in this list"))
         self._refresh_title()
 

@@ -15,17 +15,21 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_music_import import FIXTURES
+
+# Reuse the sync tests' fixtures so fingerprint tests exercise the same setup.
 from tests.iOpenPod.app.test_podcast_sync_execution import (
-    _addition,
-    _FixedPodcastPlan,
-    _OpenerFactory,
-    _request,
+    _addition,  # pyright: ignore[reportPrivateUsage]
+    _FixedPodcastPlan,  # pyright: ignore[reportPrivateUsage]
+    _OpenerFactory,  # pyright: ignore[reportPrivateUsage]
+    _request,  # pyright: ignore[reportPrivateUsage]
 )
 from tests.iOpenPod.app.test_sync_execution import (
-    _Executor,
-    _host,
+    _Executor,  # pyright: ignore[reportPrivateUsage]
+    _host,  # pyright: ignore[reportPrivateUsage]
 )
-from tests.iOpenPod.app.test_sync_execution import _request as _host_request
+from tests.iOpenPod.app.test_sync_execution import (
+    _request as _host_request,  # pyright: ignore[reportPrivateUsage]
+)
 
 from iOpenPod.app.host_media_fingerprint import (
     FpcalcError,

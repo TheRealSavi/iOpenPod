@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
     QAbstractTableModel,
+    QCoreApplication,
     QModelIndex,
     QObject,
     QPersistentModelIndex,
@@ -109,14 +110,14 @@ class SyncPlanTableModel(QAbstractTableModel):
         ):
             return self._selection.review_check_state(item)
         if role == Qt.ItemDataRole.DisplayRole:
-            return _display_value(self, item, column)
+            return _display_value(item, column)
         if role == Qt.ItemDataRole.ToolTipRole:
-            return _tooltip(self, item)
+            return _tooltip(item)
         if role == Qt.ItemDataRole.AccessibleTextRole:
             return (
                 self.tr("%1, %2, %3")
-                .replace("%1", _action_label(self, item.action))
-                .replace("%2", _media_label(self, item.media_kind))
+                .replace("%1", _action_label(item.action))
+                .replace("%2", _media_label(item.media_kind))
                 .replace("%3", item.name)
             )
         if role == SyncPlanRole.ITEM:
@@ -251,76 +252,105 @@ class SyncPlanFilterModel(QSortFilterProxyModel):
 
 
 def _display_value(
-    model: SyncPlanTableModel,
     item: SyncPlanItem,
     column: SyncPlanColumn,
 ) -> str:
     if column is SyncPlanColumn.ACTION:
-        return _action_label(model, item.action)
+        return _action_label(item.action)
     if column is SyncPlanColumn.MEDIA:
-        return _media_label(model, item.media_kind)
+        return _media_label(item.media_kind)
     if column is SyncPlanColumn.NAME:
         return item.name if not item.detail else f"{item.name} — {item.detail}"
     if column is SyncPlanColumn.HOST:
         return item.host_path or "—"
     if column is SyncPlanColumn.IPOD:
         return item.ipod_path or "—"
-    return _basis_label(model, item)
+    return _basis_label(item)
 
 
-def _action_label(model: SyncPlanTableModel, action: SyncPlanAction) -> str:
+def _action_label(action: SyncPlanAction) -> str:
     return {
-        SyncPlanAction.ADD: model.tr("Add"),
-        SyncPlanAction.UPDATE: model.tr("Update"),
-        SyncPlanAction.REMOVE: model.tr("Remove"),
-        SyncPlanAction.UNCHANGED: model.tr("In sync"),
-        SyncPlanAction.ATTENTION: model.tr("Needs attention"),
+        SyncPlanAction.ADD: QCoreApplication.translate("SyncPlanTableModel", "Add"),
+        SyncPlanAction.UPDATE: QCoreApplication.translate(
+            "SyncPlanTableModel", "Update"
+        ),
+        SyncPlanAction.REMOVE: QCoreApplication.translate(
+            "SyncPlanTableModel", "Remove"
+        ),
+        SyncPlanAction.UNCHANGED: QCoreApplication.translate(
+            "SyncPlanTableModel", "In sync"
+        ),
+        SyncPlanAction.ATTENTION: QCoreApplication.translate(
+            "SyncPlanTableModel", "Needs attention"
+        ),
     }[action]
 
 
-def _media_label(model: SyncPlanTableModel, kind: SyncPlanMediaKind) -> str:
+def _media_label(kind: SyncPlanMediaKind) -> str:
     return {
-        SyncPlanMediaKind.TRACK: model.tr("Track"),
-        SyncPlanMediaKind.PHOTO: model.tr("Photo"),
+        SyncPlanMediaKind.TRACK: QCoreApplication.translate(
+            "SyncPlanTableModel", "Track"
+        ),
+        SyncPlanMediaKind.PHOTO: QCoreApplication.translate(
+            "SyncPlanTableModel", "Photo"
+        ),
     }[kind]
 
 
-def _basis_label(model: SyncPlanTableModel, item: SyncPlanItem) -> str:
+def _basis_label(item: SyncPlanItem) -> str:
     if item.basis is SyncPlanBasis.HOST_FACTS_CHANGED:
         if item.host_size_changed and item.host_modified_changed:
-            return model.tr("Host size and modified time changed")
+            return QCoreApplication.translate(
+                "SyncPlanTableModel", "Host size and modified time changed"
+            )
         if item.host_size_changed:
-            return model.tr("Host size changed")
-        return model.tr("Host modified time changed")
+            return QCoreApplication.translate("SyncPlanTableModel", "Host size changed")
+        return QCoreApplication.translate(
+            "SyncPlanTableModel", "Host modified time changed"
+        )
     return {
-        SyncPlanBasis.HOST_ONLY: model.tr("Only in Host Media Library"),
-        SyncPlanBasis.IPOD_ONLY: model.tr("Only on iPod"),
-        SyncPlanBasis.HOST_FACTS_MATCH: model.tr(
-            "Host size and modified time still match"
+        SyncPlanBasis.HOST_ONLY: QCoreApplication.translate(
+            "SyncPlanTableModel", "Only in Host Media Library"
         ),
-        SyncPlanBasis.CONTENT_MATCH: model.tr("Matching content identity"),
-        SyncPlanBasis.MISSING_IDENTITY: model.tr(
-            "No safe content identity was available"
+        SyncPlanBasis.IPOD_ONLY: QCoreApplication.translate(
+            "SyncPlanTableModel", "Only on iPod"
         ),
-        SyncPlanBasis.AMBIGUOUS_IDENTITY: model.tr(
-            "Content identity matched more than one item"
+        SyncPlanBasis.HOST_FACTS_MATCH: QCoreApplication.translate(
+            "SyncPlanTableModel", "Host size and modified time still match"
         ),
-        SyncPlanBasis.CONFLICTING_IDENTITY: model.tr(
-            "File facts match, but content identity differs"
+        SyncPlanBasis.CONTENT_MATCH: QCoreApplication.translate(
+            "SyncPlanTableModel", "Matching content identity"
         ),
-        SyncPlanBasis.USER_DESELECTED: model.tr(
-            "Deselected from the desired iPod contents"
+        SyncPlanBasis.MISSING_IDENTITY: QCoreApplication.translate(
+            "SyncPlanTableModel", "No safe content identity was available"
+        ),
+        SyncPlanBasis.AMBIGUOUS_IDENTITY: QCoreApplication.translate(
+            "SyncPlanTableModel", "Content identity matched more than one item"
+        ),
+        SyncPlanBasis.CONFLICTING_IDENTITY: QCoreApplication.translate(
+            "SyncPlanTableModel", "File facts match, but content identity differs"
+        ),
+        SyncPlanBasis.USER_DESELECTED: QCoreApplication.translate(
+            "SyncPlanTableModel", "Deselected from the desired iPod contents"
         ),
         SyncPlanBasis.HOST_FACTS_CHANGED: "",
     }[item.basis]
 
 
-def _tooltip(model: SyncPlanTableModel, item: SyncPlanItem) -> str:
-    lines = [_action_label(model, item.action) + " · " + _basis_label(model, item)]
+def _tooltip(item: SyncPlanItem) -> str:
+    lines = [_action_label(item.action) + " · " + _basis_label(item)]
     if item.host_path:
-        lines.append(model.tr("Host: %1").replace("%1", item.host_path))
+        lines.append(
+            QCoreApplication.translate("SyncPlanTableModel", "Host: %1").replace(
+                "%1", item.host_path
+            )
+        )
     if item.ipod_path:
-        lines.append(model.tr("iPod: %1").replace("%1", item.ipod_path))
+        lines.append(
+            QCoreApplication.translate("SyncPlanTableModel", "iPod: %1").replace(
+                "%1", item.ipod_path
+            )
+        )
     return "\n".join(lines)
 
 

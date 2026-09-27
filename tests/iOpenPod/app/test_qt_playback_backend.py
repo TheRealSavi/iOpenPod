@@ -10,6 +10,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from pytest import CaptureFixture, LogCaptureFixture
 
+from iOpenPod.app.display_text import SourceText, source_text
 from iOpenPod.app.playback.backend import (
     PlaybackAttemptId,
     PlaybackFailure,
@@ -111,7 +112,12 @@ def test_qt_backend_tags_source_failures_with_the_attempt() -> None:
     class _FailingProvider:
         def open_playback_source(self, track: Track) -> _MemorySource:
             del track
-            raise PlaybackSourceError("source unavailable")
+            raise PlaybackSourceError(
+                source_text(
+                    "The selected Track's media could not be opened: {error}",
+                    error="native source unavailable",
+                )
+            )
 
     backend = QtPlaybackBackend(_FailingProvider())
     attempt_id = PlaybackAttemptId(9)
@@ -123,6 +129,12 @@ def test_qt_backend_tags_source_failures_with_the_attempt() -> None:
     assert len(failures) == 1
     failure = failures[0]
     assert failure.attempt_id == attempt_id
+    assert isinstance(failure.message, SourceText)
+    assert failure.message.source == (
+        "The selected Track's media could not be opened: {error}"
+    )
+    assert dict(failure.message.parameters) == {"error": "native source unavailable"}
+    assert failure.error_type == "PlaybackSourceError"
     backend.close()
 
 

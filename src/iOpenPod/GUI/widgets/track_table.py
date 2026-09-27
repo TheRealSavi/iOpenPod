@@ -1,6 +1,15 @@
 """Reusable, persistently configurable Track table."""
 
-from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QEventLoop,
+    QModelIndex,
+    QPoint,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -24,6 +33,7 @@ from iOpenPod.app.models.track_columns import (
 from iOpenPod.app.models.track_table_model import TrackRole, TrackTableModel
 from iOpenPod.GUI.delegates.track_artwork_delegate import TrackArtworkDelegate
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.i18n.text import track_count_text
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.presentation.track_drag_preview import (
@@ -176,9 +186,12 @@ class TrackTable(QTableView):
                 return
             pixmap = render_single_track_drag_preview(
                 track,
-                title=track.title or self.tr("Untitled Track"),
-                artist=track.artist or self.tr("Unknown Artist"),
-                album=track.album or self.tr("Unknown Album"),
+                title=track.title
+                or QCoreApplication.translate("LibraryLabels", "Untitled Track"),
+                artist=track.artist
+                or QCoreApplication.translate("LibraryLabels", "Unknown Artist"),
+                album=track.album
+                or QCoreApplication.translate("LibraryLabels", "Unknown Album"),
                 base_font=self.font(),
                 tokens=self._theme_manager.tokens,
                 artwork_provider=self._artwork_provider,
@@ -186,7 +199,7 @@ class TrackTable(QTableView):
             )
         else:
             pixmap = render_track_count_drag_preview(
-                self.tr("%n Tracks", None, len(tracks)),
+                track_count_text(len(tracks)),
                 base_font=self.font(),
                 tokens=self._theme_manager.tokens,
                 device_pixel_ratio=ratio,

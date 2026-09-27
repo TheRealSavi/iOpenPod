@@ -16,6 +16,7 @@ from PIL import Image
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_music_import import FIXTURES
 
+from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
 from iOpenPod.app.library_sync_helper import (
@@ -328,6 +329,15 @@ def test_failed_podcast_replacement_preserves_existing_track_and_file(
             _request(device.active), lambda _: None, Event()
         )
         assert result.status is SyncExecutionStatus.FAILED
+        failure = next(
+            issue for issue in result.issues if issue.code == "sync.podcast_failed"
+        )
+        assert isinstance(failure.message, SourceText)
+        assert failure.message == (
+            "Downloaded Episode could not be added. The Episode awaiting replacement was kept. "
+            "Refresh the Podcast and retry."
+        )
+        assert dict(failure.message.parameters) == {"title": "Downloaded Episode"}
         device.assert_original()
     finally:
         device.coordinator.close()

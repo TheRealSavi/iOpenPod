@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 _ROOT_INDEX = QModelIndex()
 _UNKNOWN_ALBUM_SOURCE = cast(
     "str",
-    QT_TRANSLATE_NOOP("AlbumListModel", "Unknown Album"),
+    QT_TRANSLATE_NOOP("LibraryLabels", "Unknown Album"),
 )
 
 
@@ -282,4 +282,4 @@ class AlbumListModel(QAbstractListModel):
 
 
 def _translate(source_text: str) -> str:
-    return QCoreApplication.translate("AlbumListModel", source_text)
+    return QCoreApplication.translate("LibraryLabels", source_text)

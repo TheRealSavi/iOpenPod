@@ -9,7 +9,9 @@ from typing import Any
 
 import pytest
 
+from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.library_export import (
+    ExportProgress,
     LibraryExporter,
     PhotoExporter,
     PlaylistExportMode,
@@ -117,6 +119,7 @@ def test_copying_a_playlist_exports_each_track_once_and_uses_relative_paths(
     tmp_path: Path,
 ) -> None:
     source = _Source(tmp_path / "iPod")
+    progress: list[ExportProgress] = []
 
     result = _exporter(source).export_playlist(
         "Road: Trip",
@@ -124,6 +127,7 @@ def test_copying_a_playlist_exports_each_track_once_and_uses_relative_paths(
         HostPath(tmp_path),
         PlaylistFileType.M3U8,
         PlaylistExportMode.COPY_TRACKS,
+        progress=progress.append,
     )
 
     playlist_file = result.playlist_file
@@ -139,6 +143,12 @@ def test_copying_a_playlist_exports_each_track_once_and_uses_relative_paths(
     assert content.count("An Artist - First _ Song.mp3") == 2
     assert content.count("An Artist - First _ Song (1).mp3") == 1
     assert str(tmp_path) not in content
+    message = progress[0].message
+    assert isinstance(message, SourceText)
+    assert message.source == "Exporting {name}"
+    assert dict(message.parameters) == {"name": "An Artist - First _ Song.mp3"}
+    assert isinstance(progress[-1].message, SourceText)
+    assert progress[-1].message.source == "Created {name}"
 
 
 def test_existing_playlist_gets_the_next_number_without_replacing_the_original(

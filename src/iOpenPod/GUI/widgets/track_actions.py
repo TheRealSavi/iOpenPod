@@ -8,6 +8,7 @@ from time import monotonic
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
+    QCoreApplication,
     QEvent,
     QItemSelection,
     QItemSelectionModel,
@@ -52,6 +53,8 @@ from iOpenPod.app.track_conversion import podcast_conversion_needed
 from iOpenPod.app.track_playback_policy import requires_track_playback_policy
 from iOpenPod.GUI.dialogs.metadata_editor import MetadataEditorDialog
 from iOpenPod.GUI.dialogs.playlist_editor import PlaylistEditorDialog
+from iOpenPod.GUI.presentation.i18n.text import remove_tracks_text
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.icons import glyph_icon
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.track_table import TrackTable
@@ -382,18 +385,20 @@ class TrackActions(QObject):
             action()
         except ValueError as error:
             QMessageBox.warning(
-                self.window, self.tr("Library action unavailable"), str(error)
+                self.window,
+                self.tr("Library action unavailable"),
+                workflow_text(str(error)),
             )
 
     def _require(self, selection: TrackSelection, *, editing: bool = True) -> None:
         if editing:
             self.workspace.require_revision(selection.revision)
         elif selection.revision != self.workspace.edit_revision:
-            raise ValueError("The Library changed. Select the tracks again.")
+            raise ValueError(self.tr("The Library changed. Select the tracks again."))
         if not selection.tracks or any(
             self.workspace.track(t.track_id) != t for t in selection.tracks
         ):
-            raise ValueError("The selected tracks changed. Select them again.")
+            raise ValueError(self.tr("The selected tracks changed. Select them again."))
 
     def build_menu(self, selection: TrackSelection) -> QMenu:
         menu = QMenu(self.window)
@@ -449,7 +454,7 @@ class TrackActions(QObject):
         )
         enqueue = add(
             menu,
-            self.tr("Add to Queue"),
+            QCoreApplication.translate("CommonActions", "Add to Queue"),
             lambda: self.enqueue(selection),
             enabled=bool(selection.tracks),
             shortcut=_ENQUEUE_SHORTCUT,
@@ -502,10 +507,10 @@ class TrackActions(QObject):
             )
         menu.addSeparator()
         for path, title in (
-            ("metadata.compilation", "Compilation"),
-            ("metadata.skip_shuffle", "Skip When Shuffling"),
-            ("metadata.remember_position", "Remember Playback Position"),
-            ("metadata.checked", "Checked"),
+            ("metadata.compilation", self.tr("Compilation")),
+            ("metadata.skip_shuffle", self.tr("Skip When Shuffling")),
+            ("metadata.remember_position", self.tr("Remember Playback Position")),
+            ("metadata.checked", self.tr("Checked")),
         ):
             values = tuple(bool(field_value(t, path)) for t in selection.tracks)
             unanimous = len(set(values)) == 1
@@ -534,17 +539,21 @@ class TrackActions(QObject):
             )
         for title, path, options in (
             (
-                "Rating",
+                self.tr("Rating"),
                 "rating",
                 tuple(
-                    ("No Rating" if stars == 0 else "★" * stars, stars * 20)
+                    (self.tr("No Rating") if stars == 0 else "★" * stars, stars * 20)
                     for stars in range(6)
                 ),
             ),
             (
-                "Content Advisory",
+                self.tr("Content Advisory"),
                 "metadata.content_advisory",
-                tuple((a.value.capitalize(), a) for a in ContentAdvisory),
+                (
+                    (self.tr("Unspecified"), ContentAdvisory.UNSPECIFIED),
+                    (self.tr("Explicit"), ContentAdvisory.EXPLICIT),
+                    (self.tr("Clean"), ContentAdvisory.CLEAN),
+                ),
             ),
         ):
             submenu = menu.addMenu(title)
@@ -565,10 +574,7 @@ class TrackActions(QObject):
         count = len(selection.track_ids)
         add(
             menu,
-            self.tr("Remove {count} Track{suffix} from iPod").format(
-                count=count,
-                suffix="" if count == 1 else "s",
-            ),
+            remove_tracks_text(count),
             lambda: self.remove_tracks(selection),
             enabled=editable,
         )
@@ -621,7 +627,7 @@ class TrackActions(QObject):
     def convert_to_podcast(self, selection: TrackSelection) -> None:
         self._require(selection)
         if not self._podcasts_supported():
-            raise ValueError("This iPod does not support Podcasts.")
+            raise ValueError(self.tr("This iPod does not support Podcasts."))
         self.workspace.convert_tracks_to_podcasts(
             selection.track_ids, selection.revision
         )
@@ -640,7 +646,9 @@ class TrackActions(QObject):
         self._require(selection)
         playlist = self.workspace.playlist(playlist_id)
         if playlist is None:
-            raise ValueError("The destination Playlist is no longer available.")
+            raise ValueError(
+                self.tr("The destination Playlist is no longer available.")
+            )
         self.workspace.set_tracks(
             playlist_id, (*playlist.track_ids, *(t.track_id for t in selection.tracks))
         )
@@ -668,7 +676,9 @@ class TrackActions(QObject):
         if selection.playlist_id is None or (
             action != "remove" and not selection.reorderable
         ):
-            raise ValueError("Use the Playlist's natural order to move entries.")
+            raise ValueError(
+                self.tr("Use the Playlist's natural order to move entries.")
+            )
         self.workspace.edit_entries(
             selection.playlist_id, selection.entry_ids, action, selection.revision
         )
@@ -700,7 +710,7 @@ class TrackActions(QObject):
         layout.setSpacing(8)
 
         value_label = QLabel(
-            self.tr("Mixed values")
+            QCoreApplication.translate("EditorLabels", "Mixed values")
             if unanimous is None
             else self._volume_adjustment_label(unanimous)
         )

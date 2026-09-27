@@ -310,7 +310,9 @@ class PhotoListModel(QAbstractListModel):
         if role == Qt.ItemDataRole.CheckStateRole and self._sync_selection is not None:
             return self._sync_selection.photo_check_state(photo.photo_id)
         if role == Qt.ItemDataRole.DisplayRole:
-            return self.tr("Photo %1").replace("%1", str(photo.photo_id))
+            return QCoreApplication.translate("LibraryLabels", "Photo %1").replace(
+                "%1", str(photo.photo_id)
+            )
         if role == PhotoRole.PHOTO:
             return photo
         if role == PhotoRole.ID:
@@ -411,7 +413,9 @@ class PhotoListModel(QAbstractListModel):
         )
 
     def _search_text(self, photo: Photo) -> str:
-        label = self.tr("Photo %1").replace("%1", str(photo.photo_id))
+        label = QCoreApplication.translate("LibraryLabels", "Photo %1").replace(
+            "%1", str(photo.photo_id)
+        )
         paths = (item.relative_path for item in photo.representations)
         return " ".join((label, str(photo.photo_id), *paths)).casefold()
 

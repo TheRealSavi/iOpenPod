@@ -108,7 +108,7 @@ _COLUMN_TRANSLATION_SOURCES = frozenset(
 )
 _YES_SOURCE = _marked(QT_TRANSLATE_NOOP("TrackTableModel", "Yes"))
 _NO_SOURCE = _marked(QT_TRANSLATE_NOOP("TrackTableModel", "No"))
-_UNTITLED_TRACK_SOURCE = _marked(QT_TRANSLATE_NOOP("TrackTableModel", "Untitled Track"))
+_UNTITLED_TRACK_SOURCE = _marked(QT_TRANSLATE_NOOP("LibraryLabels", "Untitled Track"))
 _UNTITLED_CHAPTER_SOURCE = _marked(
     QT_TRANSLATE_NOOP("TrackTableModel", "Untitled Chapter")
 )
@@ -490,7 +490,10 @@ def _build_column_definitions() -> tuple[TrackColumnDefinition, ...]:
         ),
         _column(
             "Title",
-            lambda track: track.title or _translate(_UNTITLED_TRACK_SOURCE),
+            lambda track: (
+                track.title
+                or QCoreApplication.translate("LibraryLabels", _UNTITLED_TRACK_SOURCE)
+            ),
         ),
         _column("Artist", lambda track: track.artist),
         _column("Album", lambda track: track.album),

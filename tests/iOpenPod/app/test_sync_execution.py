@@ -22,6 +22,7 @@ from PIL import Image
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
 from tests.iOpenPod.app.test_music_import import FIXTURES
 
+from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.host_media_library import (
     HostArtworkKind,
     HostMediaArtworkSource,
@@ -758,7 +759,16 @@ def test_bad_track_yields_safe_partial_success_without_partial_playlist(
         assert any(
             issue.code == "sync.playlist_changes_skipped" for issue in result.issues
         )
-        assert any(issue.code == "sync.item_failed" for issue in result.issues)
+        failure = next(
+            issue for issue in result.issues if issue.code == "sync.item_failed"
+        )
+        assert isinstance(failure.message, SourceText)
+        assert failure.message == (
+            "Failure was skipped. No iPod copy was added. "
+            "Correct the source or encoder settings and retry."
+        )
+        assert dict(failure.message.parameters) == {"name": "Failure"}
+        assert "{name}" in failure.message.source
         assert result.helper is not None
         assert (
             len([track for track in result.helper.tracks if track.sync is not None])
@@ -1088,7 +1098,41 @@ def test_source_changed_during_photo_preparation_is_skipped_before_commit(
             track.title == "Changed later" for track in result.active.library.tracks
         )
         assert len(result.active.library.photos.photos) == 1
-        assert any(issue.code == "sync.source_changed" for issue in result.issues)
+        detail = next(
+            issue.detail
+            for issue in result.issues
+            if issue.code == "sync.source_changed"
+        )
+        assert isinstance(detail, SourceText)
+        assert (
+            detail.source
+            == "The Host source {name} changed after scanning. Rescan before Sync."
+        )
+    finally:
+        device.coordinator.close()
+
+
+def test_changed_photo_detail_retains_its_translation_source(tmp_path: Path) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _photo_host(tmp_path)
+        host = replace(
+            host, sources=(replace(host.sources[0], content_sha256="0" * 64),)
+        )
+        request = _request(device, host)
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        detail = next(
+            issue.detail for issue in result.issues if issue.code == "sync.photo_failed"
+        )
+        assert isinstance(detail, SourceText)
+        assert (
+            detail.source
+            == "The Photo changed after scanning. Rescan this source before retrying."
+        )
+        assert not result.completed
+        device.assert_original()
     finally:
         device.coordinator.close()
 
