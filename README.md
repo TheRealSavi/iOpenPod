@@ -43,6 +43,11 @@ iOpenPod is available as a Python package to download through `pip`, `pipx`, and
 
 Requires **Python 3.12**.
 
+The standard native macOS candidate targets **macOS 12.3 or later** on Apple
+Silicon and Intel. Execution on 12.3 is still pending acceptance. See the
+[macOS build instructions](docs/packaging.md#macos--mac-app-store) for the controlled
+dependency selection; the optional GPU analysis extra has separate requirements.
+
 After installing invoke in your shell with:
 
 ```bash

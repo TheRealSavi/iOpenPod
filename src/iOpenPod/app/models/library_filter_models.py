@@ -17,6 +17,7 @@ from iOpenPod.app.models.collection_list_model import (
     CollectionRole,
     collection_key_for_track,
 )
+from iOpenPod.app.models.filter_compat import end_rows_filter_change
 from iOpenPod.app.models.track_order import album_track_sort_key
 from iOpenPod.app.models.track_table_model import (
     TrackColumn,
@@ -68,7 +69,7 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
             return
         self.beginFilterChange()
         self._query = normalized
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
         # Dynamic sorting is disabled; rebuild the ordering when rows return.
         self.invalidate()
 
@@ -77,7 +78,7 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
             return
         self.beginFilterChange()
         self._album_key = album_key
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
         self.invalidate()
 
     def set_collection_key(
@@ -95,7 +96,7 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
         self.beginFilterChange()
         self._collection_kind = normalized_kind
         self._collection_key = normalized_key
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
         self.invalidate()
 
     def set_media_kinds(self, kinds: tuple[MediaKind, ...] | None) -> None:
@@ -104,7 +105,7 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
             return
         self.beginFilterChange()
         self._media_kinds = normalized
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
 
     def track_at(self, index: QModelIndex) -> Track | None:
         if not index.isValid():
@@ -180,7 +181,7 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
             return
         self.beginFilterChange()
         self._query = normalized
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
         # Dynamic sorting is disabled; rebuild the ordering when rows return.
         self.invalidate()
 
@@ -230,7 +231,7 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
         self.beginFilterChange()
         self._collection_kind = normalized_kind
         self._collection_key = normalized_key
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
 
     def filterAcceptsRow(
         self,
@@ -331,7 +332,7 @@ class CollectionFilterProxyModel(QSortFilterProxyModel):
             return
         self.beginFilterChange()
         self._query = normalized
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
         # Dynamic sorting is disabled; rebuild the ordering when rows return.
         self.invalidate()
 

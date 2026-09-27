@@ -25,6 +25,7 @@ from PySide6.QtGui import (
     QRhiDriverInfo,
     QRhiGraphicsPipeline,
     QRhiRenderPassDescriptor,
+    QRhiResourceUpdateBatch,
     QRhiSampler,
     QRhiShaderResourceBinding,
     QRhiShaderResourceBindings,
@@ -116,6 +117,24 @@ _ANALYSIS_HANDOFF_SECONDS: Final = 2.4
 
 class _Creatable(Protocol):
     def create(self) -> bool: ...
+
+
+class _BufferUploads(Protocol):
+    """Byte-buffer overloads accepted by PySide 6.9 and newer bindings.
+
+    PySide 6.9's generated stubs describe these data arguments as pointers,
+    although its bindings accept bytes and copy them into the update batch.
+    """
+
+    def updateDynamicBuffer(
+        self, buffer: QRhiBuffer, offset: int, size: int, data: bytes
+    ) -> None: ...
+
+    def uploadStaticBuffer(self, buffer: QRhiBuffer, data: bytes) -> None: ...
+
+
+def _buffer_uploads(batch: QRhiResourceUpdateBatch) -> _BufferUploads:
+    return cast("_BufferUploads", batch)
 
 
 @dataclass(slots=True)
@@ -809,10 +828,13 @@ class SynesthesiaRenderer(QRhiWidget):
         rhi = self._require_rhi()
         assert self._uniform_buffer is not None
         updates = rhi.nextResourceUpdateBatch()
-        updates.updateDynamicBuffer(
+        uploads = _buffer_uploads(updates)
+        uniform_data = self._uniform_bytes(rhi, simulation_delta)
+        uploads.updateDynamicBuffer(
             self._uniform_buffer,
             0,
-            self._uniform_bytes(rhi, simulation_delta),
+            len(uniform_data),
+            uniform_data,
         )
         if self._particle_reset_pending:
             particle_data = _initial_particle_data(
@@ -820,11 +842,11 @@ class SynesthesiaRenderer(QRhiWidget):
                 self._particle_count,
             )
             for buffer in self._particle_buffers:
-                updates.uploadStaticBuffer(buffer, particle_data)
+                uploads.uploadStaticBuffer(buffer, particle_data)
             self._particle_reset_pending = False
         if self._filament_reset_pending:
             assert self._filament_buffer is not None
-            updates.uploadStaticBuffer(self._filament_buffer, self._filament_data)
+            uploads.uploadStaticBuffer(self._filament_buffer, self._filament_data)
             self._filament_reset_pending = False
         cb.resourceUpdate(updates)
 
@@ -1190,13 +1212,16 @@ class SynesthesiaRenderer(QRhiWidget):
             self._particle_count,
         )
         updates = rhi.nextResourceUpdateBatch()
+        uploads = _buffer_uploads(updates)
         for buffer in self._particle_buffers:
-            updates.uploadStaticBuffer(buffer, particle_data)
-        updates.uploadStaticBuffer(self._filament_buffer, self._filament_data)
-        updates.updateDynamicBuffer(
+            uploads.uploadStaticBuffer(buffer, particle_data)
+        uploads.uploadStaticBuffer(self._filament_buffer, self._filament_data)
+        uniform_data = self._uniform_bytes(rhi, 0.0)
+        uploads.updateDynamicBuffer(
             self._uniform_buffer,
             0,
-            self._uniform_bytes(rhi, 0.0),
+            len(uniform_data),
+            uniform_data,
         )
         cb.resourceUpdate(updates)
         self._particle_reset_pending = False

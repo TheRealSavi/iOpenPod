@@ -143,6 +143,10 @@ def collect_notices() -> None:
 def freeze() -> None:
     """Build the app; command-line media tools are installed by the user."""
     environment = dict(os.environ)
+    if sys.platform == "darwin":
+        with (ROOT / "pyproject.toml").open("rb") as stream:
+            config = tomllib.load(stream)["tool"]["iopenpod"]["packaging"]
+        environment["MACOSX_DEPLOYMENT_TARGET"] = config["macos-minimum-version"]
     if sys.platform == "win32":
         # Native dependency discovery must not import DLLs from unrelated Host
         # tools. In particular Poppler's icuuc.dll shadows Windows' ICU API with

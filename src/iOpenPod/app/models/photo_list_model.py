@@ -18,6 +18,7 @@ from PySide6.QtCore import (
     Qt,
 )
 
+from iOpenPod.app.models.filter_compat import end_rows_filter_change
 from iOpenPod.app.models.library_drag import (
     PHOTO_MIME_TYPE,
     PhotoSelectionMimeData,
@@ -445,7 +446,7 @@ class PhotoFilterProxyModel(QSortFilterProxyModel):
             return
         self.beginFilterChange()
         self._query = normalized
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
 
     def set_sort_mode(self, mode: PhotoSortMode) -> None:
         if mode is self._sort_mode:

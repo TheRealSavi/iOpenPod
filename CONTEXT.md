@@ -479,6 +479,10 @@ selection and saved renames. See ADR-0090 and
   documentation, tests, fixtures, and accumulated format knowledge are evidence for
   iOpenPod 2.0, not a runtime dependency or an architecture that must be copied.
 - The release target is Windows, macOS, and Linux.
+- The standard native macOS candidate targets 12.3 or later on Apple Silicon and
+  Intel with platform-specific Qt and numerical dependencies. Build selection and
+  binary deployment checks enforce that target; execution on macOS 12.3 on both
+  architectures remains an acceptance gate. See ADR-0094 and `docs/packaging.md`.
 - Planned store channels are the Mac App Store, Microsoft Store, Flatpak/Flathub,
   and Snap. Native packaging candidates are available; store publication remains
   gated on signing, sandbox-compatible Storage access, user-installed media-tool

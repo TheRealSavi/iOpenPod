@@ -15,6 +15,7 @@ from PySide6.QtCore import (
     Qt,
 )
 
+from iOpenPod.app.models.filter_compat import end_rows_filter_change
 from iOpenPod.app.sync_plan import (
     SyncPlan,
     SyncPlanAction,
@@ -218,14 +219,14 @@ class SyncPlanFilterModel(QSortFilterProxyModel):
             return
         self.beginFilterChange()
         self._actions = actions
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
 
     def set_media_kind(self, media_kind: SyncPlanMediaKind | None) -> None:
         if media_kind is self._media_kind:
             return
         self.beginFilterChange()
         self._media_kind = media_kind
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
 
     def set_query(self, query: str) -> None:
         normalized = query.strip().casefold()
@@ -233,7 +234,7 @@ class SyncPlanFilterModel(QSortFilterProxyModel):
             return
         self.beginFilterChange()
         self._query = normalized
-        self.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+        end_rows_filter_change(self)
 
     def filterAcceptsRow(
         self,

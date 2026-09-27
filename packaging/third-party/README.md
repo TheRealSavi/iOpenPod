@@ -7,6 +7,14 @@ member and its hash. These are intentionally a superset of upstream notices,
 including build/test and other-platform dependencies; their presence does not mean
 every such upstream component is included in the Windows executable.
 
+macOS candidates use Qt/PySide/Shiboken 6.9.3 and Intel-specific numerical
+versions under [ADR-0094](../../docs/adr/0094-target-macos-12-3-with-platform-specific-native-dependencies.md).
+The native evidence below establishes the Windows components. Complete the
+corresponding Mac source archives and source-derived notices, including the actual
+Qt FFmpeg and Intel LLVM/OpenBLAS versions, before publicly distributing Mac
+candidates. The installed runtime inventory records the versions actually selected
+for each candidate.
+
 Third-party components retain their own licenses. The iOpenPod GPL grant does not
 replace permissive notices, LGPL requirements, or Microsoft's runtime terms.
 The separate application acknowledgements credit Dylan Staley's HASHAB and thank

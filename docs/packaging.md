@@ -10,7 +10,7 @@ including corresponding source and third-party notices, before public release.
 
 ## Build inputs
 
-Run from a clean checkout using Python 3.12 and UV:
+Run from a clean checkout using Python 3.12 and UV. On Windows and Linux:
 
 ```shell
 uv sync --locked --group packaging
@@ -20,6 +20,9 @@ uv run --locked --group packaging python scripts/check_wheel.py
 uv run --locked --group packaging python scripts/package_app.py freeze
 uv run --locked --group packaging python scripts/package_app.py archive
 ```
+
+On macOS, use the [controlled Mac environment](#macos--mac-app-store) below so a
+newer builder selects wheels compatible with the declared minimum OS.
 
 The `packaging` dependency group locks PyInstaller and Hatchling separately from
 runtime dependencies. Build on each target OS and architecture; PyInstaller does
@@ -190,8 +193,70 @@ A report run without application deployment does not cover installed-app behavio
 
 The native build produces `dist/iOpenPod.app`. The default is an ad-hoc signed
 development candidate, not a Gatekeeper-ready public release or App Store package.
-The candidate workflow builds Apple Silicon; Intel support requires a separate
-native build and validation, not an ARM build renamed as universal.
+The standard native candidate targets **macOS 12.3 or later**. The workflow builds
+separate Apple Silicon (`macos-14`) and Intel (`macos-15-intel`) candidates. These
+newer runners establish buildability and launch on their own OS; **execution on
+macOS 12.3 on each architecture remains pending acceptance**.
+
+### Build for macOS 12.3
+
+Use UV **0.12.7**, whose managed Python manifest supplies the inspected runtime.
+`tool.iopenpod.packaging` in `pyproject.toml` owns the minimum OS and packaging
+Python version. Prepare the environment on the architecture being built:
+
+```shell
+uv run --no-project --managed-python --python 3.12 python scripts/sync_macos_build.py
+uv build --no-build-isolation
+uv run --no-sync python scripts/check_wheel.py
+uv run --no-sync python scripts/package_app.py freeze
+uv run --no-sync python scripts/check_macos_bundle.py
+uv run --no-sync python scripts/package_app.py archive
+```
+
+The preparation script selects UV-managed Python 3.12.14 and explicit
+`aarch64-apple-darwin` or `x86_64-apple-darwin` tags with
+`MACOSX_DEPLOYMENT_TARGET=12.3`. It installs locked third-party wheels, the editable
+application, and the packaging group without dev tools or optional extras.
+Setting the deployment environment variable alone does not constrain UV's host
+wheel selection. Subsequent commands use **`--no-sync`** to retain the selected
+artifacts. Re-run the preparation script after any ordinary project sync or run
+that changes the environment.
+
+macOS pins PySide **6.9.3**; Windows and Linux retain the existing 6.11.2 minimum.
+Intel macOS selects Numba **0.62.1**, llvmlite **0.45.1**, and NumPy **2.3.5**.
+Apple Silicon retains the newer numerical stack. Small Qt adaptations preserve
+row filtering and QRhi buffer uploads with either binding line. The existing
+compiled shaders are retained. These choices preserve the standard app's feature
+set; the optional `synesthesia-gpu` extra is outside this compatibility target.
+See [ADR-0094](adr/0094-target-macos-12-3-with-platform-specific-native-dependencies.md)
+and the [binary investigation](research/macos-compatibility.md).
+
+CI prepares the same environment with `--with-checks` for the existing packaging
+contracts, then prepares it again without check tools before freezing. The
+`packaging-checks` group supplies Pytest without the other dev tools, including
+Mypy, whose locked version lacks an Intel macOS wheel.
+
+Development type checking has a separate limitation: Qt 6.9's generated stubs omit
+public fields and misdescribe decorators and nullable results used by existing
+code. Mypy passes with the current Windows bindings but reports errors against the
+older stubs. Correcting those annotations remains work for a Mac development
+environment; the native build does not disable the project's type-checking rules.
+
+The bundle check compares `Info.plist` with the configured target and reads every
+unique Mach-O file, including all universal slices. It rejects a missing build
+architecture, non-macOS platform, missing deployment declaration, or minimum newer
+than 12.3. `build/packaging/macos-compatibility.json` records hashes and deployment
+targets and is retained with the CI candidate. No binary headers are rewritten.
+
+Before claiming verified 12.3 support, exercise both native candidates on 12.3:
+launch, playback, standard analysis, Synesthesia rendering through Metal, system
+media integration, device discovery, and safe Storage workflows. The binary check
+does not prove that all imported system symbols exist on that OS. User-installed
+FFmpeg, FFprobe, and fpcalc must also support the user's OS. Complete corresponding
+source and source-derived notices for Qt 6.9.3 and Intel's older numerical versions
+before public distribution; the existing native evidence is for Windows.
+
+### Signing and App Store acceptance
 
 `packaging/macos/app-store.entitlements.plist` is a starting entitlement set for
 sandbox investigation. `helper.entitlements.plist` is the inherited sandbox profile
@@ -304,7 +369,7 @@ writes diagnostics even for a Windows executable without a console.
 
 Run the frozen smoke test outside the checkout on a machine without Python. Run
 the normal repository checks before packaging. The native CI jobs exercise Windows
-x64, macOS arm64 and Linux x64 candidates and validate wheel contents. They retain
+x64, macOS arm64 and x86_64, and Linux x64 candidates and validate wheel contents. They retain
 artifacts only; tag pushes no longer automatically publish legacy v1-style releases
 or upload the rebuilt application to PyPI.
 

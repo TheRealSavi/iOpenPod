@@ -40,11 +40,13 @@ dependencies = [
     "feedparser>=6.0.12,<7",
     "librosa>=0.11,<0.12",
     "mutagen>=1.48.1",
+    "numba>=0.62.1,<0.63 ; platform_machine == 'x86_64' and sys_platform == 'darwin'",
     "numpy>=2.2,<3",
     "pillow>=12.3.0",
     "pycryptodome>=3.20,<4",
     "pyobjc-framework-mediaplayer>=12.1,<13 ; sys_platform == 'darwin'",
-    "pyside6>=6.11.2",
+    "pyside6==6.9.3 ; sys_platform == 'darwin'",
+    "pyside6>=6.11.2 ; sys_platform != 'darwin'",
     "tqdm>=4.70.0",
     "wasmtime>=36,<39",
     "winrt-runtime>=3.2.1,<4 ; sys_platform == 'win32'",
@@ -99,6 +101,13 @@ dev = [
     "types-tqdm>=4.70.0.20260805,<5",
 ]
 packaging = ["hatchling>=1.27,<2", "pyinstaller>=6.16,<7"]
+packaging-checks = [
+    "pytest>=9.1.1,<10",
+]
+
+[tool.iopenpod.packaging]
+macos-minimum-version = "12.3"
+macos-python-version = "3.12.14"
 
 [tool.pytest.ini_options]
 minversion = "9.0"
