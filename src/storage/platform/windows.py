@@ -363,6 +363,24 @@ class WindowsPlatformAdapter:
     def reinspect(self, retained: VolumeObservation) -> VolumeObservation:
         return self.inspect(retained.mount_point.path)
 
+    def set_volume_label(self, observation: VolumeObservation, label: str) -> str:
+        if observation.volume.label == label:
+            return label
+        function = self._kernel32.SetVolumeLabelW
+        function.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        function.restype = wintypes.BOOL
+        # A retained Volume GUID cannot be redirected by reassigning a drive letter.
+        root = observation.mount_instance.removeprefix("windows-volume:")
+        if not root.startswith("\\\\?\\Volume{") or not root.endswith("}\\"):
+            raise MountInspectionError("Missing Windows Volume GUID")
+        if not function(root, label):
+            raise _windows_error("Could not update the Volume label")
+        return self.inspect(observation.mount_point.path).volume.label
+
+    def enable_volume_icon(self, observation: VolumeObservation) -> None:
+        # Explorer reads the ordinary autorun.inf companion; no native flag is needed.
+        pass
+
     def physical_device_id_for_path(self, path: Path) -> PhysicalDeviceId | None:
         return self._physical_device_lookup.for_path(path)
 

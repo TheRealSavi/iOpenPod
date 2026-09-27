@@ -118,6 +118,14 @@ class TransactionState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class TransactionJournalStatus:
+    """Recorded completion and identity correlation, never mutation authority."""
+
+    state: TransactionState
+    identity_matches: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TransactionFailureFacts:
     journal_path: DevicePath
     state: TransactionState

@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, Slot
 
-from iOpenPod.app.core.settings.definitions import DRAFT_ALL_CHANGES
+from iOpenPod.app.core.settings.definitions import (
+    DRAFT_ALL_CHANGES,
+    MANAGE_VOLUME_PRESENTATION,
+)
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
     LibraryPreparationService,
@@ -146,6 +149,14 @@ class LibraryWriteController(QObject):
 
     @Slot(str, object)
     def _setting_changed(self, key: str, _value: object) -> None:
+        if key == MANAGE_VOLUME_PRESENTATION.key:
+            # An executing transaction finishes under its captured policy. All
+            # other attempts must be prepared again with the new preference.
+            if self.state is not PreparationState.SAVING:
+                self._source_invalidated = True
+                self._attempted_revision = None
+                self._invalidate()
+            return
         if key == DRAFT_ALL_CHANGES.key:
             if self.state not in (
                 PreparationState.PREPARING,

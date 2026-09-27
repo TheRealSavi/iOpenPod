@@ -21,6 +21,7 @@ from iOpenPod.app.core.settings.definitions import (
     DRAFT_ALL_CHANGES,
     IPOD_LIBRARY_VIEW_MODE,
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
+    MANAGE_VOLUME_PRESENTATION,
     MAX_BACKUPS,
     PLAYER_POSITION,
     AppearanceMode,
@@ -125,6 +126,12 @@ class SettingsPage(QWidget):
         self._double_click_row = SettingRow("", "", self._double_click_combo, self)
         library.add_row(self._double_click_row)
         library.add_row(self._draft_all_changes_row)
+        self._volume_presentation_combo = AppComboBox(self)
+        self._volume_presentation_combo.setObjectName("manageVolumePresentationCombo")
+        self._volume_presentation_row = SettingRow(
+            "", "", self._volume_presentation_combo, self
+        )
+        library.add_row(self._volume_presentation_row)
 
         self._backups_title = QLabel(self)
         self._backups_title.setObjectName("sectionTitle")
@@ -283,6 +290,9 @@ class SettingsPage(QWidget):
         self._draft_all_changes_combo.currentIndexChanged.connect(
             self._draft_all_changes_selected
         )
+        self._volume_presentation_combo.currentIndexChanged.connect(
+            self._volume_presentation_selected
+        )
         self._ipod_view_mode_combo.currentIndexChanged.connect(
             self._ipod_view_mode_selected
         )
@@ -351,6 +361,13 @@ class SettingsPage(QWidget):
             self.tr(
                 "On: review and accept changes before saving to your iPod. "
                 "Off: apply changes to your iPod immediately, including pending changes."
+            ),
+        )
+        self._volume_presentation_row.set_copy(
+            self.tr("Manage iPod drive appearance"),
+            self.tr(
+                "Use the iPod's name and model icon in desktop file managers. "
+                "Turn off to preserve custom drive names, icons, and companion files."
             ),
         )
         self._double_click_row.set_copy(
@@ -443,6 +460,7 @@ class SettingsPage(QWidget):
         self._rebuild_language_options()
         self._rebuild_backup_options()
         self._rebuild_draft_all_changes_options()
+        self._rebuild_volume_presentation_options()
         self._rebuild_ipod_view_mode_options()
         self._rebuild_double_click_options()
         self._sync_backup_location(self._settings.get(BACKUP_LOCATION))
@@ -609,6 +627,26 @@ class SettingsPage(QWidget):
         if isinstance(value, str):
             self._settings.set_global(LIBRARY_DOUBLE_CLICK_SHORTCUT, value)
 
+    def _rebuild_volume_presentation_options(self) -> None:
+        blocker = QSignalBlocker(self._volume_presentation_combo)
+        self._volume_presentation_combo.clear()
+        self._volume_presentation_combo.addItem(self.tr("Off"), False)
+        self._volume_presentation_combo.addItem(self.tr("On"), True)
+        self._sync_volume_presentation(self._settings.get(MANAGE_VOLUME_PRESENTATION))
+        del blocker
+
+    def _sync_volume_presentation(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self._volume_presentation_combo)
+        self._volume_presentation_combo.setCurrentIndex(
+            self._volume_presentation_combo.findData(enabled)
+        )
+        del blocker
+
+    def _volume_presentation_selected(self, index: int) -> None:
+        value = self._volume_presentation_combo.itemData(index)
+        if isinstance(value, bool):
+            self._settings.set_global(MANAGE_VOLUME_PRESENTATION, value)
+
     def _sync_draft_all_changes(self, enabled: bool) -> None:
         blocker = QSignalBlocker(self._draft_all_changes_combo)
         self._draft_all_changes_combo.setCurrentIndex(
@@ -752,6 +790,8 @@ class SettingsPage(QWidget):
             self._sync_double_click(value)
         elif key == DRAFT_ALL_CHANGES.key and isinstance(value, bool):
             self._sync_draft_all_changes(value)
+        elif key == MANAGE_VOLUME_PRESENTATION.key and isinstance(value, bool):
+            self._sync_volume_presentation(value)
         elif key == PLAYER_POSITION.key and isinstance(value, str):
             self._sync_player_position_selection(value)
         elif key == BACKUP_LOCATION.key and isinstance(value, str):

@@ -49,6 +49,7 @@ from storage.transactions import (
     TransactionDurabilityPendingError,
     TransactionFailureFacts,
     TransactionInterruptedError,
+    TransactionJournalStatus,
     TransactionPreparedError,
     TransactionProgress,
     TransactionRecovery,
@@ -815,7 +816,7 @@ def execute(
         raise RecoverableWriteError(str(error), str(path), started) from error
 
 
-def _read(
+def _read_journal(
     session: FilesystemSession, path: DevicePath
 ) -> tuple[TransactionJournal, FileFingerprint]:
     try:
@@ -830,15 +831,34 @@ def _read(
         )
     except (ValueError, RecursionError) as error:
         raise StorageOperationError(f"Invalid transaction journal: {error}") from error
+    return journal, snapshot.fingerprint
+
+
+def _identity_matches(session: FilesystemSession, journal: TransactionJournal) -> bool:
     volume = session.mounted_volume
-    if (
-        journal.device_id != volume.physical_device.id.value
-        or journal.volume_id != volume.volume.id.value
-    ):
+    return (
+        journal.device_id == volume.physical_device.id.value
+        and journal.volume_id == volume.volume.id.value
+    )
+
+
+def _read(
+    session: FilesystemSession, path: DevicePath
+) -> tuple[TransactionJournal, FileFingerprint]:
+    journal, fingerprint = _read_journal(session, path)
+    if not _identity_matches(session, journal):
         raise VolumeIdentityChangedError(
             "Transaction journal belongs to another device or Volume"
         )
-    return journal, snapshot.fingerprint
+    return journal, fingerprint
+
+
+def read_status(
+    session: FilesystemSession, path: DevicePath
+) -> TransactionJournalStatus:
+    """Report the recorded state without granting recovery or cleanup authority."""
+    journal, _fingerprint = _read_journal(session, path)
+    return TransactionJournalStatus(journal.state, _identity_matches(session, journal))
 
 
 def read_state(session: FilesystemSession, path: DevicePath) -> TransactionState:

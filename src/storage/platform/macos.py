@@ -202,6 +202,16 @@ class MacOSPlatformAdapter:
         native = identity.value.removeprefix("macos:").removeprefix("/dev/")
         return identity if re.fullmatch(r"disk\d+", native) is not None else None
 
+    def set_volume_label(self, observation: VolumeObservation, label: str) -> str:
+        from storage.platform.macos_volume_metadata import set_label
+
+        return set_label(observation.mount_point.path, label)
+
+    def enable_volume_icon(self, observation: VolumeObservation) -> None:
+        from storage.platform.macos_volume_metadata import enable_icon
+
+        enable_icon(observation.mount_point.path)
+
     def _inspect_full(
         self,
         mount_point: Path,

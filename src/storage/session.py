@@ -72,6 +72,7 @@ if TYPE_CHECKING:
         FileContent,
         StorageTransaction,
         TransactionActivity,
+        TransactionJournalStatus,
         TransactionProgress,
         TransactionRecovery,
         TransactionRecoveryMaterial,
@@ -694,6 +695,14 @@ class FilesystemSession:
 
         return inspect(self, journal_path, activity=activity)
 
+    def read_transaction_status(
+        self, journal_path: DevicePath
+    ) -> TransactionJournalStatus:
+        """Read validated journal status; an identity mismatch grants no write authority."""
+        from storage._transactions import read_status
+
+        return read_status(self, journal_path)
+
     def read_transaction_state(self, journal_path: DevicePath) -> TransactionState:
         """Read validated journal state without streaming the transaction's files."""
         from storage._transactions import read_state
@@ -1160,6 +1169,38 @@ class FilesystemSession:
         result = self._platform.flush(observation)
         self._revalidate()
         return result
+
+    def set_volume_label(self, name: str) -> str:
+        """Apply and verify a native label under the same writer/identity safeguards."""
+        from storage.volume_metadata import volume_label
+
+        with self._writer_lease():
+            observation = self._revalidate(write=True)
+            label = volume_label(name, observation.volume.filesystem_type)
+            try:
+                actual = self._platform.set_volume_label(observation, label)
+            except OSError as error:
+                raise StorageOperationError(
+                    f"Could not update the Volume label: {error}"
+                ) from error
+            self._revalidate(write=True)
+            if actual != label:
+                raise StorageOperationError(
+                    f"Volume label did not verify: expected {label!r}, observed {actual!r}"
+                )
+            return label
+
+    def enable_volume_icon(self) -> None:
+        """Enable the Host's custom-volume-icon flag without changing other flags."""
+        with self._writer_lease():
+            observation = self._revalidate(write=True)
+            try:
+                self._platform.enable_volume_icon(observation)
+            except OSError as error:
+                raise StorageOperationError(
+                    f"Could not enable the Volume icon: {error}"
+                ) from error
+            self._revalidate(write=True)
 
     def _atomic_publish(
         self,

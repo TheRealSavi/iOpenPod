@@ -61,7 +61,7 @@ from iOpenPod.app.podcasts.models import (
     PodcastIssueCode,
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastDeviceStore
-from iOpenPod.app.services import library_resources
+from iOpenPod.app.services import library_resources, volume_presentation
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
 from iPodDB.library import (
     CoverFormat,
@@ -240,9 +240,15 @@ class _ActiveConnection:
 
 
 @dataclass(frozen=True, slots=True)
+class _VolumePresentationPolicy:
+    enabled: bool
+
+
+@dataclass(frozen=True, slots=True)
 class _PreparedLibraryWrite:
     review: LibraryReview
     transaction: StorageTransaction
+    presentation_policy: _VolumePresentationPolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,6 +293,7 @@ class DeviceCoordinator:
         *,
         ithmb_cache_byte_limit: int = 16 * 1024 * 1024,
         ipod_media_scanner: IPodMediaScanner | None = None,
+        volume_presentation_enabled: bool = True,
     ) -> None:
         if ithmb_cache_byte_limit <= 0:
             raise ValueError("The iTHMB byte-cache limit must be positive")
@@ -300,6 +307,10 @@ class DeviceCoordinator:
         self._prepared_for_save: _PreparedLibraryWrite | None = None
         self._preparation_generation = 0
         self._lock = threading.RLock()
+        self._presentation_policy_lock = threading.Lock()
+        self._presentation_policy = _VolumePresentationPolicy(
+            volume_presentation_enabled
+        )
         self._ithmb_cache_byte_limit = ithmb_cache_byte_limit
         self._ithmb_cache_bytes = 0
         self._ithmb_bytes: OrderedDict[_IthmbByteCacheKey, bytes] = OrderedDict()
@@ -309,6 +320,20 @@ class DeviceCoordinator:
             str, tuple[MountedVolume, FileFingerprint]
         ] = {}
         self._sync_cleanup_path = ""
+
+    @property
+    def volume_presentation_enabled(self) -> bool:
+        return self._current_presentation_policy().enabled
+
+    def _current_presentation_policy(self) -> _VolumePresentationPolicy:
+        with self._presentation_policy_lock:
+            return self._presentation_policy
+
+    def set_volume_presentation_enabled(self, enabled: bool) -> None:
+        """Retire older policies without making the GUI wait for device I/O."""
+        with self._presentation_policy_lock:
+            if self._presentation_policy.enabled != enabled:
+                self._presentation_policy = _VolumePresentationPolicy(enabled)
 
     @property
     def sync_cleanup_path(self) -> str:
@@ -1013,6 +1038,7 @@ class DeviceCoordinator:
             self._prepared_for_save = None
             self._preparation_generation += 1
             preparation_generation = self._preparation_generation
+            presentation_policy = self._current_presentation_policy()
             if active is None or active.active_ipod.library is not expected.library:
                 return LibraryReview(
                     None,
@@ -1133,6 +1159,7 @@ class DeviceCoordinator:
                 plan,
                 lambda: checkpoint("resources.capture", "Capturing required resources"),
                 additional_preconditions=sqlite_postprocess_preconditions,
+                volume_presentation_enabled=presentation_policy.enabled,
             )
             resources = captured.resources
             result = source.prepare(plan, resources, progress=database_progress)
@@ -1196,8 +1223,11 @@ class DeviceCoordinator:
                     self._active is active
                     and write is not None
                     and preparation_generation == self._preparation_generation
+                    and presentation_policy is self._current_presentation_policy()
                 ):
-                    self._prepared_for_save = _PreparedLibraryWrite(review, write)
+                    self._prepared_for_save = _PreparedLibraryWrite(
+                        review, write, presentation_policy
+                    )
             return review
         except (StorageError, DeviceChangedError, ValueError) as error:
             code = "source.unavailable"
@@ -1276,6 +1306,7 @@ class DeviceCoordinator:
                 or active.active_ipod.library is not expected.library
                 or issued is None
                 or review is not issued.review
+                or issued.presentation_policy is not self._current_presentation_policy()
                 or plan is None
                 or prepared is None
                 or prepared.source_revision
@@ -1438,7 +1469,7 @@ class DeviceCoordinator:
                     self._prepared_for_save = None
                     self._ithmb_bytes.clear()
                     self._ithmb_cache_bytes = 0
-                    issues = (
+                    issues: tuple[WriteIssue, ...] = (
                         ()
                         if committed.flush.complete
                         else (
@@ -1451,6 +1482,23 @@ class DeviceCoordinator:
                             ),
                         )
                     )
+                    if (
+                        issued.presentation_policy.enabled
+                        and expected.library.device_name != updated.library.device_name
+                    ):
+                        details = volume_presentation.apply_native(
+                            session, updated.library.device_name
+                        )
+                        if details:
+                            issues += (
+                                WriteIssue(
+                                    "save.volume_presentation_incomplete",
+                                    "The iPod name was saved, but its desktop name or icon could not be applied exactly.",
+                                    severity=IssueSeverity.WARNING,
+                                    phase="save",
+                                    detail="\n".join(details),
+                                ),
+                            )
                     return LibrarySaveResult(
                         issues, updated, str(committed.recovery.journal_path)
                     )
@@ -1644,6 +1692,27 @@ class DeviceCoordinator:
                     artwork_database_fingerprint=artwork_fingerprint,
                     photos_database_fingerprint=photos_fingerprint,
                 )
+                if reconcile_metadata:
+                    presentation_issues = self._reconcile_volume_presentation(
+                        current, active_ipod
+                    )
+                    if presentation_issues:
+                        current = replace(
+                            current,
+                            candidate=replace(
+                                current.candidate,
+                                issues=(
+                                    *current.candidate.issues,
+                                    *presentation_issues,
+                                ),
+                            ),
+                        )
+                        active_ipod = replace(active_ipod, candidate=current.candidate)
+                    self._sync_cleanup_path = self._check_sync_recovery(session)
+                    if session.fingerprint(database_path) != current_fingerprint:
+                        raise DeviceChangedError(
+                            "The iTunesDB changed while desktop presentation was updated. Reload the iPod."
+                        )
                 self._records[candidate_id] = current
                 self._active = _ActiveConnection(
                     session=session,
@@ -1666,6 +1735,67 @@ class DeviceCoordinator:
             except StorageError as error:
                 session.close()
                 raise DeviceAccessError(str(error)) from error
+
+    def _reconcile_volume_presentation(
+        self, record: _CandidateRecord, active: ActiveIPod
+    ) -> tuple[DeviceCandidateIssue, ...]:
+        """Provision only the selected iPod, with its saved name as a dependency."""
+        if not self.volume_presentation_enabled:
+            return ()
+        if not record.mounted_volume.volume.capabilities.safe_for_writes:
+            return (
+                DeviceCandidateIssue(
+                    DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE,
+                    "Desktop appearance was not updated because the Volume is read-only or unsafe for writes.",
+                ),
+            )
+        try:
+            with self._storage.open_session(
+                record.mounted_volume, access=AccessMode.READ_WRITE
+            ) as session:
+                presentation = volume_presentation.capture(
+                    session, active.library.device_name, active.profile.product_image
+                )
+                if presentation.writes:
+                    changed = {write.path for write in presentation.writes}
+                    transaction = StorageTransaction(
+                        presentation.writes,
+                        dependencies=(
+                            FilePrecondition(
+                                library_resources.database_path(active.database_name),
+                                active.database_fingerprint,
+                            ),
+                            *(
+                                file
+                                for file in presentation.files
+                                if file.path not in changed
+                            ),
+                        ),
+                    )
+                    committed = session.execute_transaction(transaction)
+                    session.finalize_committed_transaction(
+                        committed.recovery.journal_path
+                    )
+                library_resources.recheck(
+                    session,
+                    (
+                        FilePrecondition(
+                            library_resources.database_path(active.database_name),
+                            active.database_fingerprint,
+                        ),
+                    ),
+                )
+                details = volume_presentation.apply_native(
+                    session, active.library.device_name
+                )
+        except (StorageError, OSError, ValueError) as error:
+            details = (str(error),)
+        return tuple(
+            DeviceCandidateIssue(
+                DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE, detail
+            )
+            for detail in details
+        )
 
     def load_artwork(self, request: ArtworkRequest) -> ArtworkImage | None:
         """Read and decode the best available cover for one current image ID."""
@@ -3424,12 +3554,14 @@ def _require_no_pending_transaction(session: FilesystemSession) -> str:
         if not session.exists(journal):
             continue
         try:
-            state = session.read_transaction_state(journal)
+            status = session.read_transaction_status(journal)
         except (StorageError, ValueError) as error:
             raise SyncRecoveryRequiredError(str(journal)) from error
-        if state not in (TransactionState.COMMITTED, TransactionState.RESTORED):
+        if status.state not in (TransactionState.COMMITTED, TransactionState.RESTORED):
             raise SyncRecoveryRequiredError(str(journal))
-        if not cleanup_path:
+        # Host identities can change across reconnects. Completed journals are
+        # not interrupted work, but only matching identities may offer cleanup.
+        if status.identity_matches and not cleanup_path:
             cleanup_path = str(journal)
     return cleanup_path
 

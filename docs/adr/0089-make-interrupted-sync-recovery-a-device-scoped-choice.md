@@ -18,6 +18,17 @@ store and omitted on its next save; other preferences remain unchanged. No new
 Host persistence is needed. Selection rediscovers terminal cleanup reminders from
 the device itself.
 
+Journal status is separate from recovery authority. A valid `committed` or
+`restored` journal records completed work even when its saved Host identity no
+longer matches the current observation. Windows volume GUID changes after reconnect
+exposed this distinction: treating every identity mismatch as interruption falsely
+blocked a successfully renamed iPod. Storage reports the validated journal state
+and identity match separately for read-only classification. Terminal journals with
+different identities remain untouched and do not block selection or offer cleanup.
+Malformed and nonterminal journals still require recovery attention. Restoration,
+cleanup, and strict state reads retain their exact identity checks; filesystem
+serial numbers alone never grant authority to modify or discard recovery data.
+
 Discovery lists an iPod with unfinished recovery as a selectable Device Candidate
 without reading its interrupted Library. Selecting it presents **Restore Previous
 Library** and **Keep Current Contents** before metadata repair or Library loading.

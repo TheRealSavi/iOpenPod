@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, 
 
 from iOpenPod.app.core.settings.definitions import (
     LAST_SELECTED_IPOD_VOLUME_ID,
+    MANAGE_VOLUME_PRESENTATION,
 )
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -109,6 +110,10 @@ class DeviceController(QObject):
         self._coordinator = coordinator
         self._track_model = track_model
         self._settings = settings
+        coordinator.set_volume_presentation_enabled(
+            settings.get(MANAGE_VOLUME_PRESENTATION)
+        )
+        settings.settingChanged.connect(self._setting_changed)
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(1)
         self._discovery = coordinator.discovery
@@ -130,6 +135,11 @@ class DeviceController(QObject):
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self._refresh_automatically)
+
+    @Slot(str, object)
+    def _setting_changed(self, key: str, value: object) -> None:
+        if key == MANAGE_VOLUME_PRESENTATION.key and isinstance(value, bool):
+            self._coordinator.set_volume_presentation_enabled(value)
 
     @property
     def discovery(self) -> DeviceDiscovery:

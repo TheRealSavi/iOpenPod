@@ -10,7 +10,11 @@ from PySide6.QtWidgets import QLabel, QScrollArea, QTabWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.context import AppContext
-from iOpenPod.app.core.settings.definitions import MAX_BACKUPS, AppearanceMode
+from iOpenPod.app.core.settings.definitions import (
+    MANAGE_VOLUME_PRESENTATION,
+    MAX_BACKUPS,
+    AppearanceMode,
+)
 from iOpenPod.app.services.linux_identity import UdevRuleStatus, UdevRuleStatusKind
 from iOpenPod.GUI.pages import settings_page
 from iOpenPod.GUI.pages.settings_page import SettingsPage
@@ -23,6 +27,31 @@ def context() -> Iterator[AppContext]:
     context = build_context()
     yield context
     context.shutdown()
+
+
+@pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])
+def test_drive_appearance_setting_defaults_on_and_updates_live(
+    context: AppContext, monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    monkeypatch.setattr(settings_page, "sys", SimpleNamespace(platform=platform))
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    try:
+        library = page.findChild(QScrollArea, "librarySettingsScroll")
+        assert library is not None
+        control = library.findChild(AppComboBox, "manageVolumePresentationCombo")
+        assert control is not None and control.currentData() is True
+        assert context.device_coordinator.volume_presentation_enabled
+        control.setCurrentIndex(control.findData(False))
+        assert context.settings.get(MANAGE_VOLUME_PRESENTATION) is False
+        assert not context.device_coordinator.volume_presentation_enabled
+        changes = QSignalSpy(context.settings.settingChanged)
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert control.currentData() is False and changes.count() == 0
+        context.settings.reset_global(MANAGE_VOLUME_PRESENTATION)
+        assert control.currentData() is True
+        assert context.device_coordinator.volume_presentation_enabled
+    finally:
+        page.close()
 
 
 @pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])

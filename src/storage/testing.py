@@ -140,6 +140,16 @@ class VirtualStoragePlatform:
     def reinspect(self, retained: VolumeObservation) -> VolumeObservation:
         return self.inspect(retained.mount_point.path)
 
+    def set_volume_label(self, observation: VolumeObservation, label: str) -> str:
+        state = self._volumes[observation.mount_point.path]
+        state.observation = replace(
+            state.observation, volume=replace(state.observation.volume, label=label)
+        )
+        return label
+
+    def enable_volume_icon(self, observation: VolumeObservation) -> None:
+        self.reinspect(observation)
+
     def physical_device_id_for_path(self, path: Path) -> PhysicalDeviceId | None:
         canonical = path.resolve(strict=True)
         matching = tuple(

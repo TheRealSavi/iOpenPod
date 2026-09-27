@@ -355,6 +355,9 @@ def _issue_text(
         DeviceCandidateIssueCode.ARTWORK_DATABASE_UNREADABLE: dialog.tr(
             "Album artwork could not be loaded."
         ),
+        DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE: dialog.tr(
+            "The iPod's desktop name or icon could not be fully updated."
+        ),
         DeviceCandidateIssueCode.INSPECTION_FAILED: dialog.tr(
             "The device filesystem could not be inspected."
         ),

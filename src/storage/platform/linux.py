@@ -34,6 +34,7 @@ from storage.models import (
 from storage.platform.base import ObservationDiscoveryResult
 from storage.platform.common import capabilities, disk_usage
 from storage.platform.linux_eject import LinuxDeviceEjector
+from storage.platform.linux_eject import set_volume_label as set_udisks_volume_label
 from storage.scsi_vpd import collect_scsi_vpd
 
 _MOUNTINFO = Path("/proc/self/mountinfo")
@@ -191,6 +192,26 @@ class LinuxPlatformAdapter:
 
     def reinspect(self, retained: VolumeObservation) -> VolumeObservation:
         return self.inspect(retained.mount_point.path)
+
+    def set_volume_label(self, observation: VolumeObservation, label: str) -> str:
+        record = next(
+            (
+                r
+                for r in self._records()
+                if "linux-mount:" + r.mount_id == observation.mount_instance
+                and r.mount_point == observation.mount_point.path
+            ),
+            None,
+        )
+        if record is None:
+            raise MountInspectionError(
+                "The Linux mount changed before updating its label"
+            )
+        return set_udisks_volume_label(record.source, label)
+
+    def enable_volume_icon(self, observation: VolumeObservation) -> None:
+        # Desktop environments read the ordinary companion files.
+        pass
 
     def physical_device_id_for_path(self, path: Path) -> PhysicalDeviceId | None:
         requested = Path(os.path.realpath(path))

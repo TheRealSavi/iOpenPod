@@ -19,8 +19,66 @@ from storage import (
     TransactionProgress,
     TransactionState,
     TransactionWrite,
+    VolumeIdentityChangedError,
 )
 from storage.testing import VirtualStoragePlatform
+
+
+@pytest.mark.parametrize("changed_identity", ["device", "volume"])
+@pytest.mark.parametrize("restored", [False, True])
+def test_foreign_journal_status_never_authorizes_recovery_or_cleanup(
+    tmp_path: Path, changed_identity: str, restored: bool
+) -> None:
+    platform = VirtualStoragePlatform()
+    observed = platform.add_volume(tmp_path)
+    storage = Storage(platform)
+    data = b"verified media"
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        result = session.execute_transaction(
+            StorageTransaction(
+                (
+                    TransactionWrite(
+                        DevicePath("media.bin"),
+                        data,
+                        FileContent(len(data), hashlib.sha256(data).hexdigest()),
+                    ),
+                )
+            )
+        )
+        journal = result.recovery.journal_path
+        if restored:
+            session.restore_transaction(result.recovery)
+        assert session.read_transaction_status(journal).identity_matches
+    original_journal = (tmp_path / str(journal)).read_bytes()
+    platform.replace_identity(
+        tmp_path,
+        device_id="another-device"
+        if changed_identity == "device"
+        else observed.physical_device.id.value,
+        volume_id="another-volume"
+        if changed_identity == "volume"
+        else observed.volume.id.value,
+    )
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as reconnected:
+        status = reconnected.read_transaction_status(journal)
+        assert status.state is (
+            TransactionState.RESTORED if restored else TransactionState.COMMITTED
+        )
+        assert not status.identity_matches
+        with pytest.raises(VolumeIdentityChangedError):
+            reconnected.read_transaction_state(journal)
+        with pytest.raises(VolumeIdentityChangedError):
+            reconnected.inspect_transaction(journal)
+        with pytest.raises(VolumeIdentityChangedError):
+            reconnected.finalize_committed_transaction(journal)
+        with pytest.raises(VolumeIdentityChangedError):
+            reconnected.finalize_restored_transaction(journal)
+    assert (tmp_path / str(journal)).read_bytes() == original_journal
+    assert (tmp_path / "media.bin").exists() is not restored
 
 
 def test_committed_journal_cleanup_does_not_hash_published_media(

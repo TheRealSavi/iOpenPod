@@ -11,7 +11,10 @@ import pytest
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
-from iOpenPod.app.core.settings.definitions import LAST_SELECTED_IPOD_VOLUME_ID
+from iOpenPod.app.core.settings.definitions import (
+    LAST_SELECTED_IPOD_VOLUME_ID,
+    MANAGE_VOLUME_PRESENTATION,
+)
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
 from iOpenPod.app.device_controller import (
@@ -51,6 +54,31 @@ def _application() -> QApplication:
 
 
 APPLICATION = _application()
+
+
+def test_startup_restoration_honors_disabled_drive_appearance(tmp_path: Path) -> None:
+    root = _device_root(tmp_path / "device")
+    companion = root / "autorun.inf"
+    original = b"\x80My custom companion format"
+    companion.write_bytes(original)
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root, volume_id="remembered", label="Custom drive")
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    settings.set_global(LAST_SELECTED_IPOD_VOLUME_ID, "remembered")
+    settings.set_global(MANAGE_VOLUME_PRESENTATION, False)
+    coordinator = DeviceCoordinator(Storage(platform))
+    controller = DeviceController(coordinator, TrackTableModel(), settings)
+    try:
+        controller.restore_previous_device()
+        _wait_until(lambda: controller.active_ipod is not None and not controller.busy)
+        assert companion.read_bytes() == original
+        assert not (root / ".xdg-volume-info").exists()
+        assert not (root / ".directory").exists()
+        assert not (root / ".VolumeIcon.icns").exists()
+        assert platform.inspect(root).volume.label == "Custom drive"
+        assert not coordinator.volume_presentation_enabled
+    finally:
+        controller.shutdown()
 
 
 @pytest.mark.parametrize("change", ["add", "update", "remove"])

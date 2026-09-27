@@ -1,11 +1,15 @@
-"""Linux safe removal through the UDisks2 system D-Bus service."""
+"""Linux safe removal and Volume labels through the UDisks2 D-Bus service."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol, cast
 
-from storage.errors import EjectError, UnsupportedStorageOperationError
+from storage.errors import (
+    EjectError,
+    StorageOperationError,
+    UnsupportedStorageOperationError,
+)
 from storage.models import EjectResult
 
 _DEVICE_BUSY = "org.freedesktop.UDisks2.Error.DeviceBusy"
@@ -78,6 +82,16 @@ class LinuxDeviceEjector:
         return EjectResult(
             "Linux UDisks confirmed that the iPod is unmounted and powered off."
         )
+
+
+def set_volume_label(device_path: str, label: str) -> str:
+    """Update a Volume label and return the label reported by UDisks."""
+    try:
+        return _QtUDisksClient().set_label(device_path, label)
+    except UDisksError as error:
+        raise StorageOperationError(
+            f"Could not update the Volume label: {error.detail}"
+        ) from error
 
 
 class _QtUDisksClient:
@@ -162,6 +176,38 @@ class _QtUDisksClient:
             _variant_map({}),
             timeout_ms=75_000,
         )
+
+    def set_label(self, device_path: str, label: str) -> str:
+        resolved = self._call(
+            self._ROOT + "/Manager",
+            self._MANAGER,
+            "ResolveDevice",
+            _variant_map({"path": device_path}),
+            _variant_map({}),
+        )
+        blocks = _object_paths(_first_argument(resolved))
+        if len(blocks) != 1:
+            raise UDisksError(
+                "org.freedesktop.UDisks2.Error.NotFound",
+                "The Volume did not resolve to one exact block device",
+            )
+        block = blocks[0]
+        if self._property(block, self._BLOCK, "IdLabel") == label:
+            return label
+        self._call(
+            block,
+            self._FILESYSTEM,
+            "SetLabel",
+            label,
+            _variant_map({"auth.no_user_interaction": True}),
+        )
+        actual = self._property(block, self._BLOCK, "IdLabel")
+        if not isinstance(actual, str):
+            raise UDisksError(
+                "org.freedesktop.UDisks2.Error.Failed",
+                "Could not verify the Volume label",
+            )
+        return actual
 
     def power_off(self, drive: str) -> None:
         self._call(

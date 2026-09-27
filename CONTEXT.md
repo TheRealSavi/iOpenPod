@@ -434,6 +434,17 @@ ADR-0042, ADR-0045, ADR-0046, ADR-0047, ADR-0048, ADR-0049, ADR-0050, ADR-0051,
 ADR-0068, ADR-0077, ADR-0078, `docs/synesthesia_backend.md`, and
 `docs/synesthesia_visual_direction.md`.
 
+With **Manage iPod drive appearance** enabled (the default), selecting a writable
+iPod also derives desktop names and model icons from its saved
+Master Playlist name and Device Profile. Renames update portable Windows, GVfs,
+KDE, and macOS icon companions through the Library's recoverable save workflow.
+Storage updates native volume labels and the macOS custom icon flag after file
+publication. Native limitations are reported without undoing a saved Library name;
+filesystem label limits never change the full iPod name. Turning this global setting
+off preserves custom companions, icons, native labels, and Finder flags across
+selection and saved renames. See ADR-0090 and
+`docs/volume-presentation.md` for platform limits and verification status.
+
 ## Product and compatibility target
 
 - The Original iOpenPod is the behavioral and research baseline. Its code,

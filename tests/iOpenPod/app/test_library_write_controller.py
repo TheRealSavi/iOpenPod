@@ -12,10 +12,14 @@ import pytest
 from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QDialog, QLabel, QPlainTextEdit, QPushButton, QTreeWidget
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
+from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
+from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 from tests.iPodDB.library.test_writing import library
 
-from iOpenPod.app.core.settings.definitions import DRAFT_ALL_CHANGES
+from iOpenPod.app.core.settings.definitions import (
+    DRAFT_ALL_CHANGES,
+    MANAGE_VOLUME_PRESENTATION,
+)
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
 from iOpenPod.app.device_controller import DeviceController
@@ -119,6 +123,35 @@ def finish_workers(controller: LibraryWriteController) -> None:
     pool = controller.findChild(QThreadPool)
     assert pool is not None and pool.waitForDone(5000)
     APPLICATION.processEvents()
+
+
+def test_drive_appearance_change_retires_review_and_reprepares_rename(
+    tmp_path: Path,
+) -> None:
+    device = bare_device(tmp_path)
+    context = build_context(device_coordinator=device.coordinator)
+    controller = context.library_write_controller
+    try:
+        context.settings.set_global(DRAFT_ALL_CHANGES, True)
+        workspace = context.library_workspace
+        workspace.load(device.active.library)
+        old_companion = (device.root / "autorun.inf").read_bytes()
+        old_label = device.platform.inspect(device.root).volume.label
+        workspace.rename_device("Renamed", workspace.edit_revision)
+        controller.prepare()
+        wait_for(lambda: controller.state is PreparationState.READY)
+        context.settings.set_global(MANAGE_VOLUME_PRESENTATION, False)
+        assert controller.state is PreparationState.STALE
+        assert not controller.can_save and controller.can_prepare
+        controller.prepare()
+        wait_for(lambda: controller.state is PreparationState.READY)
+        controller.save()
+        wait_for(lambda: controller.state is PreparationState.SAVED)
+        assert device.active.library.device_name == "Renamed"
+        assert (device.root / "autorun.inf").read_bytes() == old_companion
+        assert device.platform.inspect(device.root).volume.label == old_label
+    finally:
+        context.shutdown()
 
 
 def test_device_busy_changes_notify_review_without_forwarding_boolean(

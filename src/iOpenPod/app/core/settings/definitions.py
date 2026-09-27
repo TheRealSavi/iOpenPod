@@ -189,6 +189,12 @@ DRAFT_ALL_CHANGES = SettingDefinition[bool](
     default=False,
 )
 
+MANAGE_VOLUME_PRESENTATION = SettingDefinition[bool](
+    key="devices/manage-volume-presentation",
+    value_type=bool,
+    default=True,
+)
+
 IPOD_LIBRARY_VIEW_MODE = SettingDefinition[str](
     key="library/ipod-view-mode",
     value_type=str,

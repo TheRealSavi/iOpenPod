@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from iOpenPod.app.library_write import LibraryFileChange
 from iOpenPod.app.media.lyrics import rewrite_lyrics
+from iOpenPod.app.services import volume_presentation
 from iPodDB.library import (
     FileDependency,
     PhotoRepresentationKind,
@@ -86,6 +87,7 @@ class CapturedLibraryResources:
     files: tuple[FilePrecondition, ...]
     removals: tuple[TransactionRemoval, ...]
     media_writes: tuple[TransactionWrite, ...] = ()
+    presentation_writes: tuple[TransactionWrite, ...] = ()
 
 
 def pending_sidecars(
@@ -160,6 +162,7 @@ def capture(
     checkpoint: Callable[[], None],
     *,
     additional_preconditions: tuple[FilePrecondition, ...] = (),
+    volume_presentation_enabled: bool = True,
 ) -> CapturedLibraryResources:
     primary = database_path(request.source.database_name)
     files = [
@@ -186,6 +189,16 @@ def capture(
     inventory: list[FileDependency] = []
     sources: list[SourceFile] = []
     media_writes: list[TransactionWrite] = []
+    presentation_writes: tuple[TransactionWrite, ...] = ()
+    if (
+        volume_presentation_enabled
+        and request.snapshot.device_name != request.source.library.device_name
+    ):
+        presentation = volume_presentation.capture(
+            session, request.snapshot.device_name, request.source.profile.product_image
+        )
+        files.extend(presentation.files)
+        presentation_writes = presentation.writes
     if plan.requires_sidecar_inventory:
         sidecar_files, sidecar_writes = _capture_sidecars(session, request, checkpoint)
         files.extend(sidecar_files)
@@ -408,7 +421,11 @@ def capture(
         len(removals),
     )
     return CapturedLibraryResources(
-        resources, tuple(files), tuple(removals), tuple(media_writes)
+        resources,
+        tuple(files),
+        tuple(removals),
+        tuple(media_writes),
+        presentation_writes,
     )
 
 
@@ -545,6 +562,8 @@ def transaction(
         for artifact_name, data in prepared.sqlite.artifacts():
             path = sqlite_database_path(artifact_name)
             writes.append(TransactionWrite(path, data, _content(data), before[path]))
+    # Names follow the Library's publication, with icons before their text references.
+    writes.extend(captured.presentation_writes)
     changed = {w.path for w in writes} | {r.path for r in captured.removals}
     # Prepared dependencies are content assertions, never authority to open a new path.
     for dependency in prepared.retained_files:

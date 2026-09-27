@@ -49,12 +49,17 @@ def _wait_until(predicate: Callable[[], bool], timeout_ms: int = 3000) -> None:
     assert predicate(), "Timed out waiting for asynchronous device work"
 
 
+@pytest.mark.parametrize("changed_identity", [False, True])
 @pytest.mark.parametrize("fresh_coordinator", [False, True])
 def test_discovery_finds_crash_journal_before_loading_partial_database(
-    tmp_path: Path, fresh_coordinator: bool
+    tmp_path: Path, fresh_coordinator: bool, changed_identity: bool
 ) -> None:
     device = build_device(tmp_path)
     path = create_transaction_journal(device, TransactionState.PUBLISHING)
+    if changed_identity:
+        device.platform.replace_identity(
+            device.root, device_id="another-device", volume_id="another-volume"
+        )
     coordinator = (
         DeviceCoordinator(device.storage) if fresh_coordinator else device.coordinator
     )

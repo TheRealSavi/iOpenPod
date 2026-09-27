@@ -45,6 +45,7 @@ class DeviceCandidateIssueCode(StrEnum):
     DATABASE_FALLBACK = "database_fallback"
     ARTWORK_DATABASE_UNREADABLE = "artwork_database_unreadable"
     PHOTOS_DATABASE_UNREADABLE = "photos_database_unreadable"
+    VOLUME_PRESENTATION_INCOMPLETE = "volume_presentation_incomplete"
     INSPECTION_FAILED = "inspection_failed"
 
 

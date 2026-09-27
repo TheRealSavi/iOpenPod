@@ -29,7 +29,12 @@ SUPPORTED_MODELS = tuple(
 )
 
 
-def bare_device(tmp_path: Path, model_number: str = "MB565") -> Device:
+def bare_device(
+    tmp_path: Path,
+    model_number: str = "MB565",
+    *,
+    volume_presentation_enabled: bool = True,
+) -> Device:
     root = tmp_path / "ipod"
     original = {"iPod_Control/iTunes/iTunesDB": library().serialize().itunes}
     for relative, data in original.items():
@@ -51,7 +56,9 @@ def bare_device(tmp_path: Path, model_number: str = "MB565") -> Device:
         ),
     )
     storage = Storage(platform, writer_lock_directory=tmp_path / "locks")
-    coordinator = DeviceCoordinator(storage)
+    coordinator = DeviceCoordinator(
+        storage, volume_presentation_enabled=volume_presentation_enabled
+    )
     coordinator.select_device(coordinator.discover_devices().candidates[0].id)
     assert coordinator.active_ipod is not None
     assert coordinator.active_ipod.profile.model_number == model_number

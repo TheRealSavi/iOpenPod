@@ -442,6 +442,12 @@ Host/device copies, moves, recoverable trash and restore, free-space inspection,
 filesystem flushing. It intentionally exposes neither unconditional overwrite nor
 permanent deletion.
 
+Filesystem Sessions also expose native volume-label updates and custom-volume-icon
+activation under the same writer lease and connection revalidation. These generic
+operations apply filesystem constraints and verify the native result. The
+Application Layer owns the name and icon policy; Storage knows nothing about the
+Master Playlist or Device Profile.
+
 ### Transactions
 
 Large or destructive operations should be planned and executed as transactions.
@@ -474,6 +480,13 @@ A transaction should support:
 - interruption recovery
 
 Deletion should generally occur after successful writes and verification.
+
+Read-only transaction status distinguishes the recorded journal state from whether
+its Physical Device and Volume identities match the current session. A valid
+committed or restored journal with an outdated Host identity does not imply an
+interrupted operation. It remains untouched without offering cleanup. Recovery and
+cleanup still require exact identity validation; malformed or nonterminal journals
+continue to block selection for recovery attention. See ADR-0089.
 
 A Backup Snapshot is not a transaction phase for another feature. The implemented
 backup and restore workflow is standalone and is not invoked by Sync, Library save,
@@ -1725,6 +1738,20 @@ eject
 The GUI should call services rather than directly manipulating databases or filesystems.
 
 ---
+
+The Application Layer derives desktop presentation from the saved Master Playlist
+name and the Device Profile's packaged image when the global **Manage iPod drive
+appearance** setting is enabled (the default). Off skips companion capture and all
+appearance mutations, preserving user customizations. The Device Controller applies
+the persisted setting before startup selection and forwards changes to the
+coordinator. Policy changes invalidate pending Library preparation and review
+authority; an executing operation completes under its original policy. Selection
+provisions portable volume companions after the Library loads, and name edits include
+their changed bytes in the reviewed Library Storage Transaction. Discovery and unsaved
+drafts do not write
+presentation. Native labels and the macOS icon flag follow verified publication as
+repeatable derived metadata; failures produce diagnostics and retry on selection.
+See ADR-0090 and `docs/volume-presentation.md` for the platform contract.
 
 ### `iOpenPod/assets`
 

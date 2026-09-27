@@ -17,6 +17,7 @@ from iOpenPod.app.core.settings.definitions import (
     IPOD_LIBRARY_VIEW_MODE,
     LAST_SELECTED_IPOD_VOLUME_ID,
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
+    MANAGE_VOLUME_PRESENTATION,
     PLAYER_POSITION,
     TRACK_TITLE_BAR_STYLE,
     WINDOW_GEOMETRY,
@@ -62,6 +63,8 @@ def test_default_global_and_reset_resolution() -> None:
     assert service.source(PLAYER_POSITION) is SettingSource.DEFAULT
     assert service.get(DRAFT_ALL_CHANGES) is False
     assert service.source(DRAFT_ALL_CHANGES) is SettingSource.DEFAULT
+    assert service.get(MANAGE_VOLUME_PRESENTATION) is True
+    assert service.source(MANAGE_VOLUME_PRESENTATION) is SettingSource.DEFAULT
 
     service.set_global(APPEARANCE_MODE, "dark")
     assert service.get(APPEARANCE_MODE) == "dark"
@@ -221,6 +224,7 @@ def test_json_store_immediately_persists_typed_settings_through_storage(
     first.set_global(APPEARANCE_DARK_THEME, DarkTheme.ORIGINAL.value)
     first.set_global(COLORFUL_MODE, True)
     first.set_global(DRAFT_ALL_CHANGES, True)
+    first.set_global(MANAGE_VOLUME_PRESENTATION, False)
     first.set_global(IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.WHOLE_PAGE_TABLE.value)
     first.set_global(PLAYER_POSITION, PlayerPosition.BOTTOM.value)
     first.set_global(TRACK_TITLE_BAR_STYLE, TrackTitleBarStyle.ROUND.value)
@@ -237,6 +241,7 @@ def test_json_store_immediately_persists_typed_settings_through_storage(
     assert second.get(APPEARANCE_DARK_THEME) == DarkTheme.ORIGINAL.value
     assert second.get(COLORFUL_MODE) is True
     assert second.get(DRAFT_ALL_CHANGES) is True
+    assert second.get(MANAGE_VOLUME_PRESENTATION) is False
     assert (
         second.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
     )
@@ -252,6 +257,7 @@ def test_json_store_immediately_persists_typed_settings_through_storage(
         "appearance/theme": "dark",
         "appearance/track-title-bar-style": "round",
         "devices/last-selected-volume-id": "windows:volume-id",
+        "devices/manage-volume-presentation": False,
         "library/draft-all-changes": True,
         "library/ipod-view-mode": "whole-page-table",
         "window/main/geometry": {

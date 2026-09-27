@@ -162,3 +162,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0087: Report concurrent Host preparation progress](0087-report-concurrent-host-preparation-progress.md)
 - [ADR-0088: Edit Track classification in the metadata editor](0088-edit-track-classification-in-the-metadata-editor.md)
 - [ADR-0089: Make interrupted Sync recovery a device-scoped choice](0089-make-interrupted-sync-recovery-a-device-scoped-choice.md)
+- [ADR-0090: Derive Volume presentation from the saved iPod](0090-derive-volume-presentation-from-the-saved-ipod.md)
