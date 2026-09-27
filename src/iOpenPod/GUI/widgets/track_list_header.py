@@ -2,6 +2,7 @@
 
 from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QRectF, Qt, Signal
 from PySide6.QtGui import (
+    QBrush,
     QColor,
     QLinearGradient,
     QPainter,
@@ -21,6 +22,7 @@ from iOpenPod.app.core.settings.definitions import TrackTitleBarStyle
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.dynamic import (
     colorful_header_colors,
+    round_header_colors,
 )
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
@@ -113,7 +115,7 @@ class TrackListHeader(QSplitterHandle):
         tokens = self._theme_manager.tokens
         if self._theme_manager.track_title_bar_style is TrackTitleBarStyle.ROUND:
             accent = QColor(tokens.accent)
-            colors = colorful_header_colors(
+            round_colors = round_header_colors(
                 color or (accent.red(), accent.green(), accent.blue()), tokens
             )
             painter = QPainter(self)
@@ -124,17 +126,16 @@ class TrackListHeader(QSplitterHandle):
             # curve, so the title bar joins the Track table without a gap.
             shape = QPainterPath()
             shape.addRoundedRect(
-                QRectF(0.5, 0.5, self.width() - 1, self.height() + radius),
+                QRectF(0, 0, self.width(), self.height() + radius),
                 radius,
                 radius,
             )
             gradient = QLinearGradient(0, 0, 0, self.height())
-            gradient.setColorAt(0, colors.fill)
-            gradient.setColorAt(1, QColor(tokens.surface_alt))
-            painter.setBrush(gradient)
-            painter.setPen(QPen(colors.separator, 1.0))
-            painter.drawPath(shape)
-            painter.drawLine(self.rect().bottomLeft(), self.rect().bottomRight())
+            gradient.setColorAt(0, round_colors.top)
+            gradient.setColorAt(0.18, round_colors.highlight)
+            gradient.setColorAt(0.55, round_colors.fill)
+            gradient.setColorAt(1, round_colors.bottom)
+            painter.fillPath(shape, QBrush(gradient))
             return
 
         super().paintEvent(event)

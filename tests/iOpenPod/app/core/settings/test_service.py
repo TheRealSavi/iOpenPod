@@ -124,6 +124,35 @@ def test_invalid_player_position_is_rejected() -> None:
         service.set_global(PLAYER_POSITION, "left")
 
 
+@pytest.mark.parametrize("theme", (*LightTheme, *DarkTheme))
+def test_exact_theme_preference_survives_restart(
+    tmp_path: Path, theme: LightTheme | DarkTheme
+) -> None:
+    definition = (
+        APPEARANCE_LIGHT_THEME
+        if isinstance(theme, LightTheme)
+        else APPEARANCE_DARK_THEME
+    )
+    settings_path = tmp_path / "settings-v2.json"
+    first = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    first.set_global(definition, theme.value)
+    second = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert second.get(definition) == theme.value
+
+
+@pytest.mark.parametrize("theme", (*LightTheme, *DarkTheme))
+def test_exact_theme_cannot_be_saved_in_the_other_appearance_family(
+    theme: LightTheme | DarkTheme,
+) -> None:
+    definition = (
+        APPEARANCE_DARK_THEME
+        if isinstance(theme, LightTheme)
+        else APPEARANCE_LIGHT_THEME
+    )
+    with pytest.raises(ValueError, match=definition.key):
+        _service().set_global(definition, theme.value)
+
+
 def test_ipod_view_mode_defaults_and_rejects_invalid_values() -> None:
     store = GlobalSettingsStore()
     service = _service(store)

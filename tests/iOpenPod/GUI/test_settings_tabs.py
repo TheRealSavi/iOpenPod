@@ -5,19 +5,25 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QLabel, QScrollArea, QTabWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.settings.definitions import (
+    APPEARANCE_DARK_THEME,
+    APPEARANCE_LIGHT_THEME,
     MANAGE_VOLUME_PRESENTATION,
     MAX_BACKUPS,
     AppearanceMode,
+    DarkTheme,
+    LightTheme,
 )
 from iOpenPod.app.services.linux_identity import UdevRuleStatus, UdevRuleStatusKind
 from iOpenPod.GUI.pages import settings_page
 from iOpenPod.GUI.pages.settings_page import SettingsPage
+from iOpenPod.GUI.presentation.theme.tokens import tokens_for
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 
@@ -27,6 +33,60 @@ def context() -> Iterator[AppContext]:
     context = build_context()
     yield context
     context.shutdown()
+
+
+def test_appearance_lists_and_applies_every_theme_without_retranslation_reset(
+    context: AppContext,
+) -> None:
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    light = page.findChild(AppComboBox, "lightThemeCombo")
+    dark = page.findChild(AppComboBox, "darkThemeCombo")
+    assert light is not None and dark is not None
+    try:
+        assert [light.itemText(i) for i in range(light.count())] == [
+            "Porcelain",
+            "Catppuccin Latte",
+            "Dune Plover",
+            "Sea Glass",
+        ]
+        assert [dark.itemText(i) for i in range(dark.count())] == [
+            "Slate",
+            "Original iOpenPod",
+            "Catppuccin Frappé",
+            "Catppuccin Macchiato",
+            "Catppuccin Mocha",
+            "Gravity",
+            "Northern Lights",
+            "Orchid",
+        ]
+        for theme in (*LightTheme, *DarkTheme):
+            if isinstance(theme, LightTheme):
+                control, definition, mode = (
+                    light,
+                    APPEARANCE_LIGHT_THEME,
+                    AppearanceMode.LIGHT,
+                )
+            else:
+                control, definition, mode = (
+                    dark,
+                    APPEARANCE_DARK_THEME,
+                    AppearanceMode.DARK,
+                )
+            context.theme_manager.set_mode(mode)
+            control.setCurrentIndex(control.findData(theme.value))
+            assert context.settings.get(definition) == theme.value
+            assert context.theme_manager.effective_theme is theme
+            assert APPLICATION.palette().color(QPalette.ColorRole.Window) == QColor(
+                tokens_for(theme).window
+            )
+            changes = QSignalSpy(context.settings.settingChanged)
+            APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+            assert control.currentData() == theme.value
+            assert changes.count() == 0
+        assert light.currentData() == LightTheme.SEA_GLASS.value
+        assert dark.currentData() == DarkTheme.ORCHID.value
+    finally:
+        page.close()
 
 
 @pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])

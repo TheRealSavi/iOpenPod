@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+from dataclasses import fields
 from textwrap import dedent
 
 import pytest
@@ -55,6 +56,7 @@ from iOpenPod.GUI.presentation.theme.tokens import (
     Theme,
     ThemeTokens,
     resolve_typography,
+    tokens_for,
 )
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.player_bar import (
@@ -78,6 +80,8 @@ def _application() -> QApplication:
 
 
 APPLICATION = _application()
+ALL_THEMES: tuple[Theme, ...] = (*LightTheme, *DarkTheme)
+ALL_TOKENS = tuple(tokens_for(theme) for theme in ALL_THEMES)
 
 
 def test_runtime_theme_switch_updates_palette_and_stylesheet() -> None:
@@ -123,9 +127,108 @@ def test_runtime_theme_switch_updates_palette_and_stylesheet() -> None:
         APPLICATION.setStyleSheet(original_stylesheet)
 
 
-def test_semantic_color_pairs_meet_contrast_floors() -> None:
-    for tokens in (LIGHT_TOKENS, DARK_TOKENS, ORIGINAL_DARK_TOKENS):
-        _assert_contrast(tokens)
+@pytest.mark.parametrize("theme", ALL_THEMES)
+def test_semantic_color_pairs_meet_contrast_floors(theme: Theme) -> None:
+    tokens = tokens_for(theme)
+    _assert_contrast(tokens)
+    for field in fields(tokens):
+        color = QColor(getattr(tokens, field.name))
+        assert color.isValid() and color.alpha() == 255
+
+
+@pytest.mark.parametrize("theme", ALL_THEMES)
+def test_every_exact_theme_updates_the_live_application(theme: Theme) -> None:
+    original_palette = APPLICATION.palette()
+    original_stylesheet = APPLICATION.styleSheet()
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    manager = ThemeManager(APPLICATION, settings)
+    changes: list[str] = []
+    manager.effectiveThemeChanged.connect(changes.append)
+    try:
+        if isinstance(theme, LightTheme):
+            manager.set_mode(AppearanceMode.DARK)
+            manager.set_light_theme(theme)
+            manager.set_mode(AppearanceMode.LIGHT)
+        else:
+            manager.set_mode(AppearanceMode.LIGHT)
+            manager.set_dark_theme(theme)
+            manager.set_mode(AppearanceMode.DARK)
+        _assert_effective_theme(manager, theme)
+        assert changes[-1] == theme.value
+        tokens = tokens_for(theme)
+        palette = APPLICATION.palette()
+        assert palette.color(QPalette.ColorRole.Window) == QColor(tokens.window)
+        assert palette.color(QPalette.ColorRole.Base) == QColor(tokens.surface)
+        assert palette.color(QPalette.ColorRole.Highlight) == QColor(tokens.accent)
+        assert palette.color(QPalette.ColorRole.HighlightedText) == QColor(
+            tokens.accent_ink
+        )
+        assert palette.color(
+            QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text
+        ) == QColor(tokens.text_disabled)
+        assert APPLICATION.styleSheet() == render_stylesheet(tokens, manager.typography)
+    finally:
+        manager.close()
+        APPLICATION.setPalette(original_palette)
+        APPLICATION.setStyleSheet(original_stylesheet)
+
+
+@pytest.mark.parametrize(
+    ("light_theme", "dark_theme"),
+    (
+        (LightTheme.CATPPUCCIN_LATTE, DarkTheme.CATPPUCCIN_MOCHA),
+        (LightTheme.DUNE_PLOVER, DarkTheme.GRAVITY),
+        (LightTheme.SEA_GLASS, DarkTheme.ORCHID),
+    ),
+)
+def test_system_appearance_uses_the_saved_exact_themes(
+    light_theme: LightTheme,
+    dark_theme: DarkTheme,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_palette = APPLICATION.palette()
+    original_stylesheet = APPLICATION.styleSheet()
+    hints = APPLICATION.styleHints()
+    scheme = Qt.ColorScheme.Light
+    monkeypatch.setattr(hints, "colorScheme", lambda: scheme)
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    manager = ThemeManager(APPLICATION, settings)
+    try:
+        manager.set_mode(AppearanceMode.SYSTEM)
+        manager.set_light_theme(light_theme)
+        manager.set_dark_theme(dark_theme)
+        _assert_effective_theme(manager, light_theme)
+        scheme = Qt.ColorScheme.Dark
+        hints.colorSchemeChanged.emit(scheme)
+        _assert_effective_theme(manager, dark_theme)
+        scheme = Qt.ColorScheme.Light
+        hints.colorSchemeChanged.emit(scheme)
+        _assert_effective_theme(manager, light_theme)
+    finally:
+        manager.close()
+        APPLICATION.setPalette(original_palette)
+        APPLICATION.setStyleSheet(original_stylesheet)
+
+
+@pytest.mark.parametrize(
+    ("theme", "window", "surface", "accent"),
+    (
+        (LightTheme.CATPPUCCIN_LATTE, "#EFF1F5", "#E7E9EF", "#1E66F5"),
+        (DarkTheme.CATPPUCCIN_FRAPPE, "#303446", "#34384A", "#8CAAEE"),
+        (DarkTheme.CATPPUCCIN_MACCHIATO, "#24273A", "#282B3F", "#8AADF4"),
+        (DarkTheme.CATPPUCCIN_MOCHA, "#1E1E2E", "#222333", "#89B4FA"),
+        (LightTheme.DUNE_PLOVER, "#F5EEDC", "#F7F1E3", "#456D67"),
+        (LightTheme.SEA_GLASS, "#EDF6F7", "#E7F1F2", "#167C9C"),
+        (DarkTheme.GRAVITY, "#030507", "#0E1D2E", "#A9D8F5"),
+        (DarkTheme.NORTHERN_LIGHTS, "#0B1726", "#102439", "#78E0A4"),
+        (DarkTheme.ORCHID, "#111018", "#252231", "#C56BD8"),
+    ),
+)
+def test_original_palette_identity_is_preserved(
+    theme: Theme, window: str, surface: str, accent: str
+) -> None:
+    tokens = tokens_for(theme)
+    assert (tokens.window, tokens.surface, tokens.accent) == (window, surface, accent)
 
 
 def test_typography_uses_a_positive_platform_point_scale() -> None:
@@ -205,7 +308,7 @@ def test_layout_tokens_define_one_compact_desktop_scale() -> None:
 
 @pytest.mark.parametrize(
     "tokens",
-    (LIGHT_TOKENS, DARK_TOKENS, ORIGINAL_DARK_TOKENS),
+    ALL_TOKENS,
 )
 def test_player_depth_is_derived_from_every_semantic_theme(
     tokens: ThemeTokens,
@@ -223,7 +326,7 @@ def test_player_depth_is_derived_from_every_semantic_theme(
     assert "border-radius: 8px;" in stylesheet
 
 
-@pytest.mark.parametrize("tokens", (LIGHT_TOKENS, DARK_TOKENS, ORIGINAL_DARK_TOKENS))
+@pytest.mark.parametrize("tokens", ALL_TOKENS)
 @pytest.mark.parametrize("slider_type", (QSlider, _SeekSlider))
 def test_player_scrubber_track_stays_neutral_with_either_paint_path(
     tokens: ThemeTokens, slider_type: type[QSlider]
@@ -353,7 +456,7 @@ def test_export_popup_surfaces_are_opaque_and_theme_owned() -> None:
 
 @pytest.mark.parametrize(
     "tokens",
-    (LIGHT_TOKENS, DARK_TOKENS, ORIGINAL_DARK_TOKENS),
+    ALL_TOKENS,
 )
 def test_backup_note_popup_renders_the_active_theme_background(
     tokens: ThemeTokens,
@@ -393,7 +496,7 @@ def test_backup_note_popup_renders_the_active_theme_background(
 
 @pytest.mark.parametrize(
     "tokens",
-    (LIGHT_TOKENS, DARK_TOKENS, ORIGINAL_DARK_TOKENS),
+    ALL_TOKENS,
 )
 def test_export_popup_surfaces_render_the_active_theme_background(
     tokens: ThemeTokens,
@@ -427,7 +530,7 @@ def test_export_popup_surfaces_render_the_active_theme_background(
 
 @pytest.mark.parametrize(
     "tokens",
-    (LIGHT_TOKENS, DARK_TOKENS, ORIGINAL_DARK_TOKENS),
+    ALL_TOKENS,
 )
 def test_linux_identity_setup_renders_the_active_theme_background(
     tokens: ThemeTokens,
@@ -603,14 +706,14 @@ def test_checkbox_indicator_remains_visible_when_checked_in_each_theme() -> None
     checkbox.show()
 
     try:
-        for mode, dark_theme, tokens in (
-            (AppearanceMode.LIGHT, None, LIGHT_TOKENS),
-            (AppearanceMode.DARK, DarkTheme.SLATE, DARK_TOKENS),
-            (AppearanceMode.DARK, DarkTheme.ORIGINAL, ORIGINAL_DARK_TOKENS),
-        ):
-            if dark_theme is not None:
-                manager.set_dark_theme(dark_theme)
-            manager.set_mode(mode)
+        for theme in ALL_THEMES:
+            if isinstance(theme, LightTheme):
+                manager.set_light_theme(theme)
+                manager.set_mode(AppearanceMode.LIGHT)
+            else:
+                manager.set_dark_theme(theme)
+                manager.set_mode(AppearanceMode.DARK)
+            tokens = tokens_for(theme)
             checkbox.setChecked(False)
             checkbox.clearFocus()
             APPLICATION.processEvents()
@@ -647,6 +750,7 @@ def test_checkbox_indicator_remains_visible_when_checked_in_each_theme() -> None
             assert QColor(tokens.accent_ink).rgba() in checked
     finally:
         checkbox.close()
+        manager.close()
         APPLICATION.setPalette(original_palette)
         APPLICATION.setStyleSheet(original_stylesheet)
 
@@ -755,6 +859,14 @@ def _assert_contrast(tokens: ThemeTokens) -> None:
     assert _contrast_ratio(tokens.text_secondary, tokens.window) >= 4.5
     assert _contrast_ratio(tokens.text_secondary, tokens.surface) >= 4.5
     assert _contrast_ratio(tokens.text_disabled, tokens.surface) >= 3.0
+    for surface in (
+        tokens.surface_alt,
+        tokens.surface_hover,
+        tokens.surface_pressed,
+        tokens.surface_selected,
+    ):
+        assert _contrast_ratio(tokens.text, surface) >= 4.5
+        assert _contrast_ratio(tokens.text_secondary, surface) >= 4.5
     for accent_fill in (
         tokens.accent,
         tokens.accent_hover,

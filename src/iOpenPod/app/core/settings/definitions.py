@@ -57,6 +57,9 @@ class LightTheme(StrEnum):
     """Stable Light-theme selections."""
 
     PORCELAIN = "porcelain"
+    CATPPUCCIN_LATTE = "catppuccin-latte"
+    DUNE_PLOVER = "dune-plover"
+    SEA_GLASS = "sea-glass"
 
 
 class DarkTheme(StrEnum):
@@ -64,6 +67,12 @@ class DarkTheme(StrEnum):
 
     SLATE = "slate"
     ORIGINAL = "original"
+    CATPPUCCIN_FRAPPE = "catppuccin-frappe"
+    CATPPUCCIN_MACCHIATO = "catppuccin-macchiato"
+    CATPPUCCIN_MOCHA = "catppuccin-mocha"
+    GRAVITY = "gravity"
+    NORTHERN_LIGHTS = "northern-lights"
+    ORCHID = "orchid"
 
 
 @dataclass(frozen=True, slots=True)

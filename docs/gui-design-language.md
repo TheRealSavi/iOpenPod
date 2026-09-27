@@ -38,11 +38,13 @@ track data remain the strongest color on screen.
 
 Depth normally comes from surface lightness and one-pixel separators. Avoid
 decorative gradients, glass effects, colored shadows, and nested cards. The Player
-alone may add low-contrast vertical gradients to its band, now-playing surface,
-slider tracks, and round handles. Those effects remain opaque and theme-derived;
-they must not introduce an independent palette. Use the blue accent as a signal for
-focus, links, and primary actions rather than as a large saturated background
-treatment. Colorful Mode is an explicit user preference: it adds quiet
+may add low-contrast vertical gradients to its band, now-playing surface,
+slider tracks, and round handles. The optional Round Track-list title bar also uses
+opaque shading to make its native splitter handle feel rounded and grabbable.
+Those effects remain theme-derived; they must not introduce an independent palette.
+Use the active theme's accent for focus, links, and primary actions rather than as a
+large saturated background treatment. Colorful Mode is an explicit user preference:
+it adds quiet
 artwork-derived card fills without replacing semantic selection, focus, status, or
 action colors.
 
@@ -108,6 +110,33 @@ Nested editor groups alternate `surface_alt` and `surface` by depth. The alterna
 communicates containment rather than sibling order: depth zero uses the alternate
 surface, depth one uses the primary surface, and every deeper level continues the
 same parity. A one-pixel semantic border preserves the boundary in every theme.
+
+### Original iOpenPod Palette Choices
+
+Settings → Appearance offers independent Light and Dark theme choices. Auto uses
+the saved theme for the Host's current appearance. Porcelain and Slate remain the
+defaults.
+
+| Theme | Appearance | Canvas | Content surface | Accent |
+| --- | --- | --- | --- | --- |
+| Catppuccin Latte | Light | `#EFF1F5` | `#E7E9EF` | `#1E66F5` |
+| Catppuccin Frappé | Dark | `#303446` | `#34384A` | `#8CAAEE` |
+| Catppuccin Macchiato | Dark | `#24273A` | `#282B3F` | `#8AADF4` |
+| Catppuccin Mocha | Dark | `#1E1E2E` | `#222333` | `#89B4FA` |
+| Dune Plover | Light | `#F5EEDC` | `#F7F1E3` | `#456D67` |
+| Sea Glass | Light | `#EDF6F7` | `#E7F1F2` | `#167C9C` |
+| Gravity | Dark | `#030507` | `#0E1D2E` | `#A9D8F5` |
+| Northern Lights | Dark | `#0B1726` | `#102439` | `#78E0A4` |
+| Orchid | Dark | `#111018` | `#252231` | `#C56BD8` |
+
+These palettes were translated from the Original iOpenPod's bundled
+`src/iopenpod/themes/*.json` definitions into fixed `ThemeTokens`. They retain the
+original canvas, content surface, alternate surface, and accent colors. Hover,
+pressed, selection, supporting text, boundaries, scrollbar, and status colors are
+adapted to the shared contrast floors. Placeholder artwork uses muted variations
+of each palette's supporting colors. Every palette consumes the same metrics,
+typography, palette builder, stylesheet renderer, and Colorful Mode recipes; no
+Original iOpenPod files are loaded at runtime.
 
 ## Metrics
 
@@ -306,9 +335,12 @@ states use the existing Theme Module; no separate Review palette is introduced.
 
 The Track-list title bar has a global **Flat** / **Round** appearance preference.
 Flat retains the straight-edged treatment and is the default. Round takes its
-rounded upper corners, soft vertical gradient, and pill-shaped search field from
-the Original iOpenPod. It uses the active theme's accent, or artwork-derived color
-when Colorful Mode has one available. Both styles retain the same title, search,
+rounded upper corners and pill-shaped search field from the Original iOpenPod.
+Its borderless, opaque gradient lights an upper shoulder and shades the lower face
+of the same color, keeping depth and a solid boundary against the Track table
+instead of fading back to the table surface. Every gradient stop preserves primary
+text contrast. It uses the active theme's accent, or artwork-derived color when
+Colorful Mode has one available. Both styles retain the same title, search,
 and native splitter dragging; changing style takes effect immediately without
 resetting the search, table columns, or splitter position.
 

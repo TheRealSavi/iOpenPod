@@ -2242,9 +2242,14 @@ Dark
 ```
 
 and determine the effective theme centrally. Light and Dark each have an independent
-exact-theme setting, so Auto/System mode can select the configured Porcelain Light
-theme or either the Slate or Original iOpenPod Dark theme without conflating Host
-appearance with palette identity.
+exact-theme setting, so Auto/System mode selects the configured palette for each
+family without conflating Host appearance with palette identity. Light choices are
+Porcelain, Catppuccin Latte, Dune Plover, and Sea Glass. Dark choices are Slate,
+Original iOpenPod, Catppuccin Frappé, Catppuccin Macchiato, Catppuccin Mocha, Gravity,
+Northern Lights, and Orchid. Porcelain and Slate remain the defaults. The Original
+iOpenPod palettes are translated into fixed semantic tokens with contrast-safe
+interaction states; they do not require a runtime theme catalog or the Original
+project.
 
 Optional Colorful Mode uses a generic image-to-color presentation helper. The lazy
 artwork provider computes colors outside the GUI thread and retains them in an

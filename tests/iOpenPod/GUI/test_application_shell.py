@@ -431,6 +431,12 @@ def test_settings_choose_mode_exact_themes_and_colorful_mode() -> None:
         ) == (
             DarkTheme.SLATE.value,
             DarkTheme.ORIGINAL.value,
+            DarkTheme.CATPPUCCIN_FRAPPE.value,
+            DarkTheme.CATPPUCCIN_MACCHIATO.value,
+            DarkTheme.CATPPUCCIN_MOCHA.value,
+            DarkTheme.GRAVITY.value,
+            DarkTheme.NORTHERN_LIGHTS.value,
+            DarkTheme.ORCHID.value,
         )
         assert colorful.currentData() is False
         assert max_backups.currentData() == 0

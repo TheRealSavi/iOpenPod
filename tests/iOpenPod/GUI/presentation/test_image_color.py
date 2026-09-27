@@ -3,6 +3,7 @@
 from PIL import Image
 from PySide6.QtGui import QColor
 
+from iOpenPod.app.core.settings.definitions import DarkTheme, LightTheme
 from iOpenPod.GUI.presentation.image_color import dominant_image_color
 from iOpenPod.GUI.presentation.theme.dynamic import (
     colorful_card_fill,
@@ -10,8 +11,7 @@ from iOpenPod.GUI.presentation.theme.dynamic import (
 )
 from iOpenPod.GUI.presentation.theme.tokens import (
     DARK_TOKENS,
-    LIGHT_TOKENS,
-    ORIGINAL_DARK_TOKENS,
+    tokens_for,
 )
 
 
@@ -55,7 +55,8 @@ def test_dynamic_tints_preserve_selection_and_text_contrast() -> None:
         (0, 0, 255),
         (216, 24, 80),
     )
-    for tokens in (LIGHT_TOKENS, DARK_TOKENS, ORIGINAL_DARK_TOKENS):
+    for theme in (*LightTheme, *DarkTheme):
+        tokens = tokens_for(theme)
         for source in sources:
             fill = colorful_card_fill(source, tokens)
             selected_fill = colorful_card_fill(source, tokens, emphasized=True)

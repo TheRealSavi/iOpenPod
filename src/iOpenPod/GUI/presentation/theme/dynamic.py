@@ -25,6 +25,16 @@ class ColorfulHeaderColors:
     separator: QColor
 
 
+@dataclass(frozen=True, slots=True)
+class RoundHeaderColors:
+    """Opaque lighting colors for a rounded Track-list grip."""
+
+    top: QColor
+    highlight: QColor
+    fill: QColor
+    bottom: QColor
+
+
 def colorful_card_fill(
     color: RGBColor,
     tokens: ThemeTokens,
@@ -89,6 +99,33 @@ def colorful_header_colors(
     )
 
 
+def round_header_colors(color: RGBColor, tokens: ThemeTokens) -> RoundHeaderColors:
+    """Keep one header hue through the lit shoulder and shaded lower face."""
+
+    fill = colorful_header_colors(color, tokens).fill
+    base = (fill.red(), fill.green(), fill.blue())
+    text = _rgb(tokens.text)
+    return RoundHeaderColors(
+        top=_readable_header_shade(base, (0, 0, 0), 0.12, text),
+        highlight=_readable_header_shade(base, (255, 255, 255), 0.10, text),
+        fill=fill,
+        bottom=_readable_header_shade(base, (0, 0, 0), 0.30, text),
+    )
+
+
+def _readable_header_shade(
+    base: RGBColor,
+    light: RGBColor,
+    strength: float,
+    text: RGBColor,
+) -> QColor:
+    for step in range(round(strength * 100), -1, -1):
+        candidate = _blend(light, base, step / 100)
+        if _contrast_ratio(candidate, text) >= _TEXT_CONTRAST:
+            return QColor(*candidate)
+    return QColor(*base)
+
+
 def _normalized_for_contrast(
     color: RGBColor,
     background: RGBColor,
@@ -143,6 +180,8 @@ def _linearize(channel: float) -> float:
 
 __all__ = [
     "ColorfulHeaderColors",
+    "RoundHeaderColors",
     "colorful_card_fill",
     "colorful_header_colors",
+    "round_header_colors",
 ]

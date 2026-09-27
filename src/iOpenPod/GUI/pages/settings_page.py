@@ -517,12 +517,35 @@ class SettingsPage(QWidget):
             self.tr("Porcelain"),
             LightTheme.PORCELAIN.value,
         )
+        self._light_theme_combo.addItem(
+            self.tr("Catppuccin Latte"), LightTheme.CATPPUCCIN_LATTE.value
+        )
+        self._light_theme_combo.addItem(
+            self.tr("Dune Plover"), LightTheme.DUNE_PLOVER.value
+        )
+        self._light_theme_combo.addItem(
+            self.tr("Sea Glass"), LightTheme.SEA_GLASS.value
+        )
         self._dark_theme_combo.clear()
         self._dark_theme_combo.addItem(self.tr("Slate"), DarkTheme.SLATE.value)
         self._dark_theme_combo.addItem(
             self.tr("Original iOpenPod"),
             DarkTheme.ORIGINAL.value,
         )
+        self._dark_theme_combo.addItem(
+            self.tr("Catppuccin Frappé"), DarkTheme.CATPPUCCIN_FRAPPE.value
+        )
+        self._dark_theme_combo.addItem(
+            self.tr("Catppuccin Macchiato"), DarkTheme.CATPPUCCIN_MACCHIATO.value
+        )
+        self._dark_theme_combo.addItem(
+            self.tr("Catppuccin Mocha"), DarkTheme.CATPPUCCIN_MOCHA.value
+        )
+        self._dark_theme_combo.addItem(self.tr("Gravity"), DarkTheme.GRAVITY.value)
+        self._dark_theme_combo.addItem(
+            self.tr("Northern Lights"), DarkTheme.NORTHERN_LIGHTS.value
+        )
+        self._dark_theme_combo.addItem(self.tr("Orchid"), DarkTheme.ORCHID.value)
         self._colorful_mode_combo.clear()
         self._colorful_mode_combo.addItem(self.tr("Off"), False)
         self._colorful_mode_combo.addItem(self.tr("On"), True)
