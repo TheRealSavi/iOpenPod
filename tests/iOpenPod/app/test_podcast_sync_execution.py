@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import shutil
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -15,11 +16,14 @@ from PIL import Image
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_music_import import FIXTURES
 
+from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
     IPodMediaCacheStats,
     IPodMediaLibrary,
+    SyncDetails,
+    SyncedTrack,
 )
 from iOpenPod.app.media.transcoding import MediaTranscoder
 from iOpenPod.app.models.artwork import ArtworkRequest
@@ -54,15 +58,17 @@ from iOpenPod.app.sync_plan import SyncPlan, SyncPlanAction
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.library import LibrarySnapshot, MediaKind
-from storage import StorageOperationError
+from storage import DevicePath, StorageOperationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from urllib.request import Request
 
+    from iOpenPod.app.library_sync_helper import IPodTrackFingerprint
     from iOpenPod.app.library_write import WriteProgress
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
+    from storage import HostPath
     from storage.media_processing import MediaTools
 
 
@@ -323,6 +329,118 @@ def test_failed_podcast_replacement_preserves_existing_track_and_file(
         )
         assert result.status is SyncExecutionStatus.FAILED
         device.assert_original()
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.skipif(
+    any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")),
+    reason="FFmpeg and FFprobe required for actual Podcast preparation",
+)
+@pytest.mark.parametrize("existing_helper", (False, True))
+def test_podcast_add_records_committed_episode_in_sync_helper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    existing_helper: bool,
+) -> None:
+    device = build_device(tmp_path)
+    data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
+    monkeypatch.setattr(media, "build_opener", _OpenerFactory(data))
+    monkeypatch.setattr(
+        "iOpenPod.app.sync_execution.prepare_podcast_sync",
+        _FixedPodcastPlan(PodcastSyncPlan(additions=(_addition(),))),
+    )
+    fingerprinted: list[HostPath] = []
+
+    def fingerprint(
+        _self: FpcalcFingerprinter,
+        source: HostPath,
+        *,
+        checkpoint: Callable[[], None],
+    ) -> str:
+        checkpoint()
+        assert Path(source).is_file()
+        fingerprinted.append(source)
+        return "1,2,3"
+
+    monkeypatch.setattr(FpcalcFingerprinter, "fingerprint", fingerprint)
+    try:
+        retained: tuple[IPodTrackFingerprint, ...] = ()
+        if existing_helper:
+            baseline = device.coordinator.publish_sync_success(
+                device.active,
+                _request(device.active).ipod,
+                (
+                    SyncedTrack(
+                        DevicePath(device.active.library.tracks[0].metadata.location),
+                        "9,8,7",
+                        SyncDetails(
+                            "2026-09-26T12:00:00+00:00",
+                            "previous-host-song.m4a",
+                            123,
+                            456,
+                            "m4a",
+                            "aac",
+                            False,
+                        ),
+                    ),
+                ),
+            )
+            retained = baseline.tracks
+        result = SyncExecutor(device.coordinator).execute(
+            _request(device.active), lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        podcast = next(
+            track
+            for track in result.active.library.tracks
+            if track.media_kind is MediaKind.PODCAST
+        )
+        helper = device.root / str(LIBRARY_SYNC_HELPER_PATH)
+        assert helper.is_file(), "Committed Podcast is missing from the Sync helper"
+        document = json.loads(helper.read_bytes())
+        entry = next(
+            item for item in document["tracks"] if item["track_id"] == podcast.track_id
+        )
+        assert entry["acoustic_fingerprint"] == "1,2,3"
+        assert entry["sync"] is None
+        assert podcast.ipod is not None
+        assert entry["database_track_id"] == str(podcast.ipod.db_track_id)
+        assert entry["path"] == podcast.metadata.location
+        assert result.helper is not None
+        assert all(item in result.helper.tracks for item in retained)
+        assert len(fingerprinted) == 1
+        assert not Path(fingerprinted[0]).exists()
+
+        replacement = replace(
+            _addition(),
+            episode=replace(_addition().episode, episode_id="new", title="New Episode"),
+            replaces_track_id=podcast.track_id,
+        )
+        monkeypatch.setattr(
+            "iOpenPod.app.sync_execution.prepare_podcast_sync",
+            _FixedPodcastPlan(PodcastSyncPlan(additions=(replacement,))),
+        )
+        replaced = SyncExecutor(device.coordinator).execute(
+            _request(device.active), lambda _: None, Event()
+        )
+        assert replaced.status is SyncExecutionStatus.SUCCESS, replaced.issues
+        assert replaced.helper is not None
+        assert all(item in replaced.helper.tracks for item in retained)
+        assert all(item.track_id != podcast.track_id for item in replaced.helper.tracks)
+        new = next(item for item in replaced.helper.tracks if item not in retained)
+        assert new.acoustic_fingerprint == "1,2,3" and new.sync is None
+        monkeypatch.setattr(
+            "iOpenPod.app.sync_execution.prepare_podcast_sync",
+            _FixedPodcastPlan(PodcastSyncPlan(removals=(new.track_id,))),
+        )
+        removed = SyncExecutor(device.coordinator).execute(
+            _request(device.active), lambda _: None, Event()
+        )
+        assert removed.status is SyncExecutionStatus.SUCCESS, removed.issues
+        assert removed.helper is not None
+        assert removed.helper.tracks == retained
     finally:
         device.coordinator.close()
 

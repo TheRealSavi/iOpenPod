@@ -3,10 +3,17 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from iOpenPod.app.host_media_fingerprint import FpcalcUnavailableError
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
     IPodMediaScanner,
+    LibrarySyncHelperError,
+    SyncDetails,
+    SyncedImage,
+    SyncedTrack,
+    publish_sync_helper,
 )
 from iPodDB.library import (
     IPodTrackDetails,
@@ -18,7 +25,17 @@ from iPodDB.library import (
     Track,
     TrackMetadata,
 )
-from storage import AccessMode, FilesystemSession, HostPath, Storage
+from storage import (
+    AccessMode,
+    DeviceEntry,
+    DevicePath,
+    DevicePathNotFoundError,
+    FilesystemSession,
+    HostPath,
+    Storage,
+    StorageOperationError,
+    VolumeDisconnectedError,
+)
 from storage.testing import VirtualStoragePlatform
 
 
@@ -369,3 +386,279 @@ def test_read_only_scan_returns_evidence_without_creating_helper(
     assert result.persisted is False
     assert not (root / Path(str(LIBRARY_SYNC_HELPER_PATH))).exists()
     assert any("not safely writable" in issue.detail for issue in result.issues)
+
+
+def test_publish_without_scan_merges_podcast_evidence_and_preserves_host_provenance(
+    tmp_path: Path,
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    library = _library()
+    removed = replace(
+        library.tracks[0],
+        track_id=8,
+        ipod=IPodTrackDetails(db_track_id=4_294_967_302),
+        metadata=replace(
+            library.tracks[0].metadata, location="iPod_Control/Music/F00/OLD.MP3"
+        ),
+    )
+    (root / removed.metadata.location).write_bytes(b"audio-old")
+    initial_library = replace(library, tracks=(*library.tracks, removed))
+    details = SyncDetails(
+        "2026-09-27T12:00:00+00:00",
+        "Music/Artist/Song.flac",
+        123_456,
+        1_789_762_000_000_000_000,
+        "flac",
+        "mp3",
+        True,
+    )
+    image_details = replace(
+        details,
+        host_path_hint="Pictures/image.jpg",
+        source_format="jpg",
+        ipod_format="jpg",
+        was_transcoded=False,
+    )
+    fingerprinter = _Fingerprinter()
+    fingerprinter.values = ["1,2,3", "4,5,6"]
+    with session:
+        scanned = IPodMediaScanner(fingerprinter).scan(
+            session,
+            initial_library,
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+        )
+        initial = publish_sync_helper(
+            session,
+            initial_library,
+            scanned,
+            (SyncedTrack(scanned.tracks[0].path, "1,2,3", details),),
+            (
+                SyncedImage(
+                    scanned.images[0].path,
+                    scanned.images[0].content_sha256,
+                    image_details,
+                ),
+            ),
+            library_sha256="a" * 64,
+        )
+        podcast = replace(
+            removed,
+            track_id=9,
+            title="Podcast Episode",
+            ipod=IPodTrackDetails(db_track_id=4_294_967_303),
+            metadata=replace(
+                removed.metadata, location="iPod_Control/Music/F00/CAST.MP3"
+            ),
+        )
+        (root / podcast.metadata.location).write_bytes(b"audio-podcast")
+        (root / removed.metadata.location).unlink()
+        retained = replace(library.tracks[0], track_id=10)
+        committed = replace(library, tracks=(retained, podcast))
+        result = publish_sync_helper(
+            session,
+            committed,
+            None,
+            (SyncedTrack(DevicePath(podcast.metadata.location), "7,8,9"),),
+            library_sha256="b" * 64,
+        )
+        reused = IPodMediaScanner(_Fingerprinter()).scan(
+            session,
+            committed,
+            library_sha256="b" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+        )
+
+    assert result.persisted
+    assert result.tracks[0] == replace(initial.tracks[0], track_id=10)
+    assert result.images == initial.images
+    assert len(result.tracks) == 2
+    assert result.tracks[1].track_id == podcast.track_id
+    assert result.tracks[1].acoustic_fingerprint == "7,8,9"
+    assert result.tracks[1].sync is None
+    assert reused.tracks == result.tracks
+    assert reused.images == result.images
+    assert reused.cache.reused == 3
+
+
+@pytest.mark.parametrize("changed", ["track", "photo", "identity"])
+def test_publish_without_scan_drops_stale_retained_evidence(
+    tmp_path: Path, changed: str
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    library = _library()
+    with session:
+        IPodMediaScanner(_Fingerprinter()).scan(
+            session,
+            library,
+            library_sha256="a" * 64,
+            persist=True,
+            checkpoint=lambda: None,
+        )
+        if changed == "identity":
+            library = replace(
+                library,
+                tracks=(
+                    replace(library.tracks[0], ipod=IPodTrackDetails(db_track_id=999)),
+                ),
+            )
+        elif changed == "track":
+            (root / library.tracks[0].metadata.location).write_bytes(b"changed-audio")
+        else:
+            (root / "Photos/Full Resolution/2026/09/image.jpg").write_bytes(
+                b"changed-image"
+            )
+        result = publish_sync_helper(
+            session, library, None, (), library_sha256="b" * 64
+        )
+
+    assert len(result.tracks) == (1 if changed == "photo" else 0)
+    assert len(result.images) == (0 if changed == "photo" else 1)
+
+
+def test_publish_without_scan_preserves_invalid_helper(tmp_path: Path) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    helper_path = root / str(LIBRARY_SYNC_HELPER_PATH)
+    helper_path.parent.mkdir(parents=True)
+    helper_path.write_bytes(b"not-json")
+    with session, pytest.raises(LibrarySyncHelperError, match=r"invalid.*preserved"):
+        publish_sync_helper(session, _library(), None, (), library_sha256="a" * 64)
+    assert helper_path.read_bytes() == b"not-json"
+
+
+def test_publish_with_scan_rejects_changed_helper(tmp_path: Path) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    helper_path = root / str(LIBRARY_SYNC_HELPER_PATH)
+    with session:
+        scanned = IPodMediaScanner(_Fingerprinter()).scan(
+            session,
+            _library(),
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+        )
+        publish_sync_helper(session, _library(), scanned, (), library_sha256="a" * 64)
+        before = helper_path.read_bytes()
+        with pytest.raises(LibrarySyncHelperError, match="changed after Review"):
+            publish_sync_helper(
+                session, _library(), scanned, (), library_sha256="b" * 64
+            )
+        assert helper_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("missing", ["track", "photo"])
+def test_publish_without_scan_omits_missing_retained_files_and_keeps_new_podcast(
+    tmp_path: Path, missing: str
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    library = _library()
+    podcast = replace(
+        library.tracks[0],
+        track_id=8,
+        ipod=IPodTrackDetails(db_track_id=4_294_967_302),
+        metadata=replace(
+            library.tracks[0].metadata, location="iPod_Control/Music/F00/CAST.MP3"
+        ),
+    )
+    (root / podcast.metadata.location).write_bytes(b"audio-podcast")
+    with session:
+        scanned = IPodMediaScanner(_Fingerprinter()).scan(
+            session,
+            library,
+            library_sha256="a" * 64,
+            persist=True,
+            checkpoint=lambda: None,
+        )
+        missing_path = (
+            scanned.tracks[0].path if missing == "track" else scanned.images[0].path
+        )
+        (root / str(missing_path)).unlink()
+        result = publish_sync_helper(
+            session,
+            replace(library, tracks=(*library.tracks, podcast)),
+            None,
+            (SyncedTrack(DevicePath(podcast.metadata.location), "7,8,9"),),
+            library_sha256="b" * 64,
+        )
+
+    assert result.persisted
+    assert result.tracks[-1].acoustic_fingerprint == "7,8,9"
+    assert len(result.tracks) == (1 if missing == "track" else 2)
+    assert len(result.images) == (0 if missing == "photo" else 1)
+    assert len(result.issues) == 1
+    assert "omitted" in result.issues[0].detail
+
+
+@pytest.mark.parametrize("failed", ["track", "photo"])
+@pytest.mark.parametrize("disconnected", [False, True])
+def test_publish_without_scan_only_tolerates_retained_file_access_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed: str,
+    disconnected: bool,
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    helper_path = root / str(LIBRARY_SYNC_HELPER_PATH)
+    with session:
+        scanned = IPodMediaScanner(_Fingerprinter()).scan(
+            session,
+            _library(),
+            library_sha256="a" * 64,
+            persist=True,
+            checkpoint=lambda: None,
+        )
+        failed_path = (
+            scanned.tracks[0].path if failed == "track" else scanned.images[0].path
+        )
+        before = helper_path.read_bytes()
+        stat = FilesystemSession.stat
+
+        def fail_stat(self: FilesystemSession, path: DevicePath) -> DeviceEntry:
+            if path == failed_path:
+                if disconnected:
+                    raise VolumeDisconnectedError("Device disconnected")
+                raise StorageOperationError("Permission denied")
+            return stat(self, path)
+
+        monkeypatch.setattr(FilesystemSession, "stat", fail_stat)
+        if disconnected:
+            with pytest.raises(VolumeDisconnectedError):
+                publish_sync_helper(
+                    session, _library(), None, (), library_sha256="b" * 64
+                )
+            assert helper_path.read_bytes() == before
+        else:
+            result = publish_sync_helper(
+                session, _library(), None, (), library_sha256="b" * 64
+            )
+            assert result.persisted
+            assert len(result.tracks) == (0 if failed == "track" else 1)
+            assert len(result.images) == (0 if failed == "photo" else 1)
+            assert len(result.issues) == 1
+            assert "Permission denied" in result.issues[0].detail
+
+
+def test_publish_without_scan_rejects_missing_newly_committed_media(
+    tmp_path: Path,
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    path = DevicePath(_library().tracks[0].metadata.location)
+    (root / str(path)).unlink()
+    with session, pytest.raises(DevicePathNotFoundError):
+        publish_sync_helper(
+            session,
+            _library(),
+            None,
+            (SyncedTrack(path, "7,8,9"),),
+            library_sha256="a" * 64,
+        )
+    assert not (root / str(LIBRARY_SYNC_HELPER_PATH)).exists()

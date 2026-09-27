@@ -35,9 +35,15 @@ class _CompletedProcess:
         self.killed = True
 
 
+@pytest.mark.parametrize(
+    ("source_name", "input_suffix"),
+    [("song.flac", None), ("source", ".flac")],
+)
 def test_fpcalc_uses_raw_algorithm_two_with_a_bounded_analysis_window(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    source_name: str,
+    input_suffix: str | None,
 ) -> None:
     commands: list[list[str]] = []
 
@@ -47,13 +53,14 @@ def test_fpcalc_uses_raw_algorithm_two_with_a_bounded_analysis_window(
 
     monkeypatch.setattr(subprocess, "Popen", launch)
     executable = HostPath(tmp_path / "fpcalc")
-    source = HostPath(tmp_path / "song.flac")
-    (tmp_path / "song.flac").write_bytes(b"source")
+    source = HostPath(tmp_path / source_name)
+    (tmp_path / source_name).write_bytes(b"source")
 
     fingerprint = FpcalcFingerprinter(
         executable,
         timeout_seconds=1,
         max_output_bytes=1024,
+        input_suffix=input_suffix,
     ).fingerprint(source, checkpoint=lambda: None)
 
     assert fingerprint == "1,2,4294967295"
@@ -76,17 +83,24 @@ def test_fpcalc_uses_raw_algorithm_two_with_a_bounded_analysis_window(
         assert commands[0][-1].startswith("/dev/fd/")
 
 
+@pytest.mark.parametrize(
+    ("source_name", "input_suffix"),
+    [("Mix.m3u8", None), ("source", ".m3u8")],
+)
 def test_fpcalc_refuses_playlist_inputs_before_launch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_name: str,
+    input_suffix: str | None,
 ) -> None:
     def launch(*_args: object, **_kwargs: object) -> None:
         pytest.fail("Playlist inputs must never reach the decoder")
 
     monkeypatch.setattr(subprocess, "Popen", launch)
     with pytest.raises(FpcalcError, match="single-file decoder"):
-        FpcalcFingerprinter(HostPath(tmp_path / "fpcalc")).fingerprint(
-            HostPath(tmp_path / "Mix.m3u8"), checkpoint=lambda: None
-        )
+        FpcalcFingerprinter(
+            HostPath(tmp_path / "fpcalc"), input_suffix=input_suffix
+        ).fingerprint(HostPath(tmp_path / source_name), checkpoint=lambda: None)
 
 
 @pytest.mark.parametrize(

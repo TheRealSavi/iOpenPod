@@ -42,6 +42,7 @@ class CollectionDetailPage(QWidget):
         super().__init__(parent)
         self.setObjectName("collectionDetailPage")
         self._proxy = proxy
+        self._selection_mode = selection_mode
         self._summary: AlbumSummary | CollectionSummary | None = None
         self._track_ids: tuple[int, ...] = ()
         self._duration_ms = 0
@@ -108,7 +109,6 @@ class CollectionDetailPage(QWidget):
         header = QVBoxLayout()
         header.setSpacing(LAYOUT.space_sm)
         header.addLayout(navigation)
-        header.addLayout(self._cover)
 
         self._search = SearchField(self)
         self._search.setObjectName("collectionDetailSearch")
@@ -116,10 +116,14 @@ class CollectionDetailPage(QWidget):
         self._search_width = self._search.maximumWidth()
         self._toolbar = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         self._toolbar.setSpacing(LAYOUT.space_md)
-        self._toolbar.addWidget(self._actions, 1)
-        if not selection_mode:
-            self._toolbar.addStretch(1)
-        self._toolbar.addWidget(self._search, 1)
+        if selection_mode:
+            header.addLayout(self._cover)
+            self._toolbar.addWidget(self._actions, 1)
+            self._toolbar.addWidget(self._search, 1)
+        else:
+            self._toolbar.addLayout(self._cover, 1)
+            self._toolbar.addWidget(self._search, 1, Qt.AlignmentFlag.AlignBottom)
+            header.addLayout(self._toolbar)
 
         self._count = QLabel(self)
         self._count.setObjectName("collectionDetailCount")
@@ -133,7 +137,8 @@ class CollectionDetailPage(QWidget):
         layout.addLayout(header)
         tracks = QVBoxLayout()
         tracks.setSpacing(LAYOUT.space_sm)
-        tracks.addLayout(self._toolbar)
+        if selection_mode:
+            tracks.addLayout(self._toolbar)
         self._table_group = QVBoxLayout()
         self._table_group.setSpacing(0)
         self._table_group.addWidget(self._count)
@@ -226,8 +231,18 @@ class CollectionDetailPage(QWidget):
             if width < actions_width
             else QBoxLayout.Direction.LeftToRight
         )
+        text_width = max(
+            self._artwork.width(),
+            *(
+                label.minimumSizeHint().width()
+                for label in (self._title, self._artist, self._metadata, self._totals)
+            ),
+        )
+        cover_width = self._artwork.width() + LAYOUT.space_lg + text_width
         stacked = width < (
             actions_width + LAYOUT.space_md + self._search.minimumWidth()
+            if self._selection_mode
+            else cover_width + LAYOUT.space_md + self._search_width
         )
         self._toolbar.setDirection(
             QBoxLayout.Direction.TopToBottom
@@ -235,9 +250,12 @@ class CollectionDetailPage(QWidget):
             else QBoxLayout.Direction.LeftToRight
         )
         self._search.setMaximumWidth(width if stacked else self._search_width)
+        context_width = width
+        if not self._selection_mode and not stacked:
+            context_width -= self._search_width + LAYOUT.space_md
         self._cover.setDirection(
             QBoxLayout.Direction.TopToBottom
-            if width < 2 * self._artwork.width() + LAYOUT.space_lg
+            if context_width < cover_width
             else QBoxLayout.Direction.LeftToRight
         )
 

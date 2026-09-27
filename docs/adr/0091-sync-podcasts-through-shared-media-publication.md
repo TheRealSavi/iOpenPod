@@ -71,6 +71,12 @@ Podcast Episodes remain runtime projections. Invalid or unsupported documents ar
 preserved.
 
 Dedicated Podcast Sync does not overwrite the Library Sync Helper with an empty
-Host scan or retain temporary download paths as Host provenance. Device media and
-database publication, cancellation, restoration, and cleanup retain the common
-Sync guarantees. No new dependency or background schedule is introduced.
+Host scan or retain temporary download paths as Host provenance. After a verified
+Library commit, Podcast additions merge their Acoustic Fingerprints into the
+existing valid helper without invented Sync Details. Retained Track and Photo
+evidence is reused only while its Library identity and cheap device-file facts
+still match; committed removals are pruned. Acoustic analysis remains optional:
+failures report warnings without preventing media publication or inventing a
+fingerprint. Invalid helpers remain untouched. Device media and database
+publication, cancellation, restoration, and cleanup retain the common Sync
+guarantees. No new dependency or background schedule is introduced.

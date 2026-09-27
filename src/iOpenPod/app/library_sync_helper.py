@@ -22,6 +22,7 @@ from storage import (
     DeviceEntryKind,
     DevicePath,
     FileFingerprint,
+    FilesystemSessionError,
     HostPath,
     StorageError,
 )
@@ -160,11 +161,11 @@ class IPodMediaLibrary:
 
 @dataclass(frozen=True, slots=True)
 class SyncedTrack:
-    """Successful Host provenance for one committed, verified device location."""
+    """Matching evidence and optional Host provenance for a committed location."""
 
     path: DevicePath
     acoustic_fingerprint: str
-    sync: SyncDetails
+    sync: SyncDetails | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +180,7 @@ class SyncedImage:
 def publish_sync_helper(
     session: FilesystemSession,
     library: LibrarySnapshot,
-    previous: IPodMediaLibrary,
+    previous: IPodMediaLibrary | None,
     synced: tuple[SyncedTrack, ...],
     synced_images: tuple[SyncedImage, ...] = (),
     *,
@@ -188,8 +189,10 @@ def publish_sync_helper(
     """Publish matching evidence only after the caller's Library commit succeeds.
 
     Never decode files over the USB bus again: committed locations supply their
-    verified file facts, while the Host scan supplies acoustic matching evidence.
-    A changed or malformed helper is preserved for recovery rather than overwritten.
+    verified file facts, while incoming media supplies acoustic matching evidence.
+    Without a preceding iPod Media Scan, merge the currently stored valid helper
+    against committed Library identities and file facts. A scanned helper must still
+    match its captured revision. Malformed helpers are always preserved.
     """
 
     loaded, issue = _load_helper(session)
@@ -198,20 +201,42 @@ def publish_sync_helper(
             "The existing Sync helper is invalid and was preserved. Recover or "
             "explicitly replace it before the next Sync."
         )
-    if loaded.revision != previous.helper_revision:
+    if previous is not None and loaded.revision != previous.helper_revision:
         raise LibrarySyncHelperError(
             "The Sync helper changed after Review. Rescan the iPod before retrying."
         )
     updated = {str(item.path).casefold(): item for item in synced}
-    retained = {item.track_id: item for item in previous.tracks}
+    retained = {
+        ("track", item.track_id) if previous is not None else _track_key(item): item
+        for item in (loaded.tracks if previous is None else previous.tracks)
+    }
     tracks: list[IPodTrackFingerprint] = []
+    issues: list[IPodMediaScanIssue] = []
     for track in library.tracks:
         path = _track_path(track)
         new = updated.get(str(path).casefold())
-        old = retained.get(track.track_id)
+        old = retained.get(
+            ("track", track.track_id)
+            if previous is not None
+            else _track_key_for_track(track)
+        )
         if new is None and old is None:
             continue
-        entry = _regular_file(session, path)
+        try:
+            entry = _regular_file(session, path)
+        except FilesystemSessionError:
+            raise
+        except (OSError, StorageError, ValueError) as error:
+            if new is not None or previous is not None:
+                raise
+            issues.append(
+                IPodMediaScanIssue(
+                    f"Track {track.track_id}",
+                    f"Retained Sync helper evidence was omitted because its media "
+                    f"file could not be checked: {error}",
+                )
+            )
+            continue
         if new is not None:
             tracks.append(
                 IPodTrackFingerprint(
@@ -225,8 +250,17 @@ def publish_sync_helper(
                 )
             )
         elif old is not None and _matches(session, old, path, entry):
-            tracks.append(replace(old, database_track_id=_database_track_id(track)))
-    old_images = {item.image_id: item for item in previous.images}
+            tracks.append(
+                replace(
+                    old,
+                    track_id=track.track_id,
+                    database_track_id=_database_track_id(track),
+                )
+            )
+    old_images = {
+        item.image_id: item
+        for item in (loaded.images if previous is None else previous.images)
+    }
     new_images = {str(item.path).casefold(): item for item in synced_images}
     images: list[IPodImageFingerprint] = []
     for photo in () if library.photos is None else library.photos.photos:
@@ -258,29 +292,39 @@ def publish_sync_helper(
             )
             continue
         if prior is not None:
-            path = _photo_path(photo)
-            if _matches(session, prior, path, _regular_file(session, path)):
-                images.append(prior)
+            try:
+                path = _photo_path(photo)
+                if _matches(session, prior, path, _regular_file(session, path)):
+                    images.append(prior)
+            except FilesystemSessionError:
+                raise
+            except (OSError, StorageError, ValueError) as error:
+                if previous is not None:
+                    raise
+                issues.append(
+                    IPodMediaScanIssue(
+                        f"Image {photo.photo_id}",
+                        "Retained Sync helper evidence was omitted because its media "
+                        f"file could not be checked: {error}",
+                    )
+                )
     revision = _save_helper(
         session, tuple(tracks), tuple(images), library_sha256, loaded
     )
     flush = session.flush()
-    issues = (
-        ()
-        if flush.complete
-        else (
+    if not flush.complete:
+        issues.append(
             IPodMediaScanIssue(
                 "Sync helper",
                 "The helper was verified, but complete device flushing "
                 "could not be confirmed. Safely eject before unplugging. "
                 + flush.detail,
-            ),
+            )
         )
-    )
     return IPodMediaLibrary(
         tuple(tracks),
         tuple(images),
-        issues,
+        tuple(issues),
         IPodMediaCacheStats(reused=len(tracks) + len(images)),
         revision,
         True,

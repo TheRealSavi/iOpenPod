@@ -478,7 +478,7 @@ class DeviceCoordinator:
     def publish_sync_success(
         self,
         expected: ActiveIPod,
-        previous: IPodMediaLibrary,
+        previous: IPodMediaLibrary | None,
         tracks: tuple[SyncedTrack, ...],
         images: tuple[SyncedImage, ...] = (),
     ) -> IPodMediaLibrary:

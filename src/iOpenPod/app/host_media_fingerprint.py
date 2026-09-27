@@ -66,6 +66,7 @@ class FpcalcFingerprinter:
         *,
         timeout_seconds: float = 300,
         max_output_bytes: int = 2 * 1024 * 1024,
+        input_suffix: str | None = None,
     ) -> None:
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError("fpcalc timeout must be positive and finite")
@@ -74,6 +75,7 @@ class FpcalcFingerprinter:
         self._executable = executable
         self._timeout = timeout_seconds
         self._output_limit = max_output_bytes
+        self._input_suffix = input_suffix
 
     def fingerprint(
         self,
@@ -81,7 +83,11 @@ class FpcalcFingerprinter:
         *,
         checkpoint: Callable[[], None],
     ) -> str:
-        """Return one canonical raw fingerprint for a Host audio-bearing file."""
+        """Return one canonical raw fingerprint for a Host audio-bearing file.
+
+        An inspected, extensionless media capture may supply ``input_suffix`` at
+        construction; it selects only from the same safe single-file decoders.
+        """
 
         executable = self._resolve_executable()
         output = _run_fpcalc(
@@ -90,6 +96,7 @@ class FpcalcFingerprinter:
             checkpoint,
             timeout_seconds=self._timeout,
             max_output_bytes=self._output_limit,
+            input_suffix=self._input_suffix,
         )
         return _parse_output(output)
 
@@ -112,9 +119,11 @@ def _run_fpcalc(
     *,
     timeout_seconds: float,
     max_output_bytes: int,
+    input_suffix: str | None = None,
 ) -> bytes:
     checkpoint()
-    input_format = _INPUT_FORMATS.get(source.path.suffix.casefold())
+    suffix = source.path.suffix if input_suffix is None else input_suffix
+    input_format = _INPUT_FORMATS.get(suffix.casefold())
     if input_format is None:
         raise FpcalcError(
             "No safe single-file decoder is configured for this extension"

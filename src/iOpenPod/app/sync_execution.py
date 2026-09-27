@@ -13,6 +13,7 @@ from threading import Event, Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaFileKind
 from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTrack
 from iOpenPod.app.library_write import (
@@ -176,6 +177,7 @@ class _PreparedPodcast:
     song: ImportedSong
     replaces_track_id: int | None = None
     subscription_id: str = ""
+    acoustic_fingerprint: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,11 +494,27 @@ class SyncExecutor:
                             "sync.helper", "Recording successful Sync details…"
                         )
                     )
-                    if request.plan.change_count or requested_playlists:
+                    if (
+                        request.plan.change_count
+                        or requested_playlists
+                        or podcast_changes
+                    ):
                         helper = self._coordinator.publish_sync_success(
                             saved.active,
-                            request.ipod,
-                            tuple(item.provenance for item in prepared),
+                            request.ipod
+                            if request.reconcile_playlists or request.plan.items
+                            else None,
+                            (
+                                *(item.provenance for item in prepared),
+                                *(
+                                    SyncedTrack(
+                                        DevicePath(item.song.track.metadata.location),
+                                        item.acoustic_fingerprint,
+                                    )
+                                    for item in podcast_tracks
+                                    if item.acoustic_fingerprint
+                                ),
+                            ),
                             tuple(item.provenance for item in photos),
                         )
                         issues.extend(
@@ -1069,6 +1087,40 @@ class SyncExecutor:
                         ]
                         location = allocator.allocate(extension, checkpoint=checkpoint)
                         song = relocate_song(song, location)
+                        acoustic_fingerprint = ""
+                        progress(
+                            WriteProgress(
+                                "sync.podcast_fingerprint",
+                                "Fingerprinting Podcast media…",
+                                completed=index,
+                                total=len(plan.additions),
+                                current_item=episode.title,
+                                unit="episodes",
+                            )
+                        )
+                        try:
+                            # Pass-through captures have no extension. Use the
+                            # verified output format, not the publisher's filename.
+                            acoustic_fingerprint = FpcalcFingerprinter(
+                                input_suffix=f".{extension}"
+                            ).fingerprint(output.source, checkpoint=checkpoint)
+                        except (
+                            FpcalcError,
+                            OSError,
+                            StorageError,
+                            ValueError,
+                        ) as error:
+                            issues.append(
+                                WriteIssue(
+                                    "sync.podcast_fingerprint_unavailable",
+                                    f"{episode.title or 'Podcast Episode'} could not be "
+                                    "fingerprinted. The Episode can still be added, "
+                                    "but its acoustic matching evidence is unavailable.",
+                                    severity=IssueSeverity.WARNING,
+                                    detail=str(error),
+                                    artifact=episode.enclosure_url,
+                                )
+                            )
                         resources.callback(lifetime.pop_all().close)
                         prepared.append(
                             _PreparedPodcast(
@@ -1076,6 +1128,7 @@ class SyncExecutor:
                                 song,
                                 addition.replaces_track_id,
                                 addition.subscription.subscription_id,
+                                acoustic_fingerprint,
                             )
                         )
                         issues.extend(
