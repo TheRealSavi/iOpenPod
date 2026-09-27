@@ -1,18 +1,25 @@
 # Translation maintenance
 
 The GUI loads Qt `.qm` catalogs from
-`src/iOpenPod/GUI/presentation/i18n/translations/`. English is the source language;
-no non-English catalogs are currently shipped. Preparing text for translation does
-not itself provide a translated language.
+`src/iOpenPod/GUI/presentation/i18n/translations/`. English is the source language.
+Spanish (`es`) ships as a reviewed source catalog and a compiled catalog. Select
+**Español de España** in **Settings → Appearance → Language**; system-default Spanish also
+loads it, including regional locales such as `es_ES` and `es_MX`.
+
+The Spanish copy uses a professional, friendly tone, direct instructions, and
+familiar language. Keep `equipo` for Host, `pista` for Track, `lista de reproducción`
+for Playlist, `portada` for Track artwork, and `copia de seguridad` for Backup
+Snapshot. Use `copia de protección` for the safety snapshot created before a restore.
+Keep product names, file paths, identifiers, and user-supplied metadata intact.
 
 ## Update a language
 
 From the repository root, use the locked environment:
 
 ```shell
-uv run python scripts/update_translations.py de
-uv run pyside6-linguist src/iOpenPod/GUI/presentation/i18n/translations/iopenpod_de.ts
-uv run pyside6-lrelease src/iOpenPod/GUI/presentation/i18n/translations/iopenpod_de.ts
+uv run python scripts/update_translations.py es
+uv run pyside6-linguist src/iOpenPod/GUI/presentation/i18n/translations/iopenpod_es.ts
+uv run pyside6-lrelease src/iOpenPod/GUI/presentation/i18n/translations/iopenpod_es.ts
 ```
 
 Pass several language tags to update several catalogs. The updater retains existing
@@ -64,6 +71,7 @@ from the source contracts; there is no separately maintained English message lis
 
 ```shell
 uv run pytest tests/iOpenPod/GUI/presentation/test_translation_catalog.py
+uv run pytest tests/iOpenPod/GUI/presentation/test_spanish_catalog.py
 uv run pytest tests/iOpenPod/GUI/test_widget_translations.py
 ```
 
@@ -71,6 +79,9 @@ The catalog test runs real extraction and compilation, checks runtime contexts a
 plural metadata, and installs the compiled catalog to verify actual lookup,
 parameter substitution, and English fallback. Other GUI tests exercise language
 changes with edits and workflows in progress.
+The Spanish catalog tests check source coverage, finished translations, placeholder
+preservation, compiled-catalog consistency, regional fallback, and the live Settings
+language picker.
 
 ## Audit scope
 
