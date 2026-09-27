@@ -234,7 +234,7 @@ def _tag_mp4(
         "\xa9grp": [metadata.grouping] if metadata.grouping else None,
         "\xa9cmt": [metadata.comment] if metadata.comment else None,
         "tmpo": [metadata.bpm] if metadata.bpm > 0 else None,
-        "cpil": [metadata.compilation],
+        "cpil": metadata.compilation,
         "\xa9lyr": [metadata.lyrics] if metadata.lyrics else None,
         "sonm": [metadata.sort_title] if metadata.sort_title else None,
         "soar": [metadata.sort_artist] if metadata.sort_artist else None,

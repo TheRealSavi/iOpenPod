@@ -127,3 +127,14 @@ def test_rockbox_metadata_is_verified_on_private_bytes(name: str) -> None:
         tags = MP4(io.BytesIO(output)).tags  # type: ignore[no-untyped-call]
         assert tags is not None
         assert cast("_MP4TagView", tags)["\xa9lyr"] == [_track().metadata.lyrics]
+
+
+def test_rockbox_mp4_non_compilation_survives_read_back() -> None:
+    data = base64.b64decode((_FIXTURES / "tone.m4a.b64").read_bytes())
+    track = Track(1, "Reviewed title", "Reviewed artist", "Reviewed album", 1_000)
+
+    output = ExportMediaTagger().prepare_bytes(data, "media.m4a", track)
+
+    tags = MP4(io.BytesIO(output)).tags  # type: ignore[no-untyped-call]
+    assert tags is not None
+    assert tags["cpil"] is False
