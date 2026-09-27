@@ -6,6 +6,17 @@ Spanish (`es`) ships as a reviewed source catalog and a compiled catalog. Select
 **Español de España** in **Settings → Appearance → Language**; system-default Spanish also
 loads it, including regional locales such as `es_ES` and `es_MX`.
 
+German (`de`) also ships as a complete source catalog and a compiled catalog. Select
+**Deutsch** in **Settings → Appearance → Language**. System-default German and
+regional locales such as `de_DE`, `de_AT`, and `de_CH` load the same catalog.
+
+The German copy uses a professional, simple, friendly tone, with concise action
+labels and polite `Sie` in direct instructions. Keep `Computer` for Host,
+`Mediathek` for Library, `Titel` for Track, `Wiedergabeliste` for Playlist, `Cover`
+for Track artwork, and `Backup` for Backup Snapshot. Use `Sicherheitsbackup` for
+the safety snapshot created before a restore. Preserve the meaning of device
+safety warnings, product names, file paths, identifiers, and user metadata.
+
 The Spanish copy uses a professional, friendly tone, direct instructions, and
 familiar language. Keep `equipo` for Host, `pista` for Track, `lista de reproducción`
 for Playlist, `portada` for Track artwork, and `copia de seguridad` for Backup
@@ -72,6 +83,7 @@ from the source contracts; there is no separately maintained English message lis
 ```shell
 uv run pytest tests/iOpenPod/GUI/presentation/test_translation_catalog.py
 uv run pytest tests/iOpenPod/GUI/presentation/test_spanish_catalog.py
+uv run pytest tests/iOpenPod/GUI/presentation/test_german_catalog.py
 uv run pytest tests/iOpenPod/GUI/test_widget_translations.py
 ```
 
@@ -82,6 +94,8 @@ changes with edits and workflows in progress.
 The Spanish catalog tests check source coverage, finished translations, placeholder
 preservation, compiled-catalog consistency, regional fallback, and the live Settings
 language picker.
+The German catalog tests cover the same integration, plus preservation of rich-text
+markup, file filters, and line breaks.
 
 ## Audit scope
 
