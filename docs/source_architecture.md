@@ -1304,19 +1304,19 @@ boundary for platform path resolution and atomic byte replacement. They are not
 device-facing operations and do not use a Filesystem Session. Other application
 file categories remain separate decisions.
 
-`ApplicationStatus` is the process-wide seam for short user-visible status text.
-Callers set the default message or publish and clear source-owned messages without
-knowing about windows or widgets. It exposes immutable active-message snapshots in
-arrival order and rotates the visible message every four seconds when several
-sources are active. New sources appear immediately; updates to existing sources
-preserve the rotation position and cadence. Clearing or expiring the visible source
-advances to the next remaining source, and the default returns when none remain.
-`MainWindow` adapts the resolved message to the shared `QStatusBar`. Its small corner
-button opens a live, scrollable list of all active messages, excluding the default;
-closing that list does not clear messages. It also adapts typed Backup progress
-to a permanent progress indicator there, so an active operation remains visible when
-the user navigates away from the Backups page. Pages do not create local status strips
-or receive a status-bar widget.
+`ApplicationStatus` is the process-wide seam for user-visible statuses. Callers set
+the default text or publish and clear source-owned statuses containing text, optional
+determinate or indeterminate progress, and an optional named action. Action requests
+are emitted by source and key; callers handle them without passing callbacks or
+widgets through the status model. Immutable active-status snapshots retain arrival
+order. The visible status rotates every four seconds when several sources are active.
+New sources appear immediately; updates preserve the rotation position and cadence.
+Clearing or expiring the visible source advances to the next, and the default returns
+when none remain. `MainWindow` adapts the current text to the shared `QStatusBar`.
+Shared status controls render its progress and action, while the corner button opens
+a live, scrollable popup with the same controls for every active status. Closing the
+popup does not clear statuses. Pages do not create local status strips or receive a
+status-bar widget.
 
 Examples:
 
@@ -1420,6 +1420,11 @@ dialog. Imported drafts follow the same automatic or manual save policy.
 Source paths are streamed again at save and must match the captured content hash
 before publication. No conversion or Sync engine is involved. See ADR-0026,
 ADR-0030, ADR-0031, and ADR-0032.
+The separate Chaptered Track conversion copies a complete saved Music Album through
+Storage to temporary Host files, encodes and verifies one replacement, then stages
+its Prepared Media and source omissions in one Library Draft revision. The existing
+Library save transaction publishes the new media and database before recoverably
+removing the source files. See ADR-0095.
 The controller captures one immutable Library Preparation Request with desired
 state, source, and workspace revisions. Request/result contracts live independently
 of Qt in `iOpenPod.app.library_write`. Entered writer stages support progress and

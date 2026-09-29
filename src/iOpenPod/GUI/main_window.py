@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QListView,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QProgressDialog,
     QStackedWidget,
     QStatusBar,
@@ -25,12 +24,14 @@ from PySide6.QtWidgets import (
 
 from iOpenPod.app.artwork_controller import ArtworkLoadFailure
 from iOpenPod.app.backups import BackupProgress
+from iOpenPod.app.chaptered_conversion_controller import ChapteredConversionController
 from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.settings.definitions import (
     PLAYER_POSITION,
     WINDOW_GEOMETRY,
     PlayerPosition,
 )
+from iOpenPod.app.core.status import StatusAction, StatusProgress
 from iOpenPod.app.device_controller import (
     DeviceEjectCompletion,
     DeviceOperation,
@@ -107,6 +108,7 @@ from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.playback_pane import PlaybackPane, PlaybackPaneHost
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.sidebar import Sidebar
+from iOpenPod.GUI.widgets.status_controls import StatusBarControls
 from iOpenPod.GUI.widgets.status_list import StatusListButton
 from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iPodDB.library import MediaKind, Photo, Track, TrackFieldEdit
@@ -119,6 +121,8 @@ _SYNESTHESIA_PROGRESS_STATUS_SOURCE = "synesthesia-progress"
 _SYNESTHESIA_NOTICE_STATUS_SOURCE = "synesthesia-notice"
 _EJECT_STATUS_SOURCE = "device-eject"
 _LIBRARY_WRITE_STATUS_SOURCE = "library-write"
+_CHAPTERED_PROGRESS_STATUS_SOURCE = "chaptered-conversion-progress"
+_CHAPTERED_NOTICE_STATUS_SOURCE = "chaptered-conversion-notice"
 
 
 @dataclass(frozen=True)
@@ -153,6 +157,18 @@ class MainWindow(QMainWindow):
             self,
         )
         self._export_progress: QProgressDialog | None = None
+        self._chaptered_controller = ChapteredConversionController(
+            context.library_workspace,
+            context.device_controller,
+            context.device_coordinator,
+            self,
+        )
+        self._chaptered_controller.progressChanged.connect(
+            self._chaptered_progress_changed
+        )
+        self._chaptered_controller.finished.connect(self._chaptered_finished)
+        self._chaptered_controller.failed.connect(self._chaptered_failed)
+        self._chaptered_controller.changed.connect(self._chaptered_availability_changed)
         self._export_controller.progressChanged.connect(self._export_progress_changed)
         self._export_controller.finished.connect(self._export_finished)
         self._export_controller.failed.connect(self._export_failed)
@@ -497,6 +513,9 @@ class MainWindow(QMainWindow):
             table.set_library_workspace(context.library_workspace)
         self._track_actions.playlistCreated.connect(self._playlist_selected)
         self._track_actions.trackExportRequested.connect(self._track_export_requested)
+        self._track_actions.chapteredConversionRequested.connect(
+            self._chaptered_conversion_requested
+        )
         self._player.trackContextMenuRequested.connect(self._track_actions.show_track)
         self._playback_pane.trackContextMenuRequested.connect(
             self._track_actions.show_track
@@ -566,14 +585,10 @@ class MainWindow(QMainWindow):
         context.i18n_manager.languageChanged.connect(self._language_changed)
         context.settings.settingChanged.connect(self._setting_changed)
         self._review_availability_changed()
-        self._backup_status_progress = QProgressBar(status_bar)
-        self._backup_status_progress.setObjectName("backupStatusProgress")
-        self._backup_status_progress.setAccessibleName(self.tr("Backup progress"))
-        self._backup_status_progress.setFormat("%p%")
-        self._backup_status_progress.hide()
-        status_bar.addPermanentWidget(self._backup_status_progress)
+        status_bar.addPermanentWidget(StatusBarControls(context.status, status_bar))
         status_bar.addPermanentWidget(StatusListButton(context.status, status_bar))
         context.status.messageChanged.connect(status_bar.showMessage)
+        context.status.actionRequested.connect(self._status_action_requested)
         status_bar.showMessage(context.status.current_message)
         context.backup_controller.progressChanged.connect(self._backup_progress_changed)
         context.backup_controller.busyChanged.connect(self._backup_busy_changed)
@@ -600,6 +615,15 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, context.device_controller.restore_previous_device)
 
     def retranslate_ui(self) -> None:
+        for status in self._context.status.active_messages:
+            if status.source == _CHAPTERED_PROGRESS_STATUS_SOURCE:
+                self._context.status.show(
+                    status.source,
+                    status.message,
+                    progress=status.progress,
+                    action=self._chaptered_cancel_action(),
+                )
+                break
         if self._workspaces.currentWidget() is self._sync_workspace:
             self.setWindowTitle(self.tr("Sync with Host — iOpenPod"))
             self._context.status.set_default(self._default_status_message())
@@ -675,28 +699,21 @@ class MainWindow(QMainWindow):
     def _backup_progress_changed(self, value: object) -> None:
         if not isinstance(value, BackupProgress):
             return
-        progress = self._backup_status_progress
         if value.total_bytes > 0:
-            scale = 10_000
-            progress.setRange(0, scale)
-            progress.setValue(
-                min(scale, value.completed_bytes * scale // value.total_bytes)
+            progress = StatusProgress(
+                value.completed_bytes, value.total_bytes, value.current_file
             )
         elif value.total <= 0:
-            progress.setRange(0, 0)
+            progress = StatusProgress(detail=value.current_file)
         else:
-            progress.setRange(0, value.total)
-            progress.setValue(min(value.current, value.total))
-        progress.setToolTip(value.current_file)
-        progress.show()
-        self._context.status.show(_BACKUP_STATUS_SOURCE, workflow_text(value.message))
+            progress = StatusProgress(value.current, value.total, value.current_file)
+        self._context.status.show(
+            _BACKUP_STATUS_SOURCE, workflow_text(value.message), progress=progress
+        )
 
     def _backup_busy_changed(self, busy: bool) -> None:
         if busy:
             return
-        self._backup_status_progress.hide()
-        self._backup_status_progress.reset()
-        self._backup_status_progress.setToolTip("")
         self._context.status.clear(_BACKUP_STATUS_SOURCE)
 
     def _review_availability_changed(self) -> None:
@@ -910,6 +927,7 @@ class MainWindow(QMainWindow):
         self._sync_controller.shutdown()
         self._normalization.shutdown()
         self._export_controller.shutdown()
+        self._chaptered_controller.shutdown()
         self._artwork_provider.shutdown()
         self._photo_provider.shutdown()
         self._sync_workspace.shutdown()
@@ -957,6 +975,79 @@ class MainWindow(QMainWindow):
             return
         if self._export_controller.start_tracks(tracks, directory):
             self._show_export_progress(self.tr("Preparing Track export…"))
+
+    def _chaptered_conversion_requested(self, value: object) -> None:
+        tracks = _tracks_from_signal(value)
+        if not tracks:
+            return
+        try:
+            started = self._chaptered_controller.start(tracks)
+        except ValueError as error:
+            self._chaptered_failed(str(error))
+            return
+        if not started:
+            self._chaptered_failed(
+                self.tr("Album conversion is unavailable right now.")
+            )
+            return
+        self._context.status.clear(_CHAPTERED_NOTICE_STATUS_SOURCE)
+        self._context.status.show(
+            _CHAPTERED_PROGRESS_STATUS_SOURCE,
+            self.tr("Preparing chaptered Album…"),
+            progress=StatusProgress(),
+            action=self._chaptered_cancel_action(),
+        )
+
+    def _chaptered_progress_changed(self, message: str) -> None:
+        self._context.status.show(
+            _CHAPTERED_PROGRESS_STATUS_SOURCE,
+            workflow_text(message),
+            progress=StatusProgress(),
+            action=self._chaptered_cancel_action(),
+        )
+
+    def _chaptered_availability_changed(self) -> None:
+        if not self._chaptered_controller.busy:
+            self._stop_chaptered_status()
+
+    def _stop_chaptered_status(self) -> None:
+        self._context.status.clear(_CHAPTERED_PROGRESS_STATUS_SOURCE)
+
+    @staticmethod
+    def _chaptered_cancel_action() -> StatusAction:
+        return StatusAction(
+            "cancel", QCoreApplication.translate("CommonActions", "Cancel")
+        )
+
+    def _status_action_requested(self, source: str, key: str) -> None:
+        if source == _CHAPTERED_PROGRESS_STATUS_SOURCE and key == "cancel":
+            self._cancel_chaptered_conversion()
+
+    def _cancel_chaptered_conversion(self) -> None:
+        self._chaptered_controller.cancel()
+        self._context.status.show(
+            _CHAPTERED_NOTICE_STATUS_SOURCE,
+            self.tr("Album conversion cancelled."),
+            timeout_ms=8_000,
+        )
+
+    def _chaptered_finished(self) -> None:
+        self._stop_chaptered_status()
+        self._context.status.show(
+            _CHAPTERED_NOTICE_STATUS_SOURCE,
+            self.tr("Chaptered Album prepared for Library save."),
+            timeout_ms=8_000,
+        )
+
+    def _chaptered_failed(self, detail: str) -> None:
+        if not self._chaptered_controller.busy:
+            self._stop_chaptered_status()
+        title = self.tr("Album conversion failed")
+        self._context.status.show(
+            _CHAPTERED_NOTICE_STATUS_SOURCE,
+            f"{title}: {workflow_text(detail)}",
+            timeout_ms=15_000,
+        )
 
     def _photo_export_requested(self, value: object) -> None:
         photos = _photos_from_signal(value)

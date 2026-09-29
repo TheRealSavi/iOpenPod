@@ -1,6 +1,14 @@
 """Compact status-bar control and a live, keyboard-accessible status popup."""
 
-from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QPropertyAnimation, Qt
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    QSize,
+    Qt,
+)
 from PySide6.QtGui import (
     QCloseEvent,
     QMouseEvent,
@@ -23,9 +31,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from iOpenPod.app.core.status import ApplicationStatus
+from iOpenPod.app.core.status import ApplicationStatus, StatusMessage
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.widgets.status_controls import StatusControls
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
 
 # Leave room for the entrance curve's small overshoot above the final panel.
@@ -171,6 +180,56 @@ class _StatusPopup(QFrame):
         super().mouseReleaseEvent(event)
 
 
+class _StatusRow(QWidget):
+    """Show one active status with its controls beneath the full message."""
+
+    def __init__(self, status: ApplicationStatus, parent: QWidget) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        self._layout = layout
+        layout.setContentsMargins(
+            LAYOUT.space_xs, LAYOUT.space_xs, LAYOUT.space_xs, LAYOUT.space_xs
+        )
+        layout.setSpacing(LAYOUT.space_xs)
+        self.label = QLabel(self)
+        self.label.setWordWrap(True)
+        layout.addWidget(self.label)
+        self.controls = StatusControls(status, self)
+        layout.addWidget(self.controls)
+
+    def set_status(self, value: StatusMessage) -> None:
+        self.label.setText(workflow_text(value.message))
+        self.setAccessibleName(self.label.text())
+        self.controls.set_status(value)
+
+    def size_for_width(self, width: int) -> QSize:
+        self.setFixedWidth(width)
+        self._layout.activate()
+        text_width = max(1, width - 2 * LAYOUT.space_xs)
+        text_height = (
+            self.label.fontMetrics()
+            .boundingRect(
+                QRect(0, 0, text_width, 10_000),
+                Qt.TextFlag.TextWordWrap,
+                self.label.text(),
+            )
+            .height()
+        )
+        controls_height = max(
+            self.controls.progress.sizeHint().height(),
+            self.controls.action.sizeHint().height(),
+        )
+        height = (
+            2 * LAYOUT.space_xs
+            + text_height
+            + LAYOUT.space_xs
+            + controls_height
+            + 2 * (LAYOUT.space_sm + LAYOUT.space_3xs)
+            + LAYOUT.space_xs
+        )
+        return QSize(width, height)
+
+
 class StatusListButton(IconButton):
     """Expose all active messages without giving callers a status-bar widget."""
 
@@ -234,12 +293,34 @@ class StatusListButton(IconButton):
             else:
                 item = self._list.item(row)
             text = workflow_text(message.message)
-            if item.text() != text:
-                item.setText(text)
-                item.setToolTip(text)
+            item.setToolTip(text)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, text)
+            existing = self._list.itemWidget(item)
+            if message.progress is not None or message.action is not None:
+                item.setText("")
+                if not isinstance(existing, _StatusRow):
+                    existing = _StatusRow(self._status, self._list)
+                    self._list.setItemWidget(item, existing)
+                existing.set_status(message)
+            else:
+                if isinstance(existing, _StatusRow):
+                    self._list.removeItemWidget(item)
+                    existing.deleteLater()
+                    item.setSizeHint(QSize())
+                if item.text() != text:
+                    item.setText(text)
+        self._resize_enhanced_rows()
         self._list.setVisible(bool(messages))
         self._empty.setVisible(not messages)
         self.retranslate_ui()
+
+    def _resize_enhanced_rows(self) -> None:
+        width = max(120, self._list.viewport().width() - 2 * LAYOUT.space_xs)
+        for index in range(self._list.count()):
+            item = self._list.item(index)
+            row = self._list.itemWidget(item)
+            if isinstance(row, _StatusRow):
+                item.setSizeHint(row.size_for_width(width))
 
     def retranslate_ui(self) -> None:
         count = len(self._status.active_messages)
@@ -268,6 +349,7 @@ class StatusListButton(IconButton):
             self._refresh()
         elif event.type() == QEvent.Type.FontChange:
             self._resize_button()
+            self._resize_enhanced_rows()
 
     def _toggle_popup(self) -> None:
         if self._popup.isVisible():
@@ -295,6 +377,7 @@ class StatusListButton(IconButton):
             ),
         )
         self._popup.open_at(QPoint(x, y))
+        self._resize_enhanced_rows()
         if self._list.count():
             if self._list.currentRow() < 0:
                 self._list.setCurrentRow(0)

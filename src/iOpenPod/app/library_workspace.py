@@ -1,6 +1,8 @@
 """One session draft for Library metadata, Playlists, Photos, and device naming."""
 
 from dataclasses import dataclass, replace
+from itertools import pairwise
+from uuid import uuid4
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -20,6 +22,7 @@ from iPodDB.library import (
     PhotoAlbumKind,
     PhotoLibrary,
     Playlist,
+    PlaylistEntry,
     PlaylistKind,
     PlaylistSort,
     PlaylistSortOrder,
@@ -556,6 +559,103 @@ class LibraryWorkspace(QObject):
         self._retain_artwork_assets()
         self._publish()
         self.tracksChanged.emit(self.tracks)
+
+    def replace_tracks_with_chaptered_song(
+        self,
+        track_ids: tuple[int, ...],
+        song: ImportedSong,
+        expected: EditRevision,
+    ) -> None:
+        """Stage one verified media addition and the source omissions atomically."""
+        self.require_revision(expected)
+        selected = self._selected_tracks(track_ids)
+        if len(selected) < 2 or any(t.track_id <= 0 for t in selected):
+            raise ValueError("Choose at least two saved Tracks from one Album.")
+        if len({t.album_key for t in selected}) != 1 or not selected[0].album:
+            raise ValueError("Choose Tracks from one named Album.")
+        album_ids = {
+            t.track_id
+            for t in self._tracks.values()
+            if t.album_key == selected[0].album_key
+        }
+        if album_ids != set(track_ids):
+            raise ValueError("Select the complete Album before converting its Tracks.")
+        location = song.track.metadata.location
+        if (
+            not location
+            or any(
+                t.metadata.location.casefold() == location.casefold()
+                for t in self._tracks.values()
+            )
+            or (song.track.size_bytes, location)
+            != (song.source.media.file.size, song.source.media.file.relative_path)
+            or song.source.fingerprint.sha256 != song.source.media.file.sha256
+        ):
+            raise ValueError("Chaptered media does not match its verified destination.")
+        chapters = song.track.metadata.chapters
+        if (
+            len(chapters) != len(selected)
+            or chapters[0].start_ms != 0
+            or any(
+                left.start_ms >= right.start_ms for left, right in pairwise(chapters)
+            )
+            or chapters[-1].start_ms >= song.track.length_ms
+        ):
+            raise ValueError("The chapter timeline does not match the Album Tracks.")
+
+        removed = set(track_ids)
+        identity = min((0, *self._tracks)) - 1
+        merged = replace(
+            enforce_track_playback_policy(song.track),
+            track_id=identity,
+            artwork_id=selected[0].artwork_id,
+        )
+        tracks: dict[int, Track] = {}
+        for track_id, track in self._tracks.items():
+            if track_id in removed:
+                if identity not in tracks:
+                    tracks[identity] = merged
+            else:
+                tracks[track_id] = track
+        playlists: dict[int, Playlist] = {}
+        for playlist_id, playlist in self._playlists.items():
+            inserted = False
+            entries: list[PlaylistEntry] = []
+            for entry in playlist.entries:
+                if entry.track_id in removed:
+                    if not inserted:
+                        entries.append(PlaylistEntry(uuid4().hex, identity))
+                        inserted = True
+                else:
+                    entries.append(entry)
+            playlists[playlist_id] = replace(playlist, entries=tuple(entries))
+        self._tracks = tracks
+        self._playlists = playlists
+        if self._photos is not None:
+            self._photos = replace(
+                self._photos,
+                albums=tuple(
+                    replace(album, music_track_id=identity)
+                    if album.music_track_id in removed
+                    else album
+                    for album in self._photos.albums
+                ),
+            )
+        self._media_sources = {
+            track_id: source
+            for track_id, source in self._media_sources.items()
+            if track_id not in removed
+        }
+        self._media_sources[identity] = replace(
+            song.source, media=replace(song.source.media, track_id=identity)
+        )
+        self._delete_omissions = True
+        self._retain_artwork_assets()
+        self._refresh_field_sorted_playlists()
+        self._publish()
+        self.tracksChanged.emit(self.tracks)
+        if self._photos is not None:
+            self.photosChanged.emit(self._photos)
 
     def _selected_tracks(self, track_ids: tuple[int, ...]) -> tuple[Track, ...]:
         if len(set(track_ids)) != len(track_ids) or any(

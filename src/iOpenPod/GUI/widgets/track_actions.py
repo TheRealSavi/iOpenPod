@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from iOpenPod.app.chaptered_conversion import can_convert_album
 from iOpenPod.app.core.settings.definitions import (
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
     LibraryDoubleClickShortcut,
@@ -113,6 +114,7 @@ class _DoubleClickSelection:
 class TrackActions(QObject):
     playlistCreated = Signal(int)
     trackExportRequested = Signal(object)
+    chapteredConversionRequested = Signal(object)
 
     def __init__(
         self,
@@ -400,6 +402,16 @@ class TrackActions(QObject):
         ):
             raise ValueError(self.tr("The selected tracks changed. Select them again."))
 
+    def _can_convert_chaptered(self, selection: TrackSelection) -> bool:
+        if not can_convert_album(selection.tracks, self.workspace.tracks):
+            return False
+        if self._device_controller is None:
+            return True
+        active = self._device_controller.active_ipod
+        return active is not None and can_convert_album(
+            selection.tracks, active.library.tracks
+        )
+
     def build_menu(self, selection: TrackSelection) -> QMenu:
         menu = QMenu(self.window)
         menu.setObjectName("trackContextMenu")
@@ -442,9 +454,12 @@ class TrackActions(QObject):
                 and any(podcast_conversion_needed(track) for track in selection.tracks)
             ),
         )
-        chaptered = menu.addAction(self.tr("Convert to a single chaptered track"))
-        chaptered.setEnabled(False)
-        chaptered.setToolTip(self.tr("Chaptered-track conversion is coming later."))
+        add(
+            menu,
+            self.tr("Convert to a single chaptered track"),
+            lambda: self.convert_to_chaptered(selection),
+            enabled=editable and self._can_convert_chaptered(selection),
+        )
         play_next = add(
             menu,
             self.tr("Play Next"),
@@ -631,6 +646,14 @@ class TrackActions(QObject):
         self.workspace.convert_tracks_to_podcasts(
             selection.track_ids, selection.revision
         )
+
+    def convert_to_chaptered(self, selection: TrackSelection) -> None:
+        self._require(selection)
+        if not self._can_convert_chaptered(selection):
+            raise ValueError(
+                self.tr("Select a complete Music Album with at least two Tracks.")
+            )
+        self.chapteredConversionRequested.emit(selection.tracks)
 
     def apply(self, selection: TrackSelection, path: str, value: MetadataValue) -> None:
         self._require(selection)

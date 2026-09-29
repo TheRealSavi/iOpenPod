@@ -6,7 +6,12 @@ from PySide6.QtCore import QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from iOpenPod.app.core.status import ApplicationStatus, StatusMessage
+from iOpenPod.app.core.status import (
+    ApplicationStatus,
+    StatusAction,
+    StatusMessage,
+    StatusProgress,
+)
 
 
 def _application() -> QApplication:
@@ -97,6 +102,37 @@ def test_active_messages_are_source_owned_snapshots_and_notify_hidden_changes() 
     status.clear("analysis")
     assert snapshots[-1] == ()
     assert status.current_message == "Ready"
+
+
+def test_progress_and_actions_follow_their_source_and_reject_stale_clicks() -> None:
+    status = ApplicationStatus()
+    snapshots: list[tuple[StatusMessage, ...]] = []
+    current: list[StatusMessage | None] = []
+    requests: list[tuple[str, str]] = []
+
+    def record_action(source: str, key: str) -> None:
+        requests.append((source, key))
+
+    status.activeMessagesChanged.connect(
+        lambda: snapshots.append(status.active_messages)
+    )
+    status.currentStatusChanged.connect(lambda: current.append(status.current_status))
+    status.actionRequested.connect(record_action)
+    cancel = StatusAction("cancel", "Cancel")
+
+    status.show("backup", "Capturing…", progress=StatusProgress(75, 100, "song.m4a"))
+    status.show("chaptered", "Encoding…", progress=StatusProgress(), action=cancel)
+    status.request_action("chaptered", "cancel")
+    status.show("chaptered", "Checking…", progress=StatusProgress(), action=cancel)
+    status.clear("chaptered")
+    status.request_action("chaptered", "cancel")
+
+    assert requests == [("chaptered", "cancel")]
+    assert snapshots[0][0].progress == StatusProgress(75, 100, "song.m4a")
+    assert snapshots[1][-1].action == cancel
+    assert current[-1] == StatusMessage(
+        "backup", "Capturing…", StatusProgress(75, 100, "song.m4a")
+    )
 
 
 def test_status_rotates_automatically_without_progress_updates_starving_peers(

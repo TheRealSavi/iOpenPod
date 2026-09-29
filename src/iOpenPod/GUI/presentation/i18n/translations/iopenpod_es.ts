@@ -1747,7 +1747,11 @@
     <name>MainWindow</name>
     <message>
         <source>Backup progress</source>
-        <translation>Progreso de la copia de seguridad</translation>
+        <translation type="vanished">Progreso de la copia de seguridad</translation>
+    </message>
+    <message>
+        <source>Album conversion progress</source>
+        <translation type="vanished">Progreso de conversión del álbum</translation>
     </message>
     <message>
         <source>Sync with Host — iOpenPod</source>
@@ -1847,6 +1851,30 @@
     <message>
         <source>Preparing Track export…</source>
         <translation>Preparando exportación de pistas…</translation>
+    </message>
+    <message>
+        <source>Album conversion is unavailable right now.</source>
+        <translation>La conversión del álbum no está disponible en este momento.</translation>
+    </message>
+    <message>
+        <source>Preparing chaptered Album…</source>
+        <translation>Preparando el álbum con capítulos…</translation>
+    </message>
+    <message>
+        <source>Converting Album</source>
+        <translation type="vanished">Convirtiendo álbum</translation>
+    </message>
+    <message>
+        <source>Chaptered Album prepared for Library save.</source>
+        <translation>Álbum con capítulos preparado para guardar la biblioteca.</translation>
+    </message>
+    <message>
+        <source>Album conversion failed</source>
+        <translation>Error al convertir el álbum</translation>
+    </message>
+    <message>
+        <source>Album conversion cancelled.</source>
+        <translation>Conversión del álbum cancelada.</translation>
     </message>
     <message>
         <source>Choose Photo Export Folder</source>
@@ -4708,12 +4736,48 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Porcelain</translation>
     </message>
     <message>
+        <source>Catppuccin Latte</source>
+        <translation>Catppuccin Latte</translation>
+    </message>
+    <message>
+        <source>Dune Plover</source>
+        <translation>Dune Plover</translation>
+    </message>
+    <message>
+        <source>Sea Glass</source>
+        <translation>Sea Glass</translation>
+    </message>
+    <message>
         <source>Slate</source>
         <translation>Slate</translation>
     </message>
     <message>
         <source>Original iOpenPod</source>
         <translation>iOpenPod original</translation>
+    </message>
+    <message>
+        <source>Catppuccin Frappé</source>
+        <translation>Catppuccin Frappé</translation>
+    </message>
+    <message>
+        <source>Catppuccin Macchiato</source>
+        <translation>Catppuccin Macchiato</translation>
+    </message>
+    <message>
+        <source>Catppuccin Mocha</source>
+        <translation>Catppuccin Mocha</translation>
+    </message>
+    <message>
+        <source>Gravity</source>
+        <translation>Gravity</translation>
+    </message>
+    <message>
+        <source>Northern Lights</source>
+        <translation>Northern Lights</translation>
+    </message>
+    <message>
+        <source>Orchid</source>
+        <translation>Orchid</translation>
     </message>
     <message>
         <source>Off</source>
@@ -5848,7 +5912,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Chaptered-track conversion is coming later.</source>
-        <translation>La conversión a pistas con capítulos estará disponible más adelante.</translation>
+        <translation type="vanished">La conversión a pistas con capítulos estará disponible más adelante.</translation>
     </message>
     <message>
         <source>Play Next</source>
@@ -5933,6 +5997,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>This iPod does not support Podcasts.</source>
         <translation>Este iPod no admite pódcast.</translation>
+    </message>
+    <message>
+        <source>Select a complete Music Album with at least two Tracks.</source>
+        <translation>Selecciona un álbum de música completo con al menos dos pistas.</translation>
     </message>
     <message>
         <source>The destination Playlist is no longer available.</source>
@@ -6969,6 +7037,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Las posiciones de capítulos deben estar ordenadas y dentro de la duración de la pista.</translation>
     </message>
     <message>
+        <source>Chaptered media does not match its verified destination.</source>
+        <translation>El archivo con capítulos no coincide con el destino verificado.</translation>
+    </message>
+    <message>
         <source>Checking for files that changed during the scan…</source>
         <translation>Comprobando archivos que cambiaron durante el análisis…</translation>
     </message>
@@ -6985,6 +7057,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Comprobando origen</translation>
     </message>
     <message>
+        <source>Checking the chaptered output…</source>
+        <translation>Comprobando el archivo con capítulos…</translation>
+    </message>
+    <message>
         <source>Checking the reviewed source</source>
         <translation>Comprobando el origen revisado</translation>
     </message>
@@ -6999,6 +7075,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Choose Remove, Move Up, or Move Down.</source>
         <translation>Elige Quitar, Subir o Bajar.</translation>
+    </message>
+    <message>
+        <source>Choose Tracks from one named Album.</source>
+        <translation>Selecciona pistas de un mismo álbum con nombre.</translation>
     </message>
     <message>
         <source>Choose a Playlist for this Smart Playlist rule.</source>
@@ -7049,6 +7129,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Elige una carpeta de listas existente como carpeta superior.</translation>
     </message>
     <message>
+        <source>Choose at least two saved Tracks from one Album.</source>
+        <translation>Selecciona al menos dos pistas guardadas de un mismo álbum.</translation>
+    </message>
+    <message>
         <source>Choose current Tracks for a regular Playlist.</source>
         <translation>Elige pistas actuales para una lista de reproducción normal.</translation>
     </message>
@@ -7091,6 +7175,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Continuing without acoustic matching…</source>
         <translation>Continuando sin comparación acústica…</translation>
+    </message>
+    <message>
+        <source>Copying and checking Album Tracks…</source>
+        <translation>Copiando y comprobando las pistas del álbum…</translation>
     </message>
     <message>
         <source>Could not fingerprint iPod Track {index} of {total}.</source>
@@ -7179,6 +7267,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Downloading {title}…</source>
         <translation>Descargando {title}…</translation>
+    </message>
+    <message>
+        <source>Encoding the chaptered Album…</source>
+        <translation>Codificando el álbum con capítulos…</translation>
     </message>
     <message>
         <source>Enter a name for the Photo Album.</source>
@@ -7985,6 +8077,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Selecciona al menos una pista para exportar.</translation>
     </message>
     <message>
+        <source>Select the complete Album before converting its Tracks.</source>
+        <translation>Selecciona el álbum completo antes de convertir sus pistas.</translation>
+    </message>
+    <message>
         <source>Serializing database artifacts</source>
         <translation>Serializando archivos de bases de datos</translation>
     </message>
@@ -8243,6 +8339,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>The changed composer has conflicting native identities.</source>
         <translation>El compositor modificado tiene identidades nativas en conflicto.</translation>
+    </message>
+    <message>
+        <source>The chapter timeline does not match the Album Tracks.</source>
+        <translation>La secuencia de capítulos no coincide con las pistas del álbum.</translation>
     </message>
     <message>
         <source>The connected iPod does not match this imported Original backup.</source>

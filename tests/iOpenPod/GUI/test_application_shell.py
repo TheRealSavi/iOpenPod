@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QListView,
-    QProgressBar,
     QProgressDialog,
     QPushButton,
     QSplitter,
@@ -31,6 +30,7 @@ from tests.iOpenPod.GUI.application_shell_test_support import (
 )
 
 from iOpenPod.app.backups import BackupProgress, BackupStage
+from iOpenPod.app.chaptered_conversion_controller import ChapteredConversionController
 from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.settings.definitions import (
     APPEARANCE_DARK_THEME,
@@ -46,6 +46,7 @@ from iOpenPod.app.core.settings.definitions import (
     LightTheme,
     PlayerPosition,
 )
+from iOpenPod.app.core.status import StatusAction, StatusProgress
 from iOpenPod.app.models.collection_list_model import (
     CollectionRole,
 )
@@ -77,12 +78,15 @@ from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.search_field import SearchField
+from iOpenPod.GUI.widgets.status_controls import StatusBarControls
+from iOpenPod.GUI.widgets.status_list import StatusListButton
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
     IconButton,
     IconButtonKind,
 )
+from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iOpenPod.GUI.widgets.track_list_header import LibrarySplitter
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import LibrarySnapshot, MediaType, Track
@@ -209,6 +213,40 @@ def test_application_status_drives_the_shared_window_status_bar(
         context.shutdown()
 
 
+def test_status_controls_do_not_change_the_status_bar_height() -> None:
+    context = _context()
+    window = MainWindow(context, auto_discover=False)
+
+    try:
+        window.show()
+        APPLICATION.processEvents()
+        baseline_height = window.statusBar().height()
+
+        context.status.show(
+            "test",
+            "Working…",
+            action=StatusAction("cancel", "Cancel"),
+        )
+        APPLICATION.processEvents()
+        assert window.statusBar().height() == baseline_height
+
+        context.status.show(
+            "test",
+            "Working…",
+            progress=StatusProgress(),
+            action=StatusAction("cancel", "Cancel"),
+        )
+        APPLICATION.processEvents()
+        assert window.statusBar().height() == baseline_height
+
+        context.status.clear("test")
+        APPLICATION.processEvents()
+        assert window.statusBar().height() == baseline_height
+    finally:
+        window.close()
+        context.shutdown()
+
+
 def test_backup_progress_drives_the_shared_window_status_bar() -> None:
     context = _context()
     window = MainWindow(context, auto_discover=False)
@@ -216,8 +254,9 @@ def test_backup_progress_drives_the_shared_window_status_bar() -> None:
     try:
         window.show()
         APPLICATION.processEvents()
-        progress = window.findChild(QProgressBar, "backupStatusProgress")
-        assert progress is not None
+        controls = window.findChild(StatusBarControls)
+        assert controls is not None
+        progress = controls.progress
         assert progress.isHidden()
 
         context.backup_controller.progressChanged.emit(
@@ -245,6 +284,74 @@ def test_backup_progress_drives_the_shared_window_status_bar() -> None:
         assert progress.isHidden()
         assert progress.toolTip() == ""
         assert "No Active iPod" in window.statusBar().currentMessage()
+    finally:
+        window.close()
+        context.shutdown()
+
+
+def test_chaptered_conversion_uses_the_status_bar_for_progress_and_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context()
+    window = MainWindow(context, auto_discover=False)
+
+    def start(
+        controller: ChapteredConversionController, tracks: tuple[Track, ...]
+    ) -> bool:
+        assert tracks
+        controller.busy = True
+        controller.changed.emit()
+        return True
+
+    monkeypatch.setattr(ChapteredConversionController, "start", start)
+    try:
+        window.show()
+        APPLICATION.processEvents()
+        controller = window.findChild(ChapteredConversionController)
+        actions = window.findChild(TrackActions)
+        controls = window.findChild(StatusBarControls)
+        assert controller is not None and actions is not None
+        assert controls is not None
+        progress, cancel = controls.progress, controls.action
+        assert progress.isHidden() and cancel.isHidden()
+
+        actions.chapteredConversionRequested.emit(_tracks(2))
+        APPLICATION.processEvents()
+        assert progress.isVisible() and cancel.isVisible()
+        assert progress.minimum() == progress.maximum() == 0
+        bell = window.findChild(StatusListButton)
+        assert bell is not None
+        assert controls.width() == controls.sizeHint().width()
+        assert cancel.x() - progress.geometry().right() == LAYOUT.space_xs + 1
+        assert bell.x() - controls.geometry().right() <= LAYOUT.space_xs + 1
+        assert window.statusBar().currentMessage() == "Preparing chaptered Album…"
+        assert window.findChild(QProgressDialog, "chapteredConversionProgress") is None
+
+        controller.progressChanged.emit("Encoding the chaptered Album…")
+        assert window.statusBar().currentMessage() == "Encoding the chaptered Album…"
+
+        cancel.click()
+        assert not controller.busy
+        assert progress.isHidden() and cancel.isHidden()
+        assert window.statusBar().currentMessage() == "Album conversion cancelled."
+
+        actions.chapteredConversionRequested.emit(_tracks(2))
+        controller.busy = False
+        controller.failed.emit("Encoder unavailable")
+        controller.changed.emit()
+        assert progress.isHidden() and cancel.isHidden()
+        assert window.statusBar().currentMessage() == (
+            "Album conversion failed: Encoder unavailable"
+        )
+
+        actions.chapteredConversionRequested.emit(_tracks(2))
+        controller.busy = False
+        controller.finished.emit()
+        controller.changed.emit()
+        assert progress.isHidden() and cancel.isHidden()
+        assert window.statusBar().currentMessage() == (
+            "Chaptered Album prepared for Library save."
+        )
     finally:
         window.close()
         context.shutdown()

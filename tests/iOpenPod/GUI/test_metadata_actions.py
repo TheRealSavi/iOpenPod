@@ -116,7 +116,7 @@ def test_context_menu_omits_clear_artwork_and_remove_is_a_reversible_draft_edit(
         context.shutdown()
 
 
-def test_context_menu_converts_tracks_to_podcasts_and_keeps_chapter_placeholder() -> (
+def test_context_menu_converts_tracks_to_podcasts_and_requires_album_for_chapters() -> (
     None
 ):
     context = build_context()
@@ -137,7 +137,6 @@ def test_context_menu_converts_tracks_to_podcasts_and_keeps_chapter_placeholder(
         )
         assert convert.isEnabled()
         assert not chaptered.isEnabled()
-        assert "coming later" in chaptered.toolTip().lower()
 
         convert.trigger()
 
@@ -160,6 +159,40 @@ def test_context_menu_converts_tracks_to_podcasts_and_keeps_chapter_placeholder(
         assert not convert.isEnabled()
     finally:
         window.close()
+        context.shutdown()
+
+
+def test_chaptered_action_requests_the_complete_album() -> None:
+    context = build_context()
+    tracks = tuple(
+        replace(
+            track,
+            metadata=replace(
+                track.metadata, location=f"iPod_Control/Music/F00/{track.track_id}.m4a"
+            ),
+        )
+        for track in _TRACKS
+    )
+    workspace = context.library_workspace
+    workspace.load(LibrarySnapshot(tracks))
+    parent = QWidget()
+    actions = TrackActions(workspace, context.playback_controller, parent)
+    requested: list[tuple[Track, ...]] = []
+    actions.chapteredConversionRequested.connect(requested.append)
+    try:
+        selection = TrackSelection(tracks[:2], workspace.edit_revision)
+        menu = actions.build_menu(selection)
+        action = next(
+            item
+            for item in menu.actions()
+            if item.text() == "Convert to a single chaptered track"
+        )
+        assert action.isEnabled()
+        action.trigger()
+        assert requested == [tracks[:2]]
+        assert workspace.tracks == tracks
+    finally:
+        parent.close()
         context.shutdown()
 
 

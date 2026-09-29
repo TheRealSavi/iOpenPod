@@ -166,3 +166,6 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0091: Sync Podcasts through shared media publication](0091-sync-podcasts-through-shared-media-publication.md)
 - [ADR-0092: Enforce Podcast and video playback options](0092-enforce-podcast-and-video-playback-options.md)
 - [ADR-0093: Complete terminal transaction cleanup automatically](0093-complete-terminal-transaction-cleanup-automatically.md)
+- [ADR-0094: Target macOS 12.3 with platform-specific native dependencies](0094-target-macos-12-3-with-platform-specific-native-dependencies.md)
+- [ADR-0095: Convert a complete Album to one chaptered Track](0095-convert-a-complete-album-to-one-chaptered-track.md)
+- [ADR-0096: Publish status progress and actions as source-owned data](0096-publish-status-progress-and-actions-as-source-owned-data.md)

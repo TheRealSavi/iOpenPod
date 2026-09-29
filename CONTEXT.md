@@ -272,6 +272,12 @@ metadata stays unchanged. Preparation validates the supplied media, verifies nat
 codec output, and returns captured file dependencies. Application replacement
 capture and publication remain unfinished. See ADR-0034.
 
+The Track context action can now turn a complete saved Music Album into one
+Chaptered Track. It copies source media through Storage, encodes and checks one
+Host output in the background, and stages that output with source omissions in one
+reversible Library Draft revision. The ordinary Library save publishes the new
+media and database before recoverably removing unshared originals. See ADR-0095.
+
 Lyrics edits now require verified text embedded in the media file as well as the
 iTunesDB presence flag. The Application Layer prepares focused lyric-tag updates;
 Storage publishes them with the database in one recoverable transaction. This is

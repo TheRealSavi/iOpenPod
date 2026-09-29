@@ -2142,7 +2142,7 @@ QListWidget#activeStatusesList::item:focus {{
     border: 1px solid {tokens.focus};
 }}
 
-QProgressBar#backupStatusProgress {{
+QProgressBar#sharedStatusProgress {{
     min-width: 160px;
     max-width: 220px;
     min-height: 14px;
@@ -2154,9 +2154,25 @@ QProgressBar#backupStatusProgress {{
     text-align: center;
 }}
 
-QProgressBar#backupStatusProgress::chunk {{
+QProgressBar#sharedStatusProgress::chunk {{
     background-color: {tokens.accent};
     border-radius: 6px;
+}}
+
+QToolButton#sharedStatusAction {{
+    color: {tokens.text};
+    background-color: {tokens.surface_alt};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_control}px;
+    padding: 0 {LAYOUT.space_xs}px;
+}}
+
+QToolButton#sharedStatusAction:hover {{
+    background-color: {tokens.surface_hover};
+}}
+
+QToolButton#sharedStatusAction:focus {{
+    border-color: {tokens.focus};
 }}
 
 QScrollBar:vertical {{

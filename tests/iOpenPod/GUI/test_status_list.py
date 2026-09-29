@@ -11,9 +11,10 @@ from tests.iOpenPod.app.core.test_status import (
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.core.settings.definitions import AppearanceMode
-from iOpenPod.app.core.status import ApplicationStatus
+from iOpenPod.app.core.status import ApplicationStatus, StatusAction, StatusProgress
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.widgets.status_controls import StatusBarControls, StatusControls
 from iOpenPod.GUI.widgets.status_list import StatusListButton
 
 
@@ -223,6 +224,76 @@ def test_corner_button_opens_live_list_and_closing_does_not_clear_statuses() -> 
         assert empty.isVisible()
         assert not button.text()
         assert "No Active iPod" in window.statusBar().currentMessage()
+    finally:
+        window.close()
+        context.shutdown()
+
+
+def test_popup_shows_progress_and_can_request_a_status_action() -> None:
+    context = build_context()
+    window = MainWindow(context, auto_discover=False)
+    requests: list[tuple[str, str]] = []
+
+    def record_action(source: str, key: str) -> None:
+        requests.append((source, key))
+
+    context.status.actionRequested.connect(record_action)
+    try:
+        context.status.show(
+            "backup",
+            "Capturing a fairly long filename from the iPod for this Backup Snapshot…",
+            progress=StatusProgress(75, 100, "song.m4a"),
+        )
+        context.status.show(
+            "chaptered",
+            "Encoding…",
+            progress=StatusProgress(),
+            action=StatusAction("cancel", "Cancel"),
+        )
+        window.show()
+        APPLICATION.processEvents()
+        button = window.findChild(StatusListButton)
+        popup = window.findChild(QFrame, "activeStatusesPopup")
+        assert button is not None and popup is not None
+        button.click()
+        APPLICATION.processEvents()
+        _finish_popup_animation(popup)
+
+        controls = {
+            control.property("statusSource"): control
+            for control in popup.findChildren(StatusControls)
+        }
+        assert set(controls) == {"backup", "chaptered"}
+        assert controls["backup"].progress.value() == 7_500
+        assert controls["backup"].progress.toolTip() == "song.m4a"
+        assert controls["backup"].action.isHidden()
+        assert controls["chaptered"].progress.minimum() == 0
+        assert controls["chaptered"].progress.maximum() == 0
+        assert controls["chaptered"].action.text() == "Cancel"
+        assert (
+            controls["chaptered"].action.height()
+            >= controls["chaptered"].action.sizeHint().height()
+        )
+        backup_row = controls["backup"].parentWidget()
+        assert backup_row is not None
+        backup_label = backup_row.findChild(QLabel)
+        assert backup_label is not None
+        assert backup_label.height() >= 2 * backup_label.fontMetrics().height()
+
+        bar_controls = window.findChild(StatusBarControls)
+        assert bar_controls is not None
+        assert bar_controls.property("statusSource") == "chaptered"
+        context.status._rotate()  # pyright: ignore[reportPrivateUsage]
+        assert bar_controls.property("statusSource") == "backup"
+        assert bar_controls.progress.value() == 7_500
+        assert bar_controls.action.isHidden()
+
+        controls["chaptered"].action.click()
+        assert requests == [("chaptered", "cancel")]
+        context.status.clear("chaptered")
+        APPLICATION.processEvents()
+        assert len(popup.findChildren(StatusControls)) >= 1
+        assert controls["backup"].progress.isVisible()
     finally:
         window.close()
         context.shutdown()
