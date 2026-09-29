@@ -38,7 +38,8 @@ Podcast grouping applies only to the special podcast-marked Playlist in dataset 
 The first episode creates its show group. Grouping retains native metadata and
 stable duplicate occurrences; ambiguous retained ownership blocks the change.
 Episodes are grouped by album in first-appearance order. When that changes the
-submitted order, the Prepared Library exposes the resulting order with a warning.
+submitted order, the Prepared Library exposes the resulting order with an informational
+diagnostic.
 Renaming preserves different flat and grouped orders already present in established
 podcast counterparts.
 
@@ -48,7 +49,7 @@ permits creation of the special Podcasts playlist. Without that source evidence,
 creating it is blocked rather than guessing target capability. This is explicit
 firmware relationship maintenance, not general Smart Playlist reevaluation. An
 untouched draft never triggers it. Derived membership changes accompany preparation
-diagnostics and appear in the resulting snapshot.
+with an informational diagnostic and appear in the resulting snapshot.
 
 Dataset 5 stays a separate firmware category universe. Its category flags, rules,
 settings, and parsed membership remain retained; it is excluded from visible folder,

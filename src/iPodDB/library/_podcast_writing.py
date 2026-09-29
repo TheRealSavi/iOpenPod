@@ -107,7 +107,7 @@ def normalize_podcast_order(
                     WriteIssue(
                         "playlist.podcast_membership",
                         "The special Podcasts playlist was updated to contain the resulting podcast Tracks.",
-                        IssueSeverity.WARNING,
+                        IssueSeverity.INFO,
                         "reconciliation",
                         "playlist",
                         playlist.playlist_id,
@@ -146,7 +146,7 @@ def normalize_podcast_order(
                 WriteIssue(
                     "playlist.podcast_group_order",
                     "Podcast episodes were grouped by show; the prepared Playlist contains the resulting order.",
-                    IssueSeverity.WARNING,
+                    IssueSeverity.INFO,
                     "reconciliation",
                     "playlist",
                     playlist.playlist_id,
