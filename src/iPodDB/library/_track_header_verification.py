@@ -2,9 +2,9 @@
 
 from functools import lru_cache
 
+from iPodDB.device_time import TimeConversion, unix_to_mac
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import DEFINITION as MHIT
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
-from iPodDB.iTunesDB.shared.device_time import MAC_EPOCH_UNIX_OFFSET
 from iPodDB.library._field_policy import DATE_FIELDS, METADATA_FIELDS, TRACK_FIELDS
 from iPodDB.library._native_values import (
     encode_media_types,
@@ -66,7 +66,7 @@ def track_field_expectations(
     source: ParsedChunk[MhitHeader] | None,
     before: Track | None,
     desired: Track,
-    timezone_offset: int,
+    timezone_offset: TimeConversion,
 ) -> dict[str, ChunkFieldValue]:
     """Retain every defined field unless its semantic dependency changed.
 
@@ -99,8 +99,8 @@ def track_field_expectations(
     for name, native in DATE_FIELDS.items():
         if changed(name):
             value = getattr(meta, name)
-            expected[native] = (
-                value + MAC_EPOCH_UNIX_OFFSET + timezone_offset if value else 0
+            expected[native] = unix_to_mac(
+                value, timezone_offset, utc=name == "release_date"
             )
     if changed("sample_rate_hz"):
         expected["sample_rate_1"] = meta.sample_rate_hz << 16

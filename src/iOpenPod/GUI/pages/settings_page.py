@@ -34,6 +34,7 @@ from iOpenPod.app.core.settings.definitions import (
 )
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.version import get_version
+from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.services.linux_identity import (
     UDEV_RULE_DESTINATION,
     UdevRuleStatus,
@@ -48,6 +49,7 @@ from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
+from iOpenPod.GUI.widgets.ipod_preferences import IPodPreferencesView
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
@@ -253,6 +255,10 @@ class SettingsPage(QWidget):
         self._backups_tab = self._add_tab(
             "backupSettingsScroll", self._backups_title, backups
         )
+        self._ipod_preferences = IPodPreferencesView(self)
+        self._ipod_preferences_tab = self._add_tab(
+            "ipodPreferencesScroll", self._ipod_preferences
+        )
         self._linux_tab = (
             self._add_tab("linuxSettingsScroll", self._linux_section)
             if self._linux_supported
@@ -305,6 +311,7 @@ class SettingsPage(QWidget):
         self._uninstall_udev_rule.clicked.connect(self._show_udev_uninstall)
         self._report_issue.clicked.connect(self._open_issue_tracker)
         self._donate.clicked.connect(self._open_donation_page)
+        self._tabs.currentChanged.connect(self._update_saved_note)
         settings.settingChanged.connect(self._setting_changed)
         theme_manager.modeChanged.connect(self._sync_mode_selection)
         theme_manager.lightThemeChanged.connect(self._sync_light_theme_selection)
@@ -344,6 +351,7 @@ class SettingsPage(QWidget):
         self._tabs.setTabText(self._transcoding_tab, self.tr("Transcoding"))
         self._tabs.setTabText(self._sync_tab, self.tr("Sync"))
         self._tabs.setTabText(self._backups_tab, self.tr("Backups"))
+        self._tabs.setTabText(self._ipod_preferences_tab, self.tr("iPod Preferences"))
         if self._linux_tab is not None:
             self._tabs.setTabText(self._linux_tab, self.tr("Linux"))
         self._tabs.setTabText(self._about_tab, self.tr("About"))
@@ -456,7 +464,8 @@ class SettingsPage(QWidget):
             QCoreApplication.translate("CommonActions", "Report an Issue")
         )
         self._donate.setText(self.tr("Donate"))
-        self._saved_note.setText(self.tr("Changes are saved automatically."))
+        self._update_saved_note()
+        self._ipod_preferences.retranslate_ui()
         self._rebuild_appearance_options()
         self._rebuild_player_position_options()
         self._rebuild_language_options()
@@ -468,6 +477,18 @@ class SettingsPage(QWidget):
         self._sync_backup_location(self._settings.get(BACKUP_LOCATION))
         self._transcoding_settings.retranslate_ui()
         self._sync_settings.retranslate_ui()
+
+    def set_active_ipod(self, active: ActiveIPod | None) -> None:
+        self._ipod_preferences.set_active_ipod(active)
+
+    def _update_saved_note(self, _index: int = -1) -> None:
+        text = (
+            self.tr("iPod preferences are read-only.")
+            if self._tabs.currentIndex() == self._ipod_preferences_tab
+            else self.tr("Changes are saved automatically.")
+        )
+        if self._saved_note.text() != text:
+            self._saved_note.setText(text)
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:

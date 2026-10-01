@@ -57,7 +57,7 @@ def test_ipod_library_projects_photos_without_exposing_database_chunks() -> None
         photo.original_date,
         photo.taken_date,
         photo.source_size_bytes,
-    ) == (100, 1_700_000_000, 1_699_999_000, 34_567)
+    ) == (100, 1_700_000_000 - 2_082_844_800, 1_699_999_000 - 2_082_844_800, 34_567)
     assert tuple(item.kind for item in photo.representations) == (
         PhotoRepresentationKind.FULL_RESOLUTION,
         PhotoRepresentationKind.THUMBNAIL,

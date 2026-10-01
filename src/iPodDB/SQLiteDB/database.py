@@ -13,6 +13,7 @@ import struct
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from iPodDB.device_time import unix_to_core_data
 from iPodDB.iTunesDB.shared.constants import (
     FILE_EXTENSION_INT,
     MEDIA_TYPE_AUDIO,
@@ -49,7 +50,7 @@ if TYPE_CHECKING:
 
     from iPodDB.library.writing import WriteChecksum
 
-_CORE_DATA_EPOCH = 978_307_200
+
 type _AlbumKey = tuple[str, str, str]
 
 
@@ -95,7 +96,7 @@ def _s64(value: int) -> int:
 
 
 def _core_data(value: int) -> int:
-    return value - _CORE_DATA_EPOCH if value else 0
+    return unix_to_core_data(value)
 
 
 def _track_pid(track: Track) -> int:
@@ -653,6 +654,12 @@ def build_sqlite_databases(
                     metadata.podcast_rss_url,
                     metadata.track_keywords,
                 ),
+            )
+        purchased = details.date_added_to_itunes if details is not None else 0
+        if purchased or metadata.release_date:
+            library.execute(
+                "INSERT INTO store_info (item_pid,date_purchased,date_released) VALUES (?,?,?)",
+                (_s64(pid), _core_data(purchased), _core_data(metadata.release_date)),
             )
         locations.execute(
             "INSERT INTO location VALUES (?,0,1,?,?,?,?,?,?,NULL,NULL,NULL,NULL)",

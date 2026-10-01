@@ -366,6 +366,7 @@ class MainWindow(QMainWindow):
             context.i18n_manager,
             self._pages,
         )
+        self._settings_page.set_active_ipod(context.device_controller.active_ipod)
         self._backup_page = BackupPage(
             context.backup_controller,
             context.device_controller,
@@ -1655,6 +1656,7 @@ class MainWindow(QMainWindow):
 
     def _active_ipod_changed(self, value: object) -> None:
         active_ipod = value if isinstance(value, ActiveIPod) else None
+        self._settings_page.set_active_ipod(active_ipod)
         sync_was_visible = self._workspaces.currentWidget() is self._sync_workspace
         retain_sync = (
             self._sync_controller.busy

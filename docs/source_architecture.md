@@ -18,7 +18,12 @@ Brief Summary:
   hardware and software capabilities. It receives discovery evidence from Storage;
   it does not query host devices itself.
 - **iPodDB** knows how to parse, model, and write iPod-specific database formats,
-  including iTunesDB, ArtworkDB, and PhotosDB.
+  including iTunesDB, ArtworkDB, and PhotosDB, and the flat firmware Preferences
+  and binary iTunesPrefs artifacts. Its preferences codecs consume bytes and return typed
+  settings plus retained Unknown Data; model identity and file publication remain
+  outside this boundary. The Application Layer supplies a captured Device Time
+  Context; iPodDB owns field-specific epoch conversion using those supplied rules.
+  See [the Preferences contract](ipod-preferences.md) and [time contract](ipod-time.md).
 - **iOpenPod** is the application. Its Application Layer coordinates Device Registry,
   iPodDB, Storage, application state, and the GUI.
 

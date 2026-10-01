@@ -3,6 +3,7 @@
 import math
 from dataclasses import replace
 
+from iPodDB.device_time import DeviceTimeContext
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
@@ -117,10 +118,9 @@ def resolve(
     draft: LibraryDraft,
     target: WriteTarget,
     source_revision: str,
+    device_time: DeviceTimeContext,
 ) -> ResolvedWrite:
-    plan = analyze(
-        source_revision, original, draft, target, document.header.timezone_offset
-    )
+    plan = analyze(source_revision, original, draft, target, device_time)
     issues = [*plan.issues, *source_warnings(document, original)]
     requested = draft.snapshot
     desired = requested

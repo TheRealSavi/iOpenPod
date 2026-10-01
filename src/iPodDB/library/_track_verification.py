@@ -4,6 +4,7 @@ import hashlib
 import math
 from dataclasses import replace
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.library._track_header_verification import (
@@ -28,6 +29,7 @@ def verify_native_tracks(
     desired: LibrarySnapshot,
     mappings: tuple[IdentityMapping, ...],
     resources: WriteResources,
+    device_time: TimeConversion = 0,
 ) -> tuple[WriteIssue, ...]:
     """Compare reparsed fields with source identities and captured caller facts.
 
@@ -166,7 +168,7 @@ def verify_native_tracks(
             check("sample_rate_2", prior.sample_rate_2, actual.sample_rate_2)
         original_chunk = source_chunks.get(track.track_id)
         for field, expected in track_field_expectations(
-            original_chunk, prior_track, track, original.header.timezone_offset
+            original_chunk, prior_track, track, device_time
         ).items():
             check(field, expected, getattr(actual, field))
         original_header = original_chunk.raw_header if original_chunk else b""

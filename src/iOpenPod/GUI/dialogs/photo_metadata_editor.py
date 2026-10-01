@@ -328,10 +328,6 @@ class PhotoMetadataEditorDialog(QDialog):
                     raise ValueError(self.tr("Use a whole number."))
                 if spec.path == "rating" and not 0 <= value <= 100:
                     raise ValueError(self.tr("Use a rating from 0 to 100."))
-                if spec.kind is FieldKind.DATE and not 0 <= value <= 0xFFFFFFFF:
-                    raise ValueError(
-                        self.tr("Use a date supported by this Photo Database.")
-                    )
                 values[spec.path] = value
             except (ValueError, OverflowError, OSError) as error:
                 label = QCoreApplication.translate("MetadataFields", spec.label)

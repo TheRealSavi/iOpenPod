@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
@@ -77,7 +78,7 @@ def _position(item: ParsedChunk[MhipHeader]) -> int | None:
 def project_playlist(
     selection: ChunkSelection[MhbdHeader, MhypHeader],
     track_ids: frozenset[int],
-    timezone_offset: int = 0,
+    timezone_offset: TimeConversion = 0,
 ) -> Playlist:
     header = selection.chunk.header
     metadata = _metadata(selection)
@@ -157,7 +158,9 @@ def _repair_hierarchy(playlists: tuple[Playlist, ...]) -> tuple[Playlist, ...]:
 
 
 def project_playlists(
-    database: DatabaseDocument[MhbdHeader], track_ids: frozenset[int]
+    database: DatabaseDocument[MhbdHeader],
+    track_ids: frozenset[int],
+    device_time: TimeConversion = None,
 ) -> tuple[tuple[Playlist, ...], str]:
     """Read one canonical dataset (3, otherwise 2); never merge firmware categories."""
 
@@ -192,7 +195,11 @@ def project_playlists(
         _text(_metadata(masters[0]), MhodType.TITLE) if len(masters) == 1 else ""
     )
     playlists = tuple(
-        project_playlist(selection, track_ids, database.header.timezone_offset)
+        project_playlist(
+            selection,
+            track_ids,
+            device_time if device_time is not None else database.header.timezone_offset,
+        )
         for selection in selections
         if not selection.chunk.header.master_flag & 1
         and selection.chunk.header.mhsd_5_type == 0

@@ -6,6 +6,7 @@ use IS_TRUE/IS_FALSE with value zero. Native field codes remain private.
 
 from enum import StrEnum
 
+from iPodDB.device_time import MAX_LOCAL_UNIX_TIME, MIN_LOCAL_UNIX_TIME
 from iPodDB.library.playlists import (
     SmartField,
     SmartLimitSort,
@@ -214,11 +215,11 @@ def _validate_rule(rule: SmartRule) -> None:
             raise ValueError("Boolean conditions do not accept a value.")
         return
     relative = rule.operator in (SmartOperator.IN_LAST, SmartOperator.NOT_IN_LAST)
-    lower = 1 if relative else -2_082_844_800 if kind is SmartValueKind.DATE else 0
+    lower = 1 if relative else MIN_LOCAL_UNIX_TIME if kind is SmartValueKind.DATE else 0
     maximum = (
         0x7FFFFFFFFFFFFFFF
         if relative
-        else 0xFFFFFFFF - 2_082_844_800
+        else MAX_LOCAL_UNIX_TIME
         if kind is SmartValueKind.DATE
         else 100
         if rule.field is SmartField.RATING

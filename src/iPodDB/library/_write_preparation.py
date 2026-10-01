@@ -46,7 +46,6 @@ from iPodDB.library._playlist_projection import project_playlists
 from iPodDB.library._playlist_verification import verify_playlists
 from iPodDB.library._projection import link_artwork, project_tracks
 from iPodDB.library._reconcile import reconcile
-from iPodDB.library._resolve_write import resolve
 from iPodDB.library._track_verification import verify_native_tracks
 from iPodDB.library._write_logging import log_resources, log_result
 from iPodDB.library._write_verification import retained_artwork, verify_relationships
@@ -79,9 +78,15 @@ if TYPE_CHECKING:
     from iPodDB.ArtworkDB.shared.artwork_index import ArtworkIndex
     from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
     from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
+    from iPodDB.library._resolved_write import ResolvedWrite
     from iPodDB.library.database import IPodLibrary
     from iPodDB.library.photos import PhotoAlbum
-    from iPodDB.library.writing import IdentityMapping, PreparedLyrics, PreparedMedia
+    from iPodDB.library.writing import (
+        IdentityMapping,
+        LibraryDraft,
+        PreparedLyrics,
+        PreparedMedia,
+    )
     from iPodDB.PhotosDB.shared.chunk_defs.mhfd import MhfdHeader as PhotosMhfdHeader
     from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
@@ -173,6 +178,7 @@ def prepare(
     requested_plan: LibraryWritePlan,
     resources: WriteResources,
     *,
+    resolve: Callable[[LibraryDraft, WriteTarget], ResolvedWrite],
     source_revision: str,
     progress: Callable[[WritePhase], None] | None = None,
 ) -> LibraryWriteResult:
@@ -205,6 +211,7 @@ def prepare(
             requested_plan,
             resources,
             notify,
+            resolve=resolve,
             source_revision=source_revision,
         )
         if entered is not None:
@@ -234,18 +241,13 @@ def _prepare(
     resources: WriteResources,
     notify: Callable[[WritePhase], None],
     *,
+    resolve: Callable[[LibraryDraft, WriteTarget], ResolvedWrite],
     source_revision: str,
 ) -> LibraryWriteResult:
     # Revalidate public immutable plans: callers cannot bypass validation by
     # constructing a plan or replacing its issues/requirements themselves.
     notify(WritePhase.VALIDATION)
-    resolved = resolve(
-        document,
-        source.snapshot,
-        requested_plan.draft,
-        requested_plan.target,
-        source_revision,
-    )
+    resolved = resolve(requested_plan.draft, requested_plan.target)
     plan = resolved.plan
     issues = list(plan.issues)
     if any(issue.code == "draft.wrong_source" for issue in issues):
@@ -556,6 +558,7 @@ def _prepare(
                 resolved,
                 resources,
                 issues,
+                source.device_time,
             )
             if _blocked(issues):
                 return LibraryWriteResult(tuple(issues))
@@ -587,6 +590,7 @@ def _prepare(
                 resolved.desired.photos,
                 dict(resolved.persistent_ids),
                 plan.target,
+                source.device_time,
             )
         phase = "serialization"
         notify(WritePhase.SERIALIZATION)
@@ -660,11 +664,13 @@ def _prepare(
             if checked_artwork is not None
             else EMPTY_ARTWORK_INDEX
         )
-        checked_tracks = project_tracks(checked_document)
+        checked_tracks = project_tracks(checked_document, source.device_time)
         if checked_artwork is not None:
             checked_tracks = link_artwork(checked_tracks, checked_index)
         checked_playlists, checked_name = project_playlists(
-            checked_document, frozenset(t.track_id for t in checked_tracks)
+            checked_document,
+            frozenset(t.track_id for t in checked_tracks),
+            source.device_time,
         )
         checked_photo_library = (
             project_photos(
@@ -674,6 +680,7 @@ def _prepare(
                     for track in checked_tracks
                     if track.ipod is not None and track.ipod.db_track_id
                 },
+                source.device_time,
             )
             if checked_photos is not None
             else None
@@ -712,6 +719,7 @@ def _prepare(
                 desired,
                 mappings,
                 resources,
+                source.device_time,
             )
         )
         issues.extend(
@@ -752,6 +760,7 @@ def _prepare(
                 original_logical,
                 checked_logical,
                 generated_podcasts,
+                source.device_time,
             )
         )
         if _blocked(issues):

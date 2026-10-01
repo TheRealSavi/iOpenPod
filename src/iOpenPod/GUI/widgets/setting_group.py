@@ -46,6 +46,7 @@ class SettingRow(QWidget):
         self._description.setObjectName("settingDescription")
         self._description.setWordWrap(True)
         self._description.setMaximumWidth(720)
+        self._description.setVisible(bool(description))
 
         copy_layout = QVBoxLayout()
         copy_layout.setContentsMargins(0, 0, 0, 0)
@@ -71,3 +72,4 @@ class SettingRow(QWidget):
     def set_copy(self, title: str, description: str) -> None:
         self._title.setText(title)
         self._description.setText(description)
+        self._description.setVisible(bool(description))

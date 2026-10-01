@@ -1,5 +1,6 @@
 """Aggregate semantic validation without modifying the retained source."""
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.library._field_policy import (
     changed_fields,
     needs_media,
@@ -26,7 +27,7 @@ def analyze(
     original: LibrarySnapshot,
     draft: LibraryDraft,
     target: WriteTarget,
-    timezone_offset: int = 0,
+    timezone_offset: TimeConversion = 0,
 ) -> LibraryWritePlan:
     issues: list[WriteIssue] = []
     changes: list[LibraryChange] = []
@@ -372,6 +373,7 @@ def analyze(
         tracks=draft.snapshot.tracks,
         target=target,
         replace_photos=draft.replace_photos,
+        device_time=timezone_offset,
     )
     changes.extend(photo_changes)
     issues.extend(photo_issues)

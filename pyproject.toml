@@ -48,6 +48,7 @@ dependencies = [
     "pyside6==6.9.3 ; sys_platform == 'darwin'",
     "pyside6>=6.11.2 ; sys_platform != 'darwin'",
     "tqdm>=4.70.0",
+    "tzdata>=2026.2",
     "wasmtime>=36,<39",
     "winrt-runtime>=3.2.1,<4 ; sys_platform == 'win32'",
     "winrt-windows-foundation>=3.2.1,<4 ; sys_platform == 'win32'",

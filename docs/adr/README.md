@@ -169,3 +169,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0094: Target macOS 12.3 with platform-specific native dependencies](0094-target-macos-12-3-with-platform-specific-native-dependencies.md)
 - [ADR-0095: Convert a complete Album to one chaptered Track](0095-convert-a-complete-album-to-one-chaptered-track.md)
 - [ADR-0096: Publish status progress and actions as source-owned data](0096-publish-status-progress-and-actions-as-source-owned-data.md)
+- [ADR-0097: Model Preferences as a lossless flat document](0097-model-preferences-as-a-lossless-flat-document.md)
+- [ADR-0098: Capture Device Time Context for Library dates](0098-capture-device-time-context-for-library-dates.md)

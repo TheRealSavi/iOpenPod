@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 
+from iPodDB.device_time import TimeConversion, project_mac
 from iPodDB.library.photos import (
     IPodPhotoAlbumDetails,
     Photo,
@@ -32,11 +33,12 @@ from iPodDB.shared.chunk import DatabaseDocument, ParsedChunk
 def project_photos(
     document: DatabaseDocument[MhfdHeader],
     persistent_track_ids: Mapping[int, int],
+    device_time: TimeConversion = 0,
 ) -> PhotoLibrary:
     """Project PhotosDB records without exposing Chunks or device paths as authority."""
 
     photos = tuple(
-        _project_photo(selection.chunk)
+        _project_photo(selection.chunk, device_time)
         for selection in document.find_chunks(MhiiHeader)
     )
     albums = tuple(
@@ -50,7 +52,9 @@ def project_photos(
     return PhotoLibrary(photos, albums, formats)
 
 
-def _project_photo(chunk: ParsedChunk[MhiiHeader]) -> Photo:
+def _project_photo(
+    chunk: ParsedChunk[MhiiHeader], device_time: TimeConversion
+) -> Photo:
     representations: list[PhotoRepresentation] = []
     for child in chunk.children:
         if not isinstance(child.header, MhodHeader) or not isinstance(
@@ -80,8 +84,8 @@ def _project_photo(chunk: ParsedChunk[MhiiHeader]) -> Photo:
     return Photo(
         photo_id=chunk.header.image_id,
         rating=chunk.header.rating,
-        original_date=chunk.header.original_date,
-        taken_date=chunk.header.exif_taken_date,
+        original_date=project_mac(chunk.header.original_date, device_time),
+        taken_date=project_mac(chunk.header.exif_taken_date, device_time),
         source_size_bytes=chunk.header.source_image_size,
         representations=tuple(representations),
     )
@@ -90,6 +94,7 @@ def _project_photo(chunk: ParsedChunk[MhiiHeader]) -> Photo:
 def _project_album(
     chunk: ParsedChunk[MhbaHeader],
     persistent_track_ids: Mapping[int, int],
+    device_time: TimeConversion = 0,
 ) -> PhotoAlbum:
     name = next(
         (

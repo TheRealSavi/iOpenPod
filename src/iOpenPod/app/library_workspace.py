@@ -227,15 +227,11 @@ class LibraryWorkspace(QObject):
                 type(rating) is not int or not 0 <= rating <= 100
             ):
                 raise ValueError(
-                    "Photo ratings use 0-100; dates must fit unsigned 32-bit fields."
+                    "Photo ratings use 0-100; dates must be supported integer Unix seconds."
                 )
-            if any(
-                value is not None
-                and (type(value) is not int or not 0 <= value <= 0xFFFFFFFF)
-                for value in dates
-            ):
+            if any(value is not None and type(value) is not int for value in dates):
                 raise ValueError(
-                    "Photo ratings use 0-100; dates must fit unsigned 32-bit fields."
+                    "Photo ratings use 0-100; dates must be supported integer Unix seconds."
                 )
             original = current[update.photo_id]
             replacements[update.photo_id] = replace(

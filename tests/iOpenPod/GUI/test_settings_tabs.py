@@ -138,6 +138,7 @@ def test_categories_show_only_their_controls_and_platform_integration(
         ("Transcoding", "lossyEncoder"),
         ("Sync", "computeSoundCheck"),
         ("Backups", "maxBackups"),
+        ("iPod Preferences", "ipodPreferencesStatus"),
     ]
     if platform == "linux":
         categories.append(("Linux", "checkUdevRule"))
@@ -190,11 +191,11 @@ def test_category_scroll_keeps_navigation_visible_and_survives_switches(
     scrollbar.setValue(scrollbar.maximum())
     saved_position = scrollbar.value()
 
-    QTest.mouseClick(
-        tabs.tabBar(),
-        Qt.MouseButton.LeftButton,
-        pos=tabs.tabBar().tabRect(tabs.count() - 1).center(),
-    )
+    # Additional categories can overflow the tab bar. Navigate with focus on the
+    # bar instead of synthesizing a mouse click outside its visible rectangle.
+    tabs.tabBar().setFocus()
+    for _ in range(tabs.count() - 1):
+        QTest.keyClick(tabs.tabBar(), Qt.Key.Key_Right)
     APPLICATION.processEvents()
     assert header.isVisible() and header.pos() == header_position
     assert note.isVisible() and note.pos() == note_position
@@ -203,9 +204,8 @@ def test_category_scroll_keeps_navigation_visible_and_survives_switches(
     assert isinstance(about, QScrollArea)
     assert about.verticalScrollBar().value() == 0
 
-    QTest.mouseClick(
-        tabs.tabBar(), Qt.MouseButton.LeftButton, pos=tabs.tabBar().tabRect(0).center()
-    )
+    for _ in range(tabs.count() - 1):
+        QTest.keyClick(tabs.tabBar(), Qt.Key.Key_Left)
     APPLICATION.processEvents()
     assert scrollbar.value() == saved_position
     page.close()

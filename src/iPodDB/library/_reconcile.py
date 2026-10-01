@@ -4,6 +4,7 @@ import logging
 from collections import Counter, defaultdict, deque
 from dataclasses import replace
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import DEFINITION as MHIP
@@ -60,6 +61,7 @@ def reconcile(
     resolved: ResolvedWrite,
     resources: WriteResources,
     issues: list[WriteIssue],
+    device_time: TimeConversion = 0,
 ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
     source_document = document
     original, desired = resolved.original, resolved.desired
@@ -122,7 +124,7 @@ def reconcile(
                     track,
                     track_ids[track.track_id],
                     persistent_ids[track.track_id],
-                    document.header.timezone_offset,
+                    device_time,
                     media.get(track.track_id),
                     issues,
                     lyrics=lyrics.get(track.track_id),
@@ -228,7 +230,7 @@ def reconcile(
         if canonical is None
         else {
             s.chunk.header.playlist_id: project_playlist(
-                s, frozenset(original_tracks), document.header.timezone_offset
+                s, frozenset(original_tracks), device_time
             )
             for s in canonical.find_chunks(MhypHeader)
         }
@@ -363,7 +365,7 @@ def reconcile(
                 continue
             baseline = original_playlists.get(identity)
             actual = project_playlist(
-                selection, frozenset(original_tracks), document.header.timezone_offset
+                selection, frozenset(original_tracks), device_time
             )
             if not is_canonical:
                 reference = canonical_raw.get(identity)
@@ -435,7 +437,7 @@ def reconcile(
                     playlist_ids,
                     track_ids,
                     persistent_ids,
-                    document.header.timezone_offset,
+                    device_time,
                     document.header.db_id_2,
                 )
             except ValueError as error:
@@ -449,7 +451,7 @@ def reconcile(
                 )
         mirror_rows = {
             s.chunk.header.playlist_id: project_playlist(
-                s, frozenset(original_tracks), document.header.timezone_offset
+                s, frozenset(original_tracks), device_time
             )
             for s in selections
             if s.chunk.header.playlist_id in original_playlists
@@ -495,7 +497,7 @@ def reconcile(
                                 playlist_ids,
                                 track_ids,
                                 persistent_ids,
-                                document.header.timezone_offset,
+                                device_time,
                                 document.header.db_id_2,
                             )
                         )

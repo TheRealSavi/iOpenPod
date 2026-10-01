@@ -79,7 +79,7 @@ def source_warnings(
         issues.append(
             WriteIssue(
                 "source.invalid_timezone",
-                "The source timezone is invalid; unchanged date bytes will be retained.",
+                "The database header timezone is invalid. Preferences may still resolve local dates; the header will be retained unchanged.",
                 IssueSeverity.WARNING,
                 "source",
             )

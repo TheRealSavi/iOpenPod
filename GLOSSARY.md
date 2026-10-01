@@ -25,6 +25,7 @@ normal lowercase conventions while retaining the same domain term.
 | **Volume** | A filesystem-bearing logical storage unit exposed by a Physical Device. | partition when no partition is known, drive |
 | **Volume Identity** | Stable evidence used to distinguish one Volume from another. | Mount Point, drive letter |
 | **Mount Point** | The temporary Host path at which a Volume is accessible. | Device Identity, Device Path |
+| **Device Time Context** | Captured timezone rules and provenance used to translate native iPod dates to and from Unix instants for one Library source; distinct from the retained database header offset. | Host timezone, current UTC offset |
 | **Device Path** | A validated relative path inside an authorized device filesystem root. | Host path, absolute path, file path |
 | **Filesystem Session** | Authorized access to one connected Volume for one Connection Generation. | mount, handle, device connection |
 | **Connection Generation** | The unique lifetime of one attachment of a Physical Device. | session, connection ID |
@@ -57,6 +58,8 @@ normal lowercase conventions while retaining the same domain term.
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
+| **iPod Preferences** | The firmware-owned binary `iPod_Control/Device/Preferences` artifact, represented losslessly by iPodDB with known fields scoped to an evidenced layout. | iTunesPrefs, application settings, Device Profile |
+| **iTunesPrefs** | The binary `iPod_Control/iTunes/iTunesPrefs` artifact containing iTunes attachment, library-link, Sync, and media settings. Its companion `iTunesPrefs.plist` is a separate artifact. | iPod Preferences, application settings |
 | **Host Media Library** | The media collection on the Host that may be compared with an iPod Library. | PC library, source folder, local library |
 | **Host Media Scan** | The read-only Application Layer workflow that enumerates the user-selected Host Media Library folders, reuses unchanged cached metadata, resolves explicitly accepted external Playlist references, and publishes an in-memory Library Snapshot. It stops before comparison or Sync planning. | import, Sync, folder crawl |
 | **Host Media Scan Cache** | An application-owned, checksummed catalog of source path, media kind, size, modification time, inspected metadata, Track Acoustic Fingerprints, Host artwork references, and Photo Image Content Fingerprints used to avoid rereading unchanged files during a Host Media Scan. It is an optimization, never Library authority. | Host Media Library, Backup Snapshot, source of truth |

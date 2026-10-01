@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 
+from iPodDB.device_time import TimeConversion, mac_to_unix
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_prefs_mhod import (
     MhodSmartPrefsPrefix,
@@ -144,12 +145,11 @@ MEDIA_KIND_VALUES = {
 }
 LOCATION_VALUES = {1: SmartLocation.LOCAL, 2: SmartLocation.CLOUD}
 DATE_IDENTIFIER = 0x2DAE2DAE2DAE2DAE
-MAC_EPOCH_OFFSET = 2_082_844_800
 
 
 def project_rule(
     rule: MhodSmartRule,
-    timezone_offset: int = 0,
+    timezone_offset: TimeConversion = 0,
 ) -> SmartRule | SmartRuleGroup | UnsupportedSmartRule:
     data = rule.data
     if isinstance(data, MhodSmartRuleGroupData):
@@ -216,28 +216,36 @@ def project_rule(
             if field in DATE_FIELDS and data.from_value == 0:
                 # Native zero means a missing date, not an absolute instant.
                 return UnsupportedSmartRule()
-            offset = MAC_EPOCH_OFFSET + timezone_offset if field in DATE_FIELDS else 0
             if field in DATE_FIELDS and (
-                not -86400 < timezone_offset < 86400
-                or (
-                    action in (SmartOperator.IS, SmartOperator.IS_NOT)
-                    and data.to_value not in (0, data.from_value)
-                )
+                action in (SmartOperator.IS, SmartOperator.IS_NOT)
+                and data.to_value not in (0, data.from_value)
             ):
                 return UnsupportedSmartRule()
-            return SmartRule(
-                field,
-                action,
-                data.from_value - offset,
-                data.to_value - offset if action is SmartOperator.BETWEEN else None,
-            )
+            try:
+                lower = (
+                    mac_to_unix(data.from_value, timezone_offset)
+                    if field in DATE_FIELDS
+                    else data.from_value
+                )
+                upper = (
+                    (
+                        mac_to_unix(data.to_value, timezone_offset)
+                        if field in DATE_FIELDS
+                        else data.to_value
+                    )
+                    if action is SmartOperator.BETWEEN
+                    else None
+                )
+            except ValueError:
+                return UnsupportedSmartRule()
+            return SmartRule(field, action, lower, upper)
     return UnsupportedSmartRule()
 
 
 def _project_group(
     conjunction: int,
     rules: tuple[MhodSmartRule, ...],
-    timezone_offset: int = 0,
+    timezone_offset: TimeConversion = 0,
 ) -> SmartRuleGroup:
     if conjunction not in (0, 1):
         return SmartRuleGroup(rules=(UnsupportedSmartRule(),))
@@ -259,7 +267,7 @@ def _supported(group: SmartRuleGroup) -> bool:
 
 
 def project_smart(
-    metadata: tuple[ParsedChunk[MhodHeader], ...], timezone_offset: int = 0
+    metadata: tuple[ParsedChunk[MhodHeader], ...], timezone_offset: TimeConversion = 0
 ) -> SmartPlaylist:
     """Keep incomplete, unknown, or ambiguous configurations explicitly uneditable."""
 

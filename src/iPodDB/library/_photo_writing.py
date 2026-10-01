@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import cast
 
+from iPodDB.device_time import TimeConversion, unix_to_mac
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library.photos import (
     Photo,
@@ -46,6 +47,7 @@ def reconcile_photos(
     desired: PhotoLibrary,
     persistent_track_ids: Mapping[int, int],
     target: WriteTarget,
+    device_time: TimeConversion = 0,
 ) -> DatabaseDocument[MhfdHeader]:
     """Apply only the Photo edits admitted by analysis to retained Chunks."""
 
@@ -76,8 +78,12 @@ def reconcile_photos(
                 header=replace(
                     image_selection.chunk.header,
                     rating=wanted.rating,
-                    original_date=wanted.original_date,
-                    exif_taken_date=wanted.taken_date,
+                    original_date=unix_to_mac(wanted.original_date, device_time)
+                    if wanted.original_date != prior.original_date
+                    else image_selection.chunk.header.original_date,
+                    exif_taken_date=unix_to_mac(wanted.taken_date, device_time)
+                    if wanted.taken_date != prior.taken_date
+                    else image_selection.chunk.header.exif_taken_date,
                     source_image_size=wanted.source_size_bytes,
                 ),
                 children=(
@@ -114,8 +120,8 @@ def reconcile_photos(
                     MhiiHeader(
                         image_id=photo.photo_id,
                         rating=photo.rating,
-                        original_date=photo.original_date,
-                        exif_taken_date=photo.taken_date,
+                        original_date=unix_to_mac(photo.original_date, device_time),
+                        exif_taken_date=unix_to_mac(photo.taken_date, device_time),
                         source_image_size=photo.source_size_bytes,
                     ),
                     children=(*_photo_representations(photo), new_auxiliary_mhod()),

@@ -1,5 +1,6 @@
 """Validate Photo Library draft changes before retained-document reconciliation."""
 
+from iPodDB.device_time import TimeConversion, unix_to_mac
 from iPodDB.library._field_policy import (
     PHOTO_ALBUM_POLICY,
     PHOTO_POLICY,
@@ -20,6 +21,7 @@ def analyze_photos(
     tracks: tuple[Track, ...],
     target: WriteTarget | None = None,
     replace_photos: tuple[int, ...] = (),
+    device_time: TimeConversion = 0,
 ) -> tuple[tuple[LibraryChange, ...], tuple[WriteIssue, ...]]:
     """Return observable Photo changes and fail-closed editing diagnostics."""
 
@@ -90,6 +92,7 @@ def analyze_photos(
         delete_omissions=delete_omissions,
         replace_photos=replace_photos,
         allow_assets=bool(target and target.photo_formats),
+        device_time=device_time,
     )
     _analyze_albums(
         original,
@@ -145,6 +148,7 @@ def _analyze_photo_records(
     delete_omissions: bool,
     replace_photos: tuple[int, ...],
     allow_assets: bool,
+    device_time: TimeConversion,
 ) -> None:
     previous = {photo.photo_id: photo for photo in original.photos}
     wanted = {photo.photo_id: photo for photo in desired.photos}
@@ -228,12 +232,17 @@ def _analyze_photo_records(
             )
         for field in ("rating", "original_date", "taken_date"):
             value = getattr(photo, field)
-            valid = _u32(value) and (field != "rating" or value <= 100)
+            valid = _u32(value) and value <= 100 if field == "rating" else True
+            if field != "rating" and field in fields:
+                try:
+                    unix_to_mac(value, device_time)
+                except ValueError:
+                    valid = False
             if field in fields and not valid:
                 _photo_issue(
                     issues,
                     "photo.invalid_value",
-                    "Photo ratings use 0-100; dates must fit unsigned 32-bit fields.",
+                    "Photo ratings use 0-100; dates need a known timezone and a unique instant in the iPod date range.",
                     photo_id,
                     field,
                 )

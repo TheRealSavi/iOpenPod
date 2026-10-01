@@ -73,7 +73,7 @@ def metadata_edit_issues(before: Track, after: Track) -> tuple[WriteIssue, ...]:
             )
     if issues:
         return tuple(issues)
-    return validate_track(before, after)
+    return validate_track(before, after, check_date_encoding=False)
 
 
 def edit_track_metadata(track: Track, edits: tuple[TrackFieldEdit, ...]) -> Track:

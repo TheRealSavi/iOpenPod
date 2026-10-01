@@ -4,6 +4,7 @@ from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import replace
 
+from iPodDB.device_time import TimeConversion, unix_to_mac
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
@@ -30,7 +31,6 @@ from iPodDB.library._smart_projection import (
     LIMIT_UNITS,
     LOCATION_ACTIONS,
     LOCATION_VALUES,
-    MAC_EPOCH_OFFSET,
     MEDIA_KIND_VALUES,
     NUMERIC_ACTIONS,
     RELATIVE_ACTIONS,
@@ -60,7 +60,7 @@ from iPodDB.shared.chunk import ParsedChunk
 def encode_rule(
     rule: SmartRule | SmartRuleGroup | UnsupportedSmartRule,
     depth: int = 0,
-    timezone_offset: int = 0,
+    timezone_offset: TimeConversion = 0,
     existing: MhodSmartRule | None = None,
     playlist_ids: Mapping[int, int] | None = None,
 ) -> MhodSmartRule:
@@ -199,10 +199,10 @@ def encode_rule(
     value = rule.value
     upper = rule.upper_value if rule.operator is SmartOperator.BETWEEN else value
     if rule.field in DATE_FIELDS:
-        if not -86400 < timezone_offset < 86400 or not isinstance(upper, int):
+        if not isinstance(upper, int):
             raise ValueError("A valid device timezone and date range are required.")
-        value += MAC_EPOCH_OFFSET + timezone_offset
-        upper += MAC_EPOCH_OFFSET + timezone_offset
+        value = unix_to_mac(value, timezone_offset, missing_zero=False)
+        upper = unix_to_mac(upper, timezone_offset, missing_zero=False)
         if not 0 < value <= upper <= 0xFFFFFFFF:
             raise ValueError("The date cannot be represented in the device timezone.")
     if not isinstance(upper, int) or not 0 <= value <= upper <= 0xFFFFFFFFFFFFFFFF:
@@ -221,7 +221,7 @@ def encode_rule(
 def _encode_rules(
     rules: tuple[SmartRule | SmartRuleGroup | UnsupportedSmartRule, ...],
     existing: tuple[MhodSmartRule, ...],
-    timezone_offset: int,
+    timezone_offset: TimeConversion,
     depth: int = 0,
     playlist_ids: Mapping[int, int] | None = None,
 ) -> tuple[MhodSmartRule, ...]:
@@ -250,7 +250,7 @@ def _encode_rules(
 def smart_chunks(
     smart: SmartPlaylist,
     existing: tuple[ParsedChunk[MhodHeader], ...],
-    timezone_offset: int = 0,
+    timezone_offset: TimeConversion = 0,
     playlist_ids: Mapping[int, int] | None = None,
 ) -> tuple[ParsedChunk[MhodHeader], ...]:
     if not smart.editable:

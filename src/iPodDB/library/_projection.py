@@ -1,9 +1,9 @@
 """Private database-format translation into semantic Library records."""
 
 from dataclasses import dataclass, replace
-from datetime import UTC, timedelta, timezone
 
 from iPodDB.ArtworkDB.shared.artwork_index import ArtworkIndex
+from iPodDB.device_time import DeviceTimeContext, TimeConversion, project_mac
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
@@ -34,7 +34,6 @@ from iPodDB.iTunesDB.shared.constants import (
     MEDIA_TYPE_VIDEO_PODCAST,
     MhodType,
 )
-from iPodDB.iTunesDB.shared.device_time import mac_to_unix
 from iPodDB.iTunesDB.shared.field_converters import fixed_to_sample_rate
 from iPodDB.library._native_values import normalization_gain_from_native
 from iPodDB.library.models import (
@@ -90,7 +89,7 @@ class _TrackTextMetadata:
 
 def _project_track(
     selection: ChunkSelection[MhbdHeader, MhitHeader],
-    device_timezone: timezone,
+    device_timezone: TimeConversion,
 ) -> Track:
     text, chapters = _project_track_children(selection)
     header = selection.chunk.header
@@ -122,7 +121,7 @@ def _project_track(
 def _project_ipod_details(
     header: MhitHeader,
     text: _TrackTextMetadata,
-    device_timezone: timezone,
+    device_timezone: TimeConversion,
 ) -> IPodTrackDetails:
     """Retain source diagnostics separately from common metadata."""
 
@@ -145,7 +144,7 @@ def _project_ipod_details(
         movie_flag=header.video_flag,
         encoder=header.encoder,
         date_added_to_itunes=_project_timestamp(
-            header.date_added_to_itunes, device_timezone
+            header.date_added_to_itunes, device_timezone, utc=True
         ),
         store_track_id=header.store_track_id,
         store_encoder_version=header.store_encoder_version,
@@ -171,7 +170,7 @@ def _project_metadata(
     header: MhitHeader,
     text: _TrackTextMetadata,
     chapters: tuple[TrackChapter, ...],
-    device_timezone: timezone,
+    device_timezone: TimeConversion,
 ) -> TrackMetadata:
     """Translate source fields into semantic values with the contract's units."""
 
@@ -195,7 +194,7 @@ def _project_metadata(
         checked=header.checked_flag == 0,
         bpm=header.bpm,
         artwork_count=header.artwork_count,
-        release_date=_project_timestamp(header.date_released, device_timezone),
+        release_date=project_mac(header.date_released, device_timezone, utc=True),
         content_advisory=_content_advisory(header.explicit_flag),
         skip_count=header.skip_count,
         last_skipped=_project_timestamp(header.last_skipped, device_timezone),
@@ -299,15 +298,10 @@ def _project_track_children(
     )
 
 
-def _device_timezone(offset_seconds: int) -> timezone:
-    try:
-        return timezone(timedelta(seconds=offset_seconds))
-    except ValueError:
-        return UTC
-
-
-def _project_timestamp(value: int, device_timezone: timezone) -> int:
-    return mac_to_unix(value, device_timezone) if value > 0 else 0
+def _project_timestamp(
+    value: int, device_timezone: TimeConversion, *, utc: bool = False
+) -> int:
+    return project_mac(value, device_timezone, utc=utc)
 
 
 def _resolved_artwork_id(track: Track, artwork_index: ArtworkIndex) -> int:
@@ -393,7 +387,9 @@ def _file_format(label: str, code: int) -> str:
     return decoded if decoded and decoded.isprintable() else f"0x{code:08X}"
 
 
-def project_tracks(database: DatabaseDocument[MhbdHeader]) -> tuple[Track, ...]:
+def project_tracks(
+    database: DatabaseDocument[MhbdHeader], device_time: DeviceTimeContext | None = None
+) -> tuple[Track, ...]:
     """Translate the Track dataset using the shared format definitions."""
 
     track_dataset = next(
@@ -406,7 +402,9 @@ def project_tracks(database: DatabaseDocument[MhbdHeader]) -> tuple[Track, ...]:
     )
     if track_dataset is None:
         return ()
-    device_timezone = _device_timezone(database.header.timezone_offset)
+    device_timezone = device_time or DeviceTimeContext().for_database(
+        database.header.timezone_offset
+    )
     return tuple(
         _project_track(selection, device_timezone)
         for selection in track_dataset.find_chunks(MhitHeader)

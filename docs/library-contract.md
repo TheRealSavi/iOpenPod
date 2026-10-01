@@ -49,7 +49,9 @@ the completed scan. See ADR-0064 and ADR-0067.
   an artwork ID of zero means no known cover. Source adapters retain their own
   native-ID mapping and authenticated access state.
 - Durations and chapter positions use milliseconds; dates use Unix seconds, with
-  zero for missing dates. File sizes use bytes and sample rates use hertz.
+  zero for missing or unresolvable dates. Unresolvable device dates retain their
+  native bytes and produce diagnostics; see [timestamp conversion](ipod-time.md).
+  File sizes use bytes and sample rates use hertz.
 - Ratings retain the existing 0–100 application scale. Volume adjustment is a
   percentage; normalization gain is decibels or `None` when absent. Positive gain
   amplifies and negative gain attenuates. Pre-gap and post-gap values count samples.

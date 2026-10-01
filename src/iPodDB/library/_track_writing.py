@@ -4,6 +4,7 @@ import math
 from dataclasses import fields, replace
 from typing import Any
 
+from iPodDB.device_time import TimeConversion, possible_unix_date, unix_to_mac
 from iPodDB.iTunesDB.builder.build_iTunesDB import (
     new_itunes_chunk,
     new_string_mhod,
@@ -24,7 +25,6 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.url_mhod import MhodUrlPayload
 from iPodDB.iTunesDB.shared.constants import MhodType
-from iPodDB.iTunesDB.shared.device_time import MAC_EPOCH_UNIX_OFFSET
 from iPodDB.library._field_policy import (
     DATE_FIELDS,
     METADATA_FIELDS,
@@ -97,7 +97,11 @@ def edit_text[H: ChunkHeader](
 
 
 def validate_track(
-    old: Track | None, new: Track, timezone_offset: int = 0
+    old: Track | None,
+    new: Track,
+    timezone_offset: TimeConversion = 0,
+    *,
+    check_date_encoding: bool = True,
 ) -> tuple[WriteIssue, ...]:
     issues: list[WriteIssue] = []
 
@@ -163,18 +167,13 @@ def validate_track(
         value = getattr(new.metadata, attr)
         if old is not None and value == getattr(old.metadata, attr):
             continue
-        if not -86400 < timezone_offset < 86400:
-            error(
-                "metadata." + attr,
-                "The source timezone is invalid; this date cannot be edited reliably.",
-            )
-        elif (
-            value
-            and not 0 < value + MAC_EPOCH_UNIX_OFFSET + timezone_offset <= 0xFFFFFFFF
-        ):
-            error(
-                "metadata." + attr, "This date is outside the unsigned iPod date range."
-            )
+        try:
+            if check_date_encoding:
+                unix_to_mac(value, timezone_offset, utc=attr == "release_date")
+            elif not possible_unix_date(value):
+                raise ValueError("This date is outside the supported Unix date range.")
+        except ValueError as failure:
+            error("metadata." + attr, str(failure))
     meta = new.metadata
     if (
         old is None
@@ -239,7 +238,7 @@ def edit_track(
     new: Track,
     native_id: int,
     persistent_id: int,
-    timezone_offset: int,
+    timezone_offset: TimeConversion,
     media: PreparedMedia | None,
     issues: list[WriteIssue],
     *,
@@ -279,14 +278,9 @@ def edit_track(
     for attr, native in DATE_FIELDS.items():
         value = getattr(meta, attr)
         if value != getattr(prior, attr):
-            if not -86400 < timezone_offset < 86400:
-                raise ValueError(
-                    "The source timezone is invalid; dates cannot be edited reliably."
-                )
-            encoded = value + MAC_EPOCH_UNIX_OFFSET + timezone_offset if value else 0
-            if value and not 0 < encoded <= 0xFFFFFFFF:
-                raise ValueError(f"{attr} is outside the iPod date range.")
-            values[native] = encoded
+            values[native] = unix_to_mac(
+                value, timezone_offset, utc=attr == "release_date"
+            )
     if old is None or new.media_types != old.media_types:
         values["media_type"] = encode_media_types(
             new.media_types,

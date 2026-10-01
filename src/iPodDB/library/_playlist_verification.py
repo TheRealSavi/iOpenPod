@@ -3,6 +3,7 @@
 from collections import Counter
 from dataclasses import replace
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
@@ -60,6 +61,7 @@ def verify_playlists(
     original_bytes: bytes,
     output_bytes: bytes,
     generated_podcasts: frozenset[int] = frozenset(),
+    device_time: TimeConversion = 0,
 ) -> tuple[WriteIssue, ...]:
     issues = list(
         structure_issues(
@@ -417,9 +419,7 @@ def verify_playlists(
                 else None,
                 entries=(),
             )
-            actual = project_playlist(
-                selection, track_ids, checked.header.timezone_offset
-            )
+            actual = project_playlist(selection, track_ids, device_time)
             if previous and previous.parent_id == playlist.parent_id:
                 parent_source = (
                     baseline or old.get((3, identity)) or old.get((2, identity))

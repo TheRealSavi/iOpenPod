@@ -14,6 +14,7 @@ from iPodDB.ArtworkDB.shared.artwork_index import (
     build_artwork_index,
 )
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
+from iPodDB.device_time import DeviceTimeContext
 from iPodDB.iTunesDB.cdb import decompress_iTunesCDB, is_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.library._photo_projection import project_photos
@@ -31,6 +32,7 @@ from iPodDB.library.writing import (
     LibraryDraft,
     LibraryWritePlan,
     LibraryWriteResult,
+    WriteIssue,
     WritePhase,
     WriteResources,
     WriteTarget,
@@ -65,6 +67,7 @@ class IPodLibrary:
     __slots__ = (
         "_artwork_document",
         "_artwork_index",
+        "_device_time",
         "_document",
         "_photos_document",
         "_snapshot",
@@ -72,16 +75,23 @@ class IPodLibrary:
         "_source_revision",
     )
 
-    def __init__(self, data: bytes) -> None:
+    def __init__(
+        self, data: bytes, *, device_time: DeviceTimeContext | None = None
+    ) -> None:
         self._source_revision = uuid4().hex
         self._source_itunes = bytes(data)
         logical = (
             decompress_iTunesCDB(data).logical_bytes if is_iTunesCDB(data) else data
         )
         self._document: DatabaseDocument[MhbdHeader] = parse_iTunesDB(logical)
-        tracks = project_tracks(self._document)
+        self._device_time = (device_time or DeviceTimeContext()).for_database(
+            self._document.header.timezone_offset
+        )
+        tracks = project_tracks(self._document, self._device_time)
         playlists, device_name = project_playlists(
-            self._document, frozenset(track.track_id for track in tracks)
+            self._document,
+            frozenset(track.track_id for track in tracks),
+            self._device_time,
         )
         self._snapshot = LibrarySnapshot(tracks, playlists, device_name)
         self._artwork_document: DatabaseDocument[MhfdHeader] | None = None
@@ -102,10 +112,43 @@ class IPodLibrary:
         return self._snapshot
 
     @classmethod
-    def parse(cls, data: bytes) -> IPodLibrary:
+    def parse(
+        cls, data: bytes, *, device_time: DeviceTimeContext | None = None
+    ) -> IPodLibrary:
         """Parse iTunesDB bytes and translate records without filesystem access."""
 
-        return cls(data)
+        return cls(data, device_time=device_time)
+
+    @property
+    def device_time(self) -> DeviceTimeContext:
+        return self._device_time
+
+    def with_device_time(self, context: DeviceTimeContext) -> IPodLibrary:
+        """Reproject with captured evidence before publishing a Library snapshot."""
+        updated = copy(self)
+        updated._device_time = context.for_database(
+            self._document.header.timezone_offset
+        )
+        tracks = project_tracks(self._document, updated._device_time)
+        if self._artwork_document is not None:
+            tracks = link_artwork(tracks, self._artwork_index)
+        playlists, name = project_playlists(
+            self._document, frozenset(t.track_id for t in tracks), updated._device_time
+        )
+        photos = None
+        if self._photos_document is not None:
+            photos = project_photos(
+                self._photos_document,
+                {
+                    t.ipod.db_track_id: t.track_id
+                    for t in tracks
+                    if t.ipod is not None and t.ipod.db_track_id
+                },
+                updated._device_time,
+            )
+        updated._snapshot = LibrarySnapshot(tracks, playlists, name, photos)
+        updated._source_revision = uuid4().hex
+        return updated
 
     def with_artwork(self, data: bytes) -> IPodLibrary:
         """Return a new adapter with ArtworkDB relationships resolved once."""
@@ -135,7 +178,7 @@ class IPodLibrary:
             for track in self.snapshot.tracks
             if track.ipod is not None and track.ipod.db_track_id
         }
-        photos = project_photos(database, persistent_track_ids)
+        photos = project_photos(database, persistent_track_ids, self._device_time)
         updated = copy(self)
         updated._snapshot = replace(self.snapshot, photos=photos)
         updated._photos_document = database
@@ -180,11 +223,44 @@ class IPodLibrary:
         log_plan(plan, self.snapshot)
         return plan
 
+    @property
+    def time_warnings(self) -> tuple[WriteIssue, ...]:
+        from iPodDB.library._time_warnings import time_warnings
+
+        return time_warnings(self._document, self._photos_document, self._device_time)
+
     def _resolve(self, draft: LibraryDraft, target: WriteTarget) -> ResolvedWrite:
         from iPodDB.library._resolve_write import resolve
 
-        return resolve(
-            self._document, self.snapshot, draft, target, self._source_revision
+        resolved = resolve(
+            self._document,
+            self.snapshot,
+            draft,
+            target,
+            self._source_revision,
+            self._device_time,
+        )
+        time_issues = self.time_warnings
+        if (
+            resolved.plan.changes_itunes
+            and target.sqlite_database
+            and any(
+                issue.code == "source.unavailable_dates"
+                and issue.artifact == "iTunesDB"
+                for issue in time_issues
+            )
+        ):
+            time_issues = (
+                *time_issues,
+                WriteIssue(
+                    "source.sqlite_unavailable_dates",
+                    "SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.",
+                    phase="source",
+                ),
+            )
+        return replace(
+            resolved,
+            plan=replace(resolved.plan, issues=(*resolved.plan.issues, *time_issues)),
         )
 
     def prepare(
@@ -210,6 +286,7 @@ class IPodLibrary:
             self._photos_document,
             plan,
             resources or WriteResources(),
+            resolve=self._resolve,
             source_revision=self._source_revision,
             progress=progress,
         )

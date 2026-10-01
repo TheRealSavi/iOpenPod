@@ -342,6 +342,10 @@ def _issue_text(
     issue: DeviceCandidateIssue,
 ) -> str:
     return {
+        DeviceCandidateIssueCode.TIMEZONE_UNCERTAIN: QCoreApplication.translate(
+            "DevicePickerDialog",
+            "Some dates need a timezone fallback or cannot be interpreted uniquely.",
+        ),
         DeviceCandidateIssueCode.METADATA_UNREADABLE: QCoreApplication.translate(
             "DevicePickerDialog", "Some device identity metadata could not be read."
         ),

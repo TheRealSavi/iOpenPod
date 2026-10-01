@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import DEFINITION as MHIP
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
@@ -66,7 +67,7 @@ def edit_playlist(
     playlist_ids: dict[int, int],
     track_ids: dict[int, int],
     persistent_ids: dict[int, int],
-    timezone_offset: int = 0,
+    timezone_offset: TimeConversion = 0,
     db_id_2: int = 0,
 ) -> ParsedChunk[MhypHeader]:
     source_string_count = (

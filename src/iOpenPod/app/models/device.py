@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from device_registry import DeviceProfile, IdentificationStatus
+from iOpenPod.app.models.ipod_preferences import IPodPreferenceSection
 from iPodDB.library import LibrarySnapshot
 from storage import FileFingerprint
 
@@ -36,6 +37,7 @@ class DeviceReadiness(StrEnum):
 class DeviceCandidateIssueCode(StrEnum):
     """Stable issue vocabulary suitable for GUI translation and tests."""
 
+    TIMEZONE_UNCERTAIN = "timezone_uncertain"
     METADATA_UNREADABLE = "metadata_unreadable"
     METADATA_RECONCILIATION_SKIPPED = "metadata_reconciliation_skipped"
     METADATA_RECONCILIATION_FAILED = "metadata_reconciliation_failed"
@@ -128,6 +130,7 @@ class ActiveIPod:
     database_fingerprint: FileFingerprint
     artwork_database_fingerprint: FileFingerprint | None = None
     photos_database_fingerprint: FileFingerprint | None = None
+    preferences: tuple[IPodPreferenceSection, ...] = ()
 
     @property
     def display_name(self) -> str:

@@ -63,6 +63,7 @@ from iOpenPod.app.podcasts.models import (
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastDeviceStore
 from iOpenPod.app.services import library_resources, volume_presentation
+from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
 from iPodDB.library import (
     CoverFormat,
@@ -245,6 +246,7 @@ class _ActiveConnection:
     record: _CandidateRecord
     active_ipod: ActiveIPod
     library_source: IPodLibrary
+    time_precondition: FilePrecondition | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1172,6 +1174,11 @@ class DeviceCoordinator:
                     for f in capabilities.artwork.cover_formats
                 ),
             )
+            if active.time_precondition is None:
+                raise DeviceChangedError(
+                    "The iPod timezone settings could not be verified. Reload before saving."
+                )
+            library_resources.recheck(active.session, (active.time_precondition,))
             checkpoint("draft.analysis", "Analyzing changes")
             plan = source.analyze(
                 source.begin_draft(
@@ -1188,7 +1195,10 @@ class DeviceCoordinator:
                 request,
                 plan,
                 lambda: checkpoint("resources.capture", "Capturing required resources"),
-                additional_preconditions=sqlite_postprocess_preconditions,
+                additional_preconditions=(
+                    *sqlite_postprocess_preconditions,
+                    active.time_precondition,
+                ),
                 volume_presentation_enabled=presentation_policy.enabled,
             )
             resources = captured.resources
@@ -1361,7 +1371,9 @@ class DeviceCoordinator:
                     "The review no longer belongs to the Active iPod. Prepare again.",
                 )
             # Construct the next authoritative source before touching the device.
-            updated_source = IPodLibrary.parse(prepared.itunes)
+            updated_source = IPodLibrary.parse(
+                prepared.itunes, device_time=active.library_source.device_time
+            )
             if prepared.artwork is not None:
                 updated_source = updated_source.with_artwork(prepared.artwork)
             if prepared.photos is not None:
@@ -1809,7 +1821,17 @@ class DeviceCoordinator:
                     max_bytes=profile.capabilities.database.max_database_bytes,
                 )
                 try:
-                    library = self._library_loader(snapshot.data)
+                    preferences = capture_ipod_preferences(
+                        session,
+                        profile,
+                        firmware_versions=tuple(
+                            item.value
+                            for item in current.device_evidence.firmware_versions
+                        ),
+                    )
+                    library = self._library_loader(snapshot.data).with_device_time(
+                        preferences.device_time
+                    )
                 except (TypeError, ValueError) as error:
                     raise DeviceLibraryLoadError(
                         "The selected iPod's primary Library database could not be parsed."
@@ -1828,6 +1850,24 @@ class DeviceCoordinator:
                     session, current, library
                 )
 
+                time_warnings = library.time_warnings
+                if time_warnings:
+                    current = replace(
+                        current,
+                        candidate=replace(
+                            current.candidate,
+                            issues=(
+                                *current.candidate.issues,
+                                *(
+                                    DeviceCandidateIssue(
+                                        DeviceCandidateIssueCode.TIMEZONE_UNCERTAIN,
+                                        issue.message,
+                                    )
+                                    for issue in time_warnings
+                                ),
+                            ),
+                        ),
+                    )
                 active_ipod = ActiveIPod(
                     candidate=current.candidate,
                     profile=profile,
@@ -1836,6 +1876,7 @@ class DeviceCoordinator:
                     database_fingerprint=current_fingerprint,
                     artwork_database_fingerprint=artwork_fingerprint,
                     photos_database_fingerprint=photos_fingerprint,
+                    preferences=preferences.sections,
                 )
                 if reconcile_metadata:
                     presentation_issues = self._reconcile_volume_presentation(
@@ -1866,6 +1907,7 @@ class DeviceCoordinator:
                     record=current,
                     active_ipod=active_ipod,
                     library_source=library,
+                    time_precondition=preferences.time_precondition,
                 )
                 self._discovery = replace(
                     self._discovery,

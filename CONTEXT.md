@@ -14,6 +14,21 @@ then beyond it.
 
 ## Current stage
 
+iPodDB also provides lossless typed readers/writers for firmware Preferences and
+binary iTunesPrefs. They expose documented device and iTunes settings while
+retaining Unknown Data. Model-specific fields require explicit caller assertions;
+layout recognition remains separate from Device Identity. Companion plist modeling
+and physical preferences editing remain separate work.
+Library dates now use a captured Device Time Context: historical city rules or an
+explicit fixed-offset fallback, UTC-only release/purchase fields, and local Mac
+conversion for Photo dates. Preferences are checked again before publication;
+ambiguous dates remain unavailable and losslessly retained. See ADR-0098 and
+[the time contract](docs/ipod-time.md).
+Settings now includes a read-only iPod Preferences tab. Device selection captures
+both binary preference files through Storage and publishes display summaries with
+the Active iPod; switching or disconnecting clears the previous device's values.
+See [the Preferences contract](docs/ipod-preferences.md) and ADR-0097.
+
 iOpenPod 2.0 is in its foundation and binary-format implementation stage. Current
 binary-format work includes definition-driven, lossless parser/writer foundations
 for iTunesDB, ArtworkDB, and PhotosDB. PhotosDB exposes the on-device Photo Database

@@ -19,7 +19,7 @@ generated = root / "build" / "packaging"
 config = tomllib.loads((root / "pyproject.toml").read_text())
 version = config["project"]["version"]
 datas = [(str(generated / "licenses"), "licenses")]
-for package in ("iOpenPod", "device_registry", "iPodDB", "storage"):
+for package in ("iOpenPod", "device_registry", "iPodDB", "storage", "tzdata"):
     datas += collect_data_files(package)
 datas += copy_metadata("iOpenPod")
 # librosa/lazy_loader need their on-disk stubs, even when code lives in PYZ.
@@ -28,7 +28,8 @@ datas += collect_data_files(
     excludes=["**/__pycache__/**", "**/*.pyc", "**/*.nbc", "**/*.nbi"],
 )
 binaries = collect_dynamic_libs("wasmtime")
-hiddenimports = collect_submodules("librosa") + [
+# zoneinfo loads tzdata's geographical resource packages dynamically on Windows.
+hiddenimports = collect_submodules("librosa") + collect_submodules("tzdata") + [
     "iOpenPod.app.synesthesia.dsp",
     "iOpenPod.app.synesthesia.enrichment",
 ]
