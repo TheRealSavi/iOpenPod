@@ -153,6 +153,11 @@ its Library Sync Helper update. Selection also cleans matching completed
 transactions after checking all journals for unfinished recovery. Discovery stays
 read-only, and foreign or declined journals remain untouched. Only actual cleanup
 failures require a cleanup warning and retry. See ADR-0089 and ADR-0093.
+Host tag interpretation now shares native ID3, MP4, Vorbis/APE, ASF, and FFprobe
+aliases across scanning and import. Media classification, TV and Podcast fields,
+lyrics, sorting, advisory, and normalization metadata survive Scan Cache v9.
+See [Host tag coverage](docs/host-media-tags.md) and ADR-0099 for precedence and limits.
+
 Optional acoustic analysis no longer gates readable Host media or explicit Adds.
 Sync checks media tools only for incoming Tracks and preserves committed Host-path
 provenance independently of Acoustic Fingerprints in Library Sync Helper v3.

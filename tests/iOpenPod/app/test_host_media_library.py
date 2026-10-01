@@ -302,7 +302,7 @@ def test_metadata_parsers_receive_read_only_storage_streams(
     )
     library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert library.snapshot.tracks[0].title == "The Title"
-    assert len(streams) == 2 and streams[0] is streams[1]
+    assert len(streams) == 1  # Native tags and artwork share one parse.
     assert all(stream.closed for stream in streams)
     assert not library.issues
 
@@ -658,7 +658,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 8
+    assert document["version"] == 9
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {
@@ -685,6 +685,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
         "track_number",
         "year",
         "media_type",
+        "tag_values",
         "acoustic_fingerprint",
         "artwork_content_sha256",
         "artwork_kind",

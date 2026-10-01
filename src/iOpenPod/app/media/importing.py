@@ -12,9 +12,13 @@ from mutagen.mp3 import BitrateMode
 from PIL import Image, ImageOps
 
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
-from iOpenPod.app.media.lyrics import embedded_lyrics
 from iOpenPod.app.media.models import StreamKind
 from iOpenPod.app.media.music_paths import MusicPathAllocator
+from iOpenPod.app.media.tags import (
+    apply_tag_values,
+    inspection_tag_values,
+    read_tag_values,
+)
 from iPodDB.library import (
     ArtworkPixels,
     AudioEncoding,
@@ -115,9 +119,6 @@ class MusicImporter:
         audio = observed.audio_streams[0]
         duration = audio.duration_seconds or observed.duration_seconds
         assert duration is not None and audio.sample_rate_hz is not None
-        tags = {t.name.casefold(): t.value for t in (*observed.tags, *audio.tags)}
-        number, total = _pair(tags.get("track", ""))
-        disc, discs = _pair(tags.get("disc", ""))
         extension, description = {
             AudioEncoding.MP3: ("mp3", "MPEG audio file"),
             AudioEncoding.AAC: ("m4a", "AAC audio file"),
@@ -130,16 +131,12 @@ class MusicImporter:
         ).allocate(extension)
         track = Track(
             0,
-            tags.get("title") or source.path.stem,
-            tags.get("artist", ""),
-            tags.get("album", ""),
+            source.path.stem,
+            "",
+            "",
             max(1, round(duration * 1000)),
-            genre=tags.get("genre", ""),
-            year=_number(tags.get("date", tags.get("year", ""))[:4]),
-            track_number=number,
             size_bytes=observed.fingerprint.size,
             bitrate_kbps=round((audio.bitrate_bps or observed.bitrate_bps or 0) / 1000),
-            album_artist=tags.get("album_artist", tags.get("albumartist", "")),
             metadata=TrackMetadata(
                 file_format=description,
                 sample_rate_hz=audio.sample_rate_hz,
@@ -148,13 +145,6 @@ class MusicImporter:
                     and getattr(getattr(parsed, "info", None), "bitrate_mode", None)
                     in (BitrateMode.VBR, BitrateMode.ABR)
                 ),
-                total_tracks=total,
-                disc_number=disc,
-                total_discs=discs,
-                compilation=tags.get("compilation", "0") == "1",
-                composer=tags.get("composer", ""),
-                comment=tags.get("comment", ""),
-                lyrics=embedded_lyrics(parsed),
                 date_added=int(time.time()),
                 last_modified=observed.fingerprint.modified_ns // 1_000_000_000,
                 location=location,
@@ -170,6 +160,18 @@ class MusicImporter:
                 ),
             ),
         )
+        track = apply_tag_values(
+            track,
+            (
+                *inspection_tag_values(observed),
+                *read_tag_values(getattr(parsed, "tags", None)),
+            ),
+            suffix=source.path.suffix,
+            video=False,
+        )
+        # The Host observation may report lyric presence, but an incoming draft
+        # must let verified PreparedLyrics evidence derive the device flag.
+        track = replace(track, metadata=replace(track.metadata, has_lyrics=False))
         media = prepared_audio(
             0,
             FileDependency(location, track.size_bytes, observed.fingerprint.sha256),
@@ -248,12 +250,3 @@ def _cover(parsed: Any) -> ArtworkPixels | None:
             raise ValueError("Embedded cover dimensions exceed the artwork limit.")
         rgb = ImageOps.exif_transpose(image).convert("RGB")
         return ArtworkPixels(rgb.width, rgb.height, rgb.tobytes())
-
-
-def _number(value: str) -> int:
-    return int(value) if value.isascii() and value.isdigit() and len(value) <= 4 else 0
-
-
-def _pair(value: str) -> tuple[int, int]:
-    parts = value.split("/", 1)
-    return _number(parts[0]), _number(parts[1]) if len(parts) > 1 else 0

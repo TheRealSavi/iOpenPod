@@ -8,7 +8,6 @@ import json
 import logging
 import math
 import os
-import re
 from collections.abc import Callable, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
@@ -35,6 +34,14 @@ from iOpenPod.app.host_playlists import (
     parse_host_playlist,
 )
 from iOpenPod.app.media.content_type import classify_content_type
+from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
+from iOpenPod.app.media.models import MediaTag
+from iOpenPod.app.media.tags import (
+    TAG_NAMES,
+    apply_tag_values,
+    inspection_tag_values,
+    read_tag_values,
+)
 from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 from iOpenPod.app.models.photos import PhotoImage, PhotoRequest
 from iPodDB.library import (
@@ -60,7 +67,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 8
+_CACHE_VERSION = 9
 _MAX_CACHE_BYTES = 64 * 1024 * 1024
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
@@ -137,6 +144,7 @@ _TRACK_METADATA_FIELDS = frozenset(
         "track_number",
         "year",
         "media_type",
+        "tag_values",
         "acoustic_fingerprint",
         "artwork_content_sha256",
         "artwork_kind",
@@ -595,6 +603,7 @@ class _CachedTrackRecord(_CachedFileRecord):
     artwork_modified_ns: int = 0
     artwork_content_sha256: str = ""
     media_type: MediaType | None = None
+    tag_values: tuple[MediaTag, ...] = ()
 
     @property
     def artwork(self) -> _ArtworkReference | None:
@@ -1523,8 +1532,69 @@ def _inspect_track(
     *,
     checkpoint: CancellationCheck,
 ) -> _CachedTrackRecord:
-    with _observed_file(observation).open_read(checkpoint=checkpoint) as stream:
-        return _read_track(observation, folder_artwork, stream)
+    try:
+        with _observed_file(observation).open_read(checkpoint=checkpoint) as stream:
+            record = _read_track(observation, folder_artwork, stream)
+    except mutagen.MutagenError as error:
+        fallback = _fallback_record(
+            observation, str(error), folder_artwork=folder_artwork
+        )
+        assert isinstance(fallback, _CachedTrackRecord)
+        record = fallback
+    if (
+        record.tag_values
+        or record.length_ms
+        or observation.kind is HostMediaFileKind.AUDIO
+    ):
+        return record
+    # Containers without native tag support, including Matroska and AVI, use
+    # the existing bounded, single-file FFprobe adapter instead.
+    try:
+        observed = MediaInspector().inspect(observation.path, checkpoint=checkpoint)
+    except MediaInspectionError as error:
+        return replace(
+            record,
+            warning=_combine_warnings(
+                record.warning,
+                f"Metadata inspection unavailable; basic file facts were retained: {error}",
+            ),
+        )
+    values = inspection_tag_values(observed)
+    tagged = apply_tag_values(
+        Track(0, observation.path.path.stem, "", "", 0),
+        values,
+        suffix=observation.path.path.suffix,
+        video=bool(observed.video_streams),
+    )
+    streams = observed.audio_streams or observed.video_streams
+    preferred = next(
+        (stream for stream in streams if stream.default), next(iter(streams), None)
+    )
+    duration = (
+        preferred.duration_seconds if preferred else None
+    ) or observed.duration_seconds
+    bitrate = (
+        (preferred.bitrate_bps if preferred else None) or observed.bitrate_bps or 0
+    )
+    return replace(
+        record,
+        warning="",
+        tag_values=values,
+        media_type=tagged.media_types[0],
+        title=tagged.title,
+        artist=tagged.artist,
+        album=tagged.album,
+        album_artist=tagged.album_artist,
+        genre=tagged.genre,
+        year=tagged.year,
+        track_number=tagged.track_number,
+        total_tracks=tagged.metadata.total_tracks,
+        disc_number=tagged.metadata.disc_number,
+        total_discs=tagged.metadata.total_discs,
+        length_ms=round(duration * 1000) if duration is not None else 0,
+        bitrate_kbps=round(bitrate / 1000),
+        sample_rate_hz=(preferred.sample_rate_hz or 0) if preferred else 0,
+    )
 
 
 def _observed_file(observation: _Observation) -> LocalHostFile:
@@ -1546,72 +1616,19 @@ def _read_track(
     folder_artwork: _ArtworkReference | None,
     stream: BinaryIO,
 ) -> _CachedTrackRecord:
-    parsed = cast("_MutagenReader", mutagen).File(
-        stream,
-        easy=True,
+    parsed = cast("_MutagenReader", mutagen).File(stream, easy=False)
+    tag_values = read_tag_values(getattr(parsed, "tags", None))
+    tagged = apply_tag_values(
+        Track(0, observation.path.path.stem, "", "", 0),
+        tag_values,
+        suffix=observation.path.path.suffix,
+        video=observation.kind is HostMediaFileKind.VIDEO,
     )
-    if parsed is None:
-        return _CachedTrackRecord(
-            path=observation.path,
-            kind=observation.kind,
-            size_bytes=observation.size_bytes,
-            modified_ns=observation.modified_ns,
-            title=observation.path.path.stem,
-            artwork_kind=(None if folder_artwork is None else folder_artwork.kind),
-            artwork_path=(None if folder_artwork is None else folder_artwork.path),
-            artwork_size_bytes=(
-                0 if folder_artwork is None else folder_artwork.size_bytes
-            ),
-            artwork_modified_ns=(
-                0 if folder_artwork is None else folder_artwork.modified_ns
-            ),
-            artwork_content_sha256=(
-                "" if folder_artwork is None else folder_artwork.content_sha256
-            ),
-        )
-    tags = getattr(parsed, "tags", None)
     info = getattr(parsed, "info", None)
-    track_number, total_tracks = _number_pair(_tag(tags, "tracknumber"))
-    disc_number, total_discs = _number_pair(_tag(tags, "discnumber"))
     length = _finite_number(getattr(info, "length", 0.0))
     bitrate = _nonnegative_int(getattr(info, "bitrate", 0))
     sample_rate = _nonnegative_int(getattr(info, "sample_rate", 0))
-    date = _tag(tags, "date") or _tag(tags, "year")
-    media_type = classify_content_type(
-        observation.path.path.suffix,
-        {},
-        video=observation.kind is HostMediaFileKind.VIDEO,
-    )
-
-    def classify(tags: object) -> None:
-        nonlocal media_type
-        fields: dict[str, str] = {}
-        if tags is not None and hasattr(tags, "get"):
-            reader = cast("_TagReader", tags)
-            for name in (
-                "stik",
-                "media_type",
-                "media type",
-                "media_kind",
-                "pcst",
-                "podcast",
-                "PCST",
-            ):
-                value = reader.get(name)
-                if value is None:
-                    continue
-                value = getattr(value, "text", value)
-                if isinstance(value, list) and value:
-                    value = cast("list[object]", value)[0]
-                if isinstance(value, str | int | bool):
-                    fields["pcst" if name == "PCST" else name] = str(value)
-        media_type = classify_content_type(
-            observation.path.path.suffix,
-            fields,
-            video=observation.kind is HostMediaFileKind.VIDEO,
-        )
-
-    artwork_payload = _embedded_artwork(stream, tag_observer=classify)
+    artwork_payload = _parsed_embedded_artwork(parsed)
     artwork = (
         _ArtworkReference(
             HostArtworkKind.EMBEDDED,
@@ -1628,20 +1645,21 @@ def _read_track(
         kind=observation.kind,
         size_bytes=observation.size_bytes,
         modified_ns=observation.modified_ns,
-        title=_tag(tags, "title") or observation.path.path.stem,
-        artist=_tag(tags, "artist"),
-        album=_tag(tags, "album"),
-        album_artist=_tag(tags, "albumartist"),
-        genre=_tag(tags, "genre"),
-        year=_leading_year(date),
-        track_number=track_number,
-        total_tracks=total_tracks,
-        disc_number=disc_number,
-        total_discs=total_discs,
+        title=tagged.title,
+        artist=tagged.artist,
+        album=tagged.album,
+        album_artist=tagged.album_artist,
+        genre=tagged.genre,
+        year=tagged.year,
+        track_number=tagged.track_number,
+        total_tracks=tagged.metadata.total_tracks,
+        disc_number=tagged.metadata.disc_number,
+        total_discs=tagged.metadata.total_discs,
         length_ms=max(0, round(length * 1000)),
         bitrate_kbps=max(0, round(bitrate / 1000)),
         sample_rate_hz=sample_rate,
-        media_type=media_type,
+        media_type=tagged.media_types[0],
+        tag_values=tag_values,
         artwork_kind=None if artwork is None else artwork.kind,
         artwork_path=None if artwork is None else artwork.path,
         artwork_size_bytes=0 if artwork is None else artwork.size_bytes,
@@ -1650,12 +1668,10 @@ def _read_track(
     )
 
 
-def _embedded_artwork(
-    stream: BinaryIO, *, tag_observer: Callable[[object], None] | None = None
-) -> bytes | None:
+def _embedded_artwork(stream: BinaryIO) -> bytes | None:
     stream.seek(0)
     parsed = cast("_MutagenReader", mutagen).File(stream, easy=False)
-    return _parsed_embedded_artwork(parsed, tag_observer=tag_observer)
+    return _parsed_embedded_artwork(parsed)
 
 
 def embedded_artwork_from_bytes(data: bytes) -> bytes | None:
@@ -1671,9 +1687,7 @@ def embedded_artwork_from_stream(stream: BinaryIO) -> bytes | None:
     return _embedded_artwork(stream)
 
 
-def _parsed_embedded_artwork(
-    parsed: Any, *, tag_observer: Callable[[object], None] | None = None
-) -> bytes | None:
+def _parsed_embedded_artwork(parsed: Any) -> bytes | None:
     if parsed is None:
         return None
     candidates: list[tuple[bool, bytes]] = []
@@ -1685,8 +1699,6 @@ def _parsed_embedded_artwork(
                 candidates.append((getattr(picture, "type", 0) == 3, payload))
 
     tags = getattr(parsed, "tags", None)
-    if tag_observer is not None:
-        tag_observer(tags)
     if tags is not None and hasattr(tags, "getall"):
         frame_reader = cast("_FrameReader", tags)
         for picture in frame_reader.getall("APIC"):
@@ -1856,35 +1868,51 @@ def _build_library(
                 artwork_sources.setdefault(artwork_id, artwork.source)
             track_by_path[_path_identity(record.path.path)] = identity
             tracks.append(
-                Track(
-                    track_id=identity,
-                    title=record.title or record.path.path.stem,
-                    artist=record.artist,
-                    album=record.album,
-                    length_ms=record.length_ms,
-                    genre=record.genre,
-                    year=record.year,
-                    track_number=record.track_number,
-                    size_bytes=record.size_bytes,
-                    bitrate_kbps=record.bitrate_kbps,
-                    artwork_id=artwork_id,
-                    media_types=(
-                        record.media_type
-                        or classify_content_type(
-                            record.path.path.suffix,
-                            {},
-                            video=record.kind is HostMediaFileKind.VIDEO,
+                apply_tag_values(
+                    Track(
+                        track_id=identity,
+                        title=record.title or record.path.path.stem,
+                        artist=record.artist,
+                        album=record.album,
+                        length_ms=record.length_ms,
+                        genre=record.genre,
+                        year=record.year,
+                        track_number=record.track_number,
+                        size_bytes=record.size_bytes,
+                        bitrate_kbps=record.bitrate_kbps,
+                        artwork_id=artwork_id,
+                        media_types=(
+                            record.media_type
+                            or classify_content_type(
+                                record.path.path.suffix,
+                                {},
+                                video=record.kind is HostMediaFileKind.VIDEO,
+                            ),
+                        ),
+                        album_artist=record.album_artist,
+                        metadata=TrackMetadata(
+                            file_format=record.path.path.suffix.casefold().lstrip("."),
+                            last_modified=record.modified_ns // 1_000_000_000,
+                            total_tracks=record.total_tracks,
+                            sample_rate_hz=record.sample_rate_hz,
+                            disc_number=record.disc_number,
+                            total_discs=record.total_discs,
+                            location=os.fspath(record.path),
                         ),
                     ),
-                    album_artist=record.album_artist,
-                    metadata=TrackMetadata(
-                        file_format=record.path.path.suffix.casefold().lstrip("."),
-                        last_modified=record.modified_ns // 1_000_000_000,
-                        total_tracks=record.total_tracks,
-                        sample_rate_hz=record.sample_rate_hz,
-                        disc_number=record.disc_number,
-                        total_discs=record.total_discs,
-                        location=os.fspath(record.path),
+                    record.tag_values,
+                    suffix=record.path.path.suffix,
+                    video=record.media_type
+                    in (
+                        MediaType.VIDEO,
+                        MediaType.AUDIO_VIDEO,
+                        MediaType.VIDEO_PODCAST,
+                        MediaType.MUSIC_VIDEO,
+                        MediaType.TV_SHOW,
+                    )
+                    or (
+                        record.media_type is None
+                        and record.kind is HostMediaFileKind.VIDEO
                     ),
                 )
             )
@@ -2004,6 +2032,9 @@ def _record_document(record: _CachedRecord) -> dict[str, object]:
             "media_type": record.media_type.value
             if record.media_type is not None
             else "",
+            "tag_values": [
+                {"name": tag.name, "value": tag.value} for tag in record.tag_values
+            ],
             "year": record.year,
             "track_number": record.track_number,
             "total_tracks": record.total_tracks,
@@ -2104,6 +2135,7 @@ def _record_from_document(value: object) -> _CachedRecord:
             size_bytes=size_bytes,
             modified_ns=modified_ns,
             warning=warning,
+            tag_values=_cached_tag_values(metadata["tag_values"]),
             title=_text(metadata["title"], "title"),
             artist=_text(metadata["artist"], "artist"),
             album=_text(metadata["album"], "album"),
@@ -2228,31 +2260,19 @@ def _integer(value: object, label: str) -> int:
     return value
 
 
-def _tag(tags: object, name: str) -> str:
-    if tags is None or not hasattr(tags, "get"):
-        return ""
-    values = cast("_TagReader", tags)
-    value = values.get(name)
-    if value is None:
-        # WAVE/AIFF expose ID3 frames even when Mutagen is asked for easy tags.
-        frame = {
-            "title": "TIT2",
-            "artist": "TPE1",
-            "album": "TALB",
-            "albumartist": "TPE2",
-            "genre": "TCON",
-            "date": "TDRC",
-            "year": "TYER",
-            "tracknumber": "TRCK",
-            "discnumber": "TPOS",
-        }.get(name)
-        if frame is not None:
-            value = getattr(values.get(frame), "text", None)
-    if isinstance(value, str):
-        return value.strip()
-    if isinstance(value, list) and value:
-        return str(cast("list[object]", value)[0]).strip()
-    return ""
+def _cached_tag_values(value: object) -> tuple[MediaTag, ...]:
+    values: list[MediaTag] = []
+    seen: set[str] = set()
+    for entry in _array(value, "tag_values"):
+        row = _object(entry, "tag")
+        if set(row) != {"name", "value"}:
+            raise ValueError("Cached tag fields are invalid")
+        name = _text(row["name"], "tag name")
+        if name not in TAG_NAMES or name in seen:
+            raise ValueError("Cached tag name is unknown or duplicated")
+        seen.add(name)
+        values.append(MediaTag(name, _text(row["value"], "tag value")))
+    return tuple(values)
 
 
 def _finite_number(value: object) -> float:
@@ -2267,23 +2287,6 @@ def _nonnegative_int(value: object) -> int:
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0
         else 0
     )
-
-
-def _number_pair(value: str) -> tuple[int, int]:
-    parts = value.split("/", 1)
-    first = _small_number(parts[0])
-    second = _small_number(parts[1]) if len(parts) > 1 else 0
-    return first, second
-
-
-def _small_number(value: str) -> int:
-    value = value.strip()
-    return int(value) if value.isascii() and value.isdigit() and len(value) <= 6 else 0
-
-
-def _leading_year(value: str) -> int:
-    match = re.match(r"\s*(\d{4})", value, re.ASCII)
-    return int(match.group(1)) if match is not None else 0
 
 
 def _stable_identity(path: os.PathLike[str], namespace: str) -> int:

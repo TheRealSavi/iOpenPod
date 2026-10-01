@@ -9,11 +9,11 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from iOpenPod.app.export_tagging import ExportMediaTagger
-from iOpenPod.app.media.content_type import classify_content_type
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.models import StreamKind
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
-from iPodDB.library import AudioEncoding, MediaKind, MediaType, TrackChapter
+from iOpenPod.app.media.tags import apply_tag_values, inspection_tag_values
+from iPodDB.library import AudioEncoding, MediaKind, TrackChapter
 from storage.media_processing import (
     MediaToolError,
     available_compute_threads,
@@ -1000,39 +1000,18 @@ def _metadata_arguments(track: Track, full: bool) -> tuple[str, ...]:
 
 def enrich_source_metadata(track: Track, observed: MediaInspection) -> Track:
     """Fill source-only metadata while preserving reviewed/normalized core tags."""
-    tags = {
-        tag.name.casefold(): tag.value
-        for tag in (
-            *observed.tags,
-            *(
-                _select_preferred_stream(observed.audio_streams).tags
-                if observed.audio_streams
-                else ()
-            ),
-        )
-    }
-    metadata = track.metadata
-    lyrics = tags.get("lyrics", "") or next(
-        (value for key, value in tags.items() if key.startswith("lyrics-")), ""
-    )
-    media_types = track.media_types
-    if media_types in ((MediaType.AUDIO,), (MediaType.VIDEO,)):
-        media_types = (
-            classify_content_type(
-                observed.source.path.suffix, tags, video=bool(observed.video_streams)
-            ),
-        )
-    return replace(
+    enriched = apply_tag_values(
         track,
-        media_types=media_types,
+        inspection_tag_values(observed),
+        suffix=observed.source.path.suffix,
+        video=bool(observed.video_streams),
+        fill_only=True,
+    )
+    metadata = enriched.metadata
+    return replace(
+        enriched,
         metadata=replace(
             metadata,
-            composer=metadata.composer or tags.get("composer", ""),
-            comment=metadata.comment or tags.get("comment", ""),
-            lyrics=metadata.lyrics or lyrics,
-            copyright=metadata.copyright or tags.get("copyright", ""),
-            grouping=metadata.grouping or tags.get("grouping", ""),
-            description=metadata.description or tags.get("description", ""),
             chapters=metadata.chapters
             or tuple(
                 TrackChapter(

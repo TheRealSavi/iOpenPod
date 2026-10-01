@@ -1105,6 +1105,12 @@ or cancellation. This permits metadata inspection without copying every selected
 media file or loading it entirely into memory. Storage also launches fingerprint
 processes against validated inputs and owns temporary device-scan captures.
 
+Host scanning, music import, and Sync enrichment share `app/media/tags.py` for native
+tag interpretation and common Track projection. Cache v9 retains recognized tag
+values, including classification, TV/Podcast details, sorting, and lyrics. Videos
+without useful native tags or timing can use bounded FFprobe inspection through a
+private Storage capture. See ADR-0099 and [Host tag coverage](host-media-tags.md).
+
 The Host Library Source projects scanned Tracks, Photos, and Playlists into the same
 immutable `iPodDB.library.LibrarySnapshot` records used by the iPod source. Absolute
 Host access paths remain in source-specific `HostMediaSource` records or descriptive

@@ -14,6 +14,8 @@ from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
 from mutagen.wave import WAVE
 
+from iOpenPod.app.media.tags import read_tag_values
+
 _FRAMES: Any = id3_frames
 _ID3_SUFFIXES = frozenset((".mp3", ".wav", ".wave", ".aif", ".aiff", ".aifc"))
 _MP4_SUFFIXES = frozenset((".m4a", ".m4b", ".m4v", ".mp4", ".mov"))
@@ -42,16 +44,14 @@ def _no_padding(_info: object) -> int:
 
 def embedded_lyrics(parsed: Any) -> str:
     """Read unsynchronized text without treating a database flag as lyrics."""
-    tags = getattr(parsed, "tags", None)
-    if tags is None:
-        return ""
-    if isinstance(tags, ID3):
-        frames = cast("Any", tags).getall("USLT")
-        # Prefer the ordinary descriptionless frame, with a stable fallback.
-        frame = next((f for f in frames if not f.desc), next(iter(frames), None))
-        return str(frame.text) if frame is not None else ""
-    values = tags.get("\xa9lyr", ())
-    return str(values[0]) if values else ""
+    return next(
+        (
+            tag.value
+            for tag in read_tag_values(getattr(parsed, "tags", None))
+            if tag.name == "lyrics"
+        ),
+        "",
+    )
 
 
 def rewrite_lyrics(data: bytes, file_name: str, lyrics: str) -> bytes:

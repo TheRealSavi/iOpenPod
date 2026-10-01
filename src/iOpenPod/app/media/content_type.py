@@ -21,18 +21,22 @@ def classify_content_type(
         or tags.get("media_kind")
         or ""
     )
-    kind = kind.strip().casefold().replace("_", " ")
+    kind = kind.strip().casefold().replace("_", " ").replace("-", " ")
     podcast = tags.get("pcst") or tags.get("podcast") or ""
-    if kind in ("21", "podcast") or podcast.casefold() in ("1", "true", "yes"):
+    if kind in ("21", "podcast", "video podcast") or podcast.strip().casefold() in (
+        "1",
+        "true",
+        "yes",
+    ):
         return MediaType.VIDEO_PODCAST if video else MediaType.PODCAST
     if not video and (
         kind in ("2", "audiobook", "audio book") or suffix.casefold() == ".m4b"
     ):
         return MediaType.AUDIOBOOK
     if video:
-        if kind in ("6", "music video"):
+        if kind in ("6", "music video", "musicvideo"):
             return MediaType.MUSIC_VIDEO
-        if kind in ("10", "tv show"):
+        if kind in ("10", "tv show", "tvshow"):
             return MediaType.TV_SHOW
         return MediaType.VIDEO
     return MediaType.AUDIO
