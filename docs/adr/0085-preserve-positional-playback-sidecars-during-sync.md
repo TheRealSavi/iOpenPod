@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-26
 - Extends: ADR-0029, ADR-0030 and ADR-0076
+- Extended by: [ADR-0100](0100-reconcile-firmware-playback-sidecars-on-device-selection.md)
 
 ## Context
 

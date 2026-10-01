@@ -461,9 +461,15 @@ Retained roots keep their original value. See
 [ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md).
 
 Structural Track edits require captured playback-sidecar context.
-`pending_playback_sidecars=False` means the caller established their absence;
-`None` means unchecked and `True` means pending data. Both latter cases block
-structural edits. Preparation does not discard or consume pending playback data.
+`pending_playback_sidecars=False` means the caller established their absence or
+captured their preservation/consumption in the Library transaction. `None` means
+unchecked and `True` means unhandled data; both block structural edits. Loaded
+playback deltas and OTG Playlists also require this context. Preparation projects
+them into verified output without modifying the retained source. The Application
+Layer runs this preparation and save immediately during device selection, archiving
+consumed bytes and removing active inputs only with the successful Storage
+Transaction. The Active iPod is published after that commit. See
+[playback sidecars](playback-sidecars.md).
 
 ## Results, verification, and review
 

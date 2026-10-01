@@ -14,6 +14,8 @@ sessions.
   typography, metric, and interaction foundations for the desktop GUI.
 - [`eta.md`](eta.md) — reusable stage ETA model, integration, and accuracy limits.
 - [iPod timestamp conversion](ipod-time.md)
+- [Firmware playback sidecars](playback-sidecars.md) — parsing, Library projection,
+  transactional consumption, and recovery of playback history and OTG Playlists.
 - [`ipod-preferences.md`](ipod-preferences.md) — typed, lossless firmware Preferences
   and iTunesPrefs readers/writers, supported layouts, and model limitations.
 - [`sync-workflow-audit-2026-09-26.md`](sync-workflow-audit-2026-09-26.md) — scan and Sync findings, fixes, and remaining limits.

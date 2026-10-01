@@ -429,7 +429,7 @@ def test_new_sidecar_blocks_removal_before_publication(
 def test_pending_play_counts_are_remapped_with_the_library_and_restored(
     device: Device,
 ) -> None:
-    from tests.iPodDB.library.test_playback_sidecars import play_counts
+    from tests.iPodDB.sidecars.test_playback_sidecars import play_counts
 
     tracks = device.active.library.tracks
     rows = tuple(bytes([i + 1]) * 28 for i in range(len(tracks)))
@@ -450,7 +450,7 @@ def test_pending_play_counts_are_remapped_with_the_library_and_restored(
 def test_changed_captured_play_counts_stop_publication(
     device: Device, phase: str
 ) -> None:
-    from tests.iPodDB.library.test_playback_sidecars import play_counts
+    from tests.iPodDB.sidecars.test_playback_sidecars import play_counts
 
     sidecar = device.root / "iPod_Control/iTunes/Play Counts"
     original = play_counts(tuple(b"\x01" * 28 for _ in device.active.library.tracks))

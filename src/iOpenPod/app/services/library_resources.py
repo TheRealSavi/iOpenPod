@@ -12,11 +12,14 @@ from iOpenPod.app.library_write import LibraryFileChange
 from iOpenPod.app.media.lyrics import rewrite_lyrics
 from iOpenPod.app.services import volume_presentation
 from iPodDB.library import (
+    MAX_SIDECAR_BYTES,
     FileDependency,
     PhotoRepresentationKind,
+    PlaybackSidecar,
     PreparedLyrics,
     SourceFile,
     WriteResources,
+    is_playback_sidecar,
     remap_playback_sidecar,
 )
 from storage import (
@@ -100,28 +103,83 @@ def pending_sidecars(
 
 
 def _is_pending_sidecar(path: DevicePath) -> bool:
-    name = path.name.casefold()
-    # Backups are not active firmware input.
-    return not name.endswith((".bak", ".backup")) and name.startswith(
-        ("play counts", "otgplaylist", "on-the-go", "itunesstats")
-    )
+    return is_playback_sidecar(path.name)
+
+
+def load_sidecars(
+    session: FilesystemSession,
+) -> tuple[tuple[PlaybackSidecar, ...], tuple[FilePrecondition, ...]]:
+    """Capture a bounded firmware inventory alongside the source Library."""
+    sidecars: list[PlaybackSidecar] = []
+    files: list[FilePrecondition] = []
+    total = 0
+    for entry in session.list_directory(_ITUNES):
+        if not _is_pending_sidecar(entry.path):
+            continue
+        if len(sidecars) >= 256:
+            raise ValueError("Too many playback sidecar files to capture safely.")
+        snapshot = session.read_snapshot(entry.path, max_bytes=MAX_SIDECAR_BYTES)
+        total += len(snapshot.data)
+        if total > 64 * 1024 * 1024:
+            raise ValueError("Playback sidecars exceed the total capture limit.")
+        sidecars.append(PlaybackSidecar(entry.path.name, snapshot.data))
+        files.append(FilePrecondition(entry.path, snapshot.fingerprint))
+    recheck(session, tuple(files))
+    if pending_sidecars(session, tuple(file.path for file in files)):
+        raise FilePreconditionError(
+            "Playback sidecars changed while loading. Reload the iPod."
+        )
+    return tuple(sidecars), tuple(files)
 
 
 def _capture_sidecars(
     session: FilesystemSession,
     request: LibraryPreparationRequest,
     checkpoint: Callable[[], None],
-) -> tuple[tuple[FilePrecondition, ...], tuple[TransactionWrite, ...]]:
+    consumed: tuple[PlaybackSidecar, ...],
+    loaded: tuple[FilePrecondition, ...],
+) -> tuple[
+    tuple[FilePrecondition, ...],
+    tuple[TransactionWrite, ...],
+    tuple[TransactionRemoval, ...],
+]:
     original = tuple(t.track_id for t in request.source.library.tracks)
     desired = tuple(t.track_id for t in request.snapshot.tracks)
     files: list[FilePrecondition] = []
     writes: list[TransactionWrite] = []
+    removals: list[TransactionRemoval] = []
+    expected = {item.name.casefold(): item for item in consumed}
+    found: set[str] = set()
+    loaded_paths = {file.path for file in loaded}
     for entry in session.list_directory(_ITUNES):
         if not _is_pending_sidecar(entry.path):
             continue
+        if consumed and entry.path not in loaded_paths:
+            raise FilePreconditionError(
+                "Playback sidecars appeared after loading; reload before reconciling them."
+            )
         checkpoint()
         snapshot = session.read_snapshot(entry.path, max_bytes=16 * 1024 * 1024)
         name = entry.path.name.casefold()
+        if name in expected:
+            if snapshot.data != expected[name].data:
+                raise FilePreconditionError(
+                    f"{entry.path.name} changed after loading; reload the iPod."
+                )
+            found.add(name)
+            backup = DevicePath(f"{_ITUNES}/{entry.path.name}.bak")
+            prior = session.fingerprint(backup) if session.exists(backup) else None
+            files.extend(
+                (
+                    FilePrecondition(entry.path, snapshot.fingerprint),
+                    FilePrecondition(backup, prior),
+                )
+            )
+            writes.append(
+                TransactionWrite(backup, snapshot.data, _content(snapshot.data), prior)
+            )
+            removals.append(TransactionRemoval(entry.path, snapshot.fingerprint))
+            continue
         if name == "play counts" or re.fullmatch(r"otgplaylistinfo(?:_[0-9]+)?", name):
             try:
                 output = remap_playback_sidecar(snapshot.data, original, desired)
@@ -143,7 +201,11 @@ def _capture_sidecars(
                     entry.path, output, _content(output), snapshot.fingerprint
                 )
             )
-    return tuple(files), tuple(writes)
+    if found != expected.keys():
+        raise FilePreconditionError(
+            "A loaded playback sidecar disappeared; reload the iPod."
+        )
+    return tuple(files), tuple(writes), tuple(removals)
 
 
 def recheck(session: FilesystemSession, files: tuple[FilePrecondition, ...]) -> None:
@@ -163,6 +225,8 @@ def capture(
     *,
     additional_preconditions: tuple[FilePrecondition, ...] = (),
     volume_presentation_enabled: bool = True,
+    consumed_sidecars: tuple[PlaybackSidecar, ...] = (),
+    loaded_sidecars: tuple[FilePrecondition, ...] = (),
 ) -> CapturedLibraryResources:
     primary = database_path(request.source.database_name)
     files = [
@@ -189,6 +253,7 @@ def capture(
     inventory: list[FileDependency] = []
     sources: list[SourceFile] = []
     media_writes: list[TransactionWrite] = []
+    sidecar_removals: tuple[TransactionRemoval, ...] = ()
     presentation_writes: tuple[TransactionWrite, ...] = ()
     if (
         volume_presentation_enabled
@@ -200,7 +265,9 @@ def capture(
         files.extend(presentation.files)
         presentation_writes = presentation.writes
     if plan.requires_sidecar_inventory:
-        sidecar_files, sidecar_writes = _capture_sidecars(session, request, checkpoint)
+        sidecar_files, sidecar_writes, sidecar_removals = _capture_sidecars(
+            session, request, checkpoint, consumed_sidecars, loaded_sidecars
+        )
         files.extend(sidecar_files)
         media_writes.extend(sidecar_writes)
     if len({m.media.track_id for m in request.media}) != len(request.media):
@@ -327,7 +394,7 @@ def capture(
     }
     desired_ids = {t.track_id for t in request.snapshot.tracks}
     removed_paths: set[str] = set()
-    removals: list[TransactionRemoval] = []
+    removals: list[TransactionRemoval] = list(sidecar_removals)
     for track in request.source.library.tracks:
         location = track.metadata.location
         if (

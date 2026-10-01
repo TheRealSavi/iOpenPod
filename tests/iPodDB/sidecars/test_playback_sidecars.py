@@ -2,7 +2,7 @@ import struct
 
 import pytest
 
-from iPodDB.library.playback_sidecars import remap_playback_sidecar
+from iPodDB.sidecars import remap_playback_sidecar
 
 
 def play_counts(rows: tuple[bytes, ...], endian: str = "<") -> bytes:

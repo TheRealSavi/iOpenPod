@@ -721,6 +721,13 @@ grouped diagnostics, and cancellation. Physical Sync remains separate. See
 [Library contract](library-contract.md), [Library writing](library-writing.md),
 ADR-0019, and ADR-0021.
 
+Firmware sidecar records, readers, and positional remapping live in the separate
+`iPodDB.sidecars` package. It depends on neither Library types nor filesystem or
+application code. `library._sidecar_projection` converts its results into Tracks
+and Playlists; the Library interface re-exports the captured-input type and
+capture/preservation helpers needed by application workflows. Raw document types
+and format readers belong to the sidecar package. See ADR-0100.
+
 ### Lossless round-trip requirement
 
 Unknown Data is expected in real iPod databases. If a database is parsed and then
@@ -792,7 +799,13 @@ iPodDB/
 │   ├── _photo_projection.py
 │   ├── _photo_analysis.py
 │   ├── _photo_writing.py
+│   ├── _sidecar_projection.py
 │   └── _projection.py
+├── sidecars/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── codec.py
+│   └── remapping.py
 ├── Shared/
 ├── ArtworkDB/
 │   ├── Builder/
@@ -1216,12 +1229,19 @@ remains read-only, and foreign or declined journals remain untouched. An actual
 cleanup failure reports its cause and journal location with Retry Cleanup;
 successful cleanup needs no reminder. See ADR-0089 and ADR-0093.
 
-Track membership changes capture positional playback sidecars as transaction
-dependencies or replacement writes. iPodDB remaps Play Counts rows and On-The-Go
-indexes from original to desired Track order while retaining opaque record and
-header bytes. Appended Tracks need no invented history. Sidecar edits or new files
-after capture stop publication, and recovery restores sidecars with the Library.
-History remains in its sidecar; it is not applied twice or discarded. See ADR-0085.
+Device selection captures playback sidecars through Storage. iPodDB projects
+understood playback records and On-The-Go Playlists over its retained database
+snapshot; repeated projection never accumulates deltas. Selection immediately runs
+Library preparation and saving before exposing the Active iPod, independently of
+Draft mode or later Sync. The Application Layer archives
+consumed sidecars as inactive `.bak` companions before recoverably removing their
+active inputs in the same Storage Transaction. Loaded fingerprints and inventory
+changes gate publication. Recovery restores the database, sidecars, and previous
+backups together. Parse or commit failures stop selection; verified commits with
+cleanup or flush warnings remain successful. Explicit recovery reloads show the
+actual restored or kept database without consuming its sidecars again. Unconsumed
+positional files retain ADR-0085's conservative
+remapping rules. See ADR-0100 and [the sidecar contract](playback-sidecars.md).
 
 Select Media and Review share a storage bar above their content. It combines the
 Active iPod's last observed Volume capacity with the selected Sync Plan and captured

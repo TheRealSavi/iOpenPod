@@ -47,6 +47,7 @@ class DeviceCandidateIssueCode(StrEnum):
     DATABASE_FALLBACK = "database_fallback"
     ARTWORK_DATABASE_UNREADABLE = "artwork_database_unreadable"
     PHOTOS_DATABASE_UNREADABLE = "photos_database_unreadable"
+    PLAYBACK_SIDECAR_FLUSH_PENDING = "playback_sidecar_flush_pending"
     VOLUME_PRESENTATION_INCOMPLETE = "volume_presentation_incomplete"
     TRANSACTION_CLEANUP_PENDING = "transaction_cleanup_pending"
     TRANSACTION_CLEANUP_FLUSH_PENDING = "transaction_cleanup_flush_pending"

@@ -210,7 +210,7 @@ class DeviceEjectError(DeviceCoordinationError):
 
 
 class DeviceLibraryLoadError(DeviceCoordinationError):
-    """iPodDB could not parse the selected candidate's database bytes."""
+    """The selected Library could not be parsed or its sidecars committed."""
 
 
 class DeviceArtworkLoadError(DeviceCoordinationError):
@@ -247,6 +247,7 @@ class _ActiveConnection:
     active_ipod: ActiveIPod
     library_source: IPodLibrary
     time_precondition: FilePrecondition | None = None
+    sidecar_preconditions: tuple[FilePrecondition, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -656,7 +657,7 @@ class DeviceCoordinator:
                 candidate = self.candidate_id_for_volume(mounted.volume.id)
                 if candidate is None:
                     raise DeviceChangedError("The restored iPod is not ready to load.")
-                return self.select_device(candidate)
+                return self.select_device(candidate, reconcile_sidecars=False)
             except SyncRecoveryRequiredError:
                 # A different pending transaction remains actionable on its own.
                 raise
@@ -738,7 +739,9 @@ class DeviceCoordinator:
                 candidate = self.candidate_id_for_volume(mounted.volume.id)
                 if candidate is None:
                     raise DeviceChangedError("The iPod is not ready to load.")
-                return self.select_device(candidate, reconcile_metadata=False)
+                return self.select_device(
+                    candidate, reconcile_metadata=False, reconcile_sidecars=False
+                )
             except SyncRecoveryRequiredError:
                 raise
             except Exception as error:
@@ -1179,6 +1182,7 @@ class DeviceCoordinator:
                     "The iPod timezone settings could not be verified. Reload before saving."
                 )
             library_resources.recheck(active.session, (active.time_precondition,))
+            library_resources.recheck(active.session, active.sidecar_preconditions)
             checkpoint("draft.analysis", "Analyzing changes")
             plan = source.analyze(
                 source.begin_draft(
@@ -1200,6 +1204,8 @@ class DeviceCoordinator:
                     active.time_precondition,
                 ),
                 volume_presentation_enabled=presentation_policy.enabled,
+                consumed_sidecars=source.consumed_sidecars,
+                loaded_sidecars=active.sidecar_preconditions,
             )
             resources = captured.resources
             result = source.prepare(plan, resources, progress=database_progress)
@@ -1432,6 +1438,10 @@ class DeviceCoordinator:
                                 )
                                 + tuple(
                                     write.path for write in issued.transaction.writes
+                                )
+                                + tuple(
+                                    removal.path
+                                    for removal in issued.transaction.removals
                                 ),
                             )
                         ):
@@ -1520,6 +1530,15 @@ class DeviceCoordinator:
                         photos_database_fingerprint=fingerprints[_PHOTOSDB_PATH],
                     )
                     active.library_source = updated_source
+                    active.sidecar_preconditions = tuple(
+                        FilePrecondition(
+                            file.path, fingerprints.get(file.path, file.fingerprint)
+                        )
+                        for file in active.sidecar_preconditions
+                        if not any(
+                            r.path == file.path for r in issued.transaction.removals
+                        )
+                    )
                     active.active_ipod = updated
                     self._prepared_for_save = None
                     self._ithmb_bytes.clear()
@@ -1741,9 +1760,17 @@ class DeviceCoordinator:
             )
 
     def select_device(
-        self, candidate_id: DeviceCandidateId, *, reconcile_metadata: bool = True
+        self,
+        candidate_id: DeviceCandidateId,
+        *,
+        reconcile_metadata: bool = True,
+        reconcile_sidecars: bool = True,
     ) -> ActiveIPod:
-        """Load one candidate after ending any previous Filesystem Session."""
+        """Commit captured sidecars before exposing the selected Library.
+
+        Recovery reloads disable reconciliation to show the restored or explicitly
+        kept database without immediately changing the user's recovery outcome.
+        """
 
         with self._lock:
             self._deactivate_locked()
@@ -1850,6 +1877,19 @@ class DeviceCoordinator:
                     session, current, library
                 )
 
+                try:
+                    sidecars, sidecar_preconditions = library_resources.load_sidecars(
+                        session
+                    )
+                    if reconcile_sidecars:
+                        library = library.with_sidecars(sidecars)
+                except ValueError as error:
+                    raise DeviceLibraryLoadError(str(error)) from error
+                if session.fingerprint(database_path) != current_fingerprint:
+                    raise DeviceChangedError(
+                        "The iTunesDB changed while playback sidecars were loading. Reload the iPod."
+                    )
+
                 time_warnings = library.time_warnings
                 if time_warnings:
                     current = replace(
@@ -1902,13 +1942,22 @@ class DeviceCoordinator:
                             "The iTunesDB changed while desktop presentation was updated. Reload the iPod."
                         )
                 self._records[candidate_id] = current
-                self._active = _ActiveConnection(
+                connection = _ActiveConnection(
                     session=session,
                     record=current,
                     active_ipod=active_ipod,
                     library_source=library,
                     time_precondition=preferences.time_precondition,
+                    sidecar_preconditions=sidecar_preconditions,
                 )
+                # The selection lock keeps this private connection out of the
+                # published application state until its transaction is verified.
+                self._active = connection
+                if reconcile_sidecars:
+                    self._commit_selected_sidecars(connection)
+                active_ipod = connection.active_ipod
+                current = connection.record
+                self._records[candidate_id] = current
                 self._discovery = replace(
                     self._discovery,
                     candidates=tuple(
@@ -1918,12 +1967,66 @@ class DeviceCoordinator:
                     active_candidate_id=candidate_id,
                 )
                 return active_ipod
-            except DeviceCoordinationError:
-                session.close()
-                raise
             except StorageError as error:
                 session.close()
+                self._deactivate_locked()
                 raise DeviceAccessError(str(error)) from error
+            except Exception:
+                session.close()
+                self._deactivate_locked()
+                raise
+
+    def _commit_selected_sidecars(self, active: _ActiveConnection) -> None:
+        """Use the normal signed, verified save while selection owns the lock."""
+        from iOpenPod.app.library_write import LibraryPreparationRequest
+        from iPodDB.library import IssueSeverity, WriteIssue
+
+        def load_error(issues: tuple[WriteIssue, ...]) -> DeviceLibraryLoadError:
+            return DeviceLibraryLoadError(
+                source_text(
+                    "Playback history and On-The-Go Playlists could not be saved "
+                    "while loading the iPod. {detail}",
+                    detail="\n".join(
+                        f"{issue.message} {issue.detail}".strip()
+                        for issue in issues
+                        if issue.severity is IssueSeverity.ERROR
+                    ),
+                )
+            )
+
+        source = active.library_source
+        if source.sidecar_issues:
+            raise load_error(source.sidecar_issues)
+        if not source.consumed_sidecars:
+            return
+        cancelled = threading.Event()
+        expected = active.active_ipod
+        review = self.prepare_library(
+            LibraryPreparationRequest(expected.library, expected, 0, 0),
+            lambda _: None,
+            cancelled,
+        )
+        if review.result.prepared is None:
+            raise load_error(review.result.issues)
+        saved = self.save_library(review, expected, lambda _: None, cancelled)
+        if saved.active is None:
+            if saved.recovery_path:
+                # Keep recovery actionable even if the device disconnected and
+                # the selection session can no longer inspect the journal.
+                raise SyncRecoveryRequiredError(saved.recovery_path)
+            raise load_error(saved.issues)
+        if saved.recovery_path:
+            self._sync_cleanup_path = saved.recovery_path
+        for issue in saved.issues:
+            code = {
+                "save.cleanup_pending": DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING,
+                "save.cleanup_flush_pending": DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING,
+            }.get(issue.code, DeviceCandidateIssueCode.PLAYBACK_SIDECAR_FLUSH_PENDING)
+            active.record = _with_persistent_issue(
+                active.record,
+                DeviceCandidateIssue(code, f"{issue.message} {issue.detail}".strip()),
+            )
+        active.active_ipod = replace(saved.active, candidate=active.record.candidate)
 
     def _cleanup_selected_transactions(
         self, record: _CandidateRecord

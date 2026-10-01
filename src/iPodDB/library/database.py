@@ -20,6 +20,7 @@ from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.library._photo_projection import project_photos
 from iPodDB.library._playlist_projection import project_playlists
 from iPodDB.library._projection import link_artwork, project_tracks
+from iPodDB.library._sidecar_projection import project_sidecars
 from iPodDB.library._write_logging import log_plan
 from iPodDB.library.artwork import ArtworkRead, CoverFormat, select_artwork
 from iPodDB.library.models import LibrarySnapshot
@@ -50,6 +51,7 @@ if TYPE_CHECKING:
     from iPodDB.library._resolved_write import ResolvedWrite
     from iPodDB.PhotosDB.shared.chunk_defs.mhfd import MhfdHeader as PhotosMhfdHeader
     from iPodDB.shared.chunk import DatabaseDocument
+    from iPodDB.sidecars import PlaybackSidecar
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,9 +69,13 @@ class IPodLibrary:
     __slots__ = (
         "_artwork_document",
         "_artwork_index",
+        "_consumed_sidecars",
+        "_database_snapshot",
         "_device_time",
         "_document",
         "_photos_document",
+        "_sidecar_issues",
+        "_sidecars",
         "_snapshot",
         "_source_itunes",
         "_source_revision",
@@ -94,6 +100,10 @@ class IPodLibrary:
             self._device_time,
         )
         self._snapshot = LibrarySnapshot(tracks, playlists, device_name)
+        self._database_snapshot = self._snapshot
+        self._sidecars: tuple[PlaybackSidecar, ...] = ()
+        self._consumed_sidecars: tuple[PlaybackSidecar, ...] = ()
+        self._sidecar_issues: tuple[WriteIssue, ...] = ()
         self._artwork_document: DatabaseDocument[MhfdHeader] | None = None
         self._photos_document: DatabaseDocument[PhotosMhfdHeader] | None = None
         self._artwork_index = EMPTY_ARTWORK_INDEX
@@ -110,6 +120,31 @@ class IPodLibrary:
         """Return the read-only projection of this adapter's retained documents."""
 
         return self._snapshot
+
+    @property
+    def consumed_sidecars(self) -> tuple[PlaybackSidecar, ...]:
+        """Evidence that must be retired with a successfully prepared Library."""
+        return self._consumed_sidecars
+
+    @property
+    def sidecar_issues(self) -> tuple[WriteIssue, ...]:
+        return self._sidecar_issues
+
+    def with_sidecars(self, sidecars: tuple[PlaybackSidecar, ...]) -> IPodLibrary:
+        """Replace the firmware overlay; repeated calls never accumulate deltas."""
+        updated = copy(self)
+        updated._sidecars = tuple(sidecars)
+        updated._refresh_sidecars()
+        updated._source_revision = uuid4().hex
+        return updated
+
+    def _refresh_sidecars(self) -> None:
+        projection = project_sidecars(
+            self._database_snapshot, self._sidecars, self._device_time
+        )
+        self._snapshot = projection.snapshot
+        self._consumed_sidecars = projection.consumed
+        self._sidecar_issues = projection.issues
 
     @classmethod
     def parse(
@@ -146,7 +181,8 @@ class IPodLibrary:
                 },
                 updated._device_time,
             )
-        updated._snapshot = LibrarySnapshot(tracks, playlists, name, photos)
+        updated._database_snapshot = LibrarySnapshot(tracks, playlists, name, photos)
+        updated._refresh_sidecars()
         updated._source_revision = uuid4().hex
         return updated
 
@@ -155,9 +191,10 @@ class IPodLibrary:
 
         database = parse_ArtworkDB(data)
         index = build_artwork_index(database)
-        tracks = link_artwork(self.snapshot.tracks, index)
+        tracks = link_artwork(self._database_snapshot.tracks, index)
         updated = copy(self)
-        updated._snapshot = replace(self.snapshot, tracks=tracks)
+        updated._database_snapshot = replace(self._database_snapshot, tracks=tracks)
+        updated._refresh_sidecars()
         updated._artwork_document = database
         updated._source_revision = uuid4().hex
         updated._artwork_index = index
@@ -180,7 +217,8 @@ class IPodLibrary:
         }
         photos = project_photos(database, persistent_track_ids, self._device_time)
         updated = copy(self)
-        updated._snapshot = replace(self.snapshot, photos=photos)
+        updated._database_snapshot = replace(self._database_snapshot, photos=photos)
+        updated._refresh_sidecars()
         updated._photos_document = database
         updated._source_revision = uuid4().hex
         logger.debug(
@@ -234,24 +272,38 @@ class IPodLibrary:
 
         resolved = resolve(
             self._document,
-            self.snapshot,
+            self._database_snapshot,
             draft,
             target,
             self._source_revision,
             self._device_time,
         )
-        time_issues = self.time_warnings
+        additional_issues = self.time_warnings
+        if not draft.delete_omissions:
+            persisted = {p.playlist_id for p in self._database_snapshot.playlists}
+            desired = {p.playlist_id for p in draft.snapshot.playlists}
+            additional_issues += tuple(
+                WriteIssue(
+                    "draft.deletion_not_enabled",
+                    "An imported On-The-Go Playlist was removed without deletion being authorized.",
+                    subject="playlist",
+                    record_id=playlist.playlist_id,
+                )
+                for playlist in self.snapshot.playlists
+                if playlist.playlist_id not in persisted
+                and playlist.playlist_id not in desired
+            )
         if (
             resolved.plan.changes_itunes
             and target.sqlite_database
             and any(
                 issue.code == "source.unavailable_dates"
                 and issue.artifact == "iTunesDB"
-                for issue in time_issues
+                for issue in additional_issues
             )
         ):
-            time_issues = (
-                *time_issues,
+            additional_issues = (
+                *additional_issues,
                 WriteIssue(
                     "source.sqlite_unavailable_dates",
                     "SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.",
@@ -260,7 +312,16 @@ class IPodLibrary:
             )
         return replace(
             resolved,
-            plan=replace(resolved.plan, issues=(*resolved.plan.issues, *time_issues)),
+            plan=replace(
+                resolved.plan,
+                requires_sidecar_inventory=resolved.plan.requires_sidecar_inventory
+                or bool(self._consumed_sidecars),
+                issues=(
+                    *resolved.plan.issues,
+                    *additional_issues,
+                    *self._sidecar_issues,
+                ),
+            ),
         )
 
     def prepare(
@@ -278,8 +339,10 @@ class IPodLibrary:
         """
         from iPodDB.library._write_preparation import prepare
 
+        baseline = copy(self)
+        baseline._snapshot = self._database_snapshot
         return prepare(
-            self,
+            baseline,
             self._document,
             self._artwork_document,
             self._artwork_index,

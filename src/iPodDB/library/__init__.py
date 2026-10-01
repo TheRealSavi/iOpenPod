@@ -46,7 +46,6 @@ from iPodDB.library.photos import (
     encode_photo_thumbnail,
     select_photo_thumbnail,
 )
-from iPodDB.library.playback_sidecars import remap_playback_sidecar
 from iPodDB.library.playlists import (
     Playlist,
     PlaylistEntry,
@@ -111,8 +110,15 @@ from iPodDB.library.writing import (
     WriteResources,
     WriteTarget,
 )
+from iPodDB.sidecars import (
+    MAX_SIDECAR_BYTES,
+    PlaybackSidecar,
+    is_playback_sidecar,
+    remap_playback_sidecar,
+)
 
 __all__ = [
+    "MAX_SIDECAR_BYTES",
     "ArtworkAsset",
     "ArtworkPixels",
     "ArtworkRead",
@@ -149,6 +155,7 @@ __all__ = [
     "PhotoRepresentation",
     "PhotoRepresentationKind",
     "PhotoThumbnailFormat",
+    "PlaybackSidecar",
     "Playlist",
     "PlaylistEntry",
     "PlaylistKind",
@@ -192,6 +199,7 @@ __all__ = [
     "edit_track_metadata",
     "editable_track_fields",
     "encode_photo_thumbnail",
+    "is_playback_sidecar",
     "metadata_edit_issues",
     "order_playlist_entries",
     "parse_hash72_info",

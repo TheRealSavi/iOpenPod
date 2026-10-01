@@ -172,3 +172,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0097: Model Preferences as a lossless flat document](0097-model-preferences-as-a-lossless-flat-document.md)
 - [ADR-0098: Capture Device Time Context for Library dates](0098-capture-device-time-context-for-library-dates.md)
 - [ADR-0099: Share native Host tag interpretation](0099-share-native-host-tag-interpretation.md)
+- [ADR-0100: Reconcile firmware playback sidecars on device selection](0100-reconcile-firmware-playback-sidecars-on-device-selection.md)

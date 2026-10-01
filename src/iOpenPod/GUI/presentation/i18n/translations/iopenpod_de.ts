@@ -1105,6 +1105,10 @@
 <context>
     <name>DevicePickerDialog</name>
     <message>
+        <source>Playback history and On-The-Go Playlists were saved. Safely eject before unplugging; device flushing could not be confirmed.</source>
+        <translation>Wiedergabedaten und On-The-Go-Wiedergabelisten wurden gespeichert. Werfen Sie das Gerät vor dem Trennen sicher aus; das vollständige Schreiben auf das Gerät konnte nicht bestätigt werden.</translation>
+    </message>
+    <message>
         <source>Could not check all devices · retrying automatically</source>
         <translation>Nicht alle Geräte konnten geprüft werden · Erneuter Versuch erfolgt automatisch</translation>
     </message>
@@ -6768,6 +6772,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
 </context>
 <context>
     <name>Workflow</name>
+    <message>
+        <source>Playback history and On-The-Go Playlists could not be saved while loading the iPod. {detail}</source>
+        <translation>Wiedergabedaten und On-The-Go-Wiedergabelisten konnten beim Laden des iPods nicht gespeichert werden. {detail}</translation>
+    </message>
+    <message>
+        <source>An imported On-The-Go Playlist was removed without deletion being authorized.</source>
+        <translation>Eine importierte On-The-Go-Wiedergabeliste wurde ohne Genehmigung zum Löschen entfernt.</translation>
+    </message>
     <message>
         <source>A Host Playlist or one of its retained sources changed or became unavailable after Review. Host Playlist reconciliation was skipped; rescan before retrying.</source>
         <translation>Eine Wiedergabeliste auf dem Computer oder eine ihrer erfassten Quellen hat sich nach der Prüfung geändert oder ist nicht mehr verfügbar. Der Abgleich dieser Wiedergabelisten wurde übersprungen. Starten Sie vor einem neuen Versuch die Suche erneut.</translation>

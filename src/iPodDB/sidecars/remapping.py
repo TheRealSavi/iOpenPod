@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import struct
 
+from iPodDB.sidecars.codec import parse_positional_sidecar
+
 
 def remap_playback_sidecar(
     data: bytes, original_ids: tuple[int, ...], desired_ids: tuple[int, ...]
@@ -19,28 +21,15 @@ def remap_playback_sidecar(
     after that prefix need no invented playback record. An insertion inside that
     prefix is rejected because its unknown per-record fields have no known default.
     """
-    if len(data) < 16 or data[:4] not in (b"mhdp", b"pdhm", b"mhpo", b"ophm"):
-        raise ValueError(
-            "Unsupported playback sidecar header; the original file was preserved."
-        )
-    endian = "<" if data[:4] in (b"mhdp", b"mhpo") else ">"
+    table = parse_positional_sidecar(data)
+    endian = table.byte_order
     counts = data[:4] in (b"mhdp", b"pdhm")
-    header, width, count = struct.unpack_from(endian + "III", data, 4)
-    if header < (96 if counts else 20) or width < (12 if counts else 4):
-        raise ValueError(
-            "Invalid playback sidecar layout; the original file was preserved."
-        )
-    if header + width * count != len(data):
-        raise ValueError(
-            "Truncated or unrecognized playback sidecar data; the original file was preserved."
-        )
+    header, count = table.header_size, len(table.rows)
     if len(set(original_ids)) != len(original_ids) or len(set(desired_ids)) != len(
         desired_ids
     ):
         raise ValueError("Playback preservation requires unique Track identities.")
-    rows = tuple(
-        data[header + i * width : header + (i + 1) * width] for i in range(count)
-    )
+    rows = table.rows
     output: list[bytes] = []
     if counts:
         if count > len(original_ids):

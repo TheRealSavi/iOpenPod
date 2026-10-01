@@ -375,6 +375,10 @@ def _issue_text(
         DeviceCandidateIssueCode.ARTWORK_DATABASE_UNREADABLE: QCoreApplication.translate(
             "DevicePickerDialog", "Album artwork could not be loaded."
         ),
+        DeviceCandidateIssueCode.PLAYBACK_SIDECAR_FLUSH_PENDING: QCoreApplication.translate(
+            "DevicePickerDialog",
+            "Playback history and On-The-Go Playlists were saved. Safely eject before unplugging; device flushing could not be confirmed.",
+        ),
         DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE: QCoreApplication.translate(
             "DevicePickerDialog",
             "The iPod's desktop name or icon could not be fully updated.",

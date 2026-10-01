@@ -164,9 +164,16 @@ provenance independently of Acoustic Fingerprints in Library Sync Helper v3.
 Embedded artwork uses seekable reads, including for large audiobooks. Successful
 FFprobe output remains usable with incidental metadata diagnostics. Preparation
 reports all concurrent Tracks with separate phase progress measured from FFmpeg's
-output time and speed, and groups repeated informational conversion notices. Normal
-Play Counts and On-The-Go positional data is preserved or remapped in the same
-Storage Transaction as the Library, with unchanged bytes retained wherever possible.
+output time and speed, and groups repeated informational conversion notices.
+Device selection immediately commits captured Play Counts, iTunesStats,
+PlayCounts.plist, and On-The-Go Playlists before exposing the Active iPod. The
+verified Storage Transaction archives consumed files as inactive `.bak` companions
+and removes the active inputs. iPodDB itself retains original source bytes and
+performs no file I/O. Discovery and explicit recovery reloads remain read-only
+with respect to playback evidence. Invalid evidence or a failed commit stops
+selection; no pending projected Library is published. Unsupported
+positional data retains the conservative preservation/remapping policy. See
+[the sidecar contract](docs/playback-sidecars.md) and ADR-0100.
 Oversized Photo containers become bounded PNG stills, with separate Host and iPod
 content digests. Publication verification and automatic recovery report their
 current files; verified restoration cleanup retries do not repeat media reads.
