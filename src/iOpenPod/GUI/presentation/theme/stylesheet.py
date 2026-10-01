@@ -243,6 +243,7 @@ QDialog#consolidateArtworkDialog,
 QDialog#photoMetadataEditor,
 QDialog#tagNormalizer,
 QDialog#libraryReviewDialog,
+QDialog#scrobbleReport,
 QDialog#playlistExportDialog,
 QDialog#podcastSyncSettingsDialog,
 QDialog#photoAlbumManager,
@@ -862,6 +863,7 @@ QTreeWidget#metadataTechnicalDetails::item {{
 
 QTreeWidget#libraryReviewItems,
 QPlainTextEdit#libraryReviewDetails,
+QPlainTextEdit#scrobbleReportText,
 QPlainTextEdit#linuxIdentitySetupCommand {{
     color: {tokens.text};
     background-color: {tokens.surface};

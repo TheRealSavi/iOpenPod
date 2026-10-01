@@ -22,6 +22,7 @@ datas = [(str(generated / "licenses"), "licenses")]
 for package in ("iOpenPod", "device_registry", "iPodDB", "storage", "tzdata"):
     datas += collect_data_files(package)
 datas += copy_metadata("iOpenPod")
+datas += copy_metadata("keyring")
 # librosa/lazy_loader need their on-disk stubs, even when code lives in PYZ.
 datas += collect_data_files(
     "librosa", include_py_files=True,
@@ -29,7 +30,7 @@ datas += collect_data_files(
 )
 binaries = collect_dynamic_libs("wasmtime")
 # zoneinfo loads tzdata's geographical resource packages dynamically on Windows.
-hiddenimports = collect_submodules("librosa") + collect_submodules("tzdata") + [
+hiddenimports = collect_submodules("librosa") + collect_submodules("tzdata") + collect_submodules("keyring.backends") + [
     "iOpenPod.app.synesthesia.dsp",
     "iOpenPod.app.synesthesia.enrichment",
 ]

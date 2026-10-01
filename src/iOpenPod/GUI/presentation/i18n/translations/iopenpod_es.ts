@@ -2040,6 +2040,10 @@
         <source>Could Not Load iPod</source>
         <translation>No se pudo cargar el iPod</translation>
     </message>
+    <message>
+        <source>Details</source>
+        <translation>Detalles</translation>
+    </message>
 </context>
 <context>
     <name>MediaFoldersDialog</name>
@@ -4882,6 +4886,14 @@ Usa Editar para revisar sus reglas.</translation>
         <source>Check your Library for more consistent tags.</source>
         <translation>Revisa tu biblioteca para que las etiquetas sean más uniformes.</translation>
     </message>
+    <message>
+        <source>Scrobble now</source>
+        <translation>Enviar reproducciones</translation>
+    </message>
+    <message>
+        <source>Submit pending iPod plays to Last.fm and ListenBrainz.</source>
+        <translation>Envía las reproducciones pendientes del iPod a Last.fm y ListenBrainz.</translation>
+    </message>
 </context>
 <context>
     <name>StatusListButton</name>
@@ -5159,6 +5171,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Clean up recovery files</source>
         <translation>Limpiar archivos de recuperación</translation>
+    </message>
+    <message>
+        <source>Scrobble plays</source>
+        <translation>Enviar reproducciones</translation>
     </message>
 </context>
 <context>
@@ -5537,6 +5553,14 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Write Library metadata into synced media files for Rockbox, which reads file tags. This uses additional space and processing; Apple&apos;s iPod firmware reads the Library database instead.</source>
         <translation>Escribe los metadatos de la biblioteca en los archivos sincronizados para Rockbox, que lee las etiquetas de los archivos. Requiere más espacio y procesamiento; el firmware de Apple lee la base de datos de la biblioteca.</translation>
+    </message>
+    <message>
+        <source>Scrobble during Sync</source>
+        <translation>Enviar reproducciones al sincronizar</translation>
+    </message>
+    <message>
+        <source>Submit pending iPod plays to connected services before syncing media. Failed submissions are saved for retry.</source>
+        <translation>Envía las reproducciones pendientes del iPod a los servicios conectados antes de sincronizar el contenido. Los envíos fallidos se guardan para reintentarlos.</translation>
     </message>
 </context>
 <context>
@@ -8932,6 +8956,14 @@ Usa Editar para revisar sus reglas.</translation>
         <source>{title} has no RSS feed URL and cannot be refreshed.</source>
         <translation>{title} no tiene una URL de fuente RSS y no se puede actualizar.</translation>
     </message>
+    <message>
+        <source>Pending plays could not be safely retained. Sync stopped before changing the iPod.</source>
+        <translation>No se pudieron guardar de forma segura las reproducciones pendientes. La sincronización se detuvo antes de modificar el iPod.</translation>
+    </message>
+    <message>
+        <source>Scrobbling pending iPod plays…</source>
+        <translation>Enviando reproducciones pendientes del iPod…</translation>
+    </message>
 </context>
 <context>
     <name>_ExternalPlaylistFilesModel</name>
@@ -9248,6 +9280,119 @@ Reiniciar iOpenPod no borra las propiedades ya guardadas en la caché de udev. E
     <message>
         <source>HOST MEDIA</source>
         <translation>MEDIOS DEL EQUIPO</translation>
+    </message>
+</context>
+<context>
+    <name>ScrobbleController</name>
+    <message>
+        <source>Scrobbling cancelled. Pending listens are saved.</source>
+        <translation>Envío cancelado. Las reproducciones pendientes están guardadas.</translation>
+    </message>
+    <message>
+        <source>Enter your Last.fm application API key and shared secret.</source>
+        <translation>Introduce la clave de API y el secreto compartido de tu aplicación de Last.fm.</translation>
+    </message>
+    <message>
+        <source>Enter your ListenBrainz user token.</source>
+        <translation>Introduce tu token de usuario de ListenBrainz.</translation>
+    </message>
+    <message>
+        <source>Connect Last.fm or ListenBrainz in Settings → Sync to scrobble.</source>
+        <translation>Conecta Last.fm o ListenBrainz en Ajustes → Sincronización para enviar reproducciones.</translation>
+    </message>
+    <message>
+        <source>Authorize iOpenPod in your browser, then click Finish signing in.</source>
+        <translation>Autoriza iOpenPod en el navegador y después pulsa Finalizar inicio de sesión.</translation>
+    </message>
+    <message>
+        <source>Could not save the account preference. Check Host storage and reconnect the service.</source>
+        <translation>No se pudo guardar la configuración de la cuenta. Comprueba el almacenamiento del equipo y vuelve a conectar el servicio.</translation>
+    </message>
+    <message>
+        <source>Connected to {service} as {username}.</source>
+        <translation>Conectado a {service} como {username}.</translation>
+    </message>
+    <message>
+        <source>Disconnected from {service}.</source>
+        <translation>Desconectado de {service}.</translation>
+    </message>
+</context>
+<context>
+    <name>ScrobblingSettings</name>
+    <message>
+        <source>The browser could not be opened. Enable your default browser and start signing in again.</source>
+        <translation>No se pudo abrir el navegador. Activa tu navegador predeterminado y vuelve a iniciar sesión.</translation>
+    </message>
+    <message>
+        <source>Connected as {username}</source>
+        <translation>Conectado como {username}</translation>
+    </message>
+    <message>
+        <source>Not connected</source>
+        <translation>Sin conexión</translation>
+    </message>
+    <message>
+        <source>Scrobbling accounts</source>
+        <translation>Cuentas de scrobbling</translation>
+    </message>
+    <message>
+        <source>Last.fm API key</source>
+        <translation>Clave de API de Last.fm</translation>
+    </message>
+    <message>
+        <source>Register a Last.fm application to obtain its key and shared secret.</source>
+        <translation>Registra una aplicación de Last.fm para obtener su clave y secreto compartido.</translation>
+    </message>
+    <message>
+        <source>Last.fm shared secret</source>
+        <translation>Secreto compartido de Last.fm</translation>
+    </message>
+    <message>
+        <source>ListenBrainz user token</source>
+        <translation>Token de usuario de ListenBrainz</translation>
+    </message>
+    <message>
+        <source>Copy your user token from ListenBrainz settings.</source>
+        <translation>Copia tu token de usuario desde los ajustes de ListenBrainz.</translation>
+    </message>
+    <message>
+        <source>Sign in with Last.fm</source>
+        <translation>Iniciar sesión con Last.fm</translation>
+    </message>
+    <message>
+        <source>Finish signing in</source>
+        <translation>Finalizar inicio de sesión</translation>
+    </message>
+    <message>
+        <source>Connect ListenBrainz</source>
+        <translation>Conectar ListenBrainz</translation>
+    </message>
+    <message>
+        <source>Disconnect</source>
+        <translation>Desconectar</translation>
+    </message>
+    <message>
+        <source>Get API key</source>
+        <translation>Obtener clave de API</translation>
+    </message>
+    <message>
+        <source>Get user token</source>
+        <translation>Obtener token de usuario</translation>
+    </message>
+    <message>
+        <source>View last scrobble report</source>
+        <translation>Ver el último informe de scrobbling</translation>
+    </message>
+</context>
+<context>
+    <name>ScrobbleReportDialog</name>
+    <message>
+        <source>Scrobbling report</source>
+        <translation>Informe de scrobbling</translation>
+    </message>
+    <message>
+        <source>Copy report</source>
+        <translation>Copiar informe</translation>
     </message>
 </context>
 </TS>

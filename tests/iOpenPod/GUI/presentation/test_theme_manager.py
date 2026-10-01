@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QListView,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QProgressDialog,
     QPushButton,
     QScrollBar,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate,
     QStyleOptionButton,
     QStyleOptionComboBox,
+    QWidget,
 )
 
 from iOpenPod.app.backups.models import SnapshotInfo
@@ -39,11 +41,13 @@ from iOpenPod.app.core.settings.stores import (
     DeviceSettingsStore,
     GlobalSettingsStore,
 )
+from iOpenPod.app.scrobbling.models import ScrobbleResult
 from iOpenPod.GUI.dialogs.linux_identity_setup import (
     LinuxIdentitySetupDialog,
     LinuxIdentityUninstallDialog,
 )
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
+from iOpenPod.GUI.dialogs.scrobble_report import ScrobbleReportDialog
 from iOpenPod.GUI.pages.backup_page import BackupSnapshotCard
 from iOpenPod.GUI.presentation.theme.backup_styles import render_backup_page_style
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
@@ -551,6 +555,53 @@ def test_linux_identity_setup_renders_the_active_theme_background(
     finally:
         for dialog in dialogs:
             dialog.close()
+        APPLICATION.setStyleSheet(original_stylesheet)
+
+
+def test_scrobble_report_renders_and_switches_with_every_app_theme() -> None:
+    original_palette = APPLICATION.palette()
+    original_stylesheet = APPLICATION.styleSheet()
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    manager = ThemeManager(APPLICATION, settings)
+    parent = QWidget()
+    dialog = ScrobbleReportDialog(ScrobbleResult(accepted=39, adjusted=39), parent)
+    report = dialog.findChild(QPlainTextEdit, "scrobbleReportText")
+    assert report is not None
+    dialog.show()
+    try:
+        for theme in ALL_THEMES:
+            if isinstance(theme, LightTheme):
+                manager.set_light_theme(theme)
+                manager.set_mode(AppearanceMode.LIGHT)
+            else:
+                manager.set_dark_theme(theme)
+                manager.set_mode(AppearanceMode.DARK)
+            APPLICATION.processEvents()
+            tokens = tokens_for(theme)
+            background = dialog.grab().toImage()
+            assert background.pixelColor(2, 2) == QColor(tokens.window), theme
+            viewport = report.viewport().grab().toImage()
+            assert viewport.pixelColor(
+                viewport.width() // 2, viewport.height() // 2
+            ) == QColor(tokens.surface), theme
+            frame = report.grab().toImage()
+            assert frame.pixelColor(0, frame.height() // 2) == QColor(tokens.border), (
+                theme
+            )
+            palette = report.palette()
+            assert palette.color(QPalette.ColorRole.Text) == QColor(tokens.text), theme
+            assert palette.color(QPalette.ColorRole.Highlight) == QColor(
+                tokens.surface_selected
+            ), theme
+            assert palette.color(QPalette.ColorRole.HighlightedText) == QColor(
+                tokens.text
+            ), theme
+    finally:
+        dialog.close()
+        parent.close()
+        parent.deleteLater()
+        manager.close()
+        APPLICATION.setPalette(original_palette)
         APPLICATION.setStyleSheet(original_stylesheet)
 
 

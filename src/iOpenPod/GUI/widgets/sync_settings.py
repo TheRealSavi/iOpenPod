@@ -39,6 +39,7 @@ from iOpenPod.app.media.transcoding import (
     BitrateMode,
     LossyEncoder,
 )
+from iOpenPod.app.scrobbling.settings import SCROBBLE_DURING_SYNC
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
@@ -113,7 +114,11 @@ class SyncSettings(QWidget):
         self._rockbox = _Choice(
             settings, ROCKBOX_METADATA_SUPPORT, "rockboxMetadataSupport", self
         )
+        self._scrobble = _Choice(
+            settings, SCROBBLE_DURING_SYNC, "scrobbleDuringSync", self
+        )
         self._rows = (
+            self._scrobble,
             self._sound_check,
             self._normalize,
             self._rotate,
@@ -135,6 +140,12 @@ class SyncSettings(QWidget):
         self._title.setText(self.tr("Sync behavior"))
         for row in self._rows:
             row.configure(((self.tr("Off"), False), (self.tr("On"), True)))
+        self._scrobble.set_copy(
+            self.tr("Scrobble during Sync"),
+            self.tr(
+                "Submit pending iPod plays to connected services before syncing media. Failed submissions are saved for retry."
+            ),
+        )
         self._sound_check.set_copy(
             self.tr("Compute Sound Check"),
             self.tr(

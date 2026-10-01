@@ -387,6 +387,32 @@ class DeviceCoordinator:
                 return None
             return self._active.record.mounted_volume.volume.id
 
+    def scrobble_context(self, expected: ActiveIPod) -> tuple[str, Callable[[], None]]:
+        """Capture stable receipt identity and checks for read-only scrobbling."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError("The Active iPod changed before scrobbling.")
+            session = active.session
+            identity = active.record.mounted_volume.volume.id.value
+        database_path = library_resources.database_path(expected.database_name)
+
+        def checkpoint() -> None:
+            with self._lock:
+                if self._active is not active or active.active_ipod is not expected:
+                    raise DeviceChangedError(
+                        "The Active iPod changed during scrobbling."
+                    )
+            # Storage revalidates the actual connection, including unplugging.
+            session.stat(database_path)
+
+        checkpoint()
+        if session.fingerprint(database_path) != expected.database_fingerprint:
+            raise DeviceChangedError(
+                "The iPod Library changed. Reload before scrobbling."
+            )
+        return identity, checkpoint
+
     def scan_ipod_media(
         self,
         expected: ActiveIPod,

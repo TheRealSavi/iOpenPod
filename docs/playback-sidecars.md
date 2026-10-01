@@ -87,5 +87,6 @@ reader advances by each record's declared length, unlike the referenced C loop.
 
 Unknown flags, Shuffle skip semantics, and physical firmware behavior are not
 inferred. Authored binary/XML fixtures and virtual devices verify the software;
-real-device acceptance, Back Sync, and scrobbling remain separate work. See
+real-device acceptance and Back Sync remain separate work. Scrobbling now consumes
+the committed playback evidence through [its own workflow](scrobbling.md). See
 [ADR-0100](adr/0100-reconcile-firmware-playback-sidecars-on-device-selection.md).

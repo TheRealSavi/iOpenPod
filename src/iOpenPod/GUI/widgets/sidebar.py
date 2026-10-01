@@ -466,6 +466,7 @@ class Sidebar(QFrame):
     pageRequested = Signal(str)
     chooseDeviceRequested = Signal()
     syncRequested = Signal()
+    scrobbleRequested = Signal()
     reviewChangesRequested = Signal()
     ejectRequested = Signal()
 
@@ -518,6 +519,12 @@ class Sidebar(QFrame):
         navigation_layout.addWidget(self._maintenance_label)
         for definition in _MAINTENANCE:
             navigation_layout.addWidget(self._make_button(definition))
+        self._scrobble = NavigationButton("", "broadcast", self)
+        self._scrobble.setObjectName("scrobbleNow")
+        self._scrobble.setCheckable(False)
+        self._scrobble.setEnabled(False)
+        self._scrobble.clicked.connect(self.scrobbleRequested.emit)
+        navigation_layout.addWidget(self._scrobble)
         normalize = self._buttons[PageId.NORMALIZE_TAGS]
         normalize.setObjectName("normalizationNavigation")
         self._normalization_badge = QLabel(normalize)
@@ -604,11 +611,18 @@ class Sidebar(QFrame):
     def set_device_busy(self, busy: bool) -> None:
         self._device_card.set_busy(busy)
 
+    def set_scrobble_available(self, available: bool) -> None:
+        self._scrobble.setEnabled(available)
+
     def set_eject_available(self, available: bool) -> None:
         self._device_card.set_eject_available(available)
 
     def retranslate_ui(self) -> None:
         self._sync.setText(self.tr("Sync with Host"))
+        self._scrobble.setText(self.tr("Scrobble now"))
+        self._scrobble.setToolTip(
+            self.tr("Submit pending iPod plays to Last.fm and ListenBrainz.")
+        )
         if not self._sync.isEnabled():
             self._sync.setToolTip(self.tr("Select an Active iPod before Sync."))
         self._review.setText(self.tr("Review Changes"))

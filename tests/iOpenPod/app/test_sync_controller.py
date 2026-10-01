@@ -31,6 +31,7 @@ from iOpenPod.app.models.photo_list_model import PhotoListModel
 from iOpenPod.app.models.track_table_model import TrackTableModel
 from iOpenPod.app.podcasts.models import PodcastSnapshot
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
+from iOpenPod.app.scrobbling.settings import LASTFM_USERNAME, SCROBBLE_DURING_SYNC
 from iOpenPod.app.services.device_coordinator import (
     DeviceCoordinator,
     SyncCleanupCompletedError,
@@ -80,6 +81,8 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
     workspace.load(active.library)
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     settings.set_global(COMPUTE_SOUND_CHECK, True)
+    settings.set_global(SCROBBLE_DURING_SYNC, True)
+    settings.set_global(LASTFM_USERNAME, "listener")
     service = SyncExecutionStub()
     controller = SyncController(service, workspace, devices, settings)
     finished = QSignalSpy(controller.finished)
@@ -88,9 +91,12 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
         wait_for(service.entered.is_set)
         assert workspace.locked and devices.busy
         settings.set_global(COMPUTE_SOUND_CHECK, False)
+        settings.set_global(SCROBBLE_DURING_SYNC, False)
         assert (
             service.request is not None and service.request.options.compute_sound_check
         )
+        assert service.request.options.scrobble
+        assert service.request.scrobble_accounts[0].username == "listener"
         assert not controller.start(*_inputs(), active)
         service.release.set()
         wait_for(lambda: finished.count() == 1)

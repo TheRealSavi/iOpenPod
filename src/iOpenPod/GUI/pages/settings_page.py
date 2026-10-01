@@ -35,6 +35,7 @@ from iOpenPod.app.core.settings.definitions import (
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.version import get_version
 from iOpenPod.app.models.device import ActiveIPod
+from iOpenPod.app.scrobbling.controller import ScrobbleController
 from iOpenPod.app.services.linux_identity import (
     UDEV_RULE_DESTINATION,
     UdevRuleStatus,
@@ -50,6 +51,7 @@ from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 from iOpenPod.GUI.widgets.ipod_preferences import IPodPreferencesView
+from iOpenPod.GUI.widgets.scrobbling_settings import ScrobblingSettings
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
@@ -67,6 +69,8 @@ class SettingsPage(QWidget):
         theme_manager: ThemeManager,
         i18n_manager: I18nManager,
         parent: QWidget | None = None,
+        *,
+        scrobbling: ScrobbleController | None = None,
     ) -> None:
         super().__init__(parent)
         self._settings = settings
@@ -251,7 +255,20 @@ class SettingsPage(QWidget):
         self._transcoding_tab = self._add_tab(
             "transcodingSettingsScroll", self._transcoding_settings
         )
-        self._sync_tab = self._add_tab("syncSettingsScroll", self._sync_settings)
+        self._scrobbling_settings = (
+            ScrobblingSettings(settings, scrobbling, self)
+            if scrobbling is not None
+            else None
+        )
+        self._sync_tab = self._add_tab(
+            "syncSettingsScroll",
+            self._sync_settings,
+            *(
+                (self._scrobbling_settings,)
+                if self._scrobbling_settings is not None
+                else ()
+            ),
+        )
         self._backups_tab = self._add_tab(
             "backupSettingsScroll", self._backups_title, backups
         )
@@ -325,6 +342,9 @@ class SettingsPage(QWidget):
         self.retranslate_ui()
         if self._linux_supported:
             self._inspect_udev_rule()
+
+    def show_sync_settings(self) -> None:
+        self._tabs.setCurrentIndex(self._sync_tab)
 
     def _add_tab(self, name: str, *widgets: QWidget) -> int:
         scroll = QScrollArea(self._tabs)

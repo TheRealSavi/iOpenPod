@@ -173,3 +173,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0098: Capture Device Time Context for Library dates](0098-capture-device-time-context-for-library-dates.md)
 - [ADR-0099: Share native Host tag interpretation](0099-share-native-host-tag-interpretation.md)
 - [ADR-0100: Reconcile firmware playback sidecars on device selection](0100-reconcile-firmware-playback-sidecars-on-device-selection.md)
+- [ADR-0101: Retain account-scoped scrobble delivery on the Host](0101-retain-account-scoped-scrobble-delivery-on-the-host.md)
+- [ADR-0102: Adjust old Last.fm submission dates](0102-adjust-old-lastfm-submission-dates.md)

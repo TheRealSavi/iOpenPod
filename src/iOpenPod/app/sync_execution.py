@@ -44,6 +44,7 @@ from iOpenPod.app.podcasts.sync_preparation import (
     history_after_podcast_sync,
     prepare_podcast_sync,
 )
+from iOpenPod.app.scrobbling.models import Account, ScrobbleError
 from iOpenPod.app.services.device_coordinator import (
     SyncCleanupCompletedError,
     SyncRecoveryRequiredError,
@@ -100,6 +101,7 @@ if TYPE_CHECKING:
         PodcastSyncRequest,
     )
     from iOpenPod.app.podcasts.sync_preparation import PreparedPodcastSync
+    from iOpenPod.app.scrobbling.service import ScrobbleService
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from iOpenPod.app.sync_plan import SyncPlan
     from storage.media_processing import MediaTools
@@ -120,6 +122,7 @@ class SyncOptions:
     rotate_tall_photos: bool = False
     fit_thumbnails: bool = False
     rockbox_metadata: bool = False
+    scrobble: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +146,7 @@ class SyncExecutionRequest:
     options: SyncOptions = field(default_factory=SyncOptions)
     reconcile_playlists: bool = True
     podcasts: PodcastSyncRequest | None = None
+    scrobble_accounts: tuple[Account, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,8 +200,10 @@ class SyncExecutor:
         *,
         transcoder: MediaTranscoder | None = None,
         workers: int | None = None,
+        scrobbler: ScrobbleService | None = None,
     ) -> None:
         self._coordinator = coordinator
+        self._scrobbler = scrobbler
         self._transcoder = transcoder or MediaTranscoder()
         self._default_transcoder = transcoder is None
         self._workers = (
@@ -226,6 +232,52 @@ class SyncExecutor:
             )
             _validate_plan(request)
             self._validate_sources(request, checkpoint)
+            if request.options.scrobble and request.scrobble_accounts:
+                progress(
+                    WriteProgress("sync.scrobble", "Scrobbling pending iPod plays…")
+                )
+                try:
+                    if self._scrobbler is None:
+                        raise ScrobbleError("The scrobbling service is unavailable.")
+                    scrobbles = self._scrobbler.run(
+                        request.source,
+                        request.scrobble_accounts,
+                        cancelled,
+                        lambda message: progress(
+                            WriteProgress("sync.scrobble", message)
+                        ),
+                    )
+                except (ScrobbleError, OSError, StorageError) as error:
+                    return SyncExecutionResult(
+                        SyncExecutionStatus.FAILED,
+                        issues=(
+                            WriteIssue(
+                                "sync.scrobble_capture_failed",
+                                "Pending plays could not be safely retained. Sync stopped before changing the iPod.",
+                                detail=exception_text(error),
+                            ),
+                        ),
+                    )
+                progress(WriteProgress("sync.scrobble", scrobbles.summary))
+                if scrobbles.notices:
+                    issues.append(
+                        WriteIssue(
+                            "sync.scrobble_dates_adjusted",
+                            scrobbles.summary,
+                            severity=IssueSeverity.INFO,
+                            detail="\n".join(scrobbles.notices),
+                        )
+                    )
+                if scrobbles.issues or scrobbles.skipped:
+                    issues.append(
+                        WriteIssue(
+                            "sync.scrobble_pending",
+                            scrobbles.summary,
+                            severity=IssueSeverity.WARNING,
+                            detail="\n".join(scrobbles.issues),
+                        )
+                    )
+                checkpoint()
             podcast_plan = None
             podcast_sync = None
             if request.podcasts is not None:

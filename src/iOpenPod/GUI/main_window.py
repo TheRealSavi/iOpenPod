@@ -60,6 +60,9 @@ from iOpenPod.app.models.device import ActiveIPod, DeviceDiscovery
 from iOpenPod.app.photo_controller import PhotoLoadFailure
 from iOpenPod.app.playback.backend import PlaybackFailure
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
+from iOpenPod.app.scrobbling.controller import create_scrobbling
+from iOpenPod.app.scrobbling.models import ScrobbleResult
+from iOpenPod.app.scrobbling.settings import configured_accounts
 from iOpenPod.app.sync_controller import SyncController
 from iOpenPod.app.sync_execution import (
     SyncExecutionResult,
@@ -78,6 +81,7 @@ from iOpenPod.GUI.dialogs.external_playlist_files import (
 from iOpenPod.GUI.dialogs.library_review import LibraryReviewDialog
 from iOpenPod.GUI.dialogs.media_folders import MediaFoldersDialog
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
+from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
 from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.backup_page import BackupPage
@@ -177,8 +181,16 @@ class MainWindow(QMainWindow):
         self._review_host: HostMediaLibrary | None = None
         self._review_ipod: IPodMediaLibrary | None = None
         self._review_active: ActiveIPod | None = None
+        scrobbler, self._scrobbling = create_scrobbling(
+            context.device_coordinator,
+            context.settings,
+            context.device_controller,
+            self,
+        )
+        self._scrobbling.message.connect(self._scrobble_message)
+        self._scrobbling.finished.connect(self._scrobble_finished)
         self._sync_controller = SyncController(
-            SyncExecutor(context.device_coordinator),
+            SyncExecutor(context.device_coordinator, scrobbler=scrobbler),
             context.library_workspace,
             context.device_controller,
             context.settings,
@@ -365,7 +377,11 @@ class MainWindow(QMainWindow):
             context.theme_manager,
             context.i18n_manager,
             self._pages,
+            scrobbling=self._scrobbling,
         )
+        self._sidebar.scrobbleRequested.connect(self._scrobble_now)
+        self._scrobbling.changed.connect(self._scrobbling_changed)
+        self._sidebar.set_scrobble_available(self._scrobbling.can_scrobble)
         self._settings_page.set_active_ipod(context.device_controller.active_ipod)
         self._backup_page = BackupPage(
             context.backup_controller,
@@ -924,6 +940,7 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._scrobbling.shutdown()
         self._exit_synesthesia_fullscreen()
         self._sync_controller.shutdown()
         self._normalization.shutdown()
@@ -1021,6 +1038,12 @@ class MainWindow(QMainWindow):
         )
 
     def _status_action_requested(self, source: str, key: str) -> None:
+        if source == "scrobbling" and key == "cancel":
+            self._scrobbling.cancel()
+        if source == "scrobbling" and key == "details":
+            result = self._scrobbling.last_result
+            if result is not None:
+                show_scrobble_report(result, self)
         if source == _CHAPTERED_PROGRESS_STATUS_SOURCE and key == "cancel":
             self._cancel_chaptered_conversion()
 
@@ -1189,6 +1212,47 @@ class MainWindow(QMainWindow):
             self,
             self.tr("Export Unavailable"),
             self.tr("Select an Active iPod and wait for the current export to finish."),
+        )
+
+    def _scrobble_now(self) -> None:
+        if not configured_accounts(self._context.settings):
+            self._show_page(PageId.SETTINGS.value)
+            self._settings_page.show_sync_settings()
+        self._scrobbling.scrobble_now()
+
+    def _scrobbling_changed(self) -> None:
+        self._sidebar.set_scrobble_available(self._scrobbling.can_scrobble)
+
+    def _scrobble_message(self, message: str) -> None:
+        running = self._scrobbling.submitting
+        self._context.status.show(
+            "scrobbling",
+            message,
+            progress=StatusProgress() if running else None,
+            action=StatusAction(
+                "cancel", QCoreApplication.translate("CommonActions", "Cancel")
+            )
+            if running
+            else None,
+            timeout_ms=0 if running else 20_000,
+        )
+
+    def _scrobble_finished(self, result: ScrobbleResult) -> None:
+        message = result.summary
+        if result.cancelled:
+            message = (
+                QCoreApplication.translate(
+                    "ScrobbleController",
+                    "Scrobbling cancelled. Pending listens are saved.",
+                )
+                + " "
+                + message
+            )
+        self._context.status.show(
+            "scrobbling",
+            message,
+            action=StatusAction("details", self.tr("Details")),
+            timeout_ms=0 if result.issues else 20_000,
         )
 
     def _navigate_page(self, page_value: str) -> None:

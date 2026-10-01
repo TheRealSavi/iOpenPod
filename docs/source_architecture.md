@@ -1300,6 +1300,14 @@ iOpenPod/
 
 ### `iOpenPod/app`
 
+`app/scrobbling` owns typed service clients, native credential-vault access, durable
+account-scoped capture/delivery state, and the background controller shared by
+Maintenance and Sync. It consumes committed Library Snapshots through a
+connection-checked Device Coordinator interface. Storage persists the Host queue
+and serializes its writers; lower boundaries have no network-service knowledge.
+Last.fm date adjustment is delivery state, persisted before submission separately
+from original playback evidence. See [Scrobbling](scrobbling.md), ADR-0101, and ADR-0102.
+
 Contains the non-visual application layer.
 
 ```text

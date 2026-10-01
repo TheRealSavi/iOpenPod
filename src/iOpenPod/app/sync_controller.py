@@ -19,6 +19,7 @@ from iOpenPod.app.core.settings.definitions import (
 from iOpenPod.app.core.settings.transcoding import read_transcoder_settings
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.models.device import DeviceCandidateIssueCode
+from iOpenPod.app.scrobbling.settings import SCROBBLE_DURING_SYNC, configured_accounts
 from iOpenPod.app.services.device_coordinator import (
     SyncCleanupCompletedError,
     SyncRecoveryDeclinedError,
@@ -407,6 +408,7 @@ class SyncController(QObject):
                 self._workspace.revision,
                 settings=read_transcoder_settings(self._settings),
                 options=SyncOptions(
+                    scrobble=self._settings.get(SCROBBLE_DURING_SYNC),
                     compute_sound_check=self._settings.get(COMPUTE_SOUND_CHECK),
                     normalize_tags=self._settings.get(NORMALIZE_TAGS_AFTER_SYNC),
                     rotate_tall_photos=self._settings.get(ROTATE_TALL_PHOTOS),
@@ -415,6 +417,7 @@ class SyncController(QObject):
                 ),
                 reconcile_playlists=reconcile_playlists,
                 podcasts=podcasts,
+                scrobble_accounts=configured_accounts(self._settings),
             )
         except ValueError as error:
             self.last_error = f"Check the transcoding settings: {error}"

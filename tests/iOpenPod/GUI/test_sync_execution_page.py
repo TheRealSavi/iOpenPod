@@ -215,7 +215,7 @@ def test_progress_exposes_stage_counts_and_the_last_completed_item() -> None:
         assert stage is not None and summary is not None and item is not None
         assert progress is not None
         assert stage.text() == "Prepare media on Host"
-        assert summary.text() == "Step 2 of 6"
+        assert summary.text() == "Step 3 of 7"
         assert item.text() == "Item: Track 13"
         assert progress.minimum() == 0
         assert progress.maximum() == 57

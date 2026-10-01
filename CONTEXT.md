@@ -14,6 +14,15 @@ then beyond it.
 
 ## Current stage
 
+Scrobbling now submits committed iPod music plays to Last.fm and ListenBrainz from
+Maintenance or an optional Sync step. Account-specific Host receipts prevent
+normal retries from replaying accepted listens; pending submissions survive Sync
+removals. Credentials use the native OS keyring. The iPod's aggregate playback
+counters remain evidence rather than per-service delivery state. See
+[Scrobbling](docs/scrobbling.md) and ADR-0101 for timestamp estimates and limits.
+Last.fm dates older than its backdating window are moved to the current day for
+submission, with original evidence retained separately while pending (ADR-0102).
+
 iPodDB also provides lossless typed readers/writers for firmware Preferences and
 binary iTunesPrefs. They expose documented device and iTunes settings while
 retaining Unknown Data. Model-specific fields require explicit caller assertions;

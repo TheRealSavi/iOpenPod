@@ -1,5 +1,8 @@
 # Documentation
 
+- [Scrobbling](scrobbling.md) — Last.fm and ListenBrainz setup, Sync behavior,
+  delivery receipts, and API references.
+
 This directory holds shared project knowledge that should survive individual coding
 sessions.
 

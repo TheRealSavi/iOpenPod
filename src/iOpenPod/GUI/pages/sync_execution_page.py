@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 class SyncExecutionPage(QWidget):
     _STAGES = (
         "sync.validate",
+        "sync.scrobble",
         "sync.media",
         "database.",
         "save.",
@@ -524,7 +525,7 @@ class SyncExecutionPage(QWidget):
 
     def _stage_index(self, phase: str) -> int:
         if phase == "sync.prepare" or phase == "sync.photos":
-            return 1
+            return self._STAGES.index("sync.media")
         for index, prefix in enumerate(self._STAGES):
             if phase == prefix or phase.startswith(prefix):
                 return index
@@ -566,6 +567,7 @@ class SyncExecutionPage(QWidget):
     def _stage_titles(self) -> tuple[str, ...]:
         return (
             self.tr("Validate Sync Plan"),
+            self.tr("Scrobble plays"),
             self.tr("Prepare media on Host"),
             self.tr("Build and verify iPod Library"),
             self.tr("Publish to iPod"),

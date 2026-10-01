@@ -211,6 +211,13 @@ normal lowercase conventions while retaining the same domain term.
 - The **Application Layer** coordinates **Device Registry**, **iPodDB**, and
   **Storage**; the **GUI** calls the Application Layer.
 
+## Scrobbling
+
+| Term | Definition | Aliases to avoid |
+| --- | --- | --- |
+| **Scrobble** | One music play submitted to a connected listening service account with Track metadata and a UTC Unix start timestamp. iPod starts are estimated from retained playback evidence; Last.fm submission dates outside its backdating window are adjusted under ADR-0102. | play count, Playback Entry |
+| **Scrobble Queue** | The durable Host record of pending account deliveries, original playback estimates, optional Last.fm submission dates, and capture cursors, scoped to Volume Identity and persistent Track identity. It survives Track removal and stores each service/account's delivery state independently. | Listening History, Playback History, Unscrobbled Plays counter |
+
 ## Example dialogue
 
 > **Developer:** "Storage found a new Mount Point. Is that enough to identify the
