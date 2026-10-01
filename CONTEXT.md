@@ -14,6 +14,14 @@ then beyond it.
 
 ## Current stage
 
+Startup checks media tools and offers a skippable setup popup for missing FFmpeg,
+FFprobe, or fpcalc. Settings > Media Tools shows tool and FFmpeg encoder status,
+with setup offered when a tool is missing. Installation is explicitly user-directed
+through WinGet, architecture-specific Homebrew, or supported Linux
+package managers, with progress and subsequent executable verification. Tools stay
+outside the app distribution; fpcalc remains optional. See
+[Media-tool setup](docs/media-tools.md) and ADR-0103 for platform prerequisites.
+
 Scrobbling now submits committed iPod music plays to Last.fm and ListenBrainz from
 Maintenance or an optional Sync step. Account-specific Host receipts prevent
 normal retries from replaying accepted listens; pending submissions survive Sync

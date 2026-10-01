@@ -136,6 +136,7 @@ def test_categories_show_only_their_controls_and_platform_integration(
         ("Appearance", "appearanceModeCombo"),
         ("Library", "ipodLibraryViewModeCombo"),
         ("Transcoding", "lossyEncoder"),
+        ("Media Tools", "mediaToolsStatus"),
         ("Sync", "computeSoundCheck"),
         ("Backups", "maxBackups"),
         ("iPod Preferences", "ipodPreferencesStatus"),

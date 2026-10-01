@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import threading
 import time
@@ -12,6 +11,8 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
+
+from storage.media_processing import find_media_tool
 
 from .models import AnalysisProgress, AnalysisStage
 
@@ -196,10 +197,10 @@ class FFmpegDecoder:
     def _resolve_executable(self) -> str:
         if self._executable is not None:
             return self._executable
-        executable = shutil.which("ffmpeg")
+        executable = find_media_tool("ffmpeg")
         if executable is None:
             raise AudioDecodeError("Install FFmpeg to analyze music")
-        return executable
+        return str(executable)
 
 
 def _read_pcm(stream: BinaryIO, state: _DecodeState) -> None:

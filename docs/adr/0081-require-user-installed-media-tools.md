@@ -1,5 +1,8 @@
 # Require user-installed command-line media tools
 
+> ADR-0103 amends installation: users may now explicitly install missing tools
+> through a native package-manager helper. Executables remain unbundled.
+>
 > ADR-0084 amends operation gating: FFmpeg/FFprobe are required for incoming Track
 > preparation; unavailable fpcalc limits acoustic matching but does not block
 > scanning, explicit Adds, or previously proven Sync relationships.

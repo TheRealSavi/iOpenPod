@@ -175,3 +175,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0100: Reconcile firmware playback sidecars on device selection](0100-reconcile-firmware-playback-sidecars-on-device-selection.md)
 - [ADR-0101: Retain account-scoped scrobble delivery on the Host](0101-retain-account-scoped-scrobble-delivery-on-the-host.md)
 - [ADR-0102: Adjust old Last.fm submission dates](0102-adjust-old-lastfm-submission-dates.md)
+- [ADR-0103: Offer native media-tool installation](0103-offer-native-media-tool-installation.md)

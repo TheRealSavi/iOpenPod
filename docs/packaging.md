@@ -63,19 +63,21 @@ archives preserve executable modes and symlinks using tar. Each archive gets SHA
 ## User-installed media tools and bundled libraries
 
 Users install **FFmpeg**, **FFprobe** (provided with FFmpeg), and **Chromaprint's
-fpcalc** separately. iOpenPod does not bundle, download, or install these executables.
+fpcalc** separately. iOpenPod does not bundle these executables. Its opt-in setup
+helper invokes native package managers to download and install missing tools.
 Normal native builds do not require them on the build machine and need no special
 preview flag. The earlier `--media-tools` and `--preview` options have been removed.
-See [ADR-0081](adr/0081-require-user-installed-media-tools.md).
+See [ADR-0103](adr/0103-offer-native-media-tool-installation.md) and
+[Media-tool setup](media-tools.md) for channels and prerequisites.
 
-On Windows, users add the folders containing these executables to their user PATH,
-then restart iOpenPod. The frozen app preserves that PATH. Media inspection requires
-FFprobe; acoustic fingerprinting requires fpcalc; Sync checks all three tools and
-the available FFmpeg encoders before device changes. Missing-tool messages explain
-installation, PATH, and restart steps. Startup and ordinary library browsing do not
-require these command-line tools. Some Synesthesia decoding also uses external
-FFmpeg. Store descriptions and setup help must disclose the affected features and
-the separate installation requirement.
+The frozen app preserves the user's PATH. Shared discovery also finds standard
+WinGet aliases and Homebrew prefixes, allowing setup without a restart. Media
+inspection requires FFprobe; incoming Track preparation checks FFmpeg/FFprobe and
+needed encoders before device changes. fpcalc supports optional acoustic matching.
+Startup checks tools and offers setup without requiring installation to browse.
+Some Synesthesia decoding also uses external FFmpeg. Store descriptions and setup
+help must disclose the affected features, external installation, and opt-in network
+access through package managers. Confined builds do not offer Host installation.
 
 Qt's FFmpeg **playback libraries remain bundled**, as explicitly selected by the
 owner. They are distinct from `ffmpeg.exe`/`ffprobe.exe` and do not satisfy the Sync
@@ -119,9 +121,10 @@ Put the external-tool requirement at the **beginning** of the Store description,
 as required by [Store policy 10.2.4](https://learn.microsoft.com/en-us/windows/apps/publish/store-policies#102-security).
 Suggested opening text:
 
-> Media scanning and synchronization require separately installed FFmpeg (including
-> FFprobe) and Chromaprint's fpcalc. These command-line tools are not included.
-> Add their executable folders to PATH and restart iOpenPod after installation.
+> Media inspection and conversion require separately installed FFmpeg (including
+> FFprobe); Chromaprint's fpcalc enables optional acoustic matching. These tools
+> are not bundled. The setup helper can install missing packages through WinGet
+> after you choose Install, or you can use your own installation on PATH.
 
 Include the setup steps in certification notes so reviewers can test Sync.
 

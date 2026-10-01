@@ -10,7 +10,6 @@ import hashlib
 import math
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -30,6 +29,7 @@ from storage.host_capture import (
     _capture,  # pyright: ignore[reportPrivateUsage]
 )
 from storage.host_input import LocalHostFile
+from storage.host_tools import find_host_executable
 from storage.paths import HostPath
 
 _TRANSFORM_LOCK = threading.BoundedSemaphore(1)
@@ -315,38 +315,50 @@ def discover_media_tools(*, checkpoint: Callable[[], None]) -> MediaTools:
     missing: list[str] = []
     for name in ("ffmpeg", "ffprobe"):
         checkpoint()
-        path = shutil.which(name)
+        path = find_media_tool(name)
         if path is None:
             missing.append(name)
         else:
-            found[name] = HostPath(path)
+            found[name] = path
     if missing:
         raise MediaToolError(
             "media.tools_missing",
-            f"Required media tools are missing: {', '.join(missing)}. Install FFmpeg (including FFprobe), add its executable folder to PATH, then restart iOpenPod and retry these Tracks. No device changes have been made by media preparation.",
+            f"Required media tools are missing: {', '.join(missing)}. Open Settings > Media Tools > Set Up Media Tools to install FFmpeg (including FFprobe), or add its executable folder to PATH. Then retry these Tracks. No device changes have been made by media preparation.",
         )
     run_media_tool(
         found["ffprobe"], ("-version",), checkpoint=checkpoint, timeout_seconds=15
     )
-    output = run_media_tool(
+    return MediaTools(
         found["ffmpeg"],
+        found["ffprobe"],
+        find_media_tool("fpcalc"),
+        read_media_encoders(found["ffmpeg"], checkpoint=checkpoint),
+    )
+
+
+def read_media_encoders(
+    executable: HostPath,
+    *,
+    checkpoint: Callable[[], None],
+    timeout_seconds: float = 15,
+) -> frozenset[str]:
+    """Read the encoders exposed by this installed FFmpeg executable."""
+    output = run_media_tool(
+        executable,
         ("-hide_banner", "-encoders"),
         checkpoint=checkpoint,
-        timeout_seconds=15,
+        timeout_seconds=timeout_seconds,
     )
-    encoders = frozenset(
+    return frozenset(
         match.group(1)
         for line in output.stdout.decode("utf-8", errors="replace").splitlines()
         if (match := re.match(r"\s*[VAS][A-Z.]{5}\s+(\S+)\s", line))
-    )
-    return MediaTools(
-        found["ffmpeg"], found["ffprobe"], find_media_tool("fpcalc"), encoders
     )
 
 
 def find_media_tool(name: str) -> HostPath | None:
     """Perform executable-path filesystem discovery inside Storage."""
-    path = shutil.which(name)
+    path = find_host_executable(name)
     return HostPath(path) if path is not None else None
 
 

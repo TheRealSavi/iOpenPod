@@ -56,6 +56,7 @@ from iOpenPod.app.library_sync_helper import (
 from iOpenPod.app.library_workspace import TrackUpdate
 from iOpenPod.app.library_write import WriteProgress
 from iOpenPod.app.library_write_controller import PreparationState
+from iOpenPod.app.media_tools_controller import MediaToolsController
 from iOpenPod.app.models.device import ActiveIPod, DeviceDiscovery
 from iOpenPod.app.photo_controller import PhotoLoadFailure
 from iOpenPod.app.playback.backend import PlaybackFailure
@@ -63,6 +64,7 @@ from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 from iOpenPod.app.scrobbling.controller import create_scrobbling
 from iOpenPod.app.scrobbling.models import ScrobbleResult
 from iOpenPod.app.scrobbling.settings import configured_accounts
+from iOpenPod.app.services.media_tools import MediaToolSetup
 from iOpenPod.app.sync_controller import SyncController
 from iOpenPod.app.sync_execution import (
     SyncExecutionResult,
@@ -80,6 +82,7 @@ from iOpenPod.GUI.dialogs.external_playlist_files import (
 )
 from iOpenPod.GUI.dialogs.library_review import LibraryReviewDialog
 from iOpenPod.GUI.dialogs.media_folders import MediaFoldersDialog
+from iOpenPod.GUI.dialogs.media_tools_setup import MediaToolsSetupDialog
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
 from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
@@ -379,6 +382,13 @@ class MainWindow(QMainWindow):
             self._pages,
             scrobbling=self._scrobbling,
         )
+        self._media_tools = MediaToolsController(self)
+        self._media_tools_dialog = MediaToolsSetupDialog(self._media_tools, self)
+        self._media_tools_prompt_pending = False
+        self._media_tools.checked.connect(self._media_tools_checked)
+        self._media_tools.changed.connect(self._media_tools_status_changed)
+        self._settings_page.mediaToolsRequested.connect(self._open_media_tools)
+        self._settings_page.mediaToolsCheckRequested.connect(self._media_tools.check)
         self._sidebar.scrobbleRequested.connect(self._scrobble_now)
         self._scrobbling.changed.connect(self._scrobbling_changed)
         self._sidebar.set_scrobble_available(self._scrobbling.can_scrobble)
@@ -939,7 +949,38 @@ class MainWindow(QMainWindow):
             timeout_ms=8_000,
         )
 
+    def check_media_tools(self) -> None:
+        """Make one startup check after the application window is shown."""
+        self._media_tools_prompt_pending = True
+        self._media_tools.check()
+
+    def _media_tools_checked(self, value: object) -> None:
+        if not self._media_tools_prompt_pending:
+            return
+        self._media_tools_prompt_pending = False
+        if isinstance(value, MediaToolSetup) and not value.ready:
+            self._media_tools_dialog.open()
+
+    def _media_tools_status_changed(self) -> None:
+        self._settings_page.set_media_tools_status(
+            self._media_tools.setup,
+            checking=self._media_tools.checking,
+            busy=self._media_tools.busy,
+            message=self._media_tools.message,
+        )
+
+    def _open_media_tools(self) -> None:
+        self._media_tools_prompt_pending = False
+        self._media_tools_dialog.open()
+        self._media_tools.check()
+
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._media_tools.installing:
+            self._media_tools.stop_after_current()
+            self._media_tools_dialog.open()
+            event.ignore()
+            return
+        self._media_tools.shutdown()
         self._scrobbling.shutdown()
         self._exit_synesthesia_fullscreen()
         self._sync_controller.shutdown()

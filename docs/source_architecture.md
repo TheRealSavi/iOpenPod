@@ -1300,6 +1300,13 @@ iOpenPod/
 
 ### `iOpenPod/app`
 
+`app/services/media_tools` selects native installation channels from Storage's Host
+observations. `MediaToolsController` performs background executable checks and
+asynchronous package-manager invocations; `GUI/dialogs/media_tools_setup` presents
+the opt-in setup and bounded logs. Storage owns shared executable discovery,
+including standard package locations outside a GUI process's PATH. No device
+session participates in setup. See [Media-tool setup](media-tools.md) and ADR-0103.
+
 `app/scrobbling` owns typed service clients, native credential-vault access, durable
 account-scoped capture/delivery state, and the background controller shared by
 Maintenance and Sync. It consumes committed Library Snapshots through a

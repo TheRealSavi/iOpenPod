@@ -58,7 +58,7 @@ If `iopenpod` is not on your shell `PATH` yet, run `pipx ensurepath` for `pipx` 
 
 Installs should be updated with the same tool used to install them.
 
-> **Required tools:** Install [FFmpeg](https://ffmpeg.org/) with `ffprobe` for transcoding and media probing, and [Chromaprint](https://acoustid.org/chromaprint) for acoustic fingerprinting during sync.
+> **Media tools:** The startup helper or **Settings > Media Tools > Set Up Media Tools** can install missing [FFmpeg](https://ffmpeg.org/) with `ffprobe` for transcoding and media probing, and [Chromaprint](https://acoustid.org/chromaprint) for optional acoustic matching. Setup uses WinGet, Homebrew, or supported Linux package managers. See [platform prerequisites](docs/media-tools.md).
 > **Linux desktop dependencies:** If iOpenPod fails with a Qt `xcb` platform plugin error or crashes when pressing Ctrl, Alt, or Shift, install the XCB/XKeyboard runtime packages listed on the [Install Help and Troubleshooting page](https://therealsavi.github.io/iOpenPod/install-help.html#helper-tools).
 > **Linux iPod identification:** On first use, iOpenPod may ask you to copy
 > and run transparent host-side udev setup commands. This publishes only the

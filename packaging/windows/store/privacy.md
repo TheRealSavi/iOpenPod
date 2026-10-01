@@ -1,6 +1,6 @@
 # iOpenPod privacy policy
 
-Effective date: September 25, 2026
+Effective date: October 1, 2026
 
 iOpenPod is a desktop application published by TheRealSavi and developed by
 John Gibbons. Contact: <johngibbons167@gmail.com>.
@@ -24,6 +24,15 @@ operation. Those tools are separate software with their own terms.
 Playback shares the current track title, artist, album, playback state, and
 available artwork with Windows media controls. Windows handles this information
 under your operating system settings and Microsoft's privacy practices.
+
+## Optional media-tool installation
+
+Choosing Install Missing Tools invokes WinGet to download and install FFmpeg and
+Chromaprint from their package channels. WinGet, its package source, and the
+download hosts receive package requests, your IP address, and ordinary connection
+information under their own privacy practices. This setup does not send your media
+files or fingerprints to those services. Checking locally or skipping setup does
+not start package installation.
 
 ## Podcast network requests
 

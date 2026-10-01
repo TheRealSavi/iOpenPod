@@ -13,8 +13,15 @@ vary. iPod touch, iPhone, and iPod shuffle are outside this release's scope.
 A Mac-formatted iPod that Windows cannot mount is not supported by this package.
 The app does not format your iPod or install filesystem drivers.
 
-For media scanning, fingerprint matching, conversion, and Sync, install these
-separate command-line tools:
+For media inspection and conversion, install FFmpeg with FFprobe. Chromaprint's
+fpcalc enables optional acoustic matching. Use the startup helper or **Settings >
+Media Tools > Set Up Media Tools**, then choose **Install Missing Tools**. The helper
+uses WinGet to install `Gyan.FFmpeg` and `AcoustID.Chromaprint` for your Windows
+account, accepts their package/source agreements, and verifies the tools afterward.
+Install Microsoft's App Installer first if WinGet is unavailable. The package
+manager needs Internet access. Existing working tools are kept.
+
+For manual setup, use these channels:
 
 - [FFmpeg and FFprobe](https://ffmpeg.org/download.html): obtain a Windows build
   linked from the FFmpeg project's download page that contains both
@@ -25,9 +32,9 @@ separate command-line tools:
 Extract each tool into a stable folder. Open Windows **Edit environment variables
 for your account**, edit your user **Path**, and add the folders containing those
 executables. Do not put the executable filename in Path. Close and reopen iOpenPod
-afterward. You do not need to run iOpenPod as administrator. The app does not
-download or install these tools. Qt's included playback libraries are separate
-from these command-line programs.
+afterward. The helper discovers standard WinGet tool locations without a restart.
+You do not need to run iOpenPod as administrator. These programs are installed
+separately from iOpenPod. Qt's included playback libraries are separate from them.
 
 In a newly opened terminal, these commands should print version information:
 
@@ -37,9 +44,12 @@ ffprobe -version
 fpcalc -version
 ```
 
-Missing tools block the affected operations; the app checks them before Sync
-changes the iPod. Settings, library browsing, and supported local playback remain
-available without all three command-line tools.
+Missing FFmpeg/FFprobe block affected incoming-media preparation before Sync changes
+the iPod. Missing fpcalc limits acoustic matching but does not block explicit Adds.
+Settings, library browsing, and supported local playback remain available without
+all three command-line tools. Setup can be skipped. Stop After Current Package
+waits for the package manager to finish its current operation and keeps installed
+packages; retry a scan or Sync after setup finishes.
 
 ## Use your iPod
 

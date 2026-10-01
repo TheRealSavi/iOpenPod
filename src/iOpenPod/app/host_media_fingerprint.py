@@ -106,8 +106,8 @@ class FpcalcFingerprinter:
         discovered = find_media_tool("fpcalc")
         if discovered is None:
             raise FpcalcUnavailableError(
-                "Install Chromaprint's fpcalc, add its executable folder to PATH, "
-                "then restart iOpenPod and retry the scan."
+                "Install Chromaprint's fpcalc using Settings > Media Tools > Set Up "
+                "Media Tools, or add its executable folder to PATH, then retry the scan."
             )
         return discovered
 

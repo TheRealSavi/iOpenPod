@@ -145,7 +145,9 @@ def test_fpcalc_reports_a_missing_executable(
     def missing_executable(_name: str) -> None:
         return None
 
-    monkeypatch.setattr(shutil, "which", missing_executable)
+    monkeypatch.setattr(
+        "storage.media_processing.find_host_executable", missing_executable
+    )
 
     with pytest.raises(FpcalcUnavailableError, match="Install Chromaprint") as error:
         FpcalcFingerprinter().fingerprint(

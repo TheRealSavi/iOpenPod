@@ -436,7 +436,9 @@ def test_missing_probe_is_a_clear_failure_without_capturing_source(
     def missing_executable(_command: str) -> None:
         return None
 
-    monkeypatch.setattr(shutil, "which", missing_executable)
+    monkeypatch.setattr(
+        "storage.media_processing.find_host_executable", missing_executable
+    )
     with pytest.raises(MediaInspectionError) as error:
         MediaInspector().inspect(
             HostPath(tmp_path / "unopened"), checkpoint=lambda: None

@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable
 from types import FrameType
 
-from PySide6.QtCore import QCoreApplication, QSocketNotifier
+from PySide6.QtCore import QCoreApplication, QSocketNotifier, QTimer
 from PySide6.QtWidgets import QApplication
 
 from iOpenPod.app.context import AppContext
@@ -45,6 +45,7 @@ def start_ui() -> int:
 
     window = MainWindow(context)
     window.show()
+    QTimer.singleShot(0, window.check_media_tools)
     system_media_bridge = SystemMediaBridge(
         context.playback_controller,
         create_system_media_session(window_id=int(window.winId())),

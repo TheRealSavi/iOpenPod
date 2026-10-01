@@ -249,6 +249,7 @@ QDialog#podcastSyncSettingsDialog,
 QDialog#photoAlbumManager,
 QDialog#photoAlbumEditor,
 QDialog#mediaFoldersDialog,
+QDialog#mediaToolsSetup,
 QDialog#externalPlaylistFilesDialog,
 QDialog#linuxIdentitySetup,
 QDialog#linuxIdentityUninstall,
@@ -864,6 +865,7 @@ QTreeWidget#metadataTechnicalDetails::item {{
 QTreeWidget#libraryReviewItems,
 QPlainTextEdit#libraryReviewDetails,
 QPlainTextEdit#scrobbleReportText,
+QPlainTextEdit#mediaToolInstallLog,
 QPlainTextEdit#linuxIdentitySetupCommand {{
     color: {tokens.text};
     background-color: {tokens.surface};

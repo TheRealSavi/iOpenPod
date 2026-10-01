@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -42,6 +42,7 @@ from iOpenPod.app.services.linux_identity import (
     UdevRuleStatusKind,
     inspect_udev_rule,
 )
+from iOpenPod.app.services.media_tools import MediaToolSetup
 from iOpenPod.GUI.dialogs.linux_identity_setup import (
     LinuxIdentityUninstallDialog,
 )
@@ -51,6 +52,7 @@ from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 from iOpenPod.GUI.widgets.ipod_preferences import IPodPreferencesView
+from iOpenPod.GUI.widgets.media_tools_settings import MediaToolsSettings
 from iOpenPod.GUI.widgets.scrobbling_settings import ScrobblingSettings
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
@@ -62,6 +64,9 @@ _DONATION_URL = "https://ko-fi.com/johngibbons"
 
 class SettingsPage(QWidget):
     """Expose preferences while Theme and I18n modules own side effects."""
+
+    mediaToolsRequested = Signal()
+    mediaToolsCheckRequested = Signal()
 
     def __init__(
         self,
@@ -245,6 +250,9 @@ class SettingsPage(QWidget):
         # Keep tab clicks from restoring an off-screen control and jumping the scroll.
         self._tabs.tabBar().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._transcoding_settings = TranscodingSettings(settings, self)
+        self._media_tools = MediaToolsSettings(self)
+        self._media_tools.setupRequested.connect(self.mediaToolsRequested.emit)
+        self._media_tools.checkRequested.connect(self.mediaToolsCheckRequested.emit)
         self._sync_settings = SyncSettings(settings, self)
         self._appearance_tab = self._add_tab(
             "appearanceSettingsScroll", self._appearance_title, appearance
@@ -254,6 +262,9 @@ class SettingsPage(QWidget):
         )
         self._transcoding_tab = self._add_tab(
             "transcodingSettingsScroll", self._transcoding_settings
+        )
+        self._media_tools_tab = self._add_tab(
+            "mediaToolsSettingsScroll", self._media_tools
         )
         self._scrobbling_settings = (
             ScrobblingSettings(settings, scrobbling, self)
@@ -329,6 +340,7 @@ class SettingsPage(QWidget):
         self._report_issue.clicked.connect(self._open_issue_tracker)
         self._donate.clicked.connect(self._open_donation_page)
         self._tabs.currentChanged.connect(self._update_saved_note)
+        self._tabs.currentChanged.connect(self._check_media_tools_tab)
         settings.settingChanged.connect(self._setting_changed)
         theme_manager.modeChanged.connect(self._sync_mode_selection)
         theme_manager.lightThemeChanged.connect(self._sync_light_theme_selection)
@@ -345,6 +357,17 @@ class SettingsPage(QWidget):
 
     def show_sync_settings(self) -> None:
         self._tabs.setCurrentIndex(self._sync_tab)
+
+    def set_media_tools_status(
+        self, setup: MediaToolSetup | None, *, checking: bool, busy: bool, message: str
+    ) -> None:
+        self._media_tools.set_status(
+            setup, checking=checking, busy=busy, message=message
+        )
+
+    def _check_media_tools_tab(self, index: int) -> None:
+        if index == self._media_tools_tab:
+            self.mediaToolsCheckRequested.emit()
 
     def _add_tab(self, name: str, *widgets: QWidget) -> int:
         scroll = QScrollArea(self._tabs)
@@ -364,11 +387,13 @@ class SettingsPage(QWidget):
         return self._tabs.addTab(scroll, "")
 
     def retranslate_ui(self) -> None:
+        self._media_tools.retranslate_ui()
         self._header.set_title(self.tr("Settings"))
         self._tabs.setAccessibleName(self.tr("Settings categories"))
         self._tabs.setTabText(self._appearance_tab, self.tr("Appearance"))
         self._tabs.setTabText(self._library_tab, self.tr("Library"))
         self._tabs.setTabText(self._transcoding_tab, self.tr("Transcoding"))
+        self._tabs.setTabText(self._media_tools_tab, self.tr("Media Tools"))
         self._tabs.setTabText(self._sync_tab, self.tr("Sync"))
         self._tabs.setTabText(self._backups_tab, self.tr("Backups"))
         self._tabs.setTabText(self._ipod_preferences_tab, self.tr("iPod Preferences"))
@@ -503,7 +528,9 @@ class SettingsPage(QWidget):
 
     def _update_saved_note(self, _index: int = -1) -> None:
         text = (
-            self.tr("iPod preferences are read-only.")
+            self.tr("Media tool status is read-only.")
+            if self._tabs.currentIndex() == self._media_tools_tab
+            else self.tr("iPod preferences are read-only.")
             if self._tabs.currentIndex() == self._ipod_preferences_tab
             else self.tr("Changes are saved automatically.")
         )

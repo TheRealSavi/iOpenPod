@@ -4859,6 +4859,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <source>Not installed in a standard udev rules directory.</source>
         <translation>Nicht in einem üblichen Verzeichnis für udev-Regeln installiert.</translation>
     </message>
+    <message>
+        <source>Media Tools</source>
+        <translation>Medienwerkzeuge</translation>
+    </message>
+    <message>
+        <source>Media tool status is read-only.</source>
+        <translation>Der Status der Medienwerkzeuge ist schreibgeschützt.</translation>
+    </message>
 </context>
 <context>
     <name>Sidebar</name>
@@ -8964,6 +8972,54 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <source>Scrobbling pending iPod plays…</source>
         <translation>Ausstehende iPod-Wiedergaben werden gescrobbelt…</translation>
     </message>
+    <message>
+        <source>A tool was found but could not run. Repair that installation or its PATH, then check again.</source>
+        <translation>Ein Werkzeug wurde gefunden, konnte aber nicht ausgeführt werden. Reparieren Sie die Installation oder ihren PATH und prüfen Sie erneut.</translation>
+    </message>
+    <message>
+        <source>All tools are available.</source>
+        <translation>Alle Werkzeuge sind verfügbar.</translation>
+    </message>
+    <message>
+        <source>Automatic setup needs {manager} and a graphical polkit authentication agent (pkexec). Install {ffmpeg} and {fingerprint} with your system package manager, then check again.</source>
+        <translation>Die automatische Einrichtung benötigt {manager} und einen grafischen polkit-Authentifizierungsagenten (pkexec). Installieren Sie {ffmpeg} und {fingerprint} mit der Paketverwaltung Ihres Systems und prüfen Sie erneut.</translation>
+    </message>
+    <message>
+        <source>Homebrew installs the missing packages and their dependencies. FFmpeg includes FFprobe. Older macOS and Intel systems may build from source; Homebrew's OS support differs from iOpenPod's.</source>
+        <translation>Homebrew installiert die fehlenden Pakete und ihre Abhängigkeiten. FFmpeg enthält FFprobe. Auf älteren macOS- und Intel-Systemen kann ein Bau aus dem Quellcode nötig sein; Homebrew unterstützt andere Betriebssystemversionen als iOpenPod.</translation>
+    </message>
+    <message>
+        <source>Install FFmpeg and Chromaprint's fpcalc using your distribution's package manager, then check again.</source>
+        <translation>Installieren Sie FFmpeg und Chromaprints fpcalc mit der Paketverwaltung Ihrer Distribution und prüfen Sie erneut.</translation>
+    </message>
+    <message>
+        <source>Install Homebrew from its official setup page, then choose Check Again. Homebrew may require Apple's Command Line Tools and an administrator password.</source>
+        <translation>Installieren Sie Homebrew von seiner offiziellen Einrichtungsseite und wählen Sie Erneut prüfen. Homebrew benötigt möglicherweise Apples Command Line Tools und ein Administratorpasswort.</translation>
+    </message>
+    <message>
+        <source>Install Microsoft's App Installer (WinGet), then choose Check Again.</source>
+        <translation>Installieren Sie Microsofts App-Installer (WinGet) und wählen Sie Erneut prüfen.</translation>
+    </message>
+    <message>
+        <source>Install missing packages for your Windows account. FFmpeg includes FFprobe. Install accepts the package and WinGet source agreements. On ARM Windows these packages use x64 emulation.</source>
+        <translation>Installiert fehlende Pakete für Ihr Windows-Konto. FFmpeg enthält FFprobe. Mit Installieren akzeptieren Sie die Paket- und WinGet-Quellenvereinbarungen. Unter Windows auf ARM verwenden diese Pakete die x64-Emulation.</translation>
+    </message>
+    <message>
+        <source>No automatic installation channel is available for this operating system.</source>
+        <translation>Für dieses Betriebssystem ist kein automatischer Installationskanal verfügbar.</translation>
+    </message>
+    <message>
+        <source>This application cannot install Host packages from its sandbox. Use a native iOpenPod installation or configure tools accessible inside this sandbox.</source>
+        <translation>Diese Anwendung kann aus ihrer Sandbox keine Pakete auf dem Computer installieren. Verwenden Sie eine native iOpenPod-Installation oder richten Sie Werkzeuge ein, die innerhalb dieser Sandbox erreichbar sind.</translation>
+    </message>
+    <message>
+        <source>These packages require 64-bit Windows.</source>
+        <translation>Diese Pakete benötigen 64-Bit-Windows.</translation>
+    </message>
+    <message>
+        <source>Your system may ask for administrator approval. Installs missing packages and their dependencies. No repositories are added. Available codecs depend on the distribution's FFmpeg build.</source>
+        <translation>Ihr System fordert möglicherweise eine Administratorfreigabe an. Installiert fehlende Pakete und ihre Abhängigkeiten. Es werden keine Paketquellen hinzugefügt. Verfügbare Codecs hängen vom FFmpeg-Build der Distribution ab.</translation>
+    </message>
 </context>
 <context>
     <name>_ExternalPlaylistFilesModel</name>
@@ -9393,6 +9449,143 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     <message>
         <source>Copy report</source>
         <translation>Bericht kopieren</translation>
+    </message>
+</context>
+<context>
+    <name>MediaToolsController</name>
+    <message>
+        <source>FFmpeg, FFprobe, and fpcalc are ready to use.</source>
+        <translation>FFmpeg, FFprobe und fpcalc sind einsatzbereit.</translation>
+    </message>
+    <message>
+        <source>Some media tools need setup.</source>
+        <translation>Einige Medienwerkzeuge müssen eingerichtet werden.</translation>
+    </message>
+    <message>
+        <source>Could not check media tools: %1</source>
+        <translation>Medienwerkzeuge konnten nicht geprüft werden: %1</translation>
+    </message>
+    <message>
+        <source>Installing %1 (%2 of %3)…</source>
+        <translation>%1 wird installiert (%2 von %3)…</translation>
+    </message>
+    <message>
+        <source>Waiting for the current package operation to finish. No further packages will be started.</source>
+        <translation>Warten auf den Abschluss des laufenden Paketvorgangs. Es werden keine weiteren Pakete gestartet.</translation>
+    </message>
+    <message>
+        <source>Installation did not complete (exit %1). Review the details below, then retry or use Setup Help.</source>
+        <translation>Die Installation wurde nicht abgeschlossen (Exit-Code %1). Prüfen Sie die Details unten und versuchen Sie es erneut oder öffnen Sie die Einrichtungshilfe.</translation>
+    </message>
+    <message>
+        <source>Package operation finished. Some tools still need setup; review the results and use Setup Help if needed.</source>
+        <translation>Der Paketvorgang ist abgeschlossen. Einige Werkzeuge müssen noch eingerichtet werden. Prüfen Sie die Ergebnisse und nutzen Sie bei Bedarf die Einrichtungshilfe.</translation>
+    </message>
+    <message>
+        <source>Could not start the package manager: %1</source>
+        <translation>Die Paketverwaltung konnte nicht gestartet werden: %1</translation>
+    </message>
+</context>
+<context>
+    <name>MediaToolsSetupDialog</name>
+    <message>
+        <source>Set Up Media Tools</source>
+        <translation>Medienwerkzeuge einrichten</translation>
+    </message>
+    <message>
+        <source>FFmpeg and FFprobe prepare and inspect media. Chromaprint's fpcalc enables acoustic matching. You can skip setup and keep browsing; acoustic matching is optional. Choose Install Missing Tools to let the selected package manager install them on this computer.</source>
+        <translation>FFmpeg und FFprobe bereiten Medien vor und prüfen sie. Chromaprints fpcalc ermöglicht den akustischen Abgleich. Sie können die Einrichtung überspringen und weiter stöbern; der akustische Abgleich ist optional. Wählen Sie Fehlende Werkzeuge installieren, um sie über die ausgewählte Paketverwaltung auf diesem Computer zu installieren.</translation>
+    </message>
+    <message>
+        <source>Check Again</source>
+        <translation>Erneut prüfen</translation>
+    </message>
+    <message>
+        <source>Setup Help</source>
+        <translation>Einrichtungshilfe</translation>
+    </message>
+    <message>
+        <source>Install Missing Tools</source>
+        <translation>Fehlende Werkzeuge installieren</translation>
+    </message>
+    <message>
+        <source>Stop After Current Package</source>
+        <translation>Nach aktuellem Paket stoppen</translation>
+    </message>
+    <message>
+        <source>Package installation details</source>
+        <translation>Details zur Paketinstallation</translation>
+    </message>
+    <message>
+        <source>Installation progress and errors will appear here.</source>
+        <translation>Installationsfortschritt und Fehler werden hier angezeigt.</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>Fehlt</translation>
+    </message>
+    <message>
+        <source>Needs attention</source>
+        <translation>Handlungsbedarf</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>Bereit</translation>
+    </message>
+    <message>
+        <source>Checking media tools…</source>
+        <translation>Medienwerkzeuge werden geprüft…</translation>
+    </message>
+</context>
+<context>
+    <name>MediaToolsSettings</name>
+    <message>
+        <source>Media Tools</source>
+        <translation>Medienwerkzeuge</translation>
+    </message>
+    <message>
+        <source>Check Again</source>
+        <translation>Erneut prüfen</translation>
+    </message>
+    <message>
+        <source>Set Up Media Tools</source>
+        <translation>Medienwerkzeuge einrichten</translation>
+    </message>
+    <message>
+        <source>Checking media tools…</source>
+        <translation>Medienwerkzeuge werden geprüft…</translation>
+    </message>
+    <message>
+        <source>Not checked</source>
+        <translation>Nicht geprüft</translation>
+    </message>
+    <message>
+        <source>Checking…</source>
+        <translation>Wird geprüft…</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>Fehlt</translation>
+    </message>
+    <message>
+        <source>Needs attention</source>
+        <translation>Handlungsbedarf</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <translation>Installiert</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>Nicht verfügbar</translation>
+    </message>
+    <message>
+        <source>Unknown</source>
+        <translation>Unbekannt</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>Verfügbar</translation>
     </message>
 </context>
 </TS>

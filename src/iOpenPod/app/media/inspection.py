@@ -71,8 +71,9 @@ class MediaInspector:
         if discovered is None:
             raise MediaInspectionError(
                 "media.probe_unavailable",
-                "Install FFmpeg (including FFprobe), add its executable folder to PATH, "
-                "then restart iOpenPod and retry inspecting incoming media.",
+                "Install FFmpeg (including FFprobe) using Settings > Media Tools > "
+                "Set Up Media Tools, or add its executable folder to PATH, then retry "
+                "inspecting incoming media.",
             )
         return discovered
 

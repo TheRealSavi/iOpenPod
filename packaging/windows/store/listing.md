@@ -8,7 +8,7 @@ accepted or published a submission.
 ## Description
 
 ```text
-Sync and media conversion require separately installed FFmpeg, FFprobe, and Chromaprint (fpcalc), available on your Windows PATH. These command-line tools are not included or downloaded by iOpenPod. A compatible iPod mounted as a Windows drive is required for device management.
+Media inspection and conversion require separately installed FFmpeg and FFprobe. Chromaprint (fpcalc) enables optional acoustic matching. The setup helper can install missing packages through WinGet after you choose Install; these tools are not bundled with iOpenPod. A compatible iPod mounted as a Windows drive is required for device management.
 
 Bring your iPod library back into your hands. iOpenPod is a free, open-source desktop app for browsing, organizing, and synchronizing your own music, videos, playlists, and photos without iTunes.
 
@@ -30,7 +30,7 @@ iOpenPod is free software under GPLv3 or later, with third-party notices include
 ## Short description
 
 ```text
-Browse, organize, and sync your iPod library with a free, open-source desktop app. Supports music, playlists, photos, and local backups. Sync requires separately installed FFmpeg, FFprobe, and Chromaprint.
+Browse, organize, and sync your iPod library with a free, open-source desktop app. Supports music, playlists, photos, and local backups. The setup helper installs missing FFmpeg, FFprobe, and Chromaprint tools through WinGet.
 ```
 
 ## Product features

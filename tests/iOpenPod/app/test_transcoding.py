@@ -30,6 +30,7 @@ from iOpenPod.app.media.transcoding import (
 )
 from iPodDB.library import AudioEncoding, MediaKind, Track, TrackMetadata
 from storage import HostPath, capture_host_file
+from storage.host_tools import find_host_executable
 from storage.media_processing import MediaToolError
 
 if TYPE_CHECKING:
@@ -79,7 +80,7 @@ def test_all_missing_tools_are_reported_together(
     def missing_tool(_name: str) -> None:
         return None
 
-    monkeypatch.setattr(shutil, "which", missing_tool)
+    monkeypatch.setattr("storage.media_processing.find_host_executable", missing_tool)
     with pytest.raises(MediaToolError, match="ffmpeg, ffprobe") as error:
         MediaTranscoder().preflight(checkpoint=lambda: None)
     assert error.value.code == "media.tools_missing"
@@ -90,14 +91,14 @@ def test_all_missing_tools_are_reported_together(
 def test_fpcalc_is_not_a_dependency_of_media_preparation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    native = shutil.which
+    native = find_host_executable
     if not native("ffmpeg") or not native("ffprobe"):
         pytest.skip("FFmpeg and FFprobe are required")
 
     def without_fpcalc(name: str) -> str | None:
         return None if name == "fpcalc" else native(name)
 
-    monkeypatch.setattr(shutil, "which", without_fpcalc)
+    monkeypatch.setattr("storage.media_processing.find_host_executable", without_fpcalc)
     assert MediaTranscoder().preflight(checkpoint=lambda: None).fpcalc is None
 
 
