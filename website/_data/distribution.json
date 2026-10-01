@@ -1,0 +1,37 @@
+{
+  "product": "iOpenPod 2",
+  "release_status": "In development",
+  "status_date": "2026-10-01",
+  "platforms": [
+    {
+      "id": "windows",
+      "name": "Windows",
+      "target": "Windows 10 / 11 · x64",
+      "channels": [
+        {"id": "windows-binary", "name": "Direct download", "format": "Portable ZIP", "status": "planned", "url": null, "label": "Download for Windows"},
+        {"id": "microsoft-store", "name": "Microsoft Store", "format": "Install and update through the Store", "status": "planned", "url": null, "label": "Microsoft Store"}
+      ]
+    },
+    {
+      "id": "macos",
+      "name": "macOS",
+      "target": "Apple Silicon & Intel",
+      "channels": [
+        {"id": "macos-arm64", "name": "Direct download · Apple Silicon", "format": "Native app archive", "status": "planned", "url": null, "label": "Apple Silicon download"},
+        {"id": "macos-x64", "name": "Direct download · Intel", "format": "Native app archive", "status": "planned", "url": null, "label": "Intel Mac download"},
+        {"id": "mac-app-store", "name": "Mac App Store", "format": "Install and update through the App Store", "status": "planned", "url": null, "label": "Mac App Store"}
+      ]
+    },
+    {
+      "id": "linux",
+      "name": "Linux",
+      "target": "x64 desktop",
+      "channels": [
+        {"id": "linux-binary", "name": "Direct download", "format": "Native tar.gz archive", "status": "planned", "url": null, "label": "Download for Linux"},
+        {"id": "flathub", "name": "Flathub", "format": "Flatpak package", "status": "planned", "url": null, "label": "Flathub"},
+        {"id": "snap-store", "name": "Snap Store", "format": "Snap package", "status": "planned", "url": null, "label": "Snap Store"}
+      ]
+    }
+  ],
+  "python": {"id": "pypi", "name": "PyPI", "format": "Python 3.12 · Windows, macOS & Linux", "status": "planned", "url": null, "label": "iOpenPod 2 on PyPI"}
+}

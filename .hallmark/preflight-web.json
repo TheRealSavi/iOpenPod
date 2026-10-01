@@ -1,0 +1,26 @@
+{
+  "scanned_at": "2026-10-01",
+  "scope": "website",
+  "framework": "Jekyll / Liquid, HTML, CSS, vanilla JavaScript",
+  "font_stack": "Bricolage Grotesque 700 + Geist 400/700, Geist Mono for code",
+  "palette": "Existing cool pale surfaces and iPod-blue accent; OKLCH tokens with stronger text contrast",
+  "motion": "Static; system reduced-motion support",
+  "spacing": "Existing named four-point scale",
+  "references": [
+    "website/tokens.css",
+    "website/site.css",
+    "website/theme.css",
+    "website/_layouts/default.html"
+  ],
+  "preserved": [
+    "GitHub Pages baseurl and existing page routes",
+    "brand icon and fonts",
+    "light/dark appearance",
+    "existing global stylesheet"
+  ],
+  "introduced": [
+    "Screenshot-led IOP2 product tour",
+    "platform-based distribution data",
+    "current IOP2 setup copy and metadata"
+  ]
+}

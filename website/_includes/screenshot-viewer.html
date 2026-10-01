@@ -1,0 +1,14 @@
+<dialog class="screenshot-viewer" id="screenshot-viewer"
+        aria-labelledby="screenshot-viewer-title" aria-describedby="screenshot-viewer-caption">
+  <div class="screenshot-viewer-bar">
+    <p id="screenshot-viewer-title">Screenshot</p>
+    <div class="screenshot-viewer-actions">
+      <button type="button" data-screenshot-zoom aria-pressed="false">Actual size</button>
+      <button type="button" data-screenshot-close autofocus>Close</button>
+    </div>
+  </div>
+  <div class="screenshot-viewer-stage" tabindex="0" role="region" aria-label="Screenshot; scroll to explore when zoomed">
+    <img class="screenshot-viewer-image" width="1920" height="1080" alt="">
+  </div>
+  <p class="screenshot-viewer-caption" id="screenshot-viewer-caption"></p>
+</dialog>

@@ -1,22 +1,22 @@
 /* iOpenPod web design tokens · single runtime source */
 :root {
-  --color-paper: #f0f0f5;
-  --color-paper-2: #e8e8f0;
-  --color-paper-3: #e3e3e8;
-  --color-rule: #d9d9de;
-  --color-rule-2: #c1c1c5;
-  --color-neutral: #6c6c6e;
-  --color-muted: #929295;
-  --color-ink-2: #6c6c6e;
-  --color-ink: #212122;
-  --color-accent: #0a6fdb;
-  --color-accent-ink: #ffffff;
-  --color-focus: #0a6fdb;
-  --color-success: #2b8a3e;
-  --color-warning: #e07700;
-  --color-error: #d9363e;
-  --color-overlay: rgb(255 255 255 / 72%);
-  --color-shadow: rgb(0 0 0 / 12%);
+  --color-paper: oklch(0.95656 0.00666 286.27);
+  --color-paper-2: oklch(0.93331 0.01073 286.19);
+  --color-paper-3: oklch(0.91727 0.00673 286.27);
+  --color-rule: oklch(0.88676 0.00679 286.26);
+  --color-rule-2: oklch(0.81212 0.00555 286.28);
+  --color-neutral: oklch(0.48 0.006 286);
+  --color-muted: oklch(0.48 0.006 286);
+  --color-ink-2: oklch(0.48 0.006 286);
+  --color-ink: oklch(0.248 0.006 286);
+  --color-accent: oklch(0.515 0.178 256);
+  --color-accent-ink: oklch(0.985 0.005 256);
+  --color-focus: oklch(0.515 0.178 256);
+  --color-success: oklch(0.56040 0.14275 146.89);
+  --color-warning: oklch(0.67523 0.16411 56.60);
+  --color-error: oklch(0.58613 0.19891 23.53);
+  --color-overlay: oklch(1 0 0 / 72%);
+  --color-shadow: oklch(0 0 0 / 12%);
 
   --font-display: "Bricolage Grotesque", "Arial Narrow", sans-serif;
   --font-body: "Geist", "Aptos", sans-serif;
@@ -37,7 +37,11 @@
   --text-3xl: 3.0518rem;
   --text-4xl: 3.8147rem;
   --text-display-s: clamp(2.4rem, 6vw, 4rem);
-  --text-display: clamp(2.75rem, 7vw, 4.75rem);
+  --text-display: clamp(2.75rem, 6.2vw, 5.5rem);
+  --text-section: clamp(2rem, 3.7vw, 3.05rem);
+  --tracking-hero: -0.045em;
+  --rule-accent: 3px;
+  --radius-image: 0.25rem;
 
   --space-3xs: 0.125rem;
   --space-2xs: 0.25rem;

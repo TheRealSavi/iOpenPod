@@ -50,8 +50,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&amp;family=Geist:wght@400;700&amp;family=Geist+Mono:wght@400;700&amp;display=swap">
-    <link rel="stylesheet" href="{{ '/site.min.css' | relative_url }}">
-    <link rel="stylesheet" href="{{ '/theme.min.css' | relative_url }}">
+    <link rel="stylesheet" href="{{ '/site.css' | relative_url }}">
+    <link rel="stylesheet" href="{{ '/theme.css' | relative_url }}">
+
+    <link rel="stylesheet" href="{{ '/iop2.css' | relative_url }}">
 
     <script type="application/ld+json">
     {
@@ -67,15 +69,15 @@
         {
           "@type": "SoftwareApplication",
           "@id": "{{ software_id }}",
-          "name": "iOpenPod",
+          "name": "iOpenPod 2",
           "url": "{{ site_home_url }}",
-          "description": "Free, open-source desktop application for managing iPods without iTunes. Browse and edit an iPod library, sync media from the PC, convert unsupported audio and video formats, manage podcasts and playlists, write artwork and photos, and back up device data.",
+          "description": {{ site.description | jsonify }},
+          "softwareVersion": "2.0",
+          "releaseNotes": "In development; public 2.x downloads and store releases are planned.",
           "applicationCategory": "MultimediaApplication",
           "operatingSystem": "Windows, macOS, Linux",
           "screenshot": "{{ site.default_og_image }}",
-          "downloadUrl": "https://github.com/TheRealSavi/iOpenPod/releases/latest",
-          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-          "license": "https://opensource.org/licenses/MIT",
+          "license": "https://www.gnu.org/licenses/gpl-3.0.html",
           "programmingLanguage": "Python",
           "author": { "@type": "Person", "name": "{{ site.author }}" },
           "isPartOf": { "@id": "{{ website_id }}" }
@@ -93,42 +95,11 @@
     }
     </script>
 
-    {% if page.include_faq_schema %}
-    <script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        "@id": "{{ faq_id }}",
-        "url": "{{ canonical_url }}",
-        "isPartOf": { "@id": "{{ webpage_id }}" },
-        "about": { "@id": "{{ software_id }}" },
-        "mainEntity": [
-            { "@type": "Question", "name": "How do I sync my iPod without iTunes?",
-              "acceptedAnswer": { "@type": "Answer", "text": "Install iOpenPod from PyPI with pip, pipx, or uv tool, or download a native release build. Launch it, connect your iPod as a mounted drive, choose your media folders, review the changes, and apply the sync plan." }},
-            { "@type": "Question", "name": "Can I put FLAC files on an iPod?",
-              "acceptedAnswer": { "@type": "Answer", "text": "Yes. iOpenPod converts unsupported audio and video formats to iPod-compatible output during sync. FFmpeg with ffprobe is required for transcoding and media probing." }},
-            { "@type": "Question", "name": "Is iOpenPod related to OpenPod.io or OpenPod?",
-              "acceptedAnswer": { "@type": "Answer", "text": "No. iOpenPod is a distinct, active, modern open-source iPod management tool and is not affiliated with OpenPod.io or OpenPod." }},
-            { "@type": "Question", "name": "What should I use if I am migrating from gtkpod, YamiPod, CopyPod, EphPod, Strawberry, or Clementine?",
-              "acceptedAnswer": { "@type": "Answer", "text": "iOpenPod is a modern replacement for abandoned iPod managers like gtkpod, YamiPod, CopyPod, and EphPod. If you are coming from Strawberry or Clementine, iOpenPod avoids libgpod dependency errors, stays free on Linux, Windows, and macOS, and adds safer sync review with automatic device snapshot backups." }},
-            { "@type": "Question", "name": "Does iOpenPod work on Linux and macOS?",
-              "acceptedAnswer": { "@type": "Answer", "text": "Yes. iOpenPod supports Windows, macOS, and Linux. PyPI installs are recommended, and native builds are available for easy install." }},
-            { "@type": "Question", "name": "Which iPod models are supported?",
-              "acceptedAnswer": { "@type": "Answer", "text": "iPod Classic, iPod Mini, and iPod Nano models are supported. iPod Shuffle support is planned. iPod Touch support is not planned." }},
-            { "@type": "Question", "name": "Will syncing with iOpenPod erase my iPod?",
-              "acceptedAnswer": { "@type": "Answer", "text": "No. iOpenPod shows the changes before anything is written, and backs up your database before every sync." }},
-            { "@type": "Question", "name": "How do I find the iOpenPod log file?",
-              "acceptedAnswer": { "@type": "Answer", "text": "In iOpenPod, open Settings > Storage, then click Open next to Log Location. Attach iopenpod.log when reporting a bug." }},
-            { "@type": "Question", "name": "Do I need Python to use iOpenPod?",
-              "acceptedAnswer": { "@type": "Answer", "text": "PyPI installs require Python 3.11 or newer. Native builds do not need a separate Python install." }}
-        ]
-    }
-    </script>
-    {% endif %}
+
 </head>
 <body class="{{ page.body_class | default: '' }}">
     {{ content }}
-    <script src="{{ '/site.min.js' | relative_url }}" defer></script>
-  <script src="{{ '/theme.min.js' | relative_url }}" defer></script>
+  <script src="{{ '/theme.js' | relative_url }}" defer></script>
+  <script src="{{ '/screenshot-viewer.js' | relative_url }}" defer></script>
 </body>
 </html>

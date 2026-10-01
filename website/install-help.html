@@ -1,609 +1,100 @@
 ---
-title: iOpenPod Install Help and Troubleshooting
-description: Friendly iOpenPod install help for Windows, macOS, and Linux, including native builds, uv, pipx, helper tools, and common troubleshooting.
-og_title: iOpenPod Install Help and Troubleshooting
-og_description: Step-by-step setup and troubleshooting for iOpenPod on Windows, macOS, and Linux.
-body_class: help-page
+title: Install & setup — iOpenPod 2
+description: Plan your iOpenPod 2 installation on Windows, macOS, or Linux. Native downloads, PyPI, store availability, and media-tool requirements.
+body_class: iop2-page setup-page
 permalink: /install-help/
 ---
-        {% capture canonical_url %}{{ site.url }}{{ site.baseurl }}{{ page.url }}{% endcapture %}
-        {% capture site_home_url %}{{ site.url }}{{ site.baseurl }}/{% endcapture %}
-        {% capture software_id %}{{ site_home_url }}#softwareapplication{% endcapture %}
-        {% capture webpage_id %}{{ canonical_url }}#webpage{% endcapture %}
-        <script type="application/ld+json">
-        {
-            "@context": "https://schema.org",
-            "@type": "HowTo",
-            "@id": "{{ canonical_url }}#howto",
-            "name": "Install iOpenPod with uv",
-            "description": "Install iOpenPod with uv and launch it from your terminal.",
-            "url": "{{ canonical_url }}",
-            "isPartOf": { "@id": "{{ webpage_id }}" },
-            "about": { "@id": "{{ software_id }}" },
-            "step": [
-                {
-                    "@type": "HowToStep",
-                    "@id": "{{ canonical_url }}#howto-step-install-uv",
-                    "name": "Install uv if needed",
-                    "text": "If uv is not installed, follow the official uv install guide. Then reopen your terminal."
-                },
-                {
-                    "@type": "HowToStep",
-                    "@id": "{{ canonical_url }}#howto-step-install-iopenpod",
-                    "name": "Install iOpenPod",
-                    "text": "Run: uv tool install iopenpod"
-                },
-                {
-                    "@type": "HowToStep",
-                    "@id": "{{ canonical_url }}#howto-step-launch-iopenpod",
-                    "name": "Launch iOpenPod",
-                    "text": "Run: iopenpod"
-                }
-            ]
-        }
-        </script>
-        <script type="application/ld+json">
-        {
-            "@context": "https://schema.org",
-            "@type": "FAQPage",
-            "@id": "{{ canonical_url }}#faq",
-            "url": "{{ canonical_url }}",
-            "isPartOf": { "@id": "{{ webpage_id }}" },
-            "about": { "@id": "{{ software_id }}" },
-            "mainEntity": [
-                {
-                    "@type": "Question",
-                    "@id": "{{ canonical_url }}#faq-iopenpod-not-recognized",
-                    "name": "iopenpod is not recognized",
-                    "acceptedAnswer": {
-                        "@type": "Answer",
-                        "text": "Your terminal cannot find the command yet. For uv installs, run uv tool update-shell. For pipx installs, run pipx ensurepath. Close and reopen the terminal. On Windows, sign out and back in if PATH still has not updated."
-                    }
-                },
-                {
-                    "@type": "Question",
-                    "@id": "{{ canonical_url }}#faq-pipx-python-too-old",
-                    "name": "pipx install iopenpod says Python is too old",
-                    "acceptedAnswer": {
-                        "@type": "Answer",
-                        "text": "iOpenPod requires Python 3.11 or newer. Run pipx install --python python3.11 iopenpod. On Windows, list installed Python versions with py -0p."
-                    }
-                },
-                {
-                    "@type": "Question",
-                    "@id": "{{ canonical_url }}#faq-uv-cannot-download-python",
-                    "name": "uv tool install iopenpod cannot download Python",
-                    "acceptedAnswer": {
-                        "@type": "Answer",
-                        "text": "Managed computers may block downloads, proxies, or TLS inspection. Try another network, install Python 3.11 or newer yourself, or use a native build."
-                    }
-                },
-                {
-                    "@type": "Question",
-                    "@id": "{{ canonical_url }}#faq-linux-qt-xcb",
-                    "name": "Linux says the Qt xcb platform plugin could not load",
-                    "acceptedAnswer": {
-                        "@type": "Answer",
-                        "text": "A Qt desktop library is missing. On Debian or Ubuntu, start with sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxkbcommon0 libxkbcommon-x11-0. On a Wayland-only desktop, you can also try QT_QPA_PLATFORM=wayland iopenpod."
-                    }
-                },
-                {
-                    "@type": "Question",
-                    "@id": "{{ canonical_url }}#faq-missing-helper-tools",
-                    "name": "FFmpeg, ffprobe, or fpcalc is missing",
-                    "acceptedAnswer": {
-                        "@type": "Answer",
-                        "text": "Install the missing helper tool, restart iOpenPod, then check with ffmpeg -version, ffprobe -version, and fpcalc -version."
-                    }
-                }
-            ]
-        }
-        </script>
-    <a class="skip-link" href="#main-content">Skip to content</a>
-    <nav class="site-nav" aria-label="Primary navigation">
-        <div class="container site-nav__inner">
-            <a class="site-wordmark" href="../" aria-label="iOpenPod home"><span class="site-wordmark__mark">i</span>OpenPod</a>
-            <div class="site-nav__links">
-                <a href="../">Home</a>
-                <a href="https://github.com/TheRealSavi/iOpenPod">Source</a>
-                <a href="https://discord.gg/9Yy499Tf5d">Discord</a>
-                <a href="https://ko-fi.com/johngibbons">Donate</a>
-                <button type="button" class="site-nav__action theme-toggle" data-theme-toggle aria-pressed="false" aria-label="Switch to dark mode">🌙</button>
-            </div>
-        </div>
-    </nav>
-    <header class="hero">
-        <div class="wrap">
-            <h1>Get iOpenPod running.</h1>
-            <p class="lead">Pick the install path that fits your machine. If it fails, the fixes are below.</p>
-            <div class="button-row">
-                <a class="button-link primary" href="#native">Download the app</a>
-                <a class="button-link" href="#fixes">I need help</a>
-            </div>
-        </div>
-    </header>
-
-    <div class="wrap page">
-        <aside class="sidebar" aria-label="Help navigation">
-            <div class="sidebar-inner">
-                <p class="sidebar-title">Jump to a section</p>
-                <nav class="side-nav">
-                    <a href="#start">Start here</a>
-                    <a href="#native">Native builds</a>
-                    <a href="#python">uv and pipx</a>
-                    <a href="#tools">Needed tools</a>
-                    <a href="#fixes">Common fixes</a>
-                    <a href="#community">Discord community</a>
-                </nav>
-            </div>
-        </aside>
-
-        <main id="main-content">
-            <section id="start">
-                <h2>Pick an install path</h2>
-
-                <div class="option-grid">
-                    <article class="choice">
-                        <span class="tag">Terminal</span>
-                        <h3>Use uv</h3>
-                        <p>Best if you can copy terminal commands. uv keeps iOpenPod isolated and can handle Python for you.</p>
-                        <div class="choice-actions">
-                            <div class="button-row">
-                                <a class="button-link" href="#uv-install">uv steps</a>
-                            </div>
-                        </div>
-                    </article>
-
-                    <article class="choice">
-                        <h3>Use pipx</h3>
-                        <p>Best if Python 3.11 or newer is already installed. pipx keeps app installs separate.</p>
-                        <div class="choice-actions">
-                            <div class="button-row">
-                                <a class="button-link" href="#pipx-install">pipx steps</a>
-                            </div>
-                        </div>
-                    </article>
-
-                    <article class="choice">
-                        <span class="tag">Easiest</span>
-                        <h3>Download the app</h3>
-                        <p>No Python or terminal needed. Native builds may show a security prompt because they are not fully signed yet.</p>
-                        <div class="choice-actions">
-                            <div class="button-row">
-                                <a class="button-link" href="#native">Native steps</a>
-                            </div>
-                        </div>
-                    </article>
-                </div>
-                <div class="callout">
-                    <p>Already installed iOpenPod more than one way? Use the <a href="#multiple-installs">cleanup steps</a> before reinstalling.</p>
-                </div>
-            </section>
-
-            <section id="native">
-                <h2>Native builds</h2>
-                <div class="button-row">
-                    <a class="button-link primary" href="https://github.com/TheRealSavi/iOpenPod/releases/latest">Download Here</a>
-                </div>
-
-                <div class="details-list">
-                    <details class="help-item">
-                        <summary>Windows native app</summary>
-                        <div class="help-body">
-                            <ol>
-                                <li>Download <code>iOpenPod-Windows.zip</code>.</li>
-                                <li>Right-click the zip and choose <strong>Extract All</strong>.</li>
-                                <li>Open the extracted folder.</li>
-                                <li>Double-click <code>iOpenPod.exe</code>.</li>
-                            </ol>
-                            <div class="callout warning">
-                                <p>If SmartScreen appears, check that the file came from the official iOpenPod GitHub release.</p>
-                                <p>Then choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
-                            </div>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>macOS native app and security prompt</summary>
-                        <div class="help-body">
-                            <ol>
-                                <li>Download <code>iOpenPod-macOS.zip</code>.</li>
-                                <li>Open the zip.</li>
-                                <li>Move <code>iOpenPod.app</code> to Applications if you want it installed there.</li>
-                                <li>Open <code>iOpenPod.app</code>.</li>
-                            </ol>
-                            <div class="callout warning">
-                                <p>The macOS app is not notarized yet. Gatekeeper may block the first launch.</p>
-                                <p>Only continue if the file came from the official GitHub release.</p>
-                            </div>
-
-                            <h3 id="macos-system-settings">Allow it in System Settings</h3>
-                            <ol>
-                                <li>Open <code>iOpenPod.app</code> from Finder.</li>
-                                <li>When macOS blocks it, choose <strong>Done</strong>.</li>
-                                <li>Open <strong>System Settings</strong>.</li>
-                                <li>Go to <strong>Privacy &amp; Security</strong>.</li>
-                                <li>Choose <strong>Open Anyway</strong> next to the iOpenPod message.</li>
-                                <li>Confirm with Touch ID or an administrator password.</li>
-                            </ol>
-
-                            <div class="step-gallery" aria-label="macOS security approval screenshots">
-                                <figure class="step-card wide">
-                                    <img src="{{ '/MacOS_Install_IMGS/macOS_Step1.webp' | relative_url }}" width="1840" height="1368" loading="lazy" alt="Finder window showing iOpenPod.app selected before first launch">
-                                    <figcaption>1. Open <code>iOpenPod.app</code> from Finder.</figcaption>
-                                </figure>
-                                <figure class="step-card">
-                                    <img src="{{ '/MacOS_Install_IMGS/macOS_Step2.webp' | relative_url }}" width="520" height="598" loading="lazy" alt="macOS warning dialog saying iOpenPod.app was not opened and showing Done">
-                                    <figcaption>2. Choose <strong>Done</strong>.</figcaption>
-                                </figure>
-                                <figure class="step-card wide">
-                                    <img src="{{ '/MacOS_Install_IMGS/macOS_Step3.webp' | relative_url }}" width="1446" height="1632" loading="lazy" alt="Privacy and Security settings showing iOpenPod was blocked and an Open Anyway button">
-                                    <figcaption>3. Choose <strong>Open Anyway</strong> in Privacy &amp; Security.</figcaption>
-                                </figure>
-                                <figure class="step-card">
-                                    <img src="{{ '/MacOS_Install_IMGS/macOS_Step4.webp' | relative_url }}" width="520" height="700" loading="lazy" alt="macOS confirmation dialog asking whether to open iOpenPod.app and showing Open Anyway">
-                                    <figcaption>4. Confirm with <strong>Open Anyway</strong>.</figcaption>
-                                </figure>
-                                <figure class="step-card">
-                                    <img src="{{ '/MacOS_Install_IMGS/macOS_Step5.webp' | relative_url }}" width="520" height="692" loading="lazy" alt="macOS authentication dialog asking for Touch ID or administrator password">
-                                    <figcaption>5. Use Touch ID or enter an admin password.</figcaption>
-                                </figure>
-                            </div>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>Linux AppImage</summary>
-                        <div class="help-body">
-                            <ol>
-                                <li>Download <code>iOpenPod-Linux-x86_64.AppImage</code>.</li>
-                                <li>Open a terminal in the download folder.</li>
-                                <li>Run the commands below.</li>
-                            </ol>
-                            <pre><code>chmod a+x ./iOpenPod-Linux-x86_64.AppImage
-./iOpenPod-Linux-x86_64.AppImage</code></pre>
-                            <p>You can also mark the file executable in your file manager, then double-click it.</p>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>Linux tarball or Flatpak</summary>
-                        <div class="help-body">
-                            <h3>Tarball</h3>
-                            <pre><code>tar -xzf iOpenPod-Linux.tar.gz
-cd iOpenPod
-./iOpenPod</code></pre>
-                            <h3>Flatpak bundle</h3>
-                            <pre><code>flatpak install --user ./iOpenPod-Linux.flatpak
-flatpak run io.github.therealsavi.iOpenPod</code></pre>
-                            <p>Flatpak is only available when the release includes <code>iOpenPod-Linux.flatpak</code>.</p>
-                        </div>
-                    </details>
-                </div>
-            </section>
-
-            <section id="python">
-                <h2>uv and pipx Installs</h2>
-
-                <div class="two-grid">
-                    <article id="uv-install" class="tool-card">
-                        <span class="tag">Best</span>
-                        <h3>Install with uv</h3>
-                        <p>If uv is not installed, follow the official uv install guide. Then reopen your terminal.</p>
-                        <p><a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">Official uv installation instructions</a></p>
-                        <div class="command-group">
-                            <div class="command-title">Install and run</div>
-                            <pre><code>uv tool install iopenpod
+{% include product-nav.html %}
+<main class="container setup-main" id="main-content">
+  <header class="setup-intro">
+    <h1>A little setup.<br>A lot of music.</h1>
+    <p>Installation and first steps for iOpenPod 2 on Windows, macOS, and Linux.</p>
+  </header>
+  <div class="availability-note">
+    <strong>2.0 is in development.</strong>
+    <p>Public iOpenPod 2 binaries, the 2.x PyPI package, and store listings are planned. This guide describes the intended channels and the current development build. Check <a href="{{ '/#install' | relative_url }}">download availability</a> before installing.</p>
+  </div>
+  <nav class="setup-index" aria-label="Setup topics">
+    <a href="#native">Native downloads</a><a href="#stores">Stores</a><a href="#python">Python</a><a href="#helper-tools">Media tools</a><a href="#first-sync">First sync</a><a href="#troubleshooting">Troubleshooting</a>
+  </nav>
+  <section class="setup-section" id="native">
+    <h2>Native downloads</h2>
+    <p>Native builds include Python and the application libraries. You do not need a separate Python installation. Download only a published <strong>2.x</strong> package for your operating system and processor.</p>
+    <dl class="setup-facts">
+      <div><dt>Windows</dt><dd>The direct-download target is a portable x64 ZIP. Extract the complete folder before running iOpenPod; keep its supporting files together. The Microsoft Store candidate targets Windows 10 version 2004 or later.</dd></div>
+      <div><dt>macOS</dt><dd>Separate app archives are planned for Apple Silicon and Intel. The native build targets macOS 12.3 or later; testing on 12.3 is still pending. Public direct downloads require release signing and notarization.</dd></div>
+      <div><dt>Linux</dt><dd>A native x64 tar.gz archive is planned. Extract it with executable permissions and symlinks preserved, then run the included launcher. Desktop-library requirements will accompany the release.</dd></div>
+    </dl>
+    <p>Current packaging candidates are development artifacts. Follow the instructions and checksums shipped with the eventual public release.</p>
+  </section>
+  <section class="setup-section" id="stores">
+    <h2>Install through your store</h2>
+    <p>The planned stores are <strong>Microsoft Store</strong>, <strong>Mac App Store</strong>, <strong>Flathub</strong>, and <strong>Snap Store</strong>. Each will have its own install link and update path in the <a href="{{ '/#install' | relative_url }}">download section</a> once published.</p>
+    <p>Store availability is independent: a release on one channel does not mean the others are ready. Sandboxed builds need verified access to your media folders, removable iPod, and external media tools. Their release instructions will explain the required permissions.</p>
+  </section>
+  <section class="setup-section" id="python">
+    <h2>The Python option</h2>
+    <p>The iOpenPod 2 package requires <strong>Python 3.12</strong>. The command below is for the future 2.x PyPI release; it deliberately requires version 2 and will fail until a matching release exists.</p>
+    <pre><code>uv tool install --python 3.12 "iopenpod&gt;=2,&lt;3"
 iopenpod</code></pre>
-                        </div>
-                        <div class="command-group">
-                            <div class="command-title">Update or remove</div>
-                            <pre><code>uv tool upgrade iopenpod
-uv tool uninstall iopenpod</code></pre>
-                        </div>
-                    </article>
-
-                    <article id="pipx-install" class="tool-card">
-                        <h3>Install with pipx</h3>
-                        <p>If pipx is not installed, follow the official pipx guide. Then reopen your terminal.</p>
-                        <p><a href="https://pipx.pypa.io/stable/how-to/install-pipx/" target="_blank" rel="noopener noreferrer">Official pipx installation instructions</a></p>
-                        <div class="command-group">
-                            <div class="command-title">Install and run</div>
-                            <pre><code>pipx install iopenpod
-iopenpod</code></pre>
-                        </div>
-                        <div class="command-group">
-                            <div class="command-title">Update or remove</div>
-                            <pre><code>pipx upgrade iopenpod
-pipx uninstall iopenpod</code></pre>
-                        </div>
-                    </article>
-                </div>
-            </section>
-
-            <section id="tools">
-                <h2>Needed tools</h2>
-
-                <div class="tool-grid">
-                    <article class="tool-card">
-                        <h3>FFmpeg and ffprobe</h3>
-                        <p>Needed for media checks and audio/video conversion.</p>
-                        <pre><code>ffmpeg -version
-ffprobe -version</code></pre>
-                    </article>
-
-                    <article class="tool-card">
-                        <h3>Chromaprint fpcalc</h3>
-                        <p>Needed for acoustic fingerprints during matching.</p>
-                        <pre><code>fpcalc -version</code></pre>
-                    </article>
-                </div>
-
-                <details class="help-item">
-                    <summary>Common helper tool install commands</summary>
-                    <div class="help-body">
-                        <table class="mini-table">
-                            <thead>
-                                <tr><th>Platform</th><th>FFmpeg</th><th>Chromaprint / fpcalc</th></tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td data-label="Platform">Windows</td>
-                                    <td data-label="FFmpeg">Use the <a href="https://ffmpeg.org/download.html">FFmpeg download page</a>, WinGet, Scoop, or Chocolatey.</td>
-                                    <td data-label="Chromaprint / fpcalc">Download <code>chromaprint-fpcalc</code> from <a href="https://acoustid.org/chromaprint">AcoustID Chromaprint</a>.</td>
-                                </tr>
-                                <tr>
-                                    <td data-label="Platform">macOS</td>
-                                    <td data-label="FFmpeg"><code>brew install ffmpeg</code></td>
-                                    <td data-label="Chromaprint / fpcalc"><code>brew install chromaprint</code></td>
-                                </tr>
-                                <tr>
-                                    <td data-label="Platform">Ubuntu / Debian</td>
-                                    <td data-label="FFmpeg"><code>sudo apt install ffmpeg</code></td>
-                                    <td data-label="Chromaprint / fpcalc"><code>sudo apt install libchromaprint-tools</code></td>
-                                </tr>
-                                <tr>
-                                    <td data-label="Platform">Fedora / RPM</td>
-                                    <td data-label="FFmpeg"><code>sudo dnf install ffmpeg</code></td>
-                                    <td data-label="Chromaprint / fpcalc"><code>sudo dnf install chromaprint-tools</code></td>
-                                </tr>
-                                <tr>
-                                    <td data-label="Platform">Arch Linux</td>
-                                    <td data-label="FFmpeg"><code>sudo pacman -S ffmpeg</code></td>
-                                    <td data-label="Chromaprint / fpcalc"><code>sudo pacman -S chromaprint</code></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </details>
-
-                <details class="help-item">
-                    <summary>Linux Qt desktop libraries</summary>
-                    <div class="help-body">
-                        <p>Install these if Linux reports an <code>xcb</code> error or crashes when pressing <kbd>Ctrl</kbd>, <kbd>Alt</kbd>, or <kbd>Shift</kbd>.</p>
-                        <div class="command-group">
-                            <div class="command-title">Debian / Ubuntu</div>
-                            <pre><code>sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxkbcommon0 libxkbcommon-x11-0</code></pre>
-                        </div>
-                        <div class="command-group">
-                            <div class="command-title">Fedora / RPM-based Linux</div>
-                            <pre><code>sudo dnf install libxcb xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil libxkbcommon libxkbcommon-x11</code></pre>
-                        </div>
-                        <div class="command-group">
-                            <div class="command-title">Arch Linux</div>
-                            <pre><code>sudo pacman -S libxcb xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil libxkbcommon libxkbcommon-x11</code></pre>
-                        </div>
-                        <p>If names differ, search your distro for <code>xcb-xkb</code>, <code>xkbcommon</code>, and <code>xkbcommon-x11</code>.</p>
-                    </div>
-                </details>
-            </section>
-
-            <section id="fixes">
-                <h2>Common fixes</h2>
-
-                <div class="details-list">
-                    <details class="help-item">
-                        <summary><span><code>iopenpod</code> is not recognized</span></summary>
-                        <div class="help-body">
-                            <p>Your terminal cannot find the command yet.</p>
-                            <pre><code># uv installs
-uv tool update-shell
-
-# pipx installs
-pipx ensurepath</code></pre>
-                            <p>Close and reopen the terminal. On Windows, sign out and back in if PATH still has not updated.</p>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary><span><code>pipx install iopenpod</code> says Python is too old</span></summary>
-                        <div class="help-body">
-                            <p>iOpenPod requires Python 3.11 or newer.</p>
-                            <pre><code>pipx install --python python3.11 iopenpod</code></pre>
-                            <p>On Windows, list installed Python versions with:</p>
-                            <pre><code>py -0p</code></pre>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary><span><code>uv tool install iopenpod</code> cannot download Python</span></summary>
-                        <div class="help-body">
-                            <p>Managed computers may block downloads, proxies, or TLS inspection.</p>
-                            <p>Try another network, install Python 3.11 or newer yourself, or use a native build.</p>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>Windows says the app is unsafe</summary>
-                        <div class="help-body">
-                            <p>Unsigned open-source apps can trigger SmartScreen.</p>
-                            <p>Only continue if the file came from the official iOpenPod GitHub release.</p>
-                            <p>Choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>macOS says the developer cannot be verified</summary>
-                        <div class="help-body">
-                            <p>Open <strong>System Settings</strong>, then go to <strong>Privacy &amp; Security</strong>.</p>
-                            <p>Choose <strong>Open Anyway</strong> next to the iOpenPod message.</p>
-                            <p>If <strong>Open Anyway</strong> does not appear, Control-click <code>iOpenPod.app</code>, choose <strong>Open</strong>, then confirm.</p>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>Linux says the Qt xcb platform plugin could not load</summary>
-                        <div class="help-body">
-                            <p>A Qt desktop library is missing. On Debian or Ubuntu, start with:</p>
-                            <pre><code>sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxkbcommon0 libxkbcommon-x11-0</code></pre>
-                            <p>On a Wayland-only desktop, you can also try:</p>
-                            <pre><code>QT_QPA_PLATFORM=wayland iopenpod</code></pre>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>Linux build crashes when pressing Ctrl, Alt, or Shift</summary>
-                        <div class="help-body">
-                            <p>This points to Qt's XKeyboard libraries.</p>
-                            <p>Install the Linux Qt libraries above, especially <code>libxcb-xkb1</code>, <code>libxkbcommon0</code>, and <code>libxkbcommon-x11-0</code>.</p>
-                            <p>If you use a native Linux build, download a newer iOpenPod release after those libraries were bundled.</p>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>Linux AppImage reports a FUSE error</summary>
-                        <div class="help-body">
-                            <pre><code># Ubuntu / Debian
-sudo apt install libfuse2
-
-# Ubuntu 24.04 and newer may use this name
-sudo apt install libfuse2t64
-
-# Arch Linux
-sudo pacman -S fuse2</code></pre>
-                            <p>If FUSE still fails, use the tarball, Flatpak bundle, or uv install.</p>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>Linux says the iPod is read-only or permission denied</summary>
-                        <div class="help-body">
-                            <p>Do not sync until a small write test works.</p>
-                            <p>Find your iPod path. It often looks like <code>/run/media/YOURNAME/IPOD</code> or <code>/media/YOURNAME/IPOD</code>.</p>
-
-                            <h3>Check the mount</h3>
-                            <pre><code>findmnt -T "/path/to/iPod"
-lsblk -f</code></pre>
-                            <p>In <code>findmnt</code>, <code>ro</code> means read-only. <code>rw</code> means read-write.</p>
-
-                            <h3>Safe write test</h3>
-                            <pre><code>touch "/path/to/iPod/.iopenpod-write-test"
-rm "/path/to/iPod/.iopenpod-write-test"</code></pre>
-                            <p>If both commands work, iOpenPod should be able to write.</p>
-
-                            <h3>If it mounted read-only</h3>
-                            <pre><code>sudo mount -o remount,rw "/path/to/iPod"</code></pre>
-                            <p>Run the write test again after remounting.</p>
-
-                            <h3>If FAT32 needs repair</h3>
-                            <div class="callout warning">
-                                <p>Replace <code>/dev/sdXN</code> with the iPod partition. Using the wrong disk can damage data.</p>
-                                <p>Do not run <code>fsck</code> while the iPod is mounted.</p>
-                            </div>
-                            <pre><code>sudo umount "/path/to/iPod"
-sudo fsck.vfat -a /dev/sdXN</code></pre>
-                            <p>Reconnect the iPod, then run the write test again.</p>
-
-                            <h3>If it is Mac-formatted</h3>
-                            <p>If <code>lsblk -f</code> shows <code>hfsplus</code>, Linux write support is limited.</p>
-                            <p>Use macOS, or back up and restore the iPod as Windows/FAT32 before using it mainly on Linux.</p>
-
-                            <h3>If root owns the mount</h3>
-                            <p>Unmount, unplug, and reconnect from your desktop file manager.</p>
-                            <p>Advanced manual mount:</p>
-                            <pre><code>sudo umount "/path/to/iPod"
-sudo mkdir -p /mnt/ipod
-sudo mount -o rw,uid=$(id -u),gid=$(id -g),umask=022 /dev/sdXN /mnt/ipod</code></pre>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>iOpenPod opens but does not find my iPod</summary>
-                        <div class="help-body">
-                            <ul>
-                                <li>Make sure the iPod appears in Finder, File Explorer, or your Linux file manager.</li>
-                                <li>Try another USB cable or port.</li>
-                                <li>Close iTunes, Music, Finder sync windows, or other iPod tools.</li>
-                                <li>On Linux, make sure the safe write test succeeds.</li>
-                            </ul>
-                        </div>
-                    </details>
-
-                    <details class="help-item">
-                        <summary>FFmpeg, ffprobe, or fpcalc is missing</summary>
-                        <div class="help-body">
-                            <p>Install the missing helper tool, restart iOpenPod, then check:</p>
-                            <pre><code>ffmpeg -version
-ffprobe -version
-fpcalc -version</code></pre>
-                        </div>
-                    </details>
-
-                    <details class="help-item" id="multiple-installs">
-                        <summary>I installed iOpenPod more than one way</summary>
-                        <div class="help-body">
-                            <p>Pick one install method and remove the others.</p>
-                            <pre><code>uv tool uninstall iopenpod
-pipx uninstall iopenpod
-python -m pip uninstall iopenpod</code></pre>
-                            <p>Then reinstall with one method, preferably uv or pipx.</p>
-                        </div>
-                    </details>
-                </div>
-            </section>
-
-            <section class="community-section" id="community">
-                <h2>Join the iOpenPod community</h2>
-                <div class="community-action">
-                    <p>Meet other iPod owners, suggest features, share feedback, and get help when something isn’t working.</p>
-                    <a class="btn btn-primary" href="https://discord.gg/9Yy499Tf5d">Join us on Discord</a>
-                </div>
-            </section>
-
-            <section class="help-resources" aria-labelledby="help-resources-title">
-                <h2 class="sr-only" id="help-resources-title">More help and reference links</h2>
-                <div class="help-resource-item" id="report">
-                    <h3>Found a bug?</h3>
-                    <p>Include <code>iopenpod.log</code> with your report. In iOpenPod, open <strong>Settings &gt; Storage</strong>, then choose <strong>Open</strong> next to <strong>Log Location</strong>.</p>
-                    <a class="help-resource-link" href="https://github.com/TheRealSavi/iOpenPod/issues/new/choose">Open a GitHub issue</a>
-                </div>
-
-                <details class="reference-links" id="links">
-                    <summary>Installation reference links</summary>
-                    <ul>
-                        <li><a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">Official uv installation docs</a></li>
-                        <li><a href="https://pipx.pypa.io/stable/how-to/install-pipx/" target="_blank" rel="noopener noreferrer">Official pipx installation docs</a></li>
-                        <li><a href="https://docs.appimage.org/user-guide/troubleshooting/fuse.html">Official AppImage FUSE troubleshooting docs</a></li>
-                        <li><a href="https://ffmpeg.org/download.html">Official FFmpeg download page</a></li>
-                        <li><a href="https://acoustid.org/chromaprint">Official Chromaprint download page</a></li>
-                    </ul>
-                </details>
-            </section>
-        </main>
-    </div>
-
-    <footer class="site-footer">
-        <div class="container">
-            <p class="footer-statement">Your iPod, without iTunes.</p>
-            <div class="footer-line">
-                <div class="footer-links">
-                    <a href="https://github.com/TheRealSavi">John Gibbons</a>
-                    <a href="https://github.com/TheRealSavi/iOpenPod">Source Code</a>
-                    <a href="https://github.com/TheRealSavi/iOpenPod/issues">Report Issues</a>
-                    <a href="https://discord.gg/9Yy499Tf5d">Discord</a>
-                    <a href="https://ko-fi.com/johngibbons">Ko-fi</a>
-                </div>
-                <p><span class="site-wordmark"><span class="site-wordmark__mark">i</span>OpenPod</span> · MIT License &copy; 2025–2026</p>
-            </div>
-        </div>
-    </footer>
+    <p>Use <a href="https://docs.astral.sh/uv/getting-started/installation/">uv’s installation guide</a> to set up uv. After a 2.x tool install, update with <code>uv tool upgrade iopenpod</code>. If your shell cannot find the launcher, run <code>uv tool update-shell</code> and reopen the terminal.</p>
+    <details>
+      <summary>Working from a 2.0 source checkout</summary>
+      <div class="details-body">
+        <p>From the root of this iOpenPod 2 checkout, use the locked development environment:</p>
+        <pre><code>uv sync --locked
+uv run iopenpod</code></pre>
+        <p>The version in <code>pyproject.toml</code> must be 2.x. The project’s README and packaging guide cover development checks and native builds.</p>
+      </div>
+    </details>
+  </section>
+  <section class="setup-section" id="helper-tools">
+    <h2>Set up media tools</h2>
+    <p><strong>FFmpeg and FFprobe</strong> are required for media inspection and conversion. <strong>Chromaprint’s fpcalc</strong> enables optional acoustic matching. These command-line tools are installed separately from iOpenPod.</p>
+    <ol>
+      <li>Launch iOpenPod. If tools are missing, the startup popup offers setup. You can close it to continue browsing.</li>
+      <li>Open <strong>Settings → Media Tools</strong> to inspect tool status. Choose <strong>Set Up Media Tools</strong> when offered.</li>
+      <li>Review the selected package manager, then choose <strong>Install Missing Tools</strong>. Installation starts only after your choice.</li>
+      <li>Use <strong>Check Again</strong> to verify the tools, then retry your scan or sync.</li>
+    </ol>
+    <dl class="setup-facts">
+      <div><dt>Windows</dt><dd>The native setup helper uses WinGet. Install Microsoft’s App Installer first if WinGet is unavailable.</dd></div>
+      <div><dt>macOS</dt><dd>The native helper uses Homebrew for your Mac’s architecture. Homebrew and available conversion codecs have their own OS requirements.</dd></div>
+      <div><dt>Linux</dt><dd>The native helper supports APT, DNF, Pacman, and Zypper. Automatic setup needs a desktop polkit authentication agent. Available codecs vary by distribution.</dd></div>
+    </dl>
+    <p>Existing tools on your PATH can also be used. Installing tools on the host does not automatically expose them inside Flatpak, Snap, or the Mac App Store sandbox; use the instructions for that specific release.</p>
+  </section>
+  <section class="setup-section" id="first-sync">
+    <h2>Your first sync</h2>
+    <ol>
+      <li><strong>Connect and select your iPod.</strong> It must already be mounted and readable by your computer. Choose it in the device picker.</li>
+      <li><strong>Keep a Backup Snapshot.</strong> Use Backups to capture the contents you want to preserve.</li>
+      <li><strong>Choose Sync with Host.</strong> Add your computer’s media folders and choose which media types to scan.</li>
+      <li><strong>Select your media.</strong> Choose what you want on the iPod, then open Review.</li>
+      <li><strong>Read the changes.</strong> Review additions, updates, and any removals. Removal candidates begin unchecked. Choose Sync Selected when ready.</li>
+      <li><strong>Eject when finished.</strong> Use iOpenPod’s eject action and wait for safe removal before unplugging.</li>
+    </ol>
+    <p>Library edits save automatically by default. To review those edits before saving, enable <strong>Draft all changes</strong> in Settings. Sync has its own review step.</p>
+  </section>
+  <section class="setup-section" id="troubleshooting">
+    <h2>When something needs attention</h2>
+    <details>
+      <summary>The iPod does not appear</summary>
+      <div class="details-body"><p>Check that your operating system mounts the iPod as a drive and can access its files. Open the device picker to refresh discovery. iPod touch, iPhone, and iPod shuffle are outside the 2.0 target. On Linux, follow any device-identification setup shown by the app.</p></div>
+    </details>
+    <details>
+      <summary>Sync reports a missing tool or encoder</summary>
+      <div class="details-body"><p>Check Settings → Media Tools. FFmpeg must include the encoder selected for your conversion settings. A successful tool installation does not guarantee every optional encoder is included. Correct the tool or encoder choice, then retry.</p></div>
+    </details>
+    <details>
+      <summary>Linux reports a Qt platform error</summary>
+      <div class="details-body"><p>The native app needs your distribution’s desktop graphics, XCB, and XKeyboard libraries. Follow the dependency list for the published package and your distribution. Store packages carry a separate desktop runtime and may need different troubleshooting.</p></div>
+    </details>
+    <details>
+      <summary>A write was interrupted</summary>
+      <div class="details-body"><p>Reconnect the same iPod and follow the recovery action shown by iOpenPod. Keep recovery files in place until recovery completes. Backup Snapshots are an additional user-controlled copy of your data.</p></div>
+    </details>
+    <p class="support-link">Still stuck? <a href="https://github.com/TheRealSavi/iOpenPod/issues">Report an issue</a> with your iOpenPod 2 version, install channel, operating system, iPod model, and steps to reproduce.</p>
+  </section>
+</main>
+{% include product-footer.html %}

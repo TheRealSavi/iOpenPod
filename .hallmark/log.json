@@ -1,5 +1,16 @@
 [
   {
+    "date": "2026-10-01",
+    "scope": "website",
+    "macrostructure": "Workbench",
+    "theme": "preserved iOpenPod web system",
+    "theme_axes": "light and dark / Bricolage display + Geist body / cool blue",
+    "nav": "N9 edge-aligned",
+    "footer": "Ft1 mast-headed",
+    "enrichment": "Authentic IOP2 application screenshots with fictional media",
+    "brief": "IOP2-only README and product site with planned native, PyPI, and store distribution"
+  },
+  {
     "date": "2026-09-18",
     "macrostructure": "Narrative Workflow",
     "theme": "custom",

@@ -1,0 +1,12 @@
+<li class="channel" id="{{ include.channel.id }}">
+  <div>
+    <h4>{{ include.channel.name }}</h4>
+    <p>{{ include.channel.format }}</p>
+  </div>
+  {% assign channel_url = include.channel.url | default: '' | strip %}
+  {% if include.channel.status == 'available' and channel_url != '' %}
+  <a class="channel-link" href="{{ channel_url | escape }}">{{ include.channel.label }} <span aria-hidden="true">↗</span></a>
+  {% else %}
+  <span class="channel-status">Planned</span>
+  {% endif %}
+</li>

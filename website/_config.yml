@@ -1,9 +1,11 @@
-title: iOpenPod
+title: iOpenPod 2
 baseurl: /iOpenPod
 url: https://therealsavi.github.io
 author: John Gibbons
-description: Free, open-source desktop application for managing iPods without iTunes.
-default_og_image: https://therealsavi.github.io/iOpenPod/screenshots/hero.webp
+source_url: https://github.com/TheRealSavi/iOpenPod/tree/2.0-clean
+donation_url: https://ko-fi.com/johngibbons
+description: iOpenPod 2 is a free, open-source desktop iPod manager in development for Windows, macOS, and Linux.
+default_og_image: https://therealsavi.github.io/iOpenPod/screenshots/iop2/albums.webp
 google_site_verification: google9044a61ef03e1fae
 
 plugins:
@@ -17,3 +19,23 @@ defaults:
       type: pages
     values:
       layout: default
+
+exclude:
+  - README.md
+  - THEMES.md
+  - MacOS_Install_IMGS
+  - site.min.css
+  - site.min.js
+  - theme.min.css
+  - theme.min.js
+  - screenshots/hero.webp
+  - screenshots/backups.webp
+  - screenshots/podcasts.webp
+  - screenshots/settings.webp
+  - screenshots/smartplaylists.webp
+  - screenshots/syncmedia.webp
+  - screenshots/syncreview.webp
+  - screenshots/syncreview2.webp
+  - screenshots/trackedits.webp
+  - screenshots/trackedits2.webp
+  - screenshots/iop2/manifest.json

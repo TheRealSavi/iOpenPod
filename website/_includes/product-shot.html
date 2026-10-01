@@ -1,0 +1,10 @@
+<figure class="product-shot {{ include.class }}">
+  <button type="button" class="product-shot-trigger" data-screenshot-trigger
+          aria-label="Enlarge screenshot: {{ include.alt | escape }}"
+          aria-haspopup="dialog" aria-controls="screenshot-viewer">
+    <img src="{{ '/screenshots/iop2/' | append: include.file | relative_url }}"
+         width="1920" height="1080" alt="{{ include.alt | escape }}"
+         {% if include.hero %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
+  </button>
+  <figcaption>{{ include.caption }}</figcaption>
+</figure>

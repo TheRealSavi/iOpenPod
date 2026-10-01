@@ -1,0 +1,60 @@
+{
+  "captured_on": "2026-10-01",
+  "application_version": "2.0.0",
+  "source": "Unmodified iOpenPod application widgets rendered by Qt on Windows with deterministic synthetic data.",
+  "command": "uv run --locked python -m scripts.capture_store_screenshots --output .scratch/website-iop2-captures",
+  "encoding": "WebP quality 92, method 6; complete captures with no visual edits",
+  "screenshots": [
+    {
+      "file": "albums.webp",
+      "caption": "Browse your iPod music by album, artist, genre, or track. Shown with a fictional sample library.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 198938,
+      "sha256": "f900c30dd977cfe0116283e5a827f000a890d4ba5c4ce201acc019c2e682f932",
+      "capture_file": "01-album-library.png",
+      "capture_sha256": "90e47fae9f86a13c2f3af6959b8251dcc0dcf15d8567e32755c5177228f9c066"
+    },
+    {
+      "file": "album-details.webp",
+      "caption": "Open an album to browse its tracks, metadata, ratings, and artwork.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 89926,
+      "sha256": "d4ab396797ed439210fa24744eae41777a044df11d72f192f3f24fa2a9046331",
+      "capture_file": "02-album-details.png",
+      "capture_sha256": "58d291d7b0792c81e04f5813d186eebeeb5b85d9a6a031d2e110c134bb23c4aa"
+    },
+    {
+      "file": "playlists.webp",
+      "caption": "Browse and organize playlists with track details and a cover-art overview.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 177058,
+      "sha256": "934a9d6e075fd03924c0c2c460288bcfa6be3a83a18aad53099f95ac2cd5d950",
+      "capture_file": "03-playlists.png",
+      "capture_sha256": "14991a2ed3871841c6798f7af19e0c37174f1fc3555abfbf111ad47b8096d5eb"
+    },
+    {
+      "file": "photos.webp",
+      "caption": "Browse photo albums and inspect the image representations stored on a supported iPod. Sample illustrations shown.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 83312,
+      "sha256": "9e7d109fce283bb446ce46d94236a249d9e0427dfd6da448e8d0a54ae2a5c631",
+      "capture_file": "04-photo-library.png",
+      "capture_sha256": "e08788ee3a62122884fe416991279cf87b47434b335f8c93563c54f447e0fa42"
+    },
+    {
+      "file": "sync-review.webp",
+      "caption": "Review selected changes before syncing media from your computer to your iPod. No changes are applied in this sample.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 85998,
+      "sha256": "9a9eeced4a89cebffd9fdee54309c92601f2aae4ea9c2d293c9d513597c798ec",
+      "capture_file": "05-sync-review.png",
+      "capture_sha256": "cf2a0c1f6359609f6f344d5ffea5507310e0b157ac1c862b6c14d25b19232da7"
+    }
+  ],
+  "source_commit": "17595fdd385d73c5d3b3733021c3e6edf55e6a18"
+}
