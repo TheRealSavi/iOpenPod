@@ -77,7 +77,7 @@ constraint. The package name stays `iopenpod`; it is one application distributio
 
 The root README uses absolute screenshot and documentation URLs so the package
 description works on PyPI. These URLs and `_config.yml`’s `source_url` name the
-`2.0-clean` development branch.
+`2.0` development branch.
 Before publishing, replace that ref with the public 2.x release tag or another
 verified, durable ref containing these images. Confirm anonymous access to every
 image and to the corresponding source, support, and license pages.

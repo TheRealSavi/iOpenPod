@@ -10,7 +10,7 @@ filesystem-accessible iPods on **Windows, macOS, and Linux**, without iTunes.
 [Discord](https://discord.gg/9Yy499Tf5d) ·
 [Support development](https://ko-fi.com/johngibbons)
 
-![iOpenPod 2 album library with colorful cover art and a connected sample iPod](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0-clean/website/screenshots/iop2/albums.webp)
+![iOpenPod 2 album library with colorful cover art and a connected sample iPod](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/albums.webp)
 
 *Real iOpenPod 2 UI captured on Windows. The screenshots use fictional media and
 original sample artwork; no personal library or physical iPod is involved.*
@@ -32,7 +32,7 @@ link each channel as it becomes available.
 Native downloads include the application runtime, so they do not need a separate
 Python installation. The native Mac build targets macOS 12.3 or later; acceptance
 on 12.3 remains pending. Store channels have independent signing, permissions, and
-installed-package validation requirements. See [packaging](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/docs/packaging.md).
+installed-package validation requirements. See [packaging](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/packaging.md).
 
 ### Python installation, once 2.x is published
 
@@ -57,7 +57,7 @@ The startup popup or **Settings → Media Tools → Set Up Media Tools** can ins
 missing tools after you choose **Install Missing Tools**. Native setup uses WinGet,
 Homebrew, or a supported Linux package manager. You can skip setup to browse your
 library. Confined store builds need their own verified tool access; follow the
-instructions for that release. See [media-tool setup](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/docs/media-tools.md).
+instructions for that release. See [media-tool setup](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/media-tools.md).
 
 ## Explore your library
 
@@ -82,7 +82,7 @@ and save those edits together. Sync always has its own selection and review flow
 
 | Album details | Playlists |
 | --- | --- |
-| ![iOpenPod 2 album artwork and track details](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0-clean/website/screenshots/iop2/album-details.webp) | ![iOpenPod 2 playlist browser](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0-clean/website/screenshots/iop2/playlists.webp) |
+| ![iOpenPod 2 album artwork and track details](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/album-details.webp) | ![iOpenPod 2 playlist browser](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/playlists.webp) |
 
 ## Choose what comes along
 
@@ -100,7 +100,7 @@ for your model. Optional acoustic matching helps recognize recordings across
 format or metadata changes; previously committed source relationships can also
 identify media without a new fingerprint.
 
-![iOpenPod 2 Sync Review showing selected changes before a device write](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0-clean/website/screenshots/iop2/sync-review.webp)
+![iOpenPod 2 Sync Review showing selected changes before a device write](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/sync-review.webp)
 
 ## Compatibility
 
@@ -117,7 +117,7 @@ model; real-device validation continues during development.
 must already be able to read and write the iPod’s filesystem. DRM-protected media
 is not supported.
 
-![iOpenPod 2 Photo Library with Photo Albums and an image inspector](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0-clean/website/screenshots/iop2/photos.webp)
+![iOpenPod 2 Photo Library with Photo Albums and an image inspector](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/photos.webp)
 
 ## Develop and contribute
 
@@ -156,17 +156,17 @@ The application ships as one distribution with four internal boundaries:
 | `src/iPodDB` | Lossless iPod database formats |
 | `src/storage` | Safe filesystem and removable-media operations |
 
-Read [AGENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/AGENTS.md), the [project context](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/CONTEXT.md), and the
-[documentation map](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/docs/README.md) before making substantial changes.
-[Packaging](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/docs/packaging.md) covers native candidates and store release gates;
-[website maintenance](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/website/README.md) covers screenshots and channel activation.
+Read [AGENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0/AGENTS.md), the [project context](https://github.com/TheRealSavi/iOpenPod/blob/2.0/CONTEXT.md), and the
+[documentation map](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/README.md) before making substantial changes.
+[Packaging](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/packaging.md) covers native candidates and store release gates;
+[website maintenance](https://github.com/TheRealSavi/iOpenPod/blob/2.0/website/README.md) covers screenshots and channel activation.
 
 ## License and credits
 
 Licensed under **GPL-3.0-or-later**. All features are free; optional
 [donations](https://ko-fi.com/johngibbons) support development without unlocking
-features. See [LICENSE](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/LICENSE), [COPYING.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/COPYING.md), and
-[ACKNOWLEDGEMENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0-clean/ACKNOWLEDGEMENTS.md) for the license grant and third-party
+features. See [LICENSE](https://github.com/TheRealSavi/iOpenPod/blob/2.0/LICENSE), [COPYING.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0/COPYING.md), and
+[ACKNOWLEDGEMENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0/ACKNOWLEDGEMENTS.md) for the license grant and third-party
 credits, including HASHAB, libgpod, and gtkpod research. The application icon has
 separate permission terms documented with its assets.
 
