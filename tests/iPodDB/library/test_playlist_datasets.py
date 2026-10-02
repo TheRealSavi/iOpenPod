@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from tests.iPodDB.library.test_writing import library
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk, new_string_mhod
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
@@ -643,12 +644,14 @@ def test_verification_rejects_a_dropped_existing_mirror(
         resolved: ResolvedWrite,
         resources: WriteResources,
         issues: list[WriteIssue],
+        device_time: TimeConversion = 0,
     ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
         candidate, identities = reconcile(
             document,
             resolved,
             resources,
             issues,
+            device_time,
         )
         dataset = next(
             s

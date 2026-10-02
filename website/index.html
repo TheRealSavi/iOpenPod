@@ -4,6 +4,7 @@ description: Browse, play, organize, and sync your iPod with iOpenPod 2. A free 
 og_title: iOpenPod 2 — Your music. Your iPod.
 og_description: A new home for your iPod library. Explore the app and the planned downloads, PyPI package, and store releases.
 body_class: iop2-page home-page
+include_faq_schema: true
 permalink: /
 ---
 {% include product-nav.html %}
@@ -11,15 +12,26 @@ permalink: /
   <header class="intro container">
     <div class="intro-title">
       <h1>Your music.<br>Your iPod.</h1>
-      <p class="intro-description">Meet iOpenPod 2. Browse the albums you love, put your library in order, and choose what comes along.</p>
+      <div class="project-stats" role="group" aria-label="iOpenPod project statistics">
+        <a href="https://github.com/TheRealSavi/iOpenPod/stargazers" aria-label="View iOpenPod stars on GitHub">
+          <img src="https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=for-the-badge&amp;logo=github&amp;color=0a6fdb" alt="GitHub stars" height="28" referrerpolicy="no-referrer">
+        </a>
+        <a href="https://github.com/TheRealSavi/iOpenPod/releases" aria-label="View iOpenPod releases on GitHub; downloads total all release assets">
+          <img src="https://img.shields.io/github/downloads/TheRealSavi/iOpenPod/total?style=for-the-badge&amp;logo=github&amp;logoColor=white&amp;color=0a6fdb&amp;label=Total%20downloads&amp;cacheSeconds=86400" alt="Total GitHub release downloads" height="28" referrerpolicy="no-referrer">
+        </a>
+      </div>
+      <p class="intro-description">Meet iOpenPod 2. Browse the albums you love, manage your library, and sync any file format directly to your iPod.</p>
+      <a class="text-link intro-explore" href="#tour">Explore the app <span aria-hidden="true">↓</span></a>
     </div>
     <div class="intro-aside">
       <div class="hero-support">
-        <p class="support-title">Help keep iPods playing.</p>
-        <p class="support-description">Donations support the development of iOpenPod 2, a free, open-source app.</p>
-        <a class="support-link" href="{{ site.donation_url }}">Donate on Ko-fi <span aria-hidden="true">↗</span></a>
+        <svg class="support-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>
+        <div class="support-copy">
+          <p class="support-title">Help keep iPods playing.</p>
+          <p class="support-description">iOpenPod is free and open source. Optional donations help support development.</p>
+          <a class="support-link" href="{{ site.donation_url }}">Support on Ko-fi <span aria-hidden="true">↗</span></a>
+        </div>
       </div>
-      <a class="text-link intro-explore" href="#tour">Explore the app <span aria-hidden="true">↓</span></a>
     </div>
   </header>
 
@@ -29,6 +41,8 @@ permalink: /
       <a href="#tour">Library &amp; sync</a>
       <a href="#compatibility">Your iPod</a>
       <a href="#install">Downloads</a>
+      <a href="#migration">Migrating</a>
+      <a href="#faq">FAQs</a>
       <a href="{{ '/install-help/' | relative_url }}">Setup help</a>
     </nav>
   </div>
@@ -36,7 +50,6 @@ permalink: /
   <section class="tour-section container" id="tour" aria-labelledby="library-heading">
     <div class="section-intro">
       <h2 id="library-heading">Find an old favorite.<br>Make a new mix.</h2>
-      <p>Browse by album, artist, genre, or track. Edit titles, artwork, and ratings. Bring an album into focus, or gather your next listen into playlists and Smart Playlists.</p>
     </div>
     {% include product-shot.html file="album-details.webp" alt="iOpenPod 2 album details with cover art, track titles, ratings, and metadata" caption="An album, its artwork, and every track in one view." %}
     <div class="feature-notes">
@@ -49,12 +62,30 @@ permalink: /
     <div class="container">
       <div class="section-intro">
         <h2 id="sync-heading">Decide what goes.<br>See what changes.</h2>
-        <p>Choose media folders on your computer, select the albums and tracks you want, then review additions, updates, and removals before you sync. Removal candidates start unchecked.</p>
       </div>
-      {% include product-shot.html file="sync-review.webp" alt="iOpenPod 2 Sync Review listing selected additions before applying changes" caption="Sync Review puts the proposed changes in front of you. This sample does not write to a device." %}
-      <div class="sync-details">
-        <h3>Bring your files.<br>Keep the details.</h3>
-        <div><p>Device-aware conversion prepares compatible audio and video. Artwork travels with your library. Optional acoustic matching helps recognize recordings across format and metadata changes.</p><p class="tool-note">Media inspection and conversion need separately installed FFmpeg and FFprobe. Chromaprint is optional. <a href="{{ '/install-help/#helper-tools' | relative_url }}">Media-tool setup</a></p></div>
+      <div class="sync-showcase">
+        <div class="sync-showcase-row">
+          {% include product-shot.html file="sync-selection.webp" alt="iOpenPod 2 media selection showing albums chosen for a sample iPod" caption="Choose media from a fictional Host library before reviewing the Sync Plan." %}
+          <div class="sync-showcase-copy">
+            <h3>Choose what comes along</h3>
+            <p>Choose media folders on your computer, then select the albums and tracks you want on your iPod.</p>
+          </div>
+        </div>
+        <div class="sync-showcase-row">
+          {% include product-shot.html file="sync-review.webp" alt="iOpenPod 2 Sync Review listing selected additions before applying changes" caption="Sync Review puts the proposed changes in front of you. This sample does not write to a device." %}
+          <div class="sync-showcase-copy">
+            <h3>Review the changes</h3>
+            <p>See additions, updates, removals, and estimated storage impact before you sync. Removal candidates start unchecked.</p>
+          </div>
+        </div>
+        <div class="sync-showcase-row">
+          {% include product-shot.html file="transcoding-settings.webp" alt="iOpenPod 2 conversion settings for audio quality, lossless formats, and spoken-word media" caption="Audio conversion preferences in the real iOpenPod Settings page." %}
+          <div class="sync-showcase-copy">
+            <h3>Any file type you want</h3>
+            <p>Device-aware conversion prepares compatible audio and video. Artwork travels with your library. Optional acoustic matching recognizes recordings across format and metadata changes.</p>
+            <p class="tool-note">Conversion needs FFmpeg and FFprobe. Chromaprint is optional. <a href="{{ '/install-help/#helper-tools' | relative_url }}">Media-tool setup</a></p>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -62,7 +93,6 @@ permalink: /
   <section class="collection-section container" aria-labelledby="collection-heading">
     <div class="section-intro">
       <h2 id="collection-heading">More of your collection,<br>in one place.</h2>
-      <p>Music, audiobooks, videos, podcasts, and photos. Organize the media your iPod supports, with tools for the things you want to keep.</p>
     </div>
     <div class="collection-grid">
       <div>
@@ -75,6 +105,7 @@ permalink: /
       </div>
     </div>
     <dl class="capability-list">
+      <div><dt>Supports all media types</dt><dd>Music, audiobooks, videos, podcasts, and photos. Organize the media your iPod supports, with tools for the things you want to keep.</dd></div>
       <div><dt>Podcasts</dt><dd>Find shows, manage subscriptions, and refresh feeds and artwork. Online discovery needs an internet connection.</dd></div>
       <div><dt>Listening history</dt><dd>Submit iPod music plays to Last.fm and ListenBrainz through optional scrobbling.</dd></div>
       <div><dt>Backup Snapshots</dt><dd>Capture, browse, export, and restore local backups. Interrupted writes have explicit recovery actions.</dd></div>
@@ -101,11 +132,6 @@ permalink: /
     <div class="container">
       <div class="section-intro">
         <h2 id="download-heading">Get iOpenPod 2.</h2>
-        <p>Choose the way you like to install. Native downloads include the app runtime; Python users will also be able to install from PyPI.</p>
-      </div>
-      <div class="availability-note">
-        <strong>2.0 is in development.</strong>
-        <p>These are the planned release channels. Public iOpenPod 2 downloads and store listings are not available yet. Links will appear here as each channel launches.</p>
       </div>
       <div class="download-platforms">
         {% for platform in site.data.distribution.platforms %}
@@ -135,6 +161,55 @@ permalink: /
       </div>
     </div>
   </section>
+  <section class="migration-section container" id="migration" aria-labelledby="migration-heading">
+    <div class="section-intro">
+      <h2 id="migration-heading">Migrating from legacy tools</h2>
+      <p>Looking for an iTunes alternative, or moving on from gtkpod, YamiPod, CopyPod, EphPod, Strawberry, or Clementine? Here is what to expect from iOpenPod 2.</p>
+    </div>
+    <div class="migration-grid">
+      <div>
+        <h3>Start with the iPod you have</h3>
+        <p>Browse the existing library on a supported iPod. Keep a Backup Snapshot before making changes, then choose the media you want to add. Direct import of another manager’s database or settings is not promised.</p>
+      </div>
+      <div>
+        <h3>No libgpod dependency</h3>
+        <p>iOpenPod 2 uses its own Python iPodDB engine to read and write iPod databases. It does not require libgpod. Device-specific compatibility is still being validated.</p>
+      </div>
+      <div>
+        <h3>Free and open source</h3>
+        <p>iOpenPod 2 is free software for Windows, macOS, and Linux under GPL-3.0-or-later. Native builds, PyPI, and store releases are planned; check <a href="#install">download availability</a> for each channel.</p>
+      </div>
+      <div>
+        <h3>Review before you sync</h3>
+        <p>See additions, updates, and removals in Sync Review. Removal candidates start unchecked. Backup Snapshots are user-controlled, and interrupted writes have an explicit recovery workflow.</p>
+      </div>
+    </div>
+    <a class="text-link migration-help" href="{{ '/install-help/#first-sync' | relative_url }}">Prepare your first sync <span aria-hidden="true">↗</span></a>
+  </section>
+
+  <section class="faq-section container" id="faq" aria-labelledby="faq-heading">
+    <div class="section-intro">
+      <h2 id="faq-heading">Frequently asked questions</h2>
+    </div>
+    <div class="faq-list">
+      {% for item in site.data.faq %}
+      <details id="faq-{{ item.id }}">
+        <summary>{{ item.question | escape }}</summary>
+        <p>{{ item.answer | escape }}</p>
+      </details>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="container">
+    <section class="community-section" id="community" aria-labelledby="community-heading">
+      <h2 id="community-heading">Join the iOpenPod community</h2>
+      <div class="community-action">
+        <p>Meet other iPod owners, suggest features, share feedback, and get help when something isn’t working.</p>
+        <a class="community-join" href="https://discord.gg/9Yy499Tf5d">Join us on Discord</a>
+      </div>
+    </section>
+  </div>
 </main>
 {% include product-footer.html %}
 <a class="floating-install" href="#install" aria-label="Install iOpenPod — view download options">Install <span aria-hidden="true">↓</span></a>

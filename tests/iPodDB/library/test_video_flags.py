@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 from tests.iPodDB.library.test_writing import library
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
@@ -225,8 +226,9 @@ def test_verification_rejects_stale_secondary_video_flag(
         resolved: ResolvedWrite,
         resources: WriteResources,
         issues: list[WriteIssue],
+        device_time: TimeConversion = 0,
     ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
-        output, mappings = reconcile(document, resolved, resources, issues)
+        output, mappings = reconcile(document, resolved, resources, issues, device_time)
         native_id = next(
             (
                 m.output_id

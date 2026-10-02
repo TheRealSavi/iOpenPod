@@ -96,6 +96,28 @@
     </script>
 
 
+    {% if page.include_faq_schema %}
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "@id": {{ faq_id | jsonify }},
+      "isPartOf": { "@id": {{ webpage_id | jsonify }} },
+      "mainEntity": [
+        {% for item in site.data.faq %}
+        {
+          "@type": "Question",
+          "name": {{ item.question | jsonify }},
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": {{ item.answer | jsonify }}
+          }
+        }{% unless forloop.last %},{% endunless %}
+        {% endfor %}
+      ]
+    }
+    </script>
+    {% endif %}
 </head>
 <body class="{{ page.body_class | default: '' }}">
     {{ content }}

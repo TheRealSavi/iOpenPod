@@ -712,7 +712,10 @@ bytes. The Application Layer supplies Device Registry capabilities and performs
 validated Storage reads. The source adapter knows neither dependency.
 
 Application and GUI consumers import the public contract, never the binary-format
-packages. Snapshot construction and edits do not change the retained databases.
+packages. Preferences inspection separately consumes the public `iPodDB.preferences`
+contract and `iPodDB.device_time` evidence types (ADR-0097 and ADR-0098); their
+implementation submodules remain private. Snapshot construction and edits do not
+change the retained databases.
 Source-bound Library Drafts now provide semantic preparation over the existing
 lossless writer path. Analysis returns changes and required resources; preparation
 reconciles retained records and verifies finalized output without filesystem I/O.

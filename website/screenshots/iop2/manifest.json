@@ -54,6 +54,34 @@
       "sha256": "9a9eeced4a89cebffd9fdee54309c92601f2aae4ea9c2d293c9d513597c798ec",
       "capture_file": "05-sync-review.png",
       "capture_sha256": "cf2a0c1f6359609f6f344d5ffea5507310e0b157ac1c862b6c14d25b19232da7"
+    },
+    {
+      "file": "sync-selection.webp",
+      "caption": "Select media from a fictional Host library before reviewing the Sync Plan.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 280458,
+      "sha256": "e35ffe5513530b2d66f5984a1b57b8db90a2ae1cfd29203640eb254ef69916eb",
+      "capture_file": "07-sync-selection.png",
+      "capture_sha256": "0f150e514586f3dff5afcf7dc32a256d094fe7bdd7c26a3ccb8440baabae535c",
+      "captured_on": "2026-10-01",
+      "source_commit": "c468bf4076edf41a634c1407dc8abadccd1bad4a",
+      "capture_script_sha256": "d1c170be6e30cabb23b6149d685a5a06167d2e9c762e3fa4c7c607e22b8142d4",
+      "command": "uv run --locked python -m scripts.capture_store_screenshots --output .scratch/website-sync-captures"
+    },
+    {
+      "file": "transcoding-settings.webp",
+      "caption": "Choose audio and video conversion settings in the real iOpenPod Settings page.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 99006,
+      "sha256": "c6cf3287a079050a56861270484c9da2a8abd282bcf345fafab13fa47abcaefa",
+      "capture_file": "08-transcoding-settings.png",
+      "capture_sha256": "6a091431de01efabaca04b6bea7de78ed6cc92d654fe6892abad0c170d064b02",
+      "captured_on": "2026-10-01",
+      "source_commit": "c468bf4076edf41a634c1407dc8abadccd1bad4a",
+      "capture_script_sha256": "d1c170be6e30cabb23b6149d685a5a06167d2e9c762e3fa4c7c607e22b8142d4",
+      "command": "uv run --locked python -m scripts.capture_store_screenshots --output .scratch/website-sync-captures"
     }
   ],
   "source_commit": "17595fdd385d73c5d3b3733021c3e6edf55e6a18"

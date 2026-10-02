@@ -7,6 +7,7 @@ from tests.iPodDB.library.test_playlist_datasets import podcast_source, rows
 from tests.iPodDB.library.test_write_artwork import with_shared_artwork
 
 from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
@@ -134,8 +135,11 @@ def test_verifier_rejects_bad_positions_with_occurrence_context(
         resolved: ResolvedWrite,
         resources: WriteResources,
         issues: list[WriteIssue],
+        device_time: TimeConversion = 0,
     ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
-        candidate, mappings = reconcile(document, resolved, resources, issues)
+        candidate, mappings = reconcile(
+            document, resolved, resources, issues, device_time
+        )
         episode = next(
             s
             for s in rows(candidate, dataset)[1].find_chunks(MhipHeader)

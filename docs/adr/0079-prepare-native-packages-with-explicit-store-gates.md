@@ -4,6 +4,7 @@
 - Date: 2026-09-25
 - Extends: ADR-0001 and ADR-0007
 - External media-helper bundling requirement superseded by ADR-0081.
+- Candidate-only GitHub publication policy amended by ADR-0104.
 
 ## Context
 

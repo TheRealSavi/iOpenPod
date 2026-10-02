@@ -1,9 +1,10 @@
 # Packaging and distribution
 
 iOpenPod targets the Mac App Store, Microsoft Store, and Linux software stores
-through Flatpak/Flathub and Snap. The repository currently produces **packaging
-candidates**, not approved store submissions. Store accounts, production signing,
-and sandbox/device acceptance testing are still release gates.
+through Flatpak/Flathub and Snap. Version tags publish native downloads through
+GitHub Releases; branch builds produce **packaging candidates**. These are not
+approved store submissions. Store accounts, production signing, and sandbox/device
+acceptance testing remain separate gates. See ADR-0104 for the GitHub release policy.
 
 iOpenPod is GPL-3.0-or-later. Complete the [distribution licensing requirements](licensing.md),
 including corresponding source and third-party notices, before public release.
@@ -234,8 +235,8 @@ set; the optional `synesthesia-gpu` extra is outside this compatibility target.
 See [ADR-0094](adr/0094-target-macos-12-3-with-platform-specific-native-dependencies.md)
 and the [binary investigation](research/macos-compatibility.md).
 
-CI prepares the same environment with `--with-checks` for the existing packaging
-contracts, then prepares it again without check tools before freezing. The
+CI prepares the same environment with `--with-checks` for the full test suite in
+Health. The separate native build installs it without check tools before freezing. The
 `packaging-checks` group supplies Pytest without the other dev tools, including
 Mypy, whose locked version lacks an Intel macOS wheel.
 
@@ -244,6 +245,8 @@ public fields and misdescribe decorators and nullable results used by existing
 code. Mypy passes with the current Windows bindings but reports errors against the
 older stubs. Correcting those annotations remains work for a Mac development
 environment; the native build does not disable the project's type-checking rules.
+Health runs the authoritative Mypy check on Windows and independently runs runtime
+tests on all four native targets, including both Mac architectures.
 
 The bundle check compares `Info.plist` with the configured target and reads every
 unique Mach-O file, including all universal slices. It rejects a missing build
@@ -370,14 +373,42 @@ loaded system-media bindings. It does not create settings, discover devices, or
 write to an iPod. `--smoke-test-report /absolute/file.txt`
 writes diagnostics even for a Windows executable without a console.
 
-Run the frozen smoke test outside the checkout on a machine without Python. Run
-the normal repository checks before packaging. The native CI jobs exercise Windows
-x64, macOS arm64 and x86_64, and Linux x64 candidates and validate wheel contents. They retain
-artifacts only; tag pushes no longer automatically publish legacy v1-style releases
-or upload the rebuilt application to PyPI.
+Run the frozen smoke test outside the checkout on a machine without Python. The
+native and Flatpak workflows require the reusable Health workflow to pass first:
+lockfile, formatting, linting, typing, and the complete test suite. Health runs on
+pull requests, `main` and `2.0` pushes, and manual dispatch. The native CI jobs
+exercise Windows x64, macOS arm64 and x86_64, and Linux x64 and validate wheel
+contents. Native environments exclude dev tools and optional GPU dependencies.
 
-Before publishing, also test actual playback, Sync with user-installed tools, backup and
+Pushing a tag that exactly matches `v<version>` in `pyproject.toml` automatically
+builds and publishes a public GitHub Release. A manual Build and release run on a
+version tag does the same. Manual branch builds and pull requests only retain
+candidate artifacts. No workflow publishes to PyPI or a Store.
+
+Publication waits for all four builds and their frozen smoke tests. It verifies
+each native archive's checksum, collects platform-specific dependency inventories
+and Mac compatibility reports, and includes the wheel and sdist from the Windows
+build. It also attaches the application source snapshot and hash-verified pinned
+third-party sources, `release.json`, and `SHA256SUMS`. The source snapshot excludes
+the private fixtures listed in `scripts/prepare_store_kit.py`; the Python sdist
+excludes them too, and the publication assembler rejects their presence. All assets
+upload to a draft before the workflow makes it public. Publication receives `contents: write`;
+the build and test jobs only receive read access.
+
+Before tagging, update the version and lockfile together and review
+`packaging/github-release.md`. Complete the source/licensing review for the actual
+platform binaries; the existing Windows evidence is not a completed Mac or Linux
+audit. Run a manual branch build to inspect candidates first. No signing credentials
+are required for the current unsigned downloads, and they must not be described as
+signed installers or Store-approved builds.
+
+The workflow refuses to replace an existing release. If an upload fails, inspect
+the unpublished draft, delete that incomplete draft without deleting its tag, then
+rerun the failed publication job. Keep successful public releases immutable; ship
+a new version for corrections. Do not reuse an old release tag for new code.
+
+Before Store submission, also test actual playback, Sync with user-installed tools, backup and
 restore, disconnect recovery, and safe eject in each **installed store package**.
 Use virtual Volumes for automated mutation tests; physical iPod acceptance requires
 an explicitly selected test device. Complete package signing, store metadata,
-privacy/support URLs, notices and native platform acceptance before releasing.
+privacy/support URLs, notices and native platform acceptance before Store release.

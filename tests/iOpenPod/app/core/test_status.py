@@ -68,7 +68,7 @@ def test_timed_status_restores_the_default_message() -> None:
     status.set_default("Ready")
     status.show("playback", "Temporary failure", timeout_ms=10)
 
-    QTest.qWait(20)
+    _wait_until(lambda: status.current_message == "Ready")
 
     assert status.current_message == "Ready"
 

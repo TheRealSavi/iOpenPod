@@ -322,7 +322,13 @@ def navigate(window: MainWindow, page: PageId) -> None:
     sidebar.pageRequested.emit(page.value)
 
 
-def show_sync(window: MainWindow, library: LibrarySnapshot, active: ActiveIPod) -> None:
+def show_sync(
+    window: MainWindow,
+    library: LibrarySnapshot,
+    active: ActiveIPod,
+    *,
+    track_count: int = 12,
+) -> None:
     host_tracks = tuple(
         replace(
             track,
@@ -331,7 +337,7 @@ def show_sync(window: MainWindow, library: LibrarySnapshot, active: ActiveIPod) 
                 location=f"C:/Sample Music/{track.album}/{track.title}.m4a",
             ),
         )
-        for track in library.tracks[:12]
+        for track in library.tracks[:track_count]
     )
     host = HostMediaLibrary(
         LibrarySnapshot(host_tracks),
@@ -500,6 +506,12 @@ def main() -> int:
             "05-sync-review.png",
             "Review selected changes before syncing media from your computer to your iPod. No changes are applied in this sample.",
         )
+        show_sync(window, library, active, track_count=len(library.tracks))
+        child(window, SyncWorkspace).show_selection()
+        capture(
+            "07-sync-selection.png",
+            "Select media from a fictional Host library before reviewing the Sync Plan.",
+        )
         child(window, QStackedWidget, "workspaceStack").setCurrentIndex(0)
         navigate(window, PageId.SETTINGS)
         tabs = child(window, QTabWidget, "settingsTabs")
@@ -509,6 +521,13 @@ def main() -> int:
         capture(
             "06-about-and-credits.png",
             "Free and open source, with optional donations and acknowledgements for the projects that make iOpenPod possible.",
+        )
+        tabs.setCurrentIndex(
+            next(i for i in range(tabs.count()) if tabs.tabText(i) == "Transcoding")
+        )
+        capture(
+            "08-transcoding-settings.png",
+            "Choose audio and video conversion settings in the real iOpenPod Settings page.",
         )
         (output / "manifest.json").write_text(
             json.dumps(

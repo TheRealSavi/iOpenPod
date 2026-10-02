@@ -1,0 +1,82 @@
+[
+  {
+    "id": "sync-without-itunes",
+    "question": "How do I sync my iPod without iTunes?",
+    "answer": "iOpenPod 2 lets you select a mounted iPod, choose media folders on your computer, review additions, updates, and removals, then apply your Sync Selection. You do not need iTunes for that workflow. Version 2.0 is still in development; public 2.x downloads are not available yet."
+  },
+  {
+    "id": "python",
+    "question": "Do I need Python to use iOpenPod?",
+    "answer": "Planned native iOpenPod 2 builds include the Python runtime. Running from source or using the future 2.x PyPI package requires Python 3.12."
+  },
+  {
+    "id": "flac",
+    "question": "Can I put FLAC files on an iPod?",
+    "answer": "iOpenPod 2 can convert FLAC and other supported source formats to audio your iPod can play during Sync. The output depends on your iPod model and conversion settings. FFmpeg and FFprobe are required; this does not add native FLAC playback to Apple’s iPod firmware."
+  },
+  {
+    "id": "openpod",
+    "question": "Is iOpenPod related to OpenPod.io or OpenPod?",
+    "answer": "No. iOpenPod is a separate, free and open-source iPod management application. It is not affiliated with OpenPod.io or OpenPod."
+  },
+  {
+    "id": "legacy-tools",
+    "question": "What should I use if I am migrating from gtkpod, YamiPod, CopyPod, EphPod, Strawberry, or Clementine?",
+    "answer": "iOpenPod 2 is being developed as an alternative for managing filesystem-accessible iPods on Windows, macOS, and Linux. Its iPodDB engine does not depend on libgpod. Start by browsing the existing iPod library, keep a Backup Snapshot, and review your first Sync carefully. Direct import of another manager’s application database or settings is not promised."
+  },
+  {
+    "id": "platforms",
+    "question": "Does it work on Linux and macOS?",
+    "answer": "Windows, macOS, and Linux are iOpenPod 2’s target platforms. Native packages, a Python package, and store releases are planned. Public 2.x downloads are not available yet, and platform and device validation are ongoing."
+  },
+  {
+    "id": "erase",
+    "question": "Will syncing erase my iPod?",
+    "answer": "Sync Review shows proposed additions, updates, and removals before you approve a Sync. Removal candidates start unchecked. Review the selection carefully and keep a Backup Snapshot of data you want to preserve. Backups are user-controlled, and interrupted writes can require recovery."
+  },
+  {
+    "id": "selected-files",
+    "question": "Can I add files without a full sync?",
+    "answer": "Use Sync with Host to choose media folders, select only the media you want to add, and review those additions before applying them. You can leave removal candidates unchecked; you do not have to replace the iPod’s entire library."
+  },
+  {
+    "id": "itunes-library",
+    "question": "My iPod was previously managed by iTunes. Will I lose my music?",
+    "answer": "iOpenPod 2 reads the existing iPod database so you can browse the music already on a supported device. Connecting and browsing does not require replacing the library. Library edits save automatically by default; enable Draft all changes if you want to review them first. Sync has a separate review step. Keep a Backup Snapshot before making changes."
+  },
+  {
+    "id": "detection",
+    "question": "My iPod isn’t being detected. What should I do?",
+    "answer": "Check that your computer mounts the iPod as a readable drive, then refresh the device picker. On Linux, follow any device-identification setup offered by the app. If it still does not appear, report your iOpenPod version, operating system, iPod model, and steps to reproduce."
+  },
+  {
+    "id": "logs",
+    "question": "How do I find the iOpenPod log file?",
+    "answer": "The default Windows location is %LOCALAPPDATA%\\iOpenPod\\Logs\\iopenpod.log. On macOS it is ~/Library/Logs/iOpenPod/iopenpod.log. On Linux it is $XDG_STATE_HOME/iOpenPod/iopenpod.log, or ~/.local/state/iOpenPod/iopenpod.log when XDG_STATE_HOME is unset. A configured log path can override these defaults. Review logs before sharing them because diagnostic output can include file paths and library metadata."
+  },
+  {
+    "id": "media-tools",
+    "question": "Do I need FFmpeg, FFprobe, and Chromaprint installed?",
+    "answer": "FFmpeg and FFprobe are required for media inspection and conversion and are installed separately. Chromaprint’s fpcalc enables optional acoustic matching. You can skip missing-tool setup to browse your library, then use Settings → Media Tools when you are ready to configure Sync."
+  },
+  {
+    "id": "recovery",
+    "question": "What happens if something goes wrong mid-sync?",
+    "answer": "If the iPod disconnects, further operations stop and the interrupted work may be incomplete. Reconnect the same iPod and follow the recovery action shown by the app. Keep recovery files in place until recovery completes. Backup Snapshots are an additional user-controlled recovery option, not a guarantee that every Sync has an automatic snapshot."
+  },
+  {
+    "id": "internet",
+    "question": "Does iOpenPod send any data to the internet?",
+    "answer": "Core iPod browsing and local file management work with files on your computer and iPod. Online features such as podcast discovery, feed refreshes, downloads, and optional Last.fm or ListenBrainz scrobbling contact their services. Media-tool installation also contacts package sources. Network activity depends on the features and settings you use."
+  },
+  {
+    "id": "multiple-computers",
+    "question": "Can I sync the same iPod from multiple computers?",
+    "answer": "iOpenPod 2 stores matching information on the iPod and scans each computer’s selected media folders separately. Always review each computer’s Sync Selection: their files can differ, and a track missing from one computer is not necessarily something you want removed from the iPod. Device validation is ongoing."
+  },
+  {
+    "id": "ipod-touch",
+    "question": "Does iOpenPod support iPod touch?",
+    "answer": "iPod touch and iPhone are outside the iOpenPod 2 target because they use a different device-access model. The current target covers filesystem-accessible full-size iPods, iPod classic, iPod mini, and iPod nano. iPod shuffle is also outside the 2.0 target; capabilities vary by model."
+  }
+]

@@ -6,5 +6,5 @@
          width="1920" height="1080" alt="{{ include.alt | escape }}"
          {% if include.hero %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
   </button>
-  <figcaption>{{ include.caption }}</figcaption>
+  <figcaption class="sr-only">{{ include.caption }}</figcaption>
 </figure>

@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 from tests.iPodDB.library.test_browse_relationships import browse_source
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_string_mhod
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
@@ -312,8 +313,11 @@ def test_verification_rejects_ignored_replacement_facts(
         resolved: ResolvedWrite,
         resources: WriteResources,
         issues: list[WriteIssue],
+        device_time: TimeConversion = 0,
     ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
-        candidate, mappings = reconcile(document, resolved, resources, issues)
+        candidate, mappings = reconcile(
+            document, resolved, resources, issues, device_time
+        )
         selection = candidate.find_chunks(MhitHeader)[0]
         header = selection.chunk.header
         corrupted = replace(

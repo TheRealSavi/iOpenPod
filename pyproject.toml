@@ -2,6 +2,14 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.sdist]
+# Match the private source exclusions in scripts/prepare_store_kit.py.
+exclude = [
+    "/tests/fixtures/iTunesDB/captured-album-index-36.b64",
+    "/tests/fixtures/iTunesDB/captured-album-index-36.json",
+    "/tests/fixtures/SQLiteDB/observed-postprocess-commands.plist",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/iOpenPod", "src/device_registry", "src/iPodDB", "src/storage"]
 

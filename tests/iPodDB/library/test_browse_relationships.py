@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 from tests.iPodDB.library.test_writing import library
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk, new_string_mhod
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
@@ -410,8 +411,11 @@ def test_verification_rejects_corrupted_native_browse_relationships(
         resolved: ResolvedWrite,
         resources: WriteResources,
         issues: list[WriteIssue],
+        device_time: TimeConversion = 0,
     ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
-        candidate, mappings = reconcile(document, resolved, resources, issues)
+        candidate, mappings = reconcile(
+            document, resolved, resources, issues, device_time
+        )
         if fault in ("representative", "album_title", "album_sort"):
             row = candidate.find_chunks(MhiaHeader)[0]
             if fault == "representative":

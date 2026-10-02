@@ -7,8 +7,13 @@ permissions:
   contents: read
 
 jobs:
+  checks:
+    uses: ./.github/workflows/health.yml
+
   flatpak:
+    needs: checks
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -20,9 +25,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder appstream desktop-file-utils libegl1 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libpulse0 libasound2t64
-      - run: uv sync --locked --group packaging
-      - run: uv run --locked --group packaging python scripts/package_app.py freeze
-      - run: uv run --locked --group packaging python scripts/package_app.py linux-stage
+      - run: uv sync --locked --managed-python --no-dev --group packaging
+      - run: uv run --no-sync python scripts/package_app.py freeze
+      - run: uv run --no-sync python scripts/package_app.py linux-stage
       - name: Validate desktop metadata
         run: |
           desktop-file-validate packaging/linux/io.github.therealsavi.iOpenPod.desktop

@@ -9,6 +9,7 @@ import pytest
 from tests.iPodDB.library.test_browse_relationships import browse_source
 from tests.iPodDB.library.test_media_lifecycle import prepared_media
 
+from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_string_mhod
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
@@ -110,8 +111,11 @@ def test_preparation_rejects_native_track_corruption(
         resolved: ResolvedWrite,
         supplied: WriteResources,
         issues: list[WriteIssue],
+        device_time: TimeConversion = 0,
     ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
-        candidate, mappings = reconcile(document, resolved, supplied, issues)
+        candidate, mappings = reconcile(
+            document, resolved, supplied, issues, device_time
+        )
         native_id = next(
             (
                 m.output_id
@@ -361,8 +365,11 @@ def test_new_track_rejects_zero_or_reused_persistent_identity(
         resolved: ResolvedWrite,
         supplied: WriteResources,
         issues: list[WriteIssue],
+        device_time: TimeConversion = 0,
     ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
-        candidate, mappings = reconcile(document, resolved, supplied, issues)
+        candidate, mappings = reconcile(
+            document, resolved, supplied, issues, device_time
+        )
         native_id = next(
             m.output_id for m in mappings if m.subject == "track" and m.draft_id == -2
         )

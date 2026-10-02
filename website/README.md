@@ -12,17 +12,29 @@ the setup guide. `_includes/` owns the shared navigation, footer, screenshot
 figures, and download rows. `_layouts/default.html` owns metadata and asset loading.
 `install-help-redirect.html` preserves the older `/install-help.html` URL.
 
-The homepage hero includes a short development-support message and an outlined
-Ko-fi link beside the introduction. This invitation, the compact Donate link in
+The homepage hero includes a subtle background panel with an outlined heart, a
+short development-support message, and a pill-shaped Ko-fi link beside the
+introduction. This invitation, the compact Donate link in
 the navigation, and the footer support link share `donation_url` in `_config.yml`.
+
+The header’s Shields.io badges show GitHub stars and total release-asset downloads for
+the whole iOpenPod project, including earlier releases. Downloads are not unique
+or active users. Keep the labels accurate; badge counts
+come from Shields.io and depend on that external service and its cache.
 
 `tokens.css` and `theme.css` own the shared colors and typography. `iop2.css`
 contains the scoped IOP2 layout and consumes the existing `site.css` foundation.
 The layout loads the readable CSS, `theme.js`, and `screenshot-viewer.js` directly;
 older `.min.*` assets are retained but are no longer runtime inputs.
 
+The Sync showcase alternates three compact screenshot-and-text rows on desktop:
+media selection, Sync Review, and conversion settings. On smaller screens each
+image appears above its description. The other product-tour sections are separate.
+
 Screenshot buttons open a native modal dialog. It supports actual-size zoom,
 scrolling, Escape, backdrop dismissal, and returning focus to the clicked image.
+Screenshot captions remain available to screen readers but are visually hidden
+both on the page and in the dialog. Image alternative text is retained.
 The header uses `iopenpod-icon-256.png`, an unchanged copy of the application's
 256 px master in `src/iOpenPod/assets/icons/`. Keep the existing artwork and its
 creator permission recorded in that directory's `DJShott-icon.txt`.
@@ -54,6 +66,26 @@ node tests/website/screenshot-viewer.cjs http://127.0.0.1:4000/iOpenPod/
 
 This checks every screenshot in both themes, mobile and desktop sizes, keyboard
 focus, zoom, all dismissal methods, unwanted downloads, and logo pixel density.
+
+## Migration and FAQ content
+
+The homepage restores migration and FAQ topics from the Original iOpenPod website,
+with answers adapted to the current 2.0 behavior and release status. Keep platform,
+device, backup, and media-tool claims consistent with the setup guide.
+
+`_data/faq.json` is the single source for the visible FAQ disclosures and the
+`FAQPage` JSON-LD in `_layouts/default.html`. The homepage opts in with
+`include_faq_schema: true`; pages without the visible FAQs must not opt in.
+Keep answers available in the rendered HTML and structured data identical.
+Structured data describes the content; it does not guarantee search placement or
+FAQ rich results. Google limits those results to qualifying government and health
+sites ([Google Search guidance](https://developers.google.com/search/blog/2023/08/howto-faq-changes)).
+
+After building, validate the FAQ content and structured data together:
+
+```shell
+uv run python tests/website/check_seo.py .scratch/website-preview/iOpenPod
+```
 
 ## Activate a release channel
 
@@ -93,7 +125,7 @@ uv run --locked python -m scripts.capture_store_screenshots --output .scratch/we
 This uses real application widgets with isolated settings, a virtual iPod, fictional
 media, and original geometric artwork. It does not read a personal library or
 write to a physical iPod. Keep complete captures; do not draw replacement UI or
-add fake window frames. Convert the first five PNGs to WebP at quality 92,
+add fake window frames. Convert the seven mapped PNGs to WebP at quality 92,
 method 6, retaining their 1920 × 1080 dimensions:
 
 | Capture | Website asset |
@@ -103,6 +135,8 @@ method 6, retaining their 1920 × 1080 dimensions:
 | `03-playlists.png` | `screenshots/iop2/playlists.webp` |
 | `04-photo-library.png` | `screenshots/iop2/photos.webp` |
 | `05-sync-review.png` | `screenshots/iop2/sync-review.webp` |
+| `07-sync-selection.png` | `screenshots/iop2/sync-selection.webp` |
+| `08-transcoding-settings.png` | `screenshots/iop2/transcoding-settings.webp` |
 
 Record the capture date, source, dimensions, encoding, and input/output SHA-256
 hashes in `screenshots/iop2/manifest.json`. Inspect every image after conversion.

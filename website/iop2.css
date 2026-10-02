@@ -158,6 +158,28 @@
   margin-top: var(--space-lg);
 }
 
+.project-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs) var(--space-sm);
+  margin-top: var(--space-lg);
+}
+
+.project-stats a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-hit);
+  max-width: 100%;
+}
+
+.project-stats img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  min-height: var(--space-lg);
+}
+
 .intro-explore {
   margin-top: var(--space-sm);
 }
@@ -166,9 +188,27 @@
   max-width: 38ch;
   align-self: end;
 }
+.hero-support {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  border-radius: var(--radius-card);
+  background: var(--color-paper-2);
+}
+.support-heart {
+  flex: none;
+  width: var(--space-lg);
+  height: var(--space-lg);
+  margin-top: var(--space-3xs);
+  color: var(--color-accent);
+}
+.support-copy {
+  min-width: 0;
+}
 .hero-support .support-title {
   font-family: var(--font-display);
-  font-size: var(--text-md);
+  font-size: var(--text-base);
   font-weight: var(--display-weight);
   line-height: 1.3;
 }
@@ -184,17 +224,18 @@
   gap: var(--space-xs);
   min-height: var(--control-hit);
   margin-top: var(--space-sm);
-  padding: var(--space-xs) var(--space-sm);
-  border: var(--rule-hair) solid var(--color-ink-2);
-  border-radius: var(--radius-image);
-  color: var(--color-ink);
+  padding: var(--space-xs) var(--space-md);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-pill);
+  color: var(--color-ink-2);
   font-size: var(--text-sm);
   font-weight: 700;
   text-decoration: none;
 }
 .hero-support .support-link:hover {
-  border-color: var(--color-ink);
-  background: var(--color-paper-2);
+  border-color: var(--color-ink-2);
+  background: var(--color-paper);
+  color: var(--color-ink);
 }
 
 .product-shot {
@@ -214,13 +255,6 @@
   width: 100%;
   height: auto;
   border-radius: var(--radius-image);
-}
-.product-shot figcaption {
-  margin-top: var(--space-sm);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-  color: var(--color-ink-2);
-  max-width: 90ch;
 }
 
 html.screenshot-viewer-open,
@@ -244,7 +278,7 @@ html.screenshot-viewer-open,
 
 .screenshot-viewer[open] {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: var(--space-sm);
 }
 
@@ -298,14 +332,6 @@ html.screenshot-viewer-open,
   width: auto;
   height: auto;
   max-width: none;
-}
-
-.screenshot-viewer-caption {
-  max-height: 20dvh;
-  overflow: auto;
-  color: var(--color-ink-2);
-  font-size: var(--text-sm);
-  line-height: 1.5;
 }
 
 .page-index,
@@ -365,20 +391,31 @@ html.screenshot-viewer-open,
   background: var(--color-paper-2);
   padding-block: var(--space-2xl);
 }
-.sync-details {
-  display: grid;
-  gap: var(--space-lg);
-  margin-top: var(--space-xl);
-}
-.sync-details h3 {
-  font-size: var(--text-xl);
-}
-.sync-details p {
-  max-width: 65ch;
-}
-.sync-details .tool-note {
+.sync-band .tool-note {
   margin-top: var(--space-md);
   font-size: var(--text-sm);
+  color: var(--color-ink-2);
+}
+
+/* Hallmark · scoped sync showcase · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+.sync-showcase {
+  display: grid;
+  gap: var(--space-xl);
+}
+.sync-showcase-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-lg);
+}
+.sync-showcase-copy {
+  min-width: 0;
+}
+.sync-showcase-copy h3 {
+  margin-bottom: var(--space-sm);
+}
+.sync-showcase-copy p {
+  max-width: 48ch;
   color: var(--color-ink-2);
 }
 
@@ -396,9 +433,6 @@ html.screenshot-viewer-open,
 .collection-grid p {
   color: var(--color-ink-2);
   max-width: 50ch;
-}
-.collection-grid figcaption {
-  min-height: 3em;
 }
 .capability-list {
   margin: var(--space-2xl) 0 0;
@@ -550,6 +584,57 @@ html.screenshot-viewer-open,
   font-size: var(--text-sm);
 }
 
+.migration-section,
+.faq-section {
+  padding-block: var(--space-2xl);
+}
+
+.faq-section {
+  border-top: var(--rule-hair) solid var(--color-rule);
+}
+
+.migration-grid {
+  display: grid;
+  gap: var(--space-xl);
+}
+
+.migration-grid h3 {
+  margin-bottom: var(--space-sm);
+}
+
+.migration-grid p {
+  color: var(--color-ink-2);
+  max-width: 58ch;
+}
+
+.migration-help {
+  margin-top: var(--space-lg);
+}
+
+.faq-list summary,
+.faq-list details > p {
+  overflow-wrap: anywhere;
+}
+
+.community-join {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-hit);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-accent) 85%, black);
+  color: var(--color-accent-ink);
+  font-size: var(--text-base);
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.community-join:hover {
+  background: color-mix(in srgb, var(--color-accent) 75%, black);
+}
+
 .product-footer {
   padding-block: var(--space-xl);
   background: var(--color-paper);
@@ -688,6 +773,9 @@ html.screenshot-viewer-open,
 }
 
 @media (min-width: 40rem) {
+  .migration-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .iop2-page .container {
     width: min(100% - var(--space-xl) * 2, var(--layout-max));
   }
@@ -733,6 +821,24 @@ html.screenshot-viewer-open,
 }
 
 @media (min-width: 60rem) {
+  .sync-showcase {
+    gap: var(--space-xl);
+  }
+  .sync-showcase-row {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--space-xl);
+  }
+  .sync-showcase-row:nth-child(even) {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+  .sync-showcase-row:nth-child(even) .product-shot {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .sync-showcase-row:nth-child(even) .sync-showcase-copy {
+    grid-column: 1;
+    grid-row: 1;
+  }
   .platform-icon {
     width: var(--space-2xl);
     height: var(--space-2xl);
@@ -750,10 +856,6 @@ html.screenshot-viewer-open,
   }
   .sync-band {
     padding-block: var(--space-3xl);
-  }
-  .sync-details {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
-    gap: var(--space-3xl);
   }
   .compatibility-section {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

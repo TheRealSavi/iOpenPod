@@ -63,6 +63,32 @@ Podcast subscriptions, cached episode information, and listening-state overrides
 are saved on the selected iPod under `iPod_Control/iOpenPod/Podcasts`. They can
 travel with that device to another computer.
 
+## Optional listening-history services
+
+Connecting Last.fm or ListenBrainz in Settings enables optional submission of iPod
+music plays to that service. You supply or authorize that service's credentials.
+Authentication and token-validation requests contact the selected service. Manual
+scrobbling sends listening history; after an account is connected, the Scrobble
+during Sync option is enabled by default and can also send it during Sync.
+
+Submissions include artist, track title, album, playback timestamps, duration, and
+service-specific metadata such as album artist and track number for Last.fm or
+the iOpenPod client version for ListenBrainz. Old Last.fm plays can receive adjusted
+submission dates to fit that service's acceptance window. The service receives
+account authentication information, your IP address, and ordinary connection
+information. Media files, acoustic fingerprints, and the iPod database itself are
+not uploaded. Each service controls its own processing and profile visibility.
+
+Service credentials are stored in the native operating-system credential vault
+(Windows Credential Manager on Windows). Account names are saved in preferences;
+pending listens and delivery records are saved locally in `scrobbles-v2.json`
+beside the settings file. These records can include listening metadata and device
+identifiers. Disconnect a service in Settings to remove its stored credentials and
+stop submissions to it. Turning off Scrobble during Sync stops automatic Sync
+submissions; manual scrobbling remains available for connected accounts. Removing
+local data or disconnecting does not delete listens already received by a service;
+manage those through Last.fm or ListenBrainz.
+
 ## Diagnostics, support, and donations
 
 iOpenPod keeps rotating diagnostic logs on your computer. Errors and crash traces
@@ -109,8 +135,8 @@ the app does not erase media, exports, backups in custom locations, or data on
 your iPod. Request help accessing or deleting information you sent the developer
 by emailing <johngibbons167@gmail.com>. Applicable law may also give you rights
 to correction, restriction, objection, or a complaint to your data-protection
-authority. Requests concerning Apple, a podcast host, Microsoft, GitHub, or Ko-fi
-should also be directed to that provider.
+authority. Requests concerning Apple, a podcast host, Microsoft, Last.fm,
+ListenBrainz, GitHub, or Ko-fi should also be directed to that provider.
 
 The app is intended for a general audience and does not request children's
 personal details or provide user accounts. User-selected media and third-party

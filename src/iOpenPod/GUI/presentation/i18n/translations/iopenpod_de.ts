@@ -1189,6 +1189,10 @@
         <translation>Das Dateisystem des Geräts konnte nicht geprüft werden</translation>
     </message>
     <message>
+        <source>Some dates need a timezone fallback or cannot be interpreted uniquely.</source>
+        <translation>Für einige Datumsangaben ist eine Ersatzzeitzone erforderlich oder sie lassen sich nicht eindeutig interpretieren.</translation>
+    </message>
+    <message>
         <source>Some device identity metadata could not be read.</source>
         <translation>Einige Angaben zur Geräteidentität konnten nicht gelesen werden.</translation>
     </message>
@@ -1446,6 +1450,25 @@
     <message>
         <source>System default</source>
         <translation>Systemsprache</translation>
+    </message>
+</context>
+<context>
+    <name>IPodPreferencesView</name>
+    <message>
+        <source>iPod Preferences</source>
+        <translation>iPod-Einstellungen</translation>
+    </message>
+    <message>
+        <source>Read-only settings stored on your iPod, captured when it was loaded. Some settings may not be available for every model.</source>
+        <translation>Schreibgeschützte Einstellungen auf Ihrem iPod, die beim Laden erfasst wurden. Einige Einstellungen sind möglicherweise nicht für jedes Modell verfügbar.</translation>
+    </message>
+    <message>
+        <source>Connect and select an iPod to view its preferences.</source>
+        <translation>Verbinden Sie einen iPod und wählen Sie ihn aus, um seine Einstellungen anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>Preferences have not been loaded for this iPod.</source>
+        <translation>Die Einstellungen für diesen iPod wurden noch nicht geladen.</translation>
     </message>
 </context>
 <context>
@@ -2088,6 +2111,143 @@
             <numerusform>%n Ordner ausgewählt</numerusform>
             <numerusform>%n Ordner ausgewählt</numerusform>
         </translation>
+    </message>
+</context>
+<context>
+    <name>MediaToolsController</name>
+    <message>
+        <source>FFmpeg, FFprobe, and fpcalc are ready to use.</source>
+        <translation>FFmpeg, FFprobe und fpcalc sind einsatzbereit.</translation>
+    </message>
+    <message>
+        <source>Some media tools need setup.</source>
+        <translation>Einige Medienwerkzeuge müssen eingerichtet werden.</translation>
+    </message>
+    <message>
+        <source>Could not check media tools: %1</source>
+        <translation>Medienwerkzeuge konnten nicht geprüft werden: %1</translation>
+    </message>
+    <message>
+        <source>Installing %1 (%2 of %3)…</source>
+        <translation>%1 wird installiert (%2 von %3)…</translation>
+    </message>
+    <message>
+        <source>Waiting for the current package operation to finish. No further packages will be started.</source>
+        <translation>Warten auf den Abschluss des laufenden Paketvorgangs. Es werden keine weiteren Pakete gestartet.</translation>
+    </message>
+    <message>
+        <source>Installation did not complete (exit %1). Review the details below, then retry or use Setup Help.</source>
+        <translation>Die Installation wurde nicht abgeschlossen (Exit-Code %1). Prüfen Sie die Details unten und versuchen Sie es erneut oder öffnen Sie die Einrichtungshilfe.</translation>
+    </message>
+    <message>
+        <source>Package operation finished. Some tools still need setup; review the results and use Setup Help if needed.</source>
+        <translation>Der Paketvorgang ist abgeschlossen. Einige Werkzeuge müssen noch eingerichtet werden. Prüfen Sie die Ergebnisse und nutzen Sie bei Bedarf die Einrichtungshilfe.</translation>
+    </message>
+    <message>
+        <source>Could not start the package manager: %1</source>
+        <translation>Die Paketverwaltung konnte nicht gestartet werden: %1</translation>
+    </message>
+</context>
+<context>
+    <name>MediaToolsSettings</name>
+    <message>
+        <source>Media Tools</source>
+        <translation>Medienwerkzeuge</translation>
+    </message>
+    <message>
+        <source>Check Again</source>
+        <translation>Erneut prüfen</translation>
+    </message>
+    <message>
+        <source>Set Up Media Tools</source>
+        <translation>Medienwerkzeuge einrichten</translation>
+    </message>
+    <message>
+        <source>Checking media tools…</source>
+        <translation>Medienwerkzeuge werden geprüft…</translation>
+    </message>
+    <message>
+        <source>Not checked</source>
+        <translation>Nicht geprüft</translation>
+    </message>
+    <message>
+        <source>Checking…</source>
+        <translation>Wird geprüft…</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>Fehlt</translation>
+    </message>
+    <message>
+        <source>Needs attention</source>
+        <translation>Handlungsbedarf</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <translation>Installiert</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>Nicht verfügbar</translation>
+    </message>
+    <message>
+        <source>Unknown</source>
+        <translation>Unbekannt</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>Verfügbar</translation>
+    </message>
+</context>
+<context>
+    <name>MediaToolsSetupDialog</name>
+    <message>
+        <source>Set Up Media Tools</source>
+        <translation>Medienwerkzeuge einrichten</translation>
+    </message>
+    <message>
+        <source>FFmpeg and FFprobe prepare and inspect media. Chromaprint&apos;s fpcalc enables acoustic matching. You can skip setup and keep browsing; acoustic matching is optional. Choose Install Missing Tools to let the selected package manager install them on this computer.</source>
+        <translation>FFmpeg und FFprobe bereiten Medien vor und prüfen sie. Chromaprints fpcalc ermöglicht den akustischen Abgleich. Sie können die Einrichtung überspringen und weiter stöbern; der akustische Abgleich ist optional. Wählen Sie Fehlende Werkzeuge installieren, um sie über die ausgewählte Paketverwaltung auf diesem Computer zu installieren.</translation>
+    </message>
+    <message>
+        <source>Check Again</source>
+        <translation>Erneut prüfen</translation>
+    </message>
+    <message>
+        <source>Setup Help</source>
+        <translation>Einrichtungshilfe</translation>
+    </message>
+    <message>
+        <source>Install Missing Tools</source>
+        <translation>Fehlende Werkzeuge installieren</translation>
+    </message>
+    <message>
+        <source>Stop After Current Package</source>
+        <translation>Nach aktuellem Paket stoppen</translation>
+    </message>
+    <message>
+        <source>Package installation details</source>
+        <translation>Details zur Paketinstallation</translation>
+    </message>
+    <message>
+        <source>Installation progress and errors will appear here.</source>
+        <translation>Installationsfortschritt und Fehler werden hier angezeigt.</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>Fehlt</translation>
+    </message>
+    <message>
+        <source>Needs attention</source>
+        <translation>Handlungsbedarf</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>Bereit</translation>
+    </message>
+    <message>
+        <source>Checking media tools…</source>
+        <translation>Medienwerkzeuge werden geprüft…</translation>
     </message>
 </context>
 <context>
@@ -2981,7 +3141,7 @@
     </message>
     <message>
         <source>Use a date supported by this Photo Database.</source>
-        <translation>Geben Sie ein Datum ein, das diese Fotodatenbank unterstützt.</translation>
+        <translation type="vanished">Geben Sie ein Datum ein, das diese Fotodatenbank unterstützt.</translation>
     </message>
 </context>
 <context>
@@ -4472,6 +4632,119 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
 </context>
 <context>
+    <name>ScrobbleController</name>
+    <message>
+        <source>Scrobbling cancelled. Pending listens are saved.</source>
+        <translation>Scrobbling abgebrochen. Ausstehende Wiedergaben sind gespeichert.</translation>
+    </message>
+    <message>
+        <source>Enter your Last.fm application API key and shared secret.</source>
+        <translation>Geben Sie den API-Schlüssel und das gemeinsame Geheimnis Ihrer Last.fm-Anwendung ein.</translation>
+    </message>
+    <message>
+        <source>Enter your ListenBrainz user token.</source>
+        <translation>Geben Sie Ihr ListenBrainz-Benutzertoken ein.</translation>
+    </message>
+    <message>
+        <source>Connect Last.fm or ListenBrainz in Settings → Sync to scrobble.</source>
+        <translation>Verbinden Sie Last.fm oder ListenBrainz unter Einstellungen → Synchronisieren, um zu scrobbeln.</translation>
+    </message>
+    <message>
+        <source>Authorize iOpenPod in your browser, then click Finish signing in.</source>
+        <translation>Autorisieren Sie iOpenPod in Ihrem Browser und klicken Sie dann auf Anmeldung abschließen.</translation>
+    </message>
+    <message>
+        <source>Could not save the account preference. Check Host storage and reconnect the service.</source>
+        <translation>Die Kontoeinstellung konnte nicht gespeichert werden. Prüfen Sie den Speicher des Computers und verbinden Sie den Dienst erneut.</translation>
+    </message>
+    <message>
+        <source>Connected to {service} as {username}.</source>
+        <translation>Mit {service} als {username} verbunden.</translation>
+    </message>
+    <message>
+        <source>Disconnected from {service}.</source>
+        <translation>Von {service} getrennt.</translation>
+    </message>
+</context>
+<context>
+    <name>ScrobbleReportDialog</name>
+    <message>
+        <source>Scrobbling report</source>
+        <translation>Scrobbling-Bericht</translation>
+    </message>
+    <message>
+        <source>Copy report</source>
+        <translation>Bericht kopieren</translation>
+    </message>
+</context>
+<context>
+    <name>ScrobblingSettings</name>
+    <message>
+        <source>The browser could not be opened. Enable your default browser and start signing in again.</source>
+        <translation>Der Browser konnte nicht geöffnet werden. Aktivieren Sie Ihren Standardbrowser und starten Sie die Anmeldung erneut.</translation>
+    </message>
+    <message>
+        <source>Connected as {username}</source>
+        <translation>Als {username} verbunden</translation>
+    </message>
+    <message>
+        <source>Not connected</source>
+        <translation>Nicht verbunden</translation>
+    </message>
+    <message>
+        <source>Scrobbling accounts</source>
+        <translation>Scrobbling-Konten</translation>
+    </message>
+    <message>
+        <source>Last.fm API key</source>
+        <translation>Last.fm-API-Schlüssel</translation>
+    </message>
+    <message>
+        <source>Register a Last.fm application to obtain its key and shared secret.</source>
+        <translation>Registrieren Sie eine Last.fm-Anwendung, um ihren Schlüssel und ihr gemeinsames Geheimnis zu erhalten.</translation>
+    </message>
+    <message>
+        <source>Last.fm shared secret</source>
+        <translation>Gemeinsames Last.fm-Geheimnis</translation>
+    </message>
+    <message>
+        <source>ListenBrainz user token</source>
+        <translation>ListenBrainz-Benutzertoken</translation>
+    </message>
+    <message>
+        <source>Copy your user token from ListenBrainz settings.</source>
+        <translation>Kopieren Sie Ihr Benutzertoken aus den ListenBrainz-Einstellungen.</translation>
+    </message>
+    <message>
+        <source>Sign in with Last.fm</source>
+        <translation>Bei Last.fm anmelden</translation>
+    </message>
+    <message>
+        <source>Finish signing in</source>
+        <translation>Anmeldung abschließen</translation>
+    </message>
+    <message>
+        <source>Connect ListenBrainz</source>
+        <translation>ListenBrainz verbinden</translation>
+    </message>
+    <message>
+        <source>Disconnect</source>
+        <translation>Trennen</translation>
+    </message>
+    <message>
+        <source>Get API key</source>
+        <translation>API-Schlüssel anfordern</translation>
+    </message>
+    <message>
+        <source>Get user token</source>
+        <translation>Benutzertoken abrufen</translation>
+    </message>
+    <message>
+        <source>View last scrobble report</source>
+        <translation>Letzten Scrobbling-Bericht anzeigen</translation>
+    </message>
+</context>
+<context>
     <name>SelectionGroupingProxyModel</name>
     <message>
         <source>expanded</source>
@@ -4542,6 +4815,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Backups</source>
         <translation>Backups</translation>
+    </message>
+    <message>
+        <source>iPod Preferences</source>
+        <translation>iPod-Einstellungen</translation>
     </message>
     <message>
         <source>Linux</source>
@@ -4714,6 +4991,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Donate</source>
         <translation>Spenden</translation>
+    </message>
+    <message>
+        <source>iPod preferences are read-only.</source>
+        <translation>Die iPod-Einstellungen sind schreibgeschützt.</translation>
     </message>
     <message>
         <source>Changes are saved automatically.</source>
@@ -6969,6 +7250,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Eine Album- oder Künstlergruppe enthält widersprüchliche Quellkennungen.</translation>
     </message>
     <message>
+        <source>All podcasts</source>
+        <translation>Alle Podcasts</translation>
+    </message>
+    <message>
         <source>Allocate collision-free native identities and required new-record metadata.</source>
         <translation>Eindeutige Originalkennungen und erforderliche Metadaten für neue Datensätze zuweisen.</translation>
     </message>
@@ -7043,6 +7328,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Attaching or removing the Photo Database is not supported.</source>
         <translation>Das Hinzufügen oder Entfernen der Fotodatenbank wird nicht unterstützt.</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>Automatisch</translation>
     </message>
     <message>
         <source>Backup complete — {total} files protected.</source>
@@ -7221,6 +7510,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Ohne akustischen Abgleich fortsetzen…</translation>
     </message>
     <message>
+        <source>Convert to 128 kbps AAC</source>
+        <translation>In AAC mit 128 kbit/s umwandeln</translation>
+    </message>
+    <message>
         <source>Copying and checking Album Tracks…</source>
         <translation>Albumtitel werden kopiert und geprüft…</translation>
     </message>
@@ -7243,6 +7536,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Could not open playback data</source>
         <translation>Wiedergabedaten konnten nicht geöffnet werden</translation>
+    </message>
+    <message>
+        <source>Could not read these settings: {detail}</source>
+        <translation>Diese Einstellungen konnten nicht gelesen werden: {detail}</translation>
     </message>
     <message>
         <source>Could not refresh {title}. Its episodes were kept unchanged; check the feed and retry Sync.</source>
@@ -7293,6 +7590,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Die aktuellen Inhalte wurden behalten und die Wiederherstellung abgelehnt. Die aktuelle Mediathek konnte nicht geladen werden. Die unterbrochene Synchronisierung kann unvollständig sein. Wiederherstellungskopien bleiben neben declined-transaction.json erhalten. Aktualisieren Sie die iPod-Auswahl nach der Reparatur der Mediathek. {detail}</translation>
     </message>
     <message>
+        <source>Daylight saving switch</source>
+        <translation>Sommerzeitumschaltung</translation>
+    </message>
+    <message>
         <source>Derive firmware membership, flags, or representable values from the requested edit.</source>
         <translation>Firmware-Einträge, Kennzeichen oder darstellbare Werte aus der angeforderten Änderung ableiten.</translation>
     </message>
@@ -7305,6 +7606,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Die Angaben zur Geräteidentität müssen repariert werden. Dieser Datenträger kann jedoch nicht sicher beschrieben werden.</translation>
     </message>
     <message>
+        <source>Device settings</source>
+        <translation>Geräteeinstellungen</translation>
+    </message>
+    <message>
+        <source>Disk use</source>
+        <translation>Als Festplatte verwenden</translation>
+    </message>
+    <message>
         <source>Downloading Podcast Episode…</source>
         <translation>Podcast-Folge wird heruntergeladen…</translation>
     </message>
@@ -7315,6 +7624,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Encoding the chaptered Album…</source>
         <translation>Album mit Kapiteln wird codiert…</translation>
+    </message>
+    <message>
+        <source>English</source>
+        <translation>Englisch</translation>
     </message>
     <message>
         <source>Enter a name for the Photo Album.</source>
@@ -7331,6 +7644,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Enter a valid HTTP or HTTPS podcast feed URL.</source>
         <translation>Geben Sie eine gültige HTTP- oder HTTPS-URL für den Podcast-Feed ein.</translation>
+    </message>
+    <message>
+        <source>Entire library</source>
+        <translation>Gesamte Mediathek</translation>
     </message>
     <message>
         <source>Every Playlist Entry needs a unique nonempty identity.</source>
@@ -7413,12 +7730,20 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Die Angaben zum importierten Titel stimmen nicht mit den erfassten Medien überein.</translation>
     </message>
     <message>
+        <source>Include original photos</source>
+        <translation>Originalfotos einschließen</translation>
+    </message>
+    <message>
         <source>Inspecting data streams and metadata</source>
         <translation>Datenströme und Metadaten werden geprüft</translation>
     </message>
     <message>
         <source>Inspecting the converted media</source>
         <translation>Konvertierte Medien werden geprüft</translation>
+    </message>
+    <message>
+        <source>Keep in iTunes source list</source>
+        <translation>In der iTunes-Quellenliste behalten</translation>
     </message>
     <message>
         <source>Keep the Original archive unchanged, review the diagnostics, and retry after repairing or recopying it.</source>
@@ -7469,6 +7794,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Änderungen an der Mediathek wurden geprüft. Das System konnte jedoch nicht bestätigen, dass alle Schreibvorgänge auf dem Gerät abgeschlossen sind. Werfen Sie den iPod über das Betriebssystem sicher aus, bevor Sie ihn trennen.</translation>
     </message>
     <message>
+        <source>Linked library identifier</source>
+        <translation>Kennung der verknüpften Mediathek</translation>
+    </message>
+    <message>
         <source>Linux needs the bundled 61-iopenpod.rules identity rule before iOpenPod can verify this model. Install it in /etc/udev/rules.d, reload udev rules, then reconnect the iPod.</source>
         <translation>Linux benötigt die mitgelieferte Identifikationsregel 61-iopenpod.rules, damit iOpenPod dieses Modell prüfen kann. Installieren Sie diese in /etc/udev/rules.d, laden Sie die udev-Regeln neu und schließen Sie den iPod erneut an.</translation>
     </message>
@@ -7493,6 +7822,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Die originale Albumreihenfolge des Sortiertyps 36 und Positionen der Hauptwiedergabeliste beibehalten.</translation>
     </message>
     <message>
+        <source>Manual</source>
+        <translation>Manuell</translation>
+    </message>
+    <message>
         <source>Master Playlist membership does not match the resulting library.</source>
         <translation>Die Einträge der Hauptwiedergabeliste stimmen nicht mit der resultierenden Mediathek überein.</translation>
     </message>
@@ -7505,6 +7838,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Das Ersetzen von Medien erfordert einen vorhandenen Quelltitel, der in der gewünschten Mediathek beibehalten wird.</translation>
     </message>
     <message>
+        <source>Menu language</source>
+        <translation>Menüsprache</translation>
+    </message>
+    <message>
         <source>Metadata was verified but the Host could not confirm its flush: {detail}</source>
         <translation>Metadaten wurden geprüft. Der Computer konnte jedoch den Abschluss ihrer Schreibvorgänge nicht bestätigen: {detail}</translation>
     </message>
@@ -7515,6 +7852,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Multiple playlist datasets have the same type; their ownership is ambiguous.</source>
         <translation>Mehrere Wiedergabelisten-Datenbestände haben denselben Typ. Ihre Zuordnung ist nicht eindeutig.</translation>
+    </message>
+    <message>
+        <source>Music selection</source>
+        <translation>Musikauswahl</translation>
+    </message>
+    <message>
+        <source>Music sync</source>
+        <translation>Musiksynchronisierung</translation>
     </message>
     <message>
         <source>New Photo Albums must follow the retained Photo Albums.</source>
@@ -7539,6 +7884,18 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Normalization applied.</source>
         <translation>Vereinheitlichung angewendet.</translation>
+    </message>
+    <message>
+        <source>Not decoded for this model or firmware</source>
+        <translation>Für dieses Modell oder diese Firmware nicht dekodiert</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Aus</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <translation>Ein</translation>
     </message>
     <message>
         <source>Only Smart Playlists must contain Smart Playlist rules.</source>
@@ -7567,6 +7924,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Only supported audio and video files can be included; nested Playlists are not followed.</source>
         <translation>Nur unterstützte Audio- und Videodateien können aufgenommen werden. Verschachtelte Wiedergabelisten werden nicht verfolgt.</translation>
+    </message>
+    <message>
+        <source>Open iTunes on connection</source>
+        <translation>iTunes beim Verbinden öffnen</translation>
     </message>
     <message>
         <source>Original Backup import complete.</source>
@@ -7618,7 +7979,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Photo ratings use 0-100; dates must fit unsigned 32-bit fields.</source>
-        <translation>Fotobewertungen reichen von 0 bis 100. Datumsangaben müssen in vorzeichenlose 32-Bit-Felder passen.</translation>
+        <translation type="vanished">Fotobewertungen reichen von 0 bis 100. Datumsangaben müssen in vorzeichenlose 32-Bit-Felder passen.</translation>
     </message>
     <message>
         <source>Photo replacements require unique retained Photo identities.</source>
@@ -7733,12 +8094,24 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Podcast-Zeilenkennungen fehlen oder sind mehrfach vorhanden.</translation>
     </message>
     <message>
+        <source>Podcast selection</source>
+        <translation>Podcast-Auswahl</translation>
+    </message>
+    <message>
         <source>Podcast state is read-only.</source>
         <translation>Der Podcast-Status ist schreibgeschützt.</translation>
     </message>
     <message>
         <source>Podcast state was loaded, but its reconciled files could not be saved to the iPod.</source>
         <translation>Der Podcast-Status wurde geladen. Seine abgeglichenen Dateien konnten jedoch nicht auf dem iPod gespeichert werden.</translation>
+    </message>
+    <message>
+        <source>Podcast sync</source>
+        <translation>Podcast-Synchronisierung</translation>
+    </message>
+    <message>
+        <source>Preferences do not resolve the iPod timezone. Dates use the database&apos;s fixed offset; historical DST cannot be reconstructed.</source>
+        <translation>Die Einstellungen bestimmen die Zeitzone des iPod nicht eindeutig. Datumsangaben verwenden den festen Zeitversatz der Datenbank; frühere Sommerzeitregeln lassen sich nicht rekonstruieren.</translation>
     </message>
     <message>
         <source>Preparation failed unexpectedly. Details were recorded in the application log.</source>
@@ -8057,6 +8430,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Prüfen Sie die Warnung und bestätigen Sie diese Wiederherstellung ausdrücklich für den angeschlossenen iPod.</translation>
     </message>
     <message>
+        <source>SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.</source>
+        <translation>Die Neuerstellung von SQLite erfordert eindeutig bestimmte Titeldaten. Laden Sie die Mediathek mit einer bekannten Zeitzone neu, bevor Sie sie speichern.</translation>
+    </message>
+    <message>
         <source>Saving Sync helper…</source>
         <translation>Synchronisierungsinformationen werden gespeichert…</translation>
     </message>
@@ -8093,6 +8470,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>iPod wird durchsucht…</translation>
     </message>
     <message>
+        <source>Secondary library identifier</source>
+        <translation>Kennung der zweiten Mediathek</translation>
+    </message>
+    <message>
         <source>Select Photos from the current Library.</source>
         <translation>Wählen Sie Fotos aus der aktuellen Mediathek aus.</translation>
     </message>
@@ -8125,8 +8506,28 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Wählen Sie vor der Umwandlung alle Titel des Albums aus.</translation>
     </message>
     <message>
+        <source>Selected playlists</source>
+        <translation>Ausgewählte Wiedergabelisten</translation>
+    </message>
+    <message>
+        <source>Selected podcasts</source>
+        <translation>Ausgewählte Podcasts</translation>
+    </message>
+    <message>
         <source>Serializing database artifacts</source>
         <translation>Datenbankdateien werden serialisiert</translation>
+    </message>
+    <message>
+        <source>Show artwork</source>
+        <translation>Cover anzeigen</translation>
+    </message>
+    <message>
+        <source>Shuffle file capacity</source>
+        <translation>Dateikapazität des shuffle</translation>
+    </message>
+    <message>
+        <source>Shuffle music capacity</source>
+        <translation>Musikkapazität des shuffle</translation>
     </message>
     <message>
         <source>Signed output requires the device&apos;s eight-byte FireWire GUID.</source>
@@ -8153,8 +8554,20 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Einige Ordnerinhalte waren nicht verfügbar. Die Suche wurde fortgesetzt: {error}</translation>
     </message>
     <message>
+        <source>Some retained Photo dates cannot be represented uniquely with the known timezone and missing-date marker. They are unavailable in the Library; unrelated edits preserve their native bytes.</source>
+        <translation>Einige beibehaltene Fotodatumsangaben lassen sich mit der bekannten Zeitzone und der Markierung für fehlende Datumsangaben nicht eindeutig darstellen. Sie sind in der Mediathek nicht verfügbar; andere Änderungen erhalten ihre ursprünglichen Bytes.</translation>
+    </message>
+    <message>
+        <source>Some retained Track dates cannot be represented uniquely with the known timezone and missing-date marker. They are unavailable in the Library; unrelated edits preserve their native bytes.</source>
+        <translation>Einige beibehaltene Datumsangaben von Titeln lassen sich mit der bekannten Zeitzone und der Markierung für fehlende Datumsangaben nicht eindeutig darstellen. Sie sind in der Mediathek nicht verfügbar; andere Änderungen erhalten ihre ursprünglichen Bytes.</translation>
+    </message>
+    <message>
         <source>Sort 36 has no retained source index.</source>
         <translation>Für Sortierung 36 ist kein ursprünglicher Index vorhanden.</translation>
+    </message>
+    <message>
+        <source>Sound Check</source>
+        <translation>Lautstärke anpassen</translation>
     </message>
     <message>
         <source>Staging Library files: {completed} of {total}</source>
@@ -8189,12 +8602,20 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Stellen Sie geprüfte eingebettete Liedtexte und die daraus resultierende Mediendateikennung bereit.</translation>
     </message>
     <message>
+        <source>Sync checked tracks only</source>
+        <translation>Nur markierte Titel synchronisieren</translation>
+    </message>
+    <message>
         <source>Sync could not continue. Correct the reported problem and rescan before trying again.</source>
         <translation>Die Synchronisierung konnte nicht fortgesetzt werden. Beheben Sie das gemeldete Problem und starten Sie vor einem neuen Versuch die Suche erneut.</translation>
     </message>
     <message>
         <source>Sync could not finish. Checking recovery files before restoring the previous Library…</source>
         <translation>Die Synchronisierung konnte nicht abgeschlossen werden. Wiederherstellungsdateien werden geprüft, bevor die vorherige Mediathek wiederhergestellt wird…</translation>
+    </message>
+    <message>
+        <source>Sync photos</source>
+        <translation>Fotos synchronisieren</translation>
     </message>
     <message>
         <source>Sync recovery files were removed, but device flushing could not be confirmed. Safely eject before unplugging. {detail}</source>
@@ -8397,6 +8818,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Der angeschlossene iPod ist nicht das Gerät dieser unterbrochenen Wiederherstellung.</translation>
     </message>
     <message>
+        <source>The database header timezone is invalid. Preferences may still resolve local dates; the header will be retained unchanged.</source>
+        <translation>Die Zeitzone im Datenbankkopf ist ungültig. Die Einstellungen können lokale Datumsangaben möglicherweise dennoch eindeutig bestimmen; der Kopf bleibt unverändert erhalten.</translation>
+    </message>
+    <message>
         <source>The device name contains invalid Unicode.</source>
         <translation>Der Gerätename enthält ungültige Unicode-Zeichen.</translation>
     </message>
@@ -8455,6 +8880,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>The iPod name was saved, but its desktop name or icon could not be applied exactly.</source>
         <translation>Der iPod-Name wurde gespeichert. Sein Name oder Symbol im Betriebssystem konnte jedoch nicht wie vorgesehen angewendet werden.</translation>
+    </message>
+    <message>
+        <source>The iPod timezone is unknown. Local dates are unavailable; unchanged date bytes will be retained.</source>
+        <translation>Die Zeitzone des iPod ist unbekannt. Lokale Datumsangaben sind nicht verfügbar; unveränderte Datumsbytes bleiben erhalten.</translation>
     </message>
     <message>
         <source>The limit must be a positive whole number up to 4,294,967,295.</source>
@@ -8637,12 +9066,20 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Die Quelldatenbank ist signiert. Geben Sie vor der Bearbeitung das unterstützte Signaturziel an.</translation>
     </message>
     <message>
+        <source>{value} (units unknown)</source>
+        <translation>{value} (Einheiten unbekannt)</translation>
+    </message>
+    <message>
+        <source>{value} / 64</source>
+        <translation>{value} / 64</translation>
+    </message>
+    <message>
         <source>The source timezone is invalid; this date cannot be edited reliably.</source>
-        <translation>Die Zeitzone der Quelle ist ungültig. Dieses Datum kann nicht zuverlässig bearbeitet werden.</translation>
+        <translation type="vanished">Die Zeitzone der Quelle ist ungültig. Dieses Datum kann nicht zuverlässig bearbeitet werden.</translation>
     </message>
     <message>
         <source>The source timezone is invalid; unchanged date bytes will be retained.</source>
-        <translation>Die Zeitzone der Quelle ist ungültig. Unveränderte Datumsbytes bleiben erhalten.</translation>
+        <translation type="vanished">Die Zeitzone der Quelle ist ungültig. Unveränderte Datumsbytes bleiben erhalten.</translation>
     </message>
     <message>
         <source>The special Podcasts playlist was updated to contain the resulting podcast Tracks.</source>
@@ -8667,6 +9104,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>These changes belong to another loaded Library. Reload its original source.</source>
         <translation>Diese Änderungen gehören zu einer anderen geladenen Mediathek. Laden Sie deren ursprüngliche Quelle erneut.</translation>
+    </message>
+    <message>
+        <source>These settings changed while they were being read. Reload the iPod to try again.</source>
+        <translation>Diese Einstellungen wurden während des Lesens geändert. Laden Sie den iPod neu, um es erneut zu versuchen.</translation>
     </message>
     <message>
         <source>This Backup Snapshot belongs to a different iPod.</source>
@@ -8738,7 +9179,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>This date is outside the unsigned iPod date range.</source>
-        <translation>Dieses Datum liegt außerhalb des vorzeichenlosen iPod-Datumsbereichs.</translation>
+        <translation type="vanished">Dieses Datum liegt außerhalb des vorzeichenlosen iPod-Datumsbereichs.</translation>
     </message>
     <message>
         <source>This field is read-only, unknown, or specified more than once.</source>
@@ -8751,6 +9192,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>This iPod has no Photo Album creation policy.</source>
         <translation>Für diesen iPod ist das Erstellen von Fotoalben nicht festgelegt.</translation>
+    </message>
+    <message>
+        <source>This iPod has no file for these settings.</source>
+        <translation>Dieser iPod hat keine Datei für diese Einstellungen.</translation>
+    </message>
+    <message>
+        <source>This iPod uses a settings format that is not yet recognized.</source>
+        <translation>Dieser iPod verwendet ein Einstellungsformat, das noch nicht erkannt wird.</translation>
     </message>
     <message>
         <source>This imported Original backup cannot prove an exact hardware identity.</source>
@@ -8769,6 +9218,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Dieses Backup hat keine verwendbare Backup-Kennung.</translation>
     </message>
     <message>
+        <source>Timezone</source>
+        <translation>Zeitzone</translation>
+    </message>
+    <message>
         <source>Track membership changes require a captured inventory with no pending positional playback sidecars. Preserve or reconcile them before preparing output.</source>
         <translation>Änderungen am Titelbestand erfordern einen erfassten Dateibestand ohne ausstehende positionsbezogene Wiedergabe-Begleitdateien. Behalten Sie diese bei oder gleichen Sie sie ab, bevor Sie die Ausgabe vorbereiten.</translation>
     </message>
@@ -8781,8 +9234,24 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Titel können nur in einer Wiedergabeliste direkt angeordnet werden.</translation>
     </message>
     <message>
+        <source>UTC{offset}</source>
+        <translation>UTC{offset}</translation>
+    </message>
+    <message>
         <source>Unavailable or unsafe file: {error}</source>
         <translation>Datei nicht verfügbar oder nicht sicher verwendbar: {error}</translation>
+    </message>
+    <message>
+        <source>Unknown</source>
+        <translation>Unbekannt</translation>
+    </message>
+    <message>
+        <source>Unknown (city {city})</source>
+        <translation>Unbekannt (Stadt {city})</translation>
+    </message>
+    <message>
+        <source>Unknown (code {code})</source>
+        <translation>Unbekannt (Code {code})</translation>
     </message>
     <message>
         <source>Unsupported Smart Playlist rules are read-only.</source>
@@ -8853,8 +9322,16 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Sichtbare Wiedergabelisten entsprechen nicht der gewünschten Reihenfolge der Ordnerhierarchie.</translation>
     </message>
     <message>
+        <source>VoiceOver</source>
+        <translation>VoiceOver</translation>
+    </message>
+    <message>
         <source>Volume adjustment must be between -100 and 100 percent.</source>
         <translation>Die Lautstärkeanpassung muss zwischen -100 und 100 Prozent liegen.</translation>
+    </message>
+    <message>
+        <source>Volume limit</source>
+        <translation>Maximale Lautstärke</translation>
     </message>
     <message>
         <source>Wait for the current Library save to finish.</source>
@@ -8887,6 +9364,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>iPod media scan complete.</source>
         <translation>Mediensuche auf dem iPod abgeschlossen.</translation>
+    </message>
+    <message>
+        <source>iTunes settings</source>
+        <translation>iTunes-Einstellungen</translation>
+    </message>
+    <message>
+        <source>iTunes setup completed</source>
+        <translation>iTunes-Einrichtung abgeschlossen</translation>
     </message>
     <message>
         <source>steps</source>
@@ -8985,19 +9470,19 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Die automatische Einrichtung benötigt {manager} und einen grafischen polkit-Authentifizierungsagenten (pkexec). Installieren Sie {ffmpeg} und {fingerprint} mit der Paketverwaltung Ihres Systems und prüfen Sie erneut.</translation>
     </message>
     <message>
-        <source>Homebrew installs the missing packages and their dependencies. FFmpeg includes FFprobe. Older macOS and Intel systems may build from source; Homebrew's OS support differs from iOpenPod's.</source>
+        <source>Homebrew installs the missing packages and their dependencies. FFmpeg includes FFprobe. Older macOS and Intel systems may build from source; Homebrew&apos;s OS support differs from iOpenPod&apos;s.</source>
         <translation>Homebrew installiert die fehlenden Pakete und ihre Abhängigkeiten. FFmpeg enthält FFprobe. Auf älteren macOS- und Intel-Systemen kann ein Bau aus dem Quellcode nötig sein; Homebrew unterstützt andere Betriebssystemversionen als iOpenPod.</translation>
     </message>
     <message>
-        <source>Install FFmpeg and Chromaprint's fpcalc using your distribution's package manager, then check again.</source>
+        <source>Install FFmpeg and Chromaprint&apos;s fpcalc using your distribution&apos;s package manager, then check again.</source>
         <translation>Installieren Sie FFmpeg und Chromaprints fpcalc mit der Paketverwaltung Ihrer Distribution und prüfen Sie erneut.</translation>
     </message>
     <message>
-        <source>Install Homebrew from its official setup page, then choose Check Again. Homebrew may require Apple's Command Line Tools and an administrator password.</source>
+        <source>Install Homebrew from its official setup page, then choose Check Again. Homebrew may require Apple&apos;s Command Line Tools and an administrator password.</source>
         <translation>Installieren Sie Homebrew von seiner offiziellen Einrichtungsseite und wählen Sie Erneut prüfen. Homebrew benötigt möglicherweise Apples Command Line Tools und ein Administratorpasswort.</translation>
     </message>
     <message>
-        <source>Install Microsoft's App Installer (WinGet), then choose Check Again.</source>
+        <source>Install Microsoft&apos;s App Installer (WinGet), then choose Check Again.</source>
         <translation>Installieren Sie Microsofts App-Installer (WinGet) und wählen Sie Erneut prüfen.</translation>
     </message>
     <message>
@@ -9009,6 +9494,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Für dieses Betriebssystem ist kein automatischer Installationskanal verfügbar.</translation>
     </message>
     <message>
+        <source>Photo ratings use 0-100; dates must be supported integer Unix seconds.</source>
+        <translation>Fotobewertungen verwenden 0–100; Datumsangaben müssen unterstützte ganzzahlige Unix-Sekunden sein.</translation>
+    </message>
+    <message>
+        <source>Photo ratings use 0-100; dates need a known timezone and a unique instant in the iPod date range.</source>
+        <translation>Fotobewertungen verwenden 0–100; Datumsangaben benötigen eine bekannte Zeitzone und einen eindeutigen Zeitpunkt im Datumsbereich des iPod.</translation>
+    </message>
+    <message>
         <source>This application cannot install Host packages from its sandbox. Use a native iOpenPod installation or configure tools accessible inside this sandbox.</source>
         <translation>Diese Anwendung kann aus ihrer Sandbox keine Pakete auf dem Computer installieren. Verwenden Sie eine native iOpenPod-Installation oder richten Sie Werkzeuge ein, die innerhalb dieser Sandbox erreichbar sind.</translation>
     </message>
@@ -9017,7 +9510,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Diese Pakete benötigen 64-Bit-Windows.</translation>
     </message>
     <message>
-        <source>Your system may ask for administrator approval. Installs missing packages and their dependencies. No repositories are added. Available codecs depend on the distribution's FFmpeg build.</source>
+        <source>Your system may ask for administrator approval. Installs missing packages and their dependencies. No repositories are added. Available codecs depend on the distribution&apos;s FFmpeg build.</source>
         <translation>Ihr System fordert möglicherweise eine Administratorfreigabe an. Installiert fehlende Pakete und ihre Abhängigkeiten. Es werden keine Paketquellen hinzugefügt. Verfügbare Codecs hängen vom FFmpeg-Build der Distribution ab.</translation>
     </message>
 </context>
@@ -9336,256 +9829,6 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     <message>
         <source>HOST MEDIA</source>
         <translation>MEDIEN AUF DEM COMPUTER</translation>
-    </message>
-</context>
-<context>
-    <name>ScrobbleController</name>
-    <message>
-        <source>Scrobbling cancelled. Pending listens are saved.</source>
-        <translation>Scrobbling abgebrochen. Ausstehende Wiedergaben sind gespeichert.</translation>
-    </message>
-    <message>
-        <source>Enter your Last.fm application API key and shared secret.</source>
-        <translation>Geben Sie den API-Schlüssel und das gemeinsame Geheimnis Ihrer Last.fm-Anwendung ein.</translation>
-    </message>
-    <message>
-        <source>Enter your ListenBrainz user token.</source>
-        <translation>Geben Sie Ihr ListenBrainz-Benutzertoken ein.</translation>
-    </message>
-    <message>
-        <source>Connect Last.fm or ListenBrainz in Settings → Sync to scrobble.</source>
-        <translation>Verbinden Sie Last.fm oder ListenBrainz unter Einstellungen → Synchronisieren, um zu scrobbeln.</translation>
-    </message>
-    <message>
-        <source>Authorize iOpenPod in your browser, then click Finish signing in.</source>
-        <translation>Autorisieren Sie iOpenPod in Ihrem Browser und klicken Sie dann auf Anmeldung abschließen.</translation>
-    </message>
-    <message>
-        <source>Could not save the account preference. Check Host storage and reconnect the service.</source>
-        <translation>Die Kontoeinstellung konnte nicht gespeichert werden. Prüfen Sie den Speicher des Computers und verbinden Sie den Dienst erneut.</translation>
-    </message>
-    <message>
-        <source>Connected to {service} as {username}.</source>
-        <translation>Mit {service} als {username} verbunden.</translation>
-    </message>
-    <message>
-        <source>Disconnected from {service}.</source>
-        <translation>Von {service} getrennt.</translation>
-    </message>
-</context>
-<context>
-    <name>ScrobblingSettings</name>
-    <message>
-        <source>The browser could not be opened. Enable your default browser and start signing in again.</source>
-        <translation>Der Browser konnte nicht geöffnet werden. Aktivieren Sie Ihren Standardbrowser und starten Sie die Anmeldung erneut.</translation>
-    </message>
-    <message>
-        <source>Connected as {username}</source>
-        <translation>Als {username} verbunden</translation>
-    </message>
-    <message>
-        <source>Not connected</source>
-        <translation>Nicht verbunden</translation>
-    </message>
-    <message>
-        <source>Scrobbling accounts</source>
-        <translation>Scrobbling-Konten</translation>
-    </message>
-    <message>
-        <source>Last.fm API key</source>
-        <translation>Last.fm-API-Schlüssel</translation>
-    </message>
-    <message>
-        <source>Register a Last.fm application to obtain its key and shared secret.</source>
-        <translation>Registrieren Sie eine Last.fm-Anwendung, um ihren Schlüssel und ihr gemeinsames Geheimnis zu erhalten.</translation>
-    </message>
-    <message>
-        <source>Last.fm shared secret</source>
-        <translation>Gemeinsames Last.fm-Geheimnis</translation>
-    </message>
-    <message>
-        <source>ListenBrainz user token</source>
-        <translation>ListenBrainz-Benutzertoken</translation>
-    </message>
-    <message>
-        <source>Copy your user token from ListenBrainz settings.</source>
-        <translation>Kopieren Sie Ihr Benutzertoken aus den ListenBrainz-Einstellungen.</translation>
-    </message>
-    <message>
-        <source>Sign in with Last.fm</source>
-        <translation>Bei Last.fm anmelden</translation>
-    </message>
-    <message>
-        <source>Finish signing in</source>
-        <translation>Anmeldung abschließen</translation>
-    </message>
-    <message>
-        <source>Connect ListenBrainz</source>
-        <translation>ListenBrainz verbinden</translation>
-    </message>
-    <message>
-        <source>Disconnect</source>
-        <translation>Trennen</translation>
-    </message>
-    <message>
-        <source>Get API key</source>
-        <translation>API-Schlüssel anfordern</translation>
-    </message>
-    <message>
-        <source>Get user token</source>
-        <translation>Benutzertoken abrufen</translation>
-    </message>
-    <message>
-        <source>View last scrobble report</source>
-        <translation>Letzten Scrobbling-Bericht anzeigen</translation>
-    </message>
-</context>
-<context>
-    <name>ScrobbleReportDialog</name>
-    <message>
-        <source>Scrobbling report</source>
-        <translation>Scrobbling-Bericht</translation>
-    </message>
-    <message>
-        <source>Copy report</source>
-        <translation>Bericht kopieren</translation>
-    </message>
-</context>
-<context>
-    <name>MediaToolsController</name>
-    <message>
-        <source>FFmpeg, FFprobe, and fpcalc are ready to use.</source>
-        <translation>FFmpeg, FFprobe und fpcalc sind einsatzbereit.</translation>
-    </message>
-    <message>
-        <source>Some media tools need setup.</source>
-        <translation>Einige Medienwerkzeuge müssen eingerichtet werden.</translation>
-    </message>
-    <message>
-        <source>Could not check media tools: %1</source>
-        <translation>Medienwerkzeuge konnten nicht geprüft werden: %1</translation>
-    </message>
-    <message>
-        <source>Installing %1 (%2 of %3)…</source>
-        <translation>%1 wird installiert (%2 von %3)…</translation>
-    </message>
-    <message>
-        <source>Waiting for the current package operation to finish. No further packages will be started.</source>
-        <translation>Warten auf den Abschluss des laufenden Paketvorgangs. Es werden keine weiteren Pakete gestartet.</translation>
-    </message>
-    <message>
-        <source>Installation did not complete (exit %1). Review the details below, then retry or use Setup Help.</source>
-        <translation>Die Installation wurde nicht abgeschlossen (Exit-Code %1). Prüfen Sie die Details unten und versuchen Sie es erneut oder öffnen Sie die Einrichtungshilfe.</translation>
-    </message>
-    <message>
-        <source>Package operation finished. Some tools still need setup; review the results and use Setup Help if needed.</source>
-        <translation>Der Paketvorgang ist abgeschlossen. Einige Werkzeuge müssen noch eingerichtet werden. Prüfen Sie die Ergebnisse und nutzen Sie bei Bedarf die Einrichtungshilfe.</translation>
-    </message>
-    <message>
-        <source>Could not start the package manager: %1</source>
-        <translation>Die Paketverwaltung konnte nicht gestartet werden: %1</translation>
-    </message>
-</context>
-<context>
-    <name>MediaToolsSetupDialog</name>
-    <message>
-        <source>Set Up Media Tools</source>
-        <translation>Medienwerkzeuge einrichten</translation>
-    </message>
-    <message>
-        <source>FFmpeg and FFprobe prepare and inspect media. Chromaprint's fpcalc enables acoustic matching. You can skip setup and keep browsing; acoustic matching is optional. Choose Install Missing Tools to let the selected package manager install them on this computer.</source>
-        <translation>FFmpeg und FFprobe bereiten Medien vor und prüfen sie. Chromaprints fpcalc ermöglicht den akustischen Abgleich. Sie können die Einrichtung überspringen und weiter stöbern; der akustische Abgleich ist optional. Wählen Sie Fehlende Werkzeuge installieren, um sie über die ausgewählte Paketverwaltung auf diesem Computer zu installieren.</translation>
-    </message>
-    <message>
-        <source>Check Again</source>
-        <translation>Erneut prüfen</translation>
-    </message>
-    <message>
-        <source>Setup Help</source>
-        <translation>Einrichtungshilfe</translation>
-    </message>
-    <message>
-        <source>Install Missing Tools</source>
-        <translation>Fehlende Werkzeuge installieren</translation>
-    </message>
-    <message>
-        <source>Stop After Current Package</source>
-        <translation>Nach aktuellem Paket stoppen</translation>
-    </message>
-    <message>
-        <source>Package installation details</source>
-        <translation>Details zur Paketinstallation</translation>
-    </message>
-    <message>
-        <source>Installation progress and errors will appear here.</source>
-        <translation>Installationsfortschritt und Fehler werden hier angezeigt.</translation>
-    </message>
-    <message>
-        <source>Missing</source>
-        <translation>Fehlt</translation>
-    </message>
-    <message>
-        <source>Needs attention</source>
-        <translation>Handlungsbedarf</translation>
-    </message>
-    <message>
-        <source>Ready</source>
-        <translation>Bereit</translation>
-    </message>
-    <message>
-        <source>Checking media tools…</source>
-        <translation>Medienwerkzeuge werden geprüft…</translation>
-    </message>
-</context>
-<context>
-    <name>MediaToolsSettings</name>
-    <message>
-        <source>Media Tools</source>
-        <translation>Medienwerkzeuge</translation>
-    </message>
-    <message>
-        <source>Check Again</source>
-        <translation>Erneut prüfen</translation>
-    </message>
-    <message>
-        <source>Set Up Media Tools</source>
-        <translation>Medienwerkzeuge einrichten</translation>
-    </message>
-    <message>
-        <source>Checking media tools…</source>
-        <translation>Medienwerkzeuge werden geprüft…</translation>
-    </message>
-    <message>
-        <source>Not checked</source>
-        <translation>Nicht geprüft</translation>
-    </message>
-    <message>
-        <source>Checking…</source>
-        <translation>Wird geprüft…</translation>
-    </message>
-    <message>
-        <source>Missing</source>
-        <translation>Fehlt</translation>
-    </message>
-    <message>
-        <source>Needs attention</source>
-        <translation>Handlungsbedarf</translation>
-    </message>
-    <message>
-        <source>Installed</source>
-        <translation>Installiert</translation>
-    </message>
-    <message>
-        <source>Unavailable</source>
-        <translation>Nicht verfügbar</translation>
-    </message>
-    <message>
-        <source>Unknown</source>
-        <translation>Unbekannt</translation>
-    </message>
-    <message>
-        <source>Available</source>
-        <translation>Verfügbar</translation>
     </message>
 </context>
 </TS>
