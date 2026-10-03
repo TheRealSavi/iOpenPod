@@ -15,6 +15,10 @@ from iOpenPod.app.playback.system_media import (
     SystemMediaBridge,
     create_system_media_session,
 )
+from iOpenPod.app.updates.platform import (
+    close_update_runtime,
+    initialize_update_runtime,
+)
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.presentation.application_icon import application_icon
 from iOpenPod.GUI.presentation.display import configure_display
@@ -30,6 +34,7 @@ _WINDOWS_APP_USER_MODEL_ID = "iOpenPod.iOpenPod"
 def start_ui() -> int:
     """Start iOpenPod and discover connected Device Candidates."""
 
+    initialize_update_runtime()
     _set_windows_app_user_model_id()
     configure_display()
     application = QApplication(sys.argv)
@@ -45,6 +50,7 @@ def start_ui() -> int:
 
     window = MainWindow(context)
     window.show()
+    QTimer.singleShot(0, window.check_app_updates)
     QTimer.singleShot(0, window.check_media_tools)
     system_media_bridge = SystemMediaBridge(
         context.playback_controller,
@@ -60,8 +66,10 @@ def start_ui() -> int:
         if shutdown_complete:
             return
         shutdown_complete = True
+        window.close_app_updates()
         system_media_bridge.close()
         context.shutdown()
+        close_update_runtime()
 
     application.aboutToQuit.connect(shutdown)
     try:

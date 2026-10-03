@@ -2,13 +2,16 @@
 
 import hashlib
 import json
+import shutil
 import subprocess
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
 
 import pytest
 from scripts.prepare_store_kit import (
+    ROOT,
     assemble,
     deterministic_archive,
     inspect_msix,
@@ -17,6 +20,7 @@ from scripts.prepare_store_kit import (
     source_path_allowed,
     verified_notice_files,
     verify_packaged_notices,
+    working_tree_sources,
 )
 
 
@@ -52,6 +56,9 @@ def test_archive_paths_reject_traversal_and_windows_aliases(value: str) -> None:
         "src/.env",
         "src/.ENV",
         "packaging/windows/credentials.json",
+        "src/iOpenPod/app/scrobbling/credentials.json",
+        "src/iOpenPod/app/scrobbling/credentials.py.bak",
+        "src/private/credentials.py",
         "docs/privatecaptures/session.png",
         "tests/fixtures/iTunesDB/private-library.b64",
         "packaging/test.pfx",
@@ -69,6 +76,7 @@ def test_private_inputs_never_enter_public_source(value: str) -> None:
         "uv.lock",
         "pyproject.toml",
         "src/iOpenPod/app/app.py",
+        "src/iOpenPod/app/scrobbling/credentials.py",
         "scripts/package_app.py",
         "tests/fixtures/media/tone.wav.b64",
         "LICENSES/DJShott-icon.txt",
@@ -77,6 +85,30 @@ def test_private_inputs_never_enter_public_source(value: str) -> None:
 )
 def test_build_inputs_and_synthetic_fixtures_are_allowed(value: str) -> None:
     assert source_path_allowed(value)
+
+
+def test_release_sources_can_import_the_scrobbling_controller(tmp_path: Path) -> None:
+    # Reproduce launch from exported sources without falling back to this checkout.
+    for relative, source in working_tree_sources(ROOT):
+        if relative.startswith("src/") and relative.endswith(".py"):
+            target = tmp_path / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import sys; sys.path.insert(0, sys.argv[1]); "
+            "import iOpenPod.app.scrobbling.controller",
+            str(tmp_path / "src"),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_archive_is_reproducible_and_contains_exact_reviewed_bytes(

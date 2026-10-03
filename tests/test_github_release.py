@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import tarfile
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -90,7 +91,11 @@ def release_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         for path in tmp_path.rglob("*")
         if path.is_file() and "build" not in path.relative_to(tmp_path).parts
     )
-    monkeypatch.setattr(release, "working_tree_sources", lambda root: members)
+
+    def source_members(_root: Path) -> tuple[tuple[str, Path], ...]:
+        return members
+
+    monkeypatch.setattr(release, "working_tree_sources", source_members)
     return tmp_path
 
 
@@ -216,17 +221,17 @@ def test_source_groups_split_before_asset_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(release, "MAX_ASSET_BYTES", 16 * 1024**2 + 30000)
-    members = []
+    members: list[tuple[str, Path]] = []
     for name in ("first", "second", "third"):
         path = tmp_path / name
         path.write_bytes(b"data")
         members.append((name, path))
     output = tmp_path / "output"
     output.mkdir()
-    release._source_archives(output, members)
+    release._source_archives(output, members)  # pyright: ignore[reportPrivateUsage]
     archives = sorted(output.glob("thirdparty-sources-*.tar.gz"))
     assert len(archives) == 2
-    archived = []
+    archived: list[str] = []
     for path in archives:
         with tarfile.open(path) as archive:
             archived.extend(archive.getnames())
@@ -237,6 +242,12 @@ def test_overlarge_asset_is_rejected(
     release_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(release, "MAX_ASSET_BYTES", 1)
-    monkeypatch.setattr(release, "_source_archives", lambda output, members: None)
+
+    def skip_source_archives(
+        _output: Path, _members: Sequence[tuple[str, Path]]
+    ) -> None:
+        pass
+
+    monkeypatch.setattr(release, "_source_archives", skip_source_archives)
     with pytest.raises(ValueError, match="2 GiB limit"):
         release.assemble("v2.0.0", COMMIT, root=release_root)

@@ -69,6 +69,9 @@ BLOCKED_PARTS = frozenset(
 BLOCKED_SUFFIXES = frozenset(
     {".pyc", ".pyo", ".log", ".pfx", ".p12", ".pem", ".key", ".cer"}
 )
+# Reviewed runtime code, not stored credentials. Keep exceptions path-specific so
+# similarly named secret files and private directories remain excluded.
+REVIEWED_SOURCE_FILES = frozenset({"src/iOpenPod/app/scrobbling/credentials.py"})
 PACKAGE_LICENSE_PREFIX = "app/_internal/licenses/"
 
 
@@ -115,6 +118,8 @@ def source_path_allowed(value: str) -> bool:
     path = safe_relative_path(value)
     if value in PRIVATE_FIXTURES:
         return False
+    if value in REVIEWED_SOURCE_FILES:
+        return True
     if any(
         part.casefold() in BLOCKED_PARTS
         or part.casefold().startswith(

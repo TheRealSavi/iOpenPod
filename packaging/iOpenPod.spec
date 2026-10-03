@@ -42,6 +42,9 @@ if sys.platform == "win32":
         "winrt.windows.media.interop",
         "winrt.windows.foundation.collections",
         "winrt.windows.storage.streams",
+        "winrt.windows.applicationmodel",
+        "winrt.windows.services.store",
+        "winrt.runtime.interop",
     ]
     binaries += collect_dynamic_libs("winrt")
 elif sys.platform == "darwin":

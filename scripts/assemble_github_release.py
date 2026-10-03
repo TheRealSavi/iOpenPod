@@ -13,7 +13,7 @@ import shutil
 import tarfile
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from scripts.prepare_release_sources import read_manifest, verify
 from scripts.prepare_store_kit import (
@@ -112,16 +112,21 @@ def assemble(
         entries = _json(inventory)
         if not isinstance(entries, list) or not entries:
             raise ValueError(f"Invalid dependency inventory: {target}")
-        if not all(
-            isinstance(entry, dict)
-            and isinstance(entry.get("name"), str)
-            and isinstance(entry.get("version"), str)
-            for entry in entries
-        ):
-            raise ValueError(f"Invalid dependency inventory entry: {target}")
+        inventory_packages: list[tuple[str, str]] = []
+        for entry in cast("list[object]", entries):
+            if not isinstance(entry, dict):
+                raise ValueError(f"Invalid dependency inventory entry: {target}")
+            fields = cast("dict[str, object]", entry)
+            package_name = fields.get("name")
+            package_version = fields.get("version")
+            if not isinstance(package_name, str) or not isinstance(
+                package_version, str
+            ):
+                raise ValueError(f"Invalid dependency inventory entry: {target}")
+            inventory_packages.append((package_name, package_version))
         if not any(
-            entry["name"].lower() == "iopenpod" and entry["version"] == version
-            for entry in entries
+            name.lower() == "iopenpod" and package_version == version
+            for name, package_version in inventory_packages
         ):
             raise ValueError(
                 f"Dependency inventory has the wrong app version: {target}"
@@ -134,12 +139,15 @@ def assemble(
             )
             report = _json(compatibility)
             minimum = project["tool"]["iopenpod"]["packaging"]["macos-minimum-version"]
+            if not isinstance(report, dict):
+                raise ValueError(f"Invalid macOS compatibility report: {target}")
+            report_fields = cast("dict[str, object]", report)
+            native_files = report_fields.get("native_files")
             if (
-                not isinstance(report, dict)
-                or report.get("architecture") != architecture
-                or report.get("minimum_macos") != minimum
-                or not isinstance(report.get("native_files"), list)
-                or not report["native_files"]
+                report_fields.get("architecture") != architecture
+                or report_fields.get("minimum_macos") != minimum
+                or not isinstance(native_files, list)
+                or not native_files
             ):
                 raise ValueError(f"Invalid macOS compatibility report: {target}")
             inputs.append((f"macos-compatibility-{architecture}.json", compatibility))

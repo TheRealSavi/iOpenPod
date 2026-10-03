@@ -6,6 +6,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import textwrap
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +17,45 @@ from scripts import check_windows_bundle, package_app
 
 import iopenpod_launcher as entrypoint
 from iOpenPod.app.core import runtime
+
+
+def test_smoke_test_reports_missing_gui_startup_dependency(tmp_path: Path) -> None:
+    report = tmp_path / "smoke.txt"
+    script = textwrap.dedent("""\
+        import importlib.abc
+        import sys
+
+        sys.path.insert(0, sys.argv[1])
+
+        class MissingCredentials(importlib.abc.MetaPathFinder):
+            def find_spec(self, fullname, path, target=None):
+                if fullname == "iOpenPod.app.scrobbling.credentials":
+                    raise ModuleNotFoundError(f"No module named '{fullname}'")
+
+        sys.meta_path.insert(0, MissingCredentials())
+        import iopenpod_launcher
+        raise SystemExit(iopenpod_launcher.main([
+            "--smoke-test", "--smoke-test-report", sys.argv[2],
+        ]))
+        """)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            script,
+            str(package_app.ROOT / "src"),
+            str(report),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1, result.stderr
+    assert "No module named 'iOpenPod.app.scrobbling.credentials'" in report.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_version_and_smoke_test_do_not_initialize_settings_or_devices(

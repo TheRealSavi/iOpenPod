@@ -43,6 +43,7 @@ from iOpenPod.app.services.linux_identity import (
     inspect_udev_rule,
 )
 from iOpenPod.app.services.media_tools import MediaToolSetup
+from iOpenPod.app.updates.backend import InstallChannel
 from iOpenPod.GUI.dialogs.linux_identity_setup import (
     LinuxIdentityUninstallDialog,
 )
@@ -67,6 +68,7 @@ class SettingsPage(QWidget):
 
     mediaToolsRequested = Signal()
     mediaToolsCheckRequested = Signal()
+    appUpdatesRequested = Signal()
 
     def __init__(
         self,
@@ -81,6 +83,9 @@ class SettingsPage(QWidget):
         self._settings = settings
         self._theme_manager = theme_manager
         self._i18n_manager = i18n_manager
+        self._version = get_version()
+        self._install_channel = InstallChannel.UNKNOWN
+        self._update_busy = False
 
         self._header = PageHeader(self)
         self._appearance_title = QLabel(self)
@@ -210,12 +215,17 @@ class SettingsPage(QWidget):
 
         self._about_title = QLabel(self)
         self._about_title.setObjectName("sectionTitle")
-        self._current_version = QLabel(get_version(), self)
-        self._current_version.setObjectName("currentAppVersion")
-        self._current_version.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-        self._version_row = SettingRow("", "", self._current_version, self)
+        self._check_updates = ActionButton(parent=self)
+        self._check_updates.setObjectName("checkAppUpdates")
+        self._check_updates.clicked.connect(self.appUpdatesRequested.emit)
+        self._version_row = SettingRow("", "", self._check_updates, self)
+        self._version_row.setObjectName("currentAppVersion")
+        self._update_message = QLabel(self)
+        self._update_message.setObjectName("appUpdateMessage")
+        self._update_message.setWordWrap(True)
+        self._update_message.setTextFormat(Qt.TextFormat.PlainText)
+        self._update_message.setMaximumWidth(960)
+        self._update_message.hide()
         self._report_issue = ActionButton(parent=self)
         self._report_issue.setObjectName("reportIssue")
         self._report_issue_row = SettingRow("", "", self._report_issue, self)
@@ -293,7 +303,11 @@ class SettingsPage(QWidget):
             else None
         )
         self._about_tab = self._add_tab(
-            "aboutSettingsScroll", self._about_title, about, self._credits
+            "aboutSettingsScroll",
+            self._about_title,
+            about,
+            self._update_message,
+            self._credits,
         )
 
         footer = QHBoxLayout()
@@ -358,6 +372,39 @@ class SettingsPage(QWidget):
     def show_sync_settings(self) -> None:
         self._tabs.setCurrentIndex(self._sync_tab)
 
+    def set_app_update_status(
+        self, channel: InstallChannel, *, busy: bool, message: str
+    ) -> None:
+        self._install_channel = channel
+        self._update_busy = busy
+        self._update_message.setText(message)
+        self._update_message.setVisible(bool(message))
+        self._update_version()
+
+    def _update_version(self) -> None:
+        channel_names = {
+            InstallChannel.MICROSOFT_STORE: self.tr("Microsoft Store"),
+            InstallChannel.WINDOWS_PACKAGE: self.tr("Windows package (sideloaded)"),
+            InstallChannel.UNPACKAGED: self.tr("Unpackaged"),
+            InstallChannel.FROZEN: self.tr("Standalone executable"),
+            InstallChannel.SOURCE: self.tr("Python / source"),
+            InstallChannel.MAC_APP_STORE: self.tr("Mac App Store (receipt detected)"),
+            InstallChannel.APP_STORE_TEST: self.tr("App Store testing"),
+            InstallChannel.FLATPAK: self.tr("Flatpak"),
+            InstallChannel.SNAP: self.tr("Snap"),
+            InstallChannel.UNKNOWN: self.tr("Unknown source"),
+        }
+        self._version_row.set_copy(
+            self.tr("Version"),
+            self.tr("%1 · %2")
+            .replace("%1", self._version)
+            .replace("%2", channel_names[self._install_channel]),
+        )
+        self._check_updates.setText(
+            self.tr("Checking…") if self._update_busy else self.tr("Check for updates")
+        )
+        self._check_updates.setEnabled(not self._update_busy)
+
     def set_media_tools_status(
         self, setup: MediaToolSetup | None, *, checking: bool, busy: bool, message: str
     ) -> None:
@@ -387,6 +434,7 @@ class SettingsPage(QWidget):
         return self._tabs.addTab(scroll, "")
 
     def retranslate_ui(self) -> None:
+        self._update_version()
         self._media_tools.retranslate_ui()
         self._header.set_title(self.tr("Settings"))
         self._tabs.setAccessibleName(self.tr("Settings categories"))
@@ -487,10 +535,6 @@ class SettingsPage(QWidget):
                 "Review a command that removes only iOpenPod's local /etc rule. "
                 "Package-managed copies under /usr or /lib are preserved."
             ),
-        )
-        self._version_row.set_copy(
-            self.tr("Version"),
-            self.tr("The currently running iOpenPod version."),
         )
         self._report_issue_row.set_copy(
             QCoreApplication.translate("CommonActions", "Report an Issue"),

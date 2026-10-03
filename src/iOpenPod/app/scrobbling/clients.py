@@ -319,7 +319,7 @@ class ListenBrainzClient:
                     "additional_info": {
                         "duration": entry.duration,
                         "submission_client": "iOpenPod",
-                        "submission_client_version": "2.0.0",
+                        "submission_client_version": "2.0.1",
                     },
                 },
             }

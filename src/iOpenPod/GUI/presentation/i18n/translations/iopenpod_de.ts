@@ -1904,6 +1904,22 @@
         <translation>Albumumwandlung abgebrochen.</translation>
     </message>
     <message>
+        <source>Save or discard the Library Draft before updating iOpenPod.</source>
+        <translation>Speichere oder verwirf den Bibliotheksentwurf, bevor du iOpenPod aktualisierst.</translation>
+    </message>
+    <message>
+        <source>Close the open dialog before updating iOpenPod.</source>
+        <translation>Schließe den geöffneten Dialog, bevor du iOpenPod aktualisierst.</translation>
+    </message>
+    <message>
+        <source>Finish the current work and close Sync before updating iOpenPod.</source>
+        <translation>Beende die laufenden Vorgänge und schließe die Synchronisierung, bevor du iOpenPod aktualisierst.</translation>
+    </message>
+    <message>
+        <source>Wait for the current iPod operation before updating iOpenPod.</source>
+        <translation>Warte, bis der laufende iPod-Vorgang abgeschlossen ist, bevor du iOpenPod aktualisierst.</translation>
+    </message>
+    <message>
         <source>Choose Photo Export Folder</source>
         <translation>Exportordner für Fotos auswählen</translation>
     </message>
@@ -4966,7 +4982,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>The currently running iOpenPod version.</source>
-        <translation>Die aktuell ausgeführte iOpenPod-Version.</translation>
+        <translation type="vanished">Die aktuell ausgeführte iOpenPod-Version.</translation>
     </message>
     <message>
         <source>Support iOpenPod</source>
@@ -5143,6 +5159,58 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Media Tools</source>
         <translation>Medienwerkzeuge</translation>
+    </message>
+    <message>
+        <source>Microsoft Store</source>
+        <translation>Microsoft Store</translation>
+    </message>
+    <message>
+        <source>Windows package (sideloaded)</source>
+        <translation>Windows-Paket (manuell installiert)</translation>
+    </message>
+    <message>
+        <source>Unpackaged</source>
+        <translation>Ohne Paket</translation>
+    </message>
+    <message>
+        <source>Standalone executable</source>
+        <translation>Eigenständige Anwendung</translation>
+    </message>
+    <message>
+        <source>Python / source</source>
+        <translation>Python / Quellcode</translation>
+    </message>
+    <message>
+        <source>Mac App Store (receipt detected)</source>
+        <translation>Mac App Store (Beleg erkannt)</translation>
+    </message>
+    <message>
+        <source>App Store testing</source>
+        <translation>App-Store-Testversion</translation>
+    </message>
+    <message>
+        <source>Flatpak</source>
+        <translation>Flatpak</translation>
+    </message>
+    <message>
+        <source>Snap</source>
+        <translation>Snap</translation>
+    </message>
+    <message>
+        <source>Unknown source</source>
+        <translation>Unbekannte Quelle</translation>
+    </message>
+    <message>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <source>Checking…</source>
+        <translation>Wird geprüft…</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>Nach Updates suchen</translation>
     </message>
     <message>
         <source>Media tool status is read-only.</source>
@@ -7081,6 +7149,77 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Higher values mean higher quality and larger files for this AAC encoder.</source>
         <translation>Höhere Werte bedeuten bei diesem AAC-Encoder höhere Qualität und größere Dateien.</translation>
+    </message>
+</context>
+<context>
+    <name>UpdateController</name>
+    <message>
+        <source>installation source</source>
+        <translation>Installationsquelle</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation>Jetzt aktualisieren</translation>
+    </message>
+    <message>
+        <source>Checking for application updates…</source>
+        <translation>Nach Anwendungsupdates suchen…</translation>
+    </message>
+    <message>
+        <source>Update checks are not available for this installation. Use its software manager or original download source.</source>
+        <translation>Für diese Installation ist keine Update-Prüfung verfügbar. Verwenden Sie die Softwareverwaltung oder die ursprüngliche Downloadquelle.</translation>
+    </message>
+    <message>
+        <source>Checking %1 for updates…</source>
+        <translation>Bei %1 nach Updates suchen…</translation>
+    </message>
+    <message>
+        <source>Installing</source>
+        <translation>Installieren</translation>
+    </message>
+    <message>
+        <source>Downloading / awaiting installation</source>
+        <translation>Herunterladen / auf Installation warten</translation>
+    </message>
+    <message>
+        <source>%1: %2 (current package)…</source>
+        <translation>%1: %2 (aktuelles Paket)…</translation>
+    </message>
+    <message>
+        <source>Package: %1</source>
+        <translation>Paket: %1</translation>
+    </message>
+    <message>
+        <source>Updating through %1 — iOpenPod may restart…</source>
+        <translation>Aktualisierung über %1 — iOpenPod wird möglicherweise neu gestartet…</translation>
+    </message>
+    <message>
+        <source>%1 update available</source>
+        <translation>Update über %1 verfügbar</translation>
+    </message>
+    <message>
+        <source>%1 reports no updates (results may be cached)</source>
+        <translation>%1 meldet keine Updates (Ergebnisse können zwischengespeichert sein)</translation>
+    </message>
+    <message>
+        <source>%1 update completed. Restart iOpenPod to use the installed version.</source>
+        <translation>Update über %1 abgeschlossen. Starte iOpenPod neu, um die installierte Version zu verwenden.</translation>
+    </message>
+    <message>
+        <source>%1 update canceled</source>
+        <translation>Update über %1 abgebrochen</translation>
+    </message>
+    <message>
+        <source>Retry check</source>
+        <translation>Erneut prüfen</translation>
+    </message>
+    <message>
+        <source>%1 update failed: %2</source>
+        <translation>Update über %1 fehlgeschlagen: %2</translation>
+    </message>
+    <message>
+        <source>Update check or installation unavailable: %1. Retry in 30 seconds.</source>
+        <translation>Updateprüfung oder Installation nicht verfügbar: %1. Versuche es in 30 Sekunden erneut.</translation>
     </message>
 </context>
 <context>

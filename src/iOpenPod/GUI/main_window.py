@@ -8,6 +8,7 @@ from typing import cast
 from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QSize, Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFileDialog,
     QFrame,
@@ -76,6 +77,8 @@ from iOpenPod.app.sync_plan import prepare_sync_plan
 from iOpenPod.app.synesthesia import AnalysisProgress, TrackAnalysis
 from iOpenPod.app.tag_normalization_controller import TagNormalizationController
 from iOpenPod.app.tag_normalizer import tag_profile
+from iOpenPod.app.updates.controller import UpdateController
+from iOpenPod.app.updates.platform import create_update_provider
 from iOpenPod.GUI.dialogs.device_picker import DevicePickerDialog
 from iOpenPod.GUI.dialogs.external_playlist_files import (
     ExternalPlaylistFilesDialog,
@@ -151,6 +154,14 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._context = context
+        self._update_reserved = False
+        self._updates = UpdateController(
+            context.status,
+            lambda: create_update_provider(int(self.winId())),
+            self._prepare_app_update,
+            self._finish_app_update,
+            self,
+        )
         self._synesthesia_window_state: _SynesthesiaWindowState | None = None
         self._normalization = TagNormalizationController(
             context.library_workspace, self
@@ -389,6 +400,9 @@ class MainWindow(QMainWindow):
         self._media_tools.changed.connect(self._media_tools_status_changed)
         self._settings_page.mediaToolsRequested.connect(self._open_media_tools)
         self._settings_page.mediaToolsCheckRequested.connect(self._media_tools.check)
+        self._settings_page.appUpdatesRequested.connect(self._updates.check_now)
+        self._updates.changed.connect(self._app_update_status_changed)
+        self._app_update_status_changed()
         self._sidebar.scrobbleRequested.connect(self._scrobble_now)
         self._scrobbling.changed.connect(self._scrobbling_changed)
         self._sidebar.set_scrobble_available(self._scrobbling.can_scrobble)
@@ -949,6 +963,77 @@ class MainWindow(QMainWindow):
             timeout_ms=8_000,
         )
 
+    def check_app_updates(self) -> None:
+        self._updates.start()
+
+    def _app_update_status_changed(self) -> None:
+        self._settings_page.set_app_update_status(
+            self._updates.channel,
+            busy=self._updates.busy,
+            message=self._updates.message,
+        )
+
+    def close_app_updates(self) -> None:
+        self._updates.close()
+
+    def _prepare_app_update(self) -> str:
+        context = self._context
+        if context.library_workspace.dirty:
+            return self.tr(
+                "Save or discard the Library Draft before updating iOpenPod."
+            )
+        if QApplication.activeModalWidget() is not None or any(
+            dialog.isVisible() for dialog in self.findChildren(QDialog)
+        ):
+            return self.tr("Close the open dialog before updating iOpenPod.")
+        if (
+            context.library_workspace.locked
+            or context.device_controller.busy
+            or context.backup_controller.busy
+            or context.host_media_controller.busy
+            or context.ipod_media_controller.busy
+            or context.podcast_controller.busy
+            or context.library_write_controller.state
+            in (PreparationState.PREPARING, PreparationState.SAVING)
+            or self._sync_controller.busy
+            or self._sync_controller.needs_recovery
+            or self._sync_controller.needs_cleanup
+            or self._export_controller.busy
+            or self._chaptered_controller.busy
+            or self._media_tools.busy
+            or self._scrobbling.busy
+            or self._workspaces.currentWidget() is self._sync_workspace
+        ):
+            return self.tr(
+                "Finish the current work and close Sync before updating iOpenPod."
+            )
+        if not context.device_controller.begin_recovery_operation():
+            return self.tr(
+                "Wait for the current iPod operation before updating iOpenPod."
+            )
+        self._update_reserved = True
+        try:
+            context.settings.set_global(WINDOW_GEOMETRY, self.saveGeometry())
+            context.settings.sync()
+            context.playback_controller.pause()
+            context.library_workspace.set_locked(True)
+            central = self.centralWidget()
+            if central is not None:
+                central.setEnabled(False)
+        except Exception:
+            self._finish_app_update()
+            raise
+        return ""
+
+    def _finish_app_update(self) -> None:
+        if self._update_reserved:
+            self._update_reserved = False
+            self._context.library_workspace.set_locked(False)
+            self._context.device_controller.finish_exclusive_operation()
+            central = self.centralWidget()
+            if central is not None:
+                central.setEnabled(True)
+
     def check_media_tools(self) -> None:
         """Make one startup check after the application window is shown."""
         self._media_tools_prompt_pending = True
@@ -975,11 +1060,15 @@ class MainWindow(QMainWindow):
         self._media_tools.check()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._updates.installing:
+            event.ignore()
+            return
         if self._media_tools.installing:
             self._media_tools.stop_after_current()
             self._media_tools_dialog.open()
             event.ignore()
             return
+        self.close_app_updates()
         self._media_tools.shutdown()
         self._scrobbling.shutdown()
         self._exit_synesthesia_fullscreen()

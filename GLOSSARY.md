@@ -218,6 +218,13 @@ normal lowercase conventions while retaining the same domain term.
 | **Scrobble** | One music play submitted to a connected listening service account with Track metadata and a UTC Unix start timestamp. iPod starts are estimated from retained playback evidence; Last.fm submission dates outside its backdating window are adjusted under ADR-0102. | play count, Playback Entry |
 | **Scrobble Queue** | The durable Host record of pending account deliveries, original playback estimates, optional Last.fm submission dates, and capture cursors, scoped to Volume Identity and persistent Track identity. It survives Track removal and stores each service/account's delivery state independently. | Listening History, Playback History, Unscrobbled Plays counter |
 
+## Application updates
+
+| Term | Definition | Aliases to avoid |
+| --- | --- | --- |
+| **Install Channel** | The evidenced distribution source of the running iOpenPod installation, which determines its update provider. Package identity alone does not imply Microsoft Store. | update server, platform |
+| **Update Backend** | An Application Layer adapter that checks and requests installation through one Install Channel, exposing typed outcomes and progress without native package objects. | device updater, firmware updater |
+
 ## Example dialogue
 
 > **Developer:** "Storage found a new Mount Point. Is that enough to identify the

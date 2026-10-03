@@ -367,11 +367,12 @@ and [UDisks2](https://snapcraft.io/docs/reference/interfaces/udisks2-interface/)
 ## Verification and publication
 
 Both source and installed launchers support `--version` and `--smoke-test`. The latter
-checks Qt icon/image/SVG/multimedia loading, compiled shaders, the udev resource,
-native HASHAB execution, lazy audio-analysis imports, and the platform's dynamically
-loaded system-media bindings. It does not create settings, discover devices, or
-write to an iPod. `--smoke-test-report /absolute/file.txt`
-writes diagnostics even for a Windows executable without a console.
+imports the GUI startup graph (including scrobbling and its credential-vault
+adapter), and checks Qt icon/image/SVG/multimedia loading, compiled shaders, the
+udev resource, native HASHAB execution, lazy audio-analysis imports, and the
+platform's dynamically loaded system-media bindings. It does not create settings,
+discover devices, or write to an iPod. `--smoke-test-report /absolute/file.txt` writes
+diagnostics even for a Windows executable without a console.
 
 Run the frozen smoke test outside the checkout on a machine without Python. The
 native and Flatpak workflows require the reusable Health workflow to pass first:

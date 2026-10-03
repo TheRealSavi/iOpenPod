@@ -191,7 +191,7 @@ def run_with_crash_logging() -> int:
 
 
 def check_runtime() -> None:
-    """Raise on missing assets, lazy analysis imports, or native GUI/signing code."""
+    """Raise on missing GUI imports, assets, analysis, or native runtime code."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QByteArray
     from PySide6.QtGui import QImage
@@ -203,10 +203,14 @@ def check_runtime() -> None:
 
     configure_frozen_runtime()
 
+    from iOpenPod.app.app import start_ui
     from iOpenPod.app.synesthesia import DeterministicMusicAnalyzer
     from iOpenPod.GUI.presentation.application_icon import application_icon
     from iPodDB.iTunesDB.writer.signature import compute_hashab
 
+    # Import the actual startup graph without creating settings or discovering
+    # devices. Resource-only checks miss missing application modules in a bundle.
+    assert callable(start_ui), "GUI entry point missing"
     assert callable(DeterministicMusicAnalyzer), "Deferred analysis backend missing"
     native_bindings = {
         "win32": (
