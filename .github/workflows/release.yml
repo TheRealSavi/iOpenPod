@@ -113,7 +113,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $executable = (Resolve-Path dist/iOpenPod/iOpenPod.exe).Path
+          $executable = (Resolve-Path dist/iOpenPod.exe).Path
           $report = Join-Path $env:RUNNER_TEMP 'frozen-runtime.txt'
           $arguments = '--smoke-test --smoke-test-report "' + $report + '"'
           $process = Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru -WindowStyle Hidden
@@ -170,13 +170,23 @@ jobs:
         run: uv run --no-project --managed-python --python 3.12 python scripts/prepare_release_sources.py --download
       - name: Assemble and verify the complete release
         run: uv run --no-project --managed-python --python 3.12 python -m scripts.assemble_github_release --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
+      - name: Retain supporting files as an Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-supporting-files
+          compression-level: 0
+          if-no-files-found: error
+          path: |
+            release-assets/*
+            !release-assets/iOpenPod-*.zip
+            !release-assets/iOpenPod-*-Linux-*.tar.gz
       # GITHUB_TOKEN tag pushes do not trigger another workflow. Publish here,
       # using the artifacts built and checked for this exact dispatch commit.
       - name: Create the requested version tag after successful validation
         if: needs.prepare.outputs.create_tag == 'true'
         run: gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA"
-      - name: Upload all assets before making the release public
+      - name: Upload native archives before making the release public
         run: |
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$GITHUB_SHA"
-          gh release create "$RELEASE_TAG" --verify-tag --target "$GITHUB_SHA" --draft --title "iOpenPod $RELEASE_TAG" --generate-notes --notes-file packaging/github-release.md release-assets/*
+          gh release create "$RELEASE_TAG" --verify-tag --target "$GITHUB_SHA" --draft --title "iOpenPod $RELEASE_TAG" --generate-notes --notes-file packaging/github-release.md release-assets/iOpenPod-*.zip release-assets/iOpenPod-*-Linux-*.tar.gz
           gh release edit "$RELEASE_TAG" --draft=false --latest

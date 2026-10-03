@@ -228,13 +228,14 @@ def stage_msix(identity: str, publisher: str, display_name: str) -> Path:
     )
     if arch is None:
         raise ValueError(f"Unsupported MSIX build architecture: {machine}")
-    bundle = ROOT / "dist/iOpenPod"
-    if not (bundle / "iOpenPod.exe").is_file():
+    executable = ROOT / "dist/iOpenPod.exe"
+    if not executable.is_file():
         raise ValueError("Build the native bundle first")
     # Re-running must not silently retain obsolete binaries or assets.
     destination = ROOT / "build/msix"
     destination.mkdir(parents=True, exist_ok=False)
-    shutil.copytree(bundle, destination / "app")
+    (destination / "app").mkdir()
+    shutil.copy2(executable, destination / "app/iOpenPod.exe")
     generate_assets()
     shutil.copytree(GENERATED / "Assets", destination / "Assets")
     template = (ROOT / "packaging/windows/AppxManifest.xml.in").read_text(
@@ -310,7 +311,7 @@ def archive() -> Path:
                 str(output),
                 "zip" if sys.platform == "win32" else "gztar",
                 root_dir=ROOT / "dist",
-                base_dir="iOpenPod",
+                base_dir="iOpenPod.exe" if sys.platform == "win32" else "iOpenPod",
             )
         )
     with path.open("rb") as stream:

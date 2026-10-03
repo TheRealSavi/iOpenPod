@@ -90,9 +90,10 @@ if sys.platform == "win32":
     if not replaced:
         raise ValueError("The expected SoundFile native library was not collected")
     a.datas += [("licenses/libsndfile-build-record.json", str(sndfile.parent / "build-record.json"), "DATA")]
+onefile = sys.platform == "win32"
 exe = EXE(
-    pyz, a.scripts, [],
-    exclude_binaries=True,
+    pyz, a.scripts, a.binaries if onefile else [], a.datas if onefile else [],
+    exclude_binaries=not onefile,
     name="iOpenPod",
     console=sys.platform == "linux",
     upx=False,
@@ -104,7 +105,8 @@ exe = EXE(
     codesign_identity=os.environ.get("IOPENPOD_CODESIGN_IDENTITY"),
     entitlements_file=os.environ.get("IOPENPOD_ENTITLEMENTS"),
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="iOpenPod", upx=False, strip=False)
+if not onefile:
+    coll = COLLECT(exe, a.binaries, a.datas, name="iOpenPod", upx=False, strip=False)
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,

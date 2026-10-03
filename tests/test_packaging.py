@@ -1,6 +1,7 @@
 """Installed-launch and build-resource contracts for desktop distribution."""
 
 import hashlib
+import importlib
 import os
 import platform
 import shutil
@@ -8,8 +9,9 @@ import subprocess
 import sys
 import textwrap
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -164,28 +166,56 @@ def test_freeze_cli_needs_no_media_tools_or_special_flag(
     assert (tmp_path / "licenses/ACKNOWLEDGEMENTS.md").is_file()
 
 
-@pytest.mark.parametrize("name", ["ffmpeg.exe", "FFprobe.EXE", "fpcalc.exe"])
-def test_windows_payload_rejects_bundled_command_line_tools(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+@pytest.mark.parametrize(
+    "name,message",
+    [
+        ("ffmpeg.exe", "User-installed media tool"),
+        ("tools/FFprobe.EXE", "User-installed media tool"),
+        ("fpcalc.exe", "User-installed media tool"),
+        ("sklearn/datasets/data/sample.csv", "sample datasets"),
+        ("sklearn/cluster/tests/test_example.py", "test fixtures"),
+        ("_tcl_data/init.tcl", "Tcl/Tk"),
+        ("_tkinter.pyd", "Tcl/Tk"),
+        ("media-tools/obsolete.txt", "Obsolete bundled"),
+        ("PySide6/plugins/imageformats/qpdf.dll", "Unused Qt component"),
+        ("PySide6/Qt6VirtualKeyboard.dll", "Unused Qt component"),
+    ],
+)
+def test_windows_embedded_payload_rejects_unwanted_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, message: str
 ) -> None:
+    writers = pytest.importorskip("PyInstaller.archive.writers")
+
     def read_manifest(_path: str) -> bytes:
         return (
             package_app.ROOT / "packaging/windows/iOpenPod.manifest.xml"
         ).read_bytes()
 
-    def resource_reader(_name: str) -> SimpleNamespace:
-        return SimpleNamespace(read_manifest_from_executable=read_manifest)
+    def resource_reader(name: str) -> ModuleType | SimpleNamespace:
+        if name == "PyInstaller.utils.win32.winmanifest":
+            return SimpleNamespace(read_manifest_from_executable=read_manifest)
+        return importlib.import_module(name)
 
     monkeypatch.setattr(check_windows_bundle, "import_module", resource_reader)
     monkeypatch.setattr(sys, "platform", "win32")
-    payload = tmp_path / "_internal"
-    payload.mkdir()
+    executable = tmp_path / "iOpenPod.exe"
+    source = tmp_path / "payload"
+    source.write_bytes(b"embedded payload")
+    entries = [
+        ("python312.dll", str(source), True, "b"),
+        ("PySide6/avcodec-61.dll", str(source), True, "b"),
+    ]
     # Qt's FFmpeg playback libraries are allowed; user-installed executables are not.
-    (payload / "avcodec-61.dll").touch()
-    check_windows_bundle.check_windows_bundle(tmp_path)
-    (payload / name).touch()
-    with pytest.raises(ValueError, match="User-installed media tool is bundled"):
-        check_windows_bundle.check_windows_bundle(tmp_path)
+    writers.CArchiveWriter(str(executable), entries, "python312.dll")
+    check_windows_bundle.check_windows_bundle(executable)
+    writers.CArchiveWriter(
+        str(executable), [*entries, (name, str(source), True, "x")], "python312.dll"
+    )
+    with pytest.raises(ValueError, match=message):
+        check_windows_bundle.check_windows_bundle(executable)
+    writers.CArchiveWriter(str(executable), [], "python312.dll")
+    with pytest.raises(ValueError, match="does not embed the Python runtime"):
+        check_windows_bundle.check_windows_bundle(executable)
 
 
 def test_native_notices_keep_license_grant_and_credits(
@@ -254,9 +284,12 @@ def test_msix_cli_stages_saved_identity_and_explicit_overrides(
         destination = tmp_path / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(package_app.ROOT / relative, destination)
-    executable = tmp_path / "dist/iOpenPod/iOpenPod.exe"
+    executable = tmp_path / "dist/iOpenPod.exe"
     executable.parent.mkdir(parents=True)
     executable.write_bytes(b"test bundle payload")
+    stale = tmp_path / "dist/iOpenPod/_internal/obsolete.dll"
+    stale.parent.mkdir(parents=True)
+    stale.touch()
     monkeypatch.setattr(package_app, "ROOT", tmp_path)
     monkeypatch.setattr(package_app, "GENERATED", tmp_path / "build/packaging")
     monkeypatch.setattr(sys, "platform", "win32")
@@ -281,9 +314,33 @@ def test_msix_cli_stages_saved_identity_and_explicit_overrides(
         == expected[2]
     )
     assert (staged / "app/iOpenPod.exe").read_bytes() == executable.read_bytes()
+    assert list((staged / "app").iterdir()) == [staged / "app/iOpenPod.exe"]
     assert (staged / "Assets/Square150x150Logo.png").is_file()
     with pytest.raises(FileExistsError):
         package_app.main()
+
+
+def test_windows_archive_contains_only_the_standalone_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shutil.copy2(package_app.ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    executable = tmp_path / "dist/iOpenPod.exe"
+    executable.parent.mkdir()
+    executable.write_bytes(b"standalone executable with embedded dependencies")
+    stale = tmp_path / "dist/iOpenPod/_internal/obsolete.dll"
+    stale.parent.mkdir(parents=True)
+    stale.touch()
+    monkeypatch.setattr(package_app, "ROOT", tmp_path)
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    archive = package_app.archive()
+
+    with zipfile.ZipFile(archive) as zipped:
+        assert zipped.namelist() == ["iOpenPod.exe"]
+        assert zipped.read("iOpenPod.exe") == executable.read_bytes()
+    assert archive.with_name(archive.name + ".sha256").read_text() == (
+        f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n"
+    )
 
 
 @pytest.mark.parametrize("status,expected_calls", [(15700, 1), (122, 0), (5, 0)])

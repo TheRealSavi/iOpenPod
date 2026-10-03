@@ -179,3 +179,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0104: Publish validated tagged GitHub Releases](0104-publish-validated-tagged-github-releases.md)
 - [ADR-0105: Route application updates by Install Channel](0105-route-application-updates-by-install-channel.md)
 - [ADR-0106: Run Health only on explicit dispatch](0106-run-health-only-on-explicit-dispatch.md)
+- [ADR-0107: Publish only native release archives](0107-publish-only-native-release-archives.md)
+- [ADR-0108: Bundle Windows as one executable](0108-bundle-windows-as-one-executable.md)

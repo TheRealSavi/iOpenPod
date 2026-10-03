@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import shlex
 import tarfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -124,6 +125,25 @@ def test_assembly_keeps_all_platforms_and_verifiable_source(release_root: Path) 
         assert "notices/dependency.txt" in archive.getnames()
     with pytest.raises(ValueError, match="new directory"):
         release.assemble("v2.0.0", COMMIT, root=release_root)
+
+
+def test_publication_uploads_only_the_four_native_archives(release_root: Path) -> None:
+    release.assemble("v2.0.0", COMMIT, root=release_root)
+    workflow = (release.ROOT / ".github/workflows/release.yml").read_text()
+    command = next(
+        line.strip()
+        for line in workflow.splitlines()
+        if line.strip().startswith("gh release create ")
+    )
+    patterns = [
+        argument
+        for argument in shlex.split(command)
+        if argument.startswith("release-assets/")
+    ]
+    uploaded = {
+        path.name for pattern in patterns for path in release_root.glob(pattern)
+    }
+    assert uploaded == {f"iOpenPod-2.0.0-{suffix}" for _, suffix, _ in release.TARGETS}
 
 
 @pytest.mark.parametrize(

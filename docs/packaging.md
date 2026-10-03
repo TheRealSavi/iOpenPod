@@ -41,6 +41,10 @@ The executable explicitly declares PerMonitorV2 DPI awareness and runs as the
 current user. The bundle omits unused Tcl/Tk and scikit-learn sample/test datasets;
 the analysis runtime remains included. Windows CI checks the embedded executable
 manifest and collected payload with `scripts/check_windows_bundle.py`.
+Windows uses PyInstaller one-file mode: `dist/iOpenPod.exe` embeds its Python
+runtime, libraries, resources, and notices (ADR-0108). The checker reads the
+embedded archive as well as the executable manifest. Launch extracts the runtime
+to a temporary directory, adding startup time, and cleans it up on normal exit.
 
 `pyproject.toml` owns the version. Native versions currently require three numeric
 components; MSIX appends `.0` as required for Store uploads. Tags must exactly match
@@ -58,7 +62,8 @@ the original high-resolution artwork is still needed for final store art review.
 Outputs are under ignored `build/` and `dist/`. Store staging refuses to overwrite
 an existing staging directory so obsolete files cannot silently enter a package.
 Remove that specific generated directory before staging again. Windows archives
-contain `iOpenPod/`; macOS archives preserve `.app` symlinks using `ditto`; Linux
+contain only `iOpenPod.exe`; MSIX staging copies that same executable to `app/`.
+macOS archives preserve `.app` symlinks using `ditto`; Linux
 archives preserve executable modes and symlinks using tar. Each archive gets SHA-256.
 
 ## User-installed media tools and bundled libraries
@@ -401,12 +406,17 @@ or a Store.
 
 Publication waits for all four builds and their frozen smoke tests. It verifies
 each native archive's checksum, collects platform-specific dependency inventories
-and Mac compatibility reports, and includes the wheel and sdist from the Windows
-build. It also attaches the application source snapshot and hash-verified pinned
-third-party sources, `release.json`, and `SHA256SUMS`. The source snapshot excludes
+and Mac compatibility reports, and assembles the wheel and sdist from the Windows
+build, application source snapshot, hash-verified pinned third-party sources,
+`release.json`, and `SHA256SUMS`. These supporting files are retained in the
+producing Actions run's `release-supporting-files` artifact, subject to Actions
+artifact retention, rather than attached to the GitHub Release (ADR-0107).
+Only the Windows ZIP, two macOS ZIPs, and Linux binary tar.gz are uploaded to the
+release. Bundled license files remain inside the application archives.
+The source snapshot excludes
 the private fixtures listed in `scripts/prepare_store_kit.py`; the Python sdist
-excludes them too, and the publication assembler rejects their presence. All assets
-upload to a draft before the workflow makes it public. Release notes combine
+excludes them too, and the publication assembler rejects their presence. The four
+native archives upload to a draft before the workflow makes it public. Release notes combine
 `packaging/github-release.md` with GitHub's generated change list. Publication
 receives `contents: write`; the build and test jobs only receive read access.
 
