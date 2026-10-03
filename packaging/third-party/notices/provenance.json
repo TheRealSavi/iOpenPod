@@ -10526,5 +10526,21 @@
         "sha256": "1ce4c83d89bc30a0a97d4bc18d72ccaa9d3cb7c90ba1408c6b3e29ebf0c5a71c"
       }
     ]
+  },
+  {
+    "component": "sparkle",
+    "version": "2.10.0",
+    "file": "sparkle-2.10.0-NOTICES.txt",
+    "sha256": "ec706ee6e07ca66e53daea413a5c1b1b1ab230f91fe42039503ac913b811f8fc",
+    "members": [
+      {
+        "member": "Sparkle-2.10.0/LICENSE",
+        "sha256": "389a4e4e9a32f059775b13a06e25a591445ba229d2838d26dd3e7c0c45127cfe"
+      },
+      {
+        "member": "Sparkle-2.10.0/Vendor/ed25519-sparkle/license.txt",
+        "sha256": "f68d76b9c1c2271422e55134ea94cf71f2ac3fc3ed6a7ec6b83a1a0538753214"
+      }
+    ]
   }
 ]

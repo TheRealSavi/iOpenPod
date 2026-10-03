@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QSize, Qt, QTimer
-from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import QCloseEvent, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -155,10 +155,12 @@ class MainWindow(QMainWindow):
         context: AppContext,
         *,
         auto_discover: bool = True,
+        defer_startup: bool = False,
     ) -> None:
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._context = context
+        self._startup_deferred = defer_startup
         self._update_reserved = False
         self._updates = UpdateController(
             context.status,
@@ -167,6 +169,8 @@ class MainWindow(QMainWindow):
             self._finish_app_update,
             self,
         )
+        self._updates.restartRequested.connect(self._restart_for_update)
+        self._updates.releasePageRequested.connect(self._open_update_release)
         self._synesthesia_window_state: _SynesthesiaWindowState | None = None
         self._normalization = TagNormalizationController(
             context.library_workspace, self
@@ -656,13 +660,33 @@ class MainWindow(QMainWindow):
             context.device_controller.device_writes_allowed
         )
         self.retranslate_ui()
-        if self._sync_controller.needs_recovery or self._sync_controller.needs_cleanup:
+        if not defer_startup and (
+            self._sync_controller.needs_recovery or self._sync_controller.needs_cleanup
+        ):
             QTimer.singleShot(0, self._open_sync_workspace)
-        if auto_discover:
-            self._device_picker.visibilityChanged.connect(
-                self._device_picker_visibility_changed
+        if auto_discover and not defer_startup:
+            self.start_device_discovery()
+
+    def start_device_discovery(self) -> None:
+        """Called only after an update launch has committed its health handshake."""
+        if self._startup_deferred and (
+            self._sync_controller.needs_recovery or self._sync_controller.needs_cleanup
+        ):
+            QTimer.singleShot(0, self._open_sync_workspace)
+        self._startup_deferred = False
+        self._device_picker.visibilityChanged.connect(
+            self._device_picker_visibility_changed
+        )
+        QTimer.singleShot(0, self._context.device_controller.restore_previous_device)
+
+    def _restart_for_update(self, native_restart: bool) -> None:
+        if not native_restart:
+            QTimer.singleShot(
+                0, lambda: self.close() if self._updates.handing_off else None
             )
-            QTimer.singleShot(0, context.device_controller.restore_previous_device)
+
+    def _open_update_release(self, url: str) -> None:
+        QDesktopServices.openUrl(QUrl(url))
 
     def retranslate_ui(self) -> None:
         for status in self._context.status.active_messages:
@@ -1069,7 +1093,7 @@ class MainWindow(QMainWindow):
         self._media_tools.check()
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self._updates.installing:
+        if self._updates.installing and not self._updates.handing_off:
             event.ignore()
             return
         if self._media_tools.installing:

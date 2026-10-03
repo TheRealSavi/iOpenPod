@@ -1,0 +1,54 @@
+name: Publish signed update feed
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Published stable version, without v (also renews expiry)"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    secrets:
+      IOPENPOD_UPDATE_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: signed-update-feed
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.7"
+      - name: Install the locked release-signing environment
+        run: uv sync --locked --no-dev --group packaging
+      - name: Validate the requested version
+        env:
+          UPDATE_VERSION: ${{ inputs.version }}
+        run: uv run --no-sync python -c 'import os; from iOpenPod.app.updates.releases import version_tuple; version_tuple(os.environ["UPDATE_VERSION"])'
+      - name: Download the public native release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATE_VERSION: ${{ inputs.version }}
+        run: |
+          gh release download "v$UPDATE_VERSION" --repo "$GITHUB_REPOSITORY" --dir build/update-archives --pattern "iOpenPod-$UPDATE_VERSION-*.zip"
+          gh release download "v$UPDATE_VERSION" --repo "$GITHUB_REPOSITORY" --dir build/update-archives --pattern "iOpenPod-$UPDATE_VERSION-*.tar.gz"
+      - name: Authenticate, sign, and publish the feeds atomically
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATE_VERSION: ${{ inputs.version }}
+          IOPENPOD_UPDATE_PRIVATE_KEY: ${{ secrets.IOPENPOD_UPDATE_PRIVATE_KEY }}
+        run: uv run --no-sync python -m scripts.publish_update_feed "$UPDATE_VERSION" build/update-archives build/signed-feed

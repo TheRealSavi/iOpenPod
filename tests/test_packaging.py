@@ -80,6 +80,9 @@ def test_frozen_launch_preserves_user_path_even_with_old_private_tools(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def load_playback_libraries(_root: Path) -> tuple[()]:
+        return ()
+
     bundle = tmp_path / "bundle"
     module = bundle / "iOpenPod/app/core/runtime.py"
     module.parent.mkdir(parents=True)
@@ -88,6 +91,10 @@ def test_frozen_launch_preserves_user_path_even_with_old_private_tools(
     tools.mkdir()
     monkeypatch.setattr(runtime, "__file__", str(module))
     monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(bundle), raising=False)
+    monkeypatch.setattr(
+        runtime, "_load_windows_playback_libraries", load_playback_libraries
+    )
     monkeypatch.setenv("PATH", "existing")
     monkeypatch.delenv("NUMBA_CACHE_LOCATOR_CLASSES", raising=False)
     monkeypatch.chdir(tmp_path)
@@ -148,6 +155,8 @@ def test_freeze_cli_needs_no_media_tools_or_special_flag(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from scripts import package_updates
+
     commands: list[list[str]] = []
 
     def build(
@@ -158,10 +167,20 @@ def test_freeze_cli_needs_no_media_tools_or_special_flag(
 
     monkeypatch.setattr(package_app, "GENERATED", tmp_path)
     monkeypatch.setattr(subprocess, "run", build)
+    embedded: list[Path] = []
+
+    def embed_sparkle(root: Path, _generated: Path, _minimum: str) -> None:
+        embedded.append(root)
+
+    monkeypatch.setattr(package_updates, "embed_sparkle", embed_sparkle)
     monkeypatch.setattr(sys, "argv", ["package_app.py", "freeze"])
     monkeypatch.setenv("PATH", "")
     package_app.main()
-    assert len(commands) == 1
+    assert len(commands) == (1 if sys.platform == "darwin" else 2)
+    assert bool(embedded) == (sys.platform == "darwin")
+    if sys.platform != "darwin":
+        assert commands[0][-1].endswith("update-helper.spec")
+    assert commands[-1][-1].endswith("iOpenPod.spec")
     assert commands[0][:3] == [sys.executable, "-m", "PyInstaller"]
     assert (tmp_path / "licenses/ACKNOWLEDGEMENTS.md").is_file()
 
@@ -340,6 +359,59 @@ def test_windows_archive_contains_only_the_standalone_executable(
         assert zipped.read("iOpenPod.exe") == executable.read_bytes()
     assert archive.with_name(archive.name + ".sha256").read_text() == (
         f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n"
+    )
+
+
+def test_macos_archive_adds_a_drag_to_applications_disk_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shutil.copy2(package_app.ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    app = tmp_path / "dist/iOpenPod.app"
+    executable = app / "Contents/MacOS/iOpenPod"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"signed app executable")
+    monkeypatch.setattr(package_app, "ROOT", tmp_path)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    calls: list[list[str]] = []
+
+    def fake_symlink(path: Path, target: str, *, target_is_directory: bool) -> None:
+        assert target_is_directory and target == "/Applications"
+        path.write_text(target)
+
+    def fake_run(command: list[str], *, check: bool) -> None:
+        assert check
+        calls.append(command)
+        if command[:2] == ["ditto", "-c"]:
+            Path(command[-1]).write_bytes(b"sparkle update archive")
+        elif command[0] == "ditto":
+            shutil.copytree(command[1], command[2])
+        elif command[:2] == ["hdiutil", "create"]:
+            staging = Path(command[command.index("-srcfolder") + 1])
+            assert (staging / "iOpenPod.app/Contents/MacOS/iOpenPod").read_bytes() == (
+                executable.read_bytes()
+            )
+            assert (staging / "Applications").read_text() == "/Applications"
+            assert command[command.index("-format") + 1] == "UDZO"
+            Path(command[-1]).write_bytes(b"disk image")
+        else:
+            assert command[:2] == ["hdiutil", "verify"]
+            assert Path(command[-1]).is_file()
+
+    monkeypatch.setattr(Path, "symlink_to", fake_symlink)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    archive = package_app.archive()
+    dmg = archive.with_suffix(".dmg")
+
+    assert archive.is_file() and dmg.is_file()
+    assert [command[:2] for command in calls] == [
+        ["ditto", "-c"],
+        ["ditto", str(app)],
+        ["hdiutil", "create"],
+        ["hdiutil", "verify"],
+    ]
+    assert dmg.with_name(dmg.name + ".sha256").read_text() == (
+        f"{hashlib.sha256(dmg.read_bytes()).hexdigest()}  {dmg.name}\n"
     )
 
 

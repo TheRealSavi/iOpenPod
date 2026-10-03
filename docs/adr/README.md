@@ -181,3 +181,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0106: Run Health only on explicit dispatch](0106-run-health-only-on-explicit-dispatch.md)
 - [ADR-0107: Publish only native release archives](0107-publish-only-native-release-archives.md)
 - [ADR-0108: Bundle Windows as one executable](0108-bundle-windows-as-one-executable.md)
+- [ADR-0109: Authenticate and isolate GitHub application updates](0109-authenticate-and-isolate-github-application-updates.md)
+- [ADR-0110: Offer macOS drag-to-Applications disk images](0110-offer-macos-drag-to-applications-disk-images.md)

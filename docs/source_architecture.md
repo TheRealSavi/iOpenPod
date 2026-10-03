@@ -1378,6 +1378,16 @@ a live, scrollable popup with the same controls for every active status. Closing
 popup does not clear statuses. Pages do not create local status strips or receive a
 status-bar widget.
 
+Application updates use that shared status interface. The Application Layer
+selects an Update Backend from evidenced Install Channel and embedded standalone
+identity, authenticates release policy, and coordinates the Library Draft/work
+guard. Generic exact-file replacement and installation-use locks belong to
+Storage's Host boundary, independently of Filesystem Sessions. Portable helpers
+own replacement after acknowledged shutdown and commit health before device work
+resumes. Sparkle owns macOS bundle installation through a typed native bridge.
+No updater may mirror a user's installation directory or infer ownership of
+adjacent files. See [Application updates](app-updates.md) and ADR-0109.
+
 Examples:
 
 ```python

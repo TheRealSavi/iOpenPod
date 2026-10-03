@@ -33,6 +33,7 @@ MANIFEST
 *.manifest
 *.spec
 !/packaging/iOpenPod.spec
+!/packaging/update-helper.spec
 
 # Installer logs
 pip-log.txt

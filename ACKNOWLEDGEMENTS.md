@@ -33,6 +33,11 @@ statement and asset-specific scope are preserved in
 
 ## The wider community
 
+The macOS standalone updater uses [Sparkle](https://sparkle-project.org/). Its full
+upstream license and component notices are retained in
+[`sparkle-2.10.0-NOTICES.txt`](packaging/third-party/notices/sparkle-2.10.0-NOTICES.txt)
+and copied into native distributions.
+
 Thank you to the contributors, testers, researchers, translators, and dependency
 maintainers who share their work and help keep iPods usable. These acknowledgements
 express our gratitude; they do not imply endorsement or replace component license

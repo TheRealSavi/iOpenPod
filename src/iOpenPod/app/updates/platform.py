@@ -4,7 +4,6 @@ import logging
 import os
 import sys
 from configparser import ConfigParser
-from dataclasses import replace
 from importlib import import_module
 from pathlib import Path
 
@@ -92,12 +91,44 @@ def detect_install_channel() -> InstallChannel:
 
 def create_update_provider(window_id: int) -> UpdateProvider:
     if sys.platform != "win32":
-        return UpdateProvider(detect_install_channel())
+        channel = detect_install_channel()
+        return _standalone_provider(channel)
     if _runtime_error:
         raise RuntimeError(_runtime_error)
     from .windows import create_store_provider
 
     provider = create_store_provider(window_id)
     if provider.channel is InstallChannel.UNPACKAGED:
-        return replace(provider, channel=_unpackaged_channel())
+        return _standalone_provider(_unpackaged_channel())
     return provider
+
+
+def _standalone_provider(channel: InstallChannel) -> UpdateProvider:
+    if channel is not InstallChannel.FROZEN:
+        return UpdateProvider(channel)
+    from .github import GitHubBackend, ReleaseInstaller
+    from .installation import running_installation
+
+    installation = running_installation()
+    if installation is None:
+        return UpdateProvider(channel)
+    installer: ReleaseInstaller | None = None
+    if installation.public_keys:
+        if sys.platform == "darwin":
+            from .sparkle import SparkleInstaller
+
+            installer = SparkleInstaller(installation)
+        else:
+            from .portable import PortableInstaller
+
+            try:
+                installer = PortableInstaller(installation)
+            except (ValueError, OSError):
+                logger.info("This installation requires a manual update", exc_info=True)
+    return UpdateProvider(
+        channel,
+        GitHubBackend(installation, installer),
+        "GitHub",
+        staged_download=sys.platform != "darwin",
+        native_restart=sys.platform == "darwin",
+    )

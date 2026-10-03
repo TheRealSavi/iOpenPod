@@ -13,6 +13,15 @@ on:
     paths:
       - "packaging/**"
       - "scripts/package_app.py"
+      - "scripts/package_updates.py"
+      - "scripts/update_feed.py"
+      - "scripts/publish_update_feed.py"
+      - "src/iOpenPod/app/updates/**"
+      - "src/iopenpod_update_helper.py"
+      - "src/storage/host_installation.py"
+      - "src/storage/host_usage.py"
+      - "src/storage/platform/host_install_windows.py"
+      - ".github/workflows/update-feed.yml"
       - "scripts/check_wheel.py"
       - "scripts/check_windows_bundle.py"
       - "scripts/check_macos_bundle.py"
@@ -48,6 +57,8 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       publish: ${{ steps.release.outputs.publish }}
       create_tag: ${{ steps.release.outputs.create_tag }}
+      signed_updates: ${{ steps.updates.outputs.enabled }}
+      version: ${{ steps.updates.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,6 +71,10 @@ jobs:
         env:
           PUBLISH_RELEASE: ${{ inputs.publish || false }}
         run: uv run --no-project --managed-python --python 3.12 python scripts/prepare_release.py
+      - name: Read committed update trust configuration
+        id: updates
+        run: |
+          uv run --no-project --managed-python --python 3.12 python -c 'import json,os,tomllib; from pathlib import Path; keys=json.loads(Path("packaging/update-keys.json").read_text())["public_keys"]; version=tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]; Path(os.environ["GITHUB_OUTPUT"]).write_text("enabled="+str(bool(keys)).lower()+"\nversion="+version+"\n")'
 
   native:
     needs: prepare
@@ -103,6 +118,9 @@ jobs:
         run: uv run --no-sync python -m scripts.build_windows_sndfile
       - name: Build unsigned native candidate
         run: uv run --no-sync python scripts/package_app.py freeze
+      - name: Check the independent update helper
+        if: runner.os != 'macOS'
+        run: uv run --no-sync python -c "import subprocess,sys; from pathlib import Path; helper=Path('dist/iOpenPod-update'+('.exe' if sys.platform=='win32' else '')).resolve(); subprocess.run([str(helper),'--smoke-test'],check=True,timeout=120)"
       - name: Check Windows executable manifest and payload
         if: runner.os == 'Windows'
         run: uv run --no-sync python scripts/check_windows_bundle.py
@@ -134,6 +152,26 @@ jobs:
           "$executable" --smoke-test
       - name: Archive candidate with SHA-256
         run: uv run --no-sync python scripts/package_app.py archive
+      - name: Check macOS drag-to-Applications disk image
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          images=(dist/iOpenPod-*-macOS-*.dmg)
+          test "${#images[@]}" -eq 1
+          mountpoint="$(mktemp -d "$RUNNER_TEMP/iopenpod-dmg.XXXXXX")"
+          cleanup() {
+            hdiutil detach "$mountpoint" >/dev/null 2>&1 || true
+            rmdir "$mountpoint" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          hdiutil attach -readonly -nobrowse -mountpoint "$mountpoint" "${images[0]}"
+          test -d "$mountpoint/iOpenPod.app"
+          test -L "$mountpoint/Applications"
+          test "$(readlink "$mountpoint/Applications")" = /Applications
+          cmp "$mountpoint/iOpenPod.app/Contents/MacOS/iOpenPod" dist/iOpenPod.app/Contents/MacOS/iOpenPod
+          codesign --verify --deep --strict "$mountpoint/iOpenPod.app"
       - uses: actions/upload-artifact@v4
         with:
           name: candidate-${{ matrix.os }}
@@ -141,6 +179,7 @@ jobs:
           if-no-files-found: error
           path: |
             dist/*.zip
+            dist/*.dmg
             dist/*.tar.gz
             dist/*.whl
             dist/*.sha256
@@ -179,6 +218,7 @@ jobs:
           path: |
             release-assets/*
             !release-assets/iOpenPod-*.zip
+            !release-assets/iOpenPod-*.dmg
             !release-assets/iOpenPod-*-Linux-*.tar.gz
       # GITHUB_TOKEN tag pushes do not trigger another workflow. Publish here,
       # using the artifacts built and checked for this exact dispatch commit.
@@ -188,5 +228,16 @@ jobs:
       - name: Upload native archives before making the release public
         run: |
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$GITHUB_SHA"
-          gh release create "$RELEASE_TAG" --verify-tag --target "$GITHUB_SHA" --draft --title "iOpenPod $RELEASE_TAG" --generate-notes --notes-file packaging/github-release.md release-assets/iOpenPod-*.zip release-assets/iOpenPod-*-Linux-*.tar.gz
+          gh release create "$RELEASE_TAG" --verify-tag --target "$GITHUB_SHA" --draft --title "iOpenPod $RELEASE_TAG" --generate-notes --notes-file packaging/github-release.md release-assets/iOpenPod-*.zip release-assets/iOpenPod-*.dmg release-assets/iOpenPod-*-Linux-*.tar.gz
           gh release edit "$RELEASE_TAG" --draft=false --latest
+
+  update-feed:
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.signed_updates == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/update-feed.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+    # The same-repository signing workflow declares its required key.
+    secrets: inherit

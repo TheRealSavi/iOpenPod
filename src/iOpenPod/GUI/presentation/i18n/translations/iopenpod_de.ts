@@ -7169,6 +7169,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Installationsquelle</translation>
     </message>
     <message>
+        <source>Restart to install</source>
+        <translation>Zur Installation neu starten</translation>
+    </message>
+    <message>
         <source>Update now</source>
         <translation>Jetzt aktualisieren</translation>
     </message>
@@ -7201,12 +7205,28 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Paket: %1</translation>
     </message>
     <message>
+        <source>Cancel download</source>
+        <translation>Download abbrechen</translation>
+    </message>
+    <message>
+        <source>Update downloaded and verified</source>
+        <translation>Update heruntergeladen und überprüft</translation>
+    </message>
+    <message>
+        <source>Downloading and verifying update…</source>
+        <translation>Update wird heruntergeladen und überprüft…</translation>
+    </message>
+    <message>
         <source>Updating through %1 — iOpenPod may restart…</source>
-        <translation>Aktualisierung über %1 — iOpenPod wird möglicherweise neu gestartet…</translation>
+        <translation type="vanished">Aktualisierung über %1 — iOpenPod wird möglicherweise neu gestartet…</translation>
     </message>
     <message>
         <source>%1 update available</source>
         <translation>Update über %1 verfügbar</translation>
+    </message>
+    <message>
+        <source>Open download page</source>
+        <translation>Downloadseite öffnen</translation>
     </message>
     <message>
         <source>%1 reports no updates (results may be cached)</source>
@@ -7227,6 +7247,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>%1 update failed: %2</source>
         <translation>Update über %1 fehlgeschlagen: %2</translation>
+    </message>
+    <message>
+        <source>Preparing application update…</source>
+        <translation>Anwendungsupdate wird vorbereitet…</translation>
     </message>
     <message>
         <source>Update check or installation unavailable: %1. Retry in 30 seconds.</source>

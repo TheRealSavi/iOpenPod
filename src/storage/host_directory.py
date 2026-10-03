@@ -20,7 +20,7 @@ from storage.errors import (
 from storage.host_input import (
     LocalHostFile,
     _check_local_drive,  # pyright: ignore[reportPrivateUsage]
-    _validate_spelling,  # pyright: ignore[reportPrivateUsage]
+    validate_host_path_spelling,
 )
 from storage.paths import HostPath
 
@@ -58,7 +58,7 @@ class LocalHostDirectory:
     @classmethod
     def observe(cls, path: HostPath) -> LocalHostDirectory:
         source = Path(path)
-        _validate_spelling(os.fspath(source).replace("\\", "/"))
+        validate_host_path_spelling(os.fspath(source).replace("\\", "/"))
         _check_local_drive(source)
         for parent in reversed(source.parents):
             _require_directory(parent.lstat())
@@ -86,7 +86,7 @@ class LocalHostDirectory:
         """
         checkpoint()
         entries: list[HostDirectoryEntry] = []
-        with _pin_directory(Path(self.path)) as pinned:
+        with pin_host_directory(Path(self.path)) as pinned:
             before = _directory_stat(pinned)
             _require_directory(before)
             if (before.st_dev, before.st_ino) != (self.device, self.inode) or (
@@ -172,8 +172,9 @@ def _directory_stat(pinned: Path | int) -> os.stat_result:
 
 
 @contextmanager
-def _pin_directory(path: Path) -> Generator[Path | int]:
-    _validate_spelling(os.fspath(path).replace("\\", "/"))
+def pin_host_directory(path: Path) -> Generator[Path | int]:
+    """Retain the validated directory and its ancestors for a Host operation."""
+    validate_host_path_spelling(os.fspath(path).replace("\\", "/"))
     _check_local_drive(path)
     if os.name == "nt":
         with _pin_windows_directory(path):
@@ -233,4 +234,9 @@ def _pin_windows_directory(path: Path) -> Generator[None]:
         yield
 
 
-__all__ = ["HostDirectoryEntry", "HostEntryKind", "LocalHostDirectory"]
+__all__ = [
+    "HostDirectoryEntry",
+    "HostEntryKind",
+    "LocalHostDirectory",
+    "pin_host_directory",
+]

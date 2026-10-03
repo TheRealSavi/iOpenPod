@@ -33,7 +33,7 @@ For setup help, see the [installation guide](https://therealsavi.github.io/iOpen
 | Platform     | Planned direct download                         | Store distribution                                                |
 | ------------ | ----------------------------------------------- | ----------------------------------------------------------------- |
 | Windows      | Native x64 ZIP                                  | [Microsoft Store](https://apps.microsoft.com/detail/9P2LXCHHWLG9) |
-| macOS        | Native app archives for Apple Silicon and Intel | Mac App Store (planned)                                           |
+| macOS        | DMG install images and ZIP updates for Apple Silicon and Intel | Mac App Store (planned)                           |
 | Linux        | Native x64 tar.gz archive                       | Flathub (Flatpak) and Snap Store (planned)                        |
 | Python users | `iopenpod` 2.x on PyPI, requiring Python 3.12   | —                                                                 |
 

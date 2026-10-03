@@ -65,6 +65,12 @@ def release_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             json.dumps([{"name": "iOpenPod", "version": "2.0.0"}]),
         )
         if architecture:
+            dmg_name = f"iOpenPod-2.0.0-macOS-{architecture}.dmg"
+            dmg = write(prefix + "/dist/" + dmg_name, target + " installer")
+            write(
+                prefix + "/dist/" + dmg_name + ".sha256",
+                f"{sha256(dmg)}  {dmg_name}\n",
+            )
             write(
                 prefix + "/build/packaging/macos-compatibility.json",
                 json.dumps(
@@ -109,6 +115,8 @@ def test_assembly_keeps_all_platforms_and_verifiable_source(release_root: Path) 
     assert len(list(output.glob("macos-compatibility-*.json"))) == 2
     for target, suffix, _ in release.TARGETS:
         assert (output / f"iOpenPod-2.0.0-{suffix}").read_text() == target
+    for architecture in ("arm64", "x86_64"):
+        assert (output / f"iOpenPod-2.0.0-macOS-{architecture}.dmg").is_file()
     for row in record["artifacts"]:
         assert sha256(output / row["name"]) == row["sha256"]
     sums = (output / "SHA256SUMS").read_text().splitlines()
@@ -127,7 +135,9 @@ def test_assembly_keeps_all_platforms_and_verifiable_source(release_root: Path) 
         release.assemble("v2.0.0", COMMIT, root=release_root)
 
 
-def test_publication_uploads_only_the_four_native_archives(release_root: Path) -> None:
+def test_publication_uploads_native_archives_and_mac_install_images(
+    release_root: Path,
+) -> None:
     release.assemble("v2.0.0", COMMIT, root=release_root)
     workflow = (release.ROOT / ".github/workflows/release.yml").read_text()
     command = next(
@@ -143,7 +153,11 @@ def test_publication_uploads_only_the_four_native_archives(release_root: Path) -
     uploaded = {
         path.name for pattern in patterns for path in release_root.glob(pattern)
     }
-    assert uploaded == {f"iOpenPod-2.0.0-{suffix}" for _, suffix, _ in release.TARGETS}
+    assert uploaded == {
+        *(f"iOpenPod-2.0.0-{suffix}" for _, suffix, _ in release.TARGETS),
+        "iOpenPod-2.0.0-macOS-arm64.dmg",
+        "iOpenPod-2.0.0-macOS-x86_64.dmg",
+    }
 
 
 @pytest.mark.parametrize(
@@ -162,6 +176,7 @@ def test_invalid_release_identity_fails_before_output(
     "relative",
     [
         "candidate-macos-15-intel/dist/iOpenPod-2.0.0-macOS-x86_64.zip",
+        "candidate-macos-14/dist/iOpenPod-2.0.0-macOS-arm64.dmg",
         "candidate-ubuntu-24.04/build/packaging/licenses/inventory.json",
         "candidate-macos-14/build/packaging/macos-compatibility.json",
         "candidate-windows-2022/dist/iopenpod-2.0.0.tar.gz",
@@ -177,10 +192,19 @@ def test_missing_candidate_or_report_prevents_release(
 
 
 @pytest.mark.parametrize("content", ["corrupt", "0" * 64 + "  incorrect.zip\n"])
-def test_checksum_mismatch_prevents_release(release_root: Path, content: str) -> None:
+@pytest.mark.parametrize(
+    "name",
+    ["iOpenPod-2.0.0-Windows-AMD64.zip", "iOpenPod-2.0.0-macOS-arm64.dmg"],
+)
+def test_checksum_mismatch_prevents_release(
+    release_root: Path, content: str, name: str
+) -> None:
     checksum = (
         release_root
-        / "build/candidates/candidate-windows-2022/dist/iOpenPod-2.0.0-Windows-AMD64.zip.sha256"
+        / "build/candidates"
+        / ("candidate-macos-14" if name.endswith(".dmg") else "candidate-windows-2022")
+        / "dist"
+        / (name + ".sha256")
     )
     checksum.write_text(content)
     with pytest.raises(ValueError, match="checksum or filename"):

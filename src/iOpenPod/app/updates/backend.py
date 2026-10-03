@@ -40,6 +40,9 @@ class InstallChannel(StrEnum):
 
 class UpdateOutcome(StrEnum):
     AVAILABLE = "available"
+    READY = "ready"
+    HANDOFF = "handoff"
+    MANUAL = "manual"
     CURRENT = "current"
     COMPLETED = "completed"
     CANCELED = "canceled"
@@ -50,6 +53,8 @@ class UpdateOutcome(StrEnum):
 class UpdateResult:
     outcome: UpdateOutcome
     detail: str = ""
+    version: str = ""
+    url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,11 +75,15 @@ class UpdateBackend(Protocol):
 
     def check(self) -> None: ...
 
+    def download(self) -> None: ...
+
     def install(self) -> None: ...
 
     def poll(self) -> UpdateResult | UpdateProgress | None: ...
 
     def close(self) -> None: ...
+
+    def complete_handoff(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,3 +91,5 @@ class UpdateProvider:
     channel: InstallChannel
     backend: UpdateBackend | None = None
     display_name: str = "installation source"
+    staged_download: bool = False
+    native_restart: bool = False

@@ -7169,6 +7169,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>origen de instalación</translation>
     </message>
     <message>
+        <source>Restart to install</source>
+        <translation>Reiniciar para instalar</translation>
+    </message>
+    <message>
         <source>Update now</source>
         <translation>Actualizar ahora</translation>
     </message>
@@ -7201,12 +7205,28 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Paquete: %1</translation>
     </message>
     <message>
+        <source>Cancel download</source>
+        <translation>Cancelar descarga</translation>
+    </message>
+    <message>
+        <source>Update downloaded and verified</source>
+        <translation>Actualización descargada y verificada</translation>
+    </message>
+    <message>
+        <source>Downloading and verifying update…</source>
+        <translation>Descargando y verificando la actualización…</translation>
+    </message>
+    <message>
         <source>Updating through %1 — iOpenPod may restart…</source>
-        <translation>Actualizando mediante %1 — iOpenPod podría reiniciarse…</translation>
+        <translation type="vanished">Actualizando mediante %1 — iOpenPod podría reiniciarse…</translation>
     </message>
     <message>
         <source>%1 update available</source>
         <translation>Actualización disponible en %1</translation>
+    </message>
+    <message>
+        <source>Open download page</source>
+        <translation>Abrir página de descarga</translation>
     </message>
     <message>
         <source>%1 reports no updates (results may be cached)</source>
@@ -7227,6 +7247,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>%1 update failed: %2</source>
         <translation>Error de actualización mediante %1: %2</translation>
+    </message>
+    <message>
+        <source>Preparing application update…</source>
+        <translation>Preparando la actualización de la aplicación…</translation>
     </message>
     <message>
         <source>Update check or installation unavailable: %1. Retry in 30 seconds.</source>

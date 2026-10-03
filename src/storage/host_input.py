@@ -82,7 +82,7 @@ def resolve_local_file_reference(
                 value = value[1:]
             if parsed.scheme and not (value.startswith("/") or _DRIVE.match(value)):
                 raise InvalidHostPathError("File URLs must name an absolute path")
-    _validate_spelling(value)
+    validate_host_path_spelling(value)
     if _DRIVE.match(value) and os.name != "nt":
         raise InvalidHostPathError("A Windows drive path is unavailable on this Host")
     path = Path(value)
@@ -92,11 +92,12 @@ def resolve_local_file_reference(
     result_spelling = os.fspath(result)
     if os.name == "nt":
         result_spelling = result_spelling.replace("\\", "/")
-    _validate_spelling(result_spelling)
+    validate_host_path_spelling(result_spelling)
     return result
 
 
-def _validate_spelling(value: str) -> None:
+def validate_host_path_spelling(value: str) -> None:
+    """Reject network/device syntax and ambiguous components in a slash-separated path."""
     if not value or value.startswith(("//", r"\\", "/??/")):
         raise InvalidHostPathError("Network and device paths are not allowed")
     tail = value[3:] if _DRIVE.match(value) else value
@@ -126,7 +127,7 @@ class LocalHostFile:
         source_spelling = os.fspath(source)
         if os.name == "nt":
             source_spelling = source_spelling.replace("\\", "/")
-        _validate_spelling(source_spelling)
+        validate_host_path_spelling(source_spelling)
         _check_local_drive(source)
         for parent in reversed(source.parents):
             metadata = parent.lstat()
@@ -177,7 +178,7 @@ class LocalHostFile:
     @contextmanager
     def _open(self) -> Generator[BinaryIO]:
         self.validate()
-        with _open_local_file(Path(self.path)) as source:
+        with open_local_file(Path(self.path)) as source:
             before = os.fstat(source.fileno())
             _require_regular(before)
             if self._from_stat(self.path, before) != self:
@@ -333,7 +334,8 @@ def _check_local_drive(path: Path) -> None:
 
 
 @contextmanager
-def _open_local_file(path: Path) -> Generator[BinaryIO]:
+def open_local_file(path: Path) -> Generator[BinaryIO]:
+    """Open a local path without following links while retaining its parent handles."""
     if os.name == "nt":
         with _open_windows_file(path) as source:
             yield source

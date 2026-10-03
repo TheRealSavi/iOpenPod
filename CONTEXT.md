@@ -18,12 +18,16 @@ Microsoft Store installs now check for application updates at launch and expose
 progress and an Update now action through the status bar. Installation waits for
 unsaved Library Drafts and running workflows to be resolved, then hands consent and
 package replacement to Windows. Install Channel detection and typed Update Backends
-allow future sources; other installations currently skip automatic updates. Store
-eligibility and an installed-build A-to-B upgrade still require native release
-validation. See [Application updates](docs/app-updates.md) and ADR-0105.
+also route standalone GitHub releases through signed metadata and an independent
+portable helper or Sparkle on macOS. The public trust key and repository signing
+secret are configured for future releases; existing downloads still need a manual
+bootstrap upgrade. Store eligibility and a full signed-release A-to-B upgrade still
+require native release validation. See [Application updates](docs/app-updates.md)
+and ADR-0105.
 Settings > About also shows the detected Install Channel beside the version and
 offers a manual check using the same update workflow. Other channels are identified
-where runtime evidence permits, but still have no built-in Update Backend.
+where runtime evidence permits. Mac App Store, Flatpak and Snap remain managed by
+their installation source. See ADR-0109 for standalone trust and recovery policy.
 
 Startup checks media tools and offers a skippable setup popup for missing FFmpeg,
 FFprobe, or fpcalc. Settings > Media Tools shows tool and FFmpeg encoder status,

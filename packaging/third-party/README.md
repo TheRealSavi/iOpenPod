@@ -7,6 +7,14 @@ member and its hash. These are intentionally a superset of upstream notices,
 including build/test and other-platform dependencies; their presence does not mean
 every such upstream component is included in the Windows executable.
 
+The standalone Mac updater embeds Sparkle 2.10.0 from the official release SDK.
+`scripts/package_updates.py` pins that binary archive's size and SHA-256. The
+matching tagged source archive is in `sources.json`; its complete notices and
+provenance are retained here. Packaging separately copies the SDK's full LICENSE
+into the app, preserves framework symlinks and signs components inside out.
+Native Mac execution and Apple signing/notarization remain release validation
+steps; the pinned digest alone is not evidence of those checks.
+
 macOS candidates use Qt/PySide/Shiboken 6.9.3 and Intel-specific numerical
 versions under [ADR-0094](../../docs/adr/0094-target-macos-12-3-with-platform-specific-native-dependencies.md).
 The native evidence below establishes the Windows components. Complete the

@@ -4903,5 +4903,14 @@
     "kind": "native-source",
     "sha256": "cc4b804fa064c543fd129a21ee8d7379447e18bb24c9a039005096e867187a51",
     "size": 408398
+  },
+  {
+    "name": "sparkle",
+    "version": "2.10.0",
+    "url": "https://codeload.github.com/sparkle-project/Sparkle/tar.gz/refs/tags/2.10.0",
+    "filename": "sparkle-2.10.0.tar.gz",
+    "size": 16786605,
+    "sha256": "cf43af1f26a921a8dc0be80834b9c3038bea5fd645708d26375126cbc57c316b",
+    "kind": "upstream-source"
   }
 ]

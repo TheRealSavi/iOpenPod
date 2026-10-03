@@ -48,10 +48,21 @@ def start_ui() -> int:
     application.setWindowIcon(application_icon())
     context = AppContext.create(application)
 
-    window = MainWindow(context)
+    from iOpenPod.app.updates.bootstrap import awaiting_health, start_health_handshake
+
+    health_launch = awaiting_health()
+    window = MainWindow(
+        context, auto_discover=not health_launch, defer_startup=health_launch
+    )
     window.show()
-    QTimer.singleShot(0, window.check_app_updates)
-    QTimer.singleShot(0, window.check_media_tools)
+
+    def ready() -> None:
+        if health_launch:
+            window.start_device_discovery()
+        QTimer.singleShot(0, window.check_app_updates)
+        QTimer.singleShot(0, window.check_media_tools)
+
+    start_health_handshake(application, window, ready)
     system_media_bridge = SystemMediaBridge(
         context.playback_controller,
         create_system_media_session(window_id=int(window.winId())),

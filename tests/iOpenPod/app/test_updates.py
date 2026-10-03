@@ -30,6 +30,49 @@ from iOpenPod.app.updates.windows import (
 APPLICATION = QApplication.instance() or QApplication([])
 
 
+def test_portable_download_keeps_work_usable_until_explicit_guarded_restart() -> None:
+    backend = FakeBackend()
+    status = ApplicationStatus()
+    calls: list[str] = []
+    blocked = True
+
+    def prepare() -> str:
+        calls.append("prepare")
+        return "Save the Library Draft first" if blocked else ""
+
+    updater = UpdateController(
+        status,
+        lambda: UpdateProvider(
+            InstallChannel.FROZEN, backend, "GitHub", staged_download=True
+        ),
+        prepare,
+        lambda: calls.append("finish"),
+    )
+
+    def restarted(native: bool) -> None:
+        calls.append("restart-native" if native else "restart")
+
+    updater.restartRequested.connect(restarted)
+    try:
+        updater.start()
+        backend.deliver(UpdateResult(UpdateOutcome.AVAILABLE))
+        status.request_action(UPDATE_STATUS_SOURCE, "install")
+        backend.deliver(UpdateResult(UpdateOutcome.AVAILABLE))
+        assert backend.downloads == 1 and not updater.installing and not calls
+        backend.deliver(UpdateResult(UpdateOutcome.READY))
+        assert backend.installs == 0
+        status.request_action(UPDATE_STATUS_SOURCE, "restart")
+        assert backend.installs == 0 and not updater.installing
+        blocked = False
+        status.request_action(UPDATE_STATUS_SOURCE, "restart")
+        assert backend.installs == 1 and updater.installing
+        backend.deliver(UpdateResult(UpdateOutcome.HANDOFF))
+        assert updater.handing_off and updater.installing and backend.handoffs == 1
+        assert calls == ["prepare", "prepare", "restart"]
+    finally:
+        updater.close()
+
+
 def wait_until(predicate: Callable[[], bool]) -> None:
     deadline = monotonic() + 2
     while not predicate() and monotonic() < deadline:
@@ -37,9 +80,49 @@ def wait_until(predicate: Callable[[], bool]) -> None:
     assert predicate(), "The expected update event was not delivered"
 
 
+def test_cancel_download_closes_worker_without_acquiring_install_guard() -> None:
+    backend = FakeBackend()
+    status = ApplicationStatus()
+    calls: list[str] = []
+
+    def prepare() -> str:
+        calls.append("prepare")
+        return ""
+
+    updater = UpdateController(
+        status,
+        lambda: UpdateProvider(
+            InstallChannel.FROZEN, backend, "GitHub", staged_download=True
+        ),
+        prepare,
+        lambda: calls.append("finish"),
+    )
+    try:
+        updater.start()
+        backend.deliver(UpdateResult(UpdateOutcome.AVAILABLE))
+        status.request_action(UPDATE_STATUS_SOURCE, "install")
+        backend.deliver(UpdateResult(UpdateOutcome.AVAILABLE))
+        backend.deliver(UpdateProgress("archive.zip", 0.25, False))
+        assert status.current_status is not None
+        assert status.current_status.action is not None
+        assert status.current_status.action.key == "cancel-download"
+        status.request_action(UPDATE_STATUS_SOURCE, "cancel-download")
+        assert backend.closed and not updater.busy and not updater.installing
+        assert not calls and backend.installs == 0
+        # A late worker event cannot turn cancellation into a restart.
+        backend.event = UpdateResult(UpdateOutcome.READY)
+        QTest.qWait(150)
+        status.request_action(UPDATE_STATUS_SOURCE, "restart")
+        assert backend.installs == 0 and "canceled" in updater.message
+    finally:
+        updater.close()
+
+
 class FakeBackend:
     def __init__(self) -> None:
         self.checks = 0
+        self.downloads = 0
+        self.handoffs = 0
         self.installs = 0
         self.closed = False
         self.event: UpdateResult | UpdateProgress | None = None
@@ -52,6 +135,12 @@ class FakeBackend:
 
     def install(self) -> None:
         self.installs += 1
+
+    def download(self) -> None:
+        self.downloads += 1
+
+    def complete_handoff(self) -> None:
+        self.handoffs += 1
 
     def poll(self) -> UpdateResult | UpdateProgress | None:
         event, self.event = self.event, None

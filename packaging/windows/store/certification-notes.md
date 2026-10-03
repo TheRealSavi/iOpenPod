@@ -1,4 +1,4 @@
-# Certification notes: iOpenPod 2.0.1
+# Certification notes: iOpenPod 2.0.2
 
 Prepared September 25, 2026. Copy the applicable text into Partner Center after
 the final artifact and testing evidence have been assembled. This file does not

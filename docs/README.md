@@ -26,8 +26,8 @@ sessions.
   unresolved store-release requirements.
 - [`licensing.md`](licensing.md) — GPL distribution, corresponding source,
   third-party notices, and optional donations.
-- [`app-updates.md`](app-updates.md) — Install Channel routing, Store updates,
-  status actions, and native acceptance testing.
+- [`app-updates.md`](app-updates.md) — Install Channel routing, Store and signed
+  GitHub updates, release keys, recovery, and native acceptance testing.
 - [`adr/`](adr/) — durable architectural decisions and their consequences.
 - [`agents/`](agents/) — configuration for agent-oriented engineering workflows.
 - [`research/`](research/) — supporting investigation and reference material.

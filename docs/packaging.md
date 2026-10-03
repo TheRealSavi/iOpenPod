@@ -63,8 +63,29 @@ Outputs are under ignored `build/` and `dist/`. Store staging refuses to overwri
 an existing staging directory so obsolete files cannot silently enter a package.
 Remove that specific generated directory before staging again. Windows archives
 contain only `iOpenPod.exe`; MSIX staging copies that same executable to `app/`.
-macOS archives preserve `.app` symlinks using `ditto`; Linux
-archives preserve executable modes and symlinks using tar. Each archive gets SHA-256.
+macOS ZIPs preserve `.app` symlinks using `ditto`. Each macOS DMG copies that same
+signed app with `ditto` into a read-only image beside an `/Applications` shortcut.
+The ZIP stays available for Sparkle's signed appcast; the DMG is for a first manual
+drag to Applications. Linux archives preserve
+executable modes and dereference bundled library symlinks. Their managed root has
+the stable `iOpenPod` launcher, `installation.json`, `current.json`, and
+`versions/<version>/` containing the onedir runtime. Start the root launcher.
+Store staging continues to use the ordinary onedir build. Each archive gets SHA-256.
+
+Standalone builds embed update identity and public trust keys from
+`packaging/update-keys.json`. Windows embeds a separately frozen helper; Linux
+ships it as the stable launcher and within each runtime for installation/recovery.
+The helper is independent of Qt and uses its own onefile extraction lifetime.
+Do not clean a user's installation directory when upgrading.
+
+macOS packaging downloads the SHA-256-pinned Sparkle 2.10.0 SDK, preserves framework
+symlinks and full notices, compiles the Objective-C bridge, and signs the nested
+components before the app. Ad-hoc signing is the default. A configured
+`IOPENPOD_CODESIGN_IDENTITY` is optional; notarization is still a separate release
+step. Sparkle signing does not require Apple Developer ID. See
+[Application updates](app-updates.md#signing-and-first-release-setup) for key custody,
+the first manual upgrade, feed publication and expiry renewal. Native updater
+acceptance does not change ADR-0106's manual-only Health policy.
 
 ## User-installed media tools and bundled libraries
 
@@ -89,6 +110,17 @@ Qt's FFmpeg **playback libraries remain bundled**, as explicitly selected by the
 owner. They are distinct from `ffmpeg.exe`/`ffprobe.exe` and do not satisfy the Sync
 tool requirement. Keep their applicable licenses, attribution, and corresponding
 source in the distribution review. See [Qt Multimedia deployment](https://doc.qt.io/qt-6/qtmultimedia-index.html#the-ffmpeg-backend).
+
+Windows startup loads these bundled libraries by absolute path before Qt selects
+its Playback Backend. [MSIX's DLL search](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order#search-order-for-packaged-apps)
+does not use PySide6's PATH additions;
+without this step, Qt can silently fall back to Windows Media Foundation and
+reject Apple Lossless Tracks despite the FFmpeg DLLs being present. This applies
+to both directory bundles and the extracted one-file runtime. The smoke test now
+decodes a generated in-memory audio sample through Qt's FFmpeg buffer output,
+without playing sound or requiring an audio endpoint. Installed-package validation
+must run that same smoke test under the package identity; a portable launch alone
+does not exercise the Store's loader rules.
 
 Frozen analysis code uses Numba's per-user compilation cache, keeping installed
 bundles read-only; this cache contains compiled code, not Track Analysis results.
@@ -207,6 +239,11 @@ A report run without application deployment does not cover installed-app behavio
 
 The native build produces `dist/iOpenPod.app`. The default is an ad-hoc signed
 development candidate, not a Gatekeeper-ready public release or App Store package.
+The archive command also produces an architecture-specific DMG containing
+`iOpenPod.app` and an Applications shortcut. Users open the DMG and drag the app
+onto that shortcut. The matching ZIP remains the Sparkle update archive. Native CI
+mounts each image, checks its layout and app signature, and compares its executable
+with the frozen app. A DMG does not replace Developer ID signing or notarization.
 The standard native candidate targets **macOS 12.3 or later**. The workflow builds
 separate Apple Silicon (`macos-14`) and Intel (`macos-15-intel`) candidates. These
 newer runners establish buildability and launch on their own OS; **execution on
@@ -278,8 +315,10 @@ before public distribution; the existing native evidence is for Windows.
 sandbox investigation. `helper.entitlements.plist` is the inherited sandbox profile
 for bundled executable helpers. Neither is automatically applied to every binary:
 main app and helper roles need separate inside-out signing. The build accepts
-`IOPENPOD_CODESIGN_IDENTITY`, `IOPENPOD_ENTITLEMENTS`, and `IOPENPOD_BUILD_NUMBER` for
-controlled signing experiments; these do not implement an App Store signing pipeline.
+`IOPENPOD_CODESIGN_IDENTITY` and `IOPENPOD_ENTITLEMENTS` for controlled signing
+experiments; these do not implement an App Store signing pipeline. `CFBundleVersion`
+now matches the numeric project version so Sparkle and signed JSON select the
+same release.
 
 Before an App Store submission:
 
@@ -405,18 +444,18 @@ requests. Other branches cannot request publication. No workflow publishes to Py
 or a Store.
 
 Publication waits for all four builds and their frozen smoke tests. It verifies
-each native archive's checksum, collects platform-specific dependency inventories
+each native archive and macOS disk image checksum, collects dependency inventories
 and Mac compatibility reports, and assembles the wheel and sdist from the Windows
 build, application source snapshot, hash-verified pinned third-party sources,
 `release.json`, and `SHA256SUMS`. These supporting files are retained in the
 producing Actions run's `release-supporting-files` artifact, subject to Actions
 artifact retention, rather than attached to the GitHub Release (ADR-0107).
-Only the Windows ZIP, two macOS ZIPs, and Linux binary tar.gz are uploaded to the
-release. Bundled license files remain inside the application archives.
-The source snapshot excludes
-the private fixtures listed in `scripts/prepare_store_kit.py`; the Python sdist
-excludes them too, and the publication assembler rejects their presence. The four
-native archives upload to a draft before the workflow makes it public. Release notes combine
+Only the Windows ZIP, two macOS ZIPs, two macOS DMGs, and Linux binary tar.gz are
+uploaded to the release (ADR-0110). Bundled license files remain inside the app.
+The source snapshot excludes the private fixtures listed in
+`scripts/prepare_store_kit.py`; the Python sdist excludes them too, and the
+publication assembler rejects their presence. The six native downloads upload to
+a draft before the workflow makes it public. Release notes combine
 `packaging/github-release.md` with GitHub's generated change list. Publication
 receives `contents: write`; the build and test jobs only receive read access.
 

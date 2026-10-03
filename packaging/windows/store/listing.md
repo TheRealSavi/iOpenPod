@@ -183,7 +183,7 @@ IDs. See the [requirements research](../../../docs/research/windows-store-requir
 After the final MSIX and source audit are ready, run:
 
 ```powershell
-uv run python -m scripts.prepare_store_kit --msix dist/iOpenPod-2.0.1-Windows-x64.msix --output dist/windows-store-kit
+uv run python -m scripts.prepare_store_kit --msix dist/iOpenPod-2.0.2-Windows-x64.msix --output dist/windows-store-kit
 ```
 
 The output directory must be new. The command verifies locally cached upstream
@@ -202,7 +202,7 @@ writer fixtures remain. Existing files, logs, caches, private plans, and signing
 credentials outside that allowlist are excluded.
 
 The kit's public-page staging directory is `site/iopenpod-2`. Its source links
-target the public `TheRealSavi/iOpenPod` release tag `iopenpod-2.0.1`, with assets
+target the public `TheRealSavi/iOpenPod` release tag `iopenpod-2.0.2`, with assets
 named `source.tar.gz` and `thirdparty.tar.gz`. Keep the release record's hosting,
 native provenance, installation, WACK, and account/certification gates pending
 until actual evidence is supplied. Preparing a kit does not close those gates.

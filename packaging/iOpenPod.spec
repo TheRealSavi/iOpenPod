@@ -19,6 +19,10 @@ generated = root / "build" / "packaging"
 config = tomllib.loads((root / "pyproject.toml").read_text())
 version = config["project"]["version"]
 datas = [(str(generated / "licenses"), "licenses")]
+datas += [(str(generated / "updates/installation.json"), "updates")]
+if sys.platform != "darwin":
+    helper = "iOpenPod-update.exe" if sys.platform == "win32" else "iOpenPod-update"
+    datas += [(str(root / "dist" / helper), "updates")]
 for package in ("iOpenPod", "device_registry", "iPodDB", "storage", "tzdata"):
     datas += collect_data_files(package)
 datas += copy_metadata("iOpenPod")
@@ -37,6 +41,8 @@ binaries = collect_dynamic_libs(
 hiddenimports = collect_submodules("librosa") + collect_submodules("tzdata") + collect_submodules("keyring.backends") + [
     "iOpenPod.app.synesthesia.dsp",
     "iOpenPod.app.synesthesia.enrichment",
+    "Crypto.PublicKey._ed25519",
+    "Crypto.PublicKey._ed448",
 ]
 if sys.platform == "win32":
     # Media-key adapters intentionally load OS bindings only when needed.
@@ -116,7 +122,7 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleDisplayName": "iOpenPod",
             "CFBundleShortVersionString": version,
-            "CFBundleVersion": os.environ.get("IOPENPOD_BUILD_NUMBER", version),
+            "CFBundleVersion": version,
             "NSPrincipalClass": "NSApplication",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": config["tool"]["iopenpod"]["packaging"][

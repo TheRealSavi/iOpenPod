@@ -134,6 +134,16 @@ def assemble(
         inputs.extend(((name, archive), (name + ".sha256", checksum)))
         inputs.append((f"inventory-{target}.json", inventory))
         if architecture is not None:
+            dmg_name = f"iOpenPod-{version}-macOS-{architecture}.dmg"
+            dmg = regular_file(candidate, "dist/" + dmg_name)
+            dmg_checksum = regular_file(candidate, "dist/" + dmg_name + ".sha256")
+            if dmg_checksum.read_text(encoding="utf-8").strip() != (
+                f"{sha256(dmg)}  {dmg_name}"
+            ):
+                raise ValueError(
+                    f"Native disk image checksum or filename mismatch: {dmg_name}"
+                )
+            inputs.extend(((dmg_name, dmg), (dmg_name + ".sha256", dmg_checksum)))
             compatibility = regular_file(
                 candidate, "build/packaging/macos-compatibility.json"
             )

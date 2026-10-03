@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 from importlib import metadata
 from pathlib import Path
@@ -159,6 +160,8 @@ def collect_notices() -> None:
 
 def freeze() -> None:
     """Build the app; command-line media tools are installed by the user."""
+    from scripts.package_updates import embed_sparkle, write_build_identity
+
     environment = dict(os.environ)
     if sys.platform == "darwin":
         with (ROOT / "pyproject.toml").open("rb") as stream:
@@ -182,6 +185,21 @@ def freeze() -> None:
         )
     generate_assets()
     collect_notices()
+    write_build_identity(ROOT, GENERATED, project_version())
+    if sys.platform != "darwin":
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "PyInstaller",
+                "--noconfirm",
+                "--clean",
+                str(ROOT / "packaging/update-helper.spec"),
+            ],
+            cwd=ROOT,
+            env=environment,
+            check=True,
+        )
     subprocess.run(
         [
             sys.executable,
@@ -195,6 +213,8 @@ def freeze() -> None:
         env=environment,
         check=True,
     )
+    if sys.platform == "darwin":
+        embed_sparkle(ROOT, GENERATED, config["macos-minimum-version"])
 
 
 def windows_store_identity() -> tuple[str, str, str]:
@@ -286,7 +306,50 @@ def stage_linux() -> Path:
     return destination
 
 
+def _write_checksum(path: Path) -> None:
+    with path.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    path.with_name(path.name + ".sha256").write_text(
+        f"{digest}  {path.name}\n", encoding="utf-8"
+    )
+
+
+def macos_dmg(app: Path, output: Path, version: str) -> Path:
+    """Build a drag-to-Applications image from the signed app bundle."""
+    if not app.is_dir():
+        raise ValueError("Build the macOS app bundle before making a disk image")
+    if output.exists():
+        raise FileExistsError(output)
+    with tempfile.TemporaryDirectory(
+        prefix="iopenpod-dmg-", dir=output.parent
+    ) as staging_name:
+        staging = Path(staging_name)
+        subprocess.run(["ditto", str(app), str(staging / "iOpenPod.app")], check=True)
+        (staging / "Applications").symlink_to("/Applications", target_is_directory=True)
+        subprocess.run(
+            [
+                "hdiutil",
+                "create",
+                "-srcfolder",
+                str(staging),
+                "-volname",
+                f"iOpenPod {version}",
+                "-format",
+                "UDZO",
+                "-fs",
+                "HFS+",
+                str(output),
+            ],
+            check=True,
+        )
+    subprocess.run(["hdiutil", "verify", str(output)], check=True)
+    _write_checksum(output)
+    return output
+
+
 def archive() -> Path:
+    from scripts.package_updates import managed_linux_archive
+
     version = project_version()
     system = {"win32": "Windows", "darwin": "macOS", "linux": "Linux"}[sys.platform]
     name = f"iOpenPod-{version}-{system}-{platform.machine()}"
@@ -305,6 +368,9 @@ def archive() -> Path:
             ],
             check=True,
         )
+    elif sys.platform == "linux":
+        path = Path(str(output) + ".tar.gz")
+        managed_linux_archive(ROOT, path, version)
     else:
         path = Path(
             shutil.make_archive(
@@ -314,11 +380,9 @@ def archive() -> Path:
                 base_dir="iOpenPod.exe" if sys.platform == "win32" else "iOpenPod",
             )
         )
-    with path.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    path.with_name(path.name + ".sha256").write_text(
-        f"{digest}  {path.name}\n", encoding="utf-8"
-    )
+    _write_checksum(path)
+    if sys.platform == "darwin":
+        macos_dmg(ROOT / "dist/iOpenPod.app", path.with_suffix(".dmg"), version)
     return path
 
 
@@ -363,4 +427,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if not __package__:
+        sys.path.insert(0, str(ROOT))
     main()

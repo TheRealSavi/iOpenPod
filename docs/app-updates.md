@@ -1,10 +1,10 @@
 # Application updates
 
 iOpenPod checks its installation's update source once after the main window opens.
-The first supported Install Channel is Microsoft Store. Native Windows package
-identity plus a Store signature selects that channel. An unpackaged launch, a
-developer-signed MSIX, or another platform does not query the Store or claim to be
-up to date. An identity-query failure is reported as unavailable.
+Supported installers are Microsoft Store and authenticated standalone GitHub
+releases. Native Windows package identity plus a Store signature selects the Store
+channel. Other installations do not query the Store. An identity-query failure is
+reported as unavailable.
 
 Settings > About shows the version and detected Install Channel together, with a
 **Check for updates** button. Manual checks reuse the same controller and backend,
@@ -29,13 +29,118 @@ Source labels come from runtime evidence, without a per-build channel flag:
 - Otherwise, PyInstaller's runtime marker distinguishes **Standalone executable**
   from **Python / source**. It cannot establish which website supplied a download.
 
-Only Microsoft Store currently has an Update Backend. Mac App Store, Flatpak, and
+Mac App Store, Flatpak, and
 Snap source labels do not imply built-in update support. The shared application
 code can detect its packaging; native platform builds, store signatures, package
 formats, and sandbox adaptation still differ as described in [Packaging](packaging.md).
 
+## GitHub standalone releases
+
+Frozen build metadata identifies the exact release target and installation layout;
+it does not override Store or package-manager evidence. A build with no public
+update key can report newer numeric GitHub tags and open their download page, but
+cannot download or execute an update. Legacy mutable tags such as `BETA` are not
+version identities. Existing 2.0.1 downloads need a manual bootstrap upgrade.
+
+With keys configured, the updater verifies the signed description on the
+`update-feed` branch, checks expiry, remembered sequence/version, target, layout,
+protocol and minimum runtime, and derives the download URL for that exact version.
+It validates the archive's signed byte length and SHA-256. Metadata is limited to
+256 KiB, archives to 2 GiB, and downloads to 30 minutes with individual network
+timeouts. Errors are never presented as proof that the app is current.
+
+Windows and managed Linux builds download in the background after **Update now**.
+The application remains usable until the user chooses **Restart to install**.
+That action takes the same Library Draft and workflow guard as Store updates.
+The independent helper acknowledges ownership before the app closes, waits for
+the actual old process lifetime, and obtains exclusive installation ownership.
+Every participating launch holds a shared OS lock. Another open instance prevents
+replacement; it is never forcibly closed.
+
+Windows accepts a ZIP containing only `iOpenPod.exe` and updates only that exact
+file on a writable, fixed NTFS volume. Links, reparse points, hard-linked binaries,
+changed file identities and occupied destinations are rejected. Keep the standard
+executable name. Linux uses the managed archive layout described in Packaging;
+it installs a fresh version directory and switches `current.json`, retaining all
+previous versions. Archive links, devices and traversal paths are rejected.
+
+The helper checks the new frozen runtime without settings or devices before
+replacement. After replacement, the new window starts disabled, acknowledges a
+responsive Qt event turn and waits for a durable commit before enabling device
+discovery or Sync recovery. If startup fails, rollback preserves the previous
+executable or version pointer, provided the expected files are still unchanged.
+There is no mirroring or recursive deletion. Recovery material remains in a
+private `.iopenpod-update-*` directory next to the installation; previous Linux
+version directories also remain. A retry can reuse a complete Linux version only
+after verifying every file again. An incomplete or changed version directory is
+left for manual review; the installer will not overwrite it. Review retained
+material manually before reclaiming space.
+
+If power loss interrupts Windows between its two no-replace renames, the main EXE
+may be absent. From the retained operation directory, run the embedded
+`iOpenPod-update.exe --recover <absolute-operation-directory>` with all iOpenPod
+instances closed. Recovery checks the signed historical release and exact old
+identity and refuses to overwrite an unrelated file. Linux's retained helper uses
+the same `--recover` option. Never rename an unrelated backup over the app.
+
+macOS uses Sparkle's signed appcast and native installer. **Update now** takes the
+work guard before downloading because Sparkle can install staged updates on quit.
+Only the already selected version and GitHub URL are accepted; signed feed
+validation must succeed. Sparkle owns verification, installation, cancellation and
+relaunch. Its callbacks do not falsely report installation success. A custom
+compiled bridge retains the native blocks and uses the existing Qt event loop.
+
+### Signing and first release setup
+
+`packaging/update-keys.json` pins the release trust key. Its matching private seed
+is configured as the repository Actions secret `IOPENPOD_UPDATE_PRIVATE_KEY`.
+Commit the public configuration before building the first signed release. Ed25519
+release signing does not require an Apple Developer account.
+
+The setup and publication procedure is:
+
+1. Only when initializing release signing with no existing key, run
+   `uv run --locked --group packaging python -m scripts.update_feed generate-key <private-parent-directory>`.
+   Choose an existing directory outside this checkout. The command creates a new
+   private directory, writes a base64 Ed25519 seed without displaying it, and pins
+   its public key in `packaging/update-keys.json` if no key was configured.
+2. Back up the private key securely. Set the repository Actions secret
+   `IOPENPOD_UPDATE_PRIVATE_KEY` to the private file's contents. Commit the public
+   key configuration before building the first updater-enabled release.
+3. Build and validate a numeric `v<version>` release. Native archives embed the
+   public trust configuration. macOS bundles also embed Sparkle's feed/key settings.
+4. The release workflow publishes four update archives and two macOS first-install
+   disk images, then calls
+   **Publish signed update feed** when public keys are present. That workflow checks
+   GitHub's published hashes, signs the JSON and appcasts, cross-verifies signatures
+   with Sparkle's tool, and updates the feed branch without force-pushing.
+5. Feed metadata expires after 45 days. Dispatch **Publish signed update feed**
+   with the latest published numeric version to renew it. Older versions cannot
+   replace newer history. Concurrent publication cannot overwrite another commit.
+
+Do not publish the private seed, pass it as a command argument, or delete release
+history to make a downgrade appear current. Losing or replacing the trust root
+requires a reviewed migration; the current publisher has no automatic key-rotation
+mode. Developer ID signing/notarization and Gatekeeper acceptance remain separate
+from Ed25519 authentication. Ad-hoc Mac builds are supported during setup.
+
+### Standalone validation
+
+Tests cover signed metadata tampering, freshness and rollback; malicious archives;
+all Linux runtime file hashes; canceled downloads; feed renewal and concurrent
+publication; real Windows no-replace operations; file identity changes;
+shared/exclusive locks; interruption at each publication boundary; adjacent-file
+preservation; the two-step download/restart UI; and the deferred GUI health handshake.
+Native builds include the independent helper and frozen smoke checks.
+Before first signed publication, perform a real A-to-B update
+on each shipped OS/architecture, including a readonly installation, a concurrent
+instance, canceled work guard and failed new launch. Exercise both Mac architectures
+and macOS 12.3; a Windows development run cannot establish Sparkle behavior.
+
+See [ADR-0109](adr/0109-authenticate-and-isolate-github-application-updates.md).
+
 The existing status bar and statuses popup show checking, availability, progress,
-cancellation, and failures. **Update now** refreshes the Store's package collection
+cancellation, and failures. For Store installs, **Update now** refreshes the package collection
 before installation. An empty successful response means no update was reported;
 exceptions are not converted into that result. The complete collection, including
 optional packages, is passed to Windows. No product ID or guessed target version

@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     from iOpenPod.app.core.version import get_version
 
     parser.add_argument("--version", action="version", version=get_version())
+    parser.add_argument("--update-health", nargs=2, help=argparse.SUPPRESS)
     parser.add_argument(
         "--smoke-test",
         action="store_true",
@@ -77,6 +78,9 @@ def main(
     from iOpenPod.app.core.runtime import configure_frozen_runtime
 
     configure_frozen_runtime()
+    from iOpenPod.app.updates.bootstrap import prepare_launch
+
+    prepare_launch(args.update_health)
     initialize_application()
 
     if run_cli(args):
@@ -207,7 +211,6 @@ def check_runtime() -> None:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QByteArray
     from PySide6.QtGui import QImage
-    from PySide6.QtMultimedia import QMediaPlayer
     from PySide6.QtSvg import QSvgRenderer
     from PySide6.QtWidgets import QApplication
 
@@ -216,6 +219,7 @@ def check_runtime() -> None:
     configure_frozen_runtime()
 
     from iOpenPod.app.app import start_ui
+    from iOpenPod.app.playback.runtime_check import check_playback_runtime
     from iOpenPod.app.synesthesia import DeterministicMusicAnalyzer
     from iOpenPod.GUI.presentation.application_icon import application_icon
     from iPodDB.iTunesDB.writer.signature import compute_hashab
@@ -235,6 +239,18 @@ def check_runtime() -> None:
     }
     for module in native_bindings.get(sys.platform, ()):
         import_module(module)
+    from Crypto.Signature import eddsa
+
+    test_key = eddsa.import_private_key(bytes(32))
+    signature = eddsa.new(test_key, "rfc8032").sign(b"iOpenPod signature runtime test")
+    eddsa.new(test_key.public_key(), "rfc8032").verify(
+        b"iOpenPod signature runtime test", signature
+    )
+    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+        import ctypes
+
+        bridge = Path(sys.executable).parent.parent / "Frameworks/iOpenPodSparkle.dylib"
+        assert ctypes.CDLL(str(bridge)).iop_update_start
     assert version("iOpenPod")
     app = QApplication.instance() or QApplication([])
     assert not application_icon().isNull(), "Application icon missing"
@@ -257,8 +273,7 @@ def check_runtime() -> None:
     # and alternate GUI exclusions must not remove the actual analysis runtime.
     harmonic, percussive = librosa.decompose.hpss(np.ones((32, 16), dtype=np.float32))
     assert harmonic.shape == percussive.shape == (32, 16)
-    player = QMediaPlayer()
-    player.stop()
+    check_playback_runtime()
     app.processEvents()
 
 

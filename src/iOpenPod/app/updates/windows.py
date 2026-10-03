@@ -86,6 +86,12 @@ def install_result(value: NativeResult) -> UpdateResult:
 
 
 class StoreBackend:
+    def download(self) -> None:
+        raise RuntimeError("The Store owns download and installation together")
+
+    def complete_handoff(self) -> None:
+        raise RuntimeError("The Store owns application restart")
+
     def __init__(
         self, context: NativeContext, release_owner: Callable[[], None] = lambda: None
     ) -> None:
