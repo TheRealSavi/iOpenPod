@@ -39,7 +39,7 @@ typedef void (*IOPUpdateEvent)(int event, double progress, const char *detail);
         ![item.fileURL.absoluteString isEqualToString:self.url] ||
         item.contentLength != self.size || ![item.installationType isEqualToString:@"application"] ||
         item.signingValidationStatus != SPUAppcastSigningValidationStatusSucceeded) {
-        reply(state.stage == SPUUpdateStateInstalling ? SPUUserUpdateChoiceSkip : SPUUserUpdateChoiceDismiss);
+        reply(state.stage == SPUUserUpdateStageInstalling ? SPUUserUpdateChoiceSkip : SPUUserUpdateChoiceDismiss);
         [self fail:@"The signed Sparkle feed does not match the selected release"];
         return;
     }
