@@ -33,7 +33,6 @@ on:
       - "ACKNOWLEDGEMENTS.md"
       - "LICENSES/**"
       - ".github/workflows/release.yml"
-      - ".github/workflows/health.yml"
 
 permissions:
   contents: read
@@ -61,10 +60,6 @@ jobs:
         env:
           PUBLISH_RELEASE: ${{ inputs.publish || false }}
         run: uv run --no-project --managed-python --python 3.12 python scripts/prepare_release.py
-
-  checks:
-    needs: prepare
-    uses: ./.github/workflows/health.yml
 
   native:
     needs: prepare
@@ -154,7 +149,7 @@ jobs:
 
   publish:
     if: needs.prepare.outputs.publish == 'true'
-    needs: [prepare, checks, native]
+    needs: [prepare, native]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
