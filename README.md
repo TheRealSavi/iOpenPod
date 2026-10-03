@@ -1,26 +1,34 @@
-# iOpenPod 2
+# iOpenPod: The Open-Source iPod Manager & iTunes Alternative for Windows, macOS, and Linux
 
 **Your music. Your iPod.**
 
-A free, open-source desktop app for browsing, playing, organizing, and syncing
-filesystem-accessible iPods on **Windows, macOS, and Linux**, without iTunes.
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=plastic)](LICENSE)
+[![Platform: Win | Mac | Linux](https://img.shields.io/badge/Platform-Win%20%7C%20Mac%20%7C%20Linux-2ea44f.svg?style=plastic)](#download-and-install)
+[![GitHub Release](https://img.shields.io/github/v/release/TheRealSavi/iOpenPod?style=plastic&color=0a6fdb)](https://github.com/TheRealSavi/iOpenPod/releases/latest)
+[![GitHub Stars](https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=plastic&color=6e5494)](https://github.com/TheRealSavi/iOpenPod/stargazers)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/iopenpod?style=plastic&color=0a6fdb&cacheSeconds=86400)](https://pypi.org/project/iopenpod/)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=plastic)](https://discord.gg/9Yy499Tf5d)
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/johngibbons)
+
+iOpenPod is a free, open-source iPod manager and iTunes alternative for
+**Windows, macOS, and Linux**. Browse your music, edit your library, and sync audio,
+video, photos, and podcasts from your computer. Built-in conversion prepares media
+for your iPod, and Sync Review lets you choose what gets added, updated, or removed.
+Built with Python and Qt6.
 
 [Website](https://therealsavi.github.io/iOpenPod/) ·
 [Install help](https://therealsavi.github.io/iOpenPod/install-help/) ·
 [Discord](https://discord.gg/9Yy499Tf5d) ·
 [Support development](https://ko-fi.com/johngibbons)
 
-![iOpenPod 2 album library with colorful cover art and a connected sample iPod](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/albums.webp)
+![Album browser](website/screenshots/iop2/albums.webp)
 
-*Real iOpenPod 2 UI captured on Windows. The screenshots use fictional media and
-original sample artwork; no personal library or physical iPod is involved.*
+## Download and install
 
-## Get iOpenPod 2
-
-**2.0 is in development.** Native packaging candidates exist; public iOpenPod 2 binary
-releases, the 2.x PyPI package, and store publication are still pending. The
-[website’s download section](https://therealsavi.github.io/iOpenPod/#install) will
-link each channel as it becomes available.
+Find native builds on the [releases page](https://github.com/TheRealSavi/iOpenPod/releases)
+and channel availability on the [website](https://therealsavi.github.io/iOpenPod/#install).
+For setup help, see the [installation guide](https://therealsavi.github.io/iOpenPod/install-help/).
 
 | Platform | Planned direct download | Planned store distribution |
 | --- | --- | --- |
@@ -34,7 +42,7 @@ Python installation. The native Mac build targets macOS 12.3 or later; acceptanc
 on 12.3 remains pending. Store channels have independent signing, permissions, and
 installed-package validation requirements. See [packaging](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/packaging.md).
 
-### Python installation, once 2.x is published
+### Python installation
 
 Use [uv](https://docs.astral.sh/uv/getting-started/installation/) to install the app
 in an isolated tool environment:
@@ -44,27 +52,23 @@ uv tool install --python 3.12 "iopenpod>=2,<3"
 iopenpod
 ```
 
-The version constraint requires iOpenPod 2 and will fail until a matching release is
-published. Upgrade with `uv tool upgrade iopenpod`. If the launcher is missing
-from your PATH, run `uv tool update-shell` and reopen your terminal.
-
 ### Media tools
 
-**FFmpeg and FFprobe are installed separately** for media inspection and conversion.
-**Chromaprint’s fpcalc is optional** and enables acoustic matching.
+**FFmpeg and FFprobe** are installed separately for media conversion and inspection.
+**Chromaprint's fpcalc** is optional and enables acoustic matching during Sync.
 
 The startup popup or **Settings → Media Tools → Set Up Media Tools** can install
 missing tools after you choose **Install Missing Tools**. Native setup uses WinGet,
-Homebrew, or a supported Linux package manager. You can skip setup to browse your
-library. Confined store builds need their own verified tool access; follow the
-instructions for that release. See [media-tool setup](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/media-tools.md).
+Homebrew, or a supported Linux package manager.
 
-## Explore your library
+## What you can do
 
 - **Albums, artists, genres, and tracks.** Browse artwork, search your collection,
   and edit metadata and ratings.
 - **Playlists and Smart Playlists.** Arrange tracks, organize playlist folders,
   and create rule-based selections.
+- **Automatic media conversion.** Convert audio and video when needed and prepare
+  artwork for your iPod model. Choose how incoming media is encoded in Settings.
 - **Playback and Synesthesia.** Listen to supported tracks with desktop media
   controls and explore music-reactive visuals.
 - **Photos.** Browse Photo Albums, inspect device-sized images, and export retained
@@ -82,12 +86,13 @@ and save those edits together. Sync always has its own selection and review flow
 
 | Album details | Playlists |
 | --- | --- |
-| ![iOpenPod 2 album artwork and track details](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/album-details.webp) | ![iOpenPod 2 playlist browser](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/playlists.webp) |
+| ![iOpenPod album artwork and track details](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/album-details.webp) | ![iOpenPod playlist browser](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/playlists.webp) |
 
-## Choose what comes along
+## How to use
 
 1. **Connect your iPod** and select it in the device picker. Your operating system
-   must be able to mount and access it.
+   must be able to mount and access it. Browse your library, play tracks, or edit
+   metadata and playlists.
 2. **Capture a Backup Snapshot** of the data you want to preserve.
 3. **Choose Sync with Host**, add media folders, and select what to scan.
 4. **Select your media**, then review additions, updates, and removals. Removal
@@ -95,17 +100,15 @@ and save those edits together. Sync always has its own selection and review flow
 5. **Sync Selected** prepares compatible media and publishes verified changes.
    Use the app’s eject action when you are finished.
 
-Device-aware preparation converts audio and video when needed and writes artwork
-for your model. Optional acoustic matching helps recognize recordings across
-format or metadata changes; previously committed source relationships can also
-identify media without a new fingerprint.
+Optional acoustic matching helps recognize the same recording after format or
+metadata changes. Sync can also recognize media from a previous successful Sync
+without generating a new fingerprint.
 
-![iOpenPod 2 Sync Review showing selected changes before a device write](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/sync-review.webp)
+![iOpenPod Sync Review showing selected changes before a device write](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/sync-review.webp)
 
-## Compatibility
+## iPod compatibility
 
-iOpenPod 2 targets these filesystem-accessible iPod families. Features depend on the
-model; real-device validation continues during development.
+iOpenPod targets these iPod families. Available features depend on the model.
 
 | Family | Target |
 | --- | --- |
@@ -113,25 +116,21 @@ model; real-device validation continues during development.
 | iPod mini | 1st and 2nd generation |
 | iPod nano | 1st–7th generation |
 
-**iPod shuffle, iPod touch, and iPhone are outside the 2.0 target.** The computer
-must already be able to read and write the iPod’s filesystem. DRM-protected media
-is not supported.
+**iPod shuffle, iPod touch, and iPhone are not yet supported.** The computer
+must already be able to read and write the iPod’s filesystem.
 
-![iOpenPod 2 Photo Library with Photo Albums and an image inspector](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/photos.webp)
+![iOpenPod Photo Library with Photo Albums and an image inspector](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/photos.webp)
 
 ## Develop and contribute
 
-From this **2.0 source checkout**, use the locked UV environment:
+Clone the repository, open its directory, and use the locked UV environment:
 
 ```shell
 uv sync --locked
 uv run iopenpod
 ```
 
-UV selects Python 3.12 from `.python-version`. The module entry point is also
-available through `uv run python -m iOpenPod`.
-
-Run the repository checks:
+Before submitting changes, run the repository checks:
 
 ```shell
 uv lock --check
@@ -142,10 +141,13 @@ uv run mypy
 uv run pytest
 ```
 
-Useful contributions include hardware and platform testing, reproducible bug
-reports, and focused pull requests. Include the iOpenPod 2 version, installation channel,
-operating system, and iPod model with a report. Discuss major changes in an issue
-or on [Discord](https://discord.gg/9Yy499Tf5d).
+Hardware testing, platform testing, reproducible bug reports, and focused pull
+requests all help. For bug reports, include your iPod model, operating system,
+iOpenPod version, and steps to reproduce the problem.
+
+Keep each pull request focused on one change. Discuss proposed work in an issue or
+on [Discord](https://discord.gg/9Yy499Tf5d) before starting, especially for major
+changes, so we can agree on the approach.
 
 The application ships as one distribution with four internal boundaries:
 
@@ -153,13 +155,56 @@ The application ships as one distribution with four internal boundaries:
 | --- | --- |
 | `src/iOpenPod` | Application workflows, state, and GUI |
 | `src/device_registry` | iPod identity and capabilities |
-| `src/iPodDB` | Lossless iPod database formats |
+| `src/iPodDB` | iPod database formats |
 | `src/storage` | Safe filesystem and removable-media operations |
 
 Read [AGENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0/AGENTS.md), the [project context](https://github.com/TheRealSavi/iOpenPod/blob/2.0/CONTEXT.md), and the
 [documentation map](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/README.md) before making substantial changes.
 [Packaging](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/packaging.md) covers native candidates and store release gates;
 [website maintenance](https://github.com/TheRealSavi/iOpenPod/blob/2.0/website/README.md) covers screenshots and channel activation.
+
+## Related projects
+
+- [libgpod](https://github.com/gtkpod/libgpod) - C library for iPod database access (the reference implementation this project learned from)
+- [gtkpod](https://github.com/gtkpod/gtkpod) - GTK+ iPod manager
+- [Rockbox](https://www.rockbox.org/) - Open-source firmware replacement for iPods
+
+## Coming from iTunes or another iPod manager?
+
+iOpenPod works with the library on your iPod and media folders on your computer.
+Start by browsing the existing library and capturing a Backup Snapshot, then choose
+what to bring over in Sync Review.
+
+- **No separate libgpod installation.** iOpenPod uses its own Python iPod database
+  implementation, informed by libgpod and gtkpod research.
+- **All features are free.** Donations support development without unlocking features.
+- **Review before writing.** Sync shows planned changes, with removals unchecked by
+  default. Backup Snapshots are user-controlled, and interrupted writes have
+  explicit recovery actions.
+
+---
+
+## Star history
+
+<!-- markdownlint-disable MD033 -->
+
+<a href="https://www.star-history.com/?repos=therealsavi%2Fiopenpod&type=timeline&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=therealsavi/iopenpod&type=timeline&theme=dark&legend=top-left&sealed_token=aMCIa4pbVoIhlxj9qK6fW6xT1G5WPmVyftpcUHMTDCF-jNcb-ZD5ewReZkCnZxjUqpEYILAoYH1UP1nYDNyqT1PbhUaA09JI1Lrq1EZ2-mO9bYPn3EWaHyBxmimY3pGYha3MHx1aNeAXRuF0UoijWcDkCgvNBHYDbZNCLG6zG8wx6tDuSh8cmrTN0uas" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=therealsavi/iopenpod&type=timeline&legend=top-left&sealed_token=aMCIa4pbVoIhlxj9qK6fW6xT1G5WPmVyftpcUHMTDCF-jNcb-ZD5ewReZkCnZxjUqpEYILAoYH1UP1nYDNyqT1PbhUaA09JI1Lrq1EZ2-mO9bYPn3EWaHyBxmimY3pGYha3MHx1aNeAXRuF0UoijWcDkCgvNBHYDbZNCLG6zG8wx6tDuSh8cmrTN0uas" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=therealsavi/iopenpod&type=timeline&legend=top-left&sealed_token=aMCIa4pbVoIhlxj9qK6fW6xT1G5WPmVyftpcUHMTDCF-jNcb-ZD5ewReZkCnZxjUqpEYILAoYH1UP1nYDNyqT1PbhUaA09JI1Lrq1EZ2-mO9bYPn3EWaHyBxmimY3pGYha3MHx1aNeAXRuF0UoijWcDkCgvNBHYDbZNCLG6zG8wx6tDuSh8cmrTN0uas" />
+ </picture>
+</a>
+
+<!-- markdownlint-enable MD033 -->
+
+---
+
+## Support
+
+iOpenPod is free and open source. Donations are optional and help support development.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/johngibbons)
 
 ## License and credits
 
