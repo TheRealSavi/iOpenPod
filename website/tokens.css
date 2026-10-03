@@ -18,13 +18,13 @@
   --color-overlay: oklch(1 0 0 / 72%);
   --color-shadow: oklch(0 0 0 / 12%);
 
-  --font-display: "Bricolage Grotesque", "Arial Narrow", sans-serif;
-  --font-body: "Geist", "Aptos", sans-serif;
+  --font-display: "Manrope", "Aptos", sans-serif;
+  --font-body: "Inter", "Aptos", sans-serif;
   --font-outlier: "Geist Mono", "Cascadia Code", monospace;
 
   --display-weight: 700;
   --body-weight: 400;
-  --tracking-display: -0.025em;
+  --tracking-display: -0.015em;
   --tracking-label: 0.03em;
 
   --text-xs: 0.75rem;
@@ -39,9 +39,9 @@
   --text-display-s: clamp(2.4rem, 6vw, 4rem);
   --text-display: clamp(2.75rem, 6.2vw, 5.5rem);
   --text-section: clamp(2rem, 3.7vw, 3.05rem);
-  --tracking-hero: -0.045em;
+  --tracking-hero: -0.025em;
   --rule-accent: 3px;
-  --radius-image: 0.25rem;
+  --radius-image: 0.75rem;
 
   --space-3xs: 0.125rem;
   --space-2xs: 0.25rem;

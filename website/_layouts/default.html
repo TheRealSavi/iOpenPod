@@ -49,7 +49,7 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&amp;family=Geist:wght@400;700&amp;family=Geist+Mono:wght@400;700&amp;display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;700&amp;family=Inter:wght@400;700&amp;family=Manrope:wght@700&amp;display=swap">
     <link rel="stylesheet" href="{{ '/site.css' | relative_url }}">
     <link rel="stylesheet" href="{{ '/theme.css' | relative_url }}">
 
@@ -69,11 +69,11 @@
         {
           "@type": "SoftwareApplication",
           "@id": "{{ software_id }}",
-          "name": "iOpenPod 2",
+          "name": "iOpenPod",
           "url": "{{ site_home_url }}",
           "description": {{ site.description | jsonify }},
           "softwareVersion": "2.0",
-          "releaseNotes": "In development; public 2.x downloads and store releases are planned.",
+          "releaseNotes": "Available for Windows on Microsoft Store. Direct downloads, PyPI, and other store releases are planned.",
           "applicationCategory": "MultimediaApplication",
           "operatingSystem": "Windows, macOS, Linux",
           "screenshot": "{{ site.default_og_image }}",

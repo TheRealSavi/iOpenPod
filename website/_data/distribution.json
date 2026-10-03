@@ -1,7 +1,7 @@
 {
-  "product": "iOpenPod 2",
-  "release_status": "In development",
-  "status_date": "2026-10-01",
+  "product": "iOpenPod",
+  "release_status": "Available on Microsoft Store; other channels planned",
+  "status_date": "2026-10-03",
   "platforms": [
     {
       "id": "windows",
@@ -9,7 +9,7 @@
       "target": "Windows 10 / 11 · x64",
       "channels": [
         {"id": "windows-binary", "name": "Direct download", "format": "Portable ZIP", "status": "planned", "url": null, "label": "Download for Windows"},
-        {"id": "microsoft-store", "name": "Microsoft Store", "format": "Install and update through the Store", "status": "planned", "url": null, "label": "Microsoft Store"}
+        {"id": "microsoft-store", "name": "Microsoft Store", "format": "Install and update through the Store", "status": "available", "url": "https://apps.microsoft.com/detail/9P2LXCHHWLG9", "label": "Get it from Microsoft Store"}
       ]
     },
     {
@@ -33,5 +33,5 @@
       ]
     }
   ],
-  "python": {"id": "pypi", "name": "PyPI", "format": "Python 3.12 · Windows, macOS & Linux", "status": "planned", "url": null, "label": "iOpenPod 2 on PyPI"}
+  "python": {"id": "pypi", "name": "PyPI", "format": "Python 3.12 · Windows, macOS & Linux", "status": "planned", "url": null, "label": "iOpenPod on PyPI"}
 }

@@ -4,9 +4,9 @@
 
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=plastic)](LICENSE)
 [![Platform: Win | Mac | Linux](https://img.shields.io/badge/Platform-Win%20%7C%20Mac%20%7C%20Linux-2ea44f.svg?style=plastic)](#download-and-install)
-[![GitHub Release](https://img.shields.io/github/v/release/TheRealSavi/iOpenPod?style=plastic&color=0a6fdb)](https://github.com/TheRealSavi/iOpenPod/releases/latest)
-[![GitHub Stars](https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=plastic&color=6e5494)](https://github.com/TheRealSavi/iOpenPod/stargazers)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/iopenpod?style=plastic&color=0a6fdb&cacheSeconds=86400)](https://pypi.org/project/iopenpod/)
+[![GitHub Release](https://img.shields.io/github/v/release/TheRealSavi/iOpenPod?style=plastic\&color=0a6fdb)](https://github.com/TheRealSavi/iOpenPod/releases/latest)
+[![GitHub Stars](https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=plastic\&color=6e5494)](https://github.com/TheRealSavi/iOpenPod/stargazers)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/iopenpod?style=plastic\&color=0a6fdb\&cacheSeconds=86400)](https://pypi.org/project/iopenpod/)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=plastic)](https://discord.gg/9Yy499Tf5d)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/johngibbons)
@@ -22,7 +22,7 @@ Built with Python and Qt6.
 [Discord](https://discord.gg/9Yy499Tf5d) ·
 [Support development](https://ko-fi.com/johngibbons)
 
-![Album browser](website/screenshots/iop2/albums.webp)
+![iOpenPod album library with album artwork and the selected album track list](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/album-library.webp)
 
 ## Download and install
 
@@ -30,12 +30,12 @@ Find native builds on the [releases page](https://github.com/TheRealSavi/iOpenPo
 and channel availability on the [website](https://therealsavi.github.io/iOpenPod/#install).
 For setup help, see the [installation guide](https://therealsavi.github.io/iOpenPod/install-help/).
 
-| Platform | Planned direct download | Planned store distribution |
-| --- | --- | --- |
-| Windows | Native x64 ZIP | Microsoft Store |
-| macOS | Native app archives for Apple Silicon and Intel | Mac App Store |
-| Linux | Native x64 tar.gz archive | Flathub (Flatpak) and Snap Store |
-| Python users | `iopenpod` 2.x on PyPI, requiring Python 3.12 | — |
+| Platform     | Planned direct download                         | Store distribution                                                |
+| ------------ | ----------------------------------------------- | ----------------------------------------------------------------- |
+| Windows      | Native x64 ZIP                                  | [Microsoft Store](https://apps.microsoft.com/detail/9P2LXCHHWLG9) |
+| macOS        | Native app archives for Apple Silicon and Intel | Mac App Store (planned)                                           |
+| Linux        | Native x64 tar.gz archive                       | Flathub (Flatpak) and Snap Store (planned)                        |
+| Python users | `iopenpod` 2.x on PyPI, requiring Python 3.12   | —                                                                 |
 
 Native downloads include the application runtime, so they do not need a separate
 Python installation. The native Mac build targets macOS 12.3 or later; acceptance
@@ -63,30 +63,44 @@ Homebrew, or a supported Linux package manager.
 
 ## What you can do
 
-- **Albums, artists, genres, and tracks.** Browse artwork, search your collection,
+* **Albums, artists, genres, and tracks.** Browse artwork, search your collection,
   and edit metadata and ratings.
-- **Playlists and Smart Playlists.** Arrange tracks, organize playlist folders,
+
+* **Playlists and Smart Playlists.** Arrange tracks, organize playlist folders,
   and create rule-based selections.
-- **Automatic media conversion.** Convert audio and video when needed and prepare
+
+* **Automatic media conversion.** Convert audio and video when needed and prepare
   artwork for your iPod model. Choose how incoming media is encoded in Settings.
-- **Playback and Synesthesia.** Listen to supported tracks with desktop media
+
+* **Playback and Synesthesia.** Listen to supported tracks with desktop media
   controls and explore music-reactive visuals.
-- **Photos.** Browse Photo Albums, inspect device-sized images, and export retained
+
+* **Photos.** Browse Photo Albums, inspect device-sized images, and export retained
   originals and supported image representations.
-- **Podcasts.** Find shows, manage subscriptions, and refresh feeds and artwork.
+
+* **Podcasts.** Find shows, manage subscriptions, and refresh feeds and artwork.
   Online discovery requires an internet connection.
-- **Scrobbling.** Optionally submit iPod music plays to Last.fm and ListenBrainz.
-- **Backup Snapshots.** Capture, browse, annotate, export, and restore local backups.
+
+* **Scrobbling.** Optionally submit iPod music plays to Last.fm and ListenBrainz.
+
+* **Backup Snapshots.** Capture, browse, annotate, export, and restore local backups.
   Interrupted writes expose explicit recovery actions.
-- **Appearance and conversion settings.** Choose light, dark, or system appearance
+
+* **Appearance and conversion settings.** Choose light, dark, or system appearance
   and configure how incoming media is prepared.
 
 Library edits save automatically by default. Enable **Draft all changes** to review
 and save those edits together. Sync always has its own selection and review flow.
 
-| Album details | Playlists |
+| Track metadata | Track artwork |
 | --- | --- |
-| ![iOpenPod album artwork and track details](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/album-details.webp) | ![iOpenPod playlist browser](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/playlists.webp) |
+| ![Edit Track dialog with title, artist, album, genre, composer, and track metadata](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/track-metadata.webp) | ![Edit Track artwork tab with cover art and controls to choose or clear artwork](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/track-artwork.webp) |
+
+| Smart Playlists | Backup Snapshots |
+| --- | --- |
+| ![Smart Playlist editor with rules for music released before 2000](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/smart-playlist.webp) | ![Backups page with saved Backup Snapshots and restore actions for the selected iPod](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/backups.webp) |
+
+![Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/audio-transcoding-settings.webp)
 
 ## How to use
 
@@ -104,22 +118,26 @@ Optional acoustic matching helps recognize the same recording after format or
 metadata changes. Sync can also recognize media from a previous successful Sync
 without generating a new fingerprint.
 
-![iOpenPod Sync Review showing selected changes before a device write](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/sync-review.webp)
+| Media folders | Sync selection |
+| --- | --- |
+| ![Choose Media Folders dialog with per-folder media types and subfolder scanning](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/media-folders.webp) | ![Sync media selection with albums grouped as selected, mixed, and deselected](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/sync-media-selection.webp) |
+
+![Sync Review with selected additions, unchecked removals, and items needing attention](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/sync-change-review.webp)
 
 ## iPod compatibility
 
 iOpenPod targets these iPod families. Available features depend on the model.
 
-| Family | Target |
-| --- | --- |
+| Family                | Target                                             |
+| --------------------- | -------------------------------------------------- |
 | iPod and iPod classic | Full-size generations 1–5.5 and the classic family |
-| iPod mini | 1st and 2nd generation |
-| iPod nano | 1st–7th generation |
+| iPod mini             | 1st and 2nd generation                             |
+| iPod nano             | 1st–7th generation                                 |
 
 **iPod shuffle, iPod touch, and iPhone are not yet supported.** The computer
 must already be able to read and write the iPod’s filesystem.
 
-![iOpenPod Photo Library with Photo Albums and an image inspector](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/photos.webp)
+![Photo Library with the Manage Albums dialog and selected photo inspector](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/2.0/website/screenshots/iop2/photo-albums.webp)
 
 ## Develop and contribute
 
@@ -151,12 +169,12 @@ changes, so we can agree on the approach.
 
 The application ships as one distribution with four internal boundaries:
 
-| Package | Responsibility |
-| --- | --- |
-| `src/iOpenPod` | Application workflows, state, and GUI |
-| `src/device_registry` | iPod identity and capabilities |
-| `src/iPodDB` | iPod database formats |
-| `src/storage` | Safe filesystem and removable-media operations |
+| Package               | Responsibility                                 |
+| --------------------- | ---------------------------------------------- |
+| `src/iOpenPod`        | Application workflows, state, and GUI          |
+| `src/device_registry` | iPod identity and capabilities                 |
+| `src/iPodDB`          | iPod database formats                          |
+| `src/storage`         | Safe filesystem and removable-media operations |
 
 Read [AGENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0/AGENTS.md), the [project context](https://github.com/TheRealSavi/iOpenPod/blob/2.0/CONTEXT.md), and the
 [documentation map](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/README.md) before making substantial changes.
@@ -165,9 +183,11 @@ Read [AGENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0/AGENTS.md), th
 
 ## Related projects
 
-- [libgpod](https://github.com/gtkpod/libgpod) - C library for iPod database access (the reference implementation this project learned from)
-- [gtkpod](https://github.com/gtkpod/gtkpod) - GTK+ iPod manager
-- [Rockbox](https://www.rockbox.org/) - Open-source firmware replacement for iPods
+* [libgpod](https://github.com/gtkpod/libgpod) - C library for iPod database access (the reference implementation this project learned from)
+
+* [gtkpod](https://github.com/gtkpod/gtkpod) - GTK+ iPod manager
+
+* [Rockbox](https://www.rockbox.org/) - Open-source firmware replacement for iPods
 
 ## Coming from iTunes or another iPod manager?
 
@@ -175,14 +195,16 @@ iOpenPod works with the library on your iPod and media folders on your computer.
 Start by browsing the existing library and capturing a Backup Snapshot, then choose
 what to bring over in Sync Review.
 
-- **No separate libgpod installation.** iOpenPod uses its own Python iPod database
+* **No separate libgpod installation.** iOpenPod uses its own Python iPod database
   implementation, informed by libgpod and gtkpod research.
-- **All features are free.** Donations support development without unlocking features.
-- **Review before writing.** Sync shows planned changes, with removals unchecked by
+
+* **All features are free.** Donations support development without unlocking features.
+
+* **Review before writing.** Sync shows planned changes, with removals unchecked by
   default. Backup Snapshots are user-controlled, and interrupted writes have
   explicit recovery actions.
 
----
+***
 
 ## Star history
 
@@ -198,7 +220,7 @@ what to bring over in Sync Review.
 
 <!-- markdownlint-enable MD033 -->
 
----
+***
 
 ## Support
 

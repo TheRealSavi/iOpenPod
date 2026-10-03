@@ -1,9 +1,13 @@
-# iOpenPod 2 website
+# iOpenPod website
 
-The Jekyll site in this directory describes iOpenPod 2 only. It shares the current
+The Jekyll site in this directory describes iOpenPod only. It shares the current
 application screenshots with the root README. Existing routes and GitHub Pages
 project hosting are retained; `relative_url` keeps links valid under `/iOpenPod`
 and when `baseurl` is empty for a custom domain.
+
+The website's product name is **iOpenPod**, without a version suffix. Use that
+name in visible copy, page titles, metadata, accessibility labels, and image text.
+Keep technical version requirements and release references separate from branding.
 
 ## Editing and preview
 
@@ -39,8 +43,8 @@ contains the scoped IOP2 layout and consumes the existing `site.css` foundation.
 The layout loads the readable CSS, `theme.js`, and `screenshot-viewer.js` directly;
 older `.min.*` assets are retained but are no longer runtime inputs.
 
-The Sync showcase alternates three compact screenshot-and-text rows on desktop:
-media selection, Sync Review, and conversion settings. On smaller screens each
+The Sync showcase alternates four compact screenshot-and-text rows on desktop:
+media folders, media selection, Sync Review, and conversion settings. On smaller screens each
 image appears above its description. The other product-tour sections are separate.
 
 Screenshot buttons open a native modal dialog. It supports actual-size zoom,
@@ -74,10 +78,14 @@ viewer against that preview:
 
 ```shell
 node tests/website/screenshot-viewer.cjs http://127.0.0.1:4000/iOpenPod/
+node tests/website/navigation.cjs http://127.0.0.1:4000/iOpenPod/
 ```
 
 This checks every screenshot in both themes, mobile and desktop sizes, keyboard
 focus, zoom, all dismissal methods, unwanted downloads, and logo pixel density.
+Navigation checks cover both pages, responsive header links, rounded images,
+the direct hero-to-Sync transition, and synchronized header/footer theme controls
+with keyboard activation and saved preferences.
 
 ## Migration and FAQ content
 
@@ -102,8 +110,9 @@ uv run python tests/website/check_seo.py .scratch/website-preview/iOpenPod
 ## Activate a release channel
 
 `_data/distribution.json` is the source for platform labels and release channels.
-Native Windows, Apple Silicon, Intel Mac, Linux, PyPI, Microsoft Store, Mac App
-Store, Flathub, and Snap Store entries start as `planned` with a null URL.
+Microsoft Store is available at [the iOpenPod listing](https://apps.microsoft.com/detail/9P2LXCHHWLG9)
+(product ID `9P2LXCHHWLG9`). Native Windows, Apple Silicon, Intel Mac, Linux, PyPI,
+Mac App Store, Flathub, and Snap Store entries remain `planned` with a null URL.
 
 Only set a channel to `available` when its actual **2.x** artifact or listing is
 publicly accessible and its packaging acceptance is complete. Set `url` to the
@@ -128,32 +137,35 @@ image and to the corresponding source, support, and license pages.
 
 ## Refresh screenshots
 
-From the repository root on Windows:
+The current set contains ten user-provided Windows screenshots captured on
+2026-10-03. They show a personal iPod and media library, including actual album
+artwork and photos. These are not the synthetic store-kit captures.
 
-```shell
-uv run --locked python -m scripts.capture_store_screenshots --output .scratch/website-iop2-captures
-```
+Use descriptive asset names and lossless WebP encoding (method 6). Keep each
+complete capture at its original dimensions; do not resize it, draw replacement
+UI, or add fake window frames. Set the matching width and height on each
+`product-shot.html` include so the page reserves the correct image proportions.
 
-This uses real application widgets with isolated settings, a virtual iPod, fictional
-media, and original geometric artwork. It does not read a personal library or
-write to a physical iPod. Keep complete captures; do not draw replacement UI or
-add fake window frames. Convert the seven mapped PNGs to WebP at quality 92,
-method 6, retaining their 1920 × 1080 dimensions:
-
-| Capture | Website asset |
+| Original capture | Website asset |
 | --- | --- |
-| `01-album-library.png` | `screenshots/iop2/albums.webp` |
-| `02-album-details.png` | `screenshots/iop2/album-details.webp` |
-| `03-playlists.png` | `screenshots/iop2/playlists.webp` |
-| `04-photo-library.png` | `screenshots/iop2/photos.webp` |
-| `05-sync-review.png` | `screenshots/iop2/sync-review.webp` |
-| `07-sync-selection.png` | `screenshots/iop2/sync-selection.webp` |
-| `08-transcoding-settings.png` | `screenshots/iop2/transcoding-settings.webp` |
+| `Screenshot 2026-10-03 082040.png` | `screenshots/iop2/album-library.webp` |
+| `Screenshot 2026-10-03 082421.png` | `screenshots/iop2/media-folders.webp` |
+| `Screenshot 2026-10-03 082541.png` | `screenshots/iop2/sync-media-selection.webp` |
+| `Screenshot 2026-10-03 082621.png` | `screenshots/iop2/sync-change-review.webp` |
+| `Screenshot 2026-10-03 082631.png` | `screenshots/iop2/audio-transcoding-settings.webp` |
+| `Screenshot 2026-10-03 082709.png` | `screenshots/iop2/track-metadata.webp` |
+| `Screenshot 2026-10-03 082716.png` | `screenshots/iop2/track-artwork.webp` |
+| `Screenshot 2026-10-03 082750.png` | `screenshots/iop2/backups.webp` |
+| `Screenshot 2026-10-03 082816.png` | `screenshots/iop2/smart-playlist.webp` |
+| `Screenshot 2026-10-03 083318.png` | `screenshots/iop2/photo-albums.webp` |
 
 Record the capture date, source, dimensions, encoding, and input/output SHA-256
 hashes in `screenshots/iop2/manifest.json`. Inspect every image after conversion.
-All public pages and the README must reference this IOP2 set. Older screenshot
-files remain in the repository for history; exclude them from the published site.
+Use the same assets in the homepage and root README, and keep their alternative
+text and captions accurate. The social preview uses `album-library.webp`.
+The separate synthetic capture script remains available for store-kit work; it
+does not reproduce this personal-library set. Older Original iOpenPod screenshots
+remain excluded from the published site.
 
 ## Product and distribution evidence
 

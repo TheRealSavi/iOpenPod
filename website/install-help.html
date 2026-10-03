@@ -1,6 +1,6 @@
 ---
-title: Install & setup — iOpenPod 2
-description: Plan your iOpenPod 2 installation on Windows, macOS, or Linux. Native downloads, PyPI, store availability, and media-tool requirements.
+title: Install & setup — iOpenPod
+description: Install iOpenPod for Windows from Microsoft Store, set up media tools, and prepare your first sync. Other download channels are planned.
 body_class: iop2-page setup-page
 permalink: /install-help/
 ---
@@ -8,11 +8,11 @@ permalink: /install-help/
 <main class="container setup-main" id="main-content">
   <header class="setup-intro">
     <h1>A little setup.<br>A lot of music.</h1>
-    <p>Installation and first steps for iOpenPod 2 on Windows, macOS, and Linux.</p>
+    <p>Installation and first steps for iOpenPod on Windows, macOS, and Linux.</p>
   </header>
   <div class="availability-note">
-    <strong>2.0 is in development.</strong>
-    <p>Public iOpenPod 2 binaries, the 2.x PyPI package, and store listings are planned. This guide describes the intended channels and the current development build. Check <a href="{{ '/#install' | relative_url }}">download availability</a> before installing.</p>
+    <strong>Available for Windows on Microsoft Store.</strong>
+    <p>Install iOpenPod from <a href="https://apps.microsoft.com/detail/9P2LXCHHWLG9">Microsoft Store</a>. Direct downloads, the PyPI package, and other stores are planned. Check <a href="{{ '/#install' | relative_url }}">download availability</a> before installing.</p>
   </div>
   <nav class="setup-index" aria-label="Setup topics">
     <a href="#native">Native downloads</a><a href="#stores">Stores</a><a href="#python">Python</a><a href="#helper-tools">Media tools</a><a href="#first-sync">First sync</a><a href="#troubleshooting">Troubleshooting</a>
@@ -21,27 +21,28 @@ permalink: /install-help/
     <h2>Native downloads</h2>
     <p>Native builds include Python and the application libraries. You do not need a separate Python installation. Download only a published <strong>2.x</strong> package for your operating system and processor.</p>
     <dl class="setup-facts">
-      <div><dt>Windows</dt><dd>The direct-download target is a portable x64 ZIP. Extract the complete folder before running iOpenPod; keep its supporting files together. The Microsoft Store candidate targets Windows 10 version 2004 or later.</dd></div>
+      <div><dt>Windows</dt><dd>The direct-download target is a portable x64 ZIP. Extract the complete folder before running iOpenPod; keep its supporting files together. The Microsoft Store app requires Windows 10 version 2004 or later, or Windows 11, on an x64 PC.</dd></div>
       <div><dt>macOS</dt><dd>Separate app archives are planned for Apple Silicon and Intel. The native build targets macOS 12.3 or later; testing on 12.3 is still pending. Public direct downloads require release signing and notarization.</dd></div>
       <div><dt>Linux</dt><dd>A native x64 tar.gz archive is planned. Extract it with executable permissions and symlinks preserved, then run the included launcher. Desktop-library requirements will accompany the release.</dd></div>
     </dl>
-    <p>Current packaging candidates are development artifacts. Follow the instructions and checksums shipped with the eventual public release.</p>
+    <p>Direct-download packages remain planned. Follow the instructions and checksums shipped with each public release.</p>
   </section>
   <section class="setup-section" id="stores">
     <h2>Install through your store</h2>
-    <p>The planned stores are <strong>Microsoft Store</strong>, <strong>Mac App Store</strong>, <strong>Flathub</strong>, and <strong>Snap Store</strong>. Each will have its own install link and update path in the <a href="{{ '/#install' | relative_url }}">download section</a> once published.</p>
+    <p>On Windows, <a href="https://apps.microsoft.com/detail/9P2LXCHHWLG9">get iOpenPod from Microsoft Store</a>. Open the listing, install the app, then launch iOpenPod from the Start menu. The Store handles installation and updates; you do not need a separate Python installation.</p>
+    <p><strong>Mac App Store</strong>, <strong>Flathub</strong>, and <strong>Snap Store</strong> remain planned. Check the <a href="{{ '/#install' | relative_url }}">download section</a> for availability.</p>
     <p>Store availability is independent: a release on one channel does not mean the others are ready. Sandboxed builds need verified access to your media folders, removable iPod, and external media tools. Their release instructions will explain the required permissions.</p>
   </section>
   <section class="setup-section" id="python">
     <h2>The Python option</h2>
-    <p>The iOpenPod 2 package requires <strong>Python 3.12</strong>. The command below is for the future 2.x PyPI release; it deliberately requires version 2 and will fail until a matching release exists.</p>
+    <p>The iOpenPod package requires <strong>Python 3.12</strong>. The command below is for the future 2.x PyPI release; it deliberately requires version 2 and will fail until a matching release exists.</p>
     <pre><code>uv tool install --python 3.12 "iopenpod&gt;=2,&lt;3"
 iopenpod</code></pre>
     <p>Use <a href="https://docs.astral.sh/uv/getting-started/installation/">uv’s installation guide</a> to set up uv. After a 2.x tool install, update with <code>uv tool upgrade iopenpod</code>. If your shell cannot find the launcher, run <code>uv tool update-shell</code> and reopen the terminal.</p>
     <details>
       <summary>Working from a 2.0 source checkout</summary>
       <div class="details-body">
-        <p>From the root of this iOpenPod 2 checkout, use the locked development environment:</p>
+        <p>From the root of this iOpenPod checkout, use the locked development environment:</p>
         <pre><code>uv sync --locked
 uv run iopenpod</code></pre>
         <p>The version in <code>pyproject.toml</code> must be 2.x. The project’s README and packaging guide cover development checks and native builds.</p>
@@ -94,7 +95,7 @@ uv run iopenpod</code></pre>
       <summary>A write was interrupted</summary>
       <div class="details-body"><p>Reconnect the same iPod and follow the recovery action shown by iOpenPod. Keep recovery files in place until recovery completes. Backup Snapshots are an additional user-controlled copy of your data.</p></div>
     </details>
-    <p class="support-link">Still stuck? <a href="https://github.com/TheRealSavi/iOpenPod/issues">Report an issue</a> with your iOpenPod 2 version, install channel, operating system, iPod model, and steps to reproduce.</p>
+    <p class="support-link">Still stuck? <a href="https://github.com/TheRealSavi/iOpenPod/issues">Report an issue</a> with your iOpenPod version, install channel, operating system, iPod model, and steps to reproduce.</p>
   </section>
 </main>
 {% include product-footer.html %}

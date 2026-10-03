@@ -31,13 +31,18 @@ const preview = process.argv[2] || "http://127.0.0.1:8876/iOpenPod/";
         ), "Logo must have enough pixels for a high-density display");
 
         const triggers = page.locator("[data-screenshot-trigger]");
-        assert.equal(await triggers.count(), 7);
+        assert.equal(await triggers.count(), 9);
         const dialog = page.getByRole("dialog", { name: "Screenshot", exact: true });
         const close = dialog.getByRole("button", { name: "Close", exact: true });
         const stage = dialog.getByRole("region");
         for (let index = 0; index < await triggers.count(); index += 1) {
           const trigger = triggers.nth(index);
           await trigger.scrollIntoViewIfNeeded();
+          await trigger.locator("img").evaluate((element) => element.decode());
+          assert(await trigger.locator("img").evaluate((element) =>
+            Number(element.getAttribute("width")) === element.naturalWidth &&
+            Number(element.getAttribute("height")) === element.naturalHeight
+          ), "Screenshot dimensions must match the capture");
           const scrollBefore = await page.evaluate(() => scrollY);
           const source = await trigger.locator("img").getAttribute("src");
           const caption = await trigger.locator("..").locator("figcaption").textContent();
@@ -75,11 +80,13 @@ const preview = process.argv[2] || "http://127.0.0.1:8876/iOpenPod/";
           }
 
           await dialog.getByRole("button", { name: "Actual size", exact: true }).click();
-          assert.equal(await image.evaluate((element) => element.clientWidth), 1920);
+          assert(await image.evaluate((element) => element.clientWidth === element.naturalWidth));
           assert.equal(await dialog.getByRole("button", { name: "Fit to window" }).getAttribute("aria-pressed"), "true");
           await stage.focus();
-          await page.keyboard.press("ArrowRight");
-          await page.waitForFunction(() => document.querySelector(".screenshot-viewer-stage").scrollLeft > 0);
+          if (await stage.evaluate((element) => element.scrollWidth > element.clientWidth)) {
+            await page.keyboard.press("ArrowRight");
+            await page.waitForFunction(() => document.querySelector(".screenshot-viewer-stage").scrollLeft > 0);
+          }
           await dialog.getByRole("button", { name: "Fit to window" }).click();
           assert.equal(await stage.evaluate((element) => element.scrollLeft), 0);
           assert(await stage.evaluate((element) => element.scrollWidth <= element.clientWidth));
@@ -98,7 +105,7 @@ const preview = process.argv[2] || "http://127.0.0.1:8876/iOpenPod/";
           assert.equal(page.url(), originalURL, "Opening a screenshot navigated away");
         }
         await context.close();
-        console.log(`PASS: ${colorScheme}, ${viewport.width}x${viewport.height}, five screenshots`);
+        console.log(`PASS: ${colorScheme}, ${viewport.width}x${viewport.height}, ten screenshots`);
       }
     }
     assert.deepEqual(failures, []);

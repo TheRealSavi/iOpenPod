@@ -10,6 +10,10 @@
   background: var(--color-paper);
 }
 
+.iop2-page img {
+  border-radius: var(--radius-image);
+}
+
 .iop2-page .container {
   width: min(100% - var(--space-lg) * 2, var(--layout-max));
   padding-inline: 0;
@@ -27,10 +31,12 @@
 
 .product-nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
   min-height: var(--nav-height);
+  padding-block: var(--space-sm);
   border-bottom: var(--rule-hair) solid var(--color-rule);
 }
 
@@ -51,13 +57,8 @@
   width: var(--space-lg);
   height: var(--space-lg);
 }
-.version-mark {
-  color: var(--color-accent);
-}
-
 .download-nav,
 .text-link,
-.page-index a,
 .footer-links a,
 .setup-index a,
 .channel-link {
@@ -78,12 +79,15 @@
 }
 
 .product-nav-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
   align-items: center;
-  gap: var(--space-sm);
-  flex: none;
+  justify-content: space-between;
+  gap: var(--space-xs) var(--space-sm);
+  width: 100%;
 }
 
+.utility-nav,
 .donation-nav {
   display: inline-flex;
   align-items: center;
@@ -95,7 +99,8 @@
   white-space: nowrap;
 }
 
-.donation-nav:hover {
+.donation-nav:hover,
+.utility-nav:hover {
   color: var(--color-ink);
   text-decoration: underline;
 }
@@ -182,6 +187,10 @@
 
 .intro-explore {
   margin-top: var(--space-sm);
+}
+
+.intro-visual {
+  margin-bottom: var(--space-2xl);
 }
 
 .intro-aside {
@@ -323,18 +332,19 @@ html.screenshot-viewer-open,
 }
 
 .screenshot-viewer-image {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  width: auto;
+  height: auto;
+  max-height: 100%;
+  margin-inline: auto;
 }
 
 .screenshot-viewer[data-zoomed="true"] .screenshot-viewer-image {
   width: auto;
   height: auto;
   max-width: none;
+  max-height: none;
 }
 
-.page-index,
 .setup-index {
   display: flex;
   flex-wrap: wrap;
@@ -344,21 +354,16 @@ html.screenshot-viewer-open,
   border-top: var(--rule-hair) solid var(--color-rule);
   border-bottom: var(--rule-hair) solid var(--color-rule);
 }
-.page-index a,
 .setup-index a {
   color: var(--color-ink-2);
   font-size: var(--text-sm);
   text-decoration: none;
 }
-.page-index a:hover,
 .setup-index a:hover {
   color: var(--color-ink);
   text-decoration: underline;
 }
 
-.tour-section {
-  padding-block: var(--space-3xl) var(--space-2xl);
-}
 .section-intro {
   display: grid;
   gap: var(--space-lg);
@@ -366,8 +371,8 @@ html.screenshot-viewer-open,
 }
 .section-intro h2,
 .compatibility-section h2 {
-  font-size: var(--text-section);
-  line-height: 1.08;
+  font-size: clamp(var(--text-xl), 4vw, var(--text-2xl));
+  line-height: 1.12;
 }
 .section-intro > p {
   color: var(--color-ink-2);
@@ -375,18 +380,6 @@ html.screenshot-viewer-open,
   align-self: end;
 }
 
-.feature-notes {
-  display: grid;
-  gap: var(--space-lg);
-  margin-top: var(--space-xl);
-}
-.feature-notes h3 {
-  margin-bottom: var(--space-xs);
-}
-.feature-notes p {
-  max-width: 52ch;
-  color: var(--color-ink-2);
-}
 .sync-band {
   background: var(--color-paper-2);
   padding-block: var(--space-2xl);
@@ -413,6 +406,13 @@ html.screenshot-viewer-open,
 }
 .sync-showcase-copy h3 {
   margin-bottom: var(--space-sm);
+  max-width: 24ch;
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.35;
 }
 .sync-showcase-copy p {
   max-width: 48ch;
@@ -664,6 +664,7 @@ html.screenshot-viewer-open,
 .footer-links a:hover {
   text-decoration: underline;
 }
+.product-nav-actions .theme-toggle,
 .footer-links .theme-toggle {
   font: inherit;
   font-size: var(--text-sm);
@@ -791,7 +792,9 @@ html.screenshot-viewer-open,
     font-size: var(--text-base);
   }
   .product-nav-actions {
-    gap: var(--space-lg);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-md);
   }
   .download-name-long,
   .download-arrow {
@@ -802,10 +805,6 @@ html.screenshot-viewer-open,
   }
   .intro {
     padding-block: var(--space-3xl) var(--space-xl);
-  }
-  .feature-notes {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-xl);
   }
   .capability-list > div {
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
@@ -821,6 +820,9 @@ html.screenshot-viewer-open,
 }
 
 @media (min-width: 60rem) {
+  .product-nav-actions {
+    width: auto;
+  }
   .sync-showcase {
     gap: var(--space-xl);
   }

@@ -1,11 +1,11 @@
-title: iOpenPod 2
+title: iOpenPod
 baseurl: /iOpenPod
 url: https://therealsavi.github.io
 author: John Gibbons
 source_url: https://github.com/TheRealSavi/iOpenPod/tree/2.0
 donation_url: https://ko-fi.com/johngibbons
-description: iOpenPod 2 is a free, open-source desktop iPod manager in development for Windows, macOS, and Linux.
-default_og_image: https://therealsavi.github.io/iOpenPod/screenshots/iop2/albums.webp
+description: iOpenPod is a free, open-source desktop iPod manager. Available for Windows on Microsoft Store, with macOS and Linux releases planned.
+default_og_image: https://therealsavi.github.io/iOpenPod/screenshots/iop2/album-library.webp
 google_site_verification: google9044a61ef03e1fae
 
 plugins:

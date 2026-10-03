@@ -1,9 +1,9 @@
 (() => {
   const storageKey = "iopenpod-theme";
   const root = document.documentElement;
-  const toggle = document.querySelector("[data-theme-toggle]");
+  const toggles = document.querySelectorAll("[data-theme-toggle]");
 
-  if (!toggle) {
+  if (!toggles.length) {
     return;
   }
 
@@ -43,10 +43,12 @@
     const currentTheme = activeTheme();
     const nextTheme = currentTheme === "dark" ? "light" : "dark";
 
-    toggle.textContent = nextTheme === "dark" ? "Dark mode" : "Light mode";
-    toggle.setAttribute("aria-label", `Switch to ${nextTheme} mode`);
-    toggle.setAttribute("aria-pressed", currentTheme === "dark" ? "true" : "false");
-    toggle.dataset.themeCurrent = currentTheme;
+    toggles.forEach((toggle) => {
+      toggle.textContent = nextTheme === "dark" ? "Dark mode" : "Light mode";
+      toggle.setAttribute("aria-label", `Switch to ${nextTheme} mode`);
+      toggle.setAttribute("aria-pressed", currentTheme === "dark" ? "true" : "false");
+      toggle.dataset.themeCurrent = currentTheme;
+    });
 
     if (!savedTheme) {
       root.removeAttribute("data-theme");
@@ -80,8 +82,10 @@
 
   updateToggle();
 
-  toggle.addEventListener("click", () => {
-    applyTheme(activeTheme() === "dark" ? "light" : "dark");
+  toggles.forEach((toggle) => {
+    toggle.addEventListener("click", () => {
+      applyTheme(activeTheme() === "dark" ? "light" : "dark");
+    });
   });
 
   media.addEventListener("change", () => {

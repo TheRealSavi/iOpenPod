@@ -2,17 +2,17 @@
   {
     "id": "sync-without-itunes",
     "question": "How do I sync my iPod without iTunes?",
-    "answer": "iOpenPod 2 lets you select a mounted iPod, choose media folders on your computer, review additions, updates, and removals, then apply your Sync Selection. You do not need iTunes for that workflow. Version 2.0 is still in development; public 2.x downloads are not available yet."
+    "answer": "iOpenPod lets you select a mounted iPod, choose media folders on your computer, review additions, updates, and removals, then apply your Sync Selection. You do not need iTunes for that workflow. The Windows app is available from Microsoft Store; other download channels remain planned."
   },
   {
     "id": "python",
     "question": "Do I need Python to use iOpenPod?",
-    "answer": "Planned native iOpenPod 2 builds include the Python runtime. Running from source or using the future 2.x PyPI package requires Python 3.12."
+    "answer": "The Microsoft Store app includes the Python runtime, so no separate Python installation is needed. Planned native downloads also include it. Running from source or using the future 2.x PyPI package requires Python 3.12."
   },
   {
     "id": "flac",
     "question": "Can I put FLAC files on an iPod?",
-    "answer": "iOpenPod 2 can convert FLAC and other supported source formats to audio your iPod can play during Sync. The output depends on your iPod model and conversion settings. FFmpeg and FFprobe are required; this does not add native FLAC playback to Apple’s iPod firmware."
+    "answer": "iOpenPod can convert FLAC and other supported source formats to audio your iPod can play during Sync. The output depends on your iPod model and conversion settings. FFmpeg and FFprobe are required; this does not add native FLAC playback to Apple’s iPod firmware."
   },
   {
     "id": "openpod",
@@ -22,12 +22,12 @@
   {
     "id": "legacy-tools",
     "question": "What should I use if I am migrating from gtkpod, YamiPod, CopyPod, EphPod, Strawberry, or Clementine?",
-    "answer": "iOpenPod 2 is being developed as an alternative for managing filesystem-accessible iPods on Windows, macOS, and Linux. Its iPodDB engine does not depend on libgpod. Start by browsing the existing iPod library, keep a Backup Snapshot, and review your first Sync carefully. Direct import of another manager’s application database or settings is not promised."
+    "answer": "iOpenPod is being developed as an alternative for managing filesystem-accessible iPods on Windows, macOS, and Linux. Its iPodDB engine does not depend on libgpod. Start by browsing the existing iPod library, keep a Backup Snapshot, and review your first Sync carefully. Direct import of another manager’s application database or settings is not promised."
   },
   {
     "id": "platforms",
     "question": "Does it work on Linux and macOS?",
-    "answer": "Windows, macOS, and Linux are iOpenPod 2’s target platforms. Native packages, a Python package, and store releases are planned. Public 2.x downloads are not available yet, and platform and device validation are ongoing."
+    "answer": "Windows, macOS, and Linux are iOpenPod’s target platforms. The Windows app is available from Microsoft Store. macOS and Linux releases, direct downloads, and the Python package remain planned. Platform and device validation are ongoing."
   },
   {
     "id": "erase",
@@ -42,7 +42,7 @@
   {
     "id": "itunes-library",
     "question": "My iPod was previously managed by iTunes. Will I lose my music?",
-    "answer": "iOpenPod 2 reads the existing iPod database so you can browse the music already on a supported device. Connecting and browsing does not require replacing the library. Library edits save automatically by default; enable Draft all changes if you want to review them first. Sync has a separate review step. Keep a Backup Snapshot before making changes."
+    "answer": "iOpenPod reads the existing iPod database so you can browse the music already on a supported device. Connecting and browsing does not require replacing the library. Library edits save automatically by default; enable Draft all changes if you want to review them first. Sync has a separate review step. Keep a Backup Snapshot before making changes."
   },
   {
     "id": "detection",
@@ -72,11 +72,11 @@
   {
     "id": "multiple-computers",
     "question": "Can I sync the same iPod from multiple computers?",
-    "answer": "iOpenPod 2 stores matching information on the iPod and scans each computer’s selected media folders separately. Always review each computer’s Sync Selection: their files can differ, and a track missing from one computer is not necessarily something you want removed from the iPod. Device validation is ongoing."
+    "answer": "iOpenPod stores matching information on the iPod and scans each computer’s selected media folders separately. Always review each computer’s Sync Selection: their files can differ, and a track missing from one computer is not necessarily something you want removed from the iPod. Device validation is ongoing."
   },
   {
     "id": "ipod-touch",
     "question": "Does iOpenPod support iPod touch?",
-    "answer": "iPod touch and iPhone are outside the iOpenPod 2 target because they use a different device-access model. The current target covers filesystem-accessible full-size iPods, iPod classic, iPod mini, and iPod nano. iPod shuffle is also outside the 2.0 target; capabilities vary by model."
+    "answer": "iPod touch and iPhone are outside the iOpenPod target because they use a different device-access model. The current target covers filesystem-accessible full-size iPods, iPod classic, iPod mini, and iPod nano. iPod shuffle is also outside the 2.0 target; capabilities vary by model."
   }
 ]
