@@ -28,7 +28,11 @@ datas += collect_data_files(
     "librosa", include_py_files=True,
     excludes=["**/__pycache__/**", "**/*.pyc", "**/*.nbc", "**/*.nbi"],
 )
-binaries = collect_dynamic_libs("wasmtime")
+# The Linux wheel uses _libwasmtime.so, which the default lib*.so glob misses.
+# Preserve the platform subdirectory expected by wasmtime._ffi.
+binaries = collect_dynamic_libs(
+    "wasmtime", search_patterns=["*.dll", "*.dylib", "*.so"],
+)
 # zoneinfo loads tzdata's geographical resource packages dynamically on Windows.
 hiddenimports = collect_submodules("librosa") + collect_submodules("tzdata") + collect_submodules("keyring.backends") + [
     "iOpenPod.app.synesthesia.dsp",

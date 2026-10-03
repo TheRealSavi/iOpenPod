@@ -95,6 +95,11 @@ acknowledgements, icon permission, HASHAB notice, installed
 runtime dependency inventory, and dependency license files. `licenses/upstream/`
 adds the full source-derived notices, source manifest, and native-library audit
 materials. The native bundle excludes unused Qt PDF and Virtual Keyboard plugins.
+Notice collection excludes Python code, native binaries, and dSYM debug bundles,
+including PyObjC's copying tests whose names otherwise match license filenames.
+Wasmtime's native library is collected with an explicit `*.so` pattern on Linux
+because its `_libwasmtime.so` name does not match PyInstaller's default `lib*.so`.
+The bundle preserves the package-relative platform directory used by its loader.
 Windows libsndfile is rebuilt from pinned source with external codecs disabled;
 the package includes its exact build record. See
 [`packaging/third-party`](../packaging/third-party) for regeneration instructions.

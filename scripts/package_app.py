@@ -110,6 +110,23 @@ def collect_notices() -> None:
         directory.mkdir(exist_ok=True)
         copied: list[str] = []
         for path in dist.files or ():
+            # PyObjC ships copying tests and their dSYM files. Matching that
+            # word alone would turn native test/debug binaries into notices.
+            if path.suffix.lower() in {
+                ".py",
+                ".pyc",
+                ".pyo",
+                ".pyi",
+                ".so",
+                ".dylib",
+                ".dll",
+                ".pyd",
+                ".o",
+                ".obj",
+                ".a",
+                ".lib",
+            } or any(part.lower().endswith(".dsym") for part in path.parts):
+                continue
             if not any(
                 word in path.name.lower()
                 for word in ("license", "licence", "copying", "notice")
