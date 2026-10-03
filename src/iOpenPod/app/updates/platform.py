@@ -72,13 +72,27 @@ def close_update_runtime() -> None:
         _runtime_initialized = False
 
 
-def create_update_provider(window_id: int) -> UpdateProvider:
+def detect_install_channel() -> InstallChannel:
+    """Inspect installation evidence without creating an updater or requiring a window."""
     if sys.platform == "linux":
-        return UpdateProvider(_linux_channel())
+        return _linux_channel()
     if sys.platform == "darwin":
-        return UpdateProvider(_macos_channel())
+        return _macos_channel()
+    if sys.platform == "win32":
+        initialize_update_runtime()
+        if _runtime_error:
+            raise RuntimeError(_runtime_error)
+        from .windows import detect_channel
+
+        channel = detect_channel()
+        if channel is not InstallChannel.UNPACKAGED:
+            return channel
+    return _unpackaged_channel()
+
+
+def create_update_provider(window_id: int) -> UpdateProvider:
     if sys.platform != "win32":
-        return UpdateProvider(_unpackaged_channel())
+        return UpdateProvider(detect_install_channel())
     if _runtime_error:
         raise RuntimeError(_runtime_error)
     from .windows import create_store_provider

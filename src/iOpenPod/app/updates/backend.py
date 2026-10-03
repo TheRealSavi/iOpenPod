@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+from iOpenPod.app.display_text import source_text
+
 
 class InstallChannel(StrEnum):
     MICROSOFT_STORE = "microsoft-store"
@@ -16,6 +18,24 @@ class InstallChannel(StrEnum):
     FLATPAK = "flatpak"
     SNAP = "snap"
     UNKNOWN = "unknown"
+
+    @property
+    def display_name(self) -> str:
+        """Shared source copy for startup diagnostics and translated presentation."""
+        return {
+            InstallChannel.MICROSOFT_STORE: source_text("Microsoft Store"),
+            InstallChannel.WINDOWS_PACKAGE: source_text("Windows package (sideloaded)"),
+            InstallChannel.UNPACKAGED: source_text("Unpackaged"),
+            InstallChannel.FROZEN: source_text("Standalone executable"),
+            InstallChannel.SOURCE: source_text("Python / source"),
+            InstallChannel.MAC_APP_STORE: source_text(
+                "Mac App Store (receipt detected)"
+            ),
+            InstallChannel.APP_STORE_TEST: source_text("App Store testing"),
+            InstallChannel.FLATPAK: source_text("Flatpak"),
+            InstallChannel.SNAP: source_text("Snap"),
+            InstallChannel.UNKNOWN: source_text("Unknown source"),
+        }[self]
 
 
 class UpdateOutcome(StrEnum):

@@ -97,7 +97,6 @@ def initialize_application() -> None:
         DeviceSettingsStore,
         create_global_settings_store,
     )
-    from iOpenPod.app.core.version import get_version
     from storage import Storage
 
     storage = Storage()
@@ -111,13 +110,26 @@ def initialize_application() -> None:
 
     logger.info("iOpenPod Starting...")
 
-    logger.info("Version: %s", get_version())
+    _log_startup_version()
 
     logger.info("Log Path: %s", log_path)
 
     from iOpenPod.app.core.certifi_ssl import install_certifi_ssl
 
     install_certifi_ssl()
+
+
+def _log_startup_version() -> None:
+    from iOpenPod.app.core.version import get_version
+    from iOpenPod.app.updates.backend import InstallChannel
+    from iOpenPod.app.updates.platform import detect_install_channel
+
+    try:
+        channel = detect_install_channel()
+    except Exception:
+        logger.warning("Could not detect installation source", exc_info=True)
+        channel = InstallChannel.UNKNOWN
+    logger.info("Version: %s · %s", get_version(), channel.display_name)
 
 
 def run_cli(

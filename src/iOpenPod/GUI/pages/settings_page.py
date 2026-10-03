@@ -48,6 +48,7 @@ from iOpenPod.GUI.dialogs.linux_identity_setup import (
     LinuxIdentityUninstallDialog,
 )
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
@@ -382,23 +383,11 @@ class SettingsPage(QWidget):
         self._update_version()
 
     def _update_version(self) -> None:
-        channel_names = {
-            InstallChannel.MICROSOFT_STORE: self.tr("Microsoft Store"),
-            InstallChannel.WINDOWS_PACKAGE: self.tr("Windows package (sideloaded)"),
-            InstallChannel.UNPACKAGED: self.tr("Unpackaged"),
-            InstallChannel.FROZEN: self.tr("Standalone executable"),
-            InstallChannel.SOURCE: self.tr("Python / source"),
-            InstallChannel.MAC_APP_STORE: self.tr("Mac App Store (receipt detected)"),
-            InstallChannel.APP_STORE_TEST: self.tr("App Store testing"),
-            InstallChannel.FLATPAK: self.tr("Flatpak"),
-            InstallChannel.SNAP: self.tr("Snap"),
-            InstallChannel.UNKNOWN: self.tr("Unknown source"),
-        }
         self._version_row.set_copy(
             self.tr("Version"),
             self.tr("%1 · %2")
             .replace("%1", self._version)
-            .replace("%2", channel_names[self._install_channel]),
+            .replace("%2", workflow_text(self._install_channel.display_name)),
         )
         self._check_updates.setText(
             self.tr("Checking…") if self._update_busy else self.tr("Check for updates")

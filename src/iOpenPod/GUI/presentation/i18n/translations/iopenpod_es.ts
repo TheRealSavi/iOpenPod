@@ -5162,43 +5162,43 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Microsoft Store</source>
-        <translation>Microsoft Store</translation>
+        <translation type="vanished">Microsoft Store</translation>
     </message>
     <message>
         <source>Windows package (sideloaded)</source>
-        <translation>Paquete de Windows (instalación manual)</translation>
+        <translation type="vanished">Paquete de Windows (instalación manual)</translation>
     </message>
     <message>
         <source>Unpackaged</source>
-        <translation>Sin empaquetar</translation>
+        <translation type="vanished">Sin empaquetar</translation>
     </message>
     <message>
         <source>Standalone executable</source>
-        <translation>Ejecutable independiente</translation>
+        <translation type="vanished">Ejecutable independiente</translation>
     </message>
     <message>
         <source>Python / source</source>
-        <translation>Python / código fuente</translation>
+        <translation type="vanished">Python / código fuente</translation>
     </message>
     <message>
         <source>Mac App Store (receipt detected)</source>
-        <translation>Mac App Store (recibo detectado)</translation>
+        <translation type="vanished">Mac App Store (recibo detectado)</translation>
     </message>
     <message>
         <source>App Store testing</source>
-        <translation>Pruebas del App Store</translation>
+        <translation type="vanished">Pruebas del App Store</translation>
     </message>
     <message>
         <source>Flatpak</source>
-        <translation>Flatpak</translation>
+        <translation type="vanished">Flatpak</translation>
     </message>
     <message>
         <source>Snap</source>
-        <translation>Snap</translation>
+        <translation type="vanished">Snap</translation>
     </message>
     <message>
         <source>Unknown source</source>
-        <translation>Origen desconocido</translation>
+        <translation type="vanished">Origen desconocido</translation>
     </message>
     <message>
         <source>%1 · %2</source>
@@ -7433,6 +7433,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Otra operación está usando esta copia de seguridad o este iPod.</translation>
     </message>
     <message>
+        <source>App Store testing</source>
+        <translation>Pruebas del App Store</translation>
+    </message>
+    <message>
         <source>Apply and independently verify supplied native codec facts for replacement content; retain its captured file dependency and the Track&apos;s identity.</source>
         <translation>Aplicar y verificar de forma independiente los datos nativos de códec proporcionados para el contenido de reemplazo; conservar la dependencia del archivo capturado y la identidad de la pista.</translation>
     </message>
@@ -7833,6 +7837,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Calculando la huella de la imagen {index} de {total} del iPod…</translation>
     </message>
     <message>
+        <source>Flatpak</source>
+        <translation>Flatpak</translation>
+    </message>
+    <message>
         <source>Folder Tracks are derived from descendant Playlists.</source>
         <translation>Las pistas de las carpetas se obtienen de las listas que contienen.</translation>
     </message>
@@ -7945,6 +7953,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Los recursos de letras repiten una identidad de pista.</translation>
     </message>
     <message>
+        <source>Mac App Store (receipt detected)</source>
+        <translation>Mac App Store (recibo detectado)</translation>
+    </message>
+    <message>
         <source>Maintain Master membership, name, and required native browse structures.</source>
         <translation>Mantener el contenido y el nombre de la lista principal y las estructuras nativas de navegación obligatorias.</translation>
     </message>
@@ -7983,6 +7995,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Metadata was verified but the Host could not confirm its flush: {detail}</source>
         <translation>Los metadatos se verificaron, pero el equipo no pudo confirmar su guardado completo: {detail}</translation>
+    </message>
+    <message>
+        <source>Microsoft Store</source>
+        <translation>Microsoft Store</translation>
     </message>
     <message>
         <source>More than one Playlist carries the special Podcasts marker.</source>
@@ -8357,6 +8373,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Guardando archivos de biblioteca: {completed} de {total}</translation>
     </message>
     <message>
+        <source>Python / source</source>
+        <translation>Python / código fuente</translation>
+    </message>
+    <message>
         <source>Rating must be between 0 and 100.</source>
         <translation>La valoración debe estar entre 0 y 100.</translation>
     </message>
@@ -8689,6 +8709,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>El valor de la lista inteligente está fuera del rango permitido.</translation>
     </message>
     <message>
+        <source>Snap</source>
+        <translation>Snap</translation>
+    </message>
+    <message>
         <source>Some folder contents were unavailable; scanning continued: {error}</source>
         <translation>Parte del contenido de la carpeta no estaba disponible; el análisis continuó: {error}</translation>
     </message>
@@ -8715,6 +8739,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Staging and verifying Library files…</source>
         <translation>Preparando y verificando archivos de biblioteca en el área temporal…</translation>
+    </message>
+    <message>
+        <source>Standalone executable</source>
+        <translation>Ejecutable independiente</translation>
     </message>
     <message>
         <source>Starting Host media preparation</source>
@@ -9203,6 +9231,18 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>The source database is signed; supply its supported signature target before editing.</source>
         <translation>La base de datos de origen está firmada; proporciona su destino de firma compatible antes de editar.</translation>
+    </message>
+    <message>
+        <source>Unknown source</source>
+        <translation>Origen desconocido</translation>
+    </message>
+    <message>
+        <source>Unpackaged</source>
+        <translation>Sin empaquetar</translation>
+    </message>
+    <message>
+        <source>Windows package (sideloaded)</source>
+        <translation>Paquete de Windows (instalación manual)</translation>
     </message>
     <message>
         <source>{value} (units unknown)</source>
