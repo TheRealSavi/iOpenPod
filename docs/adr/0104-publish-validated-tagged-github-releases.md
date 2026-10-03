@@ -28,3 +28,11 @@ decision. The documented licensing/source requirements still apply, including th
 missing Mac-specific and Linux native evidence. Production signing, notarization,
 Store submission, and PyPI publication remain separate work. GitHub release notes
 must describe the unsigned downloads and acceptance limits truthfully.
+
+The owner subsequently requested the same tag-driven flow plus a manual release
+button. A manual dispatch on `main` can request publication of its checked-out
+version. Native builds run alongside Health to retain candidate artifacts even
+when tests fail; publication still requires both to pass. Only after release
+assembly succeeds may the publication job create the matching tag at the built
+commit. Existing tags are never moved. Publication stays in the same workflow
+because tags created with `GITHUB_TOKEN` do not trigger another workflow run.

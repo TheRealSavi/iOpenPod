@@ -1,0 +1,61 @@
+name: Build and deploy Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "tests/website/check_seo.py"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths:
+      - "website/**"
+      - "tests/website/check_seo.py"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+      - name: Build website with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./website
+          destination: ./_site
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.7"
+      - name: Check rendered FAQ and structured data
+        run: uv run --no-project --managed-python --python 3.12 python tests/website/check_seo.py _site
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./_site
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,6 +1,6 @@
-# iOpenPod 2
+# iOpenPod
 
-iOpenPod 2 manages filesystem-accessible iPods on Windows, macOS, and Linux.
+iOpenPod manages filesystem-accessible iPods on Windows, macOS, and Linux.
 
 ## Downloads
 

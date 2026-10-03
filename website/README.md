@@ -7,6 +7,18 @@ and when `baseurl` is empty for a custom domain.
 
 ## Editing and preview
 
+`.github/workflows/pages.yml` builds this directory with Jekyll when website files
+change on `main`, on relevant pull requests, and on manual dispatch. It validates
+the rendered FAQ and structured data before uploading the Pages artifact. Only
+`main` deploys, through the `github-pages` environment. Website deployment is
+independent of application builds and tests.
+
+The repository's **Settings → Pages → Build and deployment → Source** must be
+**GitHub Actions**, with `main` allowed in the `github-pages` environment. The
+previous `1.x` branch's `/docs` source does not build this website. After pushing
+the workflow, **Actions → Build and deploy Pages → Run workflow** on `main` can
+trigger a deployment without another website edit.
+
 `index.html` is the product tour and download directory. `install-help.html` is
 the setup guide. `_includes/` owns the shared navigation, footer, screenshot
 figures, and download rows. `_layouts/default.html` owns metadata and asset loading.

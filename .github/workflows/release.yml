@@ -2,6 +2,11 @@ name: Build and release
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish a release (on main, creates v<pyproject version> after checks pass)"
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
   pull_request:
@@ -15,7 +20,9 @@ on:
       - "scripts/build_windows_sndfile.py"
       - "scripts/prepare_release_sources.py"
       - "scripts/assemble_github_release.py"
+      - "scripts/prepare_release.py"
       - "tests/test_github_release.py"
+      - "tests/test_prepare_release.py"
       - "src/iopenpod_launcher.py"
       - "src/iOpenPod/__main__.py"
       - "src/iOpenPod/assets/**"
@@ -36,11 +43,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      publish: ${{ steps.release.outputs.publish }}
+      create_tag: ${{ steps.release.outputs.create_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.7"
+      - name: Validate release request and tag identity
+        id: release
+        env:
+          PUBLISH_RELEASE: ${{ inputs.publish || false }}
+        run: uv run --no-project --managed-python --python 3.12 python scripts/prepare_release.py
+
   checks:
+    needs: prepare
     uses: ./.github/workflows/health.yml
 
   native:
-    needs: checks
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -126,15 +153,15 @@ jobs:
             build/packaging/macos-compatibility.json
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: native
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, checks, native]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -148,8 +175,13 @@ jobs:
         run: uv run --no-project --managed-python --python 3.12 python scripts/prepare_release_sources.py --download
       - name: Assemble and verify the complete release
         run: uv run --no-project --managed-python --python 3.12 python -m scripts.assemble_github_release --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
+      # GITHUB_TOKEN tag pushes do not trigger another workflow. Publish here,
+      # using the artifacts built and checked for this exact dispatch commit.
+      - name: Create the requested version tag after successful validation
+        if: needs.prepare.outputs.create_tag == 'true'
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA"
       - name: Upload all assets before making the release public
         run: |
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$GITHUB_SHA"
-          gh release create "$RELEASE_TAG" --verify-tag --target "$GITHUB_SHA" --draft --title "iOpenPod $RELEASE_TAG" --notes-file packaging/github-release.md release-assets/*
+          gh release create "$RELEASE_TAG" --verify-tag --target "$GITHUB_SHA" --draft --title "iOpenPod $RELEASE_TAG" --generate-notes --notes-file packaging/github-release.md release-assets/*
           gh release edit "$RELEASE_TAG" --draft=false --latest

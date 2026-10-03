@@ -374,27 +374,36 @@ platform's dynamically loaded system-media bindings. It does not create settings
 discover devices, or write to an iPod. `--smoke-test-report /absolute/file.txt` writes
 diagnostics even for a Windows executable without a console.
 
-Run the frozen smoke test outside the checkout on a machine without Python. The
-native and Flatpak workflows require the reusable Health workflow to pass first:
-lockfile, formatting, linting, typing, and the complete test suite. Health runs on
+Run the frozen smoke test outside the checkout on a machine without Python. Native
+builds run alongside the reusable Health workflow so candidate artifacts remain
+available when application tests fail. Public release publication requires both
+Health and all native builds to pass. Flatpak candidates still wait for Health.
+Health checks the lockfile, formatting, linting, typing, and the complete test suite. It runs on
 pull requests, `main` and `2.0` pushes, and manual dispatch. The native CI jobs
 exercise Windows x64, macOS arm64 and x86_64, and Linux x64 and validate wheel
 contents. Native environments exclude dev tools and optional GPU dependencies.
 
 Pushing a tag that exactly matches `v<version>` in `pyproject.toml` automatically
 builds and publishes a public GitHub Release. A manual Build and release run on a
-version tag does the same. Manual branch builds and pull requests only retain
-candidate artifacts. No workflow publishes to PyPI or a Store.
+version tag does the same. To create the tag through GitHub, open **Actions → Build
+and release → Run workflow**, select **main**, and enable **Publish a release**.
+The workflow reads the version from `pyproject.toml`, builds that exact commit,
+and creates its tag only after Health, native builds, and release assembly pass.
+An existing tag must already point at that commit; tags are never moved. A manual
+branch run with publication unchecked only retains candidate artifacts, as do pull
+requests. Other branches cannot request publication. No workflow publishes to PyPI
+or a Store.
 
-Publication waits for all four builds and their frozen smoke tests. It verifies
+Publication waits for Health and all four builds and their frozen smoke tests. It verifies
 each native archive's checksum, collects platform-specific dependency inventories
 and Mac compatibility reports, and includes the wheel and sdist from the Windows
 build. It also attaches the application source snapshot and hash-verified pinned
 third-party sources, `release.json`, and `SHA256SUMS`. The source snapshot excludes
 the private fixtures listed in `scripts/prepare_store_kit.py`; the Python sdist
 excludes them too, and the publication assembler rejects their presence. All assets
-upload to a draft before the workflow makes it public. Publication receives `contents: write`;
-the build and test jobs only receive read access.
+upload to a draft before the workflow makes it public. Release notes combine
+`packaging/github-release.md` with GitHub's generated change list. Publication
+receives `contents: write`; the build and test jobs only receive read access.
 
 Before tagging, update the version and lockfile together and review
 `packaging/github-release.md`. Complete the source/licensing review for the actual
