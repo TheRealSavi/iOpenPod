@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QEvent, QPropertyAnimation
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -33,8 +34,18 @@ from iOpenPod.app.host_media_folders import (
     save_host_media_folders,
 )
 from iOpenPod.GUI import main_window as main_window_module
-from iOpenPod.GUI.dialogs.media_folders import MediaFoldersDialog
+from iOpenPod.GUI.dialogs.media_folders import (
+    MediaFoldersDialog,
+    MediaFolderSettingsDialog,
+)
 from iOpenPod.GUI.main_window import MainWindow
+from iOpenPod.GUI.presentation.theme.stylesheet import render_stylesheet
+from iOpenPod.GUI.presentation.theme.tokens import (
+    DARK_TOKENS,
+    LIGHT_TOKENS,
+    ThemeTokens,
+    resolve_typography,
+)
 from iOpenPod.GUI.sync_workspace import SyncStage, SyncWorkspace
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.status_list import StatusListButton
@@ -43,6 +54,27 @@ from iOpenPod.GUI.widgets.themed_buttons import IconButton
 
 def _settings() -> SettingsService:
     return SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+
+
+@pytest.mark.parametrize("tokens", [LIGHT_TOKENS, DARK_TOKENS])
+def test_dropped_folder_settings_render_the_theme_surface(
+    tmp_path: Path, tokens: ThemeTokens
+) -> None:
+    original = APPLICATION.styleSheet()
+    APPLICATION.setStyleSheet(render_stylesheet(tokens, resolve_typography()))
+    dialog = MediaFolderSettingsDialog(create_host_media_folder(tmp_path))
+    try:
+        dialog.show()
+        APPLICATION.processEvents()
+        assert dialog.grab().toImage().pixelColor(2, 2) == QColor(tokens.window)
+        controls = dialog.findChildren(QCheckBox)
+        assert len(controls) == 5
+        assert all(control.isVisible() and control.isChecked() for control in controls)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        APPLICATION.sendPostedEvents(dialog, QEvent.Type.DeferredDelete)
+        APPLICATION.setStyleSheet(original)
 
 
 def test_native_picker_adds_once_with_enabled_default_settings(

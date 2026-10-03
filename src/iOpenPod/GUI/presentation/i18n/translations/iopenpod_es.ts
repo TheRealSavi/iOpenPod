@@ -1446,6 +1446,17 @@
     </message>
 </context>
 <context>
+    <name>HostMediaDropTarget</name>
+    <message>
+        <source>Drop to Sync with Host</source>
+        <translation>Suelte aquí para sincronizar con el equipo</translation>
+    </message>
+    <message>
+        <source>Folders, audio, video, photos, and playlists</source>
+        <translation>Carpetas, audio, vídeo, fotos y listas de reproducción</translation>
+    </message>
+</context>
+<context>
     <name>I18nManager</name>
     <message>
         <source>System default</source>
@@ -7825,6 +7836,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Buscando medios en las carpetas seleccionadas…</translation>
     </message>
     <message>
+        <source>Finding selected media…</source>
+        <translation>Buscando los archivos multimedia seleccionados…</translation>
+    </message>
+    <message>
         <source>Fingerprinting Podcast media…</source>
         <translation>Calculando huellas de los medios de pódcast…</translation>
     </message>
@@ -9239,6 +9254,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Unpackaged</source>
         <translation>Sin empaquetar</translation>
+    </message>
+    <message>
+        <source>Unsupported media file.</source>
+        <translation>Archivo multimedia no compatible.</translation>
     </message>
     <message>
         <source>Windows package (sideloaded)</source>

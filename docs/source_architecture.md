@@ -1096,6 +1096,17 @@ facts before any device write. This preserves the metadata-first reuse pattern
 without making cloud-backed folders fail on ordinary source churn. The cache is not
 source authority. See ADR-0082.
 
+External Host file drops on the main Library browser provide another entry to the
+same workflow. A visible drop zone accepts supported local folders and files only
+while an Active iPod is available and the workspace is unlocked. Each folder opens
+the same recursion and media-type settings as Choose Media Folders; canceling
+abandons the drop. The dropped selection is temporary
+and does not change the saved folder configuration. Explicit files are observed
+through Storage and retained in the scan scope for later revalidation, without
+enumerating sibling media. Playlist references outside that scope still require
+the existing explicit review. Other application pages and the Sync Workspace do
+not accept external media drops; internal Library drags retain their behavior.
+
 Optional acoustic analysis does not gate explicit incoming Adds. Previously proven
 Sync paths match before missing acoustic evidence is classified. Helper v3 permits
 an empty fingerprint only alongside committed Sync Details and continues reading

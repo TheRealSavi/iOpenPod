@@ -697,6 +697,7 @@ class PendingHostMediaScan:
     folders: tuple[HostMediaFolder, ...] = ()
     observations: tuple[_Observation, ...] = ()
     enumeration_issues: tuple[HostMediaScanIssue, ...] = ()
+    files: tuple[HostPath, ...] = ()
 
 
 class _MutagenReader(Protocol):
@@ -770,6 +771,7 @@ class HostMediaScanner:
         *,
         checkpoint: CancellationCheck,
         progress: ProgressCallback | None = None,
+        files: tuple[HostPath, ...] = (),
     ) -> PendingHostMediaScan:
         """Read the selected scope and stop before external playlist decisions."""
 
@@ -778,10 +780,14 @@ class HostMediaScanner:
             HostMediaScanStage.DISCOVERING,
             0,
             0,
-            "Finding media in the selected folders…",
+            "Finding selected media…"
+            if files
+            else "Finding media in the selected folders…",
         )
         checkpoint()
-        before, enumeration_issues = _enumerate(folders, checkpoint=checkpoint)
+        before, enumeration_issues = _enumerate(
+            folders, files=files, checkpoint=checkpoint
+        )
         before_artwork = _folder_artwork_catalog(before, checkpoint=checkpoint)
         cached = self._load_cache()
         issues = list(enumeration_issues)
@@ -806,7 +812,7 @@ class HostMediaScanner:
             "Checking for files that changed during the scan…",
             cache_hits=reused,
         )
-        after, final_issues = _enumerate(folders, checkpoint=checkpoint)
+        after, final_issues = _enumerate(folders, files=files, checkpoint=checkpoint)
         after_artwork = _folder_artwork_catalog(after, checkpoint=checkpoint)
         if _folder_artwork_states(before_artwork) != _folder_artwork_states(
             after_artwork
@@ -819,6 +825,7 @@ class HostMediaScanner:
                     source_text(
                         "The Host Media Library changed while it was scanned; the available files were kept for review. Sync will recheck source files before writing to the iPod."
                     ),
+                    files=files,
                 )
             )
         if enumeration_issues != final_issues:
@@ -828,6 +835,7 @@ class HostMediaScanner:
                     source_text(
                         "The availability of one or more selected folders changed while they were scanned; unavailable files were omitted. Sync will recheck source files before writing to the iPod."
                     ),
+                    files=files,
                 )
             )
 
@@ -868,6 +876,7 @@ class HostMediaScanner:
             folders=folders,
             observations=before,
             enumeration_issues=enumeration_issues,
+            files=files,
         )
 
     def complete(
@@ -1011,7 +1020,9 @@ class HostMediaScanner:
 
         checkpoint()
         if pending.external_references:
-            after, final_issues = _enumerate(pending.folders, checkpoint=checkpoint)
+            after, final_issues = _enumerate(
+                pending.folders, files=pending.files, checkpoint=checkpoint
+            )
             if tuple(item.state for item in after) != tuple(
                 item.state for item in pending.observations
             ):
@@ -1021,6 +1032,7 @@ class HostMediaScanner:
                         source_text(
                             "The selected media changed during Playlist review; the original scan remains available. Sync will recheck source files before writing to the iPod."
                         ),
+                        files=pending.files,
                     )
                 )
             if final_issues != pending.enumeration_issues:
@@ -1030,6 +1042,7 @@ class HostMediaScanner:
                         source_text(
                             "The availability of one or more selected folders changed during Playlist review; unavailable files were omitted."
                         ),
+                        files=pending.files,
                     )
                 )
         _emit(
@@ -1116,13 +1129,16 @@ def _emit(
 
 
 def _scan_issue(
-    folders: tuple[HostMediaFolder, ...], detail: str
+    folders: tuple[HostMediaFolder, ...],
+    detail: str,
+    *,
+    files: tuple[HostPath, ...] = (),
 ) -> HostMediaScanIssue:
     """Describe scan drift without making a best-effort scan unusable."""
 
     # The folder dialog normally guarantees at least one folder. Keep the helper
     # total for callers that construct a scanner directly in tests or integrations.
-    path = folders[0].path if folders else HostPath(Path.cwd())
+    path = folders[0].path if folders else files[0] if files else HostPath(Path.cwd())
     return HostMediaScanIssue(path, detail)
 
 
@@ -1130,6 +1146,7 @@ def _enumerate(
     folders: tuple[HostMediaFolder, ...],
     *,
     checkpoint: CancellationCheck,
+    files: tuple[HostPath, ...] = (),
 ) -> tuple[tuple[_Observation, ...], tuple[HostMediaScanIssue, ...]]:
     observations: dict[str, _Observation] = {}
     issues: list[HostMediaScanIssue] = []
@@ -1153,6 +1170,29 @@ def _enumerate(
                     ),
                 )
             )
+    for path in files:
+        checkpoint()
+        kind = classify_host_media_file(Path(path.path))
+        if kind is None:
+            issues.append(
+                HostMediaScanIssue(path, source_text("Unsupported media file."))
+            )
+            continue
+        try:
+            file = LocalHostFile.observe(path)
+        except (OSError, StorageError) as error:
+            issues.append(
+                HostMediaScanIssue(
+                    path,
+                    source_text(
+                        "Unavailable or unsafe file: {error}", error=str(error)
+                    ),
+                )
+            )
+            continue
+        observations[_path_identity(path.path)] = _Observation(
+            path, kind, file.size_bytes, file.modified_ns, file=file
+        )
     return (
         tuple(sorted(observations.values(), key=lambda item: item.state)),
         tuple(issues),
@@ -1229,6 +1269,12 @@ def _classify(
         if extension in extensions and (allowed is None or media_type in allowed):
             return kind
     return None
+
+
+def classify_host_media_file(path: Path) -> HostMediaFileKind | None:
+    """Classify a selected filename using the scanner's supported extensions."""
+
+    return _classify(path)
 
 
 def _review_reference(
@@ -2345,5 +2391,6 @@ __all__ = [
     "HostMediaTreeChangedError",
     "PendingHostMediaScan",
     "PlaylistExternalReference",
+    "classify_host_media_file",
     "embedded_artwork_from_bytes",
 ]

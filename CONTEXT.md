@@ -138,6 +138,14 @@ the workspace presents a read-only, source-isolated Host browser made from the s
 Album, collection, Track, Playlist, Photo, and media-category pages as the iPod
 browser. The normal sidebar stays iPod-focused, and the Active iPod Library Draft is
 never replaced. See ADR-0063, ADR-0064, and ADR-0067.
+The main Library browser also accepts dropped Host folders, audio, video, Photos,
+and Playlist files while an Active iPod is available. A drop-zone overlay marks
+accepted drags; each folder opens the shared folder settings to choose recursion
+and audio, video, Photo, and Playlist scanning. Drops enter the
+same Sync Workspace with temporary sources and leave saved media-folder settings
+unchanged. Individual files do not scan sibling media, and Playlist references
+outside the dropped selection retain their explicit review step. Settings,
+Backups, Podcasts management, Synesthesia, and the Sync Workspace reject these drops.
 When an Active iPod is available, the pre-Sync workflow next runs an iPod Media Scan.
 It reads a checksummed Library Sync Helper from
 `iPod_Control/iOpenPod/library-sync-helper.json`, reuses entries whose persistent

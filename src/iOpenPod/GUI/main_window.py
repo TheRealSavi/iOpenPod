@@ -39,6 +39,7 @@ from iOpenPod.app.device_controller import (
     DeviceOperationFailure,
 )
 from iOpenPod.app.display_text import source_text
+from iOpenPod.app.host_media_folders import HostMediaFolder
 from iOpenPod.app.host_media_library import (
     HostMediaLibrary,
     HostMediaScanProgress,
@@ -84,7 +85,10 @@ from iOpenPod.GUI.dialogs.external_playlist_files import (
     ExternalPlaylistFilesDialog,
 )
 from iOpenPod.GUI.dialogs.library_review import LibraryReviewDialog
-from iOpenPod.GUI.dialogs.media_folders import MediaFoldersDialog
+from iOpenPod.GUI.dialogs.media_folders import (
+    MediaFoldersDialog,
+    MediaFolderSettingsDialog,
+)
 from iOpenPod.GUI.dialogs.media_tools_setup import MediaToolsSetupDialog
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
@@ -115,6 +119,7 @@ from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.sync_workspace import SyncStage, SyncWorkspace
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
+from iOpenPod.GUI.widgets.host_media_drop import HostMediaDropTarget
 from iOpenPod.GUI.widgets.playback_pane import PlaybackPane, PlaybackPaneHost
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.sidebar import Sidebar
@@ -511,6 +516,10 @@ class MainWindow(QMainWindow):
             self._workspaces,
         )
         self._workspaces.addWidget(self._sync_workspace)
+        self._host_drop = HostMediaDropTarget(self._pages, self._can_drop_host_media)
+        self._host_drop.pathsDropped.connect(self._drop_host_media)
+        self._pages.currentChanged.connect(self._host_drop.clear)
+        self._workspaces.currentChanged.connect(self._host_drop.clear)
         self._pages.currentChanged.connect(self._exit_synesthesia_fullscreen)
         self._workspaces.currentChanged.connect(self._exit_synesthesia_fullscreen)
         self.setCentralWidget(shell)
@@ -1069,6 +1078,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.close_app_updates()
+        self._host_drop.shutdown()
         self._media_tools.shutdown()
         self._scrobbling.shutdown()
         self._exit_synesthesia_fullscreen()
@@ -1531,7 +1541,69 @@ class MainWindow(QMainWindow):
             folders = dialog.folders
         finally:
             dialog.deleteLater()
-        if not self._context.host_media_controller.start(folders):
+        self._start_host_sync(folders)
+
+    def _can_drop_host_media(self) -> bool:
+        return (
+            self._workspaces.currentWidget() is self._library_browser
+            and self._current_page_id()
+            not in (
+                PageId.SETTINGS,
+                PageId.BACKUPS,
+                PageId.SYNESTHESIA,
+                PageId.PODCASTS,
+            )
+            and self._context.device_controller.active_ipod is not None
+            and not self._context.device_controller.busy
+            and not self._context.backup_controller.busy
+            and not self._context.library_workspace.locked
+            and not self._context.host_media_controller.busy
+            and not self._context.ipod_media_controller.busy
+            and not self._sync_controller.busy
+            and not self._sync_controller.needs_recovery
+            and not self._sync_controller.needs_cleanup
+            and QApplication.activeModalWidget() is None
+        )
+
+    def _drop_host_media(self, value: object) -> None:
+        if not self._can_drop_host_media() or not isinstance(value, tuple):
+            return
+        items = cast("tuple[object, ...]", value)
+        paths = tuple(item for item in items if isinstance(item, Path))
+        if not paths or len(paths) != len(items):
+            return
+        folders: list[HostMediaFolder] = []
+        files: list[HostPath] = []
+        active = self._context.device_controller.active_ipod
+        for path in paths:
+            if path.is_dir():
+                dialog = MediaFolderSettingsDialog(
+                    HostMediaFolder(HostPath(path)), self
+                )
+                try:
+                    if dialog.exec() != QDialog.DialogCode.Accepted:
+                        return
+                    folders.append(dialog.folder)
+                finally:
+                    dialog.deleteLater()
+            else:
+                files.append(HostPath(path))
+        if (
+            self._can_drop_host_media()
+            and self._context.device_controller.active_ipod is active
+        ):
+            self._start_host_sync(tuple(folders), files=tuple(files))
+
+    def _start_host_sync(
+        self, folders: tuple[HostMediaFolder, ...], *, files: tuple[HostPath, ...] = ()
+    ) -> None:
+        controller = self._context.host_media_controller
+        started = (
+            controller.start(folders, files=files)
+            if files
+            else controller.start(folders)
+        )
+        if not started:
             return
         available = frozenset(
             page_id
@@ -1541,7 +1613,9 @@ class MainWindow(QMainWindow):
         self._sync_workspace.set_available_pages(available)
         self._workspaces.setCurrentWidget(self._sync_workspace)
         self._show_media_scan_progress(
-            source_text("Finding media in the selected folders…")
+            source_text("Finding selected media…")
+            if files
+            else source_text("Finding media in the selected folders…")
         )
         self.retranslate_ui()
 

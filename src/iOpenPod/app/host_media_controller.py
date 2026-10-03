@@ -40,11 +40,13 @@ class _InitialScan(QRunnable):
         token: int,
         folders: tuple[HostMediaFolder, ...],
         scanner: HostMediaScanner,
+        files: tuple[HostPath, ...] = (),
     ) -> None:
         super().__init__()
         self.token = token
         self.folders = folders
         self.scanner = scanner
+        self.files = files
         self.cancelled = Event()
         self.signals = _Signals()
 
@@ -56,6 +58,7 @@ class _InitialScan(QRunnable):
         try:
             pending = self.scanner.scan(
                 self.folders,
+                files=self.files,
                 checkpoint=checkpoint,
                 progress=lambda value: self.signals.progress.emit(self.token, value),
             )
@@ -152,13 +155,15 @@ class HostMediaScanController(QObject):
     def awaiting_external_decisions(self) -> bool:
         return self._pending is not None
 
-    def start(self, folders: tuple[HostMediaFolder, ...]) -> bool:
+    def start(
+        self, folders: tuple[HostMediaFolder, ...], *, files: tuple[HostPath, ...] = ()
+    ) -> bool:
         if self._closed or self.busy:
             return False
         self._token += 1
         self._pending = None
         self.busy = True
-        job = _InitialScan(self._token, folders, self._scanner)
+        job = _InitialScan(self._token, folders, self._scanner, files)
         self._start_job(job)
         self.changed.emit()
         return True

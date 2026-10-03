@@ -68,6 +68,7 @@ class _MediaFolderRow(QFrame):
 
         self._path = QLabel(os.fspath(folder.path), self)
         self._path.setObjectName("mediaFolderPath")
+        self._path.setTextFormat(Qt.TextFormat.PlainText)
         self._path.setWordWrap(True)
         self._path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
@@ -155,6 +156,14 @@ class _MediaFolderRow(QFrame):
     def set_index(self, index: int) -> None:
         self._number.setText(str(index))
 
+    def show_settings_only(self) -> None:
+        """Present the folder's expanded settings without list editing actions."""
+
+        self._number.hide()
+        self._settings_button.hide()
+        self._remove_button.hide()
+        self._set_expanded(True)
+
     def retranslate_ui(self) -> None:
         self._settings_button.setAccessibleName(self.tr("Folder settings"))
         self._settings_button.setToolTip(self.tr("Folder settings"))
@@ -194,6 +203,52 @@ class _MediaFolderRow(QFrame):
 
     def _remove_requested(self) -> None:
         self.removeRequested.emit(self)
+
+
+class MediaFolderSettingsDialog(QDialog):
+    """Choose a dropped folder's temporary scan settings before starting Sync."""
+
+    def __init__(self, folder: HostMediaFolder, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("mediaFolderSettingsDialog")
+        self.setModal(True)
+        self.setMinimumWidth(560)
+        self._row = _MediaFolderRow(folder, 1, self)
+        self._row.show_settings_only()
+        self._buttons = QDialogButtonBox(self)
+        self._cancel = self._buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        self._sync = self._buttons.addButton("", QDialogButtonBox.ButtonRole.AcceptRole)
+        self._sync.setObjectName("syncDroppedMediaFolder")
+        self._sync.setDefault(True)
+        apply_action_button_kind(self._cancel, ActionButtonKind.SECONDARY)
+        apply_action_button_kind(self._sync, ActionButtonKind.PRIMARY)
+        self._buttons.accepted.connect(self.accept)
+        self._buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(
+            LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg
+        )
+        layout.setSpacing(LAYOUT.space_sm)
+        layout.addWidget(self._row)
+        layout.addWidget(self._buttons)
+        self.retranslate_ui()
+
+    @property
+    def folder(self) -> HostMediaFolder:
+        return self._row.folder
+
+    def retranslate_ui(self) -> None:
+        self.setWindowTitle(
+            QCoreApplication.translate("_MediaFolderRow", "Folder settings")
+        )
+        self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
+        self._sync.setText(QCoreApplication.translate("MediaFoldersDialog", "Sync"))
+        self._row.retranslate_ui()
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.Type.LanguageChange:
+            self.retranslate_ui()
+        super().changeEvent(event)
 
 
 class MediaFoldersDialog(QDialog):
@@ -382,4 +437,4 @@ class MediaFoldersDialog(QDialog):
         self._empty.setVisible(count == 0)
 
 
-__all__ = ["MediaFoldersDialog"]
+__all__ = ["MediaFolderSettingsDialog", "MediaFoldersDialog"]

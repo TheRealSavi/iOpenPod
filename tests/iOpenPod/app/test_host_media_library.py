@@ -282,6 +282,82 @@ def _write_wav(path: Path) -> None:
         stream.writeframes(b"\0\0" * 80)
 
 
+def test_explicit_files_do_not_scan_sibling_media(tmp_path: Path) -> None:
+    selected = tmp_path / "selected.wav"
+    _write_wav(selected)
+    _write_wav(tmp_path / "unrelated.wav")
+    photo = tmp_path / "selected.png"
+    Image.new("RGB", (8, 8)).save(photo)
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (), files=(HostPath(selected), HostPath(photo)), checkpoint=lambda: None
+    )
+    result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert len(result.snapshot.tracks) == 1
+    assert result.snapshot.tracks[0].title == "selected"
+    assert result.snapshot.photos is not None
+    assert len(result.snapshot.photos.photos) == 1
+
+
+def test_explicit_playlist_keeps_reference_review_and_revalidates_scope(
+    tmp_path: Path,
+) -> None:
+    song = tmp_path / "song.wav"
+    _write_wav(song)
+    playlist = tmp_path / "favorites.m3u"
+    playlist.write_text("song.wav\nsong.wav\n", encoding="utf-8")
+    scanner = HostMediaScanner()
+    pending = scanner.scan((), files=(HostPath(playlist),), checkpoint=lambda: None)
+    assert len(pending.external_references) == 1
+    denied = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert not denied.snapshot.tracks
+    accepted = scanner.complete(
+        pending, frozenset((HostPath(song),)), checkpoint=lambda: None
+    )
+    assert len(accepted.snapshot.tracks) == 1
+    assert len(accepted.snapshot.playlists[0].entries) == 2
+    assert not any(
+        "changed during Playlist review" in issue.detail for issue in accepted.issues
+    )
+    playlist.write_text("#changed\nsong.wav\n", encoding="utf-8")
+    changed = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert any(
+        "changed during Playlist review" in issue.detail
+        and issue.path == HostPath(playlist)
+        for issue in changed.issues
+    )
+
+
+@pytest.mark.parametrize("recurse", [False, True])
+def test_folder_drop_scope_respects_recursion_and_deduplicates_files(
+    tmp_path: Path, recurse: bool
+) -> None:
+    song = tmp_path / "song.wav"
+    _write_wav(song)
+    child = tmp_path / "child"
+    child.mkdir()
+    _write_wav(child / "nested.wav")
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (HostMediaFolder(HostPath(tmp_path), recurse=recurse),),
+        files=(HostPath(song),),
+        checkpoint=lambda: None,
+    )
+    result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert len(result.snapshot.tracks) == (2 if recurse else 1)
+
+
+def test_unavailable_explicit_file_is_reported_without_scanning_parent(
+    tmp_path: Path,
+) -> None:
+    _write_wav(tmp_path / "other.wav")
+    missing = HostPath(tmp_path / "missing.wav")
+    scanner = HostMediaScanner()
+    pending = scanner.scan((), files=(missing,), checkpoint=lambda: None)
+    assert not pending.records
+    assert any(issue.path == missing for issue in pending.issues)
+
+
 def test_metadata_parsers_receive_read_only_storage_streams(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
