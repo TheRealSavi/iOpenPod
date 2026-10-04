@@ -433,15 +433,16 @@ exercise Windows x64, macOS arm64 and x86_64, and Linux x64 and validate wheel
 contents. Native environments exclude dev tools and optional GPU dependencies.
 
 Pushing a tag that exactly matches `v<version>` in `pyproject.toml` automatically
-builds and publishes a public GitHub Release. A manual Build and release run on a
-version tag does the same. To create the tag through GitHub, open **Actions → Build
-and release → Run workflow**, select **main**, and enable **Publish a release**.
+builds and publishes a public GitHub Release, then publishes the same version to
+PyPI. A manual Build and release run on a version tag does the same. To create the
+tag through GitHub, open **Actions → Build and release → Run workflow**, select
+**main**, and enable **Publish to GitHub and PyPI**.
 The workflow reads the version from `pyproject.toml`, builds that exact commit,
 and creates its tag only after native builds and release assembly pass.
 An existing tag must already point at that commit; tags are never moved. A manual
 branch run with publication unchecked only retains candidate artifacts, as do pull
-requests. Other branches cannot request publication. No workflow publishes to PyPI
-or a Store.
+requests. Other branches cannot request publication. No workflow publishes to a
+Store.
 
 Publication waits for all four builds and their frozen smoke tests. It verifies
 each native archive and macOS disk image checksum, collects dependency inventories
@@ -458,6 +459,40 @@ publication assembler rejects their presence. The six native downloads upload to
 a draft before the workflow makes it public. Release notes combine
 `packaging/github-release.md` with GitHub's generated change list. Publication
 receives `contents: write`; the build and test jobs only receive read access.
+
+The separate `publish-pypi` job waits for the GitHub Release to succeed, then
+downloads the `pypi-distributions` artifact from that same run. It contains only
+the assembled Windows wheel and sdist, already checked by the native build and
+release assembler. The job uses UV with PyPI Trusted Publishing and receives only
+`id-token: write`; it does not check out or rebuild application code. PyPI and the
+signed update feed publish independently after the GitHub Release (ADR-0112).
+
+### PyPI setup and recovery
+
+Before the first PyPI-enabled release, configure the existing `iOpenPod` project's
+[Trusted Publisher](https://pypi.org/manage/project/iopenpod/settings/publishing/)
+with these GitHub values:
+
+| Field | Value |
+| --- | --- |
+| Owner | `TheRealSavi` |
+| Repository | `iOpenPod` |
+| Workflow filename | `release.yml` |
+| Environment | `pypi` |
+
+Create the matching `pypi` environment in GitHub repository settings. If deployment
+branch/tag restrictions are enabled, allow both `main` (manual publication) and
+version tags matching `v*`. No PyPI API-token secret is needed. See
+[PyPI's setup guide](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
+
+If PyPI publication fails after GitHub succeeds, fix the publisher configuration
+or upload problem and rerun only the failed `publish-pypi` job while its artifact
+is retained. Do not rerun successful builds or recreate the GitHub Release. UV
+skips files already on PyPI only when their contents match exactly, so a partial
+upload can resume with the original artifact. Changed files require a new version;
+see [UV's publishing guide](https://docs.astral.sh/uv/guides/package/#publishing-your-package).
+
+### Release checklist
 
 Before tagging, update the version and lockfile together and review
 `packaging/github-release.md`. Complete the source/licensing review for the actual

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish a release (on main, creates v<pyproject version> after checks pass)"
+        description: "Publish to GitHub and PyPI (on main, creates v<pyproject version> after checks pass)"
         type: boolean
         default: false
   push:
@@ -211,6 +211,14 @@ jobs:
         run: uv run --no-project --managed-python --python 3.12 python scripts/prepare_release_sources.py --download
       - name: Assemble and verify the complete release
         run: uv run --no-project --managed-python --python 3.12 python -m scripts.assemble_github_release --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
+      - name: Retain checked Python distributions for PyPI
+        uses: actions/upload-artifact@v4
+        with:
+          name: pypi-distributions
+          if-no-files-found: error
+          path: |
+            release-assets/iopenpod-${{ needs.prepare.outputs.version }}-py3-none-any.whl
+            release-assets/iopenpod-${{ needs.prepare.outputs.version }}.tar.gz
       - name: Retain supporting files as an Actions artifact
         uses: actions/upload-artifact@v4
         with:
@@ -232,6 +240,30 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$GITHUB_SHA"
           gh release create "$RELEASE_TAG" --verify-tag --target "$GITHUB_SHA" --draft --title "iOpenPod $RELEASE_TAG" --generate-notes --notes-file packaging/github-release.md release-assets/iOpenPod-*.zip release-assets/iOpenPod-*.dmg release-assets/iOpenPod-*-Linux-*.tar.gz
           gh release edit "$RELEASE_TAG" --draft=false --latest
+
+  publish-pypi:
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/iOpenPod/
+    permissions:
+      id-token: write
+    steps:
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.7"
+          enable-cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi-distributions
+          path: dist
+      # Reuse the assembled distributions; never rebuild under publish credentials.
+      # UV accepts already-published files only when their contents match exactly.
+      - name: Publish checked distributions to PyPI
+        run: uv publish --trusted-publishing always dist/*.whl dist/*.tar.gz
 
   update-feed:
     needs: [prepare, publish]

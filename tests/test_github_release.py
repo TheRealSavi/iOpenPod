@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import shlex
+import shutil
 import tarfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -158,6 +159,43 @@ def test_publication_uploads_native_archives_and_mac_install_images(
         "iOpenPod-2.0.0-macOS-arm64.dmg",
         "iOpenPod-2.0.0-macOS-x86_64.dmg",
     }
+
+
+def test_pypi_publishes_only_the_assembled_python_distributions(
+    release_root: Path,
+) -> None:
+    release.assemble("v2.0.0", COMMIT, root=release_root)
+    workflow = (release.ROOT / ".github/workflows/release.yml").read_text()
+    workflow = workflow.replace("${{ needs.prepare.outputs.version }}", "2.0.0")
+    # Model the artifact handoff using the workflow's actual upload paths.
+    artifact = workflow.split("name: pypi-distributions\n", 1)[1].split(
+        "\n      - ", 1
+    )[0]
+    patterns = artifact.split("path: |\n", 1)[1].splitlines()
+    distributions = release_root / "dist"
+    distributions.mkdir()
+    for pattern in patterns:
+        for path in release_root.glob(pattern.strip()):
+            shutil.copyfile(path, distributions / path.name)
+
+    command = next(
+        line.strip().removeprefix("run: ")
+        for line in workflow.splitlines()
+        if line.strip().startswith("run: uv publish ")
+    )
+    uploaded = {
+        path.name
+        for argument in shlex.split(command)
+        if argument.startswith("dist/")
+        for path in release_root.glob(argument)
+    }
+    assert uploaded == {
+        "iopenpod-2.0.0-py3-none-any.whl",
+        "iopenpod-2.0.0.tar.gz",
+    }
+    windows = release_root / "build/candidates/candidate-windows-2022/dist"
+    for name in uploaded:
+        assert (distributions / name).read_bytes() == (windows / name).read_bytes()
 
 
 @pytest.mark.parametrize(
