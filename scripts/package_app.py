@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from importlib import metadata
 from pathlib import Path
@@ -372,15 +373,34 @@ def macos_dmg(app: Path, output: Path, version: str) -> Path:
             check=True,
         )
         try:
-            subprocess.run(
-                [
-                    "osascript",
-                    str(ROOT / "packaging/macos/dmg-layout.applescript"),
-                    volume_name,
-                    str(mountpoint),
-                ],
-                check=True,
-            )
+            # hdiutil can finish mounting before Finder registers the volume.
+            # Retry only Finder's object-not-found error, leaving other script,
+            # permission and timeout failures visible to the release job.
+            for attempt in range(10):
+                try:
+                    subprocess.run(
+                        [
+                            "osascript",
+                            str(ROOT / "packaging/macos/dmg-layout.applescript"),
+                            volume_name,
+                            str(mountpoint),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                except subprocess.CalledProcessError as error:
+                    diagnostic = error.stderr or ""
+                    print(diagnostic, file=sys.stderr, flush=True)
+                    if "(-1728)" not in diagnostic or attempt == 9:
+                        raise
+                    print(
+                        "Waiting for Finder to recognize the mounted DMG...", flush=True
+                    )
+                    time.sleep(2)
+                else:
+                    break
         finally:
             subprocess.run(["hdiutil", "detach", str(mountpoint)], check=True)
         subprocess.run(

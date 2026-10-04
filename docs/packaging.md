@@ -65,6 +65,10 @@ Remove that specific generated directory before staging again. Windows archives
 contain only `iOpenPod.exe`; MSIX staging copies that same executable to `app/`.
 macOS ZIPs preserve `.app` symlinks using `ditto`. Each macOS DMG copies that same
 signed app with `ditto` into a read-only image beside an `/Applications` shortcut.
+Finder can lag behind a successful mount. Layout retries its object-not-found
+error (`-1728`) up to ten attempts, two seconds apart, with a 60-second timeout per
+script invocation. Other failures stop immediately; the image is detached before
+the error propagates, and conversion and checksum generation require a saved layout.
 The ZIP stays available for Sparkle's signed appcast; the DMG is for a first manual
 drag to Applications. Linux archives preserve
 executable modes and dereference bundled library symlinks. Their managed root has

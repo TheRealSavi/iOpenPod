@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import time
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -368,9 +369,17 @@ def test_windows_archive_contains_only_the_standalone_executable(
 
 
 @pytest.mark.parametrize("architecture", ["arm64", "x86_64"])
+@pytest.mark.parametrize(
+    "finder_state", ["ready", "late", "missing", "denied", "timeout"]
+)
 def test_macos_archive_adds_a_drag_to_applications_disk_image(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, architecture: str
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    architecture: str,
+    finder_state: str,
 ) -> None:
+    # Load the archive dependency before simulating a different host platform.
+    importlib.import_module("scripts.package_updates")
     shutil.copy2(package_app.ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
     artwork = tmp_path / "packaging/macos"
     artwork.mkdir(parents=True)
@@ -384,12 +393,21 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(platform, "machine", lambda: architecture)
     calls: list[list[str]] = []
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
 
     def fake_symlink(path: Path, target: str, *, target_is_directory: bool) -> None:
         assert target_is_directory and target == "/Applications"
         path.write_text(target)
 
-    def fake_run(command: list[str], *, check: bool) -> None:
+    def fake_run(
+        command: list[str],
+        *,
+        check: bool,
+        capture_output: bool = False,
+        text: bool = False,
+        timeout: float | None = None,
+    ) -> None:
         assert check
         calls.append(command)
         if command[:2] == ["ditto", "-c"]:
@@ -412,11 +430,30 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
         elif command[:2] == ["hdiutil", "resize"]:
             assert command[command.index("-size") + 1] == "21m"
         elif command[0] == "osascript":
+            assert capture_output and text and timeout == 60
             assert command[1] == str(artwork / "dmg-layout.applescript")
             assert command[2] == f"iOpenPod {package_app.project_version()}"
+            if finder_state == "timeout":
+                raise subprocess.TimeoutExpired(command, 60)
+            if finder_state == "denied":
+                raise subprocess.CalledProcessError(
+                    1,
+                    command,
+                    stderr="Not authorized to send Apple events to Finder. (-1743)",
+                )
+            if finder_state == "missing" or (
+                finder_state == "late"
+                and sum(call[0] == "osascript" for call in calls) == 1
+            ):
+                raise subprocess.CalledProcessError(
+                    1,
+                    command,
+                    stderr='Finder got an error: Can\u2019t get disk "iOpenPod 2.0.4". (-1728)',
+                )
             Path(command[3], ".DS_Store").write_bytes(b"Finder layout")
         elif command[:2] == ["hdiutil", "detach"]:
-            assert Path(command[2], ".DS_Store").read_bytes() == b"Finder layout"
+            if Path(command[2], ".DS_Store").exists():
+                assert Path(command[2], ".DS_Store").read_bytes() == b"Finder layout"
         elif command[:2] == ["hdiutil", "convert"]:
             assert command[command.index("-format") + 1] == "UDZO"
             Path(command[-1]).write_bytes(b"compressed disk image")
@@ -426,19 +463,39 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
 
     monkeypatch.setattr(Path, "symlink_to", fake_symlink)
     monkeypatch.setattr(subprocess, "run", fake_run)
+    if finder_state in {"missing", "denied", "timeout"}:
+        error_type = (
+            subprocess.TimeoutExpired
+            if finder_state == "timeout"
+            else subprocess.CalledProcessError
+        )
+        with pytest.raises(error_type):
+            package_app.archive()
+        assert calls[-1][:2] == ["hdiutil", "detach"]
+        assert not any(command[:2] == ["hdiutil", "convert"] for command in calls)
+        assert not list((tmp_path / "dist").glob("*.dmg*"))
+        assert sum(command[0] == "osascript" for command in calls) == (
+            10 if finder_state == "missing" else 1
+        )
+        assert waits == ([2] * 9 if finder_state == "missing" else [])
+        return
     archive = package_app.archive()
     version = package_app.project_version()
     assert archive.name == f"iOpenPod-{version}-sparkle-update-macOS-{architecture}.zip"
     dmg = archive.parent / f"iOpenPod-{version}-macOS-{architecture}.dmg"
 
     assert archive.is_file() and dmg.is_file()
+    assert waits == ([2] if finder_state == "late" else [])
     assert [command[:2] for command in calls] == [
         ["ditto", "-c"],
         ["ditto", str(app)],
         ["hdiutil", "create"],
         ["hdiutil", "resize"],
         ["hdiutil", "attach"],
-        ["osascript", str(artwork / "dmg-layout.applescript")],
+        *(
+            [["osascript", str(artwork / "dmg-layout.applescript")]]
+            * (2 if finder_state == "late" else 1)
+        ),
         ["hdiutil", "detach"],
         ["hdiutil", "convert"],
         ["hdiutil", "verify"],
