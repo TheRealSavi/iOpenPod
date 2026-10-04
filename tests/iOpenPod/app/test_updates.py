@@ -30,7 +30,14 @@ from iOpenPod.app.updates.windows import (
 APPLICATION = QApplication.instance() or QApplication([])
 
 
-def test_portable_download_keeps_work_usable_until_explicit_guarded_restart() -> None:
+@pytest.mark.parametrize(
+    ("channel", "name"),
+    [(InstallChannel.FROZEN, "GitHub"), (InstallChannel.PYPI, "PyPI")],
+)
+def test_staged_download_keeps_work_usable_until_explicit_guarded_restart(
+    channel: InstallChannel,
+    name: str,
+) -> None:
     backend = FakeBackend()
     status = ApplicationStatus()
     calls: list[str] = []
@@ -42,9 +49,7 @@ def test_portable_download_keeps_work_usable_until_explicit_guarded_restart() ->
 
     updater = UpdateController(
         status,
-        lambda: UpdateProvider(
-            InstallChannel.FROZEN, backend, "GitHub", staged_download=True
-        ),
+        lambda: UpdateProvider(channel, backend, name, staged_download=True),
         prepare,
         lambda: calls.append("finish"),
     )
@@ -80,7 +85,14 @@ def wait_until(predicate: Callable[[], bool]) -> None:
     assert predicate(), "The expected update event was not delivered"
 
 
-def test_cancel_download_closes_worker_without_acquiring_install_guard() -> None:
+@pytest.mark.parametrize(
+    ("channel", "name"),
+    [(InstallChannel.FROZEN, "GitHub"), (InstallChannel.PYPI, "PyPI")],
+)
+def test_cancel_download_closes_worker_without_acquiring_install_guard(
+    channel: InstallChannel,
+    name: str,
+) -> None:
     backend = FakeBackend()
     status = ApplicationStatus()
     calls: list[str] = []
@@ -91,9 +103,7 @@ def test_cancel_download_closes_worker_without_acquiring_install_guard() -> None
 
     updater = UpdateController(
         status,
-        lambda: UpdateProvider(
-            InstallChannel.FROZEN, backend, "GitHub", staged_download=True
-        ),
+        lambda: UpdateProvider(channel, backend, name, staged_download=True),
         prepare,
         lambda: calls.append("finish"),
     )
@@ -108,6 +118,7 @@ def test_cancel_download_closes_worker_without_acquiring_install_guard() -> None
         assert status.current_status.action.key == "cancel-download"
         status.request_action(UPDATE_STATUS_SOURCE, "cancel-download")
         assert backend.closed and not updater.busy and not updater.installing
+        assert name in updater.message
         assert not calls and backend.installs == 0
         # A late worker event cannot turn cancellation into a restart.
         backend.event = UpdateResult(UpdateOutcome.READY)

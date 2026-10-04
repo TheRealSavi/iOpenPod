@@ -28,6 +28,14 @@ Settings > About also shows the detected Install Channel beside the version and
 offers a manual check using the same update workflow. Other channels are identified
 where runtime evidence permits. Mac App Store, Flatpak and Snap remain managed by
 their installation source. See ADR-0109 for standalone trust and recovery policy.
+Installed Python packages also check PyPI. **Update now** stages a compatible,
+non-yanked stable wheel; **Restart to install** protects pending work, closes the
+app, upgrades that same Python environment, verifies the runtime and relaunches.
+Standard UV tool installs upgrade through UV's tool manager. Editable checkouts
+are excluded. Customized UV tools, pipx, locked, externally managed and read-only
+environments retain manual update guidance. See ADR-0113 for package
+identity, ownership and failure limits; Python package replacement has no automatic
+rollback.
 
 Startup checks media tools and offers a skippable setup popup for missing FFmpeg,
 FFprobe, or fpcalc. Settings > Media Tools shows tool and FFmpeg encoder status,

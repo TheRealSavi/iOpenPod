@@ -8416,6 +8416,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Python / Quellcode</translation>
     </message>
     <message>
+        <source>Python package (PyPI updates)</source>
+        <translation>Python-Paket (Updates über PyPI)</translation>
+    </message>
+    <message>
         <source>Rating must be between 0 and 100.</source>
         <translation>Die Bewertung muss zwischen 0 und 100 liegen.</translation>
     </message>

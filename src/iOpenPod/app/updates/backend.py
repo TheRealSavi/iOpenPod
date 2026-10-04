@@ -13,6 +13,7 @@ class InstallChannel(StrEnum):
     UNPACKAGED = "unpackaged"
     FROZEN = "frozen"
     SOURCE = "source"
+    PYPI = "pypi"
     MAC_APP_STORE = "mac-app-store"
     APP_STORE_TEST = "app-store-test"
     FLATPAK = "flatpak"
@@ -28,6 +29,7 @@ class InstallChannel(StrEnum):
             InstallChannel.UNPACKAGED: source_text("Unpackaged"),
             InstallChannel.FROZEN: source_text("Standalone executable"),
             InstallChannel.SOURCE: source_text("Python / source"),
+            InstallChannel.PYPI: source_text("Python package (PyPI updates)"),
             InstallChannel.MAC_APP_STORE: source_text(
                 "Mac App Store (receipt detected)"
             ),

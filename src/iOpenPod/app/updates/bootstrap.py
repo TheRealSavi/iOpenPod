@@ -30,6 +30,13 @@ def prepare_launch(health: list[str] | None) -> None:
             raise ValueError(
                 "This installation does not support a helper health launch"
             )
+        if installation is None:
+            from .python_installation import running_python_installation
+
+            python_installation = running_python_installation()
+            if python_installation is not None:
+                _lease = HostInstallationLease(python_installation.packages)
+                atexit.register(_lease.close)
         return
     if health:
         operation = read_operation(Path(health[0]), installation.public_keys)

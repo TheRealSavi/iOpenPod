@@ -169,13 +169,14 @@ class UpdateController(QObject):
         if source != UPDATE_STATUS_SOURCE or self._closed:
             return
         if key == "cancel-download" and self._downloading:
+            channel_name = self._channel_name
             self._timer.stop()
             self._busy = False
             self._downloading = False
             self._available = False
             self._close_backend()
             self._show(
-                self.tr("%1 update canceled").replace("%1", "GitHub"),
+                self.tr("%1 update canceled").replace("%1", channel_name),
                 action=StatusAction("retry", self.tr("Retry check")),
             )
             return

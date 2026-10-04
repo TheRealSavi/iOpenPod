@@ -24,7 +24,7 @@ def test_download_requires_exact_signed_bytes(
 
     monkeypatch.setattr(client, "_open", response)
     selected = replace(asset(), size=3, sha256=hashlib.sha256(b"new").hexdigest())
-    with pytest.raises(ValueError, match="signed"):
+    with pytest.raises(ValueError, match="expected"):
         client.download(
             selected, tmp_path / "download", Event(), lambda _progress: None
         )

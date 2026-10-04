@@ -185,3 +185,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0110: Offer macOS drag-to-Applications disk images](0110-offer-macos-drag-to-applications-disk-images.md)
 - [ADR-0111: Correct evidenced artwork format sizes during preparation](0111-correct-evidenced-artwork-format-sizes-during-preparation.md)
 - [ADR-0112: Publish Python distributions with GitHub Releases](0112-publish-python-distributions-with-github-releases.md)
+- [ADR-0113: Update installed Python packages through PyPI](0113-update-installed-python-packages-through-pypi.md)

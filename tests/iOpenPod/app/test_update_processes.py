@@ -43,6 +43,11 @@ def test_stopping_candidate_stops_only_its_owned_process_tree(tmp_path: Path) ->
         assert not descendant.exited()
         child.stop()
         assert child.poll() is not None
+        # Windows may publish the empty job count before every terminated
+        # descendant's process handle becomes signaled.
+        deadline = time.monotonic() + 5
+        while not descendant.exited() and time.monotonic() < deadline:
+            time.sleep(0.01)
         assert descendant.exited()
     finally:
         child.stop()

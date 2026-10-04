@@ -21,12 +21,16 @@ from iOpenPod.GUI.widgets.status_controls import StatusBarControls
 from iPodDB.library import LibrarySnapshot
 
 
+@pytest.mark.parametrize(
+    "channel", [InstallChannel.MICROSOFT_STORE, InstallChannel.PYPI]
+)
 def test_about_button_checks_again_and_shows_channel_and_result(
     monkeypatch: pytest.MonkeyPatch,
+    channel: InstallChannel,
 ) -> None:
     context = build_context()
     backend = FakeBackend()
-    mock_provider(monkeypatch, backend)
+    mock_provider(monkeypatch, backend, channel)
     window = MainWindow(context, auto_discover=False)
     try:
         button = window.findChild(QPushButton, "checkAppUpdates")
@@ -36,7 +40,7 @@ def test_about_button_checks_again_and_shows_channel_and_result(
         message = window.findChild(QLabel, "appUpdateMessage")
         assert button is not None and version is not None and message is not None
         window.check_app_updates()
-        assert "Microsoft Store" in version.text()
+        assert channel.display_name in version.text()
         assert not button.isEnabled()
         button.click()
         assert backend.checks == 1
@@ -86,9 +90,15 @@ def test_about_unsupported_check_explains_limitation(
         context.shutdown()
 
 
-def mock_provider(monkeypatch: pytest.MonkeyPatch, backend: FakeBackend) -> None:
+def mock_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: FakeBackend,
+    channel: InstallChannel = InstallChannel.MICROSOFT_STORE,
+) -> None:
     def create_provider(_window: int) -> UpdateProvider:
-        return UpdateProvider(InstallChannel.MICROSOFT_STORE, backend)
+        return UpdateProvider(
+            channel, backend, "PyPI" if channel is InstallChannel.PYPI else ""
+        )
 
     monkeypatch.setattr(
         "iOpenPod.GUI.main_window.create_update_provider", create_provider

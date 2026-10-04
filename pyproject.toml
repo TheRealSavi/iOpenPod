@@ -51,6 +51,7 @@ dependencies = [
     "mutagen>=1.48.1",
     "numba>=0.62.1,<0.63 ; platform_machine == 'x86_64' and sys_platform == 'darwin'",
     "numpy>=2.2,<3",
+    "packaging>=26,<27",
     "pillow>=12.3.0",
     "pycryptodome>=3.20,<4",
     "pyobjc-framework-mediaplayer>=12.1,<13 ; sys_platform == 'darwin'",

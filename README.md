@@ -89,6 +89,12 @@ uv tool install --python 3.12 iopenpod
 iopenpod
 ```
 
+Python installations check PyPI at launch and from **Settings > About**. Choose
+**Update now**, then **Restart to install** to install and relaunch automatically.
+Standard UV tool installs and writable Python package environments are supported;
+customized tool environments show manual upgrade guidance. See
+[Application updates](docs/app-updates.md#python-packages-and-pypi).
+
 ### Media tools
 
 **FFmpeg and FFprobe** are installed separately for media conversion and inspection.

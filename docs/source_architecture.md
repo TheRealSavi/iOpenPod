@@ -1393,6 +1393,14 @@ guard. Generic exact-file replacement and installation-use locks belong to
 Storage's Host boundary, independently of Filesystem Sessions. Portable helpers
 own replacement after acknowledged shutdown and commit health before device work
 resumes. Sparkle owns macOS bundle installation through a typed native bridge.
+Installed Python packages select compatible PyPI wheels from bounded index metadata.
+A separate Python helper waits for authorized shutdown, takes exclusive installation
+ownership and delegates the exact wheel to a package manager targeting the same
+interpreter. It verifies the installed version and device-free runtime before
+relaunch. Standard UV tool installs use UV's tool upgrade with their receipt-bound
+directories. Editable checkouts and unsupported managed environments cannot
+authorize replacement. Package-manager failure retains diagnostics, without claiming the
+transactional rollback provided by standalone helpers. See ADR-0113.
 No updater may mirror a user's installation directory or infer ownership of
 adjacent files. See [Application updates](app-updates.md) and ADR-0109.
 

@@ -8416,6 +8416,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Python / código fuente</translation>
     </message>
     <message>
+        <source>Python package (PyPI updates)</source>
+        <translation>Paquete de Python (actualizaciones de PyPI)</translation>
+    </message>
+    <message>
         <source>Rating must be between 0 and 100.</source>
         <translation>La valoración debe estar entre 0 y 100.</translation>
     </message>

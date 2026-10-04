@@ -23,7 +23,7 @@ from iOpenPod.app.updates.portable import (
 )
 from iOpenPod.app.updates.processes import CandidateProcess
 from iOpenPod.app.updates.releases import ReleaseAsset, verify_release
-from iOpenPod.app.updates.transport import UpdateTransport, validate_url
+from iOpenPod.app.updates.transport import DownloadAsset, UpdateTransport, validate_url
 from storage.host_installation import file_identity, move_owned_file
 from storage.host_usage import HostInstallationLease
 
@@ -350,7 +350,7 @@ def test_authenticated_stage_does_not_modify_the_running_application(
     class Transport(UpdateTransport):
         def download(
             self,
-            asset: ReleaseAsset,
+            asset: DownloadAsset,
             path: Path,
             cancel: Event,
             progress: Callable[[float], None],

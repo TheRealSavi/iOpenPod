@@ -222,7 +222,7 @@ normal lowercase conventions while retaining the same domain term.
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **Install Channel** | The evidenced distribution source of the running iOpenPod installation, which determines its update provider. Package identity alone does not imply Microsoft Store. | update server, platform |
+| **Install Channel** | The evidenced distribution source of the running iOpenPod installation, which determines its update provider. Package identity alone does not imply Microsoft Store. Python index installs can establish package ownership without recording the original index; their label identifies PyPI as the update source. | update server, platform |
 | **Update Backend** | An Application Layer adapter that checks and requests installation through one Install Channel, exposing typed outcomes and progress without native package objects. | device updater, firmware updater |
 
 ## Example dialogue

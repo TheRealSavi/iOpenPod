@@ -27,10 +27,9 @@ from iOpenPod.app.updates.portable import unpack_linux, verify_linux_runtime
 from iOpenPod.app.updates.releases import (
     TARGET_LAYOUTS,
     TARGET_SUFFIXES,
-    ReleaseAsset,
     verify_release,
 )
-from iOpenPod.app.updates.transport import UpdateTransport
+from iOpenPod.app.updates.transport import DownloadAsset, UpdateTransport
 from storage.host_installation import HostFileIdentity
 
 SEED = bytes(range(32))  # Public test fixture, never a release credential.
@@ -217,7 +216,7 @@ def test_linux_staging_retry_reuses_only_a_complete_verified_version(
     class LocalTransport(UpdateTransport):
         def download(
             self,
-            asset: ReleaseAsset,
+            asset: DownloadAsset,
             path: Path,
             cancel: Event,
             progress: Callable[[float], None],

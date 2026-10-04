@@ -16,10 +16,12 @@ _FLATPAK_INFO = Path("/.flatpak-info")
 
 
 def _unpackaged_channel() -> InstallChannel:
+    if getattr(sys, "frozen", False):
+        return InstallChannel.FROZEN
+    from .python_installation import running_python_installation
+
     return (
-        InstallChannel.FROZEN
-        if getattr(sys, "frozen", False)
-        else InstallChannel.SOURCE
+        InstallChannel.PYPI if running_python_installation() else InstallChannel.SOURCE
     )
 
 
@@ -38,7 +40,7 @@ def _linux_channel() -> InstallChannel:
 
 def _macos_channel() -> InstallChannel:
     if not getattr(sys, "frozen", False):
-        return InstallChannel.SOURCE
+        return _unpackaged_channel()
     foundation = import_module("Foundation")
     receipt_url = foundation.NSBundle.mainBundle().appStoreReceiptURL()
     if receipt_url is not None:
@@ -104,6 +106,26 @@ def create_update_provider(window_id: int) -> UpdateProvider:
 
 
 def _standalone_provider(channel: InstallChannel) -> UpdateProvider:
+    if channel is InstallChannel.PYPI:
+        from .pypi import PyPIBackend
+        from .python_helper import PythonInstaller
+        from .python_installation import running_python_installation
+
+        python_installation = running_python_installation()
+        if python_installation is None:
+            raise ValueError("The Python installation changed during detection")
+        python_installer: PythonInstaller | None = None
+        restriction = ""
+        try:
+            python_installer = PythonInstaller(python_installation)
+        except (OSError, ValueError) as error:
+            restriction = str(error)
+        return UpdateProvider(
+            channel,
+            PyPIBackend(python_installation, python_installer, restriction=restriction),
+            "PyPI",
+            staged_download=True,
+        )
     if channel is not InstallChannel.FROZEN:
         return UpdateProvider(channel)
     from .github import GitHubBackend, ReleaseInstaller

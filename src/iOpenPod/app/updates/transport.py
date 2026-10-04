@@ -5,14 +5,12 @@ from __future__ import annotations
 import hashlib
 import ssl
 from time import monotonic
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 import certifi
-
-from .releases import MAX_METADATA, ReleaseAsset
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -33,11 +31,11 @@ _HOSTS = frozenset(
 )
 
 
-def validate_url(url: str) -> None:
+def validate_url(url: str, hosts: frozenset[str] = _HOSTS) -> None:
     parsed = urlsplit(url)
     if (
         parsed.scheme != "https"
-        or parsed.hostname not in _HOSTS
+        or parsed.hostname not in hosts
         or parsed.username
         or parsed.password
         or parsed.port not in (None, 443)
@@ -47,6 +45,10 @@ def validate_url(url: str) -> None:
 
 
 class _Redirects(HTTPRedirectHandler):
+    def __init__(self, hosts: frozenset[str] = _HOSTS) -> None:
+        super().__init__()
+        self._hosts = hosts
+
     def redirect_request(
         self,
         req: Request,
@@ -56,16 +58,47 @@ class _Redirects(HTTPRedirectHandler):
         headers: object,
         newurl: str,
     ) -> Request | None:
-        validate_url(newurl)
+        validate_url(newurl, self._hosts)
         # The stdlib implementation owns the redirect count and method handling.
         return super().redirect_request(req, fp, code, msg, headers, newurl)  # type: ignore[arg-type]
 
 
+class DownloadAsset(Protocol):
+    @property
+    def filename(self) -> str: ...
+
+    @property
+    def url(self) -> str: ...
+
+    @property
+    def size(self) -> int: ...
+
+    @property
+    def sha256(self) -> str: ...
+
+
 class UpdateTransport:
+    def __init__(
+        self,
+        *,
+        hosts: frozenset[str] = _HOSTS,
+        metadata_limit: int | None = None,
+        accept: str = "application/json, application/octet-stream",
+    ) -> None:
+        if metadata_limit is None:
+            # PyPI's independent helper must not load the standalone signature
+            # runtime's native libraries while their package may be replaced.
+            from .releases import MAX_METADATA
+
+            metadata_limit = MAX_METADATA
+        self._hosts = hosts
+        self._metadata_limit = metadata_limit
+        self._accept = accept
+
     def _open(self, url: str) -> addinfourl:
-        validate_url(url)
+        validate_url(url, self._hosts)
         opener = build_opener(
-            _Redirects(),
+            _Redirects(self._hosts),
             HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where())),
         )
         try:
@@ -76,7 +109,7 @@ class UpdateTransport:
                         url,
                         headers={
                             "User-Agent": "iOpenPod-Updater/1",
-                            "Accept": "application/json, application/octet-stream",
+                            "Accept": self._accept,
                             "Accept-Encoding": "identity",
                         },
                     ),
@@ -90,7 +123,7 @@ class UpdateTransport:
                 ) from error
             if error.code == 404:
                 raise OSError(
-                    "The signed update feed or release asset is not published yet"
+                    "The update metadata or release asset is not published yet"
                 ) from error
             raise
 
@@ -105,18 +138,19 @@ class UpdateTransport:
                 if monotonic() > deadline:
                     raise TimeoutError("Update metadata request timed out")
                 chunk = cast(
-                    "bytes", response.read1(min(64 * 1024, MAX_METADATA - received + 1))
+                    "bytes",
+                    response.read1(min(64 * 1024, self._metadata_limit - received + 1)),
                 )
                 if not chunk:
                     return b"".join(chunks)
                 received += len(chunk)
-                if received > MAX_METADATA:
+                if received > self._metadata_limit:
                     raise ValueError("Update metadata exceeds its size limit")
                 chunks.append(chunk)
 
     def download(
         self,
-        asset: ReleaseAsset,
+        asset: DownloadAsset,
         path: Path,
         cancel: Event,
         progress: Callable[[float], None],
@@ -135,13 +169,13 @@ class UpdateTransport:
                     break
                 received += len(chunk)
                 if received > asset.size:
-                    raise ValueError("Update download exceeds its signed size")
+                    raise ValueError("Update download exceeds its expected size")
                 stream.write(chunk)
                 digest.update(chunk)
                 progress(received / asset.size)
             if received != asset.size or digest.hexdigest() != asset.sha256:
                 raise ValueError(
-                    "Update download does not match its signed size and SHA-256"
+                    "Update download does not match its expected size and SHA-256"
                 )
             import os
 

@@ -1,8 +1,9 @@
 # Application updates
 
 iOpenPod checks its installation's update source once after the main window opens.
-Supported installers are Microsoft Store and authenticated standalone GitHub
-releases. Native Windows package identity plus a Store signature selects the Store
+Supported installations are Microsoft Store, authenticated standalone GitHub
+releases, and eligible Python packages checking PyPI. Native Windows package
+identity plus a Store signature selects the Store
 channel. Other installations do not query the Store. An identity-query failure is
 reported as unavailable.
 
@@ -26,13 +27,72 @@ Source labels come from runtime evidence, without a per-build channel flag:
   validation, and never authorizes an update backend. A missing receipt falls
   back to **Standalone executable**; it does not prove an app was never obtained
   from the Store. This compatibility API supports the macOS 12.3 target.
-- Otherwise, PyInstaller's runtime marker distinguishes **Standalone executable**
-  from **Python / source**. It cannot establish which website supplied a download.
+- PyInstaller's runtime marker identifies **Standalone executable**. It cannot
+  establish which website supplied a download.
+- An installed Python distribution must own the running module in this
+  interpreter's package directory and record pip or UV as its installer. Editable,
+  local archive and VCS installs remain **Python / source**. Ordinary index installs
+  do not record the original index, so **Python package (PyPI updates)** identifies
+  the update source without claiming historical PyPI provenance. A direct wheel
+  from PyPI's official file host also remains eligible after a self-update.
 
 Mac App Store, Flatpak, and
 Snap source labels do not imply built-in update support. The shared application
 code can detect its packaging; native platform builds, store signatures, package
 formats, and sandbox adaptation still differ as described in [Packaging](packaging.md).
+
+## Python packages and PyPI
+
+Eligible Python installations check PyPI at launch and through **Settings > About**.
+The updater selects the newest compatible stable wheel using Python version and
+platform tags. It excludes pre-releases, development builds and yanked files. A
+newer release with no compatible wheel prompts a manual upgrade rather than
+claiming the installation is current. Network and metadata errors remain failures.
+
+**Update now** downloads the wheel, verifies its byte length and SHA-256, and runs
+the package manager's dependency resolution without changing the environment.
+The app remains usable until **Restart to install**. That action takes the existing
+Library Draft and workflow guard, rechecks the selected PyPI release, saves settings
+and hands off to an independent helper. After the old process exits, the helper
+obtains exclusive installation ownership, installs the selected wheel and any
+required dependencies, verifies the installed version and device-free runtime,
+then relaunches iOpenPod automatically. Another participating iOpenPod instance
+blocks replacement and is never forcibly closed. Installation may still need
+network access after shutdown.
+
+The helper targets the exact running interpreter, using an available UV executable
+or that interpreter's pip. A pip user-site installation keeps its user scope.
+Standard `uv tool install --python 3.12 iopenpod` installations use UV's own tool
+upgrade command. Their receipt binds the tool and executable directories, and its
+requirements remain unpinned so subsequent upgrades continue to work.
+Ambient package-manager configuration cannot redirect the target or index. The
+updater never requests elevation or bypasses externally managed environments.
+Customized or pinned UV tools, pipx, Conda, recognized project lockfiles, linked paths and read-only
+installations receive update notices with manual guidance instead. Optional extras
+are not newly enabled by an update. Repository development commands still use UV.
+
+Trust comes from HTTPS PyPI index metadata and its SHA-256 wheel digest, separately
+from the signed GitHub release feed. Metadata is limited to 2 MiB and a wheel to
+100 MiB. Wheel URLs and redirects use only the configured PyPI hosts; installation
+pins the selected public wheel URL and digest. Installed package identity is
+checked again before handoff and replacement. The `packaging` runtime dependency
+implements Python version requirements, wheel tags and PEP 440 ordering.
+
+Python package managers do not provide the standalone helper's rollback protocol.
+A failed install can leave an environment requiring repair; the helper retains
+logs under a private `python-update-*` directory in the application cache and
+attempts to relaunch the app. On its next successful launch, iOpenPod reports the
+retained installation failure once. If it cannot launch, use the retained
+`installer.log`, `helper.log` and `relaunch.log` to repair the Python environment
+with its package manager. Settings and device contents are not part of replacement.
+
+Tests cover install ownership, source/editable exclusion, release compatibility,
+yanking, hash changes, shared/exclusive ownership, guarded UI handoff, retained
+failures, and real UV package and tool upgrades in disposable environments. Release acceptance
+must still exercise a real published A-to-B update through the GUI on each OS,
+including pip user installs, failed dependency resolution and a failed relaunch.
+Existing versions without this updater need one manual upgrade. See
+[ADR-0113](adr/0113-update-installed-python-packages-through-pypi.md).
 
 ## GitHub standalone releases
 
@@ -229,6 +289,10 @@ does not establish Store update eligibility.
 - [Apple: Bundle receipt URL](https://developer.apple.com/documentation/foundation/bundle/appstorereceipturl)
 - [Flatpak: Sandbox metadata](https://github.com/flatpak/flatpak/wiki/Sandbox)
 - [Snap: Runtime environment](https://snapcraft.io/docs/reference/development/environment-variables/)
+- [PyPI: Index API](https://docs.pypi.org/api/index-api/)
+- [PyPA: Recording direct URL origins](https://packaging.python.org/en/latest/specifications/direct-url/)
+- [UV: Using Python environments](https://docs.astral.sh/uv/pip/environments/)
+- [pip: Configuration](https://pip.pypa.io/en/stable/topics/configuration/)
 
 The supplied October 2, 2026 implementation report and reference adapter informed
 the Store contract. Their proposed application policy and asyncio example were
