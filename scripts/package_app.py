@@ -315,6 +315,22 @@ def _write_checksum(path: Path) -> None:
     )
 
 
+def detach_macos_image(mountpoint: Path) -> None:
+    """Allow Finder to release the image without forcing an unmount."""
+    for attempt in range(5):
+        try:
+            subprocess.run(
+                ["hdiutil", "detach", str(mountpoint)], check=True, timeout=30
+            )
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 16 or attempt == 4:
+                raise
+            print("Waiting for the mounted DMG to become idle...", flush=True)
+            time.sleep(2**attempt)
+        else:
+            return
+
+
 def macos_dmg(app: Path, output: Path, version: str) -> Path:
     """Build a styled drag-to-Applications image from the signed app bundle."""
     if not app.is_dir():
@@ -373,7 +389,8 @@ def macos_dmg(app: Path, output: Path, version: str) -> Path:
             check=True,
         )
         try:
-            # hdiutil can finish mounting before Finder registers the volume.
+            # Address the actual mount path, not Finder's displayed disk name.
+            # hdiutil can finish mounting before Finder registers the folder.
             # Retry only Finder's object-not-found error, leaving other script,
             # permission and timeout failures visible to the release job.
             for attempt in range(10):
@@ -382,7 +399,6 @@ def macos_dmg(app: Path, output: Path, version: str) -> Path:
                         [
                             "osascript",
                             str(ROOT / "packaging/macos/dmg-layout.applescript"),
-                            volume_name,
                             str(mountpoint),
                         ],
                         check=True,
@@ -402,7 +418,7 @@ def macos_dmg(app: Path, output: Path, version: str) -> Path:
                 else:
                     break
         finally:
-            subprocess.run(["hdiutil", "detach", str(mountpoint)], check=True)
+            detach_macos_image(mountpoint)
         subprocess.run(
             ["hdiutil", "convert", str(writable), "-format", "UDZO", "-o", str(output)],
             check=True,

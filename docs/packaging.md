@@ -65,10 +65,17 @@ Remove that specific generated directory before staging again. Windows archives
 contain only `iOpenPod.exe`; MSIX staging copies that same executable to `app/`.
 macOS ZIPs preserve `.app` symlinks using `ditto`. Each macOS DMG copies that same
 signed app with `ditto` into a read-only image beside an `/Applications` shortcut.
-Finder can lag behind a successful mount. Layout retries its object-not-found
+Layout addresses the actual Mount Point by alias: Finder can display a custom
+mount directory's name instead of the filesystem volume label. Icon-view settings
+are obtained from that folder's container window. Layout retries its object-not-found
 error (`-1728`) up to ten attempts, two seconds apart, with a 60-second timeout per
 script invocation. Other failures stop immediately; the image is detached before
 the error propagates, and conversion and checksum generation require a saved layout.
+The layout window closes before detach. If macOS still reports a busy image,
+detach retries up to five times with bounded backoff; it never forces an unmount.
+For troubleshooting on macOS, run `uv run python -m scripts.check_macos_dmg` to
+exercise packaging with a small app fixture and check the finished image's contents.
+This diagnostic is manual; normal builds validate only the finished release DMG.
 The ZIP stays available for Sparkle's signed appcast; the DMG is for a first manual
 drag to Applications. Linux archives preserve
 executable modes and dereference bundled library symlinks. Their managed root has

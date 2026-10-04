@@ -432,7 +432,8 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
         elif command[0] == "osascript":
             assert capture_output and text and timeout == 60
             assert command[1] == str(artwork / "dmg-layout.applescript")
-            assert command[2] == f"iOpenPod {package_app.project_version()}"
+            attach = next(call for call in calls if call[:2] == ["hdiutil", "attach"])
+            assert command[2:] == [attach[attach.index("-mountpoint") + 1]]
             if finder_state == "timeout":
                 raise subprocess.TimeoutExpired(command, 60)
             if finder_state == "denied":
@@ -450,7 +451,7 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
                     command,
                     stderr='Finder got an error: Can\u2019t get disk "iOpenPod 2.0.4". (-1728)',
                 )
-            Path(command[3], ".DS_Store").write_bytes(b"Finder layout")
+            Path(command[2], ".DS_Store").write_bytes(b"Finder layout")
         elif command[:2] == ["hdiutil", "detach"]:
             if Path(command[2], ".DS_Store").exists():
                 assert Path(command[2], ".DS_Store").read_bytes() == b"Finder layout"
@@ -503,6 +504,38 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
     assert dmg.with_name(dmg.name + ".sha256").read_text() == (
         f"{hashlib.sha256(dmg.read_bytes()).hexdigest()}  {dmg.name}\n"
     )
+
+
+@pytest.mark.parametrize(
+    "failures,returncode,expected_attempts",
+    [(0, 16, 1), (1, 16, 2), (5, 16, 5), (1, 1, 1)],
+)
+def test_macos_detach_retries_only_busy_images(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failures: int,
+    returncode: int,
+    expected_attempts: int,
+) -> None:
+    calls: list[list[str]] = []
+    waits: list[float] = []
+
+    def detach(command: list[str], *, check: bool, timeout: int) -> None:
+        assert check and timeout == 30
+        assert command == ["hdiutil", "detach", str(tmp_path)]
+        calls.append(command)
+        if len(calls) <= failures:
+            raise subprocess.CalledProcessError(returncode, command)
+
+    monkeypatch.setattr(subprocess, "run", detach)
+    monkeypatch.setattr(time, "sleep", waits.append)
+    if failures >= expected_attempts:
+        with pytest.raises(subprocess.CalledProcessError):
+            package_app.detach_macos_image(tmp_path)
+    else:
+        package_app.detach_macos_image(tmp_path)
+    assert len(calls) == expected_attempts
+    assert waits == [2**attempt for attempt in range(expected_attempts - 1)]
 
 
 @pytest.mark.parametrize("status,expected_calls", [(15700, 1), (122, 0), (5, 0)])
