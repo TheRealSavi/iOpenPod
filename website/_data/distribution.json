@@ -3,8 +3,7 @@
   "release_status": "Native downloads are available for Windows, macOS, and Linux, with in-app GitHub updates. Microsoft Store is also available; PyPI and other stores remain planned.",
   "status_date": "2026-10-04",
   "native_release": {
-    "version": "2.0.3",
-    "url": "https://github.com/TheRealSavi/iOpenPod/releases/tag/v2.0.3"
+    "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest"
   },
   "platforms": [
     {
@@ -12,7 +11,7 @@
       "name": "Windows",
       "target": "Windows 10 / 11 · x64",
       "channels": [
-        {"id": "windows-binary", "name": "Direct download", "format": "ZIP · standalone executable · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.3/iOpenPod-2.0.3-Windows-AMD64.zip", "label": "Download for Windows"},
+        {"id": "windows-binary", "name": "GitHub download", "format": "Windows AMD64 ZIP · standalone executable · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Windows release"},
         {"id": "microsoft-store", "name": "Microsoft Store", "format": "Install and update through the Store", "status": "available", "url": "https://apps.microsoft.com/detail/9P2LXCHHWLG9", "label": "Get it from Microsoft Store"}
       ]
     },
@@ -21,8 +20,8 @@
       "name": "macOS",
       "target": "Apple Silicon & Intel",
       "channels": [
-        {"id": "macos-arm64", "name": "Direct download · Apple Silicon", "format": "DMG · drag to Applications · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.3/iOpenPod-2.0.3-macOS-arm64.dmg", "label": "Apple Silicon download"},
-        {"id": "macos-x64", "name": "Direct download · Intel", "format": "DMG · drag to Applications · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.3/iOpenPod-2.0.3-macOS-x86_64.dmg", "label": "Intel Mac download"},
+        {"id": "macos-arm64", "name": "GitHub download · Apple Silicon", "format": "macOS arm64 DMG · drag to Applications · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Apple Silicon release"},
+        {"id": "macos-x64", "name": "GitHub download · Intel", "format": "macOS x86_64 DMG · drag to Applications · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Intel Mac release"},
         {"id": "mac-app-store", "name": "Mac App Store", "format": "Install and update through the App Store", "status": "planned", "url": null, "label": "Mac App Store"}
       ]
     },
@@ -31,7 +30,7 @@
       "name": "Linux",
       "target": "x64 desktop · glibc 2.39+",
       "channels": [
-        {"id": "linux-binary", "name": "Direct download", "format": "tar.gz · complete app folder · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.3/iOpenPod-2.0.3-Linux-x86_64.tar.gz", "label": "Download for Linux"},
+        {"id": "linux-binary", "name": "GitHub download", "format": "Linux x86_64 tar.gz · complete app folder · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Linux release"},
         {"id": "flathub", "name": "Flathub", "format": "Flatpak package", "status": "planned", "url": null, "label": "Flathub"},
         {"id": "snap-store", "name": "Snap Store", "format": "Snap package", "status": "planned", "url": null, "label": "Snap Store"}
       ]

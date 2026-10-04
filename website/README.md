@@ -90,7 +90,7 @@ with keyboard activation and saved preferences.
 ## Migration and FAQ content
 
 The homepage restores migration and FAQ topics from the Original iOpenPod website,
-with answers adapted to the current 2.0 behavior and release status. Keep platform,
+with answers adapted to the current behavior and release status. Keep platform,
 device, backup, and media-tool claims consistent with the setup guide.
 
 `_data/faq.json` is the single source for the visible FAQ disclosures and the
@@ -110,19 +110,24 @@ uv run python tests/website/check_seo.py .scratch/website-preview/iOpenPod
 ## Maintain download and update instructions
 
 `_data/distribution.json` is the source for platform labels, release channels, and
-the featured native release. Windows x64, Apple Silicon, Intel Mac, and Linux x64
-downloads point to the published **v2.0.3** assets. Microsoft Store is available at
+the latest native release link. Windows x64, Apple Silicon, Intel Mac, and Linux x64
+downloads point to [GitHub’s latest release](https://github.com/TheRealSavi/iOpenPod/releases/latest).
+Microsoft Store is available at
 [the iOpenPod listing](https://apps.microsoft.com/detail/9P2LXCHHWLG9)
 (product ID `9P2LXCHHWLG9`). PyPI, Mac App Store, Flathub, and Snap Store remain
 `planned` with a null URL.
 
-The homepage and setup guide share the native asset URLs from this data file.
-`native_release.version` and `native_release.url` identify the release shown in
-both pages; the version also supplies the Linux extraction example and
-`SoftwareApplication` metadata. `release_status` supplies the structured-data
-release note. Keep these values, `status_date`, and every native URL in sync when
-featuring a newer release, and update the root README's download table at the same
-time. Use exact, publicly verified versioned asset URLs.
+The homepage and setup guide share the native download URLs from this data file.
+`native_release.url` and each native channel URL use `/releases/latest` so new
+releases do not require link edits. Asset filenames currently include a release
+number, so links open the latest release page and instructions identify each
+platform's filename ending. Do not construct `/releases/latest/download/` links
+unless a matching stable asset name is actually published.
+
+Use “latest” in the README and website instead of naming or pinning an iOpenPod
+version, including in installation commands and structured data. OS and Python
+requirements may still name their required versions. `release_status` supplies the
+structured-data release note; update it and `status_date` when availability changes.
 
 First installs use the Windows ZIP containing only `iOpenPod.exe`, the two macOS
 DMGs, and the complete Linux tar.gz folder. macOS ZIPs remain on the release page
@@ -139,25 +144,23 @@ Keep the homepage, setup guide, and `_data/faq.json` consistent with
 the separate `update-feed` branch; publishing this website does not publish or
 renew those feeds.
 
-Only set a channel to `available` when its actual **2.x** artifact or listing is
+Only set a channel to `available` when its latest artifact or listing is
 publicly accessible and its packaging acceptance is complete. Set `url` to the
 verified artifact or listing URL in the same edit. Both values are required to
-render a link. Do not use a generic latest-release redirect that could point at
-a 1.x build, or display a store badge for an unpublished listing.
+render a link. Verify the latest release contains each advertised native target;
+do not display a store badge for an unpublished listing.
 
 When a channel launches, update the availability copy in both pages, the root
 README, FAQ answers, and site/page descriptions. Also update
 `release_status` and `status_date` in the data file. Keep unreleased channels
 marked planned; a published Windows build does not establish Mac or Linux support.
 
-The Python example uses `iopenpod>=2,<3` and Python 3.12. Preserve that major-version
-constraint. The package name stays `iopenpod`; it is one application distribution.
+The Python example uses the unpinned package name `iopenpod` to select the latest
+published package, with Python 3.12. It is one application distribution.
 
 The root README uses absolute screenshot and documentation URLs so the package
 description works on PyPI. These URLs and `_config.yml`’s `source_url` name the
-`2.0` development branch.
-Before publishing, replace that ref with the public 2.x release tag or another
-verified, durable ref containing these images. Confirm anonymous access to every
+`main` development branch. Confirm anonymous access to every
 image and to the corresponding source, support, and license pages.
 
 ## Refresh screenshots

@@ -127,7 +127,7 @@ permalink: /
     <div class="container">
       <div class="section-intro">
         <h2 id="download-heading">Get iOpenPod.</h2>
-        <p>Native downloads include everything needed to run the app. No separate Python installation required. <a href="{{ site.data.distribution.native_release.url }}">Release {{ site.data.distribution.native_release.version }}</a></p>
+        <p>Native downloads include everything needed to run the app. No separate Python installation required. Open the <a href="{{ site.data.distribution.native_release.url }}">latest release</a> and choose the asset for your platform below.</p>
       </div>
       <div class="download-platforms">
         {% for platform in site.data.distribution.platforms %}
@@ -147,7 +147,7 @@ permalink: /
           <div class="platform-heading"><h3 id="platform-python">Prefer Python?</h3><p>One package. All three platforms.</p></div>
           <div>
             <ul class="channel-list">{% include download-channel.html channel=site.data.distribution.python %}</ul>
-            <p class="python-note">The 2.x package requires Python 3.12. <a href="{{ '/install-help/#python' | relative_url }}">Python install details</a></p>
+            <p class="python-note">The package requires Python 3.12. <a href="{{ '/install-help/#python' | relative_url }}">Python install details</a></p>
           </div>
         </article>
       </div>

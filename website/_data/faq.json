@@ -7,7 +7,7 @@
   {
     "id": "python",
     "question": "Do I need Python to use iOpenPod?",
-    "answer": "Native downloads for Windows, macOS, and Linux and the Microsoft Store app include the Python runtime, so no separate Python installation is needed. Running from source or using the future 2.x PyPI package requires Python 3.12."
+    "answer": "Native downloads for Windows, macOS, and Linux and the Microsoft Store app include the Python runtime, so no separate Python installation is needed. Running from source or using the planned PyPI package requires Python 3.12."
   },
   {
     "id": "flac",
@@ -32,7 +32,7 @@
   {
     "id": "updates",
     "question": "How do I update a GitHub download?",
-    "answer": "iOpenPod checks at launch, or you can use Settings → About → Check for updates. On Windows and Linux, choose Update now to download, then Restart to install after saving your work and closing other instances. On macOS, save your work, choose Update now, and follow the built-in updater’s prompts. Older builds that cannot update themselves, including 2.0.1, need a one-time manual install of the current release. Microsoft Store installations update through the Store."
+    "answer": "iOpenPod checks at launch, or you can use Settings → About → Check for updates. On Windows and Linux, choose Update now to download, then Restart to install after saving your work and closing other instances. On macOS, save your work, choose Update now, and follow the built-in updater’s prompts. Older builds that cannot update themselves need a one-time manual install of the latest release. Microsoft Store installations update through the Store."
   },
   {
     "id": "erase",
@@ -82,6 +82,6 @@
   {
     "id": "ipod-touch",
     "question": "Does iOpenPod support iPod touch?",
-    "answer": "iPod touch and iPhone are outside the iOpenPod target because they use a different device-access model. The current target covers filesystem-accessible full-size iPods, iPod classic, iPod mini, and iPod nano. iPod shuffle is also outside the 2.0 target; capabilities vary by model."
+    "answer": "iPod touch and iPhone are outside the iOpenPod target because they use a different device-access model. The current target covers filesystem-accessible full-size iPods, iPod classic, iPod mini, and iPod nano. iPod shuffle is also not yet supported; capabilities vary by model."
   }
 ]
