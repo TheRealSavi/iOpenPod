@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="880" viewBox="0 0 720 440">
+  <!-- Hallmark pre-emit critique: P5 H5 E5 S5 R5 V5 -->
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfcfe"/>
+      <stop offset="1" stop-color="#eef3f9"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#dceafb" stop-opacity=".72"/>
+      <stop offset="1" stop-color="#dceafb" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="720" height="440" fill="url(#paper)"/>
+  <ellipse cx="684" cy="18" rx="310" ry="200" fill="url(#glow)"/>
+  <circle cx="705" cy="34" r="157" fill="none" stroke="#87add5" stroke-width="1" opacity=".11"/>
+  <circle cx="705" cy="34" r="108" fill="none" stroke="#87add5" stroke-width="1" opacity=".11"/>
+  <circle cx="705" cy="34" r="41" fill="none" stroke="#87add5" stroke-width="1" opacity=".11"/>
+  <text x="48" y="53" fill="#1c2d44" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" letter-spacing="-.6">iOpenPod</text>
+  <path d="M48 79h624" stroke="#d9e2ec" stroke-width="1"/>
+  <path d="M328 206h57" stroke="#176fd1" stroke-width="4" stroke-linecap="round"/>
+  <path d="m376 197 10 9-10 9" fill="none" stroke="#176fd1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M100 347h520" stroke="#d5e0eb" stroke-width="1"/>
+  <text x="360" y="389" text-anchor="middle" fill="#33445a" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400">Drag iOpenPod to the Applications folder to install</text>
+</svg>

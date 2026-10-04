@@ -315,7 +315,7 @@ def _write_checksum(path: Path) -> None:
 
 
 def macos_dmg(app: Path, output: Path, version: str) -> Path:
-    """Build a drag-to-Applications image from the signed app bundle."""
+    """Build a styled drag-to-Applications image from the signed app bundle."""
     if not app.is_dir():
         raise ValueError("Build the macOS app bundle before making a disk image")
     if output.exists():
@@ -323,9 +323,19 @@ def macos_dmg(app: Path, output: Path, version: str) -> Path:
     with tempfile.TemporaryDirectory(
         prefix="iopenpod-dmg-", dir=output.parent
     ) as staging_name:
-        staging = Path(staging_name)
+        work = Path(staging_name)
+        staging = work / "contents"
+        staging.mkdir()
         subprocess.run(["ditto", str(app), str(staging / "iOpenPod.app")], check=True)
         (staging / "Applications").symlink_to("/Applications", target_is_directory=True)
+        background = staging / ".background"
+        background.mkdir()
+        shutil.copy2(
+            ROOT / "packaging/macos/dmg-background.png", background / "background.png"
+        )
+        writable = work / "writable.dmg"
+        mountpoint = work / "mounted"
+        volume_name = f"iOpenPod {version}"
         subprocess.run(
             [
                 "hdiutil",
@@ -333,13 +343,48 @@ def macos_dmg(app: Path, output: Path, version: str) -> Path:
                 "-srcfolder",
                 str(staging),
                 "-volname",
-                f"iOpenPod {version}",
+                volume_name,
                 "-format",
-                "UDZO",
+                "UDRW",
                 "-fs",
                 "HFS+",
-                str(output),
+                str(writable),
             ],
+            check=True,
+        )
+        image_megabytes = (writable.stat().st_size + 999_999) // 1_000_000 + 20
+        subprocess.run(
+            ["hdiutil", "resize", "-size", f"{image_megabytes}m", str(writable)],
+            check=True,
+        )
+        mountpoint.mkdir()
+        subprocess.run(
+            [
+                "hdiutil",
+                "attach",
+                "-readwrite",
+                "-noverify",
+                "-nobrowse",
+                "-mountpoint",
+                str(mountpoint),
+                str(writable),
+            ],
+            check=True,
+        )
+        try:
+            subprocess.run(
+                [
+                    "osascript",
+                    str(ROOT / "packaging/macos/dmg-layout.applescript"),
+                    volume_name,
+                    str(mountpoint),
+                ],
+                check=True,
+            )
+        finally:
+            subprocess.run(["hdiutil", "detach", str(mountpoint)], check=True)
+        subprocess.run(
+            ["hdiutil", "convert", str(writable), "-format", "UDZO", "-o", str(output)],
             check=True,
         )
     subprocess.run(["hdiutil", "verify", str(output)], check=True)

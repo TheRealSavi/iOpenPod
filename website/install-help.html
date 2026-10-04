@@ -1,35 +1,70 @@
 ---
 title: Install & setup — iOpenPod
-description: Install iOpenPod for Windows from Microsoft Store, set up media tools, and prepare your first sync. Other download channels are planned.
+description: Install and update iOpenPod from GitHub on Windows, macOS, and Linux, or use Microsoft Store. Set up media tools and prepare your first sync.
 body_class: iop2-page setup-page
 permalink: /install-help/
 ---
 {% include product-nav.html %}
+{% assign windows = site.data.distribution.platforms | where: 'id', 'windows' | first %}
+{% assign macos = site.data.distribution.platforms | where: 'id', 'macos' | first %}
+{% assign linux = site.data.distribution.platforms | where: 'id', 'linux' | first %}
+{% assign windows_download = windows.channels | where: 'id', 'windows-binary' | first %}
+{% assign apple_silicon_download = macos.channels | where: 'id', 'macos-arm64' | first %}
+{% assign intel_download = macos.channels | where: 'id', 'macos-x64' | first %}
+{% assign linux_download = linux.channels | where: 'id', 'linux-binary' | first %}
 <main class="container setup-main" id="main-content">
   <header class="setup-intro">
     <h1>A little setup.<br>A lot of music.</h1>
     <p>Installation and first steps for iOpenPod on Windows, macOS, and Linux.</p>
   </header>
   <div class="availability-note">
-    <strong>Available for Windows on Microsoft Store.</strong>
-    <p>Install iOpenPod from <a href="https://apps.microsoft.com/detail/9P2LXCHHWLG9">Microsoft Store</a>. Direct downloads, the PyPI package, and other stores are planned. Check <a href="{{ '/#install' | relative_url }}">download availability</a> before installing.</p>
+    <strong>Native downloads for Windows, macOS, and Linux are available.</strong>
+    <p>Install <a href="{{ site.data.distribution.native_release.url }}">iOpenPod {{ site.data.distribution.native_release.version }} from GitHub</a> with in-app updates, or get the Windows app from <a href="https://apps.microsoft.com/detail/9P2LXCHHWLG9">Microsoft Store</a>. PyPI and other stores remain planned.</p>
   </div>
   <nav class="setup-index" aria-label="Setup topics">
-    <a href="#native">Native downloads</a><a href="#stores">Stores</a><a href="#python">Python</a><a href="#helper-tools">Media tools</a><a href="#first-sync">First sync</a><a href="#troubleshooting">Troubleshooting</a>
+    <a href="#native">Native downloads</a><a href="#updates">Updates</a><a href="#stores">Stores</a><a href="#python">Python</a><a href="#helper-tools">Media tools</a><a href="#first-sync">First sync</a><a href="#troubleshooting">Troubleshooting</a>
   </nav>
   <section class="setup-section" id="native">
     <h2>Native downloads</h2>
-    <p>Native builds include Python and the application libraries. You do not need a separate Python installation. Download only a published <strong>2.x</strong> package for your operating system and processor.</p>
+    <p>Native builds include Python and the application libraries. You do not need a separate Python installation. Choose the download for your operating system and processor.</p>
+    <h3 id="native-windows">Windows x64</h3>
+    <ol>
+      <li><a href="{{ windows_download.url }}">Download the Windows ZIP</a> for Windows 10 or 11 on an x64 PC.</li>
+      <li>Extract <code>iOpenPod.exe</code> to a folder you can write to on a fixed NTFS drive, such as <code>%LOCALAPPDATA%\Programs\iOpenPod</code>. This location allows in-app updates; removable and network drives are not supported by the updater.</li>
+      <li>Run <code>iOpenPod.exe</code> from the extracted location. Keep that filename. Its runtime and supporting files are built in, and unpacking them temporarily can make startup take a moment.</li>
+    </ol>
+    <h3 id="native-macos">macOS · Apple Silicon and Intel</h3>
+    <ol>
+      <li>Choose the <a href="{{ apple_silicon_download.url }}">Apple Silicon DMG</a> for an M-series Mac, or the <a href="{{ intel_download.url }}">Intel Mac DMG</a>. Apple menu → About This Mac shows your chip or processor.</li>
+      <li>Open the DMG and drag <code>iOpenPod.app</code> onto the Applications shortcut.</li>
+      <li>Eject the disk image, then open iOpenPod from Applications. Run the installed copy so the updater can replace it.</li>
+    </ol>
+    <p>The build targets macOS 12.3 or later; testing on 12.3 remains pending. Current downloads are ad-hoc signed and not notarized. If macOS blocks the first launch, review <a href="https://support.apple.com/en-us/102445">Apple’s guidance for opening apps from outside the App Store</a> and approve only the copy you downloaded from this project.</p>
+    <p>The matching macOS ZIPs on the <a href="{{ site.data.distribution.native_release.url }}">release page</a> are used by the built-in updater. For a manual ZIP install, extract the app and move it to Applications before launching.</p>
+    <h3 id="native-linux">Linux x64</h3>
+    <ol>
+      <li><a href="{{ linux_download.url }}">Download the Linux tar.gz archive</a>. The binary is built on Ubuntu 24.04 and requires glibc 2.39 or later plus desktop graphics and audio libraries. Compatibility with older distributions is not established.</li>
+      <li>Extract the complete archive into a folder you can write to, preserving executable permissions. For example, run these commands in the directory containing your download:</li>
+    </ol>
+    <pre><code>tar -xzf iOpenPod-{{ site.data.distribution.native_release.version }}-Linux-x86_64.tar.gz
+./iOpenPod/iOpenPod</code></pre>
+    <p>Keep the whole extracted <code>iOpenPod</code> folder together, including <code>installation.json</code>, <code>current.json</code>, and <code>versions</code>. Always run its top-level <code>iOpenPod</code> launcher, including after an update. In-app updates need write access to this folder.</p>
+  </section>
+  <section class="setup-section" id="updates">
+    <h2>Update a GitHub installation</h2>
+    <p>iOpenPod checks for updates after opening. To check manually, open <strong>Settings → About → Check for updates</strong>. About also shows your version and detected Install Channel. A check never installs an update automatically.</p>
     <dl class="setup-facts">
-      <div><dt>Windows</dt><dd>The direct-download target is a portable x64 ZIP. Extract the complete folder before running iOpenPod; keep its supporting files together. The Microsoft Store app requires Windows 10 version 2004 or later, or Windows 11, on an x64 PC.</dd></div>
-      <div><dt>macOS</dt><dd>Separate app archives are planned for Apple Silicon and Intel. The native build targets macOS 12.3 or later; testing on 12.3 is still pending. Public direct downloads require release signing and notarization.</dd></div>
-      <div><dt>Linux</dt><dd>A native x64 tar.gz archive is planned. Extract it with executable permissions and symlinks preserved, then run the included launcher. Desktop-library requirements will accompany the release.</dd></div>
+      <div><dt>Windows &amp; Linux</dt><dd>Choose <strong>Update now</strong> to download in the background. When ready, save any Library Draft, finish running workflows, close other iOpenPod instances, and choose <strong>Restart to install</strong>. The app replaces its executable or active version and relaunches.</dd></div>
+      <div><dt>macOS</dt><dd>Save your work and finish running workflows before choosing <strong>Update now</strong>. Follow the built-in updater’s download, installation, and relaunch prompts.</dd></div>
     </dl>
-    <p>Direct-download packages remain planned. Follow the instructions and checksums shipped with each public release.</p>
+    <p>Updates verify signed release information and the downloaded archive. Microsoft Store installations use the Store; package-manager and Python installations stay with their original installation source.</p>
+    <h3>Coming from an older download</h3>
+    <p>Existing 2.0.1 installations need a one-time manual upgrade. If your build only offers <strong>Open download page</strong> or cannot update itself, finish your work and close iOpenPod, then use the <a href="#native">native installation steps above</a>. On Windows, replace only <code>iOpenPod.exe</code>; on macOS, replace the app in Applications. On Linux, extract the new archive into a fresh folder and start its top-level launcher instead of copying files over an older bundle.</p>
+    <p>If a check or download fails, try <strong>Check for updates</strong> again later or install from the <a href="{{ site.data.distribution.native_release.url }}">release page</a>. Keep any recovery files until an interrupted update is resolved.</p>
   </section>
   <section class="setup-section" id="stores">
     <h2>Install through your store</h2>
-    <p>On Windows, <a href="https://apps.microsoft.com/detail/9P2LXCHHWLG9">get iOpenPod from Microsoft Store</a>. Open the listing, install the app, then launch iOpenPod from the Start menu. The Store handles installation and updates; you do not need a separate Python installation.</p>
+    <p>On Windows, <a href="https://apps.microsoft.com/detail/9P2LXCHHWLG9">get iOpenPod from Microsoft Store</a>. Open the listing, install the app, then launch iOpenPod from the Start menu. The Store handles installation and updates; you do not need a separate Python installation. The Store app requires Windows 10 version 2004 or later, or Windows 11, on an x64 PC.</p>
     <p><strong>Mac App Store</strong>, <strong>Flathub</strong>, and <strong>Snap Store</strong> remain planned. Check the <a href="{{ '/#install' | relative_url }}">download section</a> for availability.</p>
     <p>Store availability is independent: a release on one channel does not mean the others are ready. Sandboxed builds need verified access to your media folders, removable iPod, and external media tools. Their release instructions will explain the required permissions.</p>
   </section>

@@ -170,6 +170,8 @@ jobs:
           test -d "$mountpoint/iOpenPod.app"
           test -L "$mountpoint/Applications"
           test "$(readlink "$mountpoint/Applications")" = /Applications
+          test -s "$mountpoint/.DS_Store"
+          test -s "$mountpoint/.background/background.png"
           cmp "$mountpoint/iOpenPod.app/Contents/MacOS/iOpenPod" dist/iOpenPod.app/Contents/MacOS/iOpenPod
           codesign --verify --deep --strict "$mountpoint/iOpenPod.app"
       - uses: actions/upload-artifact@v4

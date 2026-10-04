@@ -107,12 +107,37 @@ After building, validate the FAQ content and structured data together:
 uv run python tests/website/check_seo.py .scratch/website-preview/iOpenPod
 ```
 
-## Activate a release channel
+## Maintain download and update instructions
 
-`_data/distribution.json` is the source for platform labels and release channels.
-Microsoft Store is available at [the iOpenPod listing](https://apps.microsoft.com/detail/9P2LXCHHWLG9)
-(product ID `9P2LXCHHWLG9`). Native Windows, Apple Silicon, Intel Mac, Linux, PyPI,
-Mac App Store, Flathub, and Snap Store entries remain `planned` with a null URL.
+`_data/distribution.json` is the source for platform labels, release channels, and
+the featured native release. Windows x64, Apple Silicon, Intel Mac, and Linux x64
+downloads point to the published **v2.0.3** assets. Microsoft Store is available at
+[the iOpenPod listing](https://apps.microsoft.com/detail/9P2LXCHHWLG9)
+(product ID `9P2LXCHHWLG9`). PyPI, Mac App Store, Flathub, and Snap Store remain
+`planned` with a null URL.
+
+The homepage and setup guide share the native asset URLs from this data file.
+`native_release.version` and `native_release.url` identify the release shown in
+both pages; the version also supplies the Linux extraction example and
+`SoftwareApplication` metadata. `release_status` supplies the structured-data
+release note. Keep these values, `status_date`, and every native URL in sync when
+featuring a newer release, and update the root README's download table at the same
+time. Use exact, publicly verified versioned asset URLs.
+
+First installs use the Windows ZIP containing only `iOpenPod.exe`, the two macOS
+DMGs, and the complete Linux tar.gz folder. macOS ZIPs remain on the release page
+for Sparkle updates and manual archive installs. Document the writable fixed-NTFS
+location for Windows, Applications for macOS, and the writable complete folder
+with its top-level launcher for Linux. Preserve the current OS requirements and
+macOS signing guidance from the release notes.
+
+GitHub downloads check at launch and through Settings → About. Windows and Linux
+use **Update now**, then **Restart to install**; macOS uses the built-in updater's
+prompts. Older builds without working in-app updates need a manual upgrade.
+Keep the homepage, setup guide, and `_data/faq.json` consistent with
+[Application updates](../docs/app-updates.md). Application update feeds live on
+the separate `update-feed` branch; publishing this website does not publish or
+renew those feeds.
 
 Only set a channel to `available` when its actual **2.x** artifact or listing is
 publicly accessible and its packaging acceptance is complete. Set `url` to the
@@ -121,7 +146,7 @@ render a link. Do not use a generic latest-release redirect that could point at
 a 1.x build, or display a store badge for an unpublished listing.
 
 When a channel launches, update the availability copy in both pages, the root
-README, and the layout’s structured-data release note. Also update
+README, FAQ answers, and site/page descriptions. Also update
 `release_status` and `status_date` in the data file. Keep unreleased channels
 marked planned; a published Windows build does not establish Mac or Linux support.
 

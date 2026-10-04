@@ -26,21 +26,57 @@ Built with Python and Qt6.
 
 ## Download and install
 
-Find native builds on the [releases page](https://github.com/TheRealSavi/iOpenPod/releases)
-and channel availability on the [website](https://therealsavi.github.io/iOpenPod/#install).
-For setup help, see the [installation guide](https://therealsavi.github.io/iOpenPod/install-help/).
+Native downloads are available for all three platforms. These links install
+[iOpenPod 2.0.3](https://github.com/TheRealSavi/iOpenPod/releases/tag/v2.0.3).
+They include the application runtime, so you do not need a separate Python
+installation. See the [installation guide](https://therealsavi.github.io/iOpenPod/install-help/)
+for setup and troubleshooting.
 
-| Platform     | Planned direct download                         | Store distribution                                                |
-| ------------ | ----------------------------------------------- | ----------------------------------------------------------------- |
-| Windows      | Native x64 ZIP                                  | [Microsoft Store](https://apps.microsoft.com/detail/9P2LXCHHWLG9) |
-| macOS        | DMG install images and ZIP updates for Apple Silicon and Intel | Mac App Store (planned)                           |
-| Linux        | Native x64 tar.gz archive                       | Flathub (Flatpak) and Snap Store (planned)                        |
-| Python users | `iopenpod` 2.x on PyPI, requiring Python 3.12   | —                                                                 |
+| Platform | Direct download | Installation |
+| --- | --- | --- |
+| Windows x64 | [Windows ZIP](https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.3/iOpenPod-2.0.3-Windows-AMD64.zip) | Extract `iOpenPod.exe` and run it. |
+| macOS · Apple Silicon | [Apple Silicon DMG](https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.3/iOpenPod-2.0.3-macOS-arm64.dmg) | Open the image and drag `iOpenPod.app` to Applications. |
+| macOS · Intel | [Intel Mac DMG](https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.3/iOpenPod-2.0.3-macOS-x86_64.dmg) | Open the image and drag `iOpenPod.app` to Applications. |
+| Linux x64 | [Linux tar.gz](https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.3/iOpenPod-2.0.3-Linux-x86_64.tar.gz) | Extract the complete folder and run its top-level `iOpenPod` launcher. |
 
-Native downloads include the application runtime, so they do not need a separate
-Python installation. The native Mac build targets macOS 12.3 or later; acceptance
-on 12.3 remains pending. Store channels have independent signing, permissions, and
-installed-package validation requirements. See [packaging](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/packaging.md).
+On Windows, keep the name `iOpenPod.exe` and place it in a folder you can write to
+on a fixed NTFS drive for in-app updates. The executable contains its supporting
+files; unpacking them temporarily at launch can take a moment.
+
+On macOS, launch from Applications after copying the app and ejecting the DMG.
+The build targets macOS 12.3 or later; acceptance on 12.3 remains pending.
+Current downloads are ad-hoc signed and not notarized; the
+[Mac setup guide](https://therealsavi.github.io/iOpenPod/install-help/#native-macos)
+covers first-launch prompts. The matching ZIPs on the release page are used for
+in-app updates and are also available for manual archive installation.
+
+On Linux, extract into a folder you can write to, preserve executable permissions,
+and keep the whole `iOpenPod` folder together. Always start its top-level launcher,
+including after an update. The binary is built on Ubuntu 24.04 and requires glibc
+2.39 or later plus desktop libraries; compatibility with older distributions is
+not established.
+
+Windows users can also install through
+[Microsoft Store](https://apps.microsoft.com/detail/9P2LXCHHWLG9).
+Mac App Store, Flathub, and Snap Store remain planned. Check the
+[website](https://therealsavi.github.io/iOpenPod/#install) for channel availability.
+
+### Updating a GitHub installation
+
+iOpenPod checks for updates at launch. You can also use **Settings → About →
+Check for updates**; About shows your version and Install Channel.
+
+* **Windows and Linux:** choose **Update now** to download the update, then
+  **Restart to install** when ready. Save any Library Draft and finish running
+  workflows first. Close other iOpenPod instances before restarting.
+* **macOS:** choose **Update now** after saving your work, then follow the built-in
+  updater's installation and relaunch prompts.
+
+Installation requires your choice. If an older build only offers **Open download
+page**, or cannot update itself, install the current download above manually.
+Existing 2.0.1 installations need this one-time upgrade; older Linux directory
+bundles should be replaced by extracting the new archive into a fresh folder.
+Microsoft Store installations update through the Store.
 
 ### Python installation
 
@@ -178,7 +214,7 @@ The application ships as one distribution with four internal boundaries:
 
 Read [AGENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/2.0/AGENTS.md), the [project context](https://github.com/TheRealSavi/iOpenPod/blob/2.0/CONTEXT.md), and the
 [documentation map](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/README.md) before making substantial changes.
-[Packaging](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/packaging.md) covers native candidates and store release gates;
+[Packaging](https://github.com/TheRealSavi/iOpenPod/blob/2.0/docs/packaging.md) covers native builds and store release gates;
 [website maintenance](https://github.com/TheRealSavi/iOpenPod/blob/2.0/website/README.md) covers screenshots and channel activation.
 
 ## Related projects

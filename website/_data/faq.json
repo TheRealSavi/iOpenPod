@@ -2,12 +2,12 @@
   {
     "id": "sync-without-itunes",
     "question": "How do I sync my iPod without iTunes?",
-    "answer": "iOpenPod lets you select a mounted iPod, choose media folders on your computer, review additions, updates, and removals, then apply your Sync Selection. You do not need iTunes for that workflow. The Windows app is available from Microsoft Store; other download channels remain planned."
+    "answer": "iOpenPod lets you select a mounted iPod, choose media folders on your computer, review additions, updates, and removals, then apply your Sync Selection. You do not need iTunes for that workflow. Native downloads are available for Windows, macOS, and Linux; Windows users can also install from Microsoft Store."
   },
   {
     "id": "python",
     "question": "Do I need Python to use iOpenPod?",
-    "answer": "The Microsoft Store app includes the Python runtime, so no separate Python installation is needed. Planned native downloads also include it. Running from source or using the future 2.x PyPI package requires Python 3.12."
+    "answer": "Native downloads for Windows, macOS, and Linux and the Microsoft Store app include the Python runtime, so no separate Python installation is needed. Running from source or using the future 2.x PyPI package requires Python 3.12."
   },
   {
     "id": "flac",
@@ -27,7 +27,12 @@
   {
     "id": "platforms",
     "question": "Does it work on Linux and macOS?",
-    "answer": "Windows, macOS, and Linux are iOpenPod’s target platforms. The Windows app is available from Microsoft Store. macOS and Linux releases, direct downloads, and the Python package remain planned. Platform and device validation are ongoing."
+    "answer": "Yes. Native downloads are available for Linux x64 and for both Apple Silicon and Intel Macs, with in-app updates. macOS builds target 12.3 or later, with testing on 12.3 still pending. The Linux binary is built on Ubuntu 24.04 and requires glibc 2.39 or later plus desktop libraries. Windows x64 downloads and Microsoft Store are also available."
+  },
+  {
+    "id": "updates",
+    "question": "How do I update a GitHub download?",
+    "answer": "iOpenPod checks at launch, or you can use Settings → About → Check for updates. On Windows and Linux, choose Update now to download, then Restart to install after saving your work and closing other instances. On macOS, save your work, choose Update now, and follow the built-in updater’s prompts. Older builds that cannot update themselves, including 2.0.1, need a one-time manual install of the current release. Microsoft Store installations update through the Store."
   },
   {
     "id": "erase",
@@ -67,7 +72,7 @@
   {
     "id": "internet",
     "question": "Does iOpenPod send any data to the internet?",
-    "answer": "Core iPod browsing and local file management work with files on your computer and iPod. Online features such as podcast discovery, feed refreshes, downloads, and optional Last.fm or ListenBrainz scrobbling contact their services. Media-tool installation also contacts package sources. Network activity depends on the features and settings you use."
+    "answer": "Core iPod browsing and local file management work with files on your computer and iPod. GitHub and Microsoft Store installations check their update source at launch. Online features such as podcast discovery, feed refreshes, downloads, and optional Last.fm or ListenBrainz scrobbling contact their services. Media-tool installation also contacts package sources. Network activity depends on the features and settings you use."
   },
   {
     "id": "multiple-computers",

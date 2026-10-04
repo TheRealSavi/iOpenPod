@@ -1,8 +1,8 @@
 ---
 title: iOpenPod — Your music. Your iPod.
-description: Browse, play, organize, and sync your iPod with iOpenPod. Available for Windows on Microsoft Store, with macOS and Linux releases planned.
+description: Browse, play, organize, and sync your iPod with iOpenPod. Download for Windows, macOS, and Linux, or install from Microsoft Store.
 og_title: iOpenPod — Your music. Your iPod.
-og_description: A new home for your iPod library. Get iOpenPod for Windows from Microsoft Store and explore other planned download options.
+og_description: A new home for your iPod library. Get native downloads for Windows, macOS, and Linux with in-app updates, or install from Microsoft Store.
 body_class: iop2-page home-page
 include_faq_schema: true
 permalink: /
@@ -127,6 +127,7 @@ permalink: /
     <div class="container">
       <div class="section-intro">
         <h2 id="download-heading">Get iOpenPod.</h2>
+        <p>Native downloads include everything needed to run the app. No separate Python installation required. <a href="{{ site.data.distribution.native_release.url }}">Release {{ site.data.distribution.native_release.version }}</a></p>
       </div>
       <div class="download-platforms">
         {% for platform in site.data.distribution.platforms %}
@@ -151,6 +152,7 @@ permalink: /
         </article>
       </div>
       <div class="download-notes">
+        <p>GitHub downloads check for updates at launch. Use Settings → About → Check for updates at any time, then choose when to install. <a href="{{ '/install-help/#updates' | relative_url }}">Update instructions</a></p>
         <p>FFmpeg and FFprobe are separate installs for media inspection and conversion. Set them up from Settings → Media Tools after installing iOpenPod.</p>
         <a class="text-link" href="{{ '/install-help/' | relative_url }}">Read the setup guide <span aria-hidden="true">↗</span></a>
       </div>
@@ -172,7 +174,7 @@ permalink: /
       </div>
       <div>
         <h3>Free and open source</h3>
-        <p>iOpenPod is free software for Windows, macOS, and Linux under GPL-3.0-or-later. Get the Windows app from Microsoft Store. Direct downloads, PyPI, and other stores are planned; check <a href="#install">download availability</a> for each channel.</p>
+        <p>iOpenPod is free software for Windows, macOS, and Linux under GPL-3.0-or-later. Get a <a href="#install">native download</a> for your platform or install the Windows app from Microsoft Store. PyPI, Mac App Store, Flathub, and Snap Store remain planned.</p>
       </div>
       <div>
         <h3>Review before you sync</h3>

@@ -366,6 +366,10 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     shutil.copy2(package_app.ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    artwork = tmp_path / "packaging/macos"
+    artwork.mkdir(parents=True)
+    for name in ("dmg-background.png", "dmg-layout.applescript"):
+        shutil.copy2(package_app.ROOT / "packaging/macos" / name, artwork / name)
     app = tmp_path / "dist/iOpenPod.app"
     executable = app / "Contents/MacOS/iOpenPod"
     executable.parent.mkdir(parents=True)
@@ -392,8 +396,24 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
                 executable.read_bytes()
             )
             assert (staging / "Applications").read_text() == "/Applications"
-            assert command[command.index("-format") + 1] == "UDZO"
+            assert (staging / ".background/background.png").read_bytes() == (
+                artwork / "dmg-background.png"
+            ).read_bytes()
+            assert command[command.index("-format") + 1] == "UDRW"
             Path(command[-1]).write_bytes(b"disk image")
+        elif command[:2] == ["hdiutil", "attach"]:
+            assert command[command.index("-readwrite") + 1] == "-noverify"
+        elif command[:2] == ["hdiutil", "resize"]:
+            assert command[command.index("-size") + 1] == "21m"
+        elif command[0] == "osascript":
+            assert command[1] == str(artwork / "dmg-layout.applescript")
+            assert command[2] == f"iOpenPod {package_app.project_version()}"
+            Path(command[3], ".DS_Store").write_bytes(b"Finder layout")
+        elif command[:2] == ["hdiutil", "detach"]:
+            assert Path(command[2], ".DS_Store").read_bytes() == b"Finder layout"
+        elif command[:2] == ["hdiutil", "convert"]:
+            assert command[command.index("-format") + 1] == "UDZO"
+            Path(command[-1]).write_bytes(b"compressed disk image")
         else:
             assert command[:2] == ["hdiutil", "verify"]
             assert Path(command[-1]).is_file()
@@ -408,6 +428,11 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
         ["ditto", "-c"],
         ["ditto", str(app)],
         ["hdiutil", "create"],
+        ["hdiutil", "resize"],
+        ["hdiutil", "attach"],
+        ["osascript", str(artwork / "dmg-layout.applescript")],
+        ["hdiutil", "detach"],
+        ["hdiutil", "convert"],
         ["hdiutil", "verify"],
     ]
     assert dmg.with_name(dmg.name + ".sha256").read_text() == (
