@@ -149,6 +149,7 @@ def test_progress_callback_failure_kills_and_reaps_the_tool(
         stderr: int,
         creationflags: int,
         pass_fds: tuple[int, ...],
+        env: dict[str, str],
     ) -> subprocess.Popen[bytes]:
         process = original(
             args,
@@ -157,6 +158,7 @@ def test_progress_callback_failure_kills_and_reaps_the_tool(
             stderr=stderr,
             creationflags=creationflags,
             pass_fds=pass_fds,
+            env=env,
         )
         processes.append(process)
         return process
@@ -206,6 +208,7 @@ def test_external_tools_fail_with_bounded_diagnostics_and_reap_processes(
         stderr: int,
         creationflags: int,
         pass_fds: tuple[int, ...],
+        env: dict[str, str],
     ) -> subprocess.Popen[bytes]:
         process = original(
             args,
@@ -214,6 +217,7 @@ def test_external_tools_fail_with_bounded_diagnostics_and_reap_processes(
             stderr=stderr,
             creationflags=creationflags,
             pass_fds=pass_fds,
+            env=env,
         )
         processes.append(process)
         return process
@@ -247,6 +251,7 @@ def test_cancellation_kills_and_reaps_running_tool(
         stderr: int,
         creationflags: int,
         pass_fds: tuple[int, ...],
+        env: dict[str, str],
     ) -> subprocess.Popen[bytes]:
         process = original(
             args,
@@ -255,6 +260,7 @@ def test_cancellation_kills_and_reaps_running_tool(
             stderr=stderr,
             creationflags=creationflags,
             pass_fds=pass_fds,
+            env=env,
         )
         processes.append(process)
         return process
@@ -369,6 +375,7 @@ def test_windows_tool_input_stays_pinned_until_child_is_reaped(
         stderr: int,
         creationflags: int,
         pass_fds: tuple[int, ...],
+        env: dict[str, str],
     ) -> subprocess.Popen[bytes]:
         with pytest.raises(PermissionError):
             source.unlink()
@@ -381,6 +388,7 @@ def test_windows_tool_input_stays_pinned_until_child_is_reaped(
             stderr=stderr,
             creationflags=creationflags,
             pass_fds=pass_fds,
+            env=env,
         )
 
     monkeypatch.setattr(subprocess, "Popen", launch)
@@ -412,6 +420,7 @@ def test_posix_child_reads_pinned_file_when_input_path_is_replaced(
         stderr: int,
         creationflags: int,
         pass_fds: tuple[int, ...],
+        env: dict[str, str],
     ) -> subprocess.Popen[bytes]:
         source.rename(tmp_path / "original.bin")
         source.symlink_to(unrelated)
@@ -422,6 +431,7 @@ def test_posix_child_reads_pinned_file_when_input_path_is_replaced(
             stderr=stderr,
             creationflags=creationflags,
             pass_fds=pass_fds,
+            env=env,
         )
         processes.append(process)
         return process

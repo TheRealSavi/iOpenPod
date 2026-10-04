@@ -1,4 +1,4 @@
-"""Host executable discovery and package-manager environment observations."""
+"""Host executable discovery, child environments, and package-manager observations."""
 
 from __future__ import annotations
 
@@ -8,6 +8,19 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def host_tool_environment() -> dict[str, str]:
+    """Keep frozen Linux libraries out of system tools without changing the app."""
+    environment = dict(os.environ)
+    if sys.platform == "linux" and getattr(sys, "frozen", False):
+        # PyInstaller prepends its libraries and retains the Host's original path.
+        original = environment.get("LD_LIBRARY_PATH_ORIG")
+        if original is None:
+            environment.pop("LD_LIBRARY_PATH", None)
+        else:
+            environment["LD_LIBRARY_PATH"] = original
+    return environment
 
 
 def executable_directories() -> tuple[Path, ...]:

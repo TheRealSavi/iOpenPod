@@ -11,6 +11,8 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
+from storage.host_tools import host_tool_environment
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import BinaryIO
@@ -102,6 +104,7 @@ def probe(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             creationflags=_CREATE_NO_WINDOW,
+            env=host_tool_environment(),
         )
     except OSError as error:
         raise MediaInspectionError(
