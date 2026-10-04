@@ -1,24 +1,71 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="880" viewBox="0 0 720 440">
-  <!-- Hallmark pre-emit critique: P5 H5 E5 S5 R5 V5 -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1600" height="1000" viewBox="0 0 800 500">
+  <!-- Hallmark: atmospheric cobalt; native drag-to-install composition.
+       Pre-emit critique: P5 H5 E4 S5 R5 V4.
+       Coordinates are Finder points. Export at 2x / 144 dpi, never 96 dpi.
+       Finder supplies the two real icons at (200, 232) and (600, 232). -->
   <defs>
-    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fbfcfe"/>
-      <stop offset="1" stop-color="#eef3f9"/>
+    <image id="ribbons" width="800" height="500" preserveAspectRatio="none" xlink:href="dmg-backdrop.png"/>
+    <linearGradient id="header-shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#020b1d" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#020b1d" stop-opacity="0"/>
     </linearGradient>
-    <radialGradient id="glow">
-      <stop offset="0" stop-color="#dceafb" stop-opacity=".72"/>
-      <stop offset="1" stop-color="#dceafb" stop-opacity="0"/>
-    </radialGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2=".25" y2="1">
+      <stop offset="0" stop-color="#eef6ff" stop-opacity=".38"/>
+      <stop offset=".42" stop-color="#c1dbff" stop-opacity=".12"/>
+      <stop offset=".7" stop-color="#83b7ff" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#e1f0ff" stop-opacity=".28"/>
+    </linearGradient>
+    <linearGradient id="glass-edge" x1="0" y1="0" x2=".4" y2="1">
+      <stop offset="0" stop-color="#f5faff" stop-opacity=".95"/>
+      <stop offset=".36" stop-color="#d5e7ff" stop-opacity=".42"/>
+      <stop offset=".64" stop-color="#8eb6ed" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#ecf6ff" stop-opacity=".68"/>
+    </linearGradient>
+    <linearGradient id="arrow-glass" x1="0" y1="0" x2=".4" y2="1">
+      <stop offset="0" stop-color="#f3f8ff" stop-opacity=".72"/>
+      <stop offset=".43" stop-color="#c5deff" stop-opacity=".24"/>
+      <stop offset=".6" stop-color="#8aade2" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#dfedff" stop-opacity=".56"/>
+    </linearGradient>
+    <filter id="frost" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+    <filter id="shadow" x="-30%" y="-60%" width="160%" height="220%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <rect id="panel-shape" x="160" y="384" width="480" height="68" rx="22"/>
+    <path id="arrow-shape" d="M350 216 H403 V199 Q403 194 407 197 L449 229 Q453 232 449 235 L407 267 Q403 270 403 265 V248 H350 Q346 248 346 244 V220 Q346 216 350 216 Z"/>
+    <mask id="panel-mask" maskUnits="userSpaceOnUse" x="160" y="384" width="480" height="68">
+      <use xlink:href="#panel-shape" fill="#fff"/>
+    </mask>
+    <mask id="arrow-mask" maskUnits="userSpaceOnUse" x="346" y="195" width="107" height="74">
+      <use xlink:href="#arrow-shape" fill="#fff"/>
+    </mask>
   </defs>
-  <rect width="720" height="440" fill="url(#paper)"/>
-  <ellipse cx="684" cy="18" rx="310" ry="200" fill="url(#glow)"/>
-  <circle cx="705" cy="34" r="157" fill="none" stroke="#87add5" stroke-width="1" opacity=".11"/>
-  <circle cx="705" cy="34" r="108" fill="none" stroke="#87add5" stroke-width="1" opacity=".11"/>
-  <circle cx="705" cy="34" r="41" fill="none" stroke="#87add5" stroke-width="1" opacity=".11"/>
-  <text x="48" y="53" fill="#1c2d44" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" letter-spacing="-.6">iOpenPod</text>
-  <path d="M48 79h624" stroke="#d9e2ec" stroke-width="1"/>
-  <path d="M328 206h57" stroke="#176fd1" stroke-width="4" stroke-linecap="round"/>
-  <path d="m376 197 10 9-10 9" fill="none" stroke="#176fd1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M100 347h520" stroke="#d5e0eb" stroke-width="1"/>
-  <text x="360" y="389" text-anchor="middle" fill="#33445a" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400">Drag iOpenPod to the Applications folder to install</text>
+  <use xlink:href="#ribbons"/>
+  <rect width="800" height="112" fill="url(#header-shade)"/>
+  <text x="40" y="56" fill="#f2f6ff" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" letter-spacing="-.6">iOpenPod</text>
+
+  <g id="install-arrow">
+    <use xlink:href="#arrow-shape" transform="translate(0 6)" fill="#020817" opacity=".6" filter="url(#shadow)"/>
+    <g mask="url(#arrow-mask)">
+      <use xlink:href="#ribbons" transform="translate(-24 -14) scale(1.06)" filter="url(#frost)"/>
+    </g>
+    <use xlink:href="#arrow-shape" fill="url(#arrow-glass)" stroke="url(#glass-edge)" stroke-width="1.4"/>
+    <path d="M351 219 H406 V200 L446 231" fill="none" stroke="#f3f8ff" stroke-opacity=".48" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M351 246 H405 V264 L447 233" fill="none" stroke="#a8ceff" stroke-opacity=".4" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g id="install-instruction">
+    <use xlink:href="#panel-shape" transform="translate(0 8)" fill="#020817" opacity=".65" filter="url(#shadow)"/>
+    <g mask="url(#panel-mask)">
+      <use xlink:href="#ribbons" transform="translate(-32 -33) scale(1.08)" filter="url(#frost)"/>
+    </g>
+    <use xlink:href="#panel-shape" fill="#07152e" fill-opacity=".4"/>
+    <use xlink:href="#panel-shape" fill="url(#glass)" stroke="url(#glass-edge)" stroke-width="1.2"/>
+    <rect x="163" y="387" width="474" height="62" rx="19" fill="none" stroke="#e9f3ff" stroke-opacity=".14" stroke-width=".7"/>
+    <path d="M184 386 H616" stroke="#f5faff" stroke-opacity=".35" stroke-width="1" stroke-linecap="round"/>
+    <text x="400" y="427" text-anchor="middle" fill="#041025" fill-opacity=".65" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Drag into Applications</text>
+    <text x="400" y="426" text-anchor="middle" fill="#f5f8ff" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Drag into Applications</text>
+  </g>
 </svg>

@@ -65,6 +65,17 @@ Remove that specific generated directory before staging again. Windows archives
 contain only `iOpenPod.exe`; MSIX staging copies that same executable to `app/`.
 macOS ZIPs preserve `.app` symlinks using `ditto`. Each macOS DMG copies that same
 signed app with `ditto` into a read-only image beside an `/Applications` shortcut.
+The DMG uses a cobalt ribbon background with a static glass-style arrow and
+instruction panel. Finder provides the real draggable icons at `(200, 232)` and
+`(600, 232)`, using 160-point icons. The editable source is
+`packaging/macos/dmg-background.svg`, with its wallpaper in `dmg-backdrop.png`.
+Regenerate the checked-in PNG with `uv run python -m scripts.render_macos_dmg_background`.
+The 1600 × 1000 raster must retain **144 DPI**, giving an 800 × 500-point layout:
+Qt's default 96 DPI makes the image too large and moves the arrow below Applications.
+The renderer requires system fonts; it opens no window. The glass blur, refraction,
+and highlights are baked into the background, since Finder backgrounds are static.
+After layout changes, check the mounted DMG on macOS at standard and Retina scale;
+the cross-platform tests check image scale and arrow placement, not native Finder rendering.
 Layout addresses the actual Mount Point by alias: Finder can display a custom
 mount directory's name instead of the filesystem volume label. Icon-view settings
 are obtained from that folder's container window. Layout retries its object-not-found

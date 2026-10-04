@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -366,6 +367,49 @@ def test_windows_archive_contains_only_the_standalone_executable(
     assert archive.with_name(archive.name + ".sha256").read_text() == (
         f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n"
     )
+
+
+def test_macos_dmg_background_preserves_logical_layout_size() -> None:
+    artwork = package_app.ROOT / "packaging/macos"
+    source = ET.parse(artwork / "dmg-background.svg").getroot()
+    _, _, width, height = map(float, source.attrib["viewBox"].split())
+    with Image.open(artwork / "dmg-background.png") as background:
+        dpi_x, dpi_y = background.info["dpi"]
+        # Finder uses physical image size in 72-point coordinates, not pixels.
+        # A 2x raster accidentally saved at 96 dpi displaces the central arrow.
+        assert background.width * 72 / dpi_x == pytest.approx(width, abs=0.1)
+        assert background.height * 72 / dpi_y == pytest.approx(height, abs=0.1)
+
+
+def test_macos_dmg_arrow_stays_between_the_finder_icons() -> None:
+    from PySide6.QtSvg import QSvgRenderer
+    from PySide6.QtWidgets import QApplication
+
+    application = QApplication.instance() or QApplication([])
+    artwork = package_app.ROOT / "packaging/macos"
+    layout = (artwork / "dmg-layout.applescript").read_text()
+    positions = {
+        name: (int(x), int(y))
+        for name, x, y in re.findall(
+            r'set position of item "([^"]+)" to \{(\d+), (\d+)\}', layout
+        )
+    }
+    icon_size = re.search(r"set icon size to (\d+)", layout)
+    assert icon_size is not None
+    radius = int(icon_size[1]) / 2
+    renderer = QSvgRenderer(str(artwork / "dmg-background.svg"), application)
+    assert renderer.elementExists("arrow-shape")
+    arrow = renderer.boundsOnElement("arrow-shape")
+    with Image.open(artwork / "dmg-background.png") as background:
+        dpi_x, dpi_y = background.info["dpi"]
+        scale_x = background.width * 72 / dpi_x / renderer.viewBoxF().width()
+        scale_y = background.height * 72 / dpi_y / renderer.viewBoxF().height()
+    app_x, app_y = positions["iOpenPod.app"]
+    folder_x, folder_y = positions["Applications"]
+    assert app_y == folder_y
+    assert app_x + radius < arrow.left() * scale_x
+    assert arrow.right() * scale_x < folder_x - radius
+    assert arrow.center().y() * scale_y == pytest.approx(app_y, abs=1)
 
 
 @pytest.mark.parametrize("architecture", ["arm64", "x86_64"])
