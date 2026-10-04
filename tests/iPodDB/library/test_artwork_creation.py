@@ -143,7 +143,7 @@ def test_older_track_headers_use_distinct_reverse_artwork_links(shared: bool) ->
 
 
 @pytest.mark.parametrize(
-    "problem", ["missing_images", "missing_formats", "duplicate_formats", "wrong_size"]
+    "problem", ["missing_images", "missing_formats", "duplicate_formats"]
 )
 def test_ambiguous_or_incompatible_existing_layout_blocks_additions(
     problem: str,
@@ -175,11 +175,7 @@ def test_ambiguous_or_incompatible_existing_layout_blocks_additions(
         container = selection.chunk.children[0]
         info = container.children[0]
         assert isinstance(info.header, MhifHeader)
-        children = (
-            (info, info)
-            if problem == "duplicate_formats"
-            else (replace(info, header=replace(info.header, image_size=999)),)
-        )
+        children = (info, info)
         document = document.replace_chunk(
             selection,
             replace(selection.chunk, children=(replace(container, children=children),)),

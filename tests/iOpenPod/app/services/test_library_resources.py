@@ -18,6 +18,9 @@ from iOpenPod.app.library_write import (
 )
 from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
+from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
+from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
+from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
 from iPodDB.library import (
     CoverFormat,
     CoverPixelFormat,
@@ -96,6 +99,7 @@ def build_device(
     shared_media: bool = False,
     photos: bool = False,
     media_payload: bytes | None = None,
+    artwork_size_multiplier: int = 1,
 ) -> Device:
     root = tmp_path / "ipod"
     source, thumbnail = with_shared_artwork(
@@ -130,9 +134,22 @@ def build_device(
     )
     assert result.prepared is not None, result.issues
     assert result.prepared.artwork is not None
+    artwork = parse_ArtworkDB(result.prepared.artwork)
+    for selection in artwork.find_chunks(MhifHeader):
+        chunk = selection.chunk
+        artwork = artwork.replace_chunk(
+            selection,
+            replace(
+                chunk,
+                header=replace(
+                    chunk.header,
+                    image_size=chunk.header.image_size * artwork_size_multiplier,
+                ),
+            ),
+        )
     files = {
         "iPod_Control/iTunes/iTunesDB": result.prepared.itunes,
-        "iPod_Control/Artwork/ArtworkDB": result.prepared.artwork,
+        "iPod_Control/Artwork/ArtworkDB": write_ArtworkDB(artwork),
         thumbnail.relative_path: thumbnail.data,
         **{track.metadata.location: payload for track in tracks},
     }

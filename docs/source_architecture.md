@@ -967,6 +967,14 @@ keep their original variants and Unknown Data. Older Track layouts use reverse
 ArtworkDB links. Persistence still uses the reviewed Storage Transaction. See
 [ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md).
 
+During cover preparation, iPodDB automatically reconciles conflicting MHIF image
+sizes only when the target's fixed-size encoding, every retained MHNI representation
+of that format, and captured thumbnail ranges agree. This changes only the affected
+size fields, preserves retained image bytes, and uses the existing Storage
+Transaction without a separate confirmation. Reads and unrelated edits remain
+lossless; ambiguous conflicts still block preparation. See
+[ADR-0111](adr/0111-correct-evidenced-artwork-format-sizes-during-preparation.md).
+
 #### `ArtworkDB/Writer`
 
 Responsible for serializing structured artwork data back into the iPod format.

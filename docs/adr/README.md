@@ -183,3 +183,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0108: Bundle Windows as one executable](0108-bundle-windows-as-one-executable.md)
 - [ADR-0109: Authenticate and isolate GitHub application updates](0109-authenticate-and-isolate-github-application-updates.md)
 - [ADR-0110: Offer macOS drag-to-Applications disk images](0110-offer-macos-drag-to-applications-disk-images.md)
+- [ADR-0111: Correct evidenced artwork format sizes during preparation](0111-correct-evidenced-artwork-format-sizes-during-preparation.md)

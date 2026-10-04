@@ -238,6 +238,12 @@ Known cover-capable Device Profiles also provide the creation policy for a first
 ArtworkDB, so an empty Artwork directory needs no template database or additional
 format files. Preparation writes every declared cover layout, preserves retained
 variants, and supports older reverse Track links. See ADR-0033.
+When preparing new cover artwork, conflicting retained MHIF image sizes are
+corrected automatically when the Device Profile, retained image metadata, and
+captured thumbnail ranges establish the correct size. Unverifiable conflicts
+still block preparation; reads and unrelated edits remain lossless. Corrections
+use the existing recoverable Storage Transaction without an additional prompt.
+See ADR-0111.
 
 Selection also loads an optional `Photos/Photo Database` into the common Library
 Snapshot as an immutable Photo Library. The Application Layer can request a Photo

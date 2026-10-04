@@ -3,6 +3,7 @@
 import hashlib
 import logging
 from dataclasses import replace
+from itertools import pairwise
 from pathlib import PurePosixPath
 
 from iPodDB.ArtworkDB.builder.build_ArtworkDB import (
@@ -12,7 +13,12 @@ from iPodDB.ArtworkDB.builder.build_ArtworkDB import (
     new_container_mhod,
     new_string_mhod,
 )
-from iPodDB.ArtworkDB.ithmb import DecodedImage, IthmbLayout, decode_ithmb
+from iPodDB.ArtworkDB.ithmb import (
+    DecodedImage,
+    IthmbLayout,
+    IthmbPixelFormat,
+    decode_ithmb,
+)
 from iPodDB.ArtworkDB.ithmb_writer import encode_ithmb
 from iPodDB.ArtworkDB.shared.artwork_index import build_artwork_index
 from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
@@ -35,6 +41,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library._resolved_write import ResolvedWrite
+from iPodDB.library.artwork import CoverFormat
 from iPodDB.library.writing import (
     IdentityMapping,
     PreparedFile,
@@ -79,6 +86,90 @@ def artwork_path(name: str) -> str:
             "The retained artwork filename does not identify a supported iTHMB path."
         )
     return path
+
+
+def _validate_retained_artwork_format(
+    artwork: DatabaseDocument[MhfdHeader],
+    cover: CoverFormat,
+    size: int,
+    resources: WriteResources,
+) -> None:
+    """Establish a fixed MHIF size from every retained representation and range.
+
+    Raw fixed-size rasters need no content-dependent decoding to establish their
+    extent. Captured fingerprints bind even full shards (whose bytes need not be
+    loaded for appending) to the eventual Storage Transaction.
+    """
+    if cover.pixel_format is IthmbPixelFormat.JPEG:
+        raise ValueError("Variable-size artwork cannot establish a fixed MHIF size.")
+    inventory = {f.relative_path.casefold(): f for f in resources.file_inventory or ()}
+    ranges: dict[str, set[int]] = {}
+    for selection in artwork.find_chunks(MhiiHeader):
+        matches = 0
+        for child in selection.chunk.children:
+            if not isinstance(child.payload, MhodContainerPayload):
+                if (
+                    isinstance(child.header, MhodHeader)
+                    and child.header.mhod_type == ArtworkMhodType.THUMBNAIL_IMAGE
+                ):
+                    raise ValueError(
+                        "A retained thumbnail representation is unrecognized."
+                    )
+                continue
+            location = child.payload.child
+            header = location.header
+            if header.format_id != cover.format_id:
+                continue
+            matches += 1
+            if matches > 1:
+                raise ValueError(
+                    "A retained image has duplicate representations of this format."
+                )
+            if header.image_size != size or header.image_size_2 != size:
+                raise ValueError(
+                    "Retained MHNI image sizes disagree with the target layout."
+                )
+            for dimension, padding, expected in (
+                (header.image_width, header.horizontal_padding, cover.width),
+                (header.image_height, header.vertical_padding, cover.height),
+            ):
+                # foo_dop records the bottom/right edge of centered content;
+                # other writers record the complete raster dimensions.
+                if not (
+                    0 <= padding < dimension <= expected
+                    and (dimension == expected or dimension + padding == expected)
+                ):
+                    raise ValueError(
+                        "Retained MHNI dimensions or padding disagree with the target layout."
+                    )
+            names = tuple(
+                c.payload.value
+                for c in location.children
+                if isinstance(c.header, MhodHeader)
+                and c.header.mhod_type == ArtworkMhodType.FILE_NAME
+                and isinstance(c.payload, MhodStringPayload)
+            )
+            if len(names) != 1:
+                raise ValueError(
+                    "A retained image requires exactly one thumbnail filename."
+                )
+            path = artwork_path(names[0]).casefold()
+            dependency = inventory.get(path)
+            if (
+                dependency is None
+                or header.ithmb_offset < 0
+                or header.ithmb_offset + size > dependency.size
+            ):
+                raise ValueError(
+                    "A retained image range is missing or outside its captured thumbnail file."
+                )
+            ranges.setdefault(path, set()).add(header.ithmb_offset)
+    if not ranges:
+        raise ValueError("No retained MHNI images establish the expected size.")
+    for offsets in ranges.values():
+        ordered = sorted(offsets)
+        if any(right < left + size for left, right in pairwise(ordered)):
+            raise ValueError("Retained image ranges partially overlap.")
 
 
 def reconcile_artwork(
@@ -188,6 +279,7 @@ def reconcile_artwork(
     art_mappings: list[IdentityMapping] = []
     resolved_assets: dict[int, int] = {}
     file_sizes: dict[int, int] = {}
+    corrected_sizes: dict[int, int] = {}
     modified_owners = {
         track_chunks[native_ids.get(t.track_id, t.track_id)].header.db_track_id
         for t in changed
@@ -315,8 +407,23 @@ def reconcile_artwork(
                 if cover.format_id in retained_sizes and retained_sizes[
                     cover.format_id
                 ] != len(encoded):
-                    raise ValueError(
-                        f"Artwork format {cover.format_id} conflicts with its retained MHIF image size."
+                    retained_size = retained_sizes[cover.format_id]
+                    try:
+                        _validate_retained_artwork_format(
+                            artwork, cover, len(encoded), resources
+                        )
+                    except ValueError as error:
+                        raise ValueError(
+                            f"Artwork format {cover.format_id} retains MHIF image size {retained_size}; "
+                            f"expected {len(encoded)}. Automatic correction is unsafe: {error}"
+                        ) from error
+                    corrected_sizes[cover.format_id] = len(encoded)
+                    retained_sizes[cover.format_id] = len(encoded)
+                    logger.info(
+                        "Automatically corrected retained MHIF image size during artwork preparation: format=%d old_size=%d new_size=%d",
+                        cover.format_id,
+                        retained_size,
+                        len(encoded),
                     )
                 if cover.format_id in file_sizes and file_sizes[cover.format_id] != len(
                     encoded
@@ -495,6 +602,16 @@ def reconcile_artwork(
             s.chunk.header.format_id for s in file_dataset.find_chunks(MhifHeader)
         }
         container = file_dataset.chunk.children[0]
+        for selection in container.find_chunks(MhifHeader):
+            size = corrected_sizes.get(selection.chunk.header.format_id)
+            if size is not None:
+                container = container.replace_chunk(
+                    selection,
+                    replace(
+                        selection.chunk,
+                        header=replace(selection.chunk.header, image_size=size),
+                    ),
+                )
         for format_id, size in file_sizes.items():
             if format_id not in existing_formats:
                 container = container.append_child(
