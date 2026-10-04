@@ -79,21 +79,17 @@ Older Linux directory bundles should be replaced by extracting the new archive
 into a fresh folder.
 Microsoft Store installations update through the Store.
 
-### Python installation
+### Install from PyPI with uv
 
-Use [uv](https://docs.astral.sh/uv/getting-started/installation/) to install the
-latest published Python package in an isolated tool environment:
+First [install uv](https://docs.astral.sh/uv/getting-started/installation/),
+then run:
 
 ```shell
-uv tool install --python 3.12 iopenpod
-iopenpod
+uv tool install iopenpod
 ```
 
-Python installations check PyPI at launch and from **Settings > About**. Choose
-**Update now**, then **Restart to install** to install and relaunch automatically.
-Standard UV tool installs and writable Python package environments are supported;
-customized tool environments show manual upgrade guidance. See
-[Application updates](docs/app-updates.md#python-packages-and-pypi).
+Launch the app with `iopenpod`. For updates, choose **Update now**, then
+**Restart to install** in the app.
 
 ### Media tools
 

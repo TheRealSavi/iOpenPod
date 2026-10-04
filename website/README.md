@@ -114,8 +114,9 @@ the latest native release link. Windows x64, Apple Silicon, Intel Mac, and Linux
 downloads point to [GitHub’s latest release](https://github.com/TheRealSavi/iOpenPod/releases/latest).
 Microsoft Store is available at
 [the iOpenPod listing](https://apps.microsoft.com/detail/9P2LXCHHWLG9)
-(product ID `9P2LXCHHWLG9`). PyPI, Mac App Store, Flathub, and Snap Store remain
-`planned` with a null URL.
+(product ID `9P2LXCHHWLG9`). PyPI is available at
+[the iOpenPod package page](https://pypi.org/project/iopenpod/).
+Mac App Store, Flathub, and Snap Store remain `planned` with a null URL.
 
 The homepage and setup guide share the native download URLs from this data file.
 `native_release.url` and each native channel URL use `/releases/latest` so new
@@ -155,8 +156,10 @@ README, FAQ answers, and site/page descriptions. Also update
 `release_status` and `status_date` in the data file. Keep unreleased channels
 marked planned; a published Windows build does not establish Mac or Linux support.
 
-The Python example uses the unpinned package name `iopenpod` to select the latest
-published package, with Python 3.12. It is one application distribution.
+PyPI instructions link to uv’s installation guide, then show
+`uv tool install iopenpod` to select the latest published package. Keep this route
+concise; do not duplicate uv’s setup instructions or add alternative installers.
+It is one application distribution.
 
 The root README uses absolute screenshot and documentation URLs so the package
 description works on PyPI. These URLs and `_config.yml`’s `source_url` name the

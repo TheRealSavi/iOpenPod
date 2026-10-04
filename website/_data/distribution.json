@@ -1,6 +1,6 @@
 {
   "product": "iOpenPod",
-  "release_status": "Native downloads are available for Windows, macOS, and Linux, with in-app GitHub updates. Microsoft Store is also available; PyPI and other stores remain planned.",
+  "release_status": "Native downloads are available for Windows, macOS, and Linux, with in-app GitHub updates. PyPI installs with uv and Microsoft Store are also available; other stores remain planned.",
   "status_date": "2026-10-04",
   "native_release": {
     "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest"
@@ -36,5 +36,5 @@
       ]
     }
   ],
-  "python": {"id": "pypi", "name": "PyPI", "format": "Python 3.12 · Windows, macOS & Linux", "status": "planned", "url": null, "label": "iOpenPod on PyPI"}
+  "python": {"id": "pypi", "name": "PyPI", "format": "Install with uv · Windows, macOS & Linux", "status": "available", "url": "https://pypi.org/project/iopenpod/", "label": "iOpenPod on PyPI"}
 }

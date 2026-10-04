@@ -1,8 +1,8 @@
 ---
 title: iOpenPod — Your music. Your iPod.
-description: Browse, play, organize, and sync your iPod with iOpenPod. Download for Windows, macOS, and Linux, or install from Microsoft Store.
+description: Browse, play, organize, and sync your iPod with iOpenPod. Download for Windows, macOS, and Linux, or install from PyPI with uv or Microsoft Store.
 og_title: iOpenPod — Your music. Your iPod.
-og_description: A new home for your iPod library. Get native downloads for Windows, macOS, and Linux with in-app updates, or install from Microsoft Store.
+og_description: A new home for your iPod library. Get native downloads for Windows, macOS, and Linux, or install from PyPI with uv or Microsoft Store.
 body_class: iop2-page home-page
 include_faq_schema: true
 permalink: /
@@ -144,10 +144,12 @@ permalink: /
         </article>
         {% endfor %}
         <article class="platform-row python-row" aria-labelledby="platform-python">
-          <div class="platform-heading"><h3 id="platform-python">Prefer Python?</h3><p>One package. All three platforms.</p></div>
+          <div class="platform-heading"><h3 id="platform-python">Install from PyPI</h3><p>One package. All three platforms.</p></div>
           <div>
             <ul class="channel-list">{% include download-channel.html channel=site.data.distribution.python %}</ul>
-            <p class="python-note">The package requires Python 3.12. <a href="{{ '/install-help/#python' | relative_url }}">Python install details</a></p>
+            <p class="python-note">First <a href="https://docs.astral.sh/uv/getting-started/installation/">install uv</a>, then run:</p>
+            <pre><code>uv tool install iopenpod</code></pre>
+            <p class="python-note">Launch the app with <code>iopenpod</code>. <a href="{{ '/install-help/#python' | relative_url }}">Install help</a></p>
           </div>
         </article>
       </div>
@@ -174,7 +176,7 @@ permalink: /
       </div>
       <div>
         <h3>Free and open source</h3>
-        <p>iOpenPod is free software for Windows, macOS, and Linux under GPL-3.0-or-later. Get a <a href="#install">native download</a> for your platform or install the Windows app from Microsoft Store. PyPI, Mac App Store, Flathub, and Snap Store remain planned.</p>
+        <p>iOpenPod is free software for Windows, macOS, and Linux under GPL-3.0-or-later. Get a <a href="#install">native download</a>, <a href="#platform-python">install from PyPI with uv</a>, or install the Windows app from Microsoft Store. Mac App Store, Flathub, and Snap Store remain planned.</p>
       </div>
       <div>
         <h3>Review before you sync</h3>

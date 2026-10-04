@@ -1,6 +1,6 @@
 ---
 title: Install & setup — iOpenPod
-description: Install and update iOpenPod from GitHub on Windows, macOS, and Linux, or use Microsoft Store. Set up media tools and prepare your first sync.
+description: Install iOpenPod on Windows, macOS, and Linux from GitHub or PyPI with uv, or use Microsoft Store. Set up media tools and prepare your first sync.
 body_class: iop2-page setup-page
 permalink: /install-help/
 ---
@@ -19,10 +19,10 @@ permalink: /install-help/
   </header>
   <div class="availability-note">
     <strong>Native downloads for Windows, macOS, and Linux are available.</strong>
-    <p>Install the <a href="{{ site.data.distribution.native_release.url }}">latest iOpenPod release from GitHub</a> with in-app updates, or get the Windows app from <a href="https://apps.microsoft.com/detail/9P2LXCHHWLG9">Microsoft Store</a>. PyPI and other stores remain planned.</p>
+    <p>Install the <a href="{{ site.data.distribution.native_release.url }}">latest iOpenPod release from GitHub</a>, <a href="#python">install from PyPI with uv</a>, or get the Windows app from <a href="https://apps.microsoft.com/detail/9P2LXCHHWLG9">Microsoft Store</a>. Other stores remain planned.</p>
   </div>
   <nav class="setup-index" aria-label="Setup topics">
-    <a href="#native">Native downloads</a><a href="#updates">Updates</a><a href="#stores">Stores</a><a href="#python">Python</a><a href="#helper-tools">Media tools</a><a href="#first-sync">First sync</a><a href="#troubleshooting">Troubleshooting</a>
+    <a href="#native">Native downloads</a><a href="#updates">Updates</a><a href="#stores">Stores</a><a href="#python">PyPI with uv</a><a href="#helper-tools">Media tools</a><a href="#first-sync">First sync</a><a href="#troubleshooting">Troubleshooting</a>
   </nav>
   <section class="setup-section" id="native">
     <h2>Native downloads</h2>
@@ -56,7 +56,7 @@ permalink: /install-help/
       <div><dt>Windows &amp; Linux</dt><dd>Choose <strong>Update now</strong> to download in the background. When ready, save any Library Draft, finish running workflows, close other iOpenPod instances, and choose <strong>Restart to install</strong>. The app replaces its executable or active version and relaunches.</dd></div>
       <div><dt>macOS</dt><dd>Save your work and finish running workflows before choosing <strong>Update now</strong>. Follow the built-in updater’s download, installation, and relaunch prompts.</dd></div>
     </dl>
-    <p>Updates verify signed release information and the downloaded archive. Microsoft Store installations use the Store; package-manager and Python installations stay with their original installation source.</p>
+    <p>GitHub updates verify signed release information and the downloaded archive. Microsoft Store installations use the Store. See <a href="#python">below</a> for PyPI installs with uv.</p>
     <h3>Coming from an older download</h3>
     <p>If your build only offers <strong>Open download page</strong> or cannot update itself, finish your work and close iOpenPod, then install the latest release using the <a href="#native">native installation steps above</a>. On Windows, replace only <code>iOpenPod.exe</code>; on macOS, replace the app in Applications. On Linux, extract the new archive into a fresh folder and start its top-level launcher instead of copying files over an older bundle.</p>
     <p>If a check or download fails, try <strong>Check for updates</strong> again later or install from the <a href="{{ site.data.distribution.native_release.url }}">release page</a>. Keep any recovery files until an interrupted update is resolved.</p>
@@ -68,20 +68,10 @@ permalink: /install-help/
     <p>Store availability is independent: a release on one channel does not mean the others are ready. Sandboxed builds need verified access to your media folders, removable iPod, and external media tools. Their release instructions will explain the required permissions.</p>
   </section>
   <section class="setup-section" id="python">
-    <h2>The Python option</h2>
-    <p>The iOpenPod package requires <strong>Python 3.12</strong>. PyPI distribution is planned; check <a href="{{ '/#install' | relative_url }}">channel availability</a> before using this option. The command below installs the latest published Python package:</p>
-    <pre><code>uv tool install --python 3.12 iopenpod
-iopenpod</code></pre>
-    <p>Use <a href="https://docs.astral.sh/uv/getting-started/installation/">uv’s installation guide</a> to set up uv. After a tool install, update with <code>uv tool upgrade iopenpod</code>. If your shell cannot find the launcher, run <code>uv tool update-shell</code> and reopen the terminal.</p>
-    <details>
-      <summary>Working from a source checkout</summary>
-      <div class="details-body">
-        <p>From the root of this iOpenPod checkout, use the locked development environment:</p>
-        <pre><code>uv sync --locked
-uv run iopenpod</code></pre>
-        <p>The project’s README and packaging guide cover development checks and native builds.</p>
-      </div>
-    </details>
+    <h2>Install from PyPI with uv</h2>
+    <p>First <a href="https://docs.astral.sh/uv/getting-started/installation/">install uv</a>, then run:</p>
+    <pre><code>uv tool install iopenpod</code></pre>
+    <p>Launch the app with <code>iopenpod</code>. For updates, choose <strong>Update now</strong>, then <strong>Restart to install</strong> in the app.</p>
   </section>
   <section class="setup-section" id="helper-tools">
     <h2>Set up media tools</h2>

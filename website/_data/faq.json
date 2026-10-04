@@ -7,7 +7,7 @@
   {
     "id": "python",
     "question": "Do I need Python to use iOpenPod?",
-    "answer": "Native downloads for Windows, macOS, and Linux and the Microsoft Store app include the Python runtime, so no separate Python installation is needed. Running from source or using the planned PyPI package requires Python 3.12."
+    "answer": "Native downloads for Windows, macOS, and Linux and the Microsoft Store app include the Python runtime, so no separate Python installation is needed. For a PyPI installation, use uv to manage the Python environment: install uv, then run uv tool install iopenpod."
   },
   {
     "id": "flac",
@@ -72,7 +72,7 @@
   {
     "id": "internet",
     "question": "Does iOpenPod send any data to the internet?",
-    "answer": "Core iPod browsing and local file management work with files on your computer and iPod. GitHub and Microsoft Store installations check their update source at launch. Online features such as podcast discovery, feed refreshes, downloads, and optional Last.fm or ListenBrainz scrobbling contact their services. Media-tool installation also contacts package sources. Network activity depends on the features and settings you use."
+    "answer": "Core iPod browsing and local file management work with files on your computer and iPod. GitHub, PyPI, and Microsoft Store installations check their update source at launch. Online features such as podcast discovery, feed refreshes, downloads, and optional Last.fm or ListenBrainz scrobbling contact their services. Media-tool installation also contacts package sources. Network activity depends on the features and settings you use."
   },
   {
     "id": "multiple-computers",
