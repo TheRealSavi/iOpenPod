@@ -72,6 +72,18 @@ the stable `iOpenPod` launcher, `installation.json`, `current.json`, and
 `versions/<version>/` containing the onedir runtime. Start the root launcher.
 Store staging continues to use the ordinary onedir build. Each archive gets SHA-256.
 
+Native download names use `x86_64` consistently, including Windows:
+
+- `iOpenPod-<version>-Windows-x86_64.zip`
+- `iOpenPod-<version>-Linux-x86_64.tar.gz`
+- `iOpenPod-<version>-macOS-<architecture>.dmg` for manual installation
+- `iOpenPod-<version>-sparkle-update-macOS-<architecture>.zip` for Sparkle only
+
+Mac architectures are `arm64` and `x86_64`. Publish only the new names, without
+legacy aliases. Signed update metadata uses updater protocol 2 to select these
+names; protocol-1 clients need one manual upgrade. See
+[ADR-0114](adr/0114-distinguish-install-downloads-from-update-archives.md).
+
 Standalone builds embed update identity and public trust keys from
 `packaging/update-keys.json`. Windows embeds a separately frozen helper; Linux
 ships it as the stable launcher and within each runtime for installation/recovery.

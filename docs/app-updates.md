@@ -109,6 +109,13 @@ It validates the archive's signed byte length and SHA-256. Metadata is limited t
 256 KiB, archives to 2 GiB, and downloads to 30 minutes with individual network
 timeouts. Errors are never presented as proof that the app is current.
 
+New releases use updater protocol 2 for the `Windows-x86_64.zip` and
+`sparkle-update-macOS-<architecture>.zip` filenames. Protocol-1 clients, including
+2.0.3, report that a manual update is required; install the Windows ZIP, macOS DMG,
+or Linux tar.gz once to move to the new updater. New clients retain protocol-1
+verification for existing signed history. See
+[ADR-0114](adr/0114-distinguish-install-downloads-from-update-archives.md).
+
 Windows and managed Linux builds download in the background after **Update now**.
 The application remains usable until the user chooses **Restart to install**.
 That action takes the same Library Draft and workflow guard as Store updates.

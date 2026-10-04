@@ -12,6 +12,7 @@ from Crypto.Signature import eddsa
 from iOpenPod.app.updates.releases import (
     REPOSITORY,
     SIGNING_CONTEXT,
+    TARGET_LAYOUTS,
     ReleaseFloor,
     verify_release,
     version_tuple,
@@ -20,7 +21,9 @@ from iOpenPod.app.updates.releases import (
 NOW = datetime.now(UTC)
 
 
-def signed_release(**overrides: object) -> tuple[bytes, tuple[str, ...]]:
+def signed_release(
+    *, protocol: object = 1, target: str = "windows-x86_64", **overrides: object
+) -> tuple[bytes, tuple[str, ...]]:
     key = ECC.generate(curve="Ed25519")
     public = key.public_key().export_key(format="raw")
     value: dict[str, object] = {
@@ -35,13 +38,16 @@ def signed_release(**overrides: object) -> tuple[bytes, tuple[str, ...]]:
         "expires": (NOW + timedelta(days=30)).isoformat(),
         "assets": [
             {
-                "target": "windows-x86_64",
-                "layout": "windows-onefile-v1",
-                "updater_protocol": 1,
+                "target": target,
+                "layout": TARGET_LAYOUTS[target],
+                "updater_protocol": protocol,
                 "size": 12,
                 "sha256": "a" * 64,
                 "executable_sha256": "b" * 64,
                 "minimum_os": "10.0",
+                "sparkle_signature": base64.b64encode(bytes(64)).decode()
+                if target.startswith("macos")
+                else "",
             }
         ],
     }
@@ -87,6 +93,41 @@ def test_rejects_tampering_and_unknown_signer() -> None:
 
 
 @pytest.mark.parametrize(
+    "protocol,target,suffix",
+    [
+        (1, "windows-x86_64", "Windows-AMD64.zip"),
+        (1, "macos-arm64", "macOS-arm64.zip"),
+        (1, "macos-x86_64", "macOS-x86_64.zip"),
+        (1, "linux-x86_64", "Linux-x86_64.tar.gz"),
+        (2, "windows-x86_64", "Windows-x86_64.zip"),
+        (2, "macos-arm64", "sparkle-update-macOS-arm64.zip"),
+        (2, "macos-x86_64", "sparkle-update-macOS-x86_64.zip"),
+        (2, "linux-x86_64", "Linux-x86_64.tar.gz"),
+    ],
+)
+def test_signed_protocol_selects_exact_current_or_legacy_archive(
+    protocol: int, target: str, suffix: str
+) -> None:
+    data, keys = signed_release(protocol=protocol, target=target)
+    asset = verify_release(data, keys, now=NOW).asset(target)
+    assert asset.updater_protocol == protocol
+    assert asset.filename == f"iOpenPod-2.0.2-{suffix}"
+    assert asset.url == (
+        f"https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.2/"
+        f"iOpenPod-2.0.2-{suffix}"
+    )
+
+
+@pytest.mark.parametrize("protocol", [0, 3, True, "2", None])
+def test_unsupported_filename_protocol_requires_a_manual_update(
+    protocol: object,
+) -> None:
+    data, keys = signed_release(protocol=protocol)
+    with pytest.raises(ValueError, match="update manually"):
+        verify_release(data, keys, now=NOW)
+
+
+@pytest.mark.parametrize(
     "overrides",
     [
         {"tag": "BETA"},
@@ -104,7 +145,7 @@ def test_rejects_tampering_and_unknown_signer() -> None:
 def test_rejects_signed_but_unsupported_or_stale_metadata(
     overrides: dict[str, object],
 ) -> None:
-    data, keys = signed_release(**overrides)
+    data, keys = signed_release(target="windows-x86_64", **overrides)
     with pytest.raises(ValueError):
         verify_release(data, keys, now=NOW)
 

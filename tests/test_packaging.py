@@ -339,8 +339,9 @@ def test_msix_cli_stages_saved_identity_and_explicit_overrides(
         package_app.main()
 
 
+@pytest.mark.parametrize("machine", ["AMD64", "amd64", "x86_64"])
 def test_windows_archive_contains_only_the_standalone_executable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, machine: str
 ) -> None:
     shutil.copy2(package_app.ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
     executable = tmp_path / "dist/iOpenPod.exe"
@@ -351,9 +352,13 @@ def test_windows_archive_contains_only_the_standalone_executable(
     stale.touch()
     monkeypatch.setattr(package_app, "ROOT", tmp_path)
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(platform, "machine", lambda: machine)
 
     archive = package_app.archive()
 
+    assert (
+        archive.name == f"iOpenPod-{package_app.project_version()}-Windows-x86_64.zip"
+    )
     with zipfile.ZipFile(archive) as zipped:
         assert zipped.namelist() == ["iOpenPod.exe"]
         assert zipped.read("iOpenPod.exe") == executable.read_bytes()
@@ -362,8 +367,9 @@ def test_windows_archive_contains_only_the_standalone_executable(
     )
 
 
+@pytest.mark.parametrize("architecture", ["arm64", "x86_64"])
 def test_macos_archive_adds_a_drag_to_applications_disk_image(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, architecture: str
 ) -> None:
     shutil.copy2(package_app.ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
     artwork = tmp_path / "packaging/macos"
@@ -376,7 +382,7 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
     executable.write_bytes(b"signed app executable")
     monkeypatch.setattr(package_app, "ROOT", tmp_path)
     monkeypatch.setattr(sys, "platform", "darwin")
-    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(platform, "machine", lambda: architecture)
     calls: list[list[str]] = []
 
     def fake_symlink(path: Path, target: str, *, target_is_directory: bool) -> None:
@@ -421,7 +427,9 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
     monkeypatch.setattr(Path, "symlink_to", fake_symlink)
     monkeypatch.setattr(subprocess, "run", fake_run)
     archive = package_app.archive()
-    dmg = archive.with_suffix(".dmg")
+    version = package_app.project_version()
+    assert archive.name == f"iOpenPod-{version}-sparkle-update-macOS-{architecture}.zip"
+    dmg = archive.parent / f"iOpenPod-{version}-macOS-{architecture}.dmg"
 
     assert archive.is_file() and dmg.is_file()
     assert [command[:2] for command in calls] == [

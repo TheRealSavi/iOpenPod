@@ -186,3 +186,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0111: Correct evidenced artwork format sizes during preparation](0111-correct-evidenced-artwork-format-sizes-during-preparation.md)
 - [ADR-0112: Publish Python distributions with GitHub Releases](0112-publish-python-distributions-with-github-releases.md)
 - [ADR-0113: Update installed Python packages through PyPI](0113-update-installed-python-packages-through-pypi.md)
+- [ADR-0114: Distinguish install downloads from update archives](0114-distinguish-install-downloads-from-update-archives.md)

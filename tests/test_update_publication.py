@@ -27,6 +27,7 @@ from iOpenPod.app.updates.portable import unpack_linux, verify_linux_runtime
 from iOpenPod.app.updates.releases import (
     TARGET_LAYOUTS,
     TARGET_SUFFIXES,
+    read_json,
     verify_release,
 )
 from iOpenPod.app.updates.transport import DownloadAsset, UpdateTransport
@@ -116,6 +117,7 @@ def test_feed_authenticates_every_archive_and_mac_appcast(release_files: Path) -
     release = verify_release((output / "stable.json").read_bytes(), (PUBLIC,))
     for target in TARGET_SUFFIXES:
         asset = release.asset(target)
+        assert asset.updater_protocol == 2
         archive = release_files / asset.filename
         assert asset.size == archive.stat().st_size
         assert asset.sha256 == hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -130,8 +132,10 @@ def test_feed_authenticates_every_archive_and_mac_appcast(release_files: Path) -
             assert enclosure.get("length") == str(asset.size)
 
 
+@pytest.mark.parametrize("previous_protocol", [1, 2])
 def test_expired_feed_can_be_renewed_without_rolling_back_history(
     release_files: Path,
+    previous_protocol: int,
 ) -> None:
     old_output = release_files / "old-feed"
     update_feed.create_feed(
@@ -143,6 +147,12 @@ def test_expired_feed_can_be_renewed_without_rolling_back_history(
         now=datetime.now(UTC) - timedelta(days=60),
     )
     previous = (old_output / "stable.json").read_bytes()
+    # Older releases bind the legacy names; their signed history must remain
+    # readable when publishing the first release with the new archive names.
+    payload = read_json(base64.b64decode(str(read_json(previous)["payload"])))
+    for item in cast("list[dict[str, object]]", payload["assets"]):
+        item["updater_protocol"] = previous_protocol
+    previous = update_feed.signed_envelope(payload, SEED)
     output = release_files / "new-feed"
     update_feed.create_feed(
         release_files, output, VERSION, SEED, root=release_files, previous=previous

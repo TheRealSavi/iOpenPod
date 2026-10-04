@@ -30,9 +30,9 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 MAX_ASSET_BYTES = 2 * 1024**3
 TARGETS = (
-    ("windows-2022", "Windows-AMD64.zip", None),
-    ("macos-14", "macOS-arm64.zip", "arm64"),
-    ("macos-15-intel", "macOS-x86_64.zip", "x86_64"),
+    ("windows-2022", "Windows-x86_64.zip", None),
+    ("macos-14", "sparkle-update-macOS-arm64.zip", "arm64"),
+    ("macos-15-intel", "sparkle-update-macOS-x86_64.zip", "x86_64"),
     ("ubuntu-24.04", "Linux-x86_64.tar.gz", None),
 )
 

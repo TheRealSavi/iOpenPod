@@ -35,7 +35,7 @@ for setup and troubleshooting.
 
 | Platform | Latest release assets | Installation |
 | --- | --- | --- |
-| Windows x64 | [Windows AMD64 ZIP](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Extract `iOpenPod.exe` and run it. |
+| Windows x64 | [Windows x86_64 ZIP](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Extract `iOpenPod.exe` and run it. |
 | macOS · Apple Silicon | [macOS arm64 DMG](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Open the image and drag `iOpenPod.app` to Applications. |
 | macOS · Intel | [macOS x86_64 DMG](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Open the image and drag `iOpenPod.app` to Applications. |
 | Linux x64 | [Linux x86_64 tar.gz](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Extract the complete folder and run its top-level `iOpenPod` launcher. |
@@ -48,8 +48,8 @@ On macOS, launch from Applications after copying the app and ejecting the DMG.
 The build targets macOS 12.3 or later; acceptance on 12.3 remains pending.
 Current downloads are ad-hoc signed and not notarized; the
 [Mac setup guide](https://therealsavi.github.io/iOpenPod/install-help/#native-macos)
-covers first-launch prompts. The matching ZIPs on the release page are used for
-in-app updates and are also available for manual archive installation.
+covers first-launch prompts. Choose a DMG to install; the ZIPs labeled
+`sparkle-update` are reserved for the built-in updater.
 
 On Linux, extract into a folder you can write to, preserve executable permissions,
 and keep the whole `iOpenPod` folder together. Always start its top-level launcher,

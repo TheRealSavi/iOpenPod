@@ -22,6 +22,7 @@ from Crypto.Signature import eddsa
 from scripts.package_updates import public_keys, sparkle_sdk
 
 from iOpenPod.app.updates.releases import (
+    CURRENT_UPDATER_PROTOCOL,
     MAX_ARCHIVE,
     REPOSITORY,
     SIGNING_CONTEXT,
@@ -209,7 +210,7 @@ def create_feed(
         item: dict[str, object] = {
             "target": target,
             "layout": TARGET_LAYOUTS[target],
-            "updater_protocol": 1,
+            "updater_protocol": CURRENT_UPDATER_PROTOCOL,
             "size": archive.stat().st_size,
             "sha256": digest,
             "executable_sha256": executable_digest(archive, target, version, keys),

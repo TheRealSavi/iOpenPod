@@ -11,7 +11,7 @@
       "name": "Windows",
       "target": "Windows 10 / 11 · x64",
       "channels": [
-        {"id": "windows-binary", "name": "GitHub download", "format": "Windows AMD64 ZIP · standalone executable · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Windows release"},
+        {"id": "windows-binary", "name": "GitHub download", "format": "Windows x86_64 ZIP · standalone executable · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Windows release"},
         {"id": "microsoft-store", "name": "Microsoft Store", "format": "Install and update through the Store", "status": "available", "url": "https://apps.microsoft.com/detail/9P2LXCHHWLG9", "label": "Get it from Microsoft Store"}
       ]
     },

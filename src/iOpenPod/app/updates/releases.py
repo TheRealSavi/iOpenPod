@@ -29,6 +29,14 @@ TARGET_LAYOUTS = {
     "linux-x86_64": "linux-managed-v1",
 }
 TARGET_SUFFIXES = {
+    "windows-x86_64": "Windows-x86_64.zip",
+    "macos-arm64": "sparkle-update-macOS-arm64.zip",
+    "macos-x86_64": "sparkle-update-macOS-x86_64.zip",
+    "linux-x86_64": "Linux-x86_64.tar.gz",
+}
+CURRENT_UPDATER_PROTOCOL = 2
+# Protocol 1 is immutable: released clients derive these exact archive names.
+_LEGACY_TARGET_SUFFIXES = {
     "windows-x86_64": "Windows-AMD64.zip",
     "macos-arm64": "macOS-arm64.zip",
     "macos-x86_64": "macOS-x86_64.zip",
@@ -108,10 +116,14 @@ class ReleaseAsset:
     executable_sha256: str
     minimum_os: str
     sparkle_signature: str = ""
+    updater_protocol: int = 1
 
     @property
     def filename(self) -> str:
-        return f"iOpenPod-{self.version}-{TARGET_SUFFIXES[self.target]}"
+        suffixes = {1: _LEGACY_TARGET_SUFFIXES, 2: TARGET_SUFFIXES}[
+            self.updater_protocol
+        ]
+        return f"iOpenPod-{self.version}-{suffixes[self.target]}"
 
     @property
     def url(self) -> str:
@@ -235,7 +247,7 @@ def verify_release(
         if (
             item.get("layout") != TARGET_LAYOUTS[target]
             or type(item.get("updater_protocol")) is not int
-            or item.get("updater_protocol") != 1
+            or item.get("updater_protocol") not in (1, CURRENT_UPDATER_PROTOCOL)
         ):
             raise ValueError(
                 "This release requires a different installer; update manually"
@@ -258,6 +270,7 @@ def verify_release(
                 _digest(item, "executable_sha256"),
                 text_field(item, "minimum_os"),
                 signature,
+                integer_field(item, "updater_protocol", CURRENT_UPDATER_PROTOCOL),
             )
         )
     return Release(version, sequence, issued, expires, digest, tuple(assets))

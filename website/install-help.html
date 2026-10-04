@@ -29,7 +29,7 @@ permalink: /install-help/
     <p>Native builds include Python and the application libraries. You do not need a separate Python installation. Choose the download for your operating system and processor.</p>
     <h3 id="native-windows">Windows x64</h3>
     <ol>
-      <li>Open the <a href="{{ windows_download.url }}">latest release</a> and download the asset ending in <code>Windows-AMD64.zip</code> for Windows 10 or 11 on an x64 PC.</li>
+      <li>Open the <a href="{{ windows_download.url }}">latest release</a> and download the asset ending in <code>Windows-x86_64.zip</code> for Windows 10 or 11 on an x64 PC.</li>
       <li>Extract <code>iOpenPod.exe</code> to a folder you can write to on a fixed NTFS drive, such as <code>%LOCALAPPDATA%\Programs\iOpenPod</code>. This location allows in-app updates; removable and network drives are not supported by the updater.</li>
       <li>Run <code>iOpenPod.exe</code> from the extracted location. Keep that filename. Its runtime and supporting files are built in, and unpacking them temporarily can make startup take a moment.</li>
     </ol>
@@ -40,7 +40,7 @@ permalink: /install-help/
       <li>Eject the disk image, then open iOpenPod from Applications. Run the installed copy so the updater can replace it.</li>
     </ol>
     <p>The build targets macOS 12.3 or later; testing on 12.3 remains pending. Current downloads are ad-hoc signed and not notarized. If macOS blocks the first launch, review <a href="https://support.apple.com/en-us/102445">Apple’s guidance for opening apps from outside the App Store</a> and approve only the copy you downloaded from this project.</p>
-    <p>The matching macOS ZIPs on the <a href="{{ site.data.distribution.native_release.url }}">release page</a> are used by the built-in updater. For a manual ZIP install, extract the app and move it to Applications before launching.</p>
+    <p>Choose a DMG to install. The macOS ZIPs labeled <code>sparkle-update</code> on the <a href="{{ site.data.distribution.native_release.url }}">release page</a> are reserved for the built-in updater.</p>
     <h3 id="native-linux">Linux x64</h3>
     <ol>
       <li>Open the <a href="{{ linux_download.url }}">latest release</a> and download the asset ending in <code>Linux-x86_64.tar.gz</code>. The binary is built on Ubuntu 24.04 and requires glibc 2.39 or later plus desktop graphics and audio libraries. Compatibility with older distributions is not established.</li>

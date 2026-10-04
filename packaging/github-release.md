@@ -4,7 +4,8 @@ iOpenPod manages filesystem-accessible iPods on Windows, macOS, and Linux.
 
 ## Downloads
 
-- **Windows x64:** extract the Windows ZIP and run the standalone `iOpenPod.exe`.
+- **Windows x64:** extract the `Windows-x86_64.zip` download and run the standalone
+  `iOpenPod.exe`.
 - **macOS Apple Silicon:** open the macOS arm64 DMG and drag `iOpenPod.app` onto
   the Applications shortcut.
 - **macOS Intel:** open the macOS x86_64 DMG and drag `iOpenPod.app` onto the
@@ -13,13 +14,16 @@ iOpenPod manages filesystem-accessible iPods on Windows, macOS, and Linux.
 
 Windows includes its dependencies in the executable and extracts them temporarily
 at launch, which adds startup time. Keep the macOS and Linux application bundles
-intact. The two macOS ZIPs remain available for Sparkle updates and manual archive
-use; the DMGs provide the first-install drag-to-Applications layout. These are
+intact. **On macOS, download a DMG.** The ZIPs labeled `sparkle-update` are reserved
+for the built-in updater. These are
 development candidates (macOS uses ad-hoc signing), not notarized installers or
 Store packages.
 macOS builds target 12.3; execution on that minimum OS still needs acceptance testing.
 The Linux binary is built on Ubuntu 24.04; compatibility with older distributions
 is not established. Operating-system trust prompts may apply.
+
+**Upgrading from 2.0.3 or earlier:** install this release manually once. The release
+asset names have changed, and older updaters cannot use the new naming convention.
 
 FFmpeg and FFprobe are installed separately for media inspection and conversion.
 Chromaprint's fpcalc is optional for acoustic matching. The app offers installation

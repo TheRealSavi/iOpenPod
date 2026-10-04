@@ -397,10 +397,16 @@ def archive() -> Path:
 
     version = project_version()
     system = {"win32": "Windows", "darwin": "macOS", "linux": "Linux"}[sys.platform]
-    name = f"iOpenPod-{version}-{system}-{platform.machine()}"
+    machine = platform.machine().lower()
+    architecture = {"amd64": "x86_64"}.get(machine, machine)
+    name = f"iOpenPod-{version}-{system}-{architecture}"
     output = ROOT / "dist" / name
     if sys.platform == "darwin":
-        path = Path(str(output) + ".zip")
+        path = (
+            ROOT
+            / "dist"
+            / f"iOpenPod-{version}-sparkle-update-macOS-{architecture}.zip"
+        )
         subprocess.run(
             [
                 "ditto",
@@ -427,7 +433,7 @@ def archive() -> Path:
         )
     _write_checksum(path)
     if sys.platform == "darwin":
-        macos_dmg(ROOT / "dist/iOpenPod.app", path.with_suffix(".dmg"), version)
+        macos_dmg(ROOT / "dist/iOpenPod.app", Path(str(output) + ".dmg"), version)
     return path
 
 

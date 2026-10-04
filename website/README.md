@@ -131,8 +131,9 @@ requirements may still name their required versions. `release_status` supplies t
 structured-data release note; update it and `status_date` when availability changes.
 
 First installs use the Windows ZIP containing only `iOpenPod.exe`, the two macOS
-DMGs, and the complete Linux tar.gz folder. macOS ZIPs remain on the release page
-for Sparkle updates and manual archive installs. Document the writable fixed-NTFS
+DMGs, and the complete Linux tar.gz folder. Windows archive names use `x86_64`.
+macOS ZIPs include `sparkle-update` in their names and are reserved for Sparkle;
+direct manual installations to the DMGs. Document the writable fixed-NTFS
 location for Windows, Applications for macOS, and the writable complete folder
 with its top-level launcher for Linux. Preserve the current OS requirements and
 macOS signing guidance from the release notes.

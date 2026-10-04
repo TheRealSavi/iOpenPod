@@ -155,7 +155,10 @@ def test_publication_uploads_native_archives_and_mac_install_images(
         path.name for pattern in patterns for path in release_root.glob(pattern)
     }
     assert uploaded == {
-        *(f"iOpenPod-2.0.0-{suffix}" for _, suffix, _ in release.TARGETS),
+        "iOpenPod-2.0.0-Windows-x86_64.zip",
+        "iOpenPod-2.0.0-Linux-x86_64.tar.gz",
+        "iOpenPod-2.0.0-sparkle-update-macOS-arm64.zip",
+        "iOpenPod-2.0.0-sparkle-update-macOS-x86_64.zip",
         "iOpenPod-2.0.0-macOS-arm64.dmg",
         "iOpenPod-2.0.0-macOS-x86_64.dmg",
     }
@@ -213,7 +216,7 @@ def test_invalid_release_identity_fails_before_output(
 @pytest.mark.parametrize(
     "relative",
     [
-        "candidate-macos-15-intel/dist/iOpenPod-2.0.0-macOS-x86_64.zip",
+        "candidate-macos-15-intel/dist/iOpenPod-2.0.0-sparkle-update-macOS-x86_64.zip",
         "candidate-macos-14/dist/iOpenPod-2.0.0-macOS-arm64.dmg",
         "candidate-ubuntu-24.04/build/packaging/licenses/inventory.json",
         "candidate-macos-14/build/packaging/macos-compatibility.json",
@@ -232,7 +235,7 @@ def test_missing_candidate_or_report_prevents_release(
 @pytest.mark.parametrize("content", ["corrupt", "0" * 64 + "  incorrect.zip\n"])
 @pytest.mark.parametrize(
     "name",
-    ["iOpenPod-2.0.0-Windows-AMD64.zip", "iOpenPod-2.0.0-macOS-arm64.dmg"],
+    ["iOpenPod-2.0.0-Windows-x86_64.zip", "iOpenPod-2.0.0-macOS-arm64.dmg"],
 )
 def test_checksum_mismatch_prevents_release(
     release_root: Path, content: str, name: str
