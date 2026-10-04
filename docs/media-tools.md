@@ -56,6 +56,13 @@ Executable discovery prefers the current PATH and then searches WinGet aliases,
 the standard Homebrew prefixes, or native Linux executable directories. Installation
 does not change iOpenPod's process PATH or write tools into the application bundle.
 
+Frozen Linux builds restore the original `LD_LIBRARY_PATH` for external media
+processes (or unset it when no original value exists). iOpenPod retains its bundled
+libraries for its own use. This prevents installed FFmpeg, FFprobe, and fpcalc from
+loading incompatible application libraries, which can otherwise cause startup
+errors such as `undefined symbol: mpg123_open_handle64`. The same child environment
+is used for version checks, file inspection, and media processing.
+
 ## Channel evidence and validation
 
 Channel names and package contents were checked on 2026-10-01 against the

@@ -29,7 +29,7 @@ from storage.host_capture import (
     _capture,  # pyright: ignore[reportPrivateUsage]
 )
 from storage.host_input import LocalHostFile
-from storage.host_tools import find_host_executable
+from storage.host_tools import find_host_executable, host_tool_environment
 from storage.paths import HostPath
 
 _TRANSFORM_LOCK = threading.BoundedSemaphore(1)
@@ -238,6 +238,7 @@ def _run_media_tool(
             stderr=subprocess.PIPE,
             creationflags=flags,
             pass_fds=inherited_fds,
+            env=host_tool_environment(),
         )
     except OSError as error:
         raise MediaToolError(

@@ -326,7 +326,13 @@ def test_subprocess_failure_is_bounded_reaped_and_capture_cleaned(
     snapshots: list[Path] = []
 
     def launch(
-        args: list[str], *, stdin: int, stdout: int, stderr: int, creationflags: int
+        args: list[str],
+        *,
+        stdin: int,
+        stdout: int,
+        stderr: int,
+        creationflags: int,
+        env: dict[str, str],
     ) -> subprocess.Popen[bytes]:
         assert args[args.index("-protocol_whitelist") + 1] == "file"
         assert "concat" not in args[args.index("-format_whitelist") + 1].split(",")
@@ -337,6 +343,7 @@ def test_subprocess_failure_is_bounded_reaped_and_capture_cleaned(
             stdout=stdout,
             stderr=stderr,
             creationflags=creationflags,
+            env=env,
         )
         processes.append(process)
         return process
@@ -364,7 +371,13 @@ def test_cancel_running_probe_terminates_child_and_cleans_capture(
     cancellation = InterruptedError("cancel this inspection")
 
     def launch(
-        args: list[str], *, stdin: int, stdout: int, stderr: int, creationflags: int
+        args: list[str],
+        *,
+        stdin: int,
+        stdout: int,
+        stderr: int,
+        creationflags: int,
+        env: dict[str, str],
     ) -> subprocess.Popen[bytes]:
         snapshots.append(Path(args[-1]))
         process = original(
@@ -373,6 +386,7 @@ def test_cancel_running_probe_terminates_child_and_cleans_capture(
             stdout=stdout,
             stderr=stderr,
             creationflags=creationflags,
+            env=env,
         )
         processes.append(process)
         return process
