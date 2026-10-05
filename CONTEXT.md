@@ -253,6 +253,10 @@ format files. Profiles without native cover support receive an iOpenPod-only
 support. Preparation writes every native or application-only layout, preserves
 retained variants, and supports older reverse Track links. See ADR-0033 and
 ADR-0118.
+With Rockbox Metadata Support enabled, Sync also embeds the captured cover in
+prepared media files. Non-cover profiles use an optimized grayscale JPEG fitting
+within 120x120 pixels; this file-tag copy is separate from the iOpenPod-only
+ArtworkDB representation.
 When preparing new cover artwork, conflicting retained MHIF image sizes are
 corrected automatically when the Device Profile, retained image metadata, and
 captured thumbnail ranges establish the correct size. Unverifiable conflicts
@@ -369,7 +373,9 @@ media and database before recoverably removing unshared originals. See ADR-0095.
 Lyrics edits now require verified text embedded in the media file as well as the
 iTunesDB presence flag. The Application Layer prepares focused lyric-tag updates;
 Storage publishes them with the database in one recoverable transaction. This is
-independent of optional full metadata writing for Rockbox compatibility. Unrelated
+independent of optional full metadata writing for Rockbox compatibility. Rockbox-
+enabled Sync also embeds captured Track artwork in prepared media files; non-cover
+devices use an optimized grayscale JPEG fitting within 120x120 pixels. Unrelated
 edits preserve file-only lyrics, and incoming music reads embedded lyrics into its
 draft. Preparation exceeding the whole-media memory budget uses private Host disk
 staging with a file-specific warning, preserving complete media and lyrics.

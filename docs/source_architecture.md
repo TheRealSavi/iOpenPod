@@ -978,7 +978,10 @@ without native cover support use iOpenPod's fixed `F1060` representation only fo
 application browsing; Device Registry capability claims remain unchanged. Older
 Track layouts use reverse ArtworkDB links. Persistence still uses the reviewed
 Storage Transaction. See [ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md)
-and [ADR-0118](adr/0118-write-application-artwork-for-non-cover-devices.md).
+and [ADR-0118](adr/0118-write-application-artwork-for-non-cover-devices.md). When
+Rockbox Metadata Support is enabled, Sync separately embeds the captured cover in
+prepared media; non-cover profiles use an optimized grayscale JPEG fitting within
+120x120 pixels.
 
 During cover preparation, iPodDB automatically reconciles conflicting MHIF image
 sizes only when the target's fixed-size encoding, every retained MHNI representation

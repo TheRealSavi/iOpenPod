@@ -9,10 +9,13 @@ import pytest
 from mutagen.id3 import ID3
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
+from PIL import Image
 
+from device_registry import DEFAULT_DEVICE_REGISTRY
+from iOpenPod.app.artwork_policy import rockbox_artwork
 from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.models.artwork import ArtworkImage
-from iPodDB.library import ContentAdvisory, Track, TrackMetadata
+from iPodDB.library import ArtworkPixels, ContentAdvisory, Track, TrackMetadata
 from storage import HostPath
 
 _FIXTURES = Path(__file__).parents[2] / "fixtures" / "media"
@@ -100,6 +103,29 @@ def test_m4a_export_receives_itunes_metadata_and_cover_atom(tmp_path: Path) -> N
     assert typed_tags["disk"] == [(1, 2)]
     covers = cast("list[bytes]", typed_tags["covr"])
     assert bytes(covers[0]).startswith(b"\xff\xd8")
+
+
+def test_non_cover_rockbox_cover_is_a_small_grayscale_jpeg() -> None:
+    mini = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("M9802")
+    assert mini is not None
+    pixels = rockbox_artwork(
+        mini,
+        ArtworkPixels(240, 240, bytes((30, 80, 140)) * (240 * 240)),
+    )
+    data = ExportMediaTagger().prepare_bytes(
+        base64.b64decode((_FIXTURES / "tone.mp3.b64").read_bytes()),
+        "track.mp3",
+        _track(),
+        pixels,
+    )
+    tags = MP3(io.BytesIO(data)).tags  # type: ignore[no-untyped-call]
+    assert tags is not None
+    cover = cast("_ID3TagView", tags).getall("APIC")[0].data
+
+    with Image.open(io.BytesIO(cover)) as image:
+        assert image.size == (120, 120)
+        assert image.mode == "L"
+        assert len(cover) < 10_000
 
 
 def test_unsupported_export_format_is_rejected_before_tagging(tmp_path: Path) -> None:

@@ -13,7 +13,10 @@ from threading import Event, Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from iOpenPod.app.artwork_policy import application_artwork_formats
+from iOpenPod.app.artwork_policy import (
+    application_artwork_formats,
+    rockbox_artwork,
+)
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaFileKind
@@ -172,6 +175,7 @@ class _PreparedTrack:
     provenance: SyncedTrack
     resources: ExitStack
     warnings: tuple[str, ...]
+    output: PreparedTranscode | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,6 +403,10 @@ class SyncExecutor:
                             issues.extend(failures)
                 checkpoint()
                 issues.extend(_capture_artwork(request, prepared, checkpoint))
+                if request.options.rockbox_metadata:
+                    issues.extend(
+                        self._embed_rockbox_artwork(request, prepared, checkpoint)
+                    )
                 podcast_artwork_repairs: tuple[_PodcastArtworkRepair, ...] = ()
                 if podcast_sync is not None and podcast_plan is not None:
                     podcast_tracks, podcast_artwork_repairs, cover_issues = (
@@ -1061,6 +1069,45 @@ class SyncExecutor:
                     )
         return allocated, issues
 
+    def _embed_rockbox_artwork(
+        self,
+        request: SyncExecutionRequest,
+        tracks: list[_PreparedTrack],
+        checkpoint: Callable[[], None],
+    ) -> tuple[WriteIssue, ...]:
+        issues: list[WriteIssue] = []
+        for result in tracks:
+            if result.song.artwork is None or result.output is None:
+                continue
+            try:
+                embedded = rockbox_artwork(request.source.profile, result.song.artwork)
+                output = self._transcoder.embed_artwork(
+                    result.output,
+                    result.song.track,
+                    embedded,
+                    checkpoint=checkpoint,
+                )
+            except PreparationCancelledError:
+                raise
+            except Exception as error:
+                issues.append(
+                    WriteIssue(
+                        "sync.artwork_embedding_skipped",
+                        source_text(
+                            "Rockbox artwork for {name} was not embedded. "
+                            "The media and iOpenPod artwork can still Sync; retry after correcting the file.",
+                            name=result.item.name,
+                        ),
+                        severity=IssueSeverity.WARNING,
+                        detail=exception_text(error),
+                        artifact=result.item.host_path or "",
+                    )
+                )
+            else:
+                result.output = output
+                result.song = _song_with_output(result.song, output)
+        return tuple(issues)
+
     def _prepare_podcasts(
         self,
         request: SyncExecutionRequest,
@@ -1303,7 +1350,12 @@ class SyncExecutor:
                 ),
             )
             return _PreparedTrack(
-                item, song, provenance, lifetime.pop_all(), result.warnings
+                item,
+                song,
+                provenance,
+                lifetime.pop_all(),
+                result.warnings,
+                result,
             )
 
     def _prepare_photos(
@@ -1666,6 +1718,25 @@ def _song(
             output.inspection.fingerprint,
             media,
             display_path=host.metadata.location,
+        ),
+    )
+
+
+def _song_with_output(song: ImportedSong, output: PreparedTranscode) -> ImportedSong:
+    """Refresh media evidence after optional Rockbox tagging."""
+
+    fingerprint = output.inspection.fingerprint
+    location = song.source.media.file.relative_path
+    return replace(
+        song,
+        track=replace(song.track, size_bytes=fingerprint.size),
+        source=replace(
+            song.source,
+            fingerprint=fingerprint,
+            media=replace(
+                song.source.media,
+                file=FileDependency(location, fingerprint.size, fingerprint.sha256),
+            ),
         ),
     )
 

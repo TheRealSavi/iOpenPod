@@ -120,6 +120,9 @@ Profiles without native cover layouts use iOpenPod's application-only `F1060`
 320x320 RGB565 representation for Host Sync, imports, and browsing. This does
 not change the Device Registry's native capability claim or promise firmware
 album-art support. See [ADR-0118](adr/0118-write-application-artwork-for-non-cover-devices.md).
+When Rockbox Metadata Support is enabled, the same captured artwork is also
+embedded in each prepared media file; non-cover profiles use a compact grayscale
+JPEG fitting within 120x120 pixels, while native profiles retain color artwork.
 
 The field policy in `iPodDB/library/_field_policy.py` owns semantic editability and
 inverse-field bindings. Missing or duplicated model-field policies block analysis.

@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
     from device_registry import DeviceProfile
     from iOpenPod.app.media.models import MediaInspection, MediaStream
-    from iPodDB.library import Track
+    from iPodDB.library import ArtworkPixels, Track
     from storage import FileFingerprint, HostPath
     from storage.media_processing import MediaToolProgress
 
@@ -698,6 +698,21 @@ class MediaTranscoder:
         if threads_per_job < 1:
             raise ValueError("Encoder thread count must be positive")
         self.threads_per_job = min(threads_per_job, available_compute_threads())
+
+    def embed_artwork(
+        self,
+        prepared: PreparedTranscode,
+        track: Track,
+        artwork: ArtworkPixels,
+        *,
+        checkpoint: Callable[[], None],
+    ) -> PreparedTranscode:
+        """Add verified Rockbox artwork to an already prepared private file."""
+
+        checkpoint()
+        ExportMediaTagger().prepare(prepared.source, track, artwork)
+        inspection = MediaInspector().inspect(prepared.source, checkpoint=checkpoint)
+        return replace(prepared, inspection=inspection)
 
     def preflight(self, *, checkpoint: Callable[[], None]) -> MediaTools:
         return discover_media_tools(checkpoint=checkpoint)

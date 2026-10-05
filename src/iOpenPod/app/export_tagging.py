@@ -13,10 +13,9 @@ from mutagen.id3 import ID3
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.wave import WAVE
-from PIL import Image
+from PIL import Image, ImageChops
 
 if TYPE_CHECKING:
-    from iOpenPod.app.models.artwork import ArtworkImage
     from iPodDB.library import Track
     from storage import HostPath
 
@@ -40,6 +39,17 @@ class _MutagenFactory(Protocol):
     ) -> _MutagenFile: ...
 
 
+class _Artwork(Protocol):
+    @property
+    def width(self) -> int: ...
+
+    @property
+    def height(self) -> int: ...
+
+    @property
+    def rgb888(self) -> bytes: ...
+
+
 class ExportMediaTagger:
     """Apply common tags without transcoding or replacing unknown metadata."""
 
@@ -54,7 +64,7 @@ class ExportMediaTagger:
         self,
         destination: HostPath,
         track: Track,
-        artwork: ArtworkImage | None,
+        artwork: _Artwork | None,
     ) -> None:
         self.require_supported(destination)
         path = Path(os.fspath(destination))
@@ -70,7 +80,7 @@ class ExportMediaTagger:
         data: bytes,
         file_name: str,
         track: Track,
-        artwork: ArtworkImage | None = None,
+        artwork: _Artwork | None = None,
     ) -> bytes:
         """Materialize Rockbox metadata on private bytes with complete tag read-back.
 
@@ -283,12 +293,25 @@ def _no_padding(_info: object) -> int:
     return 0
 
 
-def _jpeg_cover(artwork: ArtworkImage) -> bytes:
+def _jpeg_cover(artwork: _Artwork) -> bytes:
     with Image.frombytes(
         "RGB", (artwork.width, artwork.height), artwork.rgb888
     ) as image:
+        channels = image.split()
+        try:
+            grayscale = (
+                ImageChops.difference(channels[0], channels[1]).getbbox() is None
+                and ImageChops.difference(channels[0], channels[2]).getbbox() is None
+            )
+        finally:
+            for channel in channels:
+                channel.close()
         output = io.BytesIO()
-        image.save(output, format="JPEG", quality=92, optimize=True)
+        if grayscale:
+            with image.convert("L") as compact:
+                compact.save(output, format="JPEG", quality=70, optimize=True)
+        else:
+            image.save(output, format="JPEG", quality=92, optimize=True)
         return output.getvalue()
 
 

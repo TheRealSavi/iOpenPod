@@ -26,10 +26,19 @@ artwork import, Library preparation, and lazy device artwork reads. All output
 continues through the existing reviewed Library write and recoverable Storage
 transaction. Existing ArtworkDB roots and retained records remain authoritative.
 
+When Rockbox Metadata Support is enabled, Sync also embeds the captured artwork in
+each prepared media file. Native cover-capable profiles retain the application
+capture size. Profiles without native cover support receive a compact cover that
+fits within 120x120 pixels, is converted to grayscale with Lanczos resampling,
+and is encoded as optimized single-channel JPEG. This file-tag representation is
+independent of the iPodDB artwork representation.
+
 ## Consequences
 
 Non-cover devices consume additional device storage for iOpenPod browsing, while
 their firmware behavior is unchanged and unsupported. Native-capable profiles
 retain their existing layouts and creation policy. Application-only artwork is
 still bounded, fingerprinted, decoded lazily, and removed or retained according
-to the existing Library draft and transaction rules.
+to the existing Library draft and transaction rules. Rockbox-enabled Sync uses
+additional media-file space for the embedded cover; a failed optional tag leaves
+the media and iOpenPod artwork eligible to Sync with a warning.

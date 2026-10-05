@@ -12,8 +12,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from mutagen.mp3 import MP3
+from PIL import Image
 
+from device_registry import DEFAULT_DEVICE_REGISTRY
 from device_registry.data.catalog import DEFAULT_CATALOG
+from iOpenPod.app.artwork_policy import rockbox_artwork
 from iOpenPod.app.media import MediaInspectionError, MediaInspector, MediaTag
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.media.transcoding import (
@@ -28,7 +31,7 @@ from iOpenPod.app.media.transcoding import (
     enrich_source_metadata,
     resolve_transcode,
 )
-from iPodDB.library import AudioEncoding, MediaKind, Track, TrackMetadata
+from iPodDB.library import ArtworkPixels, AudioEncoding, MediaKind, Track, TrackMetadata
 from storage import HostPath, capture_host_file
 from storage.host_tools import find_host_executable
 from storage.media_processing import MediaToolError
@@ -382,6 +385,39 @@ def test_rockbox_tags_and_lyrics_are_written_to_private_copy_and_reverified(
             != prepared.original_fingerprint.sha256
         )
     assert Path(original).read_bytes() == before
+
+
+def test_rockbox_artwork_is_added_after_media_preparation(
+    tmp_path: Path, transcoder: MediaTranscoder
+) -> None:
+    mini = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("M9802")
+    assert mini is not None
+    track = Track(1, "Reviewed title", "Reviewed artist", "Reviewed album", 250)
+    compact = rockbox_artwork(
+        mini,
+        ArtworkPixels(240, 240, bytes((30, 80, 140)) * (240 * 240)),
+    )
+
+    with transcoder.prepare(
+        source(tmp_path, "tone.mp3"),
+        mini,
+        TranscodeSettings(),
+        metadata=track,
+        rockbox_metadata=True,
+        checkpoint=lambda: None,
+    ) as prepared:
+        tagged = transcoder.embed_artwork(
+            prepared, track, compact, checkpoint=lambda: None
+        )
+        tags = cast("Callable[[io.BytesIO], Any]", MP3)(
+            io.BytesIO(Path(tagged.source).read_bytes())
+        )
+        assert tags.tags is not None
+        cover = tags.tags.getall("APIC")[0].data
+        with Image.open(io.BytesIO(cover)) as image:
+            assert image.size == (120, 120)
+            assert image.mode == "L"
+        assert tagged.inspection.fingerprint.size == Path(tagged.source).stat().st_size
 
 
 def test_video_and_audio_are_converted_together_and_fully_decoded(

@@ -6,6 +6,7 @@ without exposing implementation helpers as application API.
 
 import base64
 import hashlib
+import io
 import json
 import re
 import shutil
@@ -15,9 +16,10 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
-from typing import cast
+from typing import Protocol, cast
 
 import pytest
+from mutagen.mp3 import MP3
 from PIL import Image
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
@@ -64,6 +66,7 @@ from iOpenPod.app.sync_execution import (
     SyncExecutionRequest,
     SyncExecutionStatus,
     SyncExecutor,
+    SyncOptions,
     _draft,  # pyright: ignore[reportPrivateUsage]
     _PreparedTrack,  # pyright: ignore[reportPrivateUsage]
     _song,  # pyright: ignore[reportPrivateUsage]
@@ -73,7 +76,9 @@ from iOpenPod.app.sync_plan import (
     SyncPlan,
     SyncPlanAction,
     SyncPlanItem,
+    host_path_identity,
     prepare_sync_plan,
+    select_sync_plan,
 )
 from iPodDB.library import (
     AudioEncoding,
@@ -108,6 +113,14 @@ from storage import (
 )
 from storage.host_input import LocalHostFile
 from storage.media_processing import MediaToolError, MediaTools
+
+
+class _SyncArtworkFrame(Protocol):
+    data: bytes
+
+
+class _SyncID3TagView(Protocol):
+    def getall(self, key: str) -> list[_SyncArtworkFrame]: ...
 
 
 class _AvailableTools(MediaTranscoder):
@@ -1047,8 +1060,6 @@ def test_real_aac_passes_through_full_sync_without_reencoding(
             (),
             HostMediaCacheStats(),
         )
-        from iOpenPod.app.sync_plan import host_path_identity, select_sync_plan
-
         request = _request(device, host)
         request = replace(
             request,
@@ -1290,6 +1301,115 @@ def test_non_cover_device_publishes_display_only_artwork_for_iopenpod(
             pixels = read.decode(payload[read.offset : read.offset + read.length])
             assert (pixels.width, pixels.height) == (320, 320)
             assert len(set(pixels.rgb888)) > 1
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.skipif(
+    any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")),
+    reason="Sync media tools required",
+)
+def test_rockbox_sync_embeds_compact_artwork_in_a_non_cover_device_file(
+    tmp_path: Path,
+) -> None:
+    device = bare_device(tmp_path, model_number="M9802")
+    try:
+        media_path = tmp_path / "rockbox-track.mp3"
+        media_path.write_bytes(
+            base64.decodebytes((FIXTURES / "tone.mp3.b64").read_bytes())
+        )
+        media = LocalHostFile.observe(HostPath(media_path))
+        cover_path = tmp_path / "rockbox-cover.png"
+        Image.new("RGB", (240, 240), (30, 80, 140)).save(cover_path)
+        cover = LocalHostFile.observe(HostPath(cover_path))
+        host = HostMediaLibrary(
+            LibrarySnapshot(
+                tracks=(
+                    Track(
+                        100,
+                        "Rockbox track",
+                        "Artist",
+                        "Album",
+                        1000,
+                        artwork_id=123,
+                        metadata=TrackMetadata(
+                            location=str(media_path),
+                            file_format="MPEG audio file",
+                            sample_rate_hz=44100,
+                        ),
+                    ),
+                )
+            ),
+            (
+                HostMediaSource(
+                    media.path,
+                    HostMediaFileKind.AUDIO,
+                    media.size_bytes,
+                    media.modified_ns,
+                    content_sha256=hashlib.sha256(media_path.read_bytes()).hexdigest(),
+                ),
+            ),
+            (),
+            HostMediaCacheStats(),
+            artwork_sources=(
+                HostMediaArtworkSource(
+                    123,
+                    HostArtworkKind.FOLDER,
+                    cover.path,
+                    cover.size_bytes,
+                    cover.modified_ns,
+                    hashlib.sha256(cover_path.read_bytes()).hexdigest(),
+                ),
+            ),
+        )
+        ipod = IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False)
+        comparison = prepare_sync_plan(host, ipod, device.active.library)
+        request = replace(
+            SyncExecutionRequest(
+                select_sync_plan(
+                    comparison,
+                    selected_host_paths=frozenset(
+                        {host_path_identity(str(media_path))}
+                    ),
+                    selected_ipod_removals=frozenset(),
+                ),
+                host,
+                ipod,
+                device.active,
+                1,
+                1,
+            ),
+            options=SyncOptions(rockbox_metadata=True),
+        )
+
+        result = SyncExecutor(device.coordinator).execute(
+            request, lambda _: None, Event()
+        )
+
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        added = next(
+            (
+                track
+                for track in result.active.library.tracks
+                if track.title == "Rockbox track"
+            ),
+            None,
+        )
+        assert added is not None, (
+            tuple(track.title for track in result.active.library.tracks),
+            request.plan.items,
+            result.issues,
+        )
+        tags = cast(
+            "_SyncID3TagView | None",
+            MP3(device.root / added.metadata.location).tags,  # type: ignore[no-untyped-call]
+        )
+        assert tags is not None
+        cover_data = tags.getall("APIC")[0].data
+        with Image.open(io.BytesIO(cover_data)) as image:
+            assert image.size == (120, 120)
+            assert image.mode == "L"
     finally:
         device.coordinator.close()
 
