@@ -19,6 +19,14 @@ from iPodDB.library.editing import (
     editable_track_fields,
     metadata_edit_issues,
 )
+from iPodDB.library.file_content import (
+    ContentBuffer,
+    FileContentData,
+    ReadableContent,
+    content_chunks,
+    content_sha256,
+    read_content,
+)
 from iPodDB.library.media import AudioEncoding, prepared_audio, prepared_video
 from iPodDB.library.models import (
     ContentAdvisory,
@@ -124,8 +132,10 @@ __all__ = [
     "ArtworkRead",
     "AudioEncoding",
     "ContentAdvisory",
+    "ContentBuffer",
     "CoverFormat",
     "CoverPixelFormat",
+    "FileContentData",
     "FileDependency",
     "Hash72Material",
     "IPodLibrary",
@@ -166,6 +176,7 @@ __all__ = [
     "PreparedLyrics",
     "PreparedMedia",
     "PreparedPhoto",
+    "ReadableContent",
     "RetainedArtworkFile",
     "SQLiteDatabaseSet",
     "SmartField",
@@ -196,6 +207,8 @@ __all__ = [
     "WritePhase",
     "WriteResources",
     "WriteTarget",
+    "content_chunks",
+    "content_sha256",
     "edit_track_metadata",
     "editable_track_fields",
     "encode_photo_thumbnail",
@@ -208,6 +221,7 @@ __all__ = [
     "playlist_sort_value",
     "prepared_audio",
     "prepared_video",
+    "read_content",
     "recover_hash72_material",
     "remap_playback_sidecar",
     "select_photo_thumbnail",

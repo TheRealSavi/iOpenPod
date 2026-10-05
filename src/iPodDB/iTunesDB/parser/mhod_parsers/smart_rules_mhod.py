@@ -15,6 +15,8 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
     MhodSmartStringRuleData,
 )
 from iPodDB.shared.binary_struct import binary_struct_extent, parse_binary_struct
+from iPodDB.shared.diagnostics import report_unknown_data, retain_unknown_bytes
+from iPodDB.shared.errors import UnknownMhodLayoutError
 from iPodDB.shared.types import MhodPayloadParseContext
 
 _SLST_HEADER_SIZE = binary_struct_extent(MhodSmartRulesContainerHeader)
@@ -103,6 +105,19 @@ def _parse_rules(
         else:
             rule_data = MhodSmartRawRuleData(raw_data=raw_data)
 
+        if isinstance(rule_data, MhodSmartRawRuleData):
+            report_unknown_data(
+                "opaque Smart Playlist rule", data_offset, len(raw_data)
+            )
+        elif (
+            isinstance(rule_data, MhodSmartNumericRuleData)
+            and len(raw_data) > _NUMERIC_DATA_SIZE
+        ):
+            report_unknown_data(
+                "Smart Playlist numeric rule suffix",
+                data_offset + _NUMERIC_DATA_SIZE,
+                len(raw_data) - _NUMERIC_DATA_SIZE,
+            )
         rules.append(
             MhodSmartRule(
                 field_id=header.field_id,
@@ -154,7 +169,9 @@ def _parse_group(
         conjunction=header.conjunction,
         header_data=header.header_data,
         rules=rules,
-        trailing_data=bytes(data[rules_end:container_end]),
+        trailing_data=retain_unknown_bytes(
+            data, rules_end, container_end, "Smart Playlist group suffix"
+        ),
     )
 
 
@@ -162,10 +179,7 @@ def parse_smart_rules_payload(
     context: MhodPayloadParseContext[MhodSmartRulesPrefix],
 ) -> MhodSmartRulesPayload:
     if context.prefix.magic != b"SLst":
-        raise ValueError(
-            f"MHOD 51 at {context.chunk_offset:#x} expected b'SLst', "
-            f"got {context.prefix.magic!r}"
-        )
+        raise UnknownMhodLayoutError("unrecognized Smart Playlist rules layout")
 
     rules, rules_end = _parse_rules(
         context.data,
@@ -176,5 +190,7 @@ def parse_smart_rules_payload(
 
     return MhodSmartRulesPayload(
         rules=rules,
-        trailing_data=bytes(context.data[rules_end : context.payload_end]),
+        trailing_data=retain_unknown_bytes(
+            context.data, rules_end, context.payload_end, "MHOD 51 rules suffix"
+        ),
     )

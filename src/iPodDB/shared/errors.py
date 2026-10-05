@@ -21,6 +21,10 @@ class UnexpectedHeaderMarkerError(iPodDBParseError):
     """A Chunk does not have the Header Marker required at its position."""
 
 
+class UnknownMhodLayoutError(ValueError):
+    """A bounded MHOD uses an unrecognized layout, not a malformed known one."""
+
+
 class iPodDBWriteError(ValueError):  # noqa: N801
     """A structured iPod database cannot be serialized without data loss."""
 

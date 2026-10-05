@@ -262,7 +262,6 @@ class DatabaseCapabilities:
     supports_compressed_database: bool = False
     uses_sqlite_database: bool = False
     sqlite_checksum: DatabaseChecksum = DatabaseChecksum.NONE
-    requires_sqlite_postprocessing: bool = False
 
     def __post_init__(self) -> None:
         if self.binary_version <= 0:
@@ -276,8 +275,6 @@ class DatabaseCapabilities:
             and self.sqlite_checksum is not DatabaseChecksum.NONE
         ):
             raise ValueError("A SQLite checksum requires SQLite database support")
-        if self.requires_sqlite_postprocessing and not self.uses_sqlite_database:
-            raise ValueError("SQLite postprocessing requires SQLite database support")
 
 
 @dataclass(frozen=True, slots=True)

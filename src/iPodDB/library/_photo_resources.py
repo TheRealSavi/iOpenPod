@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from io import BytesIO
 from typing import TYPE_CHECKING
@@ -11,6 +10,7 @@ from PIL import Image, UnidentifiedImageError
 
 from iPodDB.ArtworkDB.ithmb import IthmbLayout, IthmbPaddingMode, decode_ithmb
 from iPodDB.library._artwork_writing import validated_path
+from iPodDB.library.file_content import content_sha256, read_content
 from iPodDB.library.photos import PhotoRepresentationKind
 from iPodDB.library.writing import WriteIssue
 
@@ -40,16 +40,6 @@ def validate_photos(
         for representation in photo.representations
     }
     seen_paths: set[str] = set()
-    total_bytes = sum(
-        len(source.data) for asset in assets.values() for source in asset.files
-    )
-    if total_bytes > 512 * 1024 * 1024:
-        return (
-            *issues,
-            _issue(
-                "Prepared Photos exceed the 512 MiB batch limit; Sync fewer Photos together."
-            ),
-        )
     for photo_id, asset in assets.items():
         try:
             if photos.get(photo_id) != asset.photo:
@@ -91,7 +81,7 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
         if (
             not source.data
             or len(source.data) != dependency.size
-            or hashlib.sha256(source.data).hexdigest() != dependency.sha256
+            or content_sha256(source.data) != dependency.sha256
         ):
             raise ValueError(
                 "Photo bytes do not match their captured size and SHA-256."
@@ -145,7 +135,9 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
                     "Photo original must preserve the captured source size inside Photos/Full Resolution."
                 )
             try:
-                with Image.open(BytesIO(source.data)) as image:
+                with Image.open(
+                    BytesIO(read_content(source.data, 0, len(source.data)))
+                ) as image:
                     if image.size != (representation.width, representation.height):
                         raise ValueError(
                             "Photo original dimensions differ from its captured metadata."
@@ -182,7 +174,7 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
             )
         symmetric = bool(horizontal_padding or vertical_padding)
         decoded = decode_ithmb(
-            source.data,
+            read_content(source.data, 0, len(source.data)),
             IthmbLayout(
                 representation.width,
                 representation.height,

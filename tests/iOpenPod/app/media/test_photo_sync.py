@@ -23,6 +23,7 @@ from iPodDB.library import (
     PreparedPhoto,
     WriteResources,
     WriteTarget,
+    content_sha256,
     select_photo_thumbnail,
 )
 from iPodDB.library._document_edit import rebuild
@@ -99,6 +100,7 @@ def test_photo_fit_and_rotation_change_only_verified_viewing_copies() -> None:
     ) == (6, 8, 2, 0)
     high_read = select_photo_thumbnail(cropped.photo, FORMATS, 8, format_id=1025)
     assert high_read is not None
+    assert isinstance(cropped.files[2].data, bytes)
     high_pixels = high_read.decode(cropped.files[2].data)
     assert high_pixels.rgb888[:3] == b"\xff\x00\x00"
     assert high_pixels.rgb888[-3:] == b"\x00\x00\xff"
@@ -112,6 +114,7 @@ def test_photo_fit_and_rotation_change_only_verified_viewing_copies() -> None:
     ) == (5, 4, 3, 0)
     read = select_photo_thumbnail(fitted.photo, FORMATS, 8, format_id=1024)
     assert read is not None
+    assert isinstance(fitted.files[1].data, bytes)
     pixels = read.decode(fitted.files[1].data)
     assert pixels.rgb888[:3] == b"\xff\x00\x00"
     assert pixels.rgb888[-3:] == b"\x00\x00\xff"
@@ -137,6 +140,7 @@ def test_photo_fit_records_vertical_padding_for_a_wide_source() -> None:
     ) == (4, 5, 0, 3)
     read = select_photo_thumbnail(asset.photo, (image_format,), 8)
     assert read is not None
+    assert isinstance(asset.files[1].data, bytes)
     pixels = read.decode(asset.files[1].data)
     assert pixels.rgb888[:3] == b"\xff\x00\x00"
     assert pixels.rgb888[-3:] == b"\x00\x00\xff"
@@ -176,6 +180,70 @@ def test_first_photosdb_creation_and_explicit_photo_replacement_round_trip() -> 
     assert updated.prepared.snapshot.photos == desired.photos
     assert updated.prepared.snapshot.photos is not None
     assert updated.prepared.snapshot.photos.albums == photos.albums
+
+
+def test_photo_resources_accept_verified_batch_larger_than_512_mib() -> None:
+    class PaddedPhoto:
+        """A valid PNG with trailing bytes, without retaining a huge batch."""
+
+        def __init__(self) -> None:
+            self.png = _image()
+            self.sha256 = content_sha256(self)
+
+        def __len__(self) -> int:
+            return 60 * 1024 * 1024
+
+        def read_at(self, offset: int, length: int) -> bytes:
+            prefix = self.png[offset : offset + length]
+            return prefix + bytes(length - len(prefix))
+
+    source = library()
+    data = PaddedPhoto()
+    assets: list[PreparedPhoto] = []
+    photos = None
+    for number in range(1, 10):
+        asset = prepare_sync_photo(
+            data.png,
+            photo_id=100 + number,
+            original_relative_path=f"Photos/Full Resolution/iOpenPod/{number}.png",
+            thumbnail_shard=number,
+            formats=FORMATS,
+        )
+        original = asset.files[0]
+        asset = replace(
+            asset,
+            photo=replace(
+                asset.photo,
+                source_size_bytes=len(data),
+                representations=(
+                    replace(asset.photo.representations[0], size_bytes=len(data)),
+                    *asset.photo.representations[1:],
+                ),
+            ),
+            files=(
+                replace(
+                    original,
+                    dependency=replace(
+                        original.dependency, size=len(data), sha256=data.sha256
+                    ),
+                    data=data,
+                ),
+                *asset.files[1:],
+            ),
+        )
+        assets.append(asset)
+        photos = photo_library_with_asset(photos, asset)
+    assert (
+        sum(len(file.data) for asset in assets for file in asset.files)
+        > 512 * 1024 * 1024
+    )
+    plan = source.analyze(
+        source.begin_draft(replace(source.snapshot, photos=photos)),
+        WriteTarget(photo_formats=FORMATS, photos_root_value=6),
+    )
+    result = source.prepare(plan, WriteResources(photos=tuple(assets)))
+    assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.photos == photos
 
 
 def test_photo_preparation_rejects_missing_or_changed_asset_evidence() -> None:

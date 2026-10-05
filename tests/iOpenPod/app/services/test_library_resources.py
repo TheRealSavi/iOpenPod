@@ -1,6 +1,7 @@
 """Prepare, publish, and recover dependent Library files through the application."""
 
 import base64
+import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -16,7 +17,9 @@ from iOpenPod.app.library_write import (
     LibrarySaveResult,
     WriteProgress,
 )
+from iOpenPod.app.library_write_inspection import inspect_library_write
 from iOpenPod.app.models.device import ActiveIPod
+from iOpenPod.app.services import library_resources
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
@@ -25,6 +28,7 @@ from iPodDB.library import (
     CoverFormat,
     CoverPixelFormat,
     IPodLibrary,
+    IssueSeverity,
     LibrarySnapshot,
     WriteResources,
 )
@@ -35,6 +39,7 @@ from storage import (
     HardwareIdentifiers,
     Storage,
 )
+from storage.content_workspace import ContentFileBuffer, StagedContent
 from storage.testing import VirtualStoragePlatform
 
 
@@ -147,6 +152,7 @@ def build_device(
                 ),
             ),
         )
+    assert isinstance(thumbnail.data, bytes)
     files = {
         "iPod_Control/iTunes/iTunesDB": result.prepared.itunes,
         "iPod_Control/Artwork/ArtworkDB": write_ArtworkDB(artwork),
@@ -247,6 +253,7 @@ def test_ordinary_library_save_cleans_recovery_and_keeps_saved_contents(
         review.result.prepared.snapshot.tracks[0].artwork_id
     )
     for file in review.result.prepared.artwork_files:
+        assert isinstance(file.data, bytes)
         assert (device.root / file.relative_path).read_bytes() == file.data
 
     reselected = device.coordinator.select_device(
@@ -301,8 +308,10 @@ def test_cover_replacement_publishes_all_formats_then_restores(device: Device) -
     assert saved.active is not None, saved.issues
     assert saved.active.library.tracks[1] == before.tracks[1]
     for file in review.result.prepared.artwork_files:
-        assert (device.root / file.relative_path).read_bytes() == file.data
-        assert file.data.startswith(device.original.get(file.relative_path, b""))
+        data = file.data
+        assert isinstance(data, bytes)
+        assert (device.root / file.relative_path).read_bytes() == data
+        assert data.startswith(device.original.get(file.relative_path, b""))
     source = IPodLibrary(
         (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
     ).with_artwork((device.root / "iPod_Control/Artwork/ArtworkDB").read_bytes())
@@ -311,6 +320,95 @@ def test_cover_replacement_publishes_all_formats_then_restores(device: Device) -
     for file in review.result.prepared.artwork_files:
         if file.relative_path not in device.original:
             assert not (device.root / file.relative_path).exists()
+
+
+@pytest.mark.parametrize("budget", [10, 32768])
+def test_cover_preparation_spills_past_memory_budget_and_restores(
+    device: Device, monkeypatch: pytest.MonkeyPatch, budget: int
+) -> None:
+    monkeypatch.setattr(library_resources, "_MAX_CAPTURE_BYTES", budget)
+    review = device.prepare(_cover_snapshot(device), cover=True)
+    assert review.result.prepared is not None, review.result.issues
+    staged = {
+        file.relative_path: file.data
+        for file in review.result.prepared.artwork_files
+        if isinstance(file.data, StagedContent)
+    }
+    assert staged
+    warnings = {
+        issue.artifact
+        for issue in review.result.issues
+        if issue.code == "resources.artwork_disk_staging"
+        and issue.severity is IssueSeverity.WARNING
+    }
+    assert set(staged) <= warnings
+    expected = {path: data.read_at(0, len(data)) for path, data in staged.items()}
+    device.assert_original()
+    saved = device.save(review)
+    assert saved.active is not None, saved.issues
+    for path, data in staged.items():
+        assert (device.root / path).read_bytes() == expected[path]
+        assert expected[path].startswith(device.original.get(path, b""))
+        assert not Path(data.path).exists()
+    report = json.loads(inspect_library_write(None, review, state="saved"))
+    descriptions = {
+        file["relative_path"]: file["data"]
+        for file in report["prepared"]["changed_artwork_files"]["items"]
+    }
+    for path, data in staged.items():
+        assert descriptions[path] == {"size": len(data), "sha256": data.sha256}
+    device.restore(saved.recovery_path)
+
+
+def test_cover_disk_output_is_cleaned_when_review_is_replaced(
+    device: Device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(library_resources, "_MAX_CAPTURE_BYTES", 0)
+    review = device.prepare(_cover_snapshot(device), cover=True)
+    assert review.result.prepared is not None
+    paths = [
+        Path(file.data.path)
+        for file in review.result.prepared.artwork_files
+        if isinstance(file.data, StagedContent)
+    ]
+    assert paths and all(path.exists() for path in paths)
+    device.prepare(device.active.library)
+    assert all(not path.exists() for path in paths)
+    device.assert_original()
+
+
+def test_artwork_host_storage_failure_is_actionable_and_leaves_device_unchanged(
+    device: Device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(_buffer: ContentFileBuffer, _data: bytes) -> None:
+        raise OSError("No space left on Host disk")
+
+    monkeypatch.setattr(ContentFileBuffer, "append", fail)
+    review = device.prepare(_cover_snapshot(device), cover=True)
+    assert review.result.prepared is None
+    issue = next(
+        issue
+        for issue in review.result.issues
+        if issue.code == "resources.host_staging_failed"
+    )
+    assert "free space" in issue.message
+    assert "No space left" in issue.detail
+    device.assert_original()
+
+
+def test_changed_staged_artwork_cannot_be_published(
+    device: Device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(library_resources, "_MAX_CAPTURE_BYTES", 0)
+    review = device.prepare(_cover_snapshot(device), cover=True)
+    assert review.result.prepared is not None
+    data = review.result.prepared.artwork_files[0].data
+    assert isinstance(data, StagedContent)
+    Path(data.path).write_bytes(b"changed")
+    saved = device.save(review)
+    assert saved.active is None
+    device.assert_original()
+    assert not Path(data.path).exists()
 
 
 def test_clear_artwork_leaves_shared_cover_and_all_thumbnail_bytes(

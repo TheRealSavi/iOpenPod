@@ -4,6 +4,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
     MhodLibraryIndexPayload,
     MhodLibraryIndexPrefix,
 )
+from iPodDB.shared.diagnostics import retain_unknown_bytes
 from iPodDB.shared.types import MhodPayloadParseContext
 
 _UINT32_LE = struct.Struct("<I")
@@ -27,5 +28,7 @@ def parse_library_index_payload(
 
     return MhodLibraryIndexPayload(
         indices=indices,
-        trailing_data=bytes(context.data[entries_end : context.payload_end]),
+        trailing_data=retain_unknown_bytes(
+            context.data, entries_end, context.payload_end, "MHOD 52 index suffix"
+        ),
     )

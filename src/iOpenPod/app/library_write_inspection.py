@@ -13,6 +13,8 @@ from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, cast
 
+from iPodDB.library import ReadableContent
+
 if TYPE_CHECKING:
     from iOpenPod.app.library_write import (
         LibraryPreparationRequest,
@@ -86,6 +88,8 @@ class _Encoder:
             return non_finite
         if isinstance(value, bytes):
             return _artifact(value)
+        if isinstance(value, ReadableContent):
+            return {"size": len(value), "sha256": value.sha256}
         if isinstance(value, tuple):
             sequence = cast("tuple[object, ...]", value)
             count = min(

@@ -92,7 +92,8 @@ an interrupted transaction must be recovered first.
 The application persists an outstanding recovery journal location across restarts
 and prevents further device writes until it is restored. Storage still verifies
 device identity and journal contents; a saved location never grants write authority.
-Prepared Photo images are bounded to 64 MiB and a 512 MiB prepared batch. ADR-0086
+Prepared Photo originals are bounded to 64 MiB. ADR-0117 replaces the former
+512 MiB batch rejection with private Host disk storage for overflow. ADR-0086
 allows larger Host containers to supply a bounded still image. Optional
 full Rockbox metadata transformations are bounded to 256 MiB per file. Exceeding a
 bound skips the affected item with a remedy rather than risking unbounded memory.

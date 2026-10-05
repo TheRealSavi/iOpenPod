@@ -369,23 +369,24 @@ def test_profiles_expose_grouped_operational_capabilities() -> None:
     assert classic.capabilities.video.supported
 
     assert nano5 is not None
-    assert nano5.capabilities.database.requires_sqlite_postprocessing
+    assert nano5.capabilities.database.uses_sqlite_database
+    assert nano5.capabilities.database.checksum is DatabaseChecksum.HASH58
+    assert nano5.capabilities.database.sqlite_checksum is DatabaseChecksum.HASH72
 
     assert nano is not None
     assert nano.storage_technology is StorageTechnology.FLASH
     assert nano.capabilities.display.height == 432
     assert nano.capabilities.database.checksum is DatabaseChecksum.HASHAB
     assert nano.capabilities.database.uses_sqlite_database
-    assert not nano.capabilities.database.requires_sqlite_postprocessing
+    assert nano.capabilities.database.sqlite_checksum is DatabaseChecksum.HASHAB
 
 
-def test_database_cannot_require_postprocessing_without_sqlite_support() -> None:
+def test_database_cannot_require_sqlite_checksum_without_sqlite_support() -> None:
     nano5 = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC027")
     assert nano5 is not None
 
-    with pytest.raises(ValueError, match="postprocessing requires SQLite"):
+    with pytest.raises(ValueError, match="SQLite checksum requires SQLite"):
         replace(
             nano5.capabilities.database,
             uses_sqlite_database=False,
-            sqlite_checksum=DatabaseChecksum.NONE,
         )

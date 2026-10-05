@@ -107,6 +107,12 @@ change plan; it never accepts a path or performs I/O. The version-1 authority fo
 remains compatible with Original iOpenPod and adds explicit evidence-authority names
 without treating persisted provenance as a new hardware observation.
 
+SysInfo and SysInfoExtended are optional metadata caches. Known capabilities come
+from Device Registry, and signing can consume current hardware Device Evidence
+without first persisting it in either file. SQLite generation owns a built-in
+projection for every supported profile; usable device postprocess commands may
+supplement it but are never required. See ADR-0115.
+
 #### Models
 
 Defines immutable or mostly immutable device metadata objects.
@@ -718,7 +724,11 @@ implementation submodules remain private. Snapshot construction and edits do not
 change the retained databases.
 Source-bound Library Drafts now provide semantic preparation over the existing
 lossless writer path. Analysis returns changes and required resources; preparation
-reconciles retained records and verifies finalized output without filesystem I/O.
+reconciles retained records and verifies finalized output without opening paths.
+Caller-owned readable content and output buffers allow bounded hashing and range
+reads while Storage manages private Host files for overflow beyond preparation
+memory budgets. Small resources and the default iPodDB buffers remain in memory.
+See [ADR-0117](adr/0117-spill-prepared-library-content-to-host-storage.md).
 The Application Layer exposes background Review Changes with revision checks,
 grouped diagnostics, and cancellation. Physical Sync remains separate. See
 [Library contract](library-contract.md), [Library writing](library-writing.md),

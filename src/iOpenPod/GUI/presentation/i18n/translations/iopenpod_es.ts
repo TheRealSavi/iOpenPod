@@ -5148,6 +5148,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Elegir ubicación de copias de seguridad</translation>
     </message>
     <message>
+        <source>Could Not Open Log Folder</source>
+        <translation>No se pudo abrir la carpeta de registros</translation>
+    </message>
+    <message>
         <source>Choose Check Again to inspect standard udev rule paths.</source>
         <translation>Elige Comprobar de nuevo para revisar las ubicaciones habituales de las reglas de udev.</translation>
     </message>
@@ -5222,6 +5226,18 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Check for updates</source>
         <translation>Buscar actualizaciones</translation>
+    </message>
+    <message>
+        <source>Log files</source>
+        <translation>Archivos de registro</translation>
+    </message>
+    <message>
+        <source>Open the folder containing the active iOpenPod log file.</source>
+        <translation>Abre la carpeta que contiene el archivo de registro activo de iOpenPod.</translation>
+    </message>
+    <message>
+        <source>Open Log Folder</source>
+        <translation>Abrir carpeta de registros</translation>
     </message>
     <message>
         <source>Media tool status is read-only.</source>
@@ -7484,6 +7500,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Las ediciones de portada no pueden contener a la vez píxeles y una identidad de origen.</translation>
     </message>
     <message>
+        <source>Artwork file &quot;{path}&quot; was prepared using temporary disk space because the memory budget was reached.</source>
+        <translation>El archivo de portada &quot;{path}&quot; se preparó usando espacio temporal en disco porque se alcanzó el límite de memoria.</translation>
+    </message>
+    <message>
         <source>Artwork for {name} was skipped. Media can still Sync; any existing iPod artwork was preserved.</source>
         <translation>Se omitió la portada de {name}. Los medios aún pueden sincronizarse; se conservó cualquier portada existente en el iPod.</translation>
     </message>
@@ -8132,6 +8152,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Los límites de tamaño del resultado deben ser positivos.</translation>
     </message>
     <message>
+        <source>Photo &quot;{path}&quot; was prepared using temporary disk space because the memory budget was reached.</source>
+        <translation>La foto &quot;{path}&quot; se preparó usando espacio temporal en disco porque se alcanzó el límite de memoria.</translation>
+    </message>
+    <message>
         <source>Photo Album creation requires a non-master unsigned 8-bit type.</source>
         <translation>Crear un álbum de fotos requiere un tipo no principal de 8 bits sin signo.</translation>
     </message>
@@ -8325,7 +8349,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Prepared Photos exceed the 512 MiB batch limit; Sync fewer Photos together.</source>
-        <translation>Las fotos preparadas superan el límite de 512 MiB por lote; sincroniza menos fotos a la vez.</translation>
+        <translation type="vanished">Las fotos preparadas superan el límite de 512 MiB por lote; sincroniza menos fotos a la vez.</translation>
     </message>
     <message>
         <source>Prepared Photos repeat an identity.</source>
@@ -8860,6 +8884,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>La sincronización se interrumpió y no se pudo restaurar la biblioteca anterior. Vuelve a conectar el mismo iPod y recupera esta operación antes de escribir más datos.</translation>
     </message>
     <message>
+        <source>Temporary Host files could not be prepared. Check free space and file access, then retry.</source>
+        <translation>No se pudieron preparar los archivos temporales del equipo. Comprueba el espacio libre y los permisos de acceso a los archivos e inténtalo de nuevo.</translation>
+    </message>
+    <message>
         <source>Text comparisons require text.</source>
         <translation>Las comparaciones de texto requieren texto.</translation>
     </message>
@@ -8949,7 +8977,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>The Photo preparation batch reached its 512 MiB limit. Sync the remaining Photos in another batch.</source>
-        <translation>El lote de preparación de fotos llegó a su límite de 512 MiB. Sincroniza las fotos restantes en otro lote.</translation>
+        <translation type="vanished">El lote de preparación de fotos llegó a su límite de 512 MiB. Sincroniza las fotos restantes en otro lote.</translation>
     </message>
     <message>
         <source>The Photo&apos;s full-resolution file changed before export.</source>

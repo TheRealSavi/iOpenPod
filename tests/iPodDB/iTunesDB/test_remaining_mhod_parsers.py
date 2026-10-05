@@ -3,10 +3,11 @@ import struct
 from dataclasses import replace
 
 import pytest
+from tests.iPodDB.binary_fixtures import mhod as _mhod
+from tests.iPodDB.binary_fixtures import parse_mhod as _parse_mhod
 
 from iPodDB.iTunesDB.parser.parser_definition import PARSER_DEFINITION
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
-from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD_DEFINITION
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
     MhodChapterDataPayload,
@@ -55,35 +56,9 @@ from iPodDB.shared.chunk import (
     GenericHeader,
     ParsedChunk,
     ParsedMhodPayload,
+    UnknownMhodPayload,
 )
-from iPodDB.shared.chunk_reader import parse_chunk_as, parse_mhod_payload
-
-
-def _mhod(mhod_type: int, body: bytes) -> bytes:
-    return (
-        struct.pack(
-            "<4sIIIII",
-            b"mhod",
-            0x18,
-            0x18 + len(body),
-            mhod_type,
-            0,
-            0,
-        )
-        + body
-    )
-
-
-def _parse_mhod(mhod_type: int, body: bytes) -> ParsedChunk[MhodHeader]:
-    data = _mhod(mhod_type, body)
-    chunk, next_offset = parse_chunk_as(
-        data,
-        0,
-        MHOD_DEFINITION,
-        parser_definition=PARSER_DEFINITION,
-    )
-    assert next_offset == len(data)
-    return chunk
+from iPodDB.shared.chunk_reader import parse_mhod_payload
 
 
 def _encode_and_reparse(
@@ -256,6 +231,11 @@ def test_smart_preferences_prefix_edits_have_a_typed_inverse() -> None:
     assert reparsed.prefix_as(MhodSmartPrefsPrefix).limit_value == 50
 
 
+def test_smart_preferences_reject_a_truncated_prefix() -> None:
+    with pytest.raises(ValueError, match="past chunk end"):
+        _parse_mhod(50, bytes(71))
+
+
 def test_parses_recursive_smart_rules_and_big_endian_numeric_values() -> None:
     string_data = "Miles".encode("utf-16-be")
     nested = _smart_rules_container(
@@ -346,9 +326,9 @@ def test_recursive_smart_rule_edits_recalculate_nested_lengths() -> None:
     assert reparsed_string.value == "Coltrane"
 
 
-def test_rejects_a_smart_rules_container_with_the_wrong_magic() -> None:
-    with pytest.raises(ValueError, match="expected b'SLst'"):
-        _parse_mhod(51, b"NOPE" + bytes(132))
+def test_retains_a_smart_rules_container_with_unknown_magic() -> None:
+    body = b"NOPE" + bytes(132)
+    assert _parse_mhod(51, body).payload_as(UnknownMhodPayload).data == body
 
 
 def test_parses_library_index() -> None:

@@ -16,7 +16,7 @@ from iPodDB.ArtworkDB.shared.artwork_index import (
 from iPodDB.ArtworkDB.shared.chunk_defs.mhba import MhbaHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhii import MhiiHeader as ArtworkImageHeader
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
-from iPodDB.iTunesDB.cdb import compress_iTunesCDB, decompress_iTunesCDB
+from iPodDB.iTunesDB.cdb import ITunesCDB, compress_iTunesCDB, decompress_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
@@ -49,6 +49,7 @@ from iPodDB.library._reconcile import reconcile
 from iPodDB.library._track_verification import verify_native_tracks
 from iPodDB.library._write_logging import log_resources, log_result
 from iPodDB.library._write_verification import retained_artwork, verify_relationships
+from iPodDB.library.file_content import content_sha256
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.library.writing import (
     IssueSeverity,
@@ -95,8 +96,20 @@ def _blocked(issues: list[WriteIssue]) -> bool:
     return any(i.severity is IssueSeverity.ERROR for i in issues)
 
 
-def _finalize_itunes(logical: bytes, target: WriteTarget) -> bytes:
-    data = compress_iTunesCDB(logical) if target.compressed_database else logical
+def _finalize_itunes(
+    logical: bytes, target: WriteTarget, framing: ITunesCDB | None = None
+) -> bytes:
+    if (
+        not target.compressed_database
+        and framing is not None
+        and (framing.stream_trailing_data or framing.file_trailing_data)
+    ):
+        raise ValueError("Converting iTunesCDB framing would discard Unknown Data.")
+    data = (
+        compress_iTunesCDB(logical, framing=framing)
+        if target.compressed_database
+        else logical
+    )
     if target.checksum is WriteChecksum.HASH58:
         data = sign_hash58(data, target.firewire_guid)
         valid = verify_hash58(data, target.firewire_guid)
@@ -180,6 +193,7 @@ def prepare(
     *,
     resolve: Callable[[LibraryDraft, WriteTarget], ResolvedWrite],
     source_revision: str,
+    cdb_framing: ITunesCDB | None = None,
     progress: Callable[[WritePhase], None] | None = None,
 ) -> LibraryWriteResult:
     measurements: list[WriteMeasurement] = []
@@ -213,6 +227,7 @@ def prepare(
             notify,
             resolve=resolve,
             source_revision=source_revision,
+            cdb_framing=cdb_framing,
         )
         if entered is not None:
             measurements.append(
@@ -243,6 +258,7 @@ def _prepare(
     *,
     resolve: Callable[[LibraryDraft, WriteTarget], ResolvedWrite],
     source_revision: str,
+    cdb_framing: ITunesCDB | None,
 ) -> LibraryWriteResult:
     # Revalidate public immutable plans: callers cannot bypass validation by
     # constructing a plan or replacing its issues/requirements themselves.
@@ -473,8 +489,7 @@ def _prepare(
             validated_path(source_file.dependency.relative_path)
             if (
                 len(source_file.data) != source_file.dependency.size
-                or hashlib.sha256(source_file.data).hexdigest()
-                != source_file.dependency.sha256
+                or content_sha256(source_file.data) != source_file.dependency.sha256
             ):
                 raise ValueError("Source bytes do not match the captured fingerprint.")
         except ValueError as error:
@@ -602,7 +617,7 @@ def _prepare(
             artifact = "iTunesCDB" if plan.target.compressed_database else "iTunesDB"
             notify(WritePhase.SIGNING)
         itunes = (
-            _finalize_itunes(logical_itunes, plan.target)
+            _finalize_itunes(logical_itunes, plan.target, cdb_framing)
             if plan.changes_itunes
             else retained_output.itunes
         )
@@ -694,7 +709,7 @@ def _prepare(
         checked_logical = write_iTunesDB(checked_document)
         if (
             (
-                _finalize_itunes(checked_logical, plan.target)
+                _finalize_itunes(checked_logical, plan.target, cdb_framing)
                 if plan.changes_itunes
                 else retained_output.itunes
             )

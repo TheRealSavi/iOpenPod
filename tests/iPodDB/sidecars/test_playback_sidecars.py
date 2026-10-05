@@ -44,13 +44,11 @@ def test_on_the_go_positions_follow_retained_tracks_and_preserve_duplicates(
     assert result[20:] == struct.pack(endian + "IIII", 0, 456, 0, 456)
 
 
-@pytest.mark.parametrize("mutation", ["short", "tail", "count", "gap"])
+@pytest.mark.parametrize("mutation", ["short", "count", "gap"])
 def test_unrecognized_or_unrepresentable_history_is_rejected(mutation: str) -> None:
     data = play_counts((b"\x01" * 28,))
     if mutation == "short":
         data = data[:-1]
-    elif mutation == "tail":
-        data += b"unknown"
     with pytest.raises(ValueError):
         remap_playback_sidecar(
             data,

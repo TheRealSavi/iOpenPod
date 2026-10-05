@@ -545,7 +545,8 @@ def test_no_available_seconds_defers_old_dates_without_submitting_them(
     active = replace(
         device.active, library=LibrarySnapshot((track(last_played=NOW - 30 * 86400),))
     )
-    state = QueueState(lastfm_reserved_through={ACCOUNTS[0].identity: NOW})
+    state = QueueState()
+    state.lastfm_reserved_through[ACCOUNTS[0].identity] = NOW
     capture(state, "volume", active.library, ACCOUNTS[:1], NOW)
     queue = ScrobbleQueue(AtomicHostFile(tmp_path / "queue.json"))
     queue.save(state)

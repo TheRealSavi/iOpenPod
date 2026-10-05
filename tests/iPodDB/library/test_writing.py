@@ -477,7 +477,9 @@ def test_artwork_output_preserves_file_prefix_and_clears_both_links() -> None:
         source.analyze(source.begin_draft(desired), target), resources
     )
     assert result.prepared is not None, result.issues
-    assert result.prepared.artwork_files[0].data.startswith(prefix)
+    data = result.prepared.artwork_files[0].data
+    assert isinstance(data, bytes)
+    assert data.startswith(prefix)
     assert result.prepared.artwork is not None
     reread = IPodLibrary(result.prepared.itunes).with_artwork(result.prepared.artwork)
     cleared = replace(

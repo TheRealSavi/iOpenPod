@@ -1,6 +1,5 @@
 """Checks over reparsed artifacts, independent of the reconciliation edits."""
 
-import hashlib
 from collections import defaultdict
 
 from iPodDB.ArtworkDB.shared.artwork_index import ArtworkIndex
@@ -11,6 +10,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.library._artwork_writing import artwork_path
+from iPodDB.library.file_content import content_sha256
 from iPodDB.library.writing import PreparedFile, RetainedArtworkFile, WriteResources
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
@@ -123,9 +123,7 @@ def verify_relationships(
                 continue
             if (
                 len(file_data) < original_file.size
-                or hashlib.sha256(
-                    memoryview(file_data)[: original_file.size]
-                ).hexdigest()
+                or content_sha256(file_data, length=original_file.size)
                 != original_file.sha256
             ):
                 raise ValueError(

@@ -1,7 +1,6 @@
 """Artwork ownership, append-only assets, and independent packed color vectors."""
 
 import base64
-import hashlib
 from dataclasses import replace
 from pathlib import Path
 
@@ -23,6 +22,7 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhod_payloads.container_mhod import (
 from iPodDB.ArtworkDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
 from iPodDB.library import ArtworkPixels, CoverFormat, IPodLibrary
+from iPodDB.library.file_content import content_sha256, read_content
 from iPodDB.library.writing import (
     ArtworkAsset,
     FileDependency,
@@ -61,7 +61,7 @@ def with_shared_artwork(
 
 def resources_for(file: PreparedFile) -> WriteResources:
     dependency = FileDependency(
-        file.relative_path, len(file.data), hashlib.sha256(file.data).hexdigest()
+        file.relative_path, len(file.data), content_sha256(file.data)
     )
     return WriteResources(
         artwork=(BLUE,),
@@ -82,7 +82,10 @@ def test_shared_artwork_replacement_does_not_change_other_track_or_source_prefix
     assert result.prepared is not None, result.issues
     assert result.prepared.snapshot.tracks[1] == second
     assert result.prepared.snapshot.tracks[0].artwork_id != second.artwork_id
-    assert result.prepared.artwork_files[0].data[: len(file.data)] == file.data
+    assert (
+        read_content(result.prepared.artwork_files[0].data, 0, len(file.data))
+        == file.data
+    )
     assert result.prepared.retained_artwork
     read = (
         IPodLibrary(result.prepared.itunes)
@@ -91,7 +94,7 @@ def test_shared_artwork_replacement_does_not_change_other_track_or_source_prefix
     )
     assert read is not None
     image = read.decode(
-        result.prepared.artwork_files[0].data[read.offset : read.offset + read.length]
+        read_content(result.prepared.artwork_files[0].data, read.offset, read.length)
     )
     assert image.rgb888[2] > 240
 

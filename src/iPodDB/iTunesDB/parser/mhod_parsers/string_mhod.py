@@ -2,6 +2,8 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
     MhodStringPayload,
     MhodStringPrefix,
 )
+from iPodDB.shared.diagnostics import report_unknown_data
+from iPodDB.shared.errors import UnknownMhodLayoutError
 from iPodDB.shared.types import (
     MhodPayloadParseContext,
 )
@@ -23,6 +25,14 @@ def parse_string_payload(
         )
 
     raw = bytes(context.data[context.payload_offset : string_end])
+    if prefix.encoding_indicator not in (1, 2):
+        raise UnknownMhodLayoutError(f"string encoding {prefix.encoding_indicator}")
+    if string_end < context.payload_end:
+        report_unknown_data(
+            f"MHOD {int(context.mhod_type)} string suffix",
+            string_end,
+            context.payload_end - string_end,
+        )
 
     if prefix.encoding_indicator == 2:
         value: str = raw.decode("utf-8", errors="replace")

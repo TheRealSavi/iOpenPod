@@ -8,6 +8,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.plist_mhod import (
     MhodPlistPayload,
     PlistValue,
 )
+from iPodDB.shared.diagnostics import report_unknown_data
 from iPodDB.shared.types import MhodPayloadParseContext
 
 
@@ -46,6 +47,12 @@ def parse_plist_payload(
         if isinstance(loaded, Mapping):
             properties = loaded
 
+    if properties is None:
+        report_unknown_data(
+            f"MHOD {int(context.mhod_type)} opaque plist",
+            context.payload_offset,
+            len(data),
+        )
     return MhodPlistPayload(
         data=data,
         properties=properties,

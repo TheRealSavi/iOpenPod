@@ -23,6 +23,7 @@ from tests.iOpenPod.app.services.test_library_resources import Device, build_dev
 from tests.iOpenPod.app.test_media_lyrics import WORDS
 from tests.iOpenPod.app.test_music_import import FIXTURES
 
+from iOpenPod.app import sync_execution
 from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.host_media_library import (
     HostArtworkKind,
@@ -152,9 +153,13 @@ def _photo_host(tmp_path: Path) -> HostMediaLibrary:
     )
 
 
+@pytest.mark.parametrize("budget", [10, 512 * 1024 * 1024])
 def test_photo_creates_verified_library_files_and_sync_provenance(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    budget: int,
 ) -> None:
+    monkeypatch.setattr(sync_execution, "_PHOTO_MEMORY_BUDGET", budget)
     device = build_device(tmp_path)
     try:
         request = _request(device, _photo_host(tmp_path))
@@ -162,6 +167,12 @@ def test_photo_creates_verified_library_files_and_sync_provenance(
             request, lambda _: None, Event()
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        if budget == 10:
+            assert any(
+                issue.code == "sync.photo_disk_staging"
+                and issue.artifact == str(request.host.sources[0].path)
+                for issue in result.issues
+            )
         assert result.active is not None and result.active.library.photos is not None
         assert len(result.active.library.photos.photos) == 1
         added = result.active.library.photos.photos[0]

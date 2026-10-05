@@ -47,6 +47,15 @@ class MhodPayload(ChunkPayload):
 
 
 @dataclass(frozen=True, slots=True)
+class UnknownMhodPayload(MhodPayload):
+    """A known MHOD with an uninterpreted layout, bound to its source context."""
+
+    data: bytes
+    mhod_type: int
+    parent_marker: bytes | None
+
+
+@dataclass(frozen=True, slots=True)
 class RawPayload(ChunkPayload):
     data: bytes
 

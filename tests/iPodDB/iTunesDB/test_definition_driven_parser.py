@@ -4,18 +4,27 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from tests.iPodDB.binary_fixtures import dataset as _dataset
+from tests.iPodDB.binary_fixtures import itunes_database as _database
+from tests.iPodDB.binary_fixtures import length_chunk as _length_chunk
+from tests.iPodDB.binary_fixtures import list_chunk as _list_chunk
 
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_string_mhod
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_prefs_mhod import (
+    MhodSmartPrefsPayload,
+    MhodSmartPrefsPrefix,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
     MhodStringPayload,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.iTunesDB.shared.database_definition import DATABASE_DEFINITION
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
+from iPodDB.library import IPodLibrary, PlaylistKind
 from iPodDB.shared.chunk import RawPayload, UnknownChunkHeader
 from iPodDB.shared.types import OpaqueMhsdDatasetDefinition
 
@@ -27,42 +36,6 @@ def _golden_fixture(name: str) -> bytes:
         "".join((FIXTURE_DIR / name).read_text(encoding="ascii").splitlines()),
         validate=True,
     )
-
-
-def _length_chunk(
-    marker: bytes,
-    header_length: int,
-    body: bytes = b"",
-    *,
-    fields: bytes = b"",
-) -> bytes:
-    header = bytearray(header_length)
-    struct.pack_into(
-        "<4sII", header, 0, marker, header_length, header_length + len(body)
-    )
-    header[12 : 12 + len(fields)] = fields
-    return bytes(header) + body
-
-
-def _list_chunk(marker: bytes, *children: bytes) -> bytes:
-    header = bytearray(92)
-    struct.pack_into("<4sII", header, 0, marker, len(header), len(children))
-    return bytes(header) + b"".join(children)
-
-
-def _dataset(dataset_type: int, child: bytes) -> bytes:
-    return _length_chunk(
-        b"mhsd",
-        96,
-        child,
-        fields=struct.pack("<I", dataset_type),
-    )
-
-
-def _database(*datasets: bytes) -> bytes:
-    fields = bytearray(12)
-    struct.pack_into("<I", fields, 8, len(datasets))
-    return _length_chunk(b"mhbd", 244, b"".join(datasets), fields=bytes(fields))
 
 
 def _string_mhod(value: str) -> bytes:
@@ -161,6 +134,68 @@ def test_original_iopenpod_itunesdb_round_trips_byte_for_byte() -> None:
     original = _golden_fixture("original-empty.b64")
 
     assert write_iTunesDB(parse_iTunesDB(original)) == original
+
+
+@pytest.mark.parametrize(
+    "trailing_data",
+    (b"", bytes(60), bytes(range(60))),
+    ids=("original-extent", "extended-zeroes", "extended-unknown-data"),
+)
+def test_smart_preferences_extensions_load_and_survive_edits(
+    trailing_data: bytes,
+) -> None:
+    # A reported 5.5th-generation capture has 156-byte MHOD 50 records:
+    # the known 96-byte prefix followed by 60 reserved bytes. Use synthetic
+    # records, including nonzero Unknown Data, instead of personal Library data.
+    preferences = _length_chunk(
+        b"mhod",
+        24,
+        bytes.fromhex("0101000302000000190000000000") + bytes(58) + trailing_data,
+        fields=struct.pack("<III", 50, 0, 0),
+    )
+    description = _length_chunk(
+        b"mhod",
+        24,
+        struct.pack("<IIII", 1, 10, 1, 0) + "After".encode("utf-16-le"),
+        fields=struct.pack("<III", 3, 0, 0),
+    )
+    playlist_fields = bytearray(0x30 - 12)
+    struct.pack_into("<I", playlist_fields, 0, 3)
+    struct.pack_into("<Q", playlist_fields, 0x1C - 12, 1)
+    playlist = _length_chunk(
+        b"mhyp",
+        184,
+        _string_mhod("Smart") + preferences + description,
+        fields=bytes(playlist_fields),
+    )
+    original = _database(_dataset(2, _list_chunk(b"mhlp", playlist)))
+
+    library = IPodLibrary.parse(original)
+    projected = library.snapshot.playlists[0]
+    assert projected.kind is PlaylistKind.SMART
+    assert projected.name == "Smart"
+    assert projected.description == "After"
+    assert projected.smart is not None and projected.smart.live_update
+
+    database = parse_iTunesDB(original)
+    assert write_iTunesDB(database) == original
+    selection = next(
+        row
+        for row in database.find_chunks(MhodHeader)
+        if row.chunk.header.mhod_type == 50
+    )
+    assert (
+        selection.chunk.payload_as(MhodSmartPrefsPayload).trailing_data == trailing_data
+    )
+    edited = selection.chunk.edit_prefix(
+        MhodSmartPrefsPrefix, lambda prefix: replace(prefix, live_update=0)
+    )
+    serialized = write_iTunesDB(database.replace_chunk(selection, edited))
+    expected = bytearray(original)
+    expected[selection.chunk.offset + 0x18] = 0
+    assert serialized == expected
+    checked = IPodLibrary.parse(serialized).snapshot.playlists[0]
+    assert checked.smart is not None and not checked.smart.live_update
 
 
 def test_itunesdb_writer_repairs_root_count_and_extent_after_a_tree_edit() -> None:

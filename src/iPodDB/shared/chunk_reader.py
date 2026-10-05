@@ -20,13 +20,16 @@ from iPodDB.shared.chunk import (
     ParsedMhodPayload,
     RawPayload,
     UnknownChunkHeader,
+    UnknownMhodPayload,
     chunk_as,
 )
+from iPodDB.shared.diagnostics import log_unknown_data, report_unknown_data
 from iPodDB.shared.errors import (
     InvalidChunkDataError,
     InvalidChunkLengthError,
     TruncatedChunkError,
     UnexpectedHeaderMarkerError,
+    UnknownMhodLayoutError,
     iPodDBParseError,
 )
 from iPodDB.shared.types import (
@@ -41,6 +44,42 @@ from iPodDB.shared.types import (
 
 
 def parse_mhod_payload[RootH: ChunkHeader](
+    data: bytes | bytearray,
+    *,
+    chunk_offset: int,
+    header_end: int,
+    chunk_end: int,
+    header: MhodChunkHeader,
+    ancestors: tuple[ChunkAncestor, ...],
+    parser_definition: DatabaseParserDefinition[RootH],
+) -> ParsedMhodPayload:
+    try:
+        return _parse_mhod_payload(
+            data,
+            chunk_offset=chunk_offset,
+            header_end=header_end,
+            chunk_end=chunk_end,
+            header=header,
+            ancestors=ancestors,
+            parser_definition=parser_definition,
+        )
+    except UnknownMhodLayoutError as error:
+        report_unknown_data(
+            f"MHOD {header.mhod_type} unknown layout ({error})",
+            header_end,
+            chunk_end - header_end,
+        )
+        return ParsedMhodPayload(
+            None,
+            UnknownMhodPayload(
+                bytes(data[header_end:chunk_end]),
+                header.mhod_type,
+                ancestors[-1].generic_header.header_marker if ancestors else None,
+            ),
+        )
+
+
+def _parse_mhod_payload[RootH: ChunkHeader](
     data: bytes | bytearray,
     *,
     chunk_offset: int,
@@ -104,7 +143,7 @@ def parse_mhod_payload[RootH: ChunkHeader](
         payload_offset = prefix_base + prefix_extent
 
         if payload_offset < header_end:
-            raise ValueError(
+            raise UnknownMhodLayoutError(
                 f"MHOD type {int(mhod_type)} "
                 f"prefix ends at "
                 f"{payload_offset:#x}, "
@@ -199,11 +238,19 @@ def _parse_chunk[RootH: ChunkHeader](
         )
 
     if definition is None:
+        report_unknown_data(
+            f"unknown Chunk {marker!r}", offset, generic_header.length_or_child_count
+        )
         header: ChunkHeader = UnknownChunkHeader()
         extent_type = "length"
         body_kind = "opaque"
         child_marker_groups: tuple[frozenset[bytes], ...] = ()
     else:
+        if generic_header.header_length > max(definition.header_sizes):
+            known_end = offset + max(definition.header_sizes)
+            report_unknown_data(
+                f"{marker!r} extended header", known_end, header_end - known_end
+            )
         header = parse_binary_struct(
             data,
             offset,
@@ -284,6 +331,10 @@ def _parse_chunk[RootH: ChunkHeader](
         and not isinstance(dataset_definition, MhsdDatasetDefinition)
     ):
         payload = RawPayload(data=bytes(data[header_end:chunk_end]))
+        if definition is not None:
+            report_unknown_data(
+                f"{marker!r} opaque body", header_end, chunk_end - header_end
+            )
 
     current_ancestor = ChunkAncestor(
         offset=offset,
@@ -327,7 +378,9 @@ def _parse_chunk[RootH: ChunkHeader](
             child_marker = child.generic_header.header_marker
             if isinstance(dataset_definition, MhsdDatasetDefinition):
                 expected_child_marker = dataset_definition.child_definition.marker
-                if child_marker != expected_child_marker:
+                if child_marker != expected_child_marker and not isinstance(
+                    child.header, UnknownChunkHeader
+                ):
                     if not isinstance(header, MhsdChunkHeader):
                         raise TypeError(
                             f"{marker!r} dataset definition has the wrong header type"
@@ -363,6 +416,10 @@ def _parse_chunk[RootH: ChunkHeader](
 
     if chunk_end < 0:
         chunk_end = child_offset
+    if child_counts and child_offset < chunk_end:
+        report_unknown_data(
+            f"{marker!r} trailing data", child_offset, chunk_end - child_offset
+        )
 
     return (
         ParsedChunk(
@@ -411,6 +468,7 @@ def parse_chunk_as[H: ChunkHeader, RootH: ChunkHeader](
     )
 
 
+@log_unknown_data("database")
 def parse_database[H: ChunkHeader](
     data: bytes | bytearray,
     parser_definition: DatabaseParserDefinition[H],
@@ -429,5 +487,6 @@ def parse_database[H: ChunkHeader](
     except (ValueError, struct.error) as error:
         raise InvalidChunkDataError(str(error)) from error
     if next_offset < len(data):
+        report_unknown_data("database suffix", next_offset, len(data) - next_offset)
         return replace(chunk, raw_source_suffix=bytes(data[next_offset:]))
     return chunk

@@ -10,12 +10,14 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from iOpenPod.app.core.logging import active_log_path
 from iOpenPod.app.core.settings.definitions import (
     BACKUP_LOCATION,
     DRAFT_ALL_CHANGES,
@@ -230,12 +232,16 @@ class SettingsPage(QWidget):
         self._report_issue = ActionButton(parent=self)
         self._report_issue.setObjectName("reportIssue")
         self._report_issue_row = SettingRow("", "", self._report_issue, self)
+        self._open_log_folder = ActionButton(parent=self)
+        self._open_log_folder.setObjectName("openLogFolder")
+        self._open_log_folder_row = SettingRow("", "", self._open_log_folder, self)
         self._donate = ActionButton(parent=self)
         self._donate.setObjectName("donate")
         self._donation_row = SettingRow("", "", self._donate, self)
         about = SettingGroup(self)
         about.setMaximumWidth(960)
         about.add_row(self._version_row)
+        about.add_row(self._open_log_folder_row)
         about.add_row(self._report_issue_row)
         about.add_row(self._donation_row)
 
@@ -353,6 +359,7 @@ class SettingsPage(QWidget):
         self._check_udev_rule.clicked.connect(self._inspect_udev_rule)
         self._uninstall_udev_rule.clicked.connect(self._show_udev_uninstall)
         self._report_issue.clicked.connect(self._open_issue_tracker)
+        self._open_log_folder.clicked.connect(self._show_log_folder)
         self._donate.clicked.connect(self._open_donation_page)
         self._tabs.currentChanged.connect(self._update_saved_note)
         self._tabs.currentChanged.connect(self._check_media_tools_tab)
@@ -529,6 +536,12 @@ class SettingsPage(QWidget):
             QCoreApplication.translate("CommonActions", "Report an Issue"),
             self.tr("Open the iOpenPod issue tracker on GitHub."),
         )
+        self._open_log_folder_row.set_copy(
+            self.tr("Log files"),
+            self.tr("Open the folder containing the active iOpenPod log file."),
+        )
+        self._open_log_folder.setText(self.tr("Open Log Folder"))
+        self._open_log_folder.setEnabled(active_log_path() is not None)
         self._donation_row.set_copy(
             self.tr("Support iOpenPod"),
             self.tr(
@@ -890,6 +903,18 @@ class SettingsPage(QWidget):
 
     def _open_issue_tracker(self) -> None:
         QDesktopServices.openUrl(QUrl(_ISSUES_URL))
+
+    def _show_log_folder(self) -> None:
+        log_path = active_log_path()
+        if log_path is None:
+            return
+        folder = log_path.parent
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))):
+            QMessageBox.warning(
+                self,
+                self.tr("Could Not Open Log Folder"),
+                str(folder),
+            )
 
     def _open_donation_page(self) -> None:
         QDesktopServices.openUrl(QUrl(_DONATION_URL))

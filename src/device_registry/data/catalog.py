@@ -153,7 +153,6 @@ def _capabilities(
     compressed_database: bool = False,
     sqlite_database: bool = False,
     sqlite_checksum: DatabaseChecksum = DatabaseChecksum.NONE,
-    requires_sqlite_postprocessing: bool = False,
 ) -> DeviceCapabilities:
     width, height, color = display
     video_capabilities = (
@@ -201,7 +200,6 @@ def _capabilities(
             supports_compressed_database=compressed_database,
             uses_sqlite_database=sqlite_database,
             sqlite_checksum=sqlite_checksum,
-            requires_sqlite_postprocessing=requires_sqlite_postprocessing,
         ),
     )
 
@@ -328,7 +326,6 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         compressed_database=True,
         sqlite_database=True,
         sqlite_checksum=DatabaseChecksum.HASH72,
-        requires_sqlite_postprocessing=True,
     ),
     ("iPod Nano", "6th Gen"): _capabilities(
         display=(240, 240, True),
@@ -344,7 +341,6 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         compressed_database=True,
         sqlite_database=True,
         sqlite_checksum=DatabaseChecksum.HASHAB,
-        requires_sqlite_postprocessing=False,
     ),
     ("iPod Nano", "7th Gen"): _capabilities(
         display=(240, 432, True),
@@ -364,7 +360,6 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         compressed_database=True,
         sqlite_database=True,
         sqlite_checksum=DatabaseChecksum.HASHAB,
-        requires_sqlite_postprocessing=False,
     ),
 }
 

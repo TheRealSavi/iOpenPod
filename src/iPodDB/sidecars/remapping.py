@@ -61,4 +61,4 @@ def remap_playback_sidecar(
                 output.append(struct.pack(endian + "I", replacement) + row[4:])
     result = bytearray(data[:header])
     struct.pack_into(endian + "I", result, 12, len(output))
-    return bytes(result) + b"".join(output)
+    return bytes(result) + b"".join(output) + table.trailing_data

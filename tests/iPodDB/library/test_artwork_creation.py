@@ -226,6 +226,7 @@ def test_orphan_thumbnail_prefix_is_preserved_and_next_frame_is_aligned() -> Non
     )
     assert result.prepared and result.prepared.artwork, result.issues
     data = result.prepared.artwork_files[0].data
+    assert isinstance(data, bytes)
     assert data.startswith(prefix)
     item = build_artwork_index(parse_ArtworkDB(result.prepared.artwork)).items[0]
     assert item.locations[0].offset == 32

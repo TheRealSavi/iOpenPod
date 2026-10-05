@@ -1,6 +1,5 @@
 """Coordinated, append-only artwork preparation over caller-supplied assets."""
 
-import hashlib
 import logging
 from dataclasses import replace
 from itertools import pairwise
@@ -42,6 +41,12 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library._resolved_write import ResolvedWrite
 from iPodDB.library.artwork import CoverFormat
+from iPodDB.library.file_content import (
+    ContentBuffer,
+    MemoryContentBuffer,
+    content_chunks,
+    content_sha256,
+)
 from iPodDB.library.writing import (
     IdentityMapping,
     PreparedFile,
@@ -262,7 +267,8 @@ def reconcile_artwork(
         else {f.relative_path: f for f in resources.file_inventory}
     )
     source_files = {f.dependency.relative_path: f for f in resources.files}
-    output_files: dict[str, bytearray] = {}
+    output_files: dict[str, ContentBuffer] = {}
+    create_buffer = resources.create_file_buffer or MemoryContentBuffer
     all_paths = set(inventory)
     if len({p.casefold() for p in all_paths}) != len(all_paths):
         raise ValueError(
@@ -323,18 +329,20 @@ def reconcile_artwork(
                 if (
                     source.dependency != dependency
                     or len(source.data) != dependency.size
-                    or hashlib.sha256(source.data).hexdigest() != dependency.sha256
+                    or content_sha256(source.data) != dependency.sha256
                 ):
                     raise ValueError(
                         f"The captured source fingerprint changed for {path}."
                     )
-                prefix = bytearray(source.data)
+                prefix = create_buffer()
+                for block in content_chunks(source.data):
+                    prefix.append(block)
             if prefix is None:
-                prefix = bytearray()
+                prefix = create_buffer()
             offset = aligned_offset(len(prefix), len(payload))
             if offset + len(payload) <= min(target.max_artwork_file_bytes, 0xFFFFFFFF):
-                prefix.extend(bytes(offset - len(prefix)))
-                prefix.extend(payload)
+                prefix.append(bytes(offset - len(prefix)))
+                prefix.append(payload)
                 output_files[path] = prefix
                 all_paths.add(path)
                 return path, offset
@@ -642,7 +650,7 @@ def reconcile_artwork(
     return (
         itunes,
         artwork,
-        tuple(PreparedFile(path, bytes(data)) for path, data in output_files.items()),
+        tuple(PreparedFile(path, data.finish()) for path, data in output_files.items()),
         tuple(art_mappings),
     )
 

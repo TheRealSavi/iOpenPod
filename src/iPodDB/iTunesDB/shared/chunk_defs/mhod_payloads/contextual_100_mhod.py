@@ -25,4 +25,4 @@ class MhodPlaylistPositionPrefix(MhodPayloadPrefix):
 
 @dataclass(frozen=True, slots=True)
 class MhodPlaylistPositionPayload(MhodPayload):
-    pass
+    trailing_data: bytes = b""

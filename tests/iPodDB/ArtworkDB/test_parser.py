@@ -4,6 +4,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from tests.iPodDB.binary_fixtures import artwork_database as _artworkdb
+from tests.iPodDB.binary_fixtures import artwork_string_mhod as _mhod_string
+from tests.iPodDB.binary_fixtures import photo_album as _photo_album
 
 from iPodDB.ArtworkDB.builder.build_ArtworkDB import (
     new_artwork_chunk,
@@ -73,69 +76,12 @@ def _dataset(dataset_type: int | ArtworkDatasetType, child: bytes) -> bytes:
     return bytes(header) + child
 
 
-def _artworkdb(*datasets: bytes, next_mhii_id: int = 64) -> bytes:
-    body = b"".join(datasets)
-    header = bytearray(132)
-    struct.pack_into("<4sII", header, 0, b"mhfd", len(header), len(header) + len(body))
-    struct.pack_into("<I", header, 0x0C, 11)
-    struct.pack_into("<I", header, 0x10, 2)
-    struct.pack_into("<I", header, 0x14, len(datasets))
-    struct.pack_into("<I", header, 0x18, 12)
-    struct.pack_into("<I", header, 0x1C, next_mhii_id)
-    struct.pack_into("<Q", header, 0x20, 0x0102030405060708)
-    struct.pack_into("<Q", header, 0x28, 0x1112131415161718)
-    struct.pack_into("<I", header, 0x30, 2)
-    struct.pack_into("<IIII", header, 0x34, 13, 14, 15, 16)
-    return bytes(header) + body
-
-
 def _empty_artworkdb() -> bytes:
     return _artworkdb(
         _dataset(ArtworkDatasetType.IMAGE_LIST, _empty_list(b"mhli")),
         _dataset(ArtworkDatasetType.PHOTO_ALBUM_LIST, _empty_list(b"mhla")),
         _dataset(ArtworkDatasetType.FILE_LIST, _empty_list(b"mhlf")),
     )
-
-
-def _mhod_string(mhod_type: int, value: str) -> bytes:
-    encoding = "utf-16-le" if mhod_type == 3 else "utf-8"
-    encoding_indicator = 2 if mhod_type == 3 else 1
-    encoded = value.encode(encoding)
-    padding = (4 - len(encoded) % 4) % 4
-    body = (
-        struct.pack("<IB3xI", len(encoded), encoding_indicator, 0)
-        + encoded
-        + bytes(padding)
-    )
-    header = bytearray(24)
-    struct.pack_into(
-        "<4sIIH", header, 0, b"mhod", len(header), len(header) + len(body), mhod_type
-    )
-    header[0x0F] = padding
-    return bytes(header) + body
-
-
-def _photo_album(album_id: int, image_id: int, name: str) -> bytes:
-    children = _mhod_string(1, name)
-    member = bytearray(40)
-    struct.pack_into("<4sII", member, 0, b"mhia", len(member), len(member))
-    struct.pack_into("<I", member, 0x10, image_id)
-    children += member
-
-    header = bytearray(148)
-    struct.pack_into(
-        "<4sII", header, 0, b"mhba", len(header), len(header) + len(children)
-    )
-    struct.pack_into("<II", header, 0x0C, 1, 1)
-    struct.pack_into("<I", header, 0x14, album_id)
-    struct.pack_into("<IH", header, 0x18, 0x1111, 0x2222)
-    header[0x1E] = 2
-    header[0x1F:0x24] = bytes((1, 2, 3, 4, 5))
-    struct.pack_into("<II", header, 0x24, 6000, 700)
-    header[0x2C:0x34] = b"ALBUMRAW"
-    struct.pack_into("<Q", header, 0x34, 0x2122232425262728)
-    struct.pack_into("<I", header, 0x3C, 6)
-    return bytes(header) + children
 
 
 def _mhod_container(mhod_type: int, child: bytes) -> bytes:

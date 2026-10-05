@@ -28,6 +28,14 @@ class _ReportIssueSuggestionHandler(logging.Handler):
         )
 
 
+def active_log_path() -> Path | None:
+    """Return the file currently used by the application's rotating log handler."""
+    for handler in logging.getLogger().handlers:
+        if isinstance(handler, RotatingFileHandler):
+            return Path(handler.baseFilename)
+    return None
+
+
 def setup_logger(log_path: str | Path) -> logging.Logger:
     """One time logger setup for iOpenPod."""
 

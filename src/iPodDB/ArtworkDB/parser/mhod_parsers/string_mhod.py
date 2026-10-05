@@ -3,6 +3,8 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhod_payloads.string_mhod import (
     MhodStringPrefix,
     decode_artwork_string,
 )
+from iPodDB.shared.diagnostics import retain_unknown_bytes
+from iPodDB.shared.errors import UnknownMhodLayoutError
 from iPodDB.shared.types import MhodPayloadParseContext
 
 
@@ -19,6 +21,8 @@ def parse_string_payload(
         )
 
     raw = bytes(context.data[context.payload_offset : string_end])
+    if prefix.encoding_indicator not in (1, 2):
+        raise UnknownMhodLayoutError(f"string encoding {prefix.encoding_indicator}")
     try:
         value = decode_artwork_string(raw, prefix.encoding_indicator)
     except ValueError as exc:
@@ -29,5 +33,10 @@ def parse_string_payload(
     return MhodStringPayload(
         value=value,
         raw_value=raw,
-        trailing_data=bytes(context.data[string_end : context.payload_end]),
+        trailing_data=retain_unknown_bytes(
+            context.data,
+            string_end,
+            context.payload_end,
+            f"MHOD {int(context.mhod_type)} string suffix",
+        ),
     )

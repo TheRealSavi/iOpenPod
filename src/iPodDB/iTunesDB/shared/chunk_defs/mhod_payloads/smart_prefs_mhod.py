@@ -25,4 +25,6 @@ class MhodSmartPrefsPrefix(MhodPayloadPrefix):
 
 @dataclass(frozen=True, slots=True)
 class MhodSmartPrefsPayload(MhodPayload):
-    pass
+    """Retain Unknown Data following the understood preferences prefix."""
+
+    trailing_data: bytes = b""

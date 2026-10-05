@@ -1149,7 +1149,7 @@ class DeviceCoordinator:
             capabilities = expected.profile.capabilities
             checksum = WriteChecksum(capabilities.database.checksum.value)
             sqlite_checksum = WriteChecksum(capabilities.database.sqlite_checksum.value)
-            guid = _read_device_guid(active.session)
+            guid = _read_device_guid(active.session, active.record.hardware_evidence)
             hash72_material: Hash72Material | None = None
             if WriteChecksum.HASH72 in (checksum, sqlite_checksum):
                 if active.session.exists(_HASHINFO_PATH):
@@ -1166,12 +1166,8 @@ class DeviceCoordinator:
             if capabilities.database.uses_sqlite_database:
                 (
                     sqlite_postprocess_commands,
-                    sqlite_postprocess_precondition,
-                ) = _read_sqlite_postprocess_commands(
-                    active.session,
-                    required=capabilities.database.requires_sqlite_postprocessing,
-                )
-                sqlite_postprocess_preconditions = (sqlite_postprocess_precondition,)
+                    sqlite_postprocess_preconditions,
+                ) = _read_sqlite_postprocess_commands(active.session)
             target = WriteTarget(
                 checksum=checksum,
                 firewire_guid=guid,
@@ -1238,7 +1234,13 @@ class DeviceCoordinator:
             )
             resources = captured.resources
             result = source.prepare(plan, resources, progress=database_progress)
-            result = replace(result, issues=(*result.issues, *captured.issues))
+            result = replace(
+                result,
+                issues=(
+                    *result.issues,
+                    *library_resources.preparation_issues(captured, result.prepared),
+                ),
+            )
             checkpoint("source.recheck", "Verifying source revision")
             with self._lock:
                 if self._active is not active or not active.session.is_active:
@@ -1313,7 +1315,7 @@ class DeviceCoordinator:
                         review, write, presentation_policy, temporary_files.pop_all()
                     )
             return review
-        except (StorageError, DeviceChangedError, ValueError) as error:
+        except (StorageError, DeviceChangedError, ValueError, OSError) as error:
             code = "source.unavailable"
             message = "The source could not be verified. Reconnect or reload before reviewing."
             if isinstance(error, StorageCapacityError):
@@ -1322,6 +1324,11 @@ class DeviceCoordinator:
             elif isinstance(error, ValueError):
                 code = "resources.invalid_input"
                 message = "Required resources could not be prepared. Review the details and correct the input."
+            elif isinstance(error, OSError):
+                code = "resources.host_staging_failed"
+                message = source_text(
+                    "Temporary Host files could not be prepared. Check free space and file access, then retry."
+                )
             return LibraryReview(
                 plan,
                 LibraryWriteResult(
@@ -1481,7 +1488,8 @@ class DeviceCoordinator:
                                 "Playback sidecars appeared after review; reload before retrying"
                             )
                         if plan.target.firewire_guid and (
-                            _read_device_guid(session) != plan.target.firewire_guid
+                            _read_device_guid(session, active.record.hardware_evidence)
+                            != plan.target.firewire_guid
                         ):
                             raise DeviceChangedError(
                                 "The device signing identity changed"
@@ -3729,13 +3737,22 @@ def _read_optional_metadata(
     return snapshot.data, snapshot.fingerprint
 
 
-def _read_device_guid(session: FilesystemSession) -> bytes:
-    if not session.exists(_SYSINFO_PATH):
+def _read_device_guid(
+    session: FilesystemSession,
+    hardware_evidence: DeviceEvidence,
+) -> bytes:
+    """Use connection-bound hardware identity before optional metadata caches."""
+    evidence = hardware_evidence
+    if not evidence.transport_serials:
+        evidence, _issues = _read_device_metadata(session)
+    if not evidence.transport_serials:
         return b""
-    evidence = parse_sysinfo(
-        session.read(_SYSINFO_PATH, max_bytes=_DEVICE_METADATA_LIMIT)
-    )
-    candidates = {item.value.removeprefix("0x") for item in evidence.transport_serials}
+    authority = max(item.authority for item in evidence.transport_serials)
+    candidates = {
+        item.value.strip().lower().removeprefix("0x")
+        for item in evidence.transport_serials
+        if item.authority == authority
+    }
     if len(candidates) != 1:
         return b""
     try:
@@ -3769,49 +3786,42 @@ def _read_hash72_material(
 
 def _read_sqlite_postprocess_commands(
     session: FilesystemSession,
-    *,
-    required: bool,
-) -> tuple[tuple[str, ...], FilePrecondition]:
+) -> tuple[tuple[str, ...], tuple[FilePrecondition, ...]]:
+    """Supplement the built-in SQLite projection with usable optional commands."""
     if not session.exists(_SYSINFO_EXTENDED_PATH):
-        if required:
-            raise ValueError(
-                "The device requires SQLite postprocess commands, but "
-                "SysInfoExtended is missing"
-            )
-        return (), FilePrecondition(_SYSINFO_EXTENDED_PATH, None)
+        return (), ()
     snapshot = session.read_snapshot(
         _SYSINFO_EXTENDED_PATH, max_bytes=_DEVICE_METADATA_LIMIT
     )
-    commands = _parse_sqlite_postprocess_commands(snapshot.data, required=required)
-    return commands, FilePrecondition(_SYSINFO_EXTENDED_PATH, snapshot.fingerprint)
+    try:
+        commands = _parse_sqlite_postprocess_commands(snapshot.data)
+    except ValueError as error:
+        logger.warning(
+            "Ignoring unusable optional SQLite postprocess metadata: %s", error
+        )
+        return (), ()
+    if not commands:
+        return (), ()
+    return commands, (FilePrecondition(_SYSINFO_EXTENDED_PATH, snapshot.fingerprint),)
 
 
 def _parse_sqlite_postprocess_commands(
     data: bytes,
-    *,
-    required: bool,
 ) -> tuple[str, ...]:
     import plistlib
+    from xml.parsers.expat import ExpatError
 
+    if not data.strip():
+        return ()
     try:
         root_value: object = plistlib.loads(data)
-    except (plistlib.InvalidFileException, ValueError) as error:
+    except (plistlib.InvalidFileException, ValueError, ExpatError) as error:
         raise ValueError("SysInfoExtended is not a readable property list") from error
     if not isinstance(root_value, dict):
-        if required:
-            raise ValueError(
-                "The device requires SQLite postprocess commands, but "
-                "SysInfoExtended has no property dictionary"
-            )
         return ()
     root = cast("dict[object, object]", root_value)
     definition = root.get("com.apple.mobile.iTunes.SQLMusicLibraryPostProcessCommands")
     if definition is None:
-        if required:
-            raise ValueError(
-                "The device requires SQLite postprocess commands, but "
-                "SysInfoExtended does not contain them"
-            )
         return ()
     if not isinstance(definition, dict):
         raise ValueError("SQLite postprocess metadata is not a dictionary")
@@ -3852,8 +3862,6 @@ def _parse_sqlite_postprocess_commands(
         if not isinstance(command, str) or not command.strip():
             raise ValueError("SQLite postprocess command reference is invalid")
         result.append(command)
-    if required and not result:
-        raise ValueError("The required SQLite postprocess command set is empty")
     return tuple(result)
 
 

@@ -25,6 +25,7 @@ from iPodDB.library import (
     SourceFile,
     WriteResources,
     WriteTarget,
+    content_sha256,
 )
 
 NANO_FORMATS = (
@@ -61,9 +62,7 @@ def retained_source(
     artwork = write_ArtworkDB(document) + b"retained suffix"
     files = tuple(
         SourceFile(
-            FileDependency(
-                f.relative_path, len(f.data), hashlib.sha256(f.data).hexdigest()
-            ),
+            FileDependency(f.relative_path, len(f.data), content_sha256(f.data)),
             f.data,
         )
         for f in result.prepared.artwork_files
@@ -191,6 +190,7 @@ def test_unsafe_retained_evidence_still_blocks_repair(problem: str) -> None:
     elif problem == "partial_overlap":
         location = replace(location, header=replace(header, ithmb_offset=1))
         file = resources.files[0]
+        assert isinstance(file.data, bytes)
         data = file.data + b"\0"
         dependency = replace(
             file.dependency, size=len(data), sha256=hashlib.sha256(data).hexdigest()
@@ -273,9 +273,7 @@ def test_corrected_database_needs_no_further_repair(
     source = IPodLibrary(result.prepared.itunes).with_artwork(result.prepared.artwork)
     files = tuple(
         SourceFile(
-            FileDependency(
-                f.relative_path, len(f.data), hashlib.sha256(f.data).hexdigest()
-            ),
+            FileDependency(f.relative_path, len(f.data), content_sha256(f.data)),
             f.data,
         )
         for f in result.prepared.artwork_files

@@ -16,6 +16,26 @@ That layer reconciles these same retained documents through the shared writers.
 The low-level examples below demonstrate Chunk editing; they do not reconcile
 all semantic dependencies or authorize device saving.
 
+## Unknown Data
+
+Bounded extensions remain in the Database Document and survive unchanged writes
+and edits to understood fields. An unsupported MHOD string encoding or layout
+signature becomes an `UnknownMhodPayload`; its type, parent context, and bytes
+must remain unchanged. A parser must not guess how to decode it or reject the
+whole Library merely because it is unfamiliar.
+
+Reads report retained extensions through `iPodDB.shared.diagnostics` at WARNING
+level, with a bounded summary of types, offsets, and sizes. The warnings are
+log-only and exclude decoded metadata and payload dumps. Invalid boundaries and
+truncation remain parse errors. See [ADR-0116](adr/0116-retain-bounded-unknown-data-with-log-only-diagnostics.md).
+
+For physical iTunesCDB artifacts, keep the result of `decompress_iTunesCDB` and
+pass it as `framing=` to `compress_iTunesCDB` after editing the logical bytes.
+This preserves opaque bytes after the compressed stream and after the physical
+root extent. `IPodLibrary` retains and supplies this framing automatically during
+preparation. Converting such an extended artifact to uncompressed framing is
+rejected because the original placement of its Unknown Data cannot be retained.
+
 ## Edit an iTunesDB title
 
 ```python

@@ -14,6 +14,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.library._artwork_writing import artwork_path
 from iPodDB.library._resolved_write import ResolvedWrite
+from iPodDB.library.file_content import read_content
 from iPodDB.library.writing import IdentityMapping, PreparedFile, WriteResources
 from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import DatabaseDocument
@@ -122,7 +123,7 @@ def verify_artwork(
             if data is None:
                 raise ValueError("Created artwork has no prepared pixel file.")
             decoded = decode_ithmb(
-                data[bounded.offset : bounded.offset + size],
+                read_content(data, bounded.offset, size),
                 IthmbLayout(
                     cover.width, cover.height, cover.row_bytes, cover.pixel_format
                 ),

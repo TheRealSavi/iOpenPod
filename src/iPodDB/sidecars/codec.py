@@ -13,6 +13,7 @@ from contextlib import suppress
 from typing import cast
 from xml.parsers.expat import ExpatError
 
+from iPodDB.shared.diagnostics import log_unknown_data, report_unknown_data
 from iPodDB.sidecars.models import (
     OTGPlaylistDocument,
     PlaybackDateKind,
@@ -44,6 +45,7 @@ def _bounded(data: bytes) -> None:
         raise ValueError("Playback sidecar exceeds the capture limit.")
 
 
+@log_unknown_data("positional playback sidecar")
 def parse_positional_sidecar(data: bytes) -> PositionalSidecar:
     """Validate framing independently of whether individual fields are known."""
     _bounded(data)
@@ -54,8 +56,11 @@ def parse_positional_sidecar(data: bytes) -> PositionalSidecar:
     header, width, count = struct.unpack_from(endian + "III", data, 4)
     if header < (96 if counts else 20) or width < (12 if counts else 4):
         raise ValueError("Invalid playback sidecar layout.")
-    if header + width * count != len(data):
-        raise ValueError("Truncated or unrecognized playback sidecar data.")
+    end = header + width * count
+    if end > len(data):
+        raise ValueError("Truncated playback sidecar data.")
+    if end < len(data):
+        report_unknown_data("sidecar suffix", end, len(data) - end)
     return PositionalSidecar(
         bytes(data),
         header,
@@ -64,6 +69,7 @@ def parse_positional_sidecar(data: bytes) -> PositionalSidecar:
         tuple(
             data[header + i * width : header + (i + 1) * width] for i in range(count)
         ),
+        data[end:],
     )
 
 
@@ -75,6 +81,7 @@ def _rating(value: int) -> int | None:
     return value
 
 
+@log_unknown_data("Play Counts")
 def parse_play_counts(data: bytes) -> PlaybackDocument:
     table = parse_positional_sidecar(data)
     if data[:4] not in (b"mhdp", b"pdhm"):
@@ -98,9 +105,12 @@ def parse_play_counts(data: bytes) -> PlaybackDocument:
                 + (row[28:] if len(row) >= 28 else row[20:]),
             )
         )
-    return PlaybackDocument(bytes(data), tuple(entries), "Play Counts")
+    return PlaybackDocument(
+        bytes(data), tuple(entries), "Play Counts", table.trailing_data
+    )
 
 
+@log_unknown_data("OTGPlaylist")
 def parse_otg_playlist(data: bytes) -> OTGPlaylistDocument:
     table = parse_positional_sidecar(data)
     if data[:4] not in (b"mhpo", b"ophm"):
@@ -145,11 +155,12 @@ def _stats(data: bytes, word: int) -> PlaybackDocument:
             )
         )
         offset += width
-    if offset != len(data):
-        raise ValueError("Unrecognized trailing iTunesStats data.")
-    return PlaybackDocument(bytes(data), tuple(entries), f"iTunesStats{word * 8}")
+    return PlaybackDocument(
+        bytes(data), tuple(entries), f"iTunesStats{word * 8}", data[offset:]
+    )
 
 
+@log_unknown_data("iTunesStats")
 def parse_itunes_stats(data: bytes) -> PlaybackDocument:
     """Recognize exactly one fully bounded 24-bit or 32-bit Shuffle layout."""
     _bounded(data)
@@ -157,9 +168,21 @@ def parse_itunes_stats(data: bytes) -> PlaybackDocument:
     for word in (3, 4):
         with suppress(ValueError):
             matches.append(_stats(data, word))
+    # An exact layout takes precedence over a candidate that leaves a suffix.
+    # If neither is exact, only an unambiguous bounded prefix is interpretable.
+    exact = [document for document in matches if not document.trailing_data]
+    if exact:
+        matches = exact
     if len(matches) != 1:
         raise ValueError("Invalid or ambiguous iTunesStats layout.")
-    return matches[0]
+    result = matches[0]
+    if result.trailing_data:
+        report_unknown_data(
+            "iTunesStats suffix",
+            len(data) - len(result.trailing_data),
+            len(result.trailing_data),
+        )
+    return result
 
 
 def parse_play_counts_plist(data: bytes) -> PlaybackDocument:

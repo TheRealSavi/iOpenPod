@@ -5148,6 +5148,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Backup-Speicherort auswählen</translation>
     </message>
     <message>
+        <source>Could Not Open Log Folder</source>
+        <translation>Protokollordner konnte nicht geöffnet werden</translation>
+    </message>
+    <message>
         <source>Choose Check Again to inspect standard udev rule paths.</source>
         <translation>Wählen Sie „Erneut prüfen“, um die üblichen Speicherorte für udev-Regeln zu prüfen.</translation>
     </message>
@@ -5222,6 +5226,18 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Check for updates</source>
         <translation>Nach Updates suchen</translation>
+    </message>
+    <message>
+        <source>Log files</source>
+        <translation>Protokolldateien</translation>
+    </message>
+    <message>
+        <source>Open the folder containing the active iOpenPod log file.</source>
+        <translation>Öffnen Sie den Ordner mit der aktuellen iOpenPod-Protokolldatei.</translation>
+    </message>
+    <message>
+        <source>Open Log Folder</source>
+        <translation>Protokollordner öffnen</translation>
     </message>
     <message>
         <source>Media tool status is read-only.</source>
@@ -7484,6 +7500,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Cover-Änderungen können nicht zugleich Pixeldaten und eine Quellkennung enthalten.</translation>
     </message>
     <message>
+        <source>Artwork file &quot;{path}&quot; was prepared using temporary disk space because the memory budget was reached.</source>
+        <translation>Die Coverdatei &quot;{path}&quot; wurde mithilfe von temporärem Festplattenspeicher vorbereitet, da das Arbeitsspeicherbudget erreicht wurde.</translation>
+    </message>
+    <message>
         <source>Artwork for {name} was skipped. Media can still Sync; any existing iPod artwork was preserved.</source>
         <translation>Das Cover für {name} wurde übersprungen. Die Medien können trotzdem synchronisiert werden. Ein vorhandenes iPod-Cover wurde beibehalten.</translation>
     </message>
@@ -8132,6 +8152,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Die Größenbegrenzungen der Ausgabe müssen größer als null sein.</translation>
     </message>
     <message>
+        <source>Photo &quot;{path}&quot; was prepared using temporary disk space because the memory budget was reached.</source>
+        <translation>Das Foto &quot;{path}&quot; wurde mithilfe von temporärem Festplattenspeicher vorbereitet, da das Arbeitsspeicherbudget erreicht wurde.</translation>
+    </message>
+    <message>
         <source>Photo Album creation requires a non-master unsigned 8-bit type.</source>
         <translation>Das Erstellen eines Fotoalbums erfordert einen vorzeichenlosen 8-Bit-Typ, der kein Hauptalbum bezeichnet.</translation>
     </message>
@@ -8325,7 +8349,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Prepared Photos exceed the 512 MiB batch limit; Sync fewer Photos together.</source>
-        <translation>Die vorbereiteten Fotos überschreiten die Grenze von 512 MiB pro Durchgang. Synchronisieren Sie weniger Fotos auf einmal.</translation>
+        <translation type="vanished">Die vorbereiteten Fotos überschreiten die Grenze von 512 MiB pro Durchgang. Synchronisieren Sie weniger Fotos auf einmal.</translation>
     </message>
     <message>
         <source>Prepared Photos repeat an identity.</source>
@@ -8860,6 +8884,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Die Synchronisierung wurde unterbrochen und die vorherige Mediathek konnte nicht wiederhergestellt werden. Schließen Sie denselben iPod erneut an und stellen Sie diesen Vorgang vor weiteren Schreibvorgängen wieder her.</translation>
     </message>
     <message>
+        <source>Temporary Host files could not be prepared. Check free space and file access, then retry.</source>
+        <translation>Temporäre Dateien auf dem Computer konnten nicht vorbereitet werden. Prüfen Sie den freien Speicherplatz und die Zugriffsrechte und versuchen Sie es erneut.</translation>
+    </message>
+    <message>
         <source>Text comparisons require text.</source>
         <translation>Textvergleiche erfordern Text.</translation>
     </message>
@@ -8949,7 +8977,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>The Photo preparation batch reached its 512 MiB limit. Sync the remaining Photos in another batch.</source>
-        <translation>Die Fotovorbereitung hat ihre Grenze von 512 MiB pro Durchgang erreicht. Synchronisieren Sie die übrigen Fotos in einem weiteren Durchgang.</translation>
+        <translation type="vanished">Die Fotovorbereitung hat ihre Grenze von 512 MiB pro Durchgang erreicht. Synchronisieren Sie die übrigen Fotos in einem weiteren Durchgang.</translation>
     </message>
     <message>
         <source>The Photo&apos;s full-resolution file changed before export.</source>

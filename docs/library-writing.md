@@ -343,8 +343,14 @@ The issued Storage Transaction publishes captured media before the database and
 retains originals for joint recovery. A changed or missing device file, unsafe
 path, shared media path, unsupported format, failed tag verification, or insufficient
 space prevents a database-only save. Incoming music retains the Host source and
-reads its embedded lyrics into the draft. Lyrics and artwork capture share a
-512 MiB aggregate byte limit; larger batches must be split.
+reads its embedded lyrics into the draft. Lyrics media, captured artwork prefixes,
+and generated artwork share a 512 MiB retained-memory budget. Complete overflow
+content uses private Host disk storage with file-specific warnings; the budget
+does not require truncation or splitting batches. Photo Sync uses the same policy
+in its own workspace. iPodDB accepts caller-owned readable content and output
+buffers, verifies hashes with bounded reads, and never opens paths itself. Staging
+survives through publication and is cleaned when its owner finishes or retires.
+Individual image and device-format limits still apply. See ADR-0117.
 
 No-op drafts and unrelated edits neither read nor rewrite media tags. A retained
 flag without database text remains untouched: an empty projected string alone is
@@ -513,6 +519,14 @@ does not require or parse the SQLite files. A true no-op returns the exact retai
 CDB and does not touch SQLite. Every CDB-changing save generates and publishes all
 six SQLite artifacts from the independently reparsed candidate snapshot, replacing
 missing, stale, or damaged companions as one transaction generation.
+
+SysInfo and SysInfoExtended are optional metadata sources (ADR-0115). Signing uses
+connection-bound hardware evidence first, then either metadata file when hardware
+lacks a transport identifier. Missing or unusable postprocess declarations use the
+built-in SQLite projection on every supported profile, including Nano 5. Usable
+commands remain supported and their exact source bytes become a publication
+precondition; a failed command or invalid generated database still blocks output.
+Metadata that supplies no commands is not a postprocessing dependency.
 
 Native Track checks compare reparsed codec flags, payload size, and file-size
 mirrors against supplied `PreparedMedia` or retained source fields. The secondary

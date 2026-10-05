@@ -117,6 +117,10 @@ can atomically repair SysInfo, SysInfoExtended, and the version-1
 iOpenPodSysInfoAuthority record on a write-safe Volume before the Library is loaded.
 The repair is verified, flushed, idempotent, and does not authorize Sync or any
 destructive workflow.
+SysInfo and SysInfoExtended remain optional metadata, never the sole required
+source of device knowledge. Signing can use current hardware evidence directly,
+and every SQLite-capable profile can use the built-in Library projection without
+device-supplied postprocess commands. See ADR-0115.
 `DeviceController` runs discovery and selection outside the Qt GUI thread and
 publishes immutable results to the shared library models. If a previous Volume
 Identity is saved, startup makes one background discovery pass to restore that iPod.
@@ -367,6 +371,11 @@ edits preserve file-only lyrics, and incoming music reads embedded lyrics into i
 draft. Preparation exceeding the whole-media memory budget uses private Host disk
 staging with a file-specific warning, preserving complete media and lyrics.
 See ADR-0075 and `docs/research/itunesdb-lyrics.md`.
+
+Artwork capture, generated artwork, and Photo batches also use private Host disk
+staging when preparation memory budgets are reached. Large valid batches continue
+with file-specific warnings while retaining complete content, independent
+verification, and recoverable publication. See ADR-0117.
 
 Backup Snapshots use Backup Archive format v4, continuing the Original iOpenPod v2
 and v3 format sequence, with lossless

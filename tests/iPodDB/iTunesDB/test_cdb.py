@@ -45,13 +45,8 @@ def test_cdb_framing_roundtrips_through_the_shared_parser() -> None:
     assert IPodLibrary.parse(physical).serialize().itunes == physical
 
 
-def test_cdb_rejects_trailing_or_corrupt_payloads() -> None:
+def test_cdb_rejects_corrupt_payloads() -> None:
     physical = compress_iTunesCDB(_database())
-    trailing = bytearray(physical + b"trailing")
-    trailing[8:12] = len(trailing).to_bytes(4, "little")
-
-    with pytest.raises(ValueError, match="trailing"):
-        decompress_iTunesCDB(trailing)
     corrupt = bytearray(physical[:244] + b"x-not-zlib")
     corrupt[8:12] = len(corrupt).to_bytes(4, "little")
     with pytest.raises(ValueError, match="malformed"):

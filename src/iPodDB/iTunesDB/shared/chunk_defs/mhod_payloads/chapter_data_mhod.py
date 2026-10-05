@@ -91,3 +91,5 @@ class MhodChapterDataPayload(MhodPayload):
     chapter_atom_indices: tuple[int, ...] = ()
     hedr_atom_index: int | None = None
     hedr_trailing_data: bytes = b""
+    sean_trailing_data: bytes = b""
+    trailing_data: bytes = b""

@@ -187,3 +187,6 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0112: Publish Python distributions with GitHub Releases](0112-publish-python-distributions-with-github-releases.md)
 - [ADR-0113: Update installed Python packages through PyPI](0113-update-installed-python-packages-through-pypi.md)
 - [ADR-0114: Distinguish install downloads from update archives](0114-distinguish-install-downloads-from-update-archives.md)
+- [ADR-0115: Treat SysInfo files as optional metadata](0115-treat-sysinfo-files-as-optional-metadata.md)
+- [ADR-0116: Retain bounded Unknown Data with log-only diagnostics](0116-retain-bounded-unknown-data-with-log-only-diagnostics.md)
+- [ADR-0117: Spill prepared Library content to Host storage](0117-spill-prepared-library-content-to-host-storage.md)

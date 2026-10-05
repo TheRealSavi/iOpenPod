@@ -2,8 +2,10 @@ from iPodDB.PhotosDB.parser.parser_definition import PARSER_DEFINITION
 from iPodDB.PhotosDB.shared.chunk_defs.mhfd import MhfdHeader
 from iPodDB.shared.chunk import DatabaseDocument
 from iPodDB.shared.chunk_reader import parse_database
+from iPodDB.shared.diagnostics import log_unknown_data
 
 
+@log_unknown_data("PhotosDB")
 def parse_PhotosDB(data: bytes | bytearray) -> DatabaseDocument[MhfdHeader]:
     """Parse a Photo Database through its sole typed database definition.
 

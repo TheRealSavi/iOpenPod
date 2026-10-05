@@ -45,3 +45,7 @@ connection, and completing publication release retained staging files. Device
 preconditions, verified publication, and recoverable media/database replacement
 remain required. Source media and full lyric text are preserved; this budget
 establishes no iPod lyric-length policy.
+
+[ADR-0117](0117-spill-prepared-library-content-to-host-storage.md) extends disk
+overflow to captured and generated artwork and Photo batches. Artwork and lyrics
+share the capture workspace's retained-memory accounting.

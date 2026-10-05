@@ -69,6 +69,7 @@ class IPodLibrary:
     __slots__ = (
         "_artwork_document",
         "_artwork_index",
+        "_cdb_framing",
         "_consumed_sidecars",
         "_database_snapshot",
         "_device_time",
@@ -86,8 +87,9 @@ class IPodLibrary:
     ) -> None:
         self._source_revision = uuid4().hex
         self._source_itunes = bytes(data)
+        self._cdb_framing = decompress_iTunesCDB(data) if is_iTunesCDB(data) else None
         logical = (
-            decompress_iTunesCDB(data).logical_bytes if is_iTunesCDB(data) else data
+            self._cdb_framing.logical_bytes if self._cdb_framing is not None else data
         )
         self._document: DatabaseDocument[MhbdHeader] = parse_iTunesDB(logical)
         self._device_time = (device_time or DeviceTimeContext()).for_database(
@@ -351,6 +353,7 @@ class IPodLibrary:
             resources or WriteResources(),
             resolve=self._resolve,
             source_revision=self._source_revision,
+            cdb_framing=self._cdb_framing,
             progress=progress,
         )
 

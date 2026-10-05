@@ -11,6 +11,7 @@ from threading import Event, Thread
 
 import pytest
 from PIL import Image
+from tests.iPodDB.sidecars.test_sidecar_readers import otg
 
 from iOpenPod.app.backups import BackupIdentityClaimKind
 from iOpenPod.app.display_text import SourceText
@@ -40,7 +41,7 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhni import MhniHeader
 from iPodDB.ArtworkDB.shared.constants import ArtworkMhodType
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
 from iPodDB.iTunesDB.cdb import compress_iTunesCDB
-from iPodDB.iTunesDB.writer.signature import verify_hashab
+from iPodDB.iTunesDB.writer.signature import verify_hash58, verify_hashab
 from iPodDB.library import IPodLibrary, SQLiteDatabaseSet
 from iPodDB.library.writing import WriteChecksum
 from iPodDB.PhotosDB.builder.build_PhotosDB import (
@@ -976,6 +977,80 @@ def test_nano_library_save_publishes_cdb_and_sqlite_as_one_generation(
     assert saved.active.library.tracks[0].title == "Late Nano"
 
 
+@pytest.mark.parametrize("metadata", [None, b""])
+def test_nano5_selection_commits_playback_without_postprocess_metadata(
+    tmp_path: Path,
+    metadata: bytes | None,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(
+        tmp_path / "nano", model_number="MC027", database_name="iTunesCDB"
+    )
+    directory = root / "iPod_Control" / "iTunes"
+    cdb = directory / "iTunesCDB"
+    database = bytearray(_database_with_track(track_header_size=0x248))
+    # A late-device database has an identity distinct from its new OTG Playlist.
+    struct.pack_into("<Q", database, 0x18, 0x1234)
+    cdb.write_bytes(compress_iTunesCDB(bytes(database)))
+    guid = bytes.fromhex("000A270012345678")
+    _install_nano5_hash72_metadata(root, guid)
+    for name in ("SysInfo", "SysInfoExtended"):
+        path = root / "iPod_Control" / "Device" / name
+        if metadata is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(metadata)
+    history = plistlib.dumps(
+        {"tracks": [{"persistentID": 0x0102030405060708, "playCount": 5}]}
+    )
+    (directory / "PlayCounts.plist").write_bytes(history)
+    playlist = otg((0, 0))
+    (directory / "OTGPlaylistInfo").write_bytes(playlist)
+    platform.add_volume(
+        root,
+        label="Nano",
+        identifiers=HardwareIdentifiers(transport_serial=guid.hex()),
+        probe_result=HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="test-vpd",
+                    vendor_payload=plistlib.dumps({"ModelNumStr": "MC027"}),
+                ),
+            )
+        ),
+    )
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        active = coordinator.select_device(
+            coordinator.discover_devices().candidates[0].id
+        )
+        assert active.library.tracks[0].play_count == 5
+        assert IPodLibrary.parse(cdb.read_bytes()).snapshot.tracks[0].play_count == 5
+        assert not (directory / "PlayCounts.plist").exists()
+        assert (directory / "PlayCounts.plist.bak").read_bytes() == history
+        assert active.library.playlists[-1].track_ids == (
+            active.library.tracks[0].track_id,
+            active.library.tracks[0].track_id,
+        )
+        assert not (directory / "OTGPlaylistInfo").exists()
+        assert (directory / "OTGPlaylistInfo.bak").read_bytes() == playlist
+        assert verify_hash58(cdb.read_bytes(), guid)
+        sqlite_directory = directory / "iTunes Library.itlp"
+        for name in ("Library", "Locations", "Dynamic", "Extras", "Genius"):
+            connection = sqlite3.connect(":memory:")
+            try:
+                connection.deserialize((sqlite_directory / f"{name}.itdb").read_bytes())
+                assert connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
+            finally:
+                connection.close()
+        assert (sqlite_directory / "Locations.itdb.cbk").is_file()
+        reloaded = coordinator.select_device(active.candidate.id)
+        assert reloaded.library.tracks[0].play_count == 5
+        assert reloaded.library.playlists == active.library.playlists
+    finally:
+        coordinator.close()
+
+
 def test_nano5_applies_observed_sqlite_postprocess_commands(tmp_path: Path) -> None:
     platform = VirtualStoragePlatform()
     root = _ipod_volume(
@@ -1072,9 +1147,18 @@ def test_nano5_preparation_rejects_hashinfo_for_another_device(
 
 @pytest.mark.parametrize(
     "metadata",
-    ("missing", "unrelated", "empty-commands"),
+    (
+        "missing",
+        "empty",
+        "empty-plist",
+        "unrelated",
+        "empty-commands",
+        "malformed-plist",
+        "incomplete-commands",
+        "non-dictionary",
+    ),
 )
-def test_nano5_preparation_requires_sqlite_postprocess_commands(
+def test_nano5_preparation_without_usable_sqlite_postprocess_commands(
     tmp_path: Path,
     metadata: str,
 ) -> None:
@@ -1088,18 +1172,33 @@ def test_nano5_preparation_requires_sqlite_postprocess_commands(
     original_cdb = compress_iTunesCDB(_database_with_track())
     cdb.write_bytes(original_cdb)
     _install_nano5_hash72_metadata(root, bytes.fromhex("000A270012345678"))
-    if metadata == "unrelated":
-        (root / "iPod_Control" / "Device" / "SysInfoExtended").write_bytes(
-            plistlib.dumps({"SerialNumber": "unrelated"})
-        )
-    elif metadata == "empty-commands":
-        _install_sqlite_postprocess_metadata(root, ())
     platform.add_volume(root, label="Nano")
     coordinator = DeviceCoordinator(Storage(platform))
     active = coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+    path = root / "iPod_Control" / "Device" / "SysInfoExtended"
+    if metadata == "missing":
+        path.unlink()
+    elif metadata == "empty":
+        path.write_bytes(b"")
+    elif metadata == "empty-plist":
+        path.write_bytes(plistlib.dumps({}))
+    elif metadata == "non-dictionary":
+        path.write_bytes(plistlib.dumps([]))
+    elif metadata == "malformed-plist":
+        path.write_bytes(b"<plist><dict>")
+    elif metadata == "incomplete-commands":
+        path.write_bytes(
+            plistlib.dumps(
+                {"com.apple.mobile.iTunes.SQLMusicLibraryPostProcessCommands": {}}
+            )
+        )
+    elif metadata == "unrelated":
+        path.write_bytes(plistlib.dumps({"SerialNumber": "unrelated"}))
+    elif metadata == "empty-commands":
+        _install_sqlite_postprocess_metadata(root, ())
     edited = replace(
         active.library,
-        tracks=(replace(active.library.tracks[0], title="Rejected edit"),),
+        tracks=(replace(active.library.tracks[0], title="Without commands"),),
     )
 
     review = coordinator.prepare_library(
@@ -1108,9 +1207,65 @@ def test_nano5_preparation_requires_sqlite_postprocess_commands(
         Event(),
     )
 
-    assert review.result.prepared is None
-    assert any("SQLite postprocess" in issue.detail for issue in review.result.issues)
+    assert review.result.prepared is not None, review.result.issues
+    assert review.result.prepared.sqlite is not None
     assert cdb.read_bytes() == original_cdb
+    coordinator.close()
+
+
+@pytest.mark.parametrize("source", ["hardware", "extended", "conflict", "unavailable"])
+def test_nano5_signing_does_not_require_sysinfo(tmp_path: Path, source: str) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(
+        tmp_path / "nano", model_number="MC027", database_name="iTunesCDB"
+    )
+    cdb = root / "iPod_Control" / "iTunes" / "iTunesCDB"
+    original = compress_iTunesCDB(_database_with_track())
+    cdb.write_bytes(original)
+    guid = bytes.fromhex("000A270012345678")
+    _install_nano5_hash72_metadata(root, guid)
+    platform.add_volume(
+        root,
+        identifiers=HardwareIdentifiers(
+            transport_serial=guid.hex() if source == "hardware" else ""
+        ),
+    )
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        active = coordinator.select_device(
+            coordinator.discover_devices().candidates[0].id
+        )
+        metadata = root / "iPod_Control" / "Device"
+        (metadata / "SysInfo").unlink()
+        if source in ("hardware", "unavailable"):
+            (metadata / "SysInfoExtended").write_bytes(b"")
+        elif source == "conflict":
+            (metadata / "SysInfo").write_text("FirewireGuid: FFFFFFFFFFFFFFFF\n")
+        edited = replace(
+            active.library,
+            tracks=(replace(active.library.tracks[0], title="Signing fallback"),),
+        )
+        review = coordinator.prepare_library(
+            LibraryPreparationRequest(edited, active, 1, 1),
+            lambda _progress: None,
+            Event(),
+        )
+        assert cdb.read_bytes() == original
+        if source in ("conflict", "unavailable"):
+            assert review.result.prepared is None
+            assert any("GUID" in issue.detail for issue in review.result.issues)
+            return
+        assert review.result.prepared is not None, review.result.issues
+        if source == "hardware":
+            # Unused metadata cannot invalidate a hardware-bound signing identity.
+            (metadata / "SysInfo").write_text("FirewireGuid: FFFFFFFFFFFFFFFF\n")
+            (metadata / "SysInfoExtended").unlink()
+        saved = coordinator.save_library(review, active, lambda _: None, Event())
+        assert saved.active is not None, saved.issues
+        assert verify_hash58(cdb.read_bytes(), guid)
+        assert saved.active.library.tracks[0].title == "Signing fallback"
+    finally:
+        coordinator.close()
 
 
 def test_nano5_save_rejects_hashinfo_replaced_after_review(tmp_path: Path) -> None:
@@ -1972,7 +2127,7 @@ def _install_sqlite_postprocess_metadata(
     )
 
 
-def _database_with_track() -> bytes:
+def _database_with_track(*, track_header_size: int = 0x9C) -> bytes:
     metadata = b"".join(
         (
             _string_mhod(1, "Blue Train"),
@@ -1982,7 +2137,7 @@ def _database_with_track() -> bytes:
             _string_mhod(2, ":iPod_Control:Music:F00:track.m4a"),
         )
     )
-    fields = bytearray(0x9C - 12)
+    fields = bytearray(track_header_size - 12)
     struct.pack_into("<II", fields, 0, 5, 7)
     struct.pack_into("<I", fields, 0x24 - 12, 5_000_000)
     struct.pack_into("<I", fields, 0x28 - 12, 640_000)
@@ -1990,7 +2145,7 @@ def _database_with_track() -> bytes:
     struct.pack_into("<I", fields, 0x34 - 12, 1957)
     struct.pack_into("<I", fields, 0x38 - 12, 256)
     struct.pack_into("<Q", fields, 0x70 - 12, 0x0102030405060708)
-    track = _length_chunk(b"mhit", 0x9C, metadata, fields=bytes(fields))
+    track = _length_chunk(b"mhit", track_header_size, metadata, fields=bytes(fields))
     return _database(_dataset(1, _list_chunk(b"mhlt", track)))
 
 

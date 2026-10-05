@@ -4,6 +4,7 @@ import hashlib
 import logging
 from reprlib import Repr
 
+from iPodDB.library.file_content import content_sha256
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.library.writing import LibraryWritePlan, LibraryWriteResult, WriteResources
 
@@ -195,7 +196,7 @@ def log_result(revision: str, result: LibraryWriteResult) -> None:
             revision,
             file.relative_path,
             len(file.data),
-            hashlib.sha256(file.data).hexdigest(),
+            content_sha256(file.data),
         )
     for retained in prepared.retained_artwork:
         logger.debug("Library retained artwork source=%s %s", revision, retained)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 from contextlib import ExitStack
@@ -10,11 +9,13 @@ from dataclasses import dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.library_write import LibraryFileChange
 from iOpenPod.app.media.lyrics import rewrite_lyrics_stream
 from iOpenPod.app.services import volume_presentation
 from iPodDB.library import (
     MAX_SIDECAR_BYTES,
+    FileContentData,
     FileDependency,
     IssueSeverity,
     PhotoRepresentationKind,
@@ -23,6 +24,7 @@ from iPodDB.library import (
     SourceFile,
     WriteIssue,
     WriteResources,
+    content_sha256,
     is_playback_sidecar,
     remap_playback_sidecar,
 )
@@ -32,11 +34,13 @@ from storage import (
     FileContent,
     FilePrecondition,
     FilePreconditionError,
+    HostPath,
     StorageError,
     StorageTransaction,
     TransactionRemoval,
     TransactionWrite,
 )
+from storage.content_workspace import ContentWorkspace, StagedContent, content_workspace
 from storage.host_input import LocalHostFile
 from storage.media_processing import media_workspace
 
@@ -258,6 +262,9 @@ def capture(
             )
         )
     inventory: list[FileDependency] = []
+    staging = temporary_files.enter_context(
+        content_workspace(memory_budget=_MAX_CAPTURE_BYTES, checkpoint=checkpoint)
+    )
     sources: list[SourceFile] = []
     media_writes: list[TransactionWrite] = []
     sidecar_removals: tuple[TransactionRemoval, ...] = ()
@@ -332,9 +339,10 @@ def capture(
                 )
             incoming_photo_paths.add(path)
             files.append(FilePrecondition(path, None))
-            media_writes.append(TransactionWrite(path, photo_file.data, content))
-    # Artwork needs retained bytes; reserve that space before lyrics can spill to disk.
-    captured_bytes = 0
+            media_writes.append(
+                TransactionWrite(path, _transaction_source(photo_file.data), content)
+            )
+    artwork_issues: list[WriteIssue] = []
     cover_prefixes = tuple(f"f{f.format_id}_" for f in plan.target.cover_formats)
     if plan.requires_artwork_inventory and session.exists(_ARTWORK):
         for entry in session.list_directory(_ARTWORK):
@@ -357,21 +365,38 @@ def capture(
                 and entry.path.name.casefold().startswith(cover_prefixes)
                 and entry.size < plan.target.max_artwork_file_bytes
             ):
-                if captured_bytes + entry.size > _MAX_CAPTURE_BYTES:
-                    raise ValueError(
-                        "Artwork files are too large to prepare together within the capture limit"
+                fingerprint = session.fingerprint(entry.path)
+                try:
+                    data, content = staging.capture_device(session, entry.path)
+                except StorageError as error:
+                    raise StorageError(
+                        f"Could not capture artwork file {entry.path}: {error}"
+                    ) from error
+                except OSError as error:
+                    raise OSError(
+                        f"Could not capture artwork file {entry.path}: {error}"
+                    ) from error
+                if content != FileContent.from_fingerprint(fingerprint):
+                    raise FilePreconditionError(
+                        f"Artwork file changed during capture: {entry.path}"
                     )
-                limit = min(
-                    plan.target.max_artwork_file_bytes,
-                    _MAX_CAPTURE_BYTES - captured_bytes,
-                )
-                snapshot = session.read_snapshot(entry.path, max_bytes=limit)
-                fingerprint = snapshot.fingerprint
                 dependency = FileDependency(
                     str(entry.path), fingerprint.size, fingerprint.sha256
                 )
-                sources.append(SourceFile(dependency, snapshot.data))
-                captured_bytes += len(snapshot.data)
+                sources.append(SourceFile(dependency, data))
+                if isinstance(data, StagedContent):
+                    artwork_issues.append(
+                        WriteIssue(
+                            "resources.artwork_disk_staging",
+                            source_text(
+                                'Artwork file "{path}" was prepared using temporary disk space because the memory budget was reached.',
+                                path=str(entry.path),
+                            ),
+                            severity=IssueSeverity.WARNING,
+                            phase="resources",
+                            artifact=str(entry.path),
+                        )
+                    )
             else:
                 fingerprint = session.fingerprint(entry.path)
                 dependency = FileDependency(
@@ -385,7 +410,7 @@ def capture(
         plan,
         checkpoint,
         temporary_files,
-        memory_budget=_MAX_CAPTURE_BYTES - captured_bytes,
+        staging=staging,
     )
     tagged = {item.track_id: item for item in lyrics}
     media = tuple(
@@ -495,11 +520,12 @@ def capture(
         files=tuple(sources),
         file_inventory=tuple(inventory) if plan.requires_artwork_inventory else None,
         pending_playback_sidecars=False if plan.requires_sidecar_inventory else None,
+        create_file_buffer=staging.new_buffer,
     )
     logger.debug(
         "Captured Library resources files=%d artwork_bytes=%d removals=%d",
         len(files),
-        captured_bytes,
+        sum(len(source.data) for source in sources if isinstance(source.data, bytes)),
         len(removals),
     )
     return CapturedLibraryResources(
@@ -508,7 +534,7 @@ def capture(
         tuple(removals),
         tuple(media_writes),
         presentation_writes,
-        lyric_issues,
+        (*artwork_issues, *lyric_issues),
     )
 
 
@@ -519,7 +545,7 @@ def _capture_lyrics(
     checkpoint: Callable[[], None],
     temporary_files: ExitStack,
     *,
-    memory_budget: int,
+    staging: ContentWorkspace,
 ) -> tuple[
     tuple[PreparedLyrics, ...], tuple[TransactionWrite, ...], tuple[WriteIssue, ...]
 ]:
@@ -536,7 +562,6 @@ def _capture_lyrics(
     lyrics: list[PreparedLyrics] = []
     writes: list[TransactionWrite] = []
     issues: list[WriteIssue] = []
-    captured_bytes = 0
     for identity in plan.required_lyrics:
         checkpoint()
         track = desired[identity]
@@ -549,7 +574,7 @@ def _capture_lyrics(
             )
         selected = incoming.get(identity)
         expected = None
-        remaining = memory_budget - captured_bytes
+        remaining = staging.remaining_bytes
         source_name = (
             selected.display_path or str(selected.source)
             if selected is not None
@@ -597,8 +622,12 @@ def _capture_lyrics(
                     payload = LocalHostFile.observe(output.snapshot).read_bytes(
                         max_bytes=remaining, checkpoint=checkpoint
                     )
-                    captured_bytes += len(payload)
-                    writes.append(TransactionWrite(path, payload, content, expected))
+                    retained = staging.store(payload)
+                    writes.append(
+                        TransactionWrite(
+                            path, _transaction_source(retained), content, expected
+                        )
+                    )
                 else:
                     writes.append(
                         TransactionWrite(path, output.snapshot, content, expected)
@@ -655,7 +684,12 @@ def transaction(
                 f"Prepared artwork is outside its allowed namespace: {path}"
             )
         writes.append(
-            TransactionWrite(path, file.data, _content(file.data), before.get(path))
+            TransactionWrite(
+                path,
+                _transaction_source(file.data),
+                _content(file.data),
+                before.get(path),
+            )
         )
     if prepared.artwork != original_artwork:
         if prepared.artwork is None:
@@ -727,8 +761,37 @@ def transaction(
     return plan
 
 
-def _content(data: bytes) -> FileContent:
-    return FileContent(len(data), hashlib.sha256(data).hexdigest())
+def preparation_issues(
+    captured: CapturedLibraryResources, prepared: PreparedLibrary | None
+) -> tuple[WriteIssue, ...]:
+    issues = list(captured.issues)
+    reported = {issue.artifact for issue in issues}
+    issues.extend(
+        WriteIssue(
+            "resources.artwork_disk_staging",
+            source_text(
+                'Artwork file "{path}" was prepared using temporary disk space because the memory budget was reached.',
+                path=file.relative_path,
+            ),
+            severity=IssueSeverity.WARNING,
+            artifact=file.relative_path,
+        )
+        for file in (() if prepared is None else prepared.artwork_files)
+        if isinstance(file.data, StagedContent) and file.relative_path not in reported
+    )
+    return tuple(issues)
+
+
+def _content(data: FileContentData) -> FileContent:
+    return FileContent(len(data), content_sha256(data))
+
+
+def _transaction_source(data: FileContentData) -> bytes | HostPath:
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, StagedContent):
+        return data.path
+    raise ValueError("Prepared content must belong to a Storage workspace.")
 
 
 def describe(plan: StorageTransaction) -> tuple[LibraryFileChange, ...]:

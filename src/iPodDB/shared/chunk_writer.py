@@ -3,16 +3,19 @@ from dataclasses import replace
 from typing import Protocol, cast
 
 from iPodDB.shared.binary_struct import (
+    parse_binary_struct,
     read_child_counts,
     replace_child_counts,
     write_binary_struct_into,
 )
 from iPodDB.shared.chunk import (
     ChunkHeader,
+    MhodChunkHeader,
     MhsdChunkHeader,
     ParsedChunk,
     RawPayload,
     UnknownChunkHeader,
+    UnknownMhodPayload,
 )
 from iPodDB.shared.errors import iPodDBWriteError
 from iPodDB.shared.types import (
@@ -148,10 +151,10 @@ def _validate_dataset(
         chunk.header.dataset_type
     )
     if isinstance(dataset_definition, MhsdDatasetDefinition):
-        if (
-            len(chunk.children) != 1
-            or chunk.children[0].generic_header.header_marker
+        if len(chunk.children) != 1 or (
+            chunk.children[0].generic_header.header_marker
             != dataset_definition.child_definition.marker
+            and not isinstance(chunk.children[0].header, UnknownChunkHeader)
         ):
             raise ValueError(
                 f"dataset type {chunk.header.dataset_type} expects exactly one "
@@ -236,11 +239,36 @@ def _serialize_chunk_body(
 
     header_value = chunk.header
     if definition is not None and definition.body_kind == "mhod":
-        body, header_value = serialize_mhod_body(
-            chunk,
-            parent_marker,
-            serialize_child,
-        )
+        if isinstance(chunk.payload, UnknownMhodPayload):
+            payload = chunk.payload
+            original_header = parse_binary_struct(
+                chunk.raw_header,
+                0,
+                definition.header_type,
+                limit=len(chunk.raw_header),
+            )
+            if (
+                not chunk.raw_header
+                or not isinstance(header_value, MhodChunkHeader)
+                or not isinstance(original_header, MhodChunkHeader)
+                or payload.mhod_type != header_value.mhod_type
+                or payload.mhod_type != original_header.mhod_type
+                or payload.parent_marker != parent_marker
+                or chunk.prefix is not None
+                or chunk.original_prefix is not None
+                or payload != chunk.original_payload
+                or payload.data != chunk.raw_body
+            ):
+                raise ValueError(
+                    "An unknown MHOD layout must retain its bytes, type, and parent context."
+                )
+            body = payload.data
+        else:
+            body, header_value = serialize_mhod_body(
+                chunk,
+                parent_marker,
+                serialize_child,
+            )
     elif definition is None or (
         definition.body_kind == "opaque"
         or (

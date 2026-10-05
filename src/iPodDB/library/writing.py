@@ -7,7 +7,10 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from iPodDB.library.artwork import ArtworkPixels, CoverFormat
+    from iPodDB.library.file_content import ContentBuffer, FileContentData
     from iPodDB.library.models import LibrarySnapshot
     from iPodDB.library.photos import Photo, PhotoThumbnailFormat
     from iPodDB.library.signing import Hash72Material
@@ -136,8 +139,10 @@ class FileDependency:
 
 @dataclass(frozen=True, slots=True)
 class SourceFile:
+    """Captured content whose backing storage remains owned by the caller."""
+
     dependency: FileDependency
-    data: bytes
+    data: FileContentData
 
 
 class MediaContent(StrEnum):
@@ -201,6 +206,13 @@ class PreparedLyrics:
 
 @dataclass(frozen=True, slots=True)
 class WriteResources:
+    """Evidence and optional caller-owned buffers for complete prepared outputs.
+
+    A buffer factory lets callers bound retained memory using private storage.
+    The caller keeps returned content readable until verification and publication
+    finish. Omitting the factory uses ordinary in-memory bytes.
+    """
+
     media: tuple[PreparedMedia, ...] = ()
     artwork: tuple[ArtworkAsset, ...] = ()
     files: tuple[SourceFile, ...] = ()
@@ -211,6 +223,9 @@ class WriteResources:
     pending_playback_sidecars: bool | None = None
     lyrics: tuple[PreparedLyrics, ...] = field(default=(), kw_only=True)
     photos: tuple[PreparedPhoto, ...] = field(default=(), kw_only=True)
+    create_file_buffer: Callable[[], ContentBuffer] | None = field(
+        default=None, kw_only=True, repr=False, compare=False
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,7 +264,7 @@ class LibraryWritePlan:
 @dataclass(frozen=True, slots=True)
 class PreparedFile:
     relative_path: str
-    data: bytes
+    data: FileContentData
 
 
 @dataclass(frozen=True, slots=True)

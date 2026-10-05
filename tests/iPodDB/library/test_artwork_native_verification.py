@@ -41,6 +41,7 @@ def _fault[**P](
         assert artwork is not None and files
         if mode == "prefix":
             first = files[0]
+            assert isinstance(first.data, bytes)
             files = (
                 replace(first, data=bytes([first.data[0] ^ 255]) + first.data[1:]),
                 *files[1:],

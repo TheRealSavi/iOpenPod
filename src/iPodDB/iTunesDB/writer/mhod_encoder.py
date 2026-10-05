@@ -219,14 +219,14 @@ def _encode_opaque(chunk: ParsedChunk[MhodHeader]) -> bytes:
 
 def _encode_smart_preferences(chunk: ParsedChunk[MhodHeader]) -> bytes:
     prefix = chunk.prefix_as(MhodSmartPrefsPrefix)
-    chunk.payload_as(MhodSmartPrefsPayload)
-    return _prefix_bytes(chunk, prefix)
+    payload = chunk.payload_as(MhodSmartPrefsPayload)
+    return _prefix_bytes(chunk, prefix) + payload.trailing_data
 
 
 def _encode_playlist_position(chunk: ParsedChunk[MhodHeader]) -> bytes:
     prefix = chunk.prefix_as(MhodPlaylistPositionPrefix)
-    chunk.payload_as(MhodPlaylistPositionPayload)
-    return _prefix_bytes(chunk, prefix)
+    payload = chunk.payload_as(MhodPlaylistPositionPayload)
+    return _prefix_bytes(chunk, prefix) + payload.trailing_data
 
 
 def _encode_library_index(chunk: ParsedChunk[MhodHeader]) -> bytes:
@@ -399,7 +399,7 @@ def _encode_chapter_data(chunk: ParsedChunk[MhodHeader]) -> bytes:
         other_atoms,
         hedr_atom,
     )
-    children = b"".join(child_atoms)
+    children = b"".join(child_atoms) + payload.sean_trailing_data
     sean: MhodChapterDataSeanHeader = replace(
         payload.sean,
         total_size=binary_struct_extent(MhodChapterDataSeanHeader) + len(children),
@@ -407,7 +407,7 @@ def _encode_chapter_data(chunk: ParsedChunk[MhodHeader]) -> bytes:
         child_count=len(child_atoms),
     )
     preamble = _CHAPTER_PREAMBLE.pack(*payload.preamble)
-    return preamble + _binary_struct_bytes(sean) + children
+    return preamble + _binary_struct_bytes(sean) + children + payload.trailing_data
 
 
 def _encode_smart_numeric_data(data: MhodSmartNumericRuleData) -> bytes:

@@ -29,6 +29,7 @@ class PlaybackDocument:
     data: bytes
     entries: tuple[PlaybackEntry, ...]
     format: str
+    trailing_data: bytes = b""
 
     def serialize(self) -> bytes:
         return self.data
@@ -41,6 +42,7 @@ class PositionalSidecar:
     entry_size: int
     byte_order: str
     rows: tuple[bytes, ...]
+    trailing_data: bytes = b""
 
     def serialize(self) -> bytes:
         return self.data

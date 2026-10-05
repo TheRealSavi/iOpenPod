@@ -4,6 +4,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
     MhodLibraryJumpTablePrefix,
 )
 from iPodDB.shared.binary_struct import binary_struct_extent, parse_binary_struct
+from iPodDB.shared.diagnostics import retain_unknown_bytes
 from iPodDB.shared.types import MhodPayloadParseContext
 
 _ENTRY_SIZE = binary_struct_extent(MhodLibraryJumpTableEntry)
@@ -32,5 +33,7 @@ def parse_library_jump_table_payload(
 
     return MhodLibraryJumpTablePayload(
         entries=entries,
-        trailing_data=bytes(context.data[entries_end : context.payload_end]),
+        trailing_data=retain_unknown_bytes(
+            context.data, entries_end, context.payload_end, "MHOD 53 jump-table suffix"
+        ),
     )

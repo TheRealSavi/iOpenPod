@@ -3,8 +3,10 @@ from iPodDB.iTunesDB.parser.parser_definition import PARSER_DEFINITION
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.shared.chunk import DatabaseDocument
 from iPodDB.shared.chunk_reader import parse_database
+from iPodDB.shared.diagnostics import log_unknown_data
 
 
+@log_unknown_data("iTunesDB")
 def parse_iTunesDB(data: bytes | bytearray) -> DatabaseDocument[MhbdHeader]:
     """Parse one logical iTunesDB through the shared database definition.
 

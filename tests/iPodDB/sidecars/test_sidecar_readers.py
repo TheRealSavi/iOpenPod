@@ -153,14 +153,12 @@ def test_malformed_plists_fail_as_format_errors(data: bytes) -> None:
 
 
 @pytest.mark.parametrize(
-    "mutation", ["truncate", "tail", "huge_count", "header", "width", "rating"]
+    "mutation", ["truncate", "huge_count", "header", "width", "rating"]
 )
 def test_counts_reject_invalid_framing_and_fields(mutation: str) -> None:
     data = bytearray(counts())
     if mutation == "truncate":
         del data[-1]
-    elif mutation == "tail":
-        data += b"x"
     else:
         offset, value = {
             "huge_count": (12, 0xFFFFFFFF),
@@ -174,8 +172,8 @@ def test_counts_reject_invalid_framing_and_fields(mutation: str) -> None:
 
 
 @pytest.mark.parametrize("word", [3, 4])
-def test_stats_rejects_truncated_or_trailing_records(word: int) -> None:
-    for data in (stats(word)[:-1], stats(word) + b"x", b"\xff" * 8):
+def test_stats_rejects_truncated_records(word: int) -> None:
+    for data in (stats(word)[:-1], b"\xff" * 8):
         with pytest.raises(ValueError):
             parse_itunes_stats(data)
 

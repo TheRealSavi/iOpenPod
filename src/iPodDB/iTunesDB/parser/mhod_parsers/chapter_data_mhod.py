@@ -11,6 +11,8 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
     MhodChapterDataSeanHeader,
 )
 from iPodDB.shared.binary_struct import parse_binary_struct
+from iPodDB.shared.diagnostics import retain_unknown_bytes
+from iPodDB.shared.errors import UnknownMhodLayoutError
 from iPodDB.shared.types import MhodPayloadParseContext
 
 _UINT32_LE = struct.Struct("<I")
@@ -94,7 +96,7 @@ def _parse_name_atom(
             errors="replace",
         ),
         header,
-        bytes(data[string_end:atom_end]),
+        retain_unknown_bytes(data, string_end, atom_end, "chapter name suffix"),
     )
 
 
@@ -158,7 +160,9 @@ def _parse_chap_atom(
             other_atoms.append(
                 MhodChapterDataRawAtom(
                     atom_type=atom_type,
-                    raw=bytes(data[child_offset:child_end]),
+                    raw=retain_unknown_bytes(
+                        data, child_offset, child_end, f"chapter atom {atom_type!r}"
+                    ),
                 )
             )
 
@@ -172,7 +176,9 @@ def _parse_chap_atom(
         name_header=name_header,
         name_atom_index=name_atom_index,
         name_trailing_data=name_trailing_data,
-        trailing_data=bytes(data[child_offset:atom_end]),
+        trailing_data=retain_unknown_bytes(
+            data, child_offset, atom_end, "chapter suffix"
+        ),
     )
 
 
@@ -220,7 +226,7 @@ def parse_chapter_data_payload(
     )
 
     if atom_type != b"sean":
-        raise ValueError(
+        raise UnknownMhodLayoutError(
             f"MHOD 17 at {context.chunk_offset:#x} "
             f"expected b'sean' at {sean_offset:#x}, "
             f"got {atom_type!r}"
@@ -289,31 +295,21 @@ def parse_chapter_data_payload(
             hedr_atom_index = child_index
             hedr_other_atom_index = len(other_atoms)
             hedr_raw = bytes(data[child_offset:child_end])
-            hedr_trailing_data = bytes(data[child_offset + 0x1C : child_end])
+            hedr_trailing_data = retain_unknown_bytes(
+                data, child_offset + 0x1C, child_end, "chapter hedr suffix"
+            )
 
         else:
             other_atoms.append(
                 MhodChapterDataRawAtom(
                     atom_type=child_type,
-                    raw=bytes(data[child_offset:child_end]),
+                    raw=retain_unknown_bytes(
+                        data, child_offset, child_end, f"chapter atom {child_type!r}"
+                    ),
                 )
             )
 
         child_offset = child_end
-
-    if child_offset != sean_end:
-        raise ValueError(
-            f"MHOD 17 sean atom at {sean_offset:#x} "
-            f"ended parsing at {child_offset:#x}, "
-            f"but declared end is {sean_end:#x}"
-        )
-
-    if sean_end != payload_end:
-        raise ValueError(
-            f"MHOD 17 at {context.chunk_offset:#x} "
-            f"has {payload_end - sean_end} trailing bytes "
-            "after its sean atom"
-        )
 
     return MhodChapterDataPayload(
         preamble=preamble,
@@ -324,4 +320,10 @@ def parse_chapter_data_payload(
         chapter_atom_indices=tuple(chapter_atom_indices),
         hedr_atom_index=hedr_atom_index,
         hedr_trailing_data=hedr_trailing_data,
+        sean_trailing_data=retain_unknown_bytes(
+            data, child_offset, sean_end, "chapter sean suffix"
+        ),
+        trailing_data=retain_unknown_bytes(
+            data, sean_end, payload_end, "MHOD 17 suffix"
+        ),
     )

@@ -41,5 +41,6 @@ This enables artwork changes and Track removal through application requests, wit
 Clear Artwork and Remove from Library actions in shared context menus. A cover file
 picker, incoming-media inspection/import/replacement, recovery UI, sidecar
 reconciliation, and unsupported database/signature variants remain unfinished.
-Artwork capture currently retains at most 512 MiB of eligible thumbnail prefixes;
-large-file streaming at the iPodDB resource boundary remains further work.
+Artwork capture originally rejected eligible thumbnail prefixes above 512 MiB.
+[ADR-0117](0117-spill-prepared-library-content-to-host-storage.md) replaces that
+restriction with private Host storage for both captured and generated content.

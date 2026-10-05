@@ -78,14 +78,18 @@ from iPodDB.library import (
     PreparedPhoto,
     Track,
     WriteIssue,
+    content_chunks,
     edit_track_metadata,
     playlist_entries,
     prepared_audio,
     prepared_video,
 )
 from storage import DeviceEntryKind, DevicePath, StorageError
+from storage.content_workspace import StagedContent, content_workspace
 from storage.host_input import LocalHostFile
 from storage.media_processing import available_compute_threads
+
+_PHOTO_MEMORY_BUDGET = 512 * 1024 * 1024
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
@@ -409,7 +413,7 @@ class SyncExecutor:
                     issues.extend(cover_issues)
                     podcast_changes += len(podcast_artwork_repairs)
                 photos, photo_issues = self._prepare_photos(
-                    request, progress, checkpoint
+                    request, progress, checkpoint, resources
                 )
                 issues.extend(photo_issues)
                 stable: list[_PreparedTrack] = []
@@ -1306,6 +1310,7 @@ class SyncExecutor:
         request: SyncExecutionRequest,
         progress: Callable[[WriteProgress], None],
         checkpoint: Callable[[], None],
+        resources: ExitStack,
     ) -> tuple[tuple[_PreparedPhoto, ...], tuple[WriteIssue, ...]]:
         changes = tuple(
             item
@@ -1341,7 +1346,9 @@ class SyncExecutor:
         )
         prepared: list[_PreparedPhoto] = []
         issues: list[WriteIssue] = []
-        retained_bytes = 0
+        staging = resources.enter_context(
+            content_workspace(memory_budget=_PHOTO_MEMORY_BUDGET, checkpoint=checkpoint)
+        )
         progress(
             WriteProgress(
                 "sync.photos",
@@ -1354,8 +1361,7 @@ class SyncExecutor:
                 unit="Photos",
             )
         )
-        # Each photo has an independently bounded decoded image. Retaining at most
-        # 512 MiB of verified output keeps large Photo libraries resumable in batches.
+        # Decode one bounded image at a time; aggregate output can overflow to disk.
         for completed, item in enumerate(changes, 1):
             checkpoint()
             source = sources[host_path_identity(item.host_path or "")]
@@ -1388,17 +1394,6 @@ class SyncExecutor:
                         max_bytes=MAX_PHOTO_SOURCE_BYTES, checkpoint=checkpoint
                     )
                     digest = hashlib.sha256(data).hexdigest()
-                if (
-                    retained_bytes
-                    + len(data)
-                    + sum(fmt.row_bytes * fmt.height for fmt in formats)
-                    > 512 * 1024 * 1024
-                ):
-                    raise ValueError(
-                        source_text(
-                            "The Photo preparation batch reached its 512 MiB limit. Sync the remaining Photos in another batch."
-                        )
-                    )
                 if digest != source.content_sha256:
                     raise ValueError(
                         source_text(
@@ -1425,7 +1420,27 @@ class SyncExecutor:
                 )
                 # Check the retained album shape before this item can enter the batch.
                 photo_library_with_asset(library, asset)
-                retained_bytes += sum(len(file.data) for file in asset.files)
+                asset = replace(
+                    asset,
+                    files=tuple(
+                        replace(
+                            file, data=staging.store_chunks(content_chunks(file.data))
+                        )
+                        for file in asset.files
+                    ),
+                )
+                if any(isinstance(file.data, StagedContent) for file in asset.files):
+                    issues.append(
+                        WriteIssue(
+                            "sync.photo_disk_staging",
+                            source_text(
+                                'Photo "{path}" was prepared using temporary disk space because the memory budget was reached.',
+                                path=str(source.path),
+                            ),
+                            severity=IssueSeverity.WARNING,
+                            artifact=str(source.path),
+                        )
+                    )
                 prepared.append(
                     _PreparedPhoto(
                         item,

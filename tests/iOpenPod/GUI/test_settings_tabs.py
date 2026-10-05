@@ -1,11 +1,14 @@
 """Category navigation keeps Settings reachable without one long scrolling page."""
 
+import logging
 from collections.abc import Iterator
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtCore import QEvent, Qt, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QPalette
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QLabel, QScrollArea, QTabWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
@@ -26,6 +29,7 @@ from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.presentation.theme.tokens import tokens_for
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
+from iOpenPod.GUI.widgets.themed_buttons import ActionButton
 
 
 @pytest.fixture
@@ -33,6 +37,40 @@ def context() -> Iterator[AppContext]:
     context = build_context()
     yield context
     context.shutdown()
+
+
+def test_about_opens_active_log_folder(
+    context: AppContext, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log_path = tmp_path / "current" / "iopenpod.log"
+    log_path.parent.mkdir()
+    handler = RotatingFileHandler(log_path)
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
+    opened: list[str] = []
+
+    def open_url(url: QUrl) -> bool:
+        opened.append(url.toLocalFile())
+        return True
+
+    monkeypatch.setattr(QDesktopServices, "openUrl", open_url)
+    try:
+        page = SettingsPage(
+            context.settings, context.theme_manager, context.i18n_manager
+        )
+        try:
+            about = page.findChild(QScrollArea, "aboutSettingsScroll")
+            assert about is not None
+            button = about.findChild(ActionButton, "openLogFolder")
+            assert button is not None and button.isEnabled()
+            button.click()
+            assert len(opened) == 1
+            assert Path(opened[0]) == log_path.parent
+        finally:
+            page.close()
+    finally:
+        root_logger.removeHandler(handler)
+        handler.close()
 
 
 def test_appearance_lists_and_applies_every_theme_without_retranslation_reset(
