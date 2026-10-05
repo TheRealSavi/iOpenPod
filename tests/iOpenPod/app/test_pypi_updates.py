@@ -14,6 +14,13 @@ from packaging.version import Version
 from tests.iOpenPod.app.test_python_installation import (
     python_installation_fixture as python_installation_fixture,
 )
+from tests.iOpenPod.app.version_fixtures import (
+    CURRENT_VERSION,
+    NEXT_MINOR_VERSION,
+    OLDER_VERSION,
+    PREVIOUS_VERSION,
+    patch_version,
+)
 
 from iOpenPod.app.updates import pypi
 from iOpenPod.app.updates.backend import UpdateOutcome, UpdateResult
@@ -22,7 +29,7 @@ from iOpenPod.app.updates.python_installation import PythonInstallation
 from iOpenPod.app.updates.transport import UpdateTransport, validate_url
 
 
-def file(version: str = "2.0.5", /, **overrides: object) -> dict[str, object]:
+def file(version: str = CURRENT_VERSION, /, **overrides: object) -> dict[str, object]:
     filename = f"iopenpod-{version}-py3-none-any.whl"
     return {
         "filename": filename,
@@ -52,16 +59,16 @@ def selected(data: bytes) -> pypi.PythonRelease:
 def test_selects_newest_compatible_stable_non_yanked_wheel() -> None:
     result = selected(
         index(
-            file("2.0.4"),
-            file("2.0.5"),
-            file("2.0.6", yanked=""),
-            file("2.0.7", yanked=True),
-            file("2.0.8rc1"),
-            file("2.1.0", **{"requires-python": ">=3.13"}),
+            file(PREVIOUS_VERSION),
+            file(CURRENT_VERSION),
+            file(patch_version(1), yanked=""),
+            file(patch_version(2), yanked=True),
+            file(f"{patch_version(3)}rc1"),
+            file(NEXT_MINOR_VERSION, **{"requires-python": ">=3.13"}),
         )
     )
-    assert result.latest_version == Version("2.1.0")
-    assert result.wheel is not None and result.wheel.version == "2.0.5"
+    assert result.latest_version == Version(NEXT_MINOR_VERSION)
+    assert result.wheel is not None and result.wheel.version == CURRENT_VERSION
 
 
 @pytest.mark.parametrize(
@@ -71,12 +78,12 @@ def test_selects_newest_compatible_stable_non_yanked_wheel() -> None:
         {"size": 0},
         {"size": True},
         {
-            "url": "http://files.pythonhosted.org/packages/iopenpod-2.0.5-py3-none-any.whl"
+            "url": f"http://files.pythonhosted.org/packages/iopenpod-{CURRENT_VERSION}-py3-none-any.whl"
         },
-        {"url": "https://evil.test/iopenpod-2.0.5-py3-none-any.whl"},
+        {"url": f"https://evil.test/iopenpod-{CURRENT_VERSION}-py3-none-any.whl"},
         {"url": "https://files.pythonhosted.org/not-the-wheel.whl"},
         {
-            "url": "https://user:password@files.pythonhosted.org/iopenpod-2.0.5-py3-none-any.whl"
+            "url": f"https://user:password@files.pythonhosted.org/iopenpod-{CURRENT_VERSION}-py3-none-any.whl"
         },
         {"requires-python": "not a specifier"},
         {"yanked": None},
@@ -90,8 +97,8 @@ def test_invalid_release_metadata_never_becomes_installable(
 
 
 def test_no_sdist_execution_or_downgrade_selection() -> None:
-    result = selected(index(file(filename="iopenpod-2.0.5.tar.gz")))
-    assert result.latest_version == Version("2.0.5") and result.wheel is None
+    result = selected(index(file(filename=f"iopenpod-{CURRENT_VERSION}.tar.gz")))
+    assert result.latest_version == Version(CURRENT_VERSION) and result.wheel is None
     with pytest.raises(ValueError, match="non-yanked"):
         selected(index(file(yanked=True)))
 
@@ -181,7 +188,7 @@ def test_check_download_and_install_are_separate_requests(
         backend.close()
 
 
-@pytest.mark.parametrize("version", ["2.0.3", "2.0.4"])
+@pytest.mark.parametrize("version", [OLDER_VERSION, PREVIOUS_VERSION])
 def test_current_or_older_never_offers_an_install(
     installed_python: PythonInstallation, version: str
 ) -> None:

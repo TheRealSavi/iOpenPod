@@ -493,7 +493,7 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
                 raise subprocess.CalledProcessError(
                     1,
                     command,
-                    stderr='Finder got an error: Can\u2019t get disk "iOpenPod 2.0.4". (-1728)',
+                    stderr=f'Finder got an error: Can\u2019t get disk "iOpenPod {package_app.project_version()}". (-1728)',
                 )
             Path(command[2], ".DS_Store").write_bytes(b"Finder layout")
         elif command[:2] == ["hdiutil", "detach"]:

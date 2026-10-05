@@ -66,7 +66,7 @@ normalization uses discriminator 4.
 
 ## Album ordering without device postprocessing
 
-The v2.0.4 SQLite generator assigned every album `name_order = sort_order = 100`
+The previous v2.0.4 SQLite generator assigned every album `name_order = sort_order = 100`
 and omitted `item.album_order`. Nano 6 and 7 profiles allow generation without
 device postprocess commands, so nothing subsequently supplied these browse ranks.
 A two-album generation with lower persistent ID for `Zimbo Trio` than `Blink 182`

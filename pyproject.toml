@@ -18,7 +18,7 @@ packages = ["src/iOpenPod", "src/device_registry", "src/iPodDB", "src/storage"]
 
 [project]
 name = "iOpenPod"
-version = "2.0.4"
+version = "2.0.5"
 description = "iPod sync tool. Manage your iPod media library without iTunes."
 authors = [{ name = "John Gibbons", email = "johngibbons167@gmail.com" }]
 readme = "README.md"
@@ -114,9 +114,7 @@ dev = [
     "types-tqdm>=4.70.0.20260805,<5",
 ]
 packaging = ["hatchling>=1.27,<2", "pyinstaller>=6.16,<7"]
-packaging-checks = [
-    "pytest>=9.1.1,<10",
-]
+packaging-checks = ["pytest>=9.1.1,<10"]
 
 [tool.iopenpod.packaging]
 macos-minimum-version = "12.3"

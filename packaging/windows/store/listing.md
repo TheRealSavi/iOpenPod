@@ -35,36 +35,46 @@ Browse, organize, and sync your iPod library with a free, open-source desktop ap
 
 ## Product features
 
-- Browse albums, tracks, artwork, and playlists on a compatible iPod.
-- Edit metadata, ratings, playlists, and Smart Playlists.
-- Review selected additions, updates, and removals before Sync.
-- Match recordings using locally calculated acoustic fingerprints.
-- Browse and export supported photos and manage Photo Albums.
-- Create and manage local Backup Snapshots.
-- Play supported tracks with Windows media controls.
-- Explore music-reactive Synesthesia visuals.
-- Search podcast feeds and manage subscriptions on your iPod.
-- Choose light, dark, or system appearance.
-- All features are free; donations are optional.
+* Browse albums, tracks, artwork, and playlists on a compatible iPod.
+
+* Edit metadata, ratings, playlists, and Smart Playlists.
+
+* Review selected additions, updates, and removals before Sync.
+
+* Match recordings using locally calculated acoustic fingerprints.
+
+* Browse and export supported photos and manage Photo Albums.
+
+* Create and manage local Backup Snapshots.
+
+* Play supported tracks with Windows media controls.
+
+* Explore music-reactive Synesthesia visuals.
+
+* Search podcast feeds and manage subscriptions on your iPod.
+
+* Choose light, dark, or system appearance.
+
+* All features are free; donations are optional.
 
 ## Additional fields
 
-| Field | Value |
-| --- | --- |
-| Product name | iOpenPod |
-| Developed by | John Gibbons |
-| Publisher display name | TheRealSavi |
-| Primary category | Music |
-| Secondary category | Utilities + tools |
-| Subcategory | None |
-| Price | Free |
-| Trial | None |
-| Device family | PC / Windows.Desktop only |
-| Architecture | x64 |
-| Minimum OS | Windows 10 build 19041 (version 2004) |
-| Supported listing/package language | English (United States), en-US |
-| Release notes for first submission | Leave blank |
-| Publish timing | Manual hold until the owner chooses Publish now |
+| Field                              | Value                                           |
+| ---------------------------------- | ----------------------------------------------- |
+| Product name                       | iOpenPod                                        |
+| Developed by                       | John Gibbons                                    |
+| Publisher display name             | TheRealSavi                                     |
+| Primary category                   | Music                                           |
+| Secondary category                 | Utilities + tools                               |
+| Subcategory                        | None                                            |
+| Price                              | Free                                            |
+| Trial                              | None                                            |
+| Device family                      | PC / Windows.Desktop only                       |
+| Architecture                       | x64                                             |
+| Minimum OS                         | Windows 10 build 19041 (version 2004)           |
+| Supported listing/package language | English (United States), en-US                  |
+| Release notes for first submission | Leave blank                                     |
+| Publish timing                     | Manual hold until the owner chooses Publish now |
 
 Search terms: `music library`, `media manager`, `playlist editor`, `music sync`,
 `audio player`, `photo backup`, `podcast organizer`. These contain 14 words across
@@ -78,12 +88,17 @@ Copyright 2025-2026 John Gibbons. iPod and iTunes are trademarks of Apple Inc. i
 
 Additional minimum requirements, one field per line:
 
-- Compatible iPod mounted as a readable and writable Windows drive for device management.
-- FFmpeg and FFprobe installed separately and available on PATH for probing and conversion.
-- Chromaprint fpcalc installed separately and available on PATH for fingerprint matching during Sync.
-- Internet access for podcast search, feed refresh, and remote artwork.
-- Free space for selected media, temporary conversion files, and any Backup Snapshots.
-- Graphics hardware and drivers supporting Direct3D 11 for Synesthesia visuals.
+* Compatible iPod mounted as a readable and writable Windows drive for device management.
+
+* FFmpeg and FFprobe installed separately and available on PATH for probing and conversion.
+
+* Chromaprint fpcalc installed separately and available on PATH for fingerprint matching during Sync.
+
+* Internet access for podcast search, feed refresh, and remote artwork.
+
+* Free space for selected media, temporary conversion files, and any Backup Snapshots.
+
+* Graphics hardware and drivers supporting Direct3D 11 for Synesthesia visuals.
 
 Do not invent tested CPU/RAM/disk thresholds. Final package size comes from the
 uploaded package. Desktop keyboard and mouse operation are the supported input
@@ -119,34 +134,40 @@ insufficient.
 
 ## Product declarations and age-rating evidence
 
-| Declaration | Prepared answer | Evidence or qualification |
-| --- | --- | --- |
-| Purchases outside Microsoft commerce | Yes | Optional external Ko-fi donation flow; no feature unlocks. Explain in certification notes. |
-| Tested to meet accessibility guidelines | No | Do not claim the full Store accessibility standard without end-to-end assistive-technology testing. |
-| Install on alternate drives | Yes | No fixed installation path; validate the final packaged install. |
-| Include app data in automatic OneDrive backups | No | Prepared privacy-preserving submission choice; users may independently back up files. |
-| Game recording/broadcast | No / not applicable | Non-game application. |
-| Pen and ink | No | No ink workflow. |
-| Generative AI | No | Procedural graphics and signal analysis; no content-generating AI service/model in this Windows baseline. |
-| Account/login required | No | No iOpenPod account; public podcast lookup needs none. |
+| Declaration                                    | Prepared answer     | Evidence or qualification                                                                                 |
+| ---------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------- |
+| Purchases outside Microsoft commerce           | Yes                 | Optional external Ko-fi donation flow; no feature unlocks. Explain in certification notes.                |
+| Tested to meet accessibility guidelines        | No                  | Do not claim the full Store accessibility standard without end-to-end assistive-technology testing.       |
+| Install on alternate drives                    | Yes                 | No fixed installation path; validate the final packaged install.                                          |
+| Include app data in automatic OneDrive backups | No                  | Prepared privacy-preserving submission choice; users may independently back up files.                     |
+| Game recording/broadcast                       | No / not applicable | Non-game application.                                                                                     |
+| Pen and ink                                    | No                  | No ink workflow.                                                                                          |
+| Generative AI                                  | No                  | Procedural graphics and signal analysis; no content-generating AI service/model in this Windows baseline. |
+| Account/login required                         | No                  | No iOpenPod account; public podcast lookup needs none.                                                    |
 
 Complete the actual IARC questionnaire in Partner Center; the resulting regional
 ratings must come from IARC, not an invented value in this repository. Answer
 against the released build and each question's help text. Prepared factual basis:
 
-- Non-game music/media application, not a product directed at children.
-- No app-authored violence, sexual content, gambling, drugs, strong language, or
+* Non-game music/media application, not a product directed at children.
+
+* No app-authored violence, sexual content, gambling, drugs, strong language, or
   fear content in the shipped interface or prepared listing media.
-- Users can access their own media and an uncurated public podcast directory.
+
+* Users can access their own media and an uncurated public podcast directory.
   Podcasts, descriptions, and covers may contain mature content. Disclose this
   wherever the questionnaire asks about online/catalog/user-selected content;
   do not answer that all accessible content is child-safe.
-- No chat, user-to-user messaging, user publishing, or social-network sharing.
-- No location sharing, contests, prizes, or real/simulated gambling.
-- No paid features, subscriptions, loot boxes, or purchases of digital goods.
+
+* No chat, user-to-user messaging, user publishing, or social-network sharing.
+
+* No location sharing, contests, prizes, or real/simulated gambling.
+
+* No paid features, subscriptions, loot boxes, or purchases of digital goods.
   The optional external donation is disclosed separately; interpret any payment
   question according to its actual wording rather than treating this as a game.
-- External links open the browser, but the app itself is not a general browser.
+
+* External links open the browser, but the app itself is not a general browser.
 
 ## Screenshots
 
@@ -181,9 +202,10 @@ IDs. See the [requirements research](../../../docs/research/windows-store-requir
 ## Assemble the offline submission kit
 
 After the final MSIX and source audit are ready, run:
+(Insert version number at `VERSION` IE `2.0.4`)
 
 ```powershell
-uv run python -m scripts.prepare_store_kit --msix dist/iOpenPod-2.0.4-Windows-x64.msix --output dist/windows-store-kit
+uv run python -m scripts.prepare_store_kit --msix dist/iOpenPod-VERSION-Windows-x64.msix --output dist/windows-store-kit
 ```
 
 The output directory must be new. The command verifies locally cached upstream
@@ -202,7 +224,7 @@ writer fixtures remain. Existing files, logs, caches, private plans, and signing
 credentials outside that allowlist are excluded.
 
 The kit's public-page staging directory is `site/iopenpod-2`. Its source links
-target the public `TheRealSavi/iOpenPod` release tag `iopenpod-2.0.4`, with assets
+target the public `TheRealSavi/iOpenPod` release tag `iopenpod-VERSION`, with assets
 named `source.tar.gz` and `thirdparty.tar.gz`. Keep the release record's hosting,
 native provenance, installation, WACK, and account/certification gates pending
 until actual evidence is supplied. Preparing a kit does not close those gates.

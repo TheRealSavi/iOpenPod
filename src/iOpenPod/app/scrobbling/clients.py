@@ -13,6 +13,8 @@ from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_ope
 
 import certifi
 
+from iOpenPod.app.core.version import get_version
+
 from ._json import is_array, is_object
 from .models import (
     Credentials,
@@ -71,7 +73,7 @@ class HttpTransport:
             url,
             data=data,
             headers={
-                "User-Agent": "iOpenPod/2.0 Scrobbler",
+                "User-Agent": f"iOpenPod/{get_version()} Scrobbler",
                 **headers,
             },
         )
@@ -319,7 +321,7 @@ class ListenBrainzClient:
                     "additional_info": {
                         "duration": entry.duration,
                         "submission_client": "iOpenPod",
-                        "submission_client_version": "2.0.4",
+                        "submission_client_version": get_version(),
                     },
                 },
             }

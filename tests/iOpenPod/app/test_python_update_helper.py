@@ -18,6 +18,7 @@ import pytest
 from tests.iOpenPod.app.test_python_installation import (
     python_installation_fixture as python_installation_fixture,
 )
+from tests.iOpenPod.app.version_fixtures import CURRENT_VERSION, PREVIOUS_VERSION
 
 from iOpenPod.app.updates import python_helper as helper
 from iOpenPod.app.updates.processes import ParentProcess
@@ -41,9 +42,9 @@ def operation(
     directory = tmp_path / "python-update-test"
     directory.mkdir()
     wheel = PythonWheel(
-        "2.0.5",
-        "iopenpod-2.0.5-py3-none-any.whl",
-        "https://files.pythonhosted.org/packages/iopenpod-2.0.5-py3-none-any.whl",
+        CURRENT_VERSION,
+        f"iopenpod-{CURRENT_VERSION}-py3-none-any.whl",
+        f"https://files.pythonhosted.org/packages/iopenpod-{CURRENT_VERSION}-py3-none-any.whl",
         5,
         hashlib.sha256(b"wheel").hexdigest(),
     )
@@ -142,7 +143,7 @@ def test_installed_version_and_smoke_check_follow_package_manager_success(
     helper.perform_update(installed_python, wheel, ("/tools/uv",), directory)
     assert len(calls) == 3
     assert calls[0][-1].endswith("#sha256=" + wheel.sha256)
-    assert calls[1][-1] == "2.0.5"
+    assert calls[1][-1] == CURRENT_VERSION
     assert calls[2][-3:] == ["-m", "iOpenPod", "--smoke-test"]
     with HostInstallationLease(installed_python.packages):
         pass
@@ -290,7 +291,7 @@ def test_real_package_replacement_in_a_disposable_environment(
     executable = prefix / (
         "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
     )
-    old = _wheel(tmp_path, "2.0.4")
+    old = _wheel(tmp_path, PREVIOUS_VERSION)
     if tool:
         environment = update_environment()
         environment.update(
@@ -342,9 +343,9 @@ def test_real_package_replacement_in_a_disposable_environment(
             text=True,
         ).strip()
     )
-    metadata = packages / "iopenpod-2.0.4.dist-info/METADATA"
+    metadata = packages / f"iopenpod-{PREVIOUS_VERSION}.dist-info/METADATA"
     installation = PythonInstallation(
-        "2.0.4",
+        PREVIOUS_VERSION,
         executable,
         prefix,
         packages,
@@ -356,9 +357,9 @@ def test_real_package_replacement_in_a_disposable_environment(
     )
     directory = tmp_path / "python-update-real"
     directory.mkdir()
-    new = _wheel(directory, "2.0.5")
+    new = _wheel(directory, CURRENT_VERSION)
     wheel = PythonWheel(
-        "2.0.5",
+        CURRENT_VERSION,
         new.name,
         "https://files.pythonhosted.org/unused",
         new.stat().st_size,
@@ -384,7 +385,7 @@ def test_real_package_replacement_in_a_disposable_environment(
 
     monkeypatch.setattr(helper, "install_command", offline_command)
     helper.perform_update(installation, wheel, (uv,), directory)
-    assert (packages / "iopenpod-2.0.5.dist-info/METADATA").is_file()
+    assert (packages / f"iopenpod-{CURRENT_VERSION}.dist-info/METADATA").is_file()
     assert not metadata.exists()
     assert (directory / "installer.log").is_file()
     if tool:

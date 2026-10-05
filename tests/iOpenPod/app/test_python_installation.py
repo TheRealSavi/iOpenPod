@@ -16,6 +16,7 @@ from importlib.metadata import PathDistribution
 from pathlib import Path
 
 import pytest
+from tests.iOpenPod.app.version_fixtures import PREVIOUS_VERSION
 
 from iOpenPod.app.updates import bootstrap, platform
 from iOpenPod.app.updates import python_installation as python
@@ -30,18 +31,18 @@ def python_installation_fixture(
 ) -> python.PythonInstallation:
     prefix = tmp_path / "venv"
     packages = prefix / "Lib/site-packages"
-    record = packages / "iopenpod-2.0.4.dist-info"
+    record = packages / f"iopenpod-{PREVIOUS_VERSION}.dist-info"
     record.mkdir(parents=True)
     module = packages / "iOpenPod/app/updates/python_installation.py"
     module.parent.mkdir(parents=True)
     module.write_text("# installed module\n")
     (record / "METADATA").write_text(
-        "Metadata-Version: 2.4\nName: iOpenPod\nVersion: 2.0.4\n"
+        f"Metadata-Version: 2.4\nName: iOpenPod\nVersion: {PREVIOUS_VERSION}\n"
     )
     (record / "INSTALLER").write_text("uv\n")
     (record / "RECORD").write_text(
         "iOpenPod/app/updates/python_installation.py,,\n"
-        "iopenpod-2.0.4.dist-info/METADATA,,\n"
+        f"iopenpod-{PREVIOUS_VERSION}.dist-info/METADATA,,\n"
     )
     interpreter = prefix / "python.exe"
     interpreter.write_bytes(b"interpreter")
@@ -71,7 +72,7 @@ def python_installation_fixture(
 def test_package_detection_uses_record_and_exact_running_module(
     installed_python: python.PythonInstallation,
 ) -> None:
-    assert installed_python.version == "2.0.4"
+    assert installed_python.version == PREVIOUS_VERSION
     assert (
         installed_python.metadata_sha256
         == hashlib.sha256(installed_python.metadata.read_bytes()).hexdigest()
@@ -132,7 +133,7 @@ def test_verified_official_direct_wheel_remains_updatable(
     (installed_python.metadata.parent / "direct_url.json").write_text(
         json.dumps(
             {
-                "url": "https://files.pythonhosted.org/packages/iopenpod-2.0.4-py3-none-any.whl",
+                "url": f"https://files.pythonhosted.org/packages/iopenpod-{PREVIOUS_VERSION}-py3-none-any.whl",
                 "archive_info": {"hashes": {"sha256": "a" * 64}},
             }
         )
@@ -200,7 +201,9 @@ def test_standard_uv_tool_scope_preserves_its_directories(
     assert digest == hashlib.sha256(receipt.read_bytes()).hexdigest()
     receipt.write_text(
         receipt.read_text().replace(
-            'name = "iopenpod"', 'name = "iopenpod", specifier = "==2.0.4"', 1
+            'name = "iopenpod"',
+            f'name = "iopenpod", specifier = "=={PREVIOUS_VERSION}"',
+            1,
         )
     )
     with pytest.raises(ValueError, match="Customized"):

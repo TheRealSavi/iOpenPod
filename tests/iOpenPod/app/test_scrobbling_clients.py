@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from iOpenPod.app.core.version import get_version
 from iOpenPod.app.scrobbling.clients import (
     LASTFM_URL,
     LISTENBRAINZ_URL,
@@ -305,6 +306,12 @@ def test_listenbrainz_header_auth_and_import_contract() -> None:
     assert (
         payload["payload"][0]["track_metadata"]["additional_info"]["submission_client"]
         == "iOpenPod"
+    )
+    assert (
+        payload["payload"][0]["track_metadata"]["additional_info"][
+            "submission_client_version"
+        ]
+        == get_version()
     )
 
 
