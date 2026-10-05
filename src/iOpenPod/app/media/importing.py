@@ -112,11 +112,9 @@ class MusicImporter:
                 checkpoint=checkpoint
             ) as stream:
                 parsed = cast("_MutagenReader", mutagen).File(stream)
-                cover = (
-                    _cover(parsed)
-                    if profile.capabilities.artwork.supports_cover_art
-                    else None
-                )
+                # iOpenPod stores a private display representation even when the
+                # firmware has no native cover-art capability.
+                cover = _cover(parsed)
             checkpoint()
         audio = observed.audio_streams[0]
         duration = audio.duration_seconds or observed.duration_seconds

@@ -972,10 +972,13 @@ package pattern.
 
 Known Device Profiles supply the first ArtworkDB's creation policy through the
 Application Layer's write target. iPodDB creates the standard datasets and declared
-cover representations without existing artwork files, while retained documents
-keep their original variants and Unknown Data. Older Track layouts use reverse
-ArtworkDB links. Persistence still uses the reviewed Storage Transaction. See
-[ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md).
+native or application-only cover representations without existing artwork files,
+while retained documents keep their original variants and Unknown Data. Profiles
+without native cover support use iOpenPod's fixed `F1060` representation only for
+application browsing; Device Registry capability claims remain unchanged. Older
+Track layouts use reverse ArtworkDB links. Persistence still uses the reviewed
+Storage Transaction. See [ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md)
+and [ADR-0118](adr/0118-write-application-artwork-for-non-cover-devices.md).
 
 During cover preparation, iPodDB automatically reconciles conflicting MHIF image
 sizes only when the target's fixed-size encoding, every retained MHNI representation

@@ -116,6 +116,10 @@ bypass validation: preparation derives them again from the source-bound draft.
 Artwork layout comes from the identified Device Profile; file allocation needs a
 captured inventory, which may be empty for the first cover;
 the Prepared Library contains their exact resulting bytes and identities.
+Profiles without native cover layouts use iOpenPod's application-only `F1060`
+320x320 RGB565 representation for Host Sync, imports, and browsing. This does
+not change the Device Registry's native capability claim or promise firmware
+album-art support. See [ADR-0118](adr/0118-write-application-artwork-for-non-cover-devices.md).
 
 The field policy in `iPodDB/library/_field_policy.py` owns semantic editability and
 inverse-field bindings. Missing or duplicated model-field policies block analysis.
@@ -460,11 +464,13 @@ requires a consistent image size per format; variable JPEG sizes cannot share on
 MHIF entry. All catalog cover formats have fixed-size rasters.
 
 For a first ArtworkDB, the application supplies the known Device Profile's creation
-value through `WriteTarget.artwork_root_value`. No existing artwork or additional
+value through `WriteTarget.artwork_root_value`; application-only `F1060` output
+uses root policy `2` when the profile has no native cover layout. No existing artwork or additional
 format files are needed. iPodDB starts image IDs at 100, creates all three datasets,
 and includes every cover layout and the evidenced empty type-6 auxiliary body.
 Retained roots keep their original value. See
-[ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md).
+[ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md) and
+[ADR-0118](adr/0118-write-application-artwork-for-non-cover-devices).
 
 Structural Track edits require captured playback-sidecar context.
 `pending_playback_sidecars=False` means the caller established their absence or

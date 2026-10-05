@@ -13,6 +13,7 @@ from threading import Event, Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from iOpenPod.app.artwork_policy import application_artwork_formats
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaFileKind
@@ -2202,9 +2203,7 @@ def _capture_artwork(
     tracks: list[_PreparedTrack],
     checkpoint: Callable[[], None],
 ) -> tuple[WriteIssue, ...]:
-    formats = request.source.profile.capabilities.artwork.cover_formats
-    if not formats:
-        return ()
+    formats = application_artwork_formats(request.source.profile)
     target_px = max(max(item.width, item.height) for item in formats)
     sources = {item.artwork_id: item for item in request.host.artwork_sources}
     by_path = {
@@ -2257,9 +2256,7 @@ def _capture_podcast_artwork(
 ) -> tuple[
     list[_PreparedPodcast], tuple[_PodcastArtworkRepair, ...], tuple[WriteIssue, ...]
 ]:
-    formats = request.source.profile.capabilities.artwork.cover_formats
-    if not formats:
-        return prepared, (), ()
+    formats = application_artwork_formats(request.source.profile)
     incoming = {podcast.subscription_id for podcast in prepared}
     shows = {
         addition.subscription.subscription_id: addition.subscription

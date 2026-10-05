@@ -153,6 +153,19 @@ def test_song_artwork_and_databases_are_published_and_recoverable(
         device.coordinator.close()
 
 
+def test_embedded_artwork_is_retained_for_a_non_cover_device(tmp_path: Path) -> None:
+    device = bare_device(tmp_path, model_number="M9802")
+    try:
+        song = MusicImporter().inspect(
+            song_file(tmp_path), device.active.profile, checkpoint=lambda: None
+        )
+
+        assert song.artwork is not None
+        assert not device.active.profile.capabilities.artwork.supports_cover_art
+    finally:
+        device.coordinator.close()
+
+
 @pytest.mark.parametrize("change", ["source", "destination"])
 def test_import_refuses_changed_inputs_before_database_publication(
     tmp_path: Path, change: str

@@ -248,8 +248,11 @@ memory-bounded artwork pipeline. Missing or malformed artwork falls back to the
 deterministic placeholder without making an otherwise valid iPod Library unusable.
 Known cover-capable Device Profiles also provide the creation policy for a first
 ArtworkDB, so an empty Artwork directory needs no template database or additional
-format files. Preparation writes every declared cover layout, preserves retained
-variants, and supports older reverse Track links. See ADR-0033.
+format files. Profiles without native cover support receive an iOpenPod-only
+`F1060` representation for browsing; this does not claim firmware album-art
+support. Preparation writes every native or application-only layout, preserves
+retained variants, and supports older reverse Track links. See ADR-0033 and
+ADR-0118.
 When preparing new cover artwork, conflicting retained MHIF image sizes are
 corrected automatically when the Device Profile, retained image metadata, and
 captured thumbnail ranges establish the correct size. Unverifiable conflicts

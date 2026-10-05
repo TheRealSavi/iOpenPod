@@ -13,12 +13,8 @@ from typing import TYPE_CHECKING, cast
 from device_registry import (
     DEFAULT_DEVICE_REGISTRY,
     SYSINFO_AUTHORITY_FILENAME,
-    ArtworkFormat,
-    ArtworkPixelFormat,
-    ArtworkUsage,
     DeviceEvidence,
     DeviceIdentifier,
-    DeviceProfile,
     DeviceRegistry,
     EvidenceAuthority,
     IdentificationResult,
@@ -28,6 +24,10 @@ from device_registry import (
     parse_sysinfo,
     parse_sysinfo_extended,
     reconcile_device_metadata,
+)
+from iOpenPod.app.artwork_policy import (
+    application_artwork_root_value,
+    application_cover_formats,
 )
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.library_sync_helper import (
@@ -66,8 +66,6 @@ from iOpenPod.app.services import library_resources, volume_presentation
 from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
 from iPodDB.library import (
-    CoverFormat,
-    CoverPixelFormat,
     IPodLibrary,
     PhotoPixelFormat,
     PhotoRepresentationKind,
@@ -144,14 +142,6 @@ _IPOD_SYSINFO_VPD_PLAN = ScsiVpdPagePlan(
     first_data_page=0xC2,
     last_data_page=0xFF,
     scan_range_when_index_empty=True,
-)
-_DISPLAY_ONLY_F1060 = ArtworkFormat(
-    format_id=1060,
-    width=320,
-    height=320,
-    row_bytes=640,
-    pixel_format=ArtworkPixelFormat.RGB565_LE,
-    usage=ArtworkUsage.COVER,
 )
 
 
@@ -1177,7 +1167,7 @@ class DeviceCoordinator:
                 sqlite_checksum=sqlite_checksum,
                 hash72_material=hash72_material,
                 sqlite_postprocess_commands=sqlite_postprocess_commands,
-                artwork_root_value=capabilities.artwork.artwork_root_value,
+                artwork_root_value=application_artwork_root_value(expected.profile),
                 photos_root_value=capabilities.artwork.photos_root_value,
                 photo_formats=tuple(
                     PhotoThumbnailFormat(
@@ -1190,16 +1180,7 @@ class DeviceCoordinator:
                     for f in capabilities.artwork.photo_formats
                 ),
                 supports_sparse_artwork=capabilities.artwork.supports_sparse_artwork,
-                cover_formats=tuple(
-                    CoverFormat(
-                        f.format_id,
-                        f.width,
-                        f.height,
-                        f.row_bytes,
-                        CoverPixelFormat(f.pixel_format.value),
-                    )
-                    for f in capabilities.artwork.cover_formats
-                ),
+                cover_formats=application_cover_formats(expected.profile),
             )
             if active.time_precondition is None:
                 raise DeviceChangedError(
@@ -2221,16 +2202,7 @@ class DeviceCoordinator:
             try:
                 read = active.library_source.artwork_read(
                     request.artwork_id,
-                    tuple(
-                        CoverFormat(
-                            cover.format_id,
-                            cover.width,
-                            cover.height,
-                            cover.row_bytes,
-                            CoverPixelFormat(cover.pixel_format.value),
-                        )
-                        for cover in _display_cover_formats(active.active_ipod.profile)
-                    ),
+                    application_cover_formats(active.active_ipod.profile),
                     request.target_px,
                 )
             except ValueError as error:
@@ -4003,11 +3975,6 @@ def _unreadable_photos(
         library,
         None,
     )
-
-
-def _display_cover_formats(profile: DeviceProfile) -> tuple[ArtworkFormat, ...]:
-    native = profile.capabilities.artwork.cover_formats
-    return native or (_DISPLAY_ONLY_F1060,)
 
 
 def _finalize_committed_transaction(

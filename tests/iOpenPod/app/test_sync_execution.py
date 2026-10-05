@@ -19,6 +19,7 @@ from typing import cast
 
 import pytest
 from PIL import Image
+from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
 from tests.iOpenPod.app.test_media_lyrics import WORDS
 from tests.iOpenPod.app.test_music_import import FIXTURES
@@ -76,7 +77,10 @@ from iOpenPod.app.sync_plan import (
 )
 from iPodDB.library import (
     AudioEncoding,
+    CoverFormat,
+    CoverPixelFormat,
     FileDependency,
+    IPodLibrary,
     LibrarySnapshot,
     MediaContent,
     MediaType,
@@ -1209,6 +1213,83 @@ def test_shared_album_artwork_is_captured_once_and_referenced_by_new_tracks(
         assert len(incoming) == 2
         assert incoming[0].artwork_id == incoming[1].artwork_id > 0
         assert all(track.metadata.artwork_count > 0 for track in incoming)
+    finally:
+        device.coordinator.close()
+
+
+def test_non_cover_device_publishes_display_only_artwork_for_iopenpod(
+    tmp_path: Path,
+) -> None:
+    device = bare_device(tmp_path, model_number="M9802")
+    try:
+        host = _host(tmp_path, "First", "Second")
+        path = tmp_path / "cover.png"
+        Image.new("RGB", (180, 180), "blue").save(path)
+        observed = LocalHostFile.observe(HostPath(path))
+        host = replace(
+            host,
+            snapshot=replace(
+                host.snapshot,
+                tracks=tuple(
+                    replace(track, artwork_id=123) for track in host.snapshot.tracks
+                ),
+            ),
+            artwork_sources=(
+                HostMediaArtworkSource(
+                    123,
+                    HostArtworkKind.FOLDER,
+                    observed.path,
+                    observed.size_bytes,
+                    observed.modified_ns,
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                ),
+            ),
+        )
+
+        ipod = IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False)
+        comparison = prepare_sync_plan(host, ipod, device.active.library)
+        request = SyncExecutionRequest(
+            SyncPlan(
+                tuple(
+                    item
+                    for item in comparison.items
+                    if item.action is not SyncPlanAction.REMOVE
+                )
+            ),
+            host,
+            ipod,
+            device.active,
+            1,
+            1,
+        )
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        incoming = tuple(
+            track
+            for track in result.active.library.tracks
+            if track.title in ("First", "Second")
+        )
+        assert len(incoming) == 2
+        assert all(track.artwork_id > 0 for track in incoming)
+        assert all(track.metadata.artwork_count == 1 for track in incoming)
+        artwork_path = device.root / "iPod_Control/Artwork/ArtworkDB"
+        assert artwork_path.exists()
+
+        parsed = IPodLibrary(
+            (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
+        ).with_artwork(artwork_path.read_bytes())
+        display_format = CoverFormat(1060, 320, 320, 640, CoverPixelFormat.RGB565_LE)
+        for track in incoming:
+            read = parsed.artwork_read(track.artwork_id, (display_format,), 320)
+            assert read is not None
+            payload = (device.root / read.relative_path).read_bytes()
+            pixels = read.decode(payload[read.offset : read.offset + read.length])
+            assert (pixels.width, pixels.height) == (320, 320)
+            assert len(set(pixels.rgb888)) > 1
     finally:
         device.coordinator.close()
 
