@@ -13,7 +13,11 @@ from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
 from mutagen.wave import WAVE
 
-from iOpenPod.app.media.lyrics import embedded_lyrics, rewrite_lyrics
+from iOpenPod.app.media.lyrics import (
+    embedded_lyrics,
+    rewrite_lyrics,
+    rewrite_lyrics_stream,
+)
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "media"
 FRAMES: Any = frames
@@ -76,7 +80,10 @@ def media_payload(data: bytes, suffix: str) -> bytes:
         "tone.aiff",
     ],
 )
-def test_add_replace_clear_and_noop_preserve_media(name: str) -> None:
+@pytest.mark.parametrize("disk_backed", [False, True])
+def test_add_replace_clear_and_noop_preserve_media(
+    name: str, tmp_path: Path, disk_backed: bool
+) -> None:
     original = fixture(name)
     suffix = Path(name).suffix
     payload = media_payload(original, suffix)
@@ -93,7 +100,14 @@ def test_add_replace_clear_and_noop_preserve_media(name: str) -> None:
     original_tags = dict(before.tags or {})
     current = original
     for lyrics in (WORDS, "Replaced\r\nSecond verse", ""):
-        current = rewrite_lyrics(current, name, lyrics)
+        if disk_backed:
+            path = tmp_path / name
+            path.write_bytes(current)
+            with path.open("r+b") as stream:
+                rewrite_lyrics_stream(stream, name, lyrics)
+            current = path.read_bytes()
+        else:
+            current = rewrite_lyrics(current, name, lyrics)
         parsed = reader(io.BytesIO(current))
         assert embedded_lyrics(parsed) == lyrics
         assert media_payload(current, suffix) == payload

@@ -155,6 +155,31 @@ def _group_tracks_by_album(
     return {key: tuple(members) for key, members in grouped.items()}
 
 
+def _album_name_for_sorting(name: str) -> str:
+    """Supply the Original iOpenPod fallback when no Sort Album tag exists."""
+
+    for article in ("the ", "an ", "a "):
+        if name.casefold().startswith(article):
+            return name[len(article) :]
+    return name
+
+
+def _album_name_ranks(names: set[str]) -> dict[str, int]:
+    """Assign firmware ranks, shared by equivalent names, in steps of 100.
+
+    The captured Nano 7 Library orders numeric names after letters and unknown
+    albums last. This deterministic fallback does not claim locale collation;
+    device postprocessing can replace it when commands are available.
+    """
+
+    keys = sorted(
+        {name.casefold() for name in names},
+        key=lambda name: (2 if not name else int(name[0].isdigit()), name),
+    )
+    ranks = {name: (index + 1) * 100 for index, name in enumerate(keys)}
+    return {name: ranks[name.casefold()] for name in names}
+
+
 def _media_kind(track: Track) -> int:
     details = track.ipod
     if details is not None:
@@ -410,6 +435,14 @@ def build_sqlite_databases(
     )
 
     album_groups = _group_tracks_by_album(snapshot.tracks)
+    album_names = {key: _album_name_for_sorting(key[0]) for key in album_groups}
+    album_name_ranks = _album_name_ranks(set(album_names.values()))
+    track_album_sort_names = {
+        track.track_id: track.metadata.sort_album
+        or _album_name_for_sorting(track.album)
+        for track in snapshot.tracks
+    }
+    album_sort_ranks = _album_name_ranks(set(track_album_sort_names.values()))
     album_keys_by_track_id = {
         track.track_id: key
         for key, members in album_groups.items()
@@ -484,13 +517,14 @@ def build_sqlite_databases(
 
     for album_key, album_pid in album_ids.items():
         members = album_groups[album_key]
+        album_sort_name = track_album_sort_names[members[0].track_id]
         artwork_track = next((track for track in members if track.artwork_id), None)
         library.execute(
             """INSERT INTO album (pid,kind,artwork_status,artwork_item_pid,
             artist_pid,user_rating,name,name_order,all_compilations,feed_url,
             season_number,is_unknown,has_songs,has_music_videos,sort_order,
             artist_order,has_any_compilations,sort_name,artist_count_calc,
-            has_movies,item_count) VALUES (?,2,?,?,?,?,?,100,?,?,?, ?,1,0,100,
+            has_movies,item_count) VALUES (?,2,?,?,?,?,?,?,?, ?,?, ?,1,0,?,
             100,?,?,0,0,?)""",
             (
                 _s64(album_pid),
@@ -499,6 +533,7 @@ def build_sqlite_databases(
                 _s64(artist_ids[album_key[1]]),
                 0,
                 album_key[0] or None,
+                album_name_ranks[album_names[album_key]],
                 int(all(track.metadata.compilation for track in members)),
                 next(
                     (
@@ -510,8 +545,9 @@ def build_sqlite_databases(
                 ),
                 next((track.season_number for track in members if track.show), 0),
                 int(not album_key[0]),
+                album_sort_ranks[album_sort_name],
                 int(any(track.metadata.compilation for track in members)),
-                album_key[0] or None,
+                album_sort_name or None,
                 len(members),
             ),
         )
@@ -582,9 +618,10 @@ def build_sqlite_databases(
             metadata.composer,
             metadata.sort_title or None,
             metadata.sort_artist or None,
-            metadata.sort_album or None,
+            track_album_sort_names[track.track_id] or None,
             metadata.sort_album_artist or None,
             metadata.sort_composer or None,
+            album_sort_ranks[track_album_sort_names[track.track_id]],
             metadata.comment or None,
             metadata.grouping or None,
             metadata.description or None,
@@ -605,7 +642,7 @@ def build_sqlite_databases(
               stop_time_ms,total_time_ms,track_number,track_count,disc_number,disc_count,
               bpm,relative_volume,eq_preset,genre_id,category_id,album_pid,artist_pid,
               composer_pid,title,artist,album,album_artist,composer,sort_title,sort_artist,
-              sort_album,sort_album_artist,sort_composer,comment,grouping,description,
+              sort_album,sort_album_artist,sort_composer,album_order,comment,grouping,description,
               copyright,track_artist_pid,physical_order,has_lyrics,date_released)
               VALUES ("""
             + ",".join("?" for _value in item_values)

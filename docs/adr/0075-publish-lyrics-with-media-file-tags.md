@@ -26,3 +26,22 @@ intent. Existing ID3v2.3/v2.4 versions are preserved to avoid the unrelated-fram
 losses possible during version conversion; new tags follow the Original iOpenPod
 v2.3 UTF-16 policy. Edits requiring migration from ID3v2.2 are blocked rather than
 discarding unknown frames implicitly. Hardware compatibility remains to be verified.
+
+## Preparation memory budget (2026-10-04)
+
+The preparation capture budget bounds retained whole-media bytes, not lyric text
+or a firmware display limit. Exceeding it must not truncate audio or block an
+otherwise valid lyrics update. Storage captures private Host files and lends
+seekable streams for focused tag edits. The Application Layer verifies the text
+and fingerprints the result, retaining small outputs in memory and larger outputs
+on disk until their issued review is saved or retired. Disk staging emits a warning
+that identifies the original Host path, or the Device Path for a retained Track.
+Actual preparation failures also identify the affected file.
+
+Artwork capture reserves memory first; lyrics media uses the remainder or disk.
+Temporary media on disk does not consume the artwork capture budget. Failed or
+cancelled preparation releases its private files; replacing a review, closing the
+connection, and completing publication release retained staging files. Device
+preconditions, verified publication, and recoverable media/database replacement
+remain required. Source media and full lyric text are preserved; this budget
+establishes no iPod lyric-length policy.

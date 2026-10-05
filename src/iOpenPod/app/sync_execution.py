@@ -1644,7 +1644,13 @@ def _song(
         )
     )
     return ImportedSong(
-        track, LibraryMediaSource(output.source, output.inspection.fingerprint, media)
+        track,
+        LibraryMediaSource(
+            output.source,
+            output.inspection.fingerprint,
+            media,
+            display_path=host.metadata.location,
+        ),
     )
 
 

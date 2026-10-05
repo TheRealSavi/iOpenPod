@@ -5,19 +5,23 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import TYPE_CHECKING
 
 from iOpenPod.app.library_write import LibraryFileChange
-from iOpenPod.app.media.lyrics import rewrite_lyrics
+from iOpenPod.app.media.lyrics import rewrite_lyrics_stream
 from iOpenPod.app.services import volume_presentation
 from iPodDB.library import (
     MAX_SIDECAR_BYTES,
     FileDependency,
+    IssueSeverity,
     PhotoRepresentationKind,
     PlaybackSidecar,
     PreparedLyrics,
     SourceFile,
+    WriteIssue,
     WriteResources,
     is_playback_sidecar,
     remap_playback_sidecar,
@@ -28,12 +32,13 @@ from storage import (
     FileContent,
     FilePrecondition,
     FilePreconditionError,
+    StorageError,
     StorageTransaction,
     TransactionRemoval,
     TransactionWrite,
-    capture_host_file,
 )
 from storage.host_input import LocalHostFile
+from storage.media_processing import media_workspace
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -91,6 +96,7 @@ class CapturedLibraryResources:
     removals: tuple[TransactionRemoval, ...]
     media_writes: tuple[TransactionWrite, ...] = ()
     presentation_writes: tuple[TransactionWrite, ...] = ()
+    issues: tuple[WriteIssue, ...] = ()
 
 
 def pending_sidecars(
@@ -223,6 +229,7 @@ def capture(
     plan: LibraryWritePlan,
     checkpoint: Callable[[], None],
     *,
+    temporary_files: ExitStack,
     additional_preconditions: tuple[FilePrecondition, ...] = (),
     volume_presentation_enabled: bool = True,
     consumed_sidecars: tuple[PlaybackSidecar, ...] = (),
@@ -326,23 +333,8 @@ def capture(
             incoming_photo_paths.add(path)
             files.append(FilePrecondition(path, None))
             media_writes.append(TransactionWrite(path, photo_file.data, content))
-    lyrics, lyric_writes = _capture_lyrics(session, request, plan, checkpoint)
-    tagged = {item.track_id: item for item in lyrics}
-    media = tuple(
-        replace(m.media, file=tagged[m.media.track_id].file)
-        if m.media.track_id in tagged
-        else m.media
-        for m in request.media
-    )
-    tagged_paths = {write.path for write in lyric_writes}
-    media_writes = [write for write in media_writes if write.path not in tagged_paths]
-    media_writes.extend(lyric_writes)
-    files.extend(
-        FilePrecondition(w.path, w.expected)
-        for w in lyric_writes
-        if w.expected is not None
-    )
-    captured_bytes = sum(w.content.size for w in lyric_writes)
+    # Artwork needs retained bytes; reserve that space before lyrics can spill to disk.
+    captured_bytes = 0
     cover_prefixes = tuple(f"f{f.format_id}_" for f in plan.target.cover_formats)
     if plan.requires_artwork_inventory and session.exists(_ARTWORK):
         for entry in session.list_directory(_ARTWORK):
@@ -387,6 +379,29 @@ def capture(
                 )
             files.append(FilePrecondition(entry.path, fingerprint))
             inventory.append(dependency)
+    lyrics, lyric_writes, lyric_issues = _capture_lyrics(
+        session,
+        request,
+        plan,
+        checkpoint,
+        temporary_files,
+        memory_budget=_MAX_CAPTURE_BYTES - captured_bytes,
+    )
+    tagged = {item.track_id: item for item in lyrics}
+    media = tuple(
+        replace(m.media, file=tagged[m.media.track_id].file)
+        if m.media.track_id in tagged
+        else m.media
+        for m in request.media
+    )
+    tagged_paths = {write.path for write in lyric_writes}
+    media_writes = [write for write in media_writes if write.path not in tagged_paths]
+    media_writes.extend(lyric_writes)
+    files.extend(
+        FilePrecondition(w.path, w.expected)
+        for w in lyric_writes
+        if w.expected is not None
+    )
     retained = {
         t.metadata.location.casefold()
         for t in request.snapshot.tracks
@@ -493,6 +508,7 @@ def capture(
         tuple(removals),
         tuple(media_writes),
         presentation_writes,
+        lyric_issues,
     )
 
 
@@ -501,9 +517,14 @@ def _capture_lyrics(
     request: LibraryPreparationRequest,
     plan: LibraryWritePlan,
     checkpoint: Callable[[], None],
-) -> tuple[tuple[PreparedLyrics, ...], tuple[TransactionWrite, ...]]:
+    temporary_files: ExitStack,
+    *,
+    memory_budget: int,
+) -> tuple[
+    tuple[PreparedLyrics, ...], tuple[TransactionWrite, ...], tuple[WriteIssue, ...]
+]:
     if plan.blocked or not plan.required_lyrics:
-        return (), ()
+        return (), (), ()
     desired = {t.track_id: t for t in request.snapshot.tracks}
     original = {t.track_id: t for t in request.source.library.tracks}
     incoming = {m.media.track_id: m for m in request.media}
@@ -514,6 +535,7 @@ def _capture_lyrics(
         )
     lyrics: list[PreparedLyrics] = []
     writes: list[TransactionWrite] = []
+    issues: list[WriteIssue] = []
     captured_bytes = 0
     for identity in plan.required_lyrics:
         checkpoint()
@@ -527,35 +549,81 @@ def _capture_lyrics(
             )
         selected = incoming.get(identity)
         expected = None
-        remaining = _MAX_CAPTURE_BYTES - captured_bytes
-        if selected is not None:
-            if selected.fingerprint.size > remaining:
-                raise ValueError("Lyrics media exceeds the preparation capture limit.")
-            with capture_host_file(
-                selected.source, max_bytes=remaining, checkpoint=checkpoint
-            ) as captured:
-                if captured.fingerprint != selected.fingerprint:
-                    raise ValueError(
-                        "The selected lyrics source changed; inspect it again."
+        remaining = memory_budget - captured_bytes
+        source_name = (
+            selected.display_path or str(selected.source)
+            if selected is not None
+            else str(path)
+        )
+        try:
+            with ExitStack() as owned:
+                workspace = owned.enter_context(media_workspace(checkpoint=checkpoint))
+                if selected is not None:
+                    captured = workspace.capture(
+                        selected.source, expected=selected.fingerprint
                     )
-                data = LocalHostFile.observe(captured.snapshot).read_bytes(
-                    max_bytes=_MAX_CAPTURE_BYTES, checkpoint=checkpoint
+                    private_source = captured.snapshot
+                else:
+                    prior = original.get(identity)
+                    if (
+                        prior is None
+                        or prior.metadata.location != track.metadata.location
+                    ):
+                        raise ValueError(
+                            "Lyrics require captured media at the retained Track location."
+                        )
+                    expected = session.fingerprint(path)
+                    private_source = workspace.output_path(".media")
+                    copied = session.copy_to_host(
+                        path, private_source, progress=lambda _copied: checkpoint()
+                    )
+                    if (copied.bytes_copied, copied.sha256) != (
+                        expected.size,
+                        expected.sha256,
+                    ):
+                        raise FilePreconditionError(
+                            "Lyrics media changed during capture."
+                        )
+                output = workspace.transform_stream(
+                    private_source,
+                    partial(
+                        rewrite_lyrics_stream,
+                        file_name=str(path),
+                        lyrics=track.metadata.lyrics,
+                    ),
                 )
-        else:
-            prior = original.get(identity)
-            if prior is None or prior.metadata.location != track.metadata.location:
-                raise ValueError(
-                    "Lyrics require captured media at the retained Track location."
-                )
-            snapshot = session.read_snapshot(path, max_bytes=remaining)
-            expected = snapshot.fingerprint
-            data = snapshot.data
-        checkpoint()
-        output = rewrite_lyrics(data, str(path), track.metadata.lyrics)
-        captured_bytes += len(output)
-        if captured_bytes > _MAX_CAPTURE_BYTES:
-            raise ValueError("Lyrics media exceeds the preparation capture limit.")
-        content = _content(output)
+                content = FileContent.from_fingerprint(output.fingerprint)
+                if content.size <= remaining:
+                    payload = LocalHostFile.observe(output.snapshot).read_bytes(
+                        max_bytes=remaining, checkpoint=checkpoint
+                    )
+                    captured_bytes += len(payload)
+                    writes.append(TransactionWrite(path, payload, content, expected))
+                else:
+                    writes.append(
+                        TransactionWrite(path, output.snapshot, content, expected)
+                    )
+                    temporary_files.enter_context(owned.pop_all())
+                    issues.append(
+                        WriteIssue(
+                            "resources.lyrics_disk_staging",
+                            f'Lyrics preparation for "{source_name}" exceeded the memory budget; temporary disk space was used. Full media and lyrics were preserved.',
+                            severity=IssueSeverity.WARNING,
+                            phase="resources",
+                            subject="track",
+                            record_id=identity,
+                            field="metadata.lyrics",
+                            artifact=source_name,
+                        )
+                    )
+        except StorageError as error:
+            raise StorageError(
+                f'Could not prepare lyrics for "{source_name}" (iPod file: {path}): {error}'
+            ) from error
+        except (ValueError, OSError) as error:
+            raise ValueError(
+                f'Could not prepare lyrics for "{source_name}" (iPod file: {path}): {error}'
+            ) from error
         lyrics.append(
             PreparedLyrics(
                 identity,
@@ -563,8 +631,7 @@ def _capture_lyrics(
                 FileDependency(str(path), content.size, content.sha256),
             )
         )
-        writes.append(TransactionWrite(path, output, content, expected))
-    return tuple(lyrics), tuple(writes)
+    return tuple(lyrics), tuple(writes), tuple(issues)
 
 
 def transaction(

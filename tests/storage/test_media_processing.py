@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 import subprocess
 import sys
 from pathlib import Path
 from threading import get_ident
+from typing import BinaryIO
 
 import pytest
 
@@ -302,6 +304,29 @@ def test_rejected_byte_transforms_remove_staging_and_preserve_source(
     assert source.read_bytes() == b"original"
     assert snapshot is not None
     assert not snapshot.exists()
+
+
+def test_stream_transform_edits_only_private_copy_and_hashes_final_bytes(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.mp3"
+    source.write_bytes(b"original")
+
+    def update(stream: BinaryIO) -> None:
+        stream.seek(0)
+        stream.write(b"updated bytes")
+        stream.truncate()
+
+    with media_workspace(checkpoint=lambda: None) as workspace:
+        with pytest.raises(ValueError, match="private files"):
+            workspace.transform_stream(HostPath(source), update)
+        captured = workspace.capture(HostPath(source))
+        output = workspace.transform_stream(captured.snapshot, update)
+        assert Path(output.snapshot).read_bytes() == b"updated bytes"
+        assert output.fingerprint.size == len(b"updated bytes")
+        assert output.fingerprint.sha256 == hashlib.sha256(b"updated bytes").hexdigest()
+    assert source.read_bytes() == b"original"
+    assert not Path(output.snapshot).exists()
 
 
 def test_tool_input_remains_seekable_and_preserves_selected_source(

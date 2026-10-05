@@ -364,7 +364,9 @@ iTunesDB presence flag. The Application Layer prepares focused lyric-tag updates
 Storage publishes them with the database in one recoverable transaction. This is
 independent of optional full metadata writing for Rockbox compatibility. Unrelated
 edits preserve file-only lyrics, and incoming music reads embedded lyrics into its
-draft. See ADR-0075 and `docs/research/itunesdb-lyrics.md`.
+draft. Preparation exceeding the whole-media memory budget uses private Host disk
+staging with a file-specific warning, preserving complete media and lyrics.
+See ADR-0075 and `docs/research/itunesdb-lyrics.md`.
 
 Backup Snapshots use Backup Archive format v4, continuing the Original iOpenPod v2
 and v3 format sequence, with lossless

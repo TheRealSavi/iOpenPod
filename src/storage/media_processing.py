@@ -451,6 +451,21 @@ class MediaWorkspace:
             raise ValueError("Only this workspace's private input can be discarded")
         path.unlink()
 
+    def transform_stream(
+        self, source: HostPath, transform: Callable[[BinaryIO], None]
+    ) -> CapturedHostFile:
+        """Edit only a private workspace file, then fingerprint it by streaming."""
+        path = Path(source)
+        if path.parent != self._directory or not (
+            path.name == "source" or path.name.startswith("processed.")
+        ):
+            raise ValueError("Only this workspace's private files can be transformed")
+        self._checkpoint()
+        with path.open("r+b") as stream:
+            transform(stream)
+        self._checkpoint()
+        return self._inspect_file(source)
+
     def inspect_output(self, path: HostPath) -> CapturedHostFile:
         """Hash output by streaming; no second temporary full-file copy."""
         resolved = Path(path)
@@ -458,6 +473,10 @@ class MediaWorkspace:
             "processed."
         ):
             raise ValueError("Only this workspace's output can be inspected")
+        return self._inspect_file(path)
+
+    def _inspect_file(self, path: HostPath) -> CapturedHostFile:
+        resolved = Path(path)
         self._checkpoint()
         digest = hashlib.sha256()
         with resolved.open("rb") as stream:

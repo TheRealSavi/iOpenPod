@@ -260,6 +260,7 @@ class _PreparedLibraryWrite:
     review: LibraryReview
     transaction: StorageTransaction
     presentation_policy: _VolumePresentationPolicy
+    temporary_files: contextlib.ExitStack
 
 
 @dataclass(frozen=True, slots=True)
@@ -1030,7 +1031,7 @@ class DeviceCoordinator:
         *,
         podcast_state: LoadedPodcastState | None = None,
     ) -> LibraryReview:
-        """Prepare an in-memory review using only reads from the selected session."""
+        """Prepare a review with private Host staging and read-only device access."""
         from iOpenPod.app.library_write import (
             LibraryReview,
             PreparationCancelledError,
@@ -1096,7 +1097,7 @@ class DeviceCoordinator:
 
         with self._lock:
             active = self._active
-            self._prepared_for_save = None
+            self._discard_prepared_write()
             self._preparation_generation += 1
             preparation_generation = self._preparation_generation
             presentation_policy = self._current_presentation_policy()
@@ -1117,6 +1118,7 @@ class DeviceCoordinator:
         resources: WriteResources | None = None
         result: LibraryWriteResult | None = None
         checkpoint("source.check", "Checking source")
+        temporary_files = contextlib.ExitStack()
         try:
             if (
                 active.session.fingerprint(
@@ -1225,6 +1227,7 @@ class DeviceCoordinator:
                 request,
                 plan,
                 lambda: checkpoint("resources.capture", "Capturing required resources"),
+                temporary_files=temporary_files,
                 additional_preconditions=(
                     *sqlite_postprocess_preconditions,
                     active.time_precondition,
@@ -1235,6 +1238,7 @@ class DeviceCoordinator:
             )
             resources = captured.resources
             result = source.prepare(plan, resources, progress=database_progress)
+            result = replace(result, issues=(*result.issues, *captured.issues))
             checkpoint("source.recheck", "Verifying source revision")
             with self._lock:
                 if self._active is not active or not active.session.is_active:
@@ -1306,7 +1310,7 @@ class DeviceCoordinator:
                     and presentation_policy is self._current_presentation_policy()
                 ):
                     self._prepared_for_save = _PreparedLibraryWrite(
-                        review, write, presentation_policy
+                        review, write, presentation_policy, temporary_files.pop_all()
                     )
             return review
         except (StorageError, DeviceChangedError, ValueError) as error:
@@ -1340,6 +1344,8 @@ class DeviceCoordinator:
                 ),
                 resources=resources,
             )
+        finally:
+            temporary_files.close()
 
     def save_library(
         self,
@@ -1566,7 +1572,7 @@ class DeviceCoordinator:
                         )
                     )
                     active.active_ipod = updated
-                    self._prepared_for_save = None
+                    self._discard_prepared_write()
                     self._ithmb_bytes.clear()
                     self._ithmb_cache_bytes = 0
                     issues: tuple[WriteIssue, ...] = (
@@ -1641,7 +1647,7 @@ class DeviceCoordinator:
                             )
                     return LibrarySaveResult(issues, updated, recovery_path)
             except RecoverableWriteError as error:
-                self._prepared_for_save = None
+                self._discard_prepared_write()
                 if not error.publication_started and isinstance(
                     error.__cause__, PreparationCancelledError
                 ):
@@ -3166,11 +3172,22 @@ class DeviceCoordinator:
             )
         return candidate_id
 
+    def _discard_prepared_write(self) -> None:
+        """Release private media copies when their issued review is retired."""
+        issued, self._prepared_for_save = self._prepared_for_save, None
+        if issued is not None:
+            try:
+                issued.temporary_files.close()
+            except OSError:
+                logger.warning(
+                    "Could not remove private Library staging files", exc_info=True
+                )
+
     def _deactivate_locked(self) -> None:
         active = self._active
         self._active = None
         self._sync_cleanup_path = ""
-        self._prepared_for_save = None
+        self._discard_prepared_write()
         self._ithmb_bytes.clear()
         self._ithmb_cache_bytes = 0
         if active is not None:
@@ -3196,7 +3213,7 @@ class DeviceCoordinator:
         }
         if self._active is active:
             self._active = None
-        self._prepared_for_save = None
+        self._discard_prepared_write()
         self._ithmb_bytes.clear()
         self._ithmb_cache_bytes = 0
         active.session.close()

@@ -63,3 +63,37 @@ two details now covered by tests: distinct artist names can reuse one native art
 reference and therefore require deterministic collision-free projection IDs, and an
 iTunes-written HASHAB CDB publishes `hashing_scheme = 3` even though the HASHAB digest
 normalization uses discriminator 4.
+
+## Album ordering without device postprocessing
+
+The v2.0.4 SQLite generator assigned every album `name_order = sort_order = 100`
+and omitted `item.album_order`. Nano 6 and 7 profiles allow generation without
+device postprocess commands, so nothing subsequently supplied these browse ranks.
+A two-album generation with lower persistent ID for `Zimbo Trio` than `Blink 182`
+therefore returns Z before B when ordered by album rank and persistent ID.
+This reproduces the missing ordering information behind a Nano 7 report; it does
+not establish the firmware's exact tie-breaking query.
+
+The locally retained `orig_nano7` Library.itdb has 234 albums with 222 distinct
+name ranks and 220 distinct sort ranks. Its album browse indexes use `sort_order`.
+The captured order places numeric album names after letters and an unknown album
+last; it also distinguishes display-name ranks from explicit Sort Album ranks.
+Original iOpenPod independently computes ranks in steps of 100 and strips leading
+English articles for default sort names. It is a compatibility reference, not a
+firmware oracle.
+
+Generation now fills album name ranks, album sort ranks, and each Track's album
+rank before device postprocessing. Default names strip `A`, `An`, or `The`;
+explicit Sort Album values remain authoritative. Equivalent case-folded names
+share ranks, numeric names follow letters, and empty names follow known names.
+Album rows take the first member's effective sort name, consistent with the
+existing snapshot-order group projection; each Track retains its own effective
+sort name. Conflicting tags within one album and full locale-specific collation
+are not resolved by this fallback. Device postprocess commands may replace the
+generated values. Track physical order, identities, and CDB metadata are unchanged.
+
+Regression tests cover the reported B/Z pair in both input orders, separate artists,
+Sort Album overrides, article/case handling, numeric/empty names, and subsequent
+device postprocessing. These are serialized-database checks, not physical firmware
+validation. Existing SQLite artifacts are replaced on the next CDB-changing save
+under ADR-0061; a no-op Sync does not regenerate them.

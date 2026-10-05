@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import mutagen
@@ -61,6 +61,8 @@ class LibraryMediaSource:
     source: HostPath
     fingerprint: FileFingerprint
     media: PreparedMedia
+    # Descriptive original path for diagnostics when source is a prepared copy.
+    display_path: str = field(default="", kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

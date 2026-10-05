@@ -115,6 +115,107 @@ def test_builds_complete_sqlite_projection_from_cdb_snapshot() -> None:
     assert isinstance(chapter_size, int) and chapter_size > 0
 
 
+@pytest.mark.parametrize("reverse", (False, True))
+def test_album_browse_ranks_put_b_before_z_without_device_postprocessing(
+    reverse: bool,
+) -> None:
+    base = _snapshot().tracks[0]
+    tracks = tuple(
+        replace(
+            base,
+            track_id=index,
+            album=name,
+            ipod=IPodTrackDetails(db_track_id=index, album_id=index),
+        )
+        for index, name in enumerate(("Zimbo Trio", "Blink 182"), start=1)
+    )
+    if reverse:
+        tracks = tuple(reversed(tracks))
+    databases = build_sqlite_databases(
+        LibrarySnapshot(tracks), database_id=42, checksum=WriteChecksum.NONE
+    )
+
+    assert _rows(
+        databases.library,
+        "SELECT name,name_order,sort_order FROM album ORDER BY sort_order,pid",
+    ) == (("Blink 182", 100, 100), ("Zimbo Trio", 200, 200))
+    assert _rows(
+        databases.library,
+        "SELECT album,album_order FROM item ORDER BY album_order,pid",
+    ) == (("Blink 182", 100), ("Zimbo Trio", 200))
+    assert _rows(
+        databases.library, "SELECT pid FROM item ORDER BY physical_order"
+    ) == tuple((track.track_id,) for track in tracks)
+
+
+def test_album_ranks_respect_sort_tags_articles_case_and_separate_artists() -> None:
+    base = _snapshot().tracks[0]
+    tracks = tuple(
+        replace(
+            base,
+            track_id=index,
+            album=name,
+            artist=f"Artist {index}",
+            metadata=replace(base.metadata, sort_album=sort_name),
+            ipod=IPodTrackDetails(db_track_id=index, album_id=index),
+        )
+        for index, (name, sort_name) in enumerate(
+            (
+                ("Zimbo Trio", ""),
+                ("The Blink Album", ""),
+                ("blink album", ""),
+                ("Zebra", "Alpha"),
+                ("9", ""),
+                ("", ""),
+            ),
+            start=1,
+        )
+    )
+    databases = build_sqlite_databases(
+        LibrarySnapshot(tracks), database_id=42, checksum=WriteChecksum.NONE
+    )
+
+    assert _rows(
+        databases.library,
+        "SELECT name,sort_name,name_order,sort_order FROM album ORDER BY pid",
+    ) == (
+        ("Zimbo Trio", "Zimbo Trio", 300, 300),
+        ("The Blink Album", "Blink Album", 100, 200),
+        ("blink album", "blink album", 100, 200),
+        ("Zebra", "Alpha", 200, 100),
+        ("9", "9", 400, 400),
+        (None, None, 500, 500),
+    )
+    assert _rows(
+        databases.library,
+        "SELECT album,sort_album,album_order FROM item ORDER BY pid",
+    ) == (
+        ("Zimbo Trio", "Zimbo Trio", 300),
+        ("The Blink Album", "Blink Album", 200),
+        ("blink album", "blink album", 200),
+        ("Zebra", "Alpha", 100),
+        ("9", "9", 400),
+        ("", None, 500),
+    )
+
+
+def test_device_postprocessing_can_replace_generated_album_ranks() -> None:
+    databases = build_sqlite_databases(
+        _snapshot(),
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+        postprocess_commands=(
+            "UPDATE album SET name_order=700,sort_order=800;"
+            "UPDATE item SET album_order=800;",
+        ),
+    )
+
+    assert _rows(databases.library, "SELECT name_order,sort_order FROM album") == (
+        (700, 800),
+    )
+    assert _value(databases.library, "SELECT album_order FROM item") == 800
+
+
 @pytest.mark.parametrize(
     ("media_type", "native", "set_flags", "video_rows", "podcast_rows", "rental_rows"),
     (

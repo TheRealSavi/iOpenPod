@@ -20,6 +20,7 @@ from typing import cast
 import pytest
 from PIL import Image
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
+from tests.iOpenPod.app.test_media_lyrics import WORDS
 from tests.iOpenPod.app.test_music_import import FIXTURES
 
 from iOpenPod.app.display_text import SourceText
@@ -45,6 +46,7 @@ from iOpenPod.app.library_sync_helper import (
 from iOpenPod.app.library_write import LibraryReview, LibrarySaveResult, WriteProgress
 from iOpenPod.app.media.importing import ImportedSong, LibraryMediaSource
 from iOpenPod.app.media.inspection import _parse  # pyright: ignore[reportPrivateUsage]
+from iOpenPod.app.media.lyrics import rewrite_lyrics
 from iOpenPod.app.media.music_paths import MusicPathAllocator
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.media.transcoding import (
@@ -53,6 +55,7 @@ from iOpenPod.app.media.transcoding import (
     VideoEncoding,
 )
 from iOpenPod.app.models.device import ActiveIPod
+from iOpenPod.app.services import library_resources
 from iOpenPod.app.services.device_coordinator import SyncCleanupCompletedError
 from iOpenPod.app.sync_execution import (
     PlaylistSyncChange,
@@ -985,13 +988,20 @@ def test_duplicate_review_action_is_rejected_before_preparation(tmp_path: Path) 
     reason="Sync media tools required",
 )
 @pytest.mark.parametrize("fingerprint", ["100,2,3", None])
+@pytest.mark.parametrize("oversized_lyrics_media", [False, True])
 def test_real_aac_passes_through_full_sync_without_reencoding(
-    tmp_path: Path, fingerprint: str | None
+    tmp_path: Path,
+    fingerprint: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    oversized_lyrics_media: bool,
 ) -> None:
     device = build_device(tmp_path)
     try:
         source = tmp_path / "real.m4a"
         data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
+        if oversized_lyrics_media:
+            data = rewrite_lyrics(data, source.name, WORDS)
+            monkeypatch.setattr(library_resources, "_MAX_CAPTURE_BYTES", 10)
         source.write_bytes(data)
         observed = LocalHostFile.observe(HostPath(source))
         host = HostMediaLibrary(
@@ -1003,7 +1013,10 @@ def test_real_aac_passes_through_full_sync_without_reencoding(
                         "",
                         "",
                         1000,
-                        metadata=TrackMetadata(location=str(source)),
+                        metadata=TrackMetadata(
+                            location=str(source),
+                            lyrics=WORDS if oversized_lyrics_media else "",
+                        ),
                     ),
                 )
             ),
@@ -1043,6 +1056,14 @@ def test_real_aac_passes_through_full_sync_without_reencoding(
             for e in events
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        warnings = [
+            i for i in result.issues if i.code == "resources.lyrics_disk_staging"
+        ]
+        assert len(warnings) == int(oversized_lyrics_media)
+        if warnings:
+            assert warnings[0].artifact == str(source)
+            assert str(source) in warnings[0].message
+        assert source.read_bytes() == data
         assert result.active is not None
         added = next(
             track

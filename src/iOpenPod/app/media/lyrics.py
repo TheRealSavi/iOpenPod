@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 from pathlib import PurePosixPath
-from typing import Any, Protocol, cast
+from typing import Any, BinaryIO, Protocol, cast
 
 import mutagen
 import mutagen.id3 as id3_frames
@@ -30,7 +30,7 @@ class _TaggedMedia(Protocol):
 
 
 class _MediaFactory(Protocol):
-    def __call__(self, filething: io.BytesIO, **kwargs: Any) -> _TaggedMedia: ...
+    def __call__(self, filething: BinaryIO, **kwargs: Any) -> _TaggedMedia: ...
 
 
 class _ID3Version(Protocol):
@@ -61,6 +61,13 @@ def rewrite_lyrics(data: bytes, file_name: str, lyrics: str) -> bytes:
     following the Original iOpenPod compatibility policy. No tag padding is added.
     An unchanged value returns the original bytes, including existing padding.
     """
+    buffer = io.BytesIO(data)
+    rewrite_lyrics_stream(buffer, file_name, lyrics)
+    return buffer.getvalue()
+
+
+def rewrite_lyrics_stream(buffer: BinaryIO, file_name: str, lyrics: str) -> None:
+    """Update a private, seekable media copy and verify its embedded lyrics."""
     suffix = PurePosixPath(file_name).suffix.casefold()
     if suffix not in _ID3_SUFFIXES | _MP4_SUFFIXES:
         raise ValueError(
@@ -77,16 +84,16 @@ def rewrite_lyrics(data: bytes, file_name: str, lyrics: str) -> bytes:
         else AIFF
     )
 
-    def load(buffer: io.BytesIO) -> _TaggedMedia:
+    def load(buffer: BinaryIO) -> _TaggedMedia:
+        buffer.seek(0)
         return cast("_MediaFactory", factory)(
             buffer, **({} if suffix in _MP4_SUFFIXES else {"translate": False})
         )
 
     try:
-        buffer = io.BytesIO(data)
         audio = load(buffer)
         if _matches(audio, lyrics):
-            return data
+            return
         id3_version = (
             cast("_ID3Version", audio.tags).version
             if isinstance(audio.tags, ID3)
@@ -123,10 +130,9 @@ def rewrite_lyrics(data: bytes, file_name: str, lyrics: str) -> bytes:
                 tags.pop("\xa9lyr", None)
             buffer.seek(0)
             audio.save(buffer, padding=_no_padding)
-        output = buffer.getvalue()
-        if not _matches(load(io.BytesIO(output)), lyrics):
+        buffer.flush()
+        if not _matches(load(buffer), lyrics):
             raise ValueError("Embedded lyrics failed read-back verification.")
-        return output
     except (mutagen.MutagenError, OSError) as error:
         raise ValueError(
             f"Could not prepare embedded lyrics for {file_name}: {error}"
