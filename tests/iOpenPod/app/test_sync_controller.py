@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtTest import QSignalSpy
 from tests.iOpenPod.app.sync_test_support import SyncExecutionStub
 from tests.iOpenPod.app.test_library_write_controller import (
@@ -27,8 +28,13 @@ from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrar
 from iOpenPod.app.library_sync_helper import IPodMediaCacheStats, IPodMediaLibrary
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.device import ActiveIPod
+from iOpenPod.app.models.library_filter_models import (
+    AlbumFilterProxyModel,
+    CollectionFilterProxyModel,
+    TrackFilterProxyModel,
+)
 from iOpenPod.app.models.photo_list_model import PhotoListModel
-from iOpenPod.app.models.track_table_model import TrackTableModel
+from iOpenPod.app.models.track_table_model import TrackColumn, TrackTableModel
 from iOpenPod.app.podcasts.models import PodcastSnapshot
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 from iOpenPod.app.scrobbling.settings import LASTFM_USERNAME, SCROBBLE_DURING_SYNC
@@ -51,7 +57,7 @@ from iOpenPod.app.sync_plan import (
     SyncPlanItem,
     SyncPlanMediaKind,
 )
-from iPodDB.library import LibrarySnapshot, Photo, PhotoLibrary, Playlist
+from iPodDB.library import LibrarySnapshot, Photo, PhotoLibrary, Playlist, Track
 
 
 def _inputs() -> tuple[SyncPlan, HostMediaLibrary, IPodMediaLibrary]:
@@ -193,6 +199,58 @@ def test_committed_sync_refreshes_changed_media(
             assert committed.library is active.library
         assert controller.result is not None and controller.result.status is status
         assert not workspace.dirty and not workspace.locked and not devices.busy
+    finally:
+        controller.shutdown()
+        context.shutdown()
+
+
+@pytest.mark.parametrize("direction", tuple(Qt.SortOrder))
+@pytest.mark.parametrize("view", ["tracks", "albums", "artists"])
+def test_committed_sync_keeps_new_library_items_sorted(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+    direction: Qt.SortOrder,
+    view: str,
+) -> None:
+    coordinator, _, _, _ = session
+    context = build_context(device_coordinator=coordinator)
+    active = coordinator.active_ipod
+    assert active is not None
+    retained = Track(1, "Bravo", "Bravo", "Bravo", 1_000)
+    active = replace(active, library=LibrarySnapshot(tracks=(retained,)))
+    context.library_workspace.load(active.library)
+    context.device_controller.finish_library_save(active)
+    proxy: TrackFilterProxyModel | AlbumFilterProxyModel | CollectionFilterProxyModel
+    if view == "tracks":
+        proxy = TrackFilterProxyModel(context.track_model)
+        proxy.sort(TrackColumn.TITLE, direction)
+    elif view == "albums":
+        proxy = AlbumFilterProxyModel(context.album_model)
+        proxy.set_sort_direction(direction)
+    else:
+        proxy = CollectionFilterProxyModel(context.artist_model)
+        proxy.set_sort_direction(direction)
+    column = TrackColumn.TITLE if view == "tracks" else 0
+    assert proxy.index(0, column).data() == "Bravo"
+
+    # Sync retains existing source order and appends the newly committed Track.
+    title = "Alpha" if direction == Qt.SortOrder.AscendingOrder else "Zulu"
+    added = Track(2, title, title, title, 1_000)
+    committed = replace(active, library=LibrarySnapshot(tracks=(retained, added)))
+    service = SyncExecutionStub()
+    service.outcome = SyncExecutionResult(SyncExecutionStatus.SUCCESS, active=committed)
+    service.release.set()
+    controller = SyncController(
+        service, context.library_workspace, context.device_controller, context.settings
+    )
+    finished = QSignalSpy(controller.finished)
+    try:
+        assert controller.start(*_inputs(), active)
+        wait_for(lambda: finished.count() == 1)
+        assert context.track_model.tracks == (retained, added)
+        assert tuple(
+            proxy.index(row, column).data() for row in range(proxy.rowCount())
+        ) == (title, "Bravo")
+        assert proxy.sortOrder() == direction
     finally:
         controller.shutdown()
         context.shutdown()

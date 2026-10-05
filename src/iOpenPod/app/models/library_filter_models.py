@@ -61,7 +61,7 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
         self._media_kinds: frozenset[MediaKind] | None = None
         self.setSourceModel(source)
         self.setSortRole(TrackRole.SORT_VALUE)
-        self.setDynamicSortFilter(False)
+        self.setDynamicSortFilter(True)
 
     def set_query(self, query: str) -> None:
         normalized = query.strip().casefold()
@@ -70,7 +70,7 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
         self.beginFilterChange()
         self._query = normalized
         end_rows_filter_change(self)
-        # Dynamic sorting is disabled; rebuild the ordering when rows return.
+        # Rebuild stable tie ordering when previously filtered rows return.
         self.invalidate()
 
     def set_album_key(self, album_key: str | None) -> None:
@@ -171,7 +171,7 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
         self._collection_key: str | None = None
         self._group_by_selection = False
         self.setSourceModel(source)
-        self.setDynamicSortFilter(False)
+        self.setDynamicSortFilter(True)
         source.dataChanged.connect(self._selection_data_changed)
         self.sort(0, self._sort_direction)
 
@@ -182,7 +182,7 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
         self.beginFilterChange()
         self._query = normalized
         end_rows_filter_change(self)
-        # Dynamic sorting is disabled; rebuild the ordering when rows return.
+        # Rebuild stable tie ordering when previously filtered rows return.
         self.invalidate()
 
     def set_sort_mode(self, mode: AlbumSortMode) -> None:
@@ -318,7 +318,7 @@ class CollectionFilterProxyModel(QSortFilterProxyModel):
         self._sort_direction = Qt.SortOrder.AscendingOrder
         self._group_by_selection = False
         self.setSourceModel(source)
-        self.setDynamicSortFilter(False)
+        self.setDynamicSortFilter(True)
         source.dataChanged.connect(self._selection_data_changed)
         self.sort(0, self._sort_direction)
 
@@ -333,7 +333,7 @@ class CollectionFilterProxyModel(QSortFilterProxyModel):
         self.beginFilterChange()
         self._query = normalized
         end_rows_filter_change(self)
-        # Dynamic sorting is disabled; rebuild the ordering when rows return.
+        # Rebuild stable tie ordering when previously filtered rows return.
         self.invalidate()
 
     def set_sort_mode(self, mode: CollectionSortMode) -> None:
