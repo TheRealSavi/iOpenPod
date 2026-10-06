@@ -13,6 +13,7 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, 
 from iOpenPod.app.core.settings.definitions import (
     DRAFT_ALL_CHANGES,
     MANAGE_VOLUME_PRESENTATION,
+    ROCKBOX_METADATA_SUPPORT,
 )
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
@@ -151,7 +152,7 @@ class LibraryWriteController(QObject):
 
     @Slot(str, object)
     def _setting_changed(self, key: str, _value: object) -> None:
-        if key == MANAGE_VOLUME_PRESENTATION.key:
+        if key in (MANAGE_VOLUME_PRESENTATION.key, ROCKBOX_METADATA_SUPPORT.key):
             # An executing transaction finishes under its captured policy. All
             # other attempts must be prepared again with the new preference.
             if self.state is not PreparationState.SAVING:
@@ -350,6 +351,7 @@ class LibraryWriteController(QObject):
             delete_omissions=self._workspace.delete_omissions,
             artwork=self._workspace.artwork_assets,
             media=self._workspace.media_sources,
+            rockbox_metadata=self._settings.get(ROCKBOX_METADATA_SUPPORT),
         )
         logger.debug(
             "Library write request attempt=%d workspace_generation=%d workspace_revision=%d "

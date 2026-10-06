@@ -9,7 +9,7 @@ import wave
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
-from typing import BinaryIO, Protocol, cast
+from typing import BinaryIO, NoReturn, Protocol, cast
 
 import mutagen
 import pytest
@@ -41,6 +41,7 @@ from iOpenPod.app.models.photos import PhotoRequest
 from iPodDB.library import LibrarySnapshot, MediaKind, MediaType
 from storage import AtomicHostFile, HostPath, StorageError
 from storage.host_directory import HostDirectoryEntry, LocalHostDirectory
+from storage.host_input import LocalHostFile
 
 
 def test_one_unreadable_subfolder_does_not_hide_later_siblings(
@@ -77,6 +78,66 @@ def test_one_unreadable_subfolder_does_not_hide_later_siblings(
     assert isinstance(diagnostic, SourceText)
     assert diagnostic.source.endswith("scanning continued: {error}")
     assert dict(diagnostic.parameters)["error"] == "folder unavailable"
+
+
+@pytest.mark.parametrize("payload", [b"not-json", b"{}", b'{"version": 10}'])
+def test_malformed_cache_falls_back_to_scanning(tmp_path: Path, payload: bytes) -> None:
+    _write_wav(tmp_path / "song.wav")
+    cache_path = tmp_path / "cache.json"
+    cache_path.write_bytes(payload)
+    scanner = HostMediaScanner(AtomicHostFile(cache_path))
+    pending = scanner.scan(
+        (create_host_media_folder(tmp_path),), checkpoint=lambda: None
+    )
+    result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert len(result.snapshot.tracks) == 1
+    assert result.cache.reused == 0
+    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 10
+
+
+def test_changed_tracks_use_existing_acoustic_analysis_without_full_stream_hashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "song.wav"
+    _write_wav(path)
+    acoustic = "1,2,3"
+    calls = 0
+
+    def fingerprint(*args: object, **kwargs: object) -> str:
+        nonlocal calls
+        calls += 1
+        return acoustic
+
+    def unexpected_media_tool(*args: object, **kwargs: object) -> NoReturn:
+        pytest.fail("Scan launched an extra media-tool pass")
+
+    monkeypatch.setattr(FpcalcFingerprinter, "fingerprint", fingerprint)
+    monkeypatch.setattr(
+        "storage.media_processing._run_media_tool",
+        unexpected_media_tool,
+    )
+    scanner = HostMediaScanner(AtomicHostFile(tmp_path / "cache.json"))
+    folder = create_host_media_folder(tmp_path)
+    scanner.scan((folder,), checkpoint=lambda: None)
+    assert calls == 1
+    tagged = cast("_MutableWave", WAVE(path))  # type: ignore[no-untyped-call]
+    tagged.add_tags()
+    assert tagged.tags is not None
+    tagged.tags.add(TIT2(encoding=3, text=["Changed"]))  # type: ignore[no-untyped-call]
+    tagged.save()
+    pending = scanner.scan((folder,), checkpoint=lambda: None)
+    result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert calls == 2
+    assert result.snapshot.tracks[0].title == "Changed"
+    assert result.sources[0].acoustic_fingerprint == "1,2,3"
+
+    # A different payload must calculate a new correlation fingerprint.
+    acoustic = "4,5,6"
+    _write_wav(path)
+    pending = scanner.scan((folder,), checkpoint=lambda: None)
+    result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert calls == 3
+    assert result.sources[0].acoustic_fingerprint == "4,5,6"
 
 
 def test_missing_fingerprinting_tool_keeps_readable_media(
@@ -605,9 +666,216 @@ def test_new_folder_cover_invalidates_an_unchanged_cached_track(tmp_path: Path) 
         checkpoint=lambda: None,
     )
 
-    assert second.cache.inspected == 1
-    assert second.cache.reused == 0
+    assert second.cache.inspected == 0
+    assert second.cache.reused == 1
     assert second.snapshot.tracks[0].artwork_id > 0
+
+
+def test_folder_cover_bytes_are_not_reread_until_file_facts_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    _write_wav(selected / "Track.wav")
+    cover = selected / "cover.bmp"
+    Image.new("RGB", (12, 8), "#32c850").save(cover)
+    cache_path = tmp_path / "cache" / "host-media-library.json"
+    folder = HostMediaFolder(
+        HostPath(selected), media_types=frozenset({HostMediaType.AUDIO})
+    )
+    scanner = HostMediaScanner(AtomicHostFile(cache_path))
+    first_pending = scanner.scan((folder,), checkpoint=lambda: None)
+    first = scanner.complete(first_pending, frozenset(), checkpoint=lambda: None)
+
+    native_open_read = LocalHostFile.open_read
+    cover_reads = 0
+
+    def counted_open_read(
+        self: LocalHostFile,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+        max_bytes: int | None = None,
+    ) -> object:
+        nonlocal cover_reads
+        if self.path == HostPath(cover):
+            cover_reads += 1
+        return native_open_read(self, checkpoint=checkpoint, max_bytes=max_bytes)
+
+    monkeypatch.setattr(LocalHostFile, "open_read", counted_open_read)
+    original_mtime = cover.stat().st_mtime_ns
+    Image.new("RGB", (12, 8), "#c83232").save(cover)
+    os.utime(cover, ns=(original_mtime, original_mtime))
+
+    unchanged_pending = HostMediaScanner(AtomicHostFile(cache_path)).scan(
+        (folder,), checkpoint=lambda: None
+    )
+    unchanged = scanner.complete(
+        unchanged_pending, frozenset(), checkpoint=lambda: None
+    )
+    assert cover_reads == 0
+    assert unchanged.cache.reused == 1
+    assert (
+        unchanged.snapshot.tracks[0].artwork_id == first.snapshot.tracks[0].artwork_id
+    )
+
+    os.utime(
+        cover,
+        ns=(original_mtime + 1_000_000_000, original_mtime + 1_000_000_000),
+    )
+    changed_pending = HostMediaScanner(AtomicHostFile(cache_path)).scan(
+        (folder,), checkpoint=lambda: None
+    )
+    changed = scanner.complete(changed_pending, frozenset(), checkpoint=lambda: None)
+    assert cover_reads == 1
+    assert changed.cache.inspected == 0
+    assert changed.cache.reused == 1
+    assert changed.snapshot.tracks[0].artwork_id != first.snapshot.tracks[0].artwork_id
+
+
+@pytest.mark.parametrize("version", [9, 10])
+def test_prior_host_cache_reuses_unchanged_media_and_cover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
+) -> None:
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    _write_wav(selected / "Track.wav")
+    cover = selected / "cover.bmp"
+    Image.new("RGB", (12, 8), "#32c850").save(cover)
+    cache_path = tmp_path / "cache" / "host-media-library.json"
+    folder = HostMediaFolder(
+        HostPath(selected), media_types=frozenset({HostMediaType.AUDIO})
+    )
+    scanner = HostMediaScanner(AtomicHostFile(cache_path))
+    first = scanner.scan((folder,), checkpoint=lambda: None)
+    scanner.complete(first, frozenset(), checkpoint=lambda: None)
+
+    document = json.loads(cache_path.read_text(encoding="utf-8"))
+    document["version"] = version
+    if version == 10:
+        document["entries"][0]["metadata"]["payload_sha256"] = "a" * 64
+    document["catalog_sha256"] = hashlib.sha256(
+        json.dumps(
+            document["entries"],
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    if version == 9:
+        document.pop("folder_artwork")
+        document.pop("folder_artwork_sha256")
+    cache_path.write_text(
+        json.dumps(
+            document,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+
+    native_open_read = LocalHostFile.open_read
+
+    def reject_cover_read(
+        self: LocalHostFile,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+        max_bytes: int | None = None,
+    ) -> object:
+        if self.path in (HostPath(cover), HostPath(selected / "Track.wav")):
+            pytest.fail("Cache migration reread unchanged media or artwork")
+        return native_open_read(self, checkpoint=checkpoint, max_bytes=max_bytes)
+
+    monkeypatch.setattr(LocalHostFile, "open_read", reject_cover_read)
+    upgraded = HostMediaScanner(AtomicHostFile(cache_path)).scan(
+        (folder,), checkpoint=lambda: None
+    )
+
+    assert upgraded.cache == HostMediaCacheStats(reused=1)
+    assert (
+        scanner.complete(upgraded, frozenset(), checkpoint=lambda: None)
+        .sources[0]
+        .acoustic_fingerprint
+        == "1,2,3"
+    )
+    stored = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert stored["version"] == 10
+    assert "payload_sha256" not in stored["entries"][0]["metadata"]
+
+
+def test_folder_cover_cache_is_independent_of_embedded_artwork(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    track_path = selected / "Track.wav"
+    _write_wav(track_path)
+    _embed_front_cover(track_path, "#c83232")
+    cover = selected / "cover.bmp"
+    Image.new("RGB", (12, 8), "#32c850").save(cover)
+    cache_path = tmp_path / "cache" / "host-media-library.json"
+    folder = HostMediaFolder(
+        HostPath(selected), media_types=frozenset({HostMediaType.AUDIO})
+    )
+    scanner = HostMediaScanner(AtomicHostFile(cache_path))
+    first_pending = scanner.scan((folder,), checkpoint=lambda: None)
+    scanner.complete(first_pending, frozenset(), checkpoint=lambda: None)
+
+    native_open_read = LocalHostFile.open_read
+
+    def reject_cover_read(
+        self: LocalHostFile,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+        max_bytes: int | None = None,
+    ) -> object:
+        if self.path == HostPath(cover):
+            pytest.fail("Unchanged folder cover must not be read again")
+        return native_open_read(self, checkpoint=checkpoint, max_bytes=max_bytes)
+
+    monkeypatch.setattr(LocalHostFile, "open_read", reject_cover_read)
+    second = HostMediaScanner(AtomicHostFile(cache_path)).scan(
+        (folder,), checkpoint=lambda: None
+    )
+    assert second.cache.reused == 1
+
+
+def test_partial_scan_preserves_other_folder_cover_facts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folders: list[HostMediaFolder] = []
+    for name in ("Left", "Right"):
+        selected = tmp_path / name
+        selected.mkdir()
+        _write_wav(selected / "Track.wav")
+        Image.new("RGB", (12, 8), "#32c850").save(selected / "cover.bmp")
+        folders.append(
+            HostMediaFolder(
+                HostPath(selected), media_types=frozenset({HostMediaType.AUDIO})
+            )
+        )
+    cache_path = tmp_path / "cache" / "host-media-library.json"
+    scanner = HostMediaScanner(AtomicHostFile(cache_path))
+    scanner.scan(tuple(folders), checkpoint=lambda: None)
+    scanner.scan((folders[0],), checkpoint=lambda: None)
+
+    native_open_read = LocalHostFile.open_read
+
+    def reject_right_cover_read(
+        self: LocalHostFile,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+        max_bytes: int | None = None,
+    ) -> object:
+        if self.path == HostPath(tmp_path / "Right" / "cover.bmp"):
+            pytest.fail("Partial scan discarded unchanged folder cover facts")
+        return native_open_read(self, checkpoint=checkpoint, max_bytes=max_bytes)
+
+    monkeypatch.setattr(LocalHostFile, "open_read", reject_right_cover_read)
+    right = scanner.scan((folders[1],), checkpoint=lambda: None)
+    assert right.cache.reused == 1
 
 
 def test_unavailable_folder_artwork_does_not_abort_a_host_scan(
@@ -723,6 +991,75 @@ def test_unchanged_files_are_reused_from_the_persistent_scan_cache(
     assert second.sources == first.sources
 
 
+def test_ipod_tag_drift_rereads_the_host_track_and_refreshes_cached_tags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    track_path = selected / "Track.wav"
+    _write_wav(track_path)
+    tags = _DictionaryLikeTags()
+    tags.set("title", ["Original title"])
+
+    class Media:
+        info = _TaggedMediaInfo()
+
+        def __init__(self) -> None:
+            self.tags = tags
+
+    reads = 0
+
+    def read_media(*_args: object, **_kwargs: object) -> Media:
+        nonlocal reads
+        reads += 1
+        return Media()
+
+    monkeypatch.setattr(mutagen, "File", read_media)
+    scanner = HostMediaScanner(AtomicHostFile(tmp_path / "cache.json"))
+    folder = create_host_media_folder(selected)
+    first = scanner.scan((folder,), checkpoint=lambda: None)
+    scanner.complete(first, frozenset(), checkpoint=lambda: None)
+    tags.set("title", ["Current Host title"])
+    cached = scanner.scan((folder,), checkpoint=lambda: None)
+    library = scanner.complete(cached, frozenset(), checkpoint=lambda: None)
+    assert library.snapshot.tracks[0].title == "Original title"
+    assert reads == 1
+
+    refreshed = scanner.refresh_tracks(
+        library, frozenset({HostPath(track_path)}), checkpoint=lambda: None
+    )
+    assert reads == 2
+    assert refreshed.snapshot.tracks[0].title == "Current Host title"
+    assert (
+        refreshed.sources[0].acoustic_fingerprint
+        == library.sources[0].acoustic_fingerprint
+    )
+
+    repeated = scanner.scan((folder,), checkpoint=lambda: None)
+    repeated_library = scanner.complete(repeated, frozenset(), checkpoint=lambda: None)
+    assert reads == 2
+    assert repeated_library.snapshot.tracks[0].title == "Current Host title"
+
+
+def test_tag_drift_refresh_rejects_changed_host_file_facts(tmp_path: Path) -> None:
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    track_path = selected / "Track.wav"
+    _write_wav(track_path)
+    scanner = HostMediaScanner(AtomicHostFile(tmp_path / "cache.json"))
+    pending = scanner.scan(
+        (create_host_media_folder(selected),), checkpoint=lambda: None
+    )
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    with track_path.open("ab") as stream:
+        stream.write(b"changed")
+
+    with pytest.raises(HostMediaTreeChangedError, match="changed before inspection"):
+        scanner.refresh_tracks(
+            library, frozenset({HostPath(track_path)}), checkpoint=lambda: None
+        )
+
+
 def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     selected, _external = _fixture_library(tmp_path)
     cache_path = tmp_path / "cache" / "host-media-library-v7.json"
@@ -734,7 +1071,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 9
+    assert document["version"] == 10
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {

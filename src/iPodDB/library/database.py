@@ -239,6 +239,7 @@ class IPodLibrary:
         delete_omissions: bool = False,
         replace_media: tuple[int, ...] = (),
         replace_photos: tuple[int, ...] = (),
+        retag_tracks: tuple[int, ...] = (),
     ) -> LibraryDraft:
         """Bind desired state to this source, rejecting omissions unless opted in.
 
@@ -247,6 +248,8 @@ class IPodLibrary:
         ``replace_media`` requests replacement content for retained Track IDs,
         including when their projected metadata stays unchanged. Preparation
         requires matching Prepared Media; it does not publish any files.
+        ``retag_tracks`` requests verified file-tag rewrites at retained locations;
+        PreparedLyrics evidence derives the final size without new codec facts.
         """
         return LibraryDraft(
             self._source_revision,
@@ -254,6 +257,7 @@ class IPodLibrary:
             delete_omissions=delete_omissions,
             replace_media=tuple(replace_media),
             replace_photos=tuple(replace_photos),
+            retag_tracks=tuple(retag_tracks),
         )
 
     def analyze(

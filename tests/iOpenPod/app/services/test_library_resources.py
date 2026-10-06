@@ -28,7 +28,6 @@ from iPodDB.library import (
     CoverFormat,
     CoverPixelFormat,
     IPodLibrary,
-    IssueSeverity,
     LibrarySnapshot,
     WriteResources,
 )
@@ -105,13 +104,16 @@ def build_device(
     photos: bool = False,
     media_payload: bytes | None = None,
     artwork_size_multiplier: int = 1,
+    model: str = "MB565",
 ) -> Device:
     root = tmp_path / "ipod"
     source, thumbnail = with_shared_artwork(
         target=replace(
             TARGET,
             cover_formats=(
-                CoverFormat(1055, 128, 128, 256, CoverPixelFormat.RGB565_LE),
+                CoverFormat(1055, 128, 128, 256, CoverPixelFormat.RGB565_LE)
+                if model == "MB565"
+                else CoverFormat(1060, 320, 320, 640, CoverPixelFormat.RGB565_LE),
             ),
         )
     )
@@ -180,14 +182,14 @@ def build_device(
     metadata = root / "iPod_Control/Device"
     metadata.mkdir()
     (metadata / "SysInfo").write_text(
-        "ModelNumStr: MB565\nFirewireGuid: 000A270012345678\n", encoding="utf-8"
+        f"ModelNumStr: {model}\nFirewireGuid: 000A270012345678\n", encoding="utf-8"
     )
     platform = VirtualStoragePlatform()
     platform.add_volume(
         root,
         identifiers=HardwareIdentifiers(
             usb_vendor_id=0x05AC,
-            usb_product_id=0x1261,
+            usb_product_id=0x1261 if model == "MB565" else None,
             transport_serial="000A270012345678",
         ),
     )
@@ -335,13 +337,9 @@ def test_cover_preparation_spills_past_memory_budget_and_restores(
         if isinstance(file.data, StagedContent)
     }
     assert staged
-    warnings = {
-        issue.artifact
-        for issue in review.result.issues
-        if issue.code == "resources.artwork_disk_staging"
-        and issue.severity is IssueSeverity.WARNING
-    }
-    assert set(staged) <= warnings
+    assert not any(
+        issue.code == "resources.artwork_disk_staging" for issue in review.result.issues
+    )
     expected = {path: data.read_at(0, len(data)) for path, data in staged.items()}
     device.assert_original()
     saved = device.save(review)

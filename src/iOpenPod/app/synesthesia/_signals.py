@@ -188,7 +188,9 @@ def calibrated_band_levels_dbfs(
     normalizer = frame_size * float(np.sum(window * window))
     columns: list[FloatArray] = []
     for low, high in zip(edges_hz, (*edges_hz[1:], math.inf), strict=True):
-        mask = (frequencies >= low) & (frequencies < high)
+        mask: NDArray[np.bool_] = np.logical_and(
+            np.greater_equal(frequencies, low), np.less(frequencies, high)
+        )
         if not np.any(mask):
             mean_square = np.zeros(power.shape[1], dtype=np.float64)
         else:

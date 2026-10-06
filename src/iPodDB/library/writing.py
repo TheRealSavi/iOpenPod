@@ -92,6 +92,9 @@ class LibraryDraft:
     # even if every projected value is unchanged. Resources alone are not intent.
     replace_media: tuple[int, ...] = field(default=(), kw_only=True)
     replace_photos: tuple[int, ...] = field(default=(), kw_only=True)
+    # Retained files whose tags will be rewritten. Require verified lyrics/file
+    # evidence even when the text itself is unchanged, to derive the final size.
+    retag_tracks: tuple[int, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +199,7 @@ class PreparedLyrics:
     """Caller-verified embedded lyrics and the resulting media file identity.
 
     Tagging changes the file size, but retains the encoded media and codec facts.
+    An explicit retag_tracks request also uses this evidence with unchanged text.
     The application owns reading, transforming, verifying and publishing the file.
     """
 

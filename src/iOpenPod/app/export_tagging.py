@@ -5,11 +5,12 @@ from __future__ import annotations
 import io
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, cast
 
 import mutagen.id3 as id3_frames
+from mutagen import MutagenError
 from mutagen.aiff import AIFF
-from mutagen.id3 import ID3
+from mutagen.id3 import ID3, ID3NoHeaderError
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.wave import WAVE
@@ -20,8 +21,10 @@ if TYPE_CHECKING:
     from storage import HostPath
 
 _ID3_EXTENSIONS = frozenset((".mp3", ".wav", ".wave", ".aif", ".aiff", ".aifc"))
+_RAW_AAC_EXTENSIONS = frozenset((".aac", ".adif", ".adts"))
 _MP4_EXTENSIONS = frozenset((".m4a", ".m4b", ".m4v", ".mp4", ".mov"))
 _ID3_FRAMES: Any = id3_frames
+_ID3_TAG: Any = ID3
 _MP4_COVER: Any = MP4Cover
 
 
@@ -35,7 +38,7 @@ class _MutagenFile(Protocol):
 
 class _MutagenFactory(Protocol):
     def __call__(
-        self, filething: str | os.PathLike[str] | io.BytesIO
+        self, filething: str | os.PathLike[str] | BinaryIO
     ) -> _MutagenFile: ...
 
 
@@ -53,9 +56,11 @@ class _Artwork(Protocol):
 class ExportMediaTagger:
     """Apply common tags without transcoding or replacing unknown metadata."""
 
-    def require_supported(self, destination: HostPath) -> None:
-        suffix = Path(os.fspath(destination)).suffix.casefold()
-        if suffix not in _ID3_EXTENSIONS | _MP4_EXTENSIONS:
+    def require_supported(
+        self, destination: HostPath, *, file_name: str | None = None
+    ) -> None:
+        suffix = Path(file_name or os.fspath(destination)).suffix.casefold()
+        if suffix not in _ID3_EXTENSIONS | _RAW_AAC_EXTENSIONS | _MP4_EXTENSIONS:
             raise ValueError(
                 f"iOpenPod cannot embed Library metadata into {suffix or 'this file type'}."
             )
@@ -65,15 +70,18 @@ class ExportMediaTagger:
         destination: HostPath,
         track: Track,
         artwork: _Artwork | None,
+        *,
+        preserve_artwork: bool = False,
+        file_name: str | None = None,
     ) -> None:
-        self.require_supported(destination)
         path = Path(os.fspath(destination))
-        suffix = path.suffix.casefold()
-        cover = _jpeg_cover(artwork) if artwork is not None else None
-        if suffix in _MP4_EXTENSIONS:
-            _tag_mp4(path, track, cover)
-        else:
-            _tag_id3_container(path, suffix, track, cover)
+        self._prepare(
+            path,
+            file_name or path.name,
+            track,
+            artwork,
+            preserve_artwork=preserve_artwork,
+        )
 
     def prepare_bytes(
         self,
@@ -81,24 +89,73 @@ class ExportMediaTagger:
         file_name: str,
         track: Track,
         artwork: _Artwork | None = None,
+        *,
+        preserve_artwork: bool = False,
     ) -> bytes:
         """Materialize Rockbox metadata on private bytes with complete tag read-back.
 
         Storage owns reading and publishing these bytes. This method never opens a
         path, and leaves the caller's original source unchanged on failure.
         """
+        buffer = io.BytesIO(data)
+        self.prepare_stream(
+            buffer, file_name, track, artwork, preserve_artwork=preserve_artwork
+        )
+        return buffer.getvalue()
+
+    def prepare_stream(
+        self,
+        buffer: BinaryIO,
+        file_name: str,
+        track: Track,
+        artwork: _Artwork | None = None,
+        *,
+        preserve_artwork: bool = False,
+    ) -> None:
+        """Retag and verify one private seekable Storage capture, with bounded memory."""
+        try:
+            self._prepare(
+                buffer, file_name, track, artwork, preserve_artwork=preserve_artwork
+            )
+        except MutagenError as error:
+            raise ValueError(
+                f"Could not prepare file tags for {file_name}: {error}"
+            ) from error
+
+    def _prepare(
+        self,
+        buffer: Path | BinaryIO,
+        file_name: str,
+        track: Track,
+        artwork: _Artwork | None,
+        *,
+        preserve_artwork: bool,
+    ) -> None:
         suffix = Path(file_name).suffix.casefold()
-        if suffix not in _ID3_EXTENSIONS | _MP4_EXTENSIONS:
+        if suffix not in _ID3_EXTENSIONS | _RAW_AAC_EXTENSIONS | _MP4_EXTENSIONS:
             raise ValueError(
                 f"Rockbox metadata is unsupported for {suffix or 'this file type'}."
             )
-        buffer = io.BytesIO(data)
         cover = _jpeg_cover(artwork) if artwork is not None else None
         if suffix in _MP4_EXTENSIONS:
-            expected = _tag_mp4(buffer, track, cover)
+            expected = _tag_mp4(buffer, track, cover, preserve_artwork=preserve_artwork)
             factory: _MutagenFactory = cast("_MutagenFactory", MP4)
+        elif suffix in _RAW_AAC_EXTENSIONS:
+            expected = _tag_raw_aac(
+                buffer, track, cover, preserve_artwork=preserve_artwork
+            )
+            if not isinstance(buffer, Path):
+                buffer.seek(0)
+            checked = _ID3_TAG(buffer)
+            if _tag_signature(checked) != expected:
+                raise ValueError(
+                    "Rockbox metadata failed read-back verification; this item was not changed."
+                )
+            return
         else:
-            expected = _tag_id3_container(buffer, suffix, track, cover)
+            expected = _tag_id3_container(
+                buffer, suffix, track, cover, preserve_artwork=preserve_artwork
+            )
             factory = cast(
                 "_MutagenFactory",
                 (
@@ -109,20 +166,22 @@ class ExportMediaTagger:
                     else AIFF
                 ),
             )
-        output = buffer.getvalue()
-        checked = factory(io.BytesIO(output))
+        if not isinstance(buffer, Path):
+            buffer.seek(0)
+        checked = factory(buffer)
         if _tag_signature(checked.tags) != expected:
             raise ValueError(
                 "Rockbox metadata failed read-back verification; this item was not changed."
             )
-        return output
 
 
 def _tag_id3_container(
-    path: Path | io.BytesIO,
+    path: Path | BinaryIO,
     suffix: str,
     track: Track,
     cover: bytes | None,
+    *,
+    preserve_artwork: bool = False,
 ) -> tuple[tuple[str, str], ...]:
     factory = MP3 if suffix == ".mp3" else WAVE if suffix in (".wav", ".wave") else AIFF
     audio = cast("_MutagenFactory", factory)(path)
@@ -132,8 +191,36 @@ def _tag_id3_container(
         raise ValueError(f"The exported {suffix} file does not support ID3 metadata.")
     tags: Any = audio.tags
 
-    for key in (
-        "APIC",
+    _apply_id3_tags(tags, track, cover, preserve_artwork=preserve_artwork)
+    audio.save(path, **({"padding": _no_padding} if not isinstance(path, Path) else {}))
+    return _tag_signature(audio.tags)
+
+
+def _tag_raw_aac(
+    path: Path | BinaryIO,
+    track: Track,
+    cover: bytes | None,
+    *,
+    preserve_artwork: bool = False,
+) -> tuple[tuple[str, str], ...]:
+    """Write an ID3 prefix because Mutagen's AAC wrapper is read-only for tags."""
+    try:
+        tags = _ID3_TAG(path)
+    except ID3NoHeaderError:
+        tags = _ID3_TAG()
+    _apply_id3_tags(tags, track, cover, preserve_artwork=preserve_artwork)
+    tags.save(path, **({"padding": _no_padding} if not isinstance(path, Path) else {}))
+    return _tag_signature(tags)
+
+
+def _apply_id3_tags(
+    tags: Any,
+    track: Track,
+    cover: bytes | None,
+    *,
+    preserve_artwork: bool,
+) -> None:
+    keys = (
         "COMM",
         "TALB",
         "TBPM",
@@ -154,8 +241,11 @@ def _tag_id3_container(
         "TSOT",
         "TXXX:ITUNESADVISORY",
         "USLT",
-    ):
+    )
+    for key in keys:
         tags.delall(key)
+    if not preserve_artwork:
+        tags.delall("APIC")
     metadata = track.metadata
     frame_values = (
         (_ID3_FRAMES.TIT2, track.title),
@@ -211,14 +301,14 @@ def _tag_id3_container(
                 data=cover,
             )
         )
-    audio.save(
-        path, **({"padding": _no_padding} if isinstance(path, io.BytesIO) else {})
-    )
-    return _tag_signature(audio.tags)
 
 
 def _tag_mp4(
-    path: Path | io.BytesIO, track: Track, cover: bytes | None
+    path: Path | BinaryIO,
+    track: Track,
+    cover: bytes | None,
+    *,
+    preserve_artwork: bool = False,
 ) -> tuple[tuple[str, str], ...]:
     audio = cast("_MutagenFactory", MP4)(path)
     if audio.tags is None:
@@ -258,18 +348,17 @@ def _tag_mp4(
             if metadata.content_advisory.value == "clean"
             else 0
         ],
-        "covr": [_MP4_COVER(cover, imageformat=_MP4_COVER.FORMAT_JPEG)]
-        if cover is not None
-        else None,
     }
+    if cover is not None:
+        values["covr"] = [_MP4_COVER(cover, imageformat=_MP4_COVER.FORMAT_JPEG)]
+    elif not preserve_artwork:
+        values["covr"] = None
     for key, value in values.items():
         if value is None:
             tags.pop(key, None)
         else:
             tags[key] = value
-    audio.save(
-        path, **({"padding": _no_padding} if isinstance(path, io.BytesIO) else {})
-    )
+    audio.save(path, **({"padding": _no_padding} if not isinstance(path, Path) else {}))
     return _tag_signature(audio.tags)
 
 

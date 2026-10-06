@@ -67,7 +67,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 9
+_CACHE_VERSION = 10
 _MAX_CACHE_BYTES = 64 * 1024 * 1024
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
@@ -294,6 +294,13 @@ class HostMediaLibrary:
     artwork_sources: tuple[HostMediaArtworkSource, ...] = ()
     approved_external_files: tuple[LocalHostFile, ...] = ()
     incomplete_playlist_ids: tuple[int, ...] = ()
+    # Retained scan evidence for targeted refresh, separate from Library authority.
+    cached_records: tuple[_CachedRecord, ...] = field(
+        default=(), repr=False, compare=False
+    )
+    rechecked_track_paths: frozenset[str] = field(
+        default=frozenset(), repr=False, compare=False
+    )
 
     @property
     def audio_count(self) -> int:
@@ -636,15 +643,9 @@ class _CachedTrackRecord(_CachedFileRecord):
         observation: _Observation,
         folder_artwork: _ArtworkReference | None = None,
     ) -> bool:
-        if not self.acoustic_fingerprint or not _CachedFileRecord.matches(
+        del folder_artwork
+        return bool(self.acoustic_fingerprint) and _CachedFileRecord.matches(
             self, observation
-        ):
-            return False
-        artwork = self.artwork
-        if artwork is not None and artwork.kind is HostArtworkKind.EMBEDDED:
-            return True
-        return (None if artwork is None else artwork.state) == (
-            None if folder_artwork is None else folder_artwork.state
         )
 
 
@@ -694,6 +695,7 @@ class PendingHostMediaScan:
     issues: tuple[HostMediaScanIssue, ...]
     cache: HostMediaCacheStats
     cached_records: tuple[_CachedRecord, ...]
+    folder_artwork: tuple[_ArtworkReference, ...] = ()
     folders: tuple[HostMediaFolder, ...] = ()
     observations: tuple[_Observation, ...] = ()
     enumeration_issues: tuple[HostMediaScanIssue, ...] = ()
@@ -788,8 +790,10 @@ class HostMediaScanner:
         before, enumeration_issues = _enumerate(
             folders, files=files, checkpoint=checkpoint
         )
-        before_artwork = _folder_artwork_catalog(before, checkpoint=checkpoint)
-        cached = self._load_cache()
+        cached, cached_artwork = self._load_cache()
+        before_artwork = _folder_artwork_catalog(
+            before, cached=cached_artwork, checkpoint=checkpoint
+        )
         issues = list(enumeration_issues)
         total = len(before)
         records, inspection_issues, reused, inspected = _inspect_selected_files(
@@ -813,7 +817,9 @@ class HostMediaScanner:
             cache_hits=reused,
         )
         after, final_issues = _enumerate(folders, files=files, checkpoint=checkpoint)
-        after_artwork = _folder_artwork_catalog(after, checkpoint=checkpoint)
+        after_artwork = _folder_artwork_catalog(
+            after, cached=before_artwork, checkpoint=checkpoint
+        )
         if _folder_artwork_states(before_artwork) != _folder_artwork_states(
             after_artwork
         ):
@@ -866,13 +872,25 @@ class HostMediaScanner:
         merged_cache.update(
             (_path_identity(record.path.path), record) for record in records
         )
-        self._store_cache(merged_cache.values())
+        scanned_artwork_directories = {
+            _path_identity(observation.path.path.parent)
+            for observation in after
+            if observation.kind in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO)
+        }
+        merged_artwork = {
+            identity: artwork
+            for identity, artwork in cached_artwork.items()
+            if identity not in scanned_artwork_directories
+        }
+        merged_artwork.update(after_artwork)
+        self._store_cache(merged_cache.values(), merged_artwork.values())
         return PendingHostMediaScan(
             records=tuple(records),
             external_references=tuple(external),
             issues=tuple(issues),
             cache=HostMediaCacheStats(reused, inspected),
             cached_records=tuple(merged_cache.values()),
+            folder_artwork=tuple(merged_artwork.values()),
             folders=folders,
             observations=before,
             enumeration_issues=enumeration_issues,
@@ -1060,7 +1078,7 @@ class HostMediaScanner:
             HostMediaCacheStats(reused, inspected),
         )
         result = replace(result, approved_external_files=tuple(approved_external_files))
-        self._store_cache(cached.values())
+        self._store_cache(cached.values(), pending.folder_artwork)
         _emit(
             progress,
             HostMediaScanStage.COMPLETE,
@@ -1071,21 +1089,109 @@ class HostMediaScanner:
         )
         return result
 
-    def _load_cache(self) -> dict[str, _CachedRecord]:
+    def refresh_tracks(
+        self,
+        library: HostMediaLibrary,
+        paths: frozenset[HostPath],
+        *,
+        checkpoint: CancellationCheck,
+    ) -> HostMediaLibrary:
+        """Reread Host tags when current iPod details disagree with cached tags."""
+
+        if not paths:
+            return library
+        records = {
+            _path_identity(record.path.path): record
+            for record in library.cached_records
+        }
+        cached_records, folder_artwork = self._load_cache()
+        refreshed_paths: set[str] = set()
+        for path in sorted(paths, key=lambda item: _path_identity(item.path)):
+            checkpoint()
+            identity = _path_identity(path.path)
+            record = records.get(identity)
+            if not isinstance(record, _CachedTrackRecord):
+                raise HostMediaScanError("The Host Track is no longer in the scan.")
+            folder = folder_artwork.get(_path_identity(path.path.parent))
+            if folder is None:
+                folder = next(
+                    (
+                        _ArtworkReference(
+                            HostArtworkKind.FOLDER,
+                            source.path,
+                            source.size_bytes,
+                            source.modified_ns,
+                            source.content_sha256,
+                        )
+                        for source in library.artwork_sources
+                        if source.kind is HostArtworkKind.FOLDER
+                        and _path_identity(source.path.path.parent)
+                        == _path_identity(path.path.parent)
+                    ),
+                    None,
+                )
+            observation = _Observation(
+                record.path, record.kind, record.size_bytes, record.modified_ns
+            )
+            try:
+                refreshed = _inspect_track(observation, folder, checkpoint=checkpoint)
+            except (OSError, StorageError, ValueError, mutagen.MutagenError) as error:
+                raise HostMediaScanError(
+                    "The Host Track could not be reread. Run Sync again."
+                ) from error
+            if refreshed.warning:
+                raise HostMediaScanError(
+                    "The Host Track details could not be verified. Run Sync again."
+                )
+            records[identity] = replace(
+                refreshed,
+                acoustic_fingerprint=record.acoustic_fingerprint,
+            )
+            refreshed_paths.add(identity)
+        updated = _build_library(
+            tuple(records.values()),
+            library.issues,
+            HostMediaCacheStats(
+                max(0, library.cache.reused - len(refreshed_paths)),
+                library.cache.inspected + len(refreshed_paths),
+            ),
+        )
+        updated = replace(
+            updated,
+            approved_external_files=library.approved_external_files,
+            rechecked_track_paths=(
+                library.rechecked_track_paths | frozenset(refreshed_paths)
+            ),
+        )
+        cached_records.update(records)
+        self._store_cache(cached_records.values(), folder_artwork.values())
+        return updated
+
+    def _load_cache(
+        self,
+    ) -> tuple[dict[str, _CachedRecord], dict[str, _ArtworkReference]]:
         if self._cache_file is None:
-            return {}
+            return {}, {}
         try:
             payload = self._cache_file.read_bytes()
             if payload is None or len(payload) > _MAX_CACHE_BYTES:
-                return {}
-            return {
-                _path_identity(record.path.path): record
-                for record in _decode_cache(payload)
-            }
+                return {}, {}
+            records, artwork = _decode_cache(payload)
+            return (
+                {_path_identity(record.path.path): record for record in records},
+                {
+                    _path_identity(reference.path.path.parent): reference
+                    for reference in artwork
+                },
+            )
         except (OSError, StorageError, ValueError, UnicodeError):
-            return {}
+            return {}, {}
 
-    def _store_cache(self, records: Iterable[_CachedRecord]) -> None:
+    def _store_cache(
+        self,
+        records: Iterable[_CachedRecord],
+        folder_artwork: Iterable[_ArtworkReference],
+    ) -> None:
         if self._cache_file is None:
             return
         ordered = tuple(
@@ -1096,8 +1202,16 @@ class HostMediaScanner:
         )
         if len(ordered) > _MAX_CACHE_ENTRIES:
             ordered = ordered[-_MAX_CACHE_ENTRIES:]
+        ordered_artwork = tuple(
+            sorted(
+                folder_artwork,
+                key=lambda reference: _path_identity(reference.path.path),
+            )
+        )
+        if len(ordered_artwork) > _MAX_CACHE_ENTRIES:
+            ordered_artwork = ordered_artwork[-_MAX_CACHE_ENTRIES:]
         try:
-            self._cache_file.replace_bytes(_encode_cache(ordered))
+            self._cache_file.replace_bytes(_encode_cache(ordered, ordered_artwork))
         except (OSError, StorageError, HostMediaScanError):
             logger.warning(
                 "Host Media Scan cache could not be updated",
@@ -1302,6 +1416,7 @@ def _review_reference(
 def _folder_artwork_catalog(
     observations: tuple[_Observation, ...],
     *,
+    cached: dict[str, _ArtworkReference],
     checkpoint: CancellationCheck,
 ) -> dict[str, _ArtworkReference]:
     catalog: dict[str, _ArtworkReference] = {}
@@ -1313,7 +1428,11 @@ def _folder_artwork_catalog(
     for identity, observation in directories.items():
         checkpoint()
         try:
-            artwork = _folder_artwork_for(observation, checkpoint=checkpoint)
+            artwork = _folder_artwork_for(
+                observation,
+                cached=cached.get(identity),
+                checkpoint=checkpoint,
+            )
         except (OSError, StorageError):
             # Folder artwork is optional presentation data. Cloud placeholders,
             # evictions, and permission churn must not invalidate media discovery.
@@ -1326,6 +1445,7 @@ def _folder_artwork_catalog(
 def _folder_artwork_for(
     observation: _Observation,
     *,
+    cached: _ArtworkReference | None = None,
     checkpoint: CancellationCheck,
 ) -> _ArtworkReference | None:
     if observation.kind not in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO):
@@ -1350,6 +1470,13 @@ def _folder_artwork_for(
                 continue
             if not 0 < entry.size_bytes <= _MAX_ARTWORK_BYTES:
                 continue
+            if (
+                cached is not None
+                and _path_identity(cached.path.path) == _path_identity(entry.path.path)
+                and cached.size_bytes == entry.size_bytes
+                and cached.modified_ns == entry.modified_ns
+            ):
+                return cached
             digest = hashlib.sha256()
             try:
                 with entry.file.open_read(checkpoint=checkpoint) as source:
@@ -1394,24 +1521,26 @@ def _reconcile_folder_artwork(
         if not isinstance(record, _CachedTrackRecord):
             reconciled.append(record)
             continue
-        artwork = record.artwork
-        if artwork is not None and artwork.kind is HostArtworkKind.EMBEDDED:
-            reconciled.append(record)
-            continue
         current = folder_artwork.get(_path_identity(record.path.path.parent))
-        reconciled.append(
-            replace(
-                record,
-                artwork_kind=None if current is None else current.kind,
-                artwork_path=None if current is None else current.path,
-                artwork_size_bytes=0 if current is None else current.size_bytes,
-                artwork_modified_ns=0 if current is None else current.modified_ns,
-                artwork_content_sha256=""
-                if current is None
-                else current.content_sha256,
-            )
-        )
+        reconciled.append(_track_with_folder_artwork(record, current))
     return reconciled
+
+
+def _track_with_folder_artwork(
+    record: _CachedTrackRecord,
+    current: _ArtworkReference | None,
+) -> _CachedTrackRecord:
+    artwork = record.artwork
+    if artwork is not None and artwork.kind is HostArtworkKind.EMBEDDED:
+        return record
+    return replace(
+        record,
+        artwork_kind=None if current is None else current.kind,
+        artwork_path=None if current is None else current.path,
+        artwork_size_bytes=0 if current is None else current.size_bytes,
+        artwork_modified_ns=0 if current is None else current.modified_ns,
+        artwork_content_sha256="" if current is None else current.content_sha256,
+    )
 
 
 def _inspect_selected_files(
@@ -1453,7 +1582,11 @@ def _inspect_selected_files(
                     _path_identity(observation.path.path.parent)
                 )
                 if previous is not None and previous.matches(observation, fallback):
-                    ready[index] = previous
+                    ready[index] = (
+                        _track_with_folder_artwork(previous, fallback)
+                        if isinstance(previous, _CachedTrackRecord)
+                        else previous
+                    )
                     continue
                 pending[index] = executor.submit(
                     _inspect_file,
@@ -2029,16 +2162,33 @@ def _build_library(
         cache=cache,
         artwork_sources=tuple(artwork_sources.values()),
         incomplete_playlist_ids=tuple(sorted(incomplete_playlists)),
+        cached_records=records,
     )
 
 
-def _encode_cache(records: tuple[_CachedRecord, ...]) -> bytes:
+def _encode_cache(
+    records: tuple[_CachedRecord, ...],
+    folder_artwork: tuple[_ArtworkReference, ...],
+) -> bytes:
     entries = [_record_document(record) for record in records]
     catalog = _canonical_json(entries)
+    artwork_entries = [
+        {
+            "path": os.fspath(reference.path),
+            "size_bytes": reference.size_bytes,
+            "modified_ns": reference.modified_ns,
+            "content_sha256": reference.content_sha256,
+        }
+        for reference in folder_artwork
+    ]
     document = {
         "version": _CACHE_VERSION,
         "entries": entries,
         "catalog_sha256": hashlib.sha256(catalog).hexdigest(),
+        "folder_artwork": artwork_entries,
+        "folder_artwork_sha256": hashlib.sha256(
+            _canonical_json(artwork_entries)
+        ).hexdigest(),
     }
     encoded = _canonical_json(document)
     if len(encoded) > _MAX_CACHE_BYTES:
@@ -2046,13 +2196,26 @@ def _encode_cache(records: tuple[_CachedRecord, ...]) -> bytes:
     return encoded
 
 
-def _decode_cache(payload: bytes) -> tuple[_CachedRecord, ...]:
+def _decode_cache(
+    payload: bytes,
+) -> tuple[tuple[_CachedRecord, ...], tuple[_ArtworkReference, ...]]:
     raw: object = json.loads(payload.decode("utf-8"), object_pairs_hook=_pairs)
     document = _object(raw, "cache")
-    if set(document) != {"version", "entries", "catalog_sha256"}:
-        raise ValueError("Host media cache fields are invalid")
-    if document["version"] != _CACHE_VERSION:
+    version = _integer(document.get("version"), "version")
+    if version == 9:
+        expected = {"version", "entries", "catalog_sha256"}
+    elif version == _CACHE_VERSION:
+        expected = {
+            "version",
+            "entries",
+            "catalog_sha256",
+            "folder_artwork",
+            "folder_artwork_sha256",
+        }
+    else:
         raise ValueError("Host media cache version is unsupported")
+    if set(document) != expected:
+        raise ValueError("Host media cache fields are invalid")
     entries = _array(document["entries"], "entries")
     if len(entries) > _MAX_CACHE_ENTRIES:
         raise ValueError("Host media cache contains too many entries")
@@ -2062,7 +2225,72 @@ def _decode_cache(payload: bytes) -> tuple[_CachedRecord, ...]:
         or hashlib.sha256(_canonical_json(entries)).hexdigest() != digest
     ):
         raise ValueError("Host media cache checksum does not match")
-    return tuple(_record_from_document(entry) for entry in entries)
+    records = tuple(_record_from_document(entry) for entry in entries)
+    if version == 9:
+        return records, _folder_artwork_from_records(records)
+    artwork_entries = _array(document["folder_artwork"], "folder_artwork")
+    if len(artwork_entries) > _MAX_CACHE_ENTRIES:
+        raise ValueError("Host media cache contains too many folder covers")
+    artwork_digest = _text(document["folder_artwork_sha256"], "folder_artwork_sha256")
+    if (
+        len(artwork_digest) != 64
+        or hashlib.sha256(_canonical_json(artwork_entries)).hexdigest()
+        != artwork_digest
+    ):
+        raise ValueError("Host media folder artwork checksum does not match")
+    artwork: list[_ArtworkReference] = []
+    for entry in artwork_entries:
+        row = _object(entry, "folder artwork")
+        if set(row) != {
+            "path",
+            "size_bytes",
+            "modified_ns",
+            "content_sha256",
+        }:
+            raise ValueError("Host media folder artwork fields are invalid")
+        path = Path(_text(row["path"], "path"))
+        if not path.is_absolute():
+            raise ValueError("Host media folder artwork paths must be absolute")
+        size_bytes = _integer(row["size_bytes"], "size_bytes")
+        modified_ns = _integer(row["modified_ns"], "modified_ns")
+        if not 0 < size_bytes <= _MAX_ARTWORK_BYTES or modified_ns < 0:
+            raise ValueError("Host media folder artwork file facts are invalid")
+        artwork.append(
+            _ArtworkReference(
+                HostArtworkKind.FOLDER,
+                HostPath(path),
+                size_bytes,
+                modified_ns,
+                _sha256(row["content_sha256"], "content_sha256"),
+            )
+        )
+    return records, tuple(artwork)
+
+
+def _folder_artwork_from_records(
+    records: tuple[_CachedRecord, ...],
+) -> tuple[_ArtworkReference, ...]:
+    """Recover v9 folder-cover facts embedded in cached Track records."""
+
+    references: dict[str, _ArtworkReference] = {}
+    conflicts: set[str] = set()
+    for record in records:
+        if not isinstance(record, _CachedTrackRecord):
+            continue
+        artwork = record.artwork
+        if artwork is None or artwork.kind is not HostArtworkKind.FOLDER:
+            continue
+        identity = _path_identity(record.path.path.parent)
+        previous = references.get(identity)
+        if previous is not None and previous != artwork:
+            conflicts.add(identity)
+        elif identity not in conflicts:
+            references[identity] = artwork
+    return tuple(
+        reference
+        for identity, reference in references.items()
+        if identity not in conflicts
+    )
 
 
 def _record_document(record: _CachedRecord) -> dict[str, object]:
@@ -2139,7 +2367,8 @@ def _record_from_document(value: object) -> _CachedRecord:
     warning = _text(row["warning"], "warning")
     metadata = _object(row["metadata"], "metadata")
     if kind in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO):
-        if frozenset(metadata) != _TRACK_METADATA_FIELDS:
+        # Ignore the unused digest emitted by an earlier v10 development build.
+        if frozenset(metadata) - {"payload_sha256"} != _TRACK_METADATA_FIELDS:
             raise ValueError("Cached Track metadata fields are invalid")
         acoustic_fingerprint = _text(
             metadata["acoustic_fingerprint"],

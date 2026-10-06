@@ -1022,6 +1022,7 @@ class DeviceCoordinator:
         podcast_state: LoadedPodcastState | None = None,
     ) -> LibraryReview:
         """Prepare a review with private Host staging and read-only device access."""
+        from iOpenPod.app.library_tag_updates import with_rockbox_edits
         from iOpenPod.app.library_write import (
             LibraryReview,
             PreparationCancelledError,
@@ -1189,12 +1190,16 @@ class DeviceCoordinator:
             library_resources.recheck(active.session, (active.time_precondition,))
             library_resources.recheck(active.session, active.sidecar_preconditions)
             checkpoint("draft.analysis", "Analyzing changes")
+            request = with_rockbox_edits(request, source)
             plan = source.analyze(
                 source.begin_draft(
                     snapshot,
                     delete_omissions=request.delete_omissions,
                     replace_media=request.replace_media,
                     replace_photos=request.replace_photos,
+                    retag_tracks=tuple(
+                        update.track_id for update in request.rockbox_media
+                    ),
                 ),
                 target,
             )

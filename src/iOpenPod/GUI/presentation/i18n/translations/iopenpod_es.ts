@@ -5742,6 +5742,26 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Foto</translation>
     </message>
     <message>
+        <source>Audio payload fingerprint changed</source>
+        <translation>Cambió la huella del contenido de audio</translation>
+    </message>
+    <message>
+        <source>Embedded Rockbox tags need updating</source>
+        <translation>Las etiquetas incrustadas de Rockbox necesitan actualizarse</translation>
+    </message>
+    <message>
+        <source>Host tags and artwork differ from the iPod</source>
+        <translation>Las etiquetas y la portada del equipo no coinciden con las del iPod</translation>
+    </message>
+    <message>
+        <source>Host tags differ from the iPod</source>
+        <translation>Las etiquetas del equipo no coinciden con las del iPod</translation>
+    </message>
+    <message>
+        <source>Host artwork differs from the iPod</source>
+        <translation>La portada del equipo no coincide con la del iPod</translation>
+    </message>
+    <message>
         <source>Host size and modified time changed</source>
         <translation>El tamaño y la fecha de modificación del archivo del equipo cambiaron</translation>
     </message>
@@ -5764,6 +5784,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Host size and modified time still match</source>
         <translation>El tamaño y la fecha de modificación del archivo del equipo siguen coincidiendo</translation>
+    </message>
+    <message>
+        <source>Host tags and artwork still match the iPod</source>
+        <translation>Las etiquetas y la portada del equipo siguen coincidiendo con las del iPod</translation>
     </message>
     <message>
         <source>Matching content identity</source>
@@ -7309,7 +7333,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>A Track with a positive play count cannot be marked unplayed.</source>
-        <translation>Una pista con reproducciones registradas no se puede marcar como no reproducida.</translation>
+        <translation type="vanished">Una pista con reproducciones registradas no se puede marcar como no reproducida.</translation>
     </message>
     <message>
         <source>A changed Playlist has inconsistent ordinary occurrence positions.</source>
@@ -7570,6 +7594,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Chaptered media does not match its verified destination.</source>
         <translation>El archivo con capítulos no coincide con el destino verificado.</translation>
+    </message>
+    <message>
+        <source>Checking Host Track details.</source>
+        <translation>Comprobando los detalles de las pistas del Host.</translation>
     </message>
     <message>
         <source>Checking for files that changed during the scan…</source>
@@ -8656,6 +8684,14 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Revisa la advertencia y confirma expresamente esta restauración para el iPod conectado.</translation>
     </message>
     <message>
+        <source>Rewrite embedded tags on the retained media; verify lyrics and derive the final file size.</source>
+        <translation>Reescribir las etiquetas incrustadas del archivo conservado; verificar la letra y determinar el tamaño final del archivo.</translation>
+    </message>
+    <message>
+        <source>Rockbox artwork for {name} was not embedded. The media and iOpenPod artwork can still Sync; retry after correcting the file.</source>
+        <translation>La portada de Rockbox de {name} no se incrustó. El archivo multimedia y la portada de iOpenPod pueden sincronizarse; corrige el archivo y vuelve a intentarlo.</translation>
+    </message>
+    <message>
         <source>SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.</source>
         <translation>La regeneración de SQLite requiere fechas de pistas resueltas. Vuelve a cargar con una zona horaria conocida antes de guardar esta biblioteca.</translation>
     </message>
@@ -8882,6 +8918,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Sync was interrupted and its previous Library could not be restored. Reconnect the same iPod and recover this transaction before further writes.</source>
         <translation>La sincronización se interrumpió y no se pudo restaurar la biblioteca anterior. Vuelve a conectar el mismo iPod y recupera esta operación antes de escribir más datos.</translation>
+    </message>
+    <message>
+        <source>Tag rewrites require one retained Track at its existing location.</source>
+        <translation>La reescritura de etiquetas requiere una pista conservada en su ubicación actual.</translation>
     </message>
     <message>
         <source>Temporary Host files could not be prepared. Check free space and file access, then retry.</source>

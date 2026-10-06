@@ -1,9 +1,12 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
 
 from iOpenPod.app.host_media_library import (
+    HostArtworkKind,
+    HostMediaArtworkSource,
     HostMediaCacheStats,
     HostMediaFileKind,
     HostMediaLibrary,
@@ -22,6 +25,7 @@ from iOpenPod.app.sync_plan import (
     SyncPlanBasis,
     prepare_sync_plan,
 )
+from iOpenPod.app.sync_track_details import track_tag_sha256
 from iPodDB.library import (
     LibrarySnapshot,
     MediaType,
@@ -204,7 +208,7 @@ def test_prior_sync_path_still_matches_when_acoustic_analysis_is_unavailable(
         path, track_id=100, fingerprint=None, size=101 if changed else 100
     )
     plan = prepare_sync_plan(
-        _host_library((track,), (), (source,)),
+        _host_library((replace(track, title="Song 1"),), (), (source,)),
         _ipod_library((_ipod_track(track_id=1, fingerprint="", sync=_sync(path)),)),
         _ipod_snapshot(1),
     )
@@ -212,6 +216,7 @@ def test_prior_sync_path_still_matches_when_acoustic_analysis_is_unavailable(
     assert plan.items[0].action is (
         SyncPlanAction.UPDATE if changed else SyncPlanAction.UNCHANGED
     )
+    assert plan.items[0].audio_payload_changed is changed
 
 
 def test_plan_classifies_host_only_ipod_only_and_content_matches(
@@ -280,9 +285,11 @@ def test_prior_host_path_correlates_changed_content_as_update(tmp_path: Path) ->
     assert len(plan.items) == 1
     item = plan.items[0]
     assert item.action is SyncPlanAction.UPDATE
-    assert item.basis is SyncPlanBasis.HOST_FACTS_CHANGED
+    assert item.basis is SyncPlanBasis.AUDIO_PAYLOAD_CHANGED
     assert item.host_size_changed is True
     assert item.host_modified_changed is True
+    assert item.metadata_changed is True
+    assert item.audio_payload_changed is True
 
 
 def test_matching_prior_host_facts_remain_unchanged(tmp_path: Path) -> None:
@@ -293,7 +300,7 @@ def test_matching_prior_host_facts_remain_unchanged(tmp_path: Path) -> None:
         fingerprint="1,2,3",
     )
     plan = prepare_sync_plan(
-        _host_library((track,), (), (source,)),
+        _host_library((replace(track, title="Song 10"),), (), (source,)),
         _ipod_library(
             (
                 _ipod_track(
@@ -310,6 +317,254 @@ def test_matching_prior_host_facts_remain_unchanged(tmp_path: Path) -> None:
     assert plan.items[0].basis is SyncPlanBasis.HOST_FACTS_MATCH
 
 
+def test_ipod_tag_edit_updates_with_unchanged_host_file_facts(tmp_path: Path) -> None:
+    path = tmp_path / "manually-edited.mp3"
+    track, source = _host_track(path, track_id=1, fingerprint="1,2,3")
+    baseline = track_tag_sha256(
+        replace(_ipod_snapshot(10).tracks[0], title="Original iPod title")
+    )
+    plan = prepare_sync_plan(
+        _host_library((track,), (), (source,)),
+        _ipod_library(
+            (
+                _ipod_track(
+                    track_id=10,
+                    fingerprint="1,2,3",
+                    sync=replace(_sync(path), ipod_tag_sha256=baseline),
+                ),
+            )
+        ),
+        _ipod_snapshot(10),
+    )
+
+    assert plan.items[0].action is SyncPlanAction.UPDATE
+    assert plan.items[0].metadata_changed is True
+    assert plan.items[0].host_size_changed is False
+    assert plan.items[0].host_modified_changed is False
+
+
+def test_rechecked_host_tags_can_confirm_an_ipod_edit_is_already_resolved(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "already-matching.mp3"
+    host_track, source = _host_track(path, track_id=1, fingerprint="1,2,3")
+    baseline = track_tag_sha256(
+        replace(_ipod_snapshot(10).tracks[0], title="Prior iPod title")
+    )
+    host = replace(
+        _host_library((replace(host_track, title="Song 10"),), (), (source,)),
+        rechecked_track_paths=frozenset({str(path)}),
+    )
+    plan = prepare_sync_plan(
+        host,
+        _ipod_library(
+            (
+                _ipod_track(
+                    track_id=10,
+                    fingerprint="1,2,3",
+                    sync=replace(_sync(path), ipod_tag_sha256=baseline),
+                ),
+            )
+        ),
+        _ipod_snapshot(10),
+    )
+
+    assert plan.items[0].action is SyncPlanAction.UNCHANGED
+    assert plan.items[0].metadata_changed is False
+
+
+def test_changed_file_facts_without_changed_tags_or_artwork_stay_in_sync(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "same-tags.mp3"
+    host_track, source = _host_track(
+        path, track_id=1, fingerprint="1,2,3", size=101, modified=1_001
+    )
+    plan = prepare_sync_plan(
+        _host_library((replace(host_track, title="Song 10"),), (), (source,)),
+        _ipod_library(
+            (_ipod_track(track_id=10, fingerprint="1,2,3", sync=_sync(path)),)
+        ),
+        _ipod_snapshot(10),
+    )
+    assert plan.items[0].action is SyncPlanAction.UNCHANGED
+    assert plan.items[0].basis is SyncPlanBasis.TRACK_DETAILS_MATCH
+
+
+def test_changed_file_facts_update_when_tags_differ(tmp_path: Path) -> None:
+    path = tmp_path / "retitled.mp3"
+    host_track, source = _host_track(
+        path, track_id=1, fingerprint="1,2,3", modified=1_001
+    )
+    plan = prepare_sync_plan(
+        _host_library((replace(host_track, title="New title"),), (), (source,)),
+        _ipod_library(
+            (_ipod_track(track_id=10, fingerprint="1,2,3", sync=_sync(path)),)
+        ),
+        _ipod_snapshot(10),
+    )
+    assert plan.items[0].action is SyncPlanAction.UPDATE
+    assert plan.items[0].metadata_changed is True
+    assert plan.items[0].artwork_changed is False
+    assert plan.items[0].audio_payload_changed is False
+
+
+@pytest.mark.parametrize("changed", [False, True])
+@pytest.mark.parametrize(
+    "host_fingerprint,ipod_fingerprint", [(None, "1,2,3"), ("1,2,3", ""), (None, "")]
+)
+def test_missing_acoustic_evidence_falls_back_to_host_file_facts(
+    tmp_path: Path, changed: bool, host_fingerprint: str | None, ipod_fingerprint: str
+) -> None:
+    path = tmp_path / "legacy.mp3"
+    track, source = _host_track(
+        path,
+        track_id=10,
+        fingerprint=host_fingerprint,
+        modified=1001 if changed else 1000,
+    )
+    sync = _sync(path)
+    plan = prepare_sync_plan(
+        _host_library((track,), (), (source,)),
+        _ipod_library(
+            (_ipod_track(track_id=10, fingerprint=ipod_fingerprint, sync=sync),)
+        ),
+        _ipod_snapshot(10),
+    )
+    assert plan.items[0].action is (
+        SyncPlanAction.UPDATE if changed else SyncPlanAction.UNCHANGED
+    )
+    assert plan.items[0].audio_payload_changed is changed
+
+
+def test_matching_acoustic_fingerprint_accepts_changed_container(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "tail-changed.mp3"
+    track, source = _host_track(path, track_id=10, fingerprint="1,2,3", modified=1001)
+    plan = prepare_sync_plan(
+        _host_library((track,), (), (source,)),
+        _ipod_library(
+            (_ipod_track(track_id=10, fingerprint="1,2,3", sync=_sync(path)),)
+        ),
+        _ipod_snapshot(10),
+    )
+    assert plan.items[0].action is SyncPlanAction.UNCHANGED
+    assert not plan.items[0].audio_payload_changed
+    assert not plan.items[0].metadata_changed
+
+
+def test_normalized_tag_baselines_remain_in_sync_after_touch(tmp_path: Path) -> None:
+    path = tmp_path / "normalized.mp3"
+    track, source = _host_track(path, track_id=10, fingerprint="1,2,3", modified=1001)
+    host_track = replace(track, title="  Song 10  ")
+    ipod = _ipod_snapshot(10)
+    sync = replace(
+        _sync(path),
+        host_tag_sha256=track_tag_sha256(host_track),
+        ipod_tag_sha256=track_tag_sha256(ipod.tracks[0]),
+    )
+    plan = prepare_sync_plan(
+        _host_library((host_track,), (), (source,)),
+        _ipod_library((_ipod_track(track_id=10, fingerprint="1,2,3", sync=sync),)),
+        ipod,
+    )
+    assert plan.items[0].action is SyncPlanAction.UNCHANGED
+
+
+def test_changed_folder_artwork_updates_without_media_file_change(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "album" / "song.mp3"
+    host_track, source = _host_track(path, track_id=1, fingerprint="1,2,3")
+    cover = HostMediaArtworkSource(
+        20,
+        HostArtworkKind.FOLDER,
+        HostPath(tmp_path / "album" / "cover.jpg"),
+        100,
+        1_000,
+        "b" * 64,
+    )
+    host = replace(
+        _host_library(
+            (replace(host_track, title="Song 10", artwork_id=20),), (), (source,)
+        ),
+        artwork_sources=(cover,),
+    )
+    ipod = replace(
+        _ipod_snapshot(10),
+        tracks=(replace(_ipod_snapshot(10).tracks[0], artwork_id=7),),
+    )
+    sync = replace(_sync(path), host_artwork_sha256="a" * 64, ipod_artwork_id=7)
+    plan = prepare_sync_plan(
+        host,
+        _ipod_library((_ipod_track(track_id=10, fingerprint="1,2,3", sync=sync),)),
+        ipod,
+    )
+    assert plan.items[0].action is SyncPlanAction.UPDATE
+    assert plan.items[0].artwork_changed is True
+    assert plan.items[0].host_size_changed is False
+    assert plan.items[0].host_modified_changed is False
+
+
+def test_removed_host_artwork_updates_ipod_cover(tmp_path: Path) -> None:
+    path = tmp_path / "no-cover.mp3"
+    host_track, source = _host_track(path, track_id=1, fingerprint="1,2,3")
+    ipod = replace(
+        _ipod_snapshot(10),
+        tracks=(replace(_ipod_snapshot(10).tracks[0], artwork_id=7),),
+    )
+    sync = replace(_sync(path), host_artwork_sha256="a" * 64, ipod_artwork_id=7)
+    plan = prepare_sync_plan(
+        _host_library((replace(host_track, title="Song 10"),), (), (source,)),
+        _ipod_library((_ipod_track(track_id=10, fingerprint="1,2,3", sync=sync),)),
+        ipod,
+    )
+    assert plan.items[0].action is SyncPlanAction.UPDATE
+    assert plan.items[0].artwork_changed is True
+
+
+def test_transformed_rockbox_artwork_does_not_look_changed(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "rockbox.mp3"
+    host_track, source = _host_track(path, track_id=1, fingerprint="1,2,3")
+    cover = HostMediaArtworkSource(
+        20,
+        HostArtworkKind.FOLDER,
+        HostPath(tmp_path / "cover.jpg"),
+        100,
+        1_000,
+        "a" * 64,
+    )
+    host = replace(
+        _host_library(
+            (replace(host_track, title="Song 10", artwork_id=20),),
+            (),
+            (source,),
+        ),
+        artwork_sources=(cover,),
+    )
+    ipod = replace(
+        _ipod_snapshot(10),
+        tracks=(replace(_ipod_snapshot(10).tracks[0], artwork_id=7),),
+    )
+    sync = replace(
+        _sync(path),
+        host_artwork_sha256="a" * 64,
+        ipod_artwork_id=7,
+    )
+
+    plan = prepare_sync_plan(
+        host,
+        _ipod_library((_ipod_track(track_id=10, fingerprint="1,2,3", sync=sync),)),
+        ipod,
+    )
+
+    assert plan.items[0].action is SyncPlanAction.UNCHANGED
+    assert plan.items[0].artwork_changed is False
+
+
 def test_same_content_at_a_moved_host_path_still_correlates(tmp_path: Path) -> None:
     old_path = tmp_path / "old" / "song.mp3"
     new_path = tmp_path / "new" / "song.mp3"
@@ -319,7 +574,7 @@ def test_same_content_at_a_moved_host_path_still_correlates(tmp_path: Path) -> N
         fingerprint="1,2,3",
     )
     plan = prepare_sync_plan(
-        _host_library((track,), (), (source,)),
+        _host_library((replace(track, title="Song 10"),), (), (source,)),
         _ipod_library(
             (
                 _ipod_track(
@@ -399,7 +654,7 @@ def test_photos_use_exact_content_identity_and_sync_facts(tmp_path: Path) -> Non
     assert plan.items[0].host_size_changed is False
 
 
-def test_unchanged_file_facts_with_conflicting_content_need_attention(
+def test_unchanged_file_facts_with_changed_audio_payload_need_update(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "contradiction.mp3"
@@ -422,8 +677,9 @@ def test_unchanged_file_facts_with_conflicting_content_need_attention(
         _ipod_snapshot(10),
     )
 
-    assert plan.items[0].action is SyncPlanAction.ATTENTION
-    assert plan.items[0].basis is SyncPlanBasis.CONFLICTING_IDENTITY
+    assert plan.items[0].action is SyncPlanAction.UPDATE
+    assert plan.items[0].basis is SyncPlanBasis.AUDIO_PAYLOAD_CHANGED
+    assert plan.items[0].audio_payload_changed is True
 
 
 def test_sync_selection_defaults_to_correlated_host_media_and_opt_in_removals(

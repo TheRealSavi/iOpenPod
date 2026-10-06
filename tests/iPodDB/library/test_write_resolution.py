@@ -101,6 +101,59 @@ def test_verification_rejects_plausible_but_wrong_browse_indexes(
     assert source.serialize() == original
 
 
+def test_retained_tag_rewrite_requires_verified_file_even_when_lyrics_match() -> None:
+    source = lyrics_source(text="Unchanged lyrics", flag=1)
+    track = source.snapshot.tracks[0]
+    plan = source.analyze(source.begin_draft(retag_tracks=(track.track_id,)))
+    assert plan.required_media == ()
+    assert plan.required_lyrics == (track.track_id,)
+    missing = source.prepare(plan)
+    assert missing.prepared is None
+    assert any(issue.code == "resources.missing_lyrics" for issue in missing.issues)
+    evidence = lyrics_resource(track)
+    result = source.prepare(plan, WriteResources(lyrics=(evidence,)))
+    assert result.prepared is not None, result.issues
+    updated = result.prepared.snapshot.tracks[0]
+    assert updated.metadata.location == track.metadata.location
+    assert updated.metadata.lyrics == track.metadata.lyrics
+    assert updated.size_bytes == evidence.file.size
+    assert result.prepared.retained_files == (evidence.file,)
+
+
+@pytest.mark.parametrize("invalid", ["duplicate", "missing", "relocated", "replaced"])
+def test_retained_tag_rewrite_rejects_invalid_targets(invalid: str) -> None:
+    source = lyrics_source()
+    track, second = source.snapshot.tracks
+    targets: tuple[int, ...] = (track.track_id,)
+    desired = source.snapshot
+    replacements: tuple[int, ...] = ()
+    if invalid == "duplicate":
+        targets = targets * 2
+    elif invalid == "missing":
+        targets = (-1,)
+    elif invalid == "relocated":
+        desired = replace(
+            desired,
+            tracks=(
+                replace(
+                    track,
+                    metadata=replace(
+                        track.metadata, location="iPod_Control/Music/F00/other.mp3"
+                    ),
+                ),
+                second,
+            ),
+        )
+    else:
+        replacements = targets
+    plan = source.analyze(
+        source.begin_draft(desired, retag_tracks=targets, replace_media=replacements)
+    )
+    assert plan.blocked
+    assert any(issue.code == "draft.invalid_retag" for issue in plan.issues)
+    assert source.prepare(plan).prepared is None
+
+
 def test_every_library_field_has_exactly_one_ownership_policy() -> None:
     assert unclassified_fields() == ()
 
@@ -222,6 +275,37 @@ def test_resolution_exposes_derived_flags_and_quantization_before_writing() -> N
     assert result.prepared is not None, result.issues
     assert result.prepared.snapshot.tracks[0].metadata == resolved.metadata
     assert sum(i.code == "track.quantized" for i in result.issues) == 1
+
+
+def test_positive_play_count_auto_resolves_an_unplayed_edit() -> None:
+    source = library()
+    seeded = replace(
+        source.snapshot,
+        tracks=(
+            replace(source.snapshot.tracks[0], play_count=1),
+            source.snapshot.tracks[1],
+        ),
+    )
+    seeded_result = source.prepare(source.analyze(source.begin_draft(seeded)))
+    assert seeded_result.prepared is not None, seeded_result.issues
+
+    loaded = IPodLibrary(seeded_result.prepared.itunes)
+    track = loaded.snapshot.tracks[0]
+    desired = replace(
+        loaded.snapshot,
+        tracks=(
+            replace(track, metadata=replace(track.metadata, played=False)),
+            loaded.snapshot.tracks[1],
+        ),
+    )
+
+    plan = loaded.analyze(loaded.begin_draft(desired))
+
+    assert not any(issue.code == "track.invalid_value" for issue in plan.issues)
+    assert plan.resolution is not None
+    assert plan.resolution.snapshot.tracks[0].metadata.played
+    result = loaded.prepare(plan)
+    assert result.prepared is not None, result.issues
 
 
 def test_normalization_gain_quantization_is_not_reported_as_a_warning() -> None:

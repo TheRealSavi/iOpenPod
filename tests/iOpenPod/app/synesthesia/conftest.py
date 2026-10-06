@@ -13,6 +13,8 @@ from iOpenPod.app.synesthesia import (
 )
 
 if TYPE_CHECKING:
+    from numpy.typing import NDArray
+
     from iOpenPod.app.synesthesia import TrackAnalysis
 
 
@@ -20,11 +22,15 @@ if TYPE_CHECKING:
 def synthetic_audio() -> DecodedAudio:
     sample_rate = 16_000
     duration = 18.0
-    times = np.arange(round(sample_rate * duration), dtype=np.float32) / sample_rate
-    samples = np.zeros_like(times)
-    first = times < 6.0
-    second = (times >= 6.0) & (times < 12.0)
-    third = times >= 12.0
+    times: NDArray[np.float32] = np.arange(
+        round(sample_rate * duration), dtype=np.float32
+    ) / np.float32(sample_rate)
+    samples: NDArray[np.float32] = np.zeros_like(times)
+    first: NDArray[np.bool_] = np.less(times, 6.0)
+    second: NDArray[np.bool_] = np.logical_and(
+        np.greater_equal(times, 6.0), np.less(times, 12.0)
+    )
+    third: NDArray[np.bool_] = np.greater_equal(times, 12.0)
     samples[first] = 0.05 * np.sin(2.0 * np.pi * 80.0 * times[first])
     samples[second] = (
         0.22 * np.sin(2.0 * np.pi * 220.0 * times[second])

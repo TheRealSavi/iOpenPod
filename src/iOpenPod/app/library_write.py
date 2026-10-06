@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from iOpenPod.app.models.device import ActiveIPod
     from iPodDB.library import (
         ArtworkAsset,
+        ArtworkPixels,
+        ArtworkRead,
         LibrarySnapshot,
         LibraryWritePlan,
         LibraryWriteResult,
@@ -25,6 +27,16 @@ if TYPE_CHECKING:
 
 class PreparationCancelledError(Exception):
     """The caller stopped work at a checkpoint before publication."""
+
+
+@dataclass(frozen=True, slots=True)
+class RockboxMediaUpdate:
+    """Retag one retained iPod media file without replacing its audio payload."""
+
+    track_id: int
+    artwork: ArtworkPixels | None
+    preserve_artwork: bool = False
+    artwork_read: ArtworkRead | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +56,8 @@ class LibraryPreparationRequest:
     artwork: tuple[ArtworkAsset, ...] = field(default=(), kw_only=True)
     media: tuple[LibraryMediaSource, ...] = field(default=(), kw_only=True)
     replace_media: tuple[int, ...] = field(default=(), kw_only=True)
+    rockbox_media: tuple[RockboxMediaUpdate, ...] = field(default=(), kw_only=True)
+    rockbox_metadata: bool = field(default=False, kw_only=True)
     photos: tuple[PreparedPhoto, ...] = field(default=(), kw_only=True)
     replace_photos: tuple[int, ...] = field(default=(), kw_only=True)
 

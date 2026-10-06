@@ -281,6 +281,14 @@ def describe_effects(
         )
     for change in plan.changes:
         if change.subject == "media":
+            if change.action == "retag":
+                effect(
+                    "media.tags",
+                    "track",
+                    change.record_id,
+                    "Rewrite embedded tags on the retained media; verify lyrics and derive the final file size.",
+                )
+                continue
             effect(
                 "media.replacement",
                 "media",

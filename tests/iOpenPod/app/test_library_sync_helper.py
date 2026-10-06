@@ -7,6 +7,12 @@ import pytest
 
 from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.host_media_fingerprint import FpcalcUnavailableError
+from iOpenPod.app.host_media_library import (
+    HostMediaCacheStats,
+    HostMediaFileKind,
+    HostMediaLibrary,
+    HostMediaSource,
+)
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
     IPodMediaScanner,
@@ -17,6 +23,8 @@ from iOpenPod.app.library_sync_helper import (
     SyncedTrack,
     publish_sync_helper,
 )
+from iOpenPod.app.sync_plan import SyncPlanAction, prepare_sync_plan
+from iOpenPod.app.sync_track_details import track_tag_sha256
 from iPodDB.library import (
     IPodTrackDetails,
     LibrarySnapshot,
@@ -261,6 +269,165 @@ def test_scan_reuses_helper_without_reading_media_content_again(tmp_path: Path) 
     assert helper_after == helper_before
 
 
+@pytest.mark.parametrize("version", [3, 4])
+def test_prior_helper_is_reused_without_refingerprinting(
+    tmp_path: Path, version: int
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    helper_path = root / Path(str(LIBRARY_SYNC_HELPER_PATH))
+
+    with session:
+        IPodMediaScanner(_Fingerprinter()).scan(
+            session,
+            _library(),
+            library_sha256="b" * 64,
+            persist=True,
+            checkpoint=lambda: None,
+        )
+        document = json.loads(helper_path.read_bytes())
+        document["version"] = version
+        document["tracks"][0]["sync"] = {
+            "last_synced_at": "2026-09-18T20:00:00+00:00",
+            "host_path_hint": "Music/Artist/Song.flac",
+            "host_size_bytes": 123_456,
+            "host_modified_ns": 1_789_762_000_000_000_000,
+            "source_format": "flac",
+            "ipod_format": "mp3",
+            "was_transcoded": True,
+        }
+        if version == 4:
+            document["tracks"][0]["sync"]["host_payload_sha256"] = "a" * 64
+        records = {"tracks": document["tracks"], "images": document["images"]}
+        document["catalog_sha256"] = hashlib.sha256(
+            json.dumps(
+                records,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        helper_path.write_text(
+            json.dumps(
+                document,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+
+        fingerprinter = _Fingerprinter()
+        upgraded = IPodMediaScanner(fingerprinter).scan(
+            session,
+            _library(),
+            library_sha256="b" * 64,
+            persist=True,
+            checkpoint=lambda: None,
+        )
+        upgraded_document = json.loads(helper_path.read_bytes())
+
+    assert upgraded.cache.reused == 2
+    assert upgraded.cache.fingerprinted == 0
+    assert fingerprinter.calls == []
+    assert upgraded_document["version"] == 4
+    sync = upgraded.tracks[0].sync
+    assert sync is not None
+    assert sync.ipod_artwork_id is None
+    assert sync.ipod_tag_sha256 is None
+    assert sync.ipod_baseline_pending is (version == 3)
+    if version == 3:
+        assert upgraded_document["tracks"][0]["sync"]["ipod_baseline_pending"] is True
+
+
+def test_v3_migration_does_not_hide_manual_ipod_tag_edit(tmp_path: Path) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    helper_path = root / Path(str(LIBRARY_SYNC_HELPER_PATH))
+    current_ipod_library = replace(
+        _library(),
+        tracks=(replace(_library().tracks[0], artist="Manual Artist"),),
+    )
+
+    with session:
+        IPodMediaScanner(_Fingerprinter()).scan(
+            session,
+            _library(),
+            library_sha256="c" * 64,
+            persist=True,
+            checkpoint=lambda: None,
+        )
+        document = json.loads(helper_path.read_bytes())
+        document["version"] = 3
+        document["tracks"][0]["sync"] = {
+            "last_synced_at": "2026-09-18T20:00:00+00:00",
+            "host_path_hint": str(tmp_path / "Music" / "Artist" / "Song.mp3"),
+            "host_size_bytes": 123_456,
+            "host_modified_ns": 1_789_762_000_000_000_000,
+            "source_format": "mp3",
+            "ipod_format": "mp3",
+            "was_transcoded": False,
+        }
+        records = {"tracks": document["tracks"], "images": document["images"]}
+        document["catalog_sha256"] = hashlib.sha256(
+            json.dumps(
+                records,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        helper_path.write_text(
+            json.dumps(
+                document, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ),
+            encoding="utf-8",
+        )
+        upgraded = IPodMediaScanner(_Fingerprinter()).scan(
+            session,
+            current_ipod_library,
+            library_sha256="c" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+        )
+
+    host_path = tmp_path / "Music" / "Artist" / "Song.mp3"
+    host_track = Track(
+        1,
+        "Song",
+        "Artist",
+        "Album",
+        1_000,
+        metadata=TrackMetadata(location=str(host_path)),
+    )
+    host = HostMediaLibrary(
+        LibrarySnapshot(tracks=(host_track,)),
+        (
+            HostMediaSource(
+                HostPath(host_path),
+                HostMediaFileKind.AUDIO,
+                123_456,
+                1_789_762_000_000_000_000,
+                acoustic_fingerprint="1,2,3",
+            ),
+        ),
+        (),
+        HostMediaCacheStats(),
+    )
+    plan = prepare_sync_plan(
+        host,
+        replace(upgraded, images=()),
+        current_ipod_library,
+    )
+
+    track_item = next(item for item in plan.items if item.host_path == str(host_path))
+    assert track_item.action is SyncPlanAction.UPDATE
+    assert track_item.metadata_changed is True
+
+
 def test_valid_sync_details_round_trip_with_a_reused_fingerprint(
     tmp_path: Path,
 ) -> None:
@@ -321,6 +488,9 @@ def test_valid_sync_details_round_trip_with_a_reused_fingerprint(
     assert sync.last_synced_at == "2026-09-18T20:00:00+00:00"
     assert sync.host_modified_ns == 1_789_762_000_000_000_000
     assert sync.was_transcoded is True
+    assert sync.host_artwork_sha256 is None
+    assert sync.ipod_artwork_id is None
+    assert sync.ipod_tag_sha256 is None
 
 
 def test_changed_track_is_refingerprinted_while_unchanged_image_is_reused(
@@ -356,12 +526,15 @@ def test_changed_track_is_refingerprinted_while_unchanged_image_is_reused(
     assert len(changed_fingerprinter.calls) == 1
 
 
-def test_invalid_existing_helper_is_never_overwritten(tmp_path: Path) -> None:
+@pytest.mark.parametrize("payload", [b"not-json", b"{}", b'{"version": 4}'])
+def test_invalid_existing_helper_is_never_overwritten(
+    tmp_path: Path, payload: bytes
+) -> None:
     root, session = _session(tmp_path)
     _write_media(root)
     helper_path = root / Path(str(LIBRARY_SYNC_HELPER_PATH))
     helper_path.parent.mkdir(parents=True)
-    helper_path.write_bytes(b"not-json")
+    helper_path.write_bytes(payload)
 
     with session:
         result = IPodMediaScanner(_Fingerprinter()).scan(
@@ -373,7 +546,7 @@ def test_invalid_existing_helper_is_never_overwritten(tmp_path: Path) -> None:
         )
 
     assert result.persisted is False
-    assert helper_path.read_bytes() == b"not-json"
+    assert helper_path.read_bytes() == payload
     assert any("invalid" in issue.detail for issue in result.issues)
     assert any("left unchanged" in issue.detail for issue in result.issues)
 
@@ -424,6 +597,7 @@ def test_publish_without_scan_merges_podcast_evidence_and_preserves_host_provena
         "flac",
         "mp3",
         True,
+        host_artwork_sha256="a" * 64,
     )
     image_details = replace(
         details,
@@ -485,6 +659,10 @@ def test_publish_without_scan_merges_podcast_evidence_and_preserves_host_provena
         )
 
     assert result.persisted
+    assert initial.tracks[0].sync is not None
+    assert initial.tracks[0].sync.host_artwork_sha256 == "a" * 64
+    assert initial.tracks[0].sync.ipod_artwork_id == library.tracks[0].artwork_id
+    assert initial.tracks[0].sync.ipod_tag_sha256 == track_tag_sha256(library.tracks[0])
     assert result.tracks[0] == replace(initial.tracks[0], track_id=10)
     assert result.images == initial.images
     assert len(result.tracks) == 2

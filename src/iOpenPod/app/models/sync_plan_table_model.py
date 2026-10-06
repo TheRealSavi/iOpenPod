@@ -299,6 +299,28 @@ def _media_label(kind: SyncPlanMediaKind) -> str:
 
 
 def _basis_label(item: SyncPlanItem) -> str:
+    if item.basis is SyncPlanBasis.AUDIO_PAYLOAD_CHANGED:
+        return QCoreApplication.translate(
+            "SyncPlanTableModel", "Audio payload fingerprint changed"
+        )
+    if item.basis is SyncPlanBasis.TRACK_DETAILS_CHANGED:
+        if item.file_tags_changed and not (
+            item.metadata_changed or item.artwork_changed
+        ):
+            return QCoreApplication.translate(
+                "SyncPlanTableModel", "Embedded Rockbox tags need updating"
+            )
+        if item.metadata_changed and item.artwork_changed:
+            return QCoreApplication.translate(
+                "SyncPlanTableModel", "Host tags and artwork differ from the iPod"
+            )
+        if item.metadata_changed:
+            return QCoreApplication.translate(
+                "SyncPlanTableModel", "Host tags differ from the iPod"
+            )
+        return QCoreApplication.translate(
+            "SyncPlanTableModel", "Host artwork differs from the iPod"
+        )
     if item.basis is SyncPlanBasis.HOST_FACTS_CHANGED:
         if item.host_size_changed and item.host_modified_changed:
             return QCoreApplication.translate(
@@ -319,6 +341,9 @@ def _basis_label(item: SyncPlanItem) -> str:
         SyncPlanBasis.HOST_FACTS_MATCH: QCoreApplication.translate(
             "SyncPlanTableModel", "Host size and modified time still match"
         ),
+        SyncPlanBasis.TRACK_DETAILS_MATCH: QCoreApplication.translate(
+            "SyncPlanTableModel", "Host tags and artwork still match the iPod"
+        ),
         SyncPlanBasis.CONTENT_MATCH: QCoreApplication.translate(
             "SyncPlanTableModel", "Matching content identity"
         ),
@@ -335,6 +360,8 @@ def _basis_label(item: SyncPlanItem) -> str:
             "SyncPlanTableModel", "Deselected from the desired iPod contents"
         ),
         SyncPlanBasis.HOST_FACTS_CHANGED: "",
+        SyncPlanBasis.TRACK_DETAILS_CHANGED: "",
+        SyncPlanBasis.AUDIO_PAYLOAD_CHANGED: "",
     }[item.basis]
 
 

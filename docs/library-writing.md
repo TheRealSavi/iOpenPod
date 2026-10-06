@@ -351,8 +351,8 @@ retains originals for joint recovery. A changed or missing device file, unsafe
 path, shared media path, unsupported format, failed tag verification, or insufficient
 space prevents a database-only save. Incoming music retains the Host source and
 reads its embedded lyrics into the draft. Lyrics media, captured artwork prefixes,
-and generated artwork share a 512 MiB retained-memory budget. Complete overflow
-content uses private Host disk storage with file-specific warnings; the budget
+and generated artwork share a 2 GiB retained-memory budget. Complete overflow
+content uses private Host disk storage without a warning; the budget
 does not require truncation or splitting batches. Photo Sync uses the same policy
 in its own workspace. iPodDB accepts caller-owned readable content and output
 buffers, verifies hashes with bounded reads, and never opens paths itself. Staging

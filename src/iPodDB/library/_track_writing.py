@@ -198,24 +198,18 @@ def validate_track(
                 "metadata.start_time_ms",
                 "Playback positions must fit within the Track duration.",
             )
-    if old is None or old.metadata != meta:
-        if (
+    if (
+        (old is None or old.metadata != meta)
+        and (
             old is None
             or old.metadata.volume_adjustment_percent != meta.volume_adjustment_percent
-        ) and not -100 <= meta.volume_adjustment_percent <= 100:
-            error(
-                "metadata.volume_adjustment_percent",
-                "Volume adjustment must be between -100 and 100 percent.",
-            )
-        if (
-            meta.played is False
-            and new.play_count > 0
-            and (old is None or old.metadata.played != meta.played)
-        ):
-            error(
-                "metadata.played",
-                "A Track with a positive play count cannot be marked unplayed.",
-            )
+        )
+        and not -100 <= meta.volume_adjustment_percent <= 100
+    ):
+        error(
+            "metadata.volume_adjustment_percent",
+            "Volume adjustment must be between -100 and 100 percent.",
+        )
     if (
         old is None
         or old.length_ms != new.length_ms

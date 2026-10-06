@@ -56,21 +56,36 @@ def application_artwork_root_value(profile: DeviceProfile) -> int:
     return native.artwork_root_value or APPLICATION_ARTWORK_ROOT_VALUE
 
 
+def rockbox_tag_policy(profile: DeviceProfile) -> str:
+    """Version the embedded-tag representation independently of ArtworkDB."""
+    return (
+        "native-v1" if profile.capabilities.artwork.supports_cover_art else "gray120-v1"
+    )
+
+
 def rockbox_artwork(profile: DeviceProfile, pixels: ArtworkPixels) -> ArtworkPixels:
     """Prepare a compact Rockbox cover for profiles without native artwork."""
 
     if profile.capabilities.artwork.supports_cover_art:
         return pixels
     with Image.frombytes("RGB", (pixels.width, pixels.height), pixels.rgb888) as image:
-        image.thumbnail(
+        compact = ImageOps.fit(
+            image,
             (ROCKBOX_NON_NATIVE_ARTWORK_PX, ROCKBOX_NON_NATIVE_ARTWORK_PX),
-            Image.Resampling.LANCZOS,
+            method=Image.Resampling.LANCZOS,
         )
-        grayscale = ImageOps.grayscale(image).convert("RGB")
         try:
-            return ArtworkPixels(grayscale.width, grayscale.height, grayscale.tobytes())
+            grayscale = ImageOps.grayscale(compact).convert("RGB")
+            try:
+                return ArtworkPixels(
+                    ROCKBOX_NON_NATIVE_ARTWORK_PX,
+                    ROCKBOX_NON_NATIVE_ARTWORK_PX,
+                    grayscale.tobytes(),
+                )
+            finally:
+                grayscale.close()
         finally:
-            grayscale.close()
+            compact.close()
 
 
 __all__ = [
@@ -80,4 +95,5 @@ __all__ = [
     "application_artwork_root_value",
     "application_cover_formats",
     "rockbox_artwork",
+    "rockbox_tag_policy",
 ]

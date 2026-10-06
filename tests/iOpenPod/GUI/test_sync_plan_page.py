@@ -1,5 +1,7 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 from PySide6.QtCore import QEvent, Qt
@@ -30,6 +32,7 @@ from iOpenPod.app.library_sync_helper import (
     IPodMediaCacheStats,
     IPodMediaLibrary,
     IPodTrackFingerprint,
+    SyncDetails,
 )
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -47,6 +50,7 @@ from iOpenPod.app.sync_plan import (
     SyncPlanItem,
     SyncPlanMediaKind,
 )
+from iOpenPod.app.sync_track_details import track_tag_sha256
 from iOpenPod.GUI import main_window as main_window_module
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId
@@ -670,6 +674,135 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert cleared_bar.isHidden()
     finally:
         monkeypatch.undo()
+        window.close()
+        context.shutdown()
+        window.deleteLater()
+        APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
+
+
+def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host_path = HostPath(tmp_path / "song.mp3")
+    host = HostMediaLibrary(
+        LibrarySnapshot(
+            tracks=(
+                Track(
+                    1,
+                    "Host title",
+                    "Artist",
+                    "Album",
+                    180_000,
+                    metadata=TrackMetadata(location=str(host_path)),
+                ),
+            )
+        ),
+        (
+            HostMediaSource(
+                host_path,
+                HostMediaFileKind.AUDIO,
+                100,
+                1_000,
+                acoustic_fingerprint="1,2,3",
+            ),
+        ),
+        (),
+        HostMediaCacheStats(reused=1),
+    )
+    ipod_snapshot = LibrarySnapshot(
+        tracks=(
+            Track(
+                10,
+                "Edited on iPod",
+                "Artist",
+                "Album",
+                180_000,
+                metadata=TrackMetadata(location="iPod_Control/Music/F00/song.mp3"),
+            ),
+        )
+    )
+    ipod = IPodMediaLibrary(
+        (
+            IPodTrackFingerprint(
+                100,
+                10,
+                DevicePath("iPod_Control/Music/F00/song.mp3"),
+                90,
+                900,
+                "1,2,3",
+                sync=SyncDetails(
+                    "2026-10-05T12:00:00Z",
+                    str(host_path),
+                    100,
+                    1_000,
+                    "mp3",
+                    "mp3",
+                    False,
+                    ipod_tag_sha256=track_tag_sha256(
+                        replace(ipod_snapshot.tracks[0], title="Prior iPod title")
+                    ),
+                ),
+            ),
+        ),
+        (),
+        (),
+        IPodMediaCacheStats(),
+        None,
+        False,
+    )
+    context = build_context()
+    window = MainWindow(context, auto_discover=False)
+    profile = next(
+        p for p in DEFAULT_DEVICE_REGISTRY.profiles if p.model_number == "MB565"
+    )
+    active = ActiveIPod(
+        DeviceCandidate(
+            DeviceCandidateId("sync-test"),
+            "Test iPod",
+            "USB iPod",
+            "usb",
+            IdentificationStatus.EXACT,
+            DeviceReadiness.READY,
+            profile,
+            1_000,
+            400,
+        ),
+        profile,
+        ipod_snapshot,
+        "iTunesDB",
+        FileFingerprint(size=100, modified_ns=0, device=0, inode=0, sha256="0" * 64),
+    )
+    monkeypatch.setattr(
+        type(context.device_controller),
+        "active_ipod",
+        property(lambda _controller: active),
+    )
+    refresh_calls: list[tuple[HostMediaLibrary, frozenset[HostPath]]] = []
+    presented: list[tuple[HostMediaLibrary, IPodMediaLibrary | None]] = []
+
+    def refresh(library: HostMediaLibrary, paths: frozenset[HostPath]) -> bool:
+        refresh_calls.append((library, paths))
+        return True
+
+    monkeypatch.setattr(context.host_media_controller, "refresh_tracks", refresh)
+
+    def finish_media_scan(library: HostMediaLibrary, media: IPodMediaLibrary) -> None:
+        presented.append((library, media))
+
+    monkeypatch.setattr(window, "_finish_media_scan", finish_media_scan)
+    try:
+        window._pending_host_media_library = host  # pyright: ignore[reportPrivateUsage]
+        ipod_media_scan_finished = cast(
+            "Callable[[object], None]",
+            window._ipod_media_scan_finished,  # pyright: ignore[reportPrivateUsage]
+        )
+        ipod_media_scan_finished(ipod)
+        assert refresh_calls == [(host, frozenset({host_path}))]
+        assert not presented
+
+        context.host_media_controller.refreshFinished.emit(host)
+        assert presented == [(host, ipod)]
+    finally:
         window.close()
         context.shutdown()
         window.deleteLater()

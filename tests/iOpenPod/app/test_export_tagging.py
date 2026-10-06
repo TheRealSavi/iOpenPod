@@ -3,7 +3,7 @@
 import base64
 import io
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 import pytest
 from mutagen.id3 import ID3
@@ -19,6 +19,7 @@ from iPodDB.library import ArtworkPixels, ContentAdvisory, Track, TrackMetadata
 from storage import HostPath
 
 _FIXTURES = Path(__file__).parents[2] / "fixtures" / "media"
+_ID3_READER: Any = ID3
 
 
 class _ArtworkFrame(Protocol):
@@ -110,7 +111,7 @@ def test_non_cover_rockbox_cover_is_a_small_grayscale_jpeg() -> None:
     assert mini is not None
     pixels = rockbox_artwork(
         mini,
-        ArtworkPixels(240, 240, bytes((30, 80, 140)) * (240 * 240)),
+        ArtworkPixels(240, 120, bytes((30, 80, 140)) * (240 * 120)),
     )
     data = ExportMediaTagger().prepare_bytes(
         base64.b64decode((_FIXTURES / "tone.mp3.b64").read_bytes()),
@@ -129,18 +130,53 @@ def test_non_cover_rockbox_cover_is_a_small_grayscale_jpeg() -> None:
 
 
 def test_unsupported_export_format_is_rejected_before_tagging(tmp_path: Path) -> None:
-    path = tmp_path / "track.aac"
-    path.write_bytes(b"raw aac")
+    path = tmp_path / "track.flac"
+    path.write_bytes(b"raw flac")
 
     try:
         ExportMediaTagger().prepare(HostPath(path), _track(), None)
     except ValueError as error:
-        assert ".aac" in str(error)
+        assert ".flac" in str(error)
     else:
-        raise AssertionError("Raw AAC should not claim embedded-tag support")
+        raise AssertionError("FLAC should not claim iPod output-tag support")
 
 
-@pytest.mark.parametrize("name", ("tone.mp3", "tone.m4a", "tone.wav", "tone.aiff"))
+def test_raw_aac_export_receives_id3_metadata() -> None:
+    data = b"raw AAC payload"
+
+    output = ExportMediaTagger().prepare_bytes(data, "track.aac", _track())
+
+    tags = _ID3_READER(io.BytesIO(output))
+    typed_tags = cast("_ID3TagView", tags)
+    assert str(typed_tags["TIT2"]) == _track().title
+    assert output.endswith(data)
+
+
+def test_raw_aac_file_export_receives_id3_metadata(tmp_path: Path) -> None:
+    data = b"raw AAC payload"
+    path = tmp_path / "track.aac"
+    path.write_bytes(data)
+
+    ExportMediaTagger().prepare(HostPath(path), _track(), None)
+
+    tags = _ID3_READER(path)
+    typed_tags = cast("_ID3TagView", tags)
+    assert str(typed_tags["TIT2"]) == _track().title
+    assert path.read_bytes().endswith(data)
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "tone.mp3",
+        "tone.m4a",
+        "silent.mp4",
+        "multi-track.m4v",
+        "multi-track.mov",
+        "tone.wav",
+        "tone.aiff",
+    ),
+)
 def test_rockbox_metadata_is_verified_on_private_bytes(name: str) -> None:
     data = base64.b64decode((_FIXTURES / f"{name}.b64").read_bytes())
     output = ExportMediaTagger().prepare_bytes(data, name, _track(), _artwork())

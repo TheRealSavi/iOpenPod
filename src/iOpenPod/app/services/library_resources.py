@@ -9,7 +9,8 @@ from dataclasses import dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING
 
-from iOpenPod.app.display_text import source_text
+from iOpenPod.app.artwork_policy import rockbox_artwork
+from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.library_write import LibraryFileChange
 from iOpenPod.app.media.lyrics import rewrite_lyrics_stream
 from iOpenPod.app.services import volume_presentation
@@ -17,7 +18,6 @@ from iPodDB.library import (
     MAX_SIDECAR_BYTES,
     FileContentData,
     FileDependency,
-    IssueSeverity,
     PhotoRepresentationKind,
     PlaybackSidecar,
     PreparedLyrics,
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from iOpenPod.app.library_write import LibraryPreparationRequest
-    from iPodDB.library import LibraryWritePlan, PreparedLibrary
+    from iPodDB.library import ArtworkPixels, LibraryWritePlan, PreparedLibrary
     from storage import FilesystemSession
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ _ITUNES = DevicePath("iPod_Control/iTunes")
 _MUSIC = DevicePath("iPod_Control/Music")
 _PHOTO_FULL_RESOLUTION = DevicePath("Photos/Full Resolution")
 _PHOTO_THUMBNAILS = DevicePath("Photos/Thumbs")
-_MAX_CAPTURE_BYTES = 512 * 1024 * 1024
+_MAX_CAPTURE_BYTES = 2 * 1024 * 1024 * 1024
 _SQLITE_DIRECTORY = "iPod_Control/iTunes/iTunes Library.itlp"
 SQLITE_DATABASE_PATHS = tuple(
     DevicePath(f"{_SQLITE_DIRECTORY}/{name}")
@@ -342,7 +342,6 @@ def capture(
             media_writes.append(
                 TransactionWrite(path, _transaction_source(photo_file.data), content)
             )
-    artwork_issues: list[WriteIssue] = []
     cover_prefixes = tuple(f"f{f.format_id}_" for f in plan.target.cover_formats)
     if plan.requires_artwork_inventory and session.exists(_ARTWORK):
         for entry in session.list_directory(_ARTWORK):
@@ -384,19 +383,6 @@ def capture(
                     str(entry.path), fingerprint.size, fingerprint.sha256
                 )
                 sources.append(SourceFile(dependency, data))
-                if isinstance(data, StagedContent):
-                    artwork_issues.append(
-                        WriteIssue(
-                            "resources.artwork_disk_staging",
-                            source_text(
-                                'Artwork file "{path}" was prepared using temporary disk space because the memory budget was reached.',
-                                path=str(entry.path),
-                            ),
-                            severity=IssueSeverity.WARNING,
-                            phase="resources",
-                            artifact=str(entry.path),
-                        )
-                    )
             else:
                 fingerprint = session.fingerprint(entry.path)
                 dependency = FileDependency(
@@ -404,13 +390,14 @@ def capture(
                 )
             files.append(FilePrecondition(entry.path, fingerprint))
             inventory.append(dependency)
-    lyrics, lyric_writes, lyric_issues = _capture_lyrics(
+    lyrics, lyric_writes, lyric_issues = _capture_file_tags(
         session,
         request,
         plan,
         checkpoint,
         temporary_files,
         staging=staging,
+        file_preconditions=files,
     )
     tagged = {item.track_id: item for item in lyrics}
     media = tuple(
@@ -534,11 +521,11 @@ def capture(
         tuple(removals),
         tuple(media_writes),
         presentation_writes,
-        (*artwork_issues, *lyric_issues),
+        lyric_issues,
     )
 
 
-def _capture_lyrics(
+def _capture_file_tags(
     session: FilesystemSession,
     request: LibraryPreparationRequest,
     plan: LibraryWritePlan,
@@ -546,6 +533,7 @@ def _capture_lyrics(
     temporary_files: ExitStack,
     *,
     staging: ContentWorkspace,
+    file_preconditions: list[FilePrecondition],
 ) -> tuple[
     tuple[PreparedLyrics, ...], tuple[TransactionWrite, ...], tuple[WriteIssue, ...]
 ]:
@@ -559,9 +547,18 @@ def _capture_lyrics(
         owners_by_path.setdefault(track.metadata.location.casefold(), set()).add(
             track.track_id
         )
+    rockbox = {update.track_id: update for update in request.rockbox_media}
+    if len(rockbox) != len(request.rockbox_media) or not rockbox.keys() <= set(
+        plan.required_lyrics
+    ):
+        raise ValueError(
+            "Rockbox tag updates must be unique and requested by the Library plan."
+        )
     lyrics: list[PreparedLyrics] = []
     writes: list[TransactionWrite] = []
     issues: list[WriteIssue] = []
+    covers: dict[int, ArtworkPixels] = {}
+    artwork_files = {file.path: file.fingerprint for file in file_preconditions}
     for identity in plan.required_lyrics:
         checkpoint()
         track = desired[identity]
@@ -609,14 +606,50 @@ def _capture_lyrics(
                         raise FilePreconditionError(
                             "Lyrics media changed during capture."
                         )
-                output = workspace.transform_stream(
-                    private_source,
+                update = rockbox.get(identity)
+                artwork = update.artwork if update is not None else None
+                if update is not None and update.artwork_read is not None:
+                    if track.artwork_id not in covers:
+                        read = update.artwork_read
+                        cover_path = DevicePath(read.relative_path)
+                        if (
+                            not cover_path.is_relative_to(_ARTWORK)
+                            or not 0 < read.length <= 32 * 1024 * 1024
+                        ):
+                            raise ValueError(
+                                "The selected artwork declares an unsafe file range."
+                            )
+                        if cover_path not in artwork_files:
+                            fingerprint = session.fingerprint(cover_path)
+                            artwork_files[cover_path] = fingerprint
+                            file_preconditions.append(
+                                FilePrecondition(cover_path, fingerprint)
+                            )
+                        pixels = read.decode(
+                            session.read_range(
+                                cover_path, offset=read.offset, length=read.length
+                            )
+                        )
+                        covers[track.artwork_id] = rockbox_artwork(
+                            request.source.profile, pixels
+                        )
+                    artwork = covers[track.artwork_id]
+                transform = (
                     partial(
                         rewrite_lyrics_stream,
                         file_name=str(path),
                         lyrics=track.metadata.lyrics,
-                    ),
+                    )
+                    if update is None
+                    else partial(
+                        ExportMediaTagger().prepare_stream,
+                        file_name=str(path),
+                        track=track,
+                        artwork=artwork,
+                        preserve_artwork=update.preserve_artwork,
+                    )
                 )
+                output = workspace.transform_stream(private_source, transform)
                 content = FileContent.from_fingerprint(output.fingerprint)
                 if content.size <= remaining:
                     payload = LocalHostFile.observe(output.snapshot).read_bytes(
@@ -633,18 +666,6 @@ def _capture_lyrics(
                         TransactionWrite(path, output.snapshot, content, expected)
                     )
                     temporary_files.enter_context(owned.pop_all())
-                    issues.append(
-                        WriteIssue(
-                            "resources.lyrics_disk_staging",
-                            f'Lyrics preparation for "{source_name}" exceeded the memory budget; temporary disk space was used. Full media and lyrics were preserved.',
-                            severity=IssueSeverity.WARNING,
-                            phase="resources",
-                            subject="track",
-                            record_id=identity,
-                            field="metadata.lyrics",
-                            artifact=source_name,
-                        )
-                    )
         except StorageError as error:
             raise StorageError(
                 f'Could not prepare lyrics for "{source_name}" (iPod file: {path}): {error}'
@@ -764,22 +785,7 @@ def transaction(
 def preparation_issues(
     captured: CapturedLibraryResources, prepared: PreparedLibrary | None
 ) -> tuple[WriteIssue, ...]:
-    issues = list(captured.issues)
-    reported = {issue.artifact for issue in issues}
-    issues.extend(
-        WriteIssue(
-            "resources.artwork_disk_staging",
-            source_text(
-                'Artwork file "{path}" was prepared using temporary disk space because the memory budget was reached.',
-                path=file.relative_path,
-            ),
-            severity=IssueSeverity.WARNING,
-            artifact=file.relative_path,
-        )
-        for file in (() if prepared is None else prepared.artwork_files)
-        if isinstance(file.data, StagedContent) and file.relative_path not in reported
-    )
-    return tuple(issues)
+    return captured.issues
 
 
 def _content(data: FileContentData) -> FileContent:

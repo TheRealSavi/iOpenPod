@@ -29,7 +29,7 @@ transaction. Existing ArtworkDB roots and retained records remain authoritative.
 When Rockbox Metadata Support is enabled, Sync also embeds the captured artwork in
 each prepared media file. Native cover-capable profiles retain the application
 capture size. Profiles without native cover support receive a compact cover that
-fits within 120x120 pixels, is converted to grayscale with Lanczos resampling,
+is fitted to exactly 120x120 pixels and converted to grayscale with Lanczos resampling,
 and is encoded as optimized single-channel JPEG. This file-tag representation is
 independent of the iPodDB artwork representation.
 

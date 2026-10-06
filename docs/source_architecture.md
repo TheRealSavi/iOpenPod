@@ -979,9 +979,11 @@ application browsing; Device Registry capability claims remain unchanged. Older
 Track layouts use reverse ArtworkDB links. Persistence still uses the reviewed
 Storage Transaction. See [ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md)
 and [ADR-0118](adr/0118-write-application-artwork-for-non-cover-devices.md). When
-Rockbox Metadata Support is enabled, Sync separately embeds the captured cover in
-prepared media; non-cover profiles use an optimized grayscale JPEG fitting within
-120x120 pixels.
+Rockbox Metadata Support is enabled, Sync and ordinary Library saves separately
+embed changed metadata and covers in prepared media; non-cover profiles use a
+120x120 grayscale JPEG. Ordinary saves capture the preference in their immutable
+request and publish tag edits with the Library transaction. Metadata-only edits
+preserve embedded covers; clearing artwork also removes its file-tag copy.
 
 During cover preparation, iPodDB automatically reconciles conflicting MHIF image
 sizes only when the target's fixed-size encoding, every retained MHNI representation
@@ -1218,7 +1220,14 @@ fingerprint-checked before helper publication, and publication uses an atomic,
 generation-checked Storage write. Invalid helpers remain untouched for explicit
 recovery. Read-only devices can still be scanned for the current run but cannot cache
 the new evidence. Host Photo records carry matching SHA-256 evidence in Host Media
-Scan cache format v5. Neither cache is part of the common Library Snapshot or grants
+Scan cache format v10. A v9 Host Media Scan cache is upgraded during the next
+scan by recovering folder-cover references already embedded in Track records and
+reusing unchanged media and artwork. An iPod Media Scan upgrades a v3 Library Sync Helper in
+memory by reusing unchanged device records without recapturing media. Because v3
+does not contain a committed iPod Track tag or artwork baseline, migration does not
+stamp the current Track as that baseline; until a successful Sync records v4
+provenance, Sync conservatively compares current Host and iPod Track semantics.
+The first writable helper publication writes v4. Neither cache is part of the common Library Snapshot or grants
 permission to mutate a device. See ADR-0065.
 
 After both scans complete, the Application Layer prepares one immutable Sync Plan.
@@ -1230,8 +1239,27 @@ or non-unique evidence produces Needs attention rather than a guessed action.
 
 Host-only items are Add, and iPod-only items are Remove. For a correlated item with
 Sync Details, the current Host size and modification time are compared with the Host
-facts recorded by that successful Sync. Either difference produces Update; matching
-facts produce In sync. A unique content match without Sync Details is also In sync
+facts recorded by that successful Sync. For Tracks with unchanged Host file facts,
+current iPod semantic tags are compared with the fingerprint committed in Sync
+Details. If the iPod has changed, a background worker rereads that Host Track before
+finalizing an Update. Migrated v3 helpers without a committed baseline compare
+current Host and iPod tags conservatively; other older helpers retain the
+Host-fact gate. Changed Host facts compare scanned Host tags with current iPod tags.
+Artwork is compared independently using the Host cover digest and the previously
+committed iPod artwork identity, so a folder-cover change can also produce Update.
+Existing Acoustic Fingerprints independently determine whether a Track requires
+new media preparation. Different fingerprints request replacement; equal fingerprints
+retain the media even if its container facts changed. This intentionally accepts
+re-encodings, changes after the bounded analysis window, and video-only changes.
+If either fingerprint is unavailable, changed Host file facts request replacement.
+Migration reuses existing fingerprint evidence without introducing a new baseline. Tags/artwork-only
+updates retain media locations and payloads; lyrics and optional Rockbox tags share
+one verified file rewrite, whose final size is reflected in iTunesDB. Unchanged
+iTHMB artwork is retained. Separate Host and committed iPod tag fingerprints prevent
+repeat Updates after device normalization. An applied Rockbox policy records whether
+embedded tags and the device-specific cover representation need refreshing.
+See ADR-0120. Photos retain
+the file-fact Update rule. A unique content match without Sync Details is also In sync
 for the current comparison without inventing provenance. A mutable Sync Selection
 then captures desired iPod membership without changing the comparison or Host Library
 Snapshot. Correlated Host items start selected, Host-only items start unselected, and
@@ -1249,7 +1277,7 @@ An isolated Library Draft carries successful media, Photo, artwork, and Playlist
 changes into the existing issued Library Review and ordered Storage Transaction.
 The Library Sync Helper is updated only after verified publication. Device writes
 remain sequential; the USB bus is not used for parallel transcoding. See ADR-0066,
-ADR-0067, ADR-0070, and ADR-0076.
+ADR-0067, ADR-0070, ADR-0076, and ADR-0119.
 
 The result page exposes item diagnostics, safe cancellation, Restore Previous
 Library, Retry Cleanup, and Keep Current Contents. Pending recovery survives

@@ -2,11 +2,10 @@
 
 ## Todo
 
-* Continue Updates to website and readme
-* Wrap up the app get ready for first release, final tweaks and tests.
-* Implement built in updater
-* Swap 2.0 and main branches.
-* Publish to Microsoft Store and linux stores
+* Progress reporting in the Capturing required resources stage of sync
+* Per Device settings profiles
+* Look into FFMPEG's AAC Update
+* Improve look of dono button in Settings>About
 
 ## Future work
 

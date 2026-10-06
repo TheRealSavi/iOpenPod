@@ -68,7 +68,8 @@ class SyncSelection(QObject):
                 item
                 for item in self.review_plan.items
                 if self.review_check_state(item) is not Qt.CheckState.Unchecked
-            )
+            ),
+            file_tag_policy=self.review_plan.file_tag_policy,
         )
 
     @property
@@ -81,7 +82,10 @@ class SyncSelection(QObject):
                 selected_host_paths=frozenset(self._selected_host_paths),
                 selected_ipod_removals=frozenset(),
             )
-            self._review_plan = SyncPlan((*selected.items, *self.potential_removals))
+            self._review_plan = SyncPlan(
+                (*selected.items, *self.potential_removals),
+                file_tag_policy=selected.file_tag_policy,
+            )
             self._review_items = frozenset(self._review_plan.items)
         return self._review_plan
 

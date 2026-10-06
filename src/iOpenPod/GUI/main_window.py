@@ -24,11 +24,13 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.artwork_controller import ArtworkLoadFailure
+from iOpenPod.app.artwork_policy import rockbox_tag_policy
 from iOpenPod.app.backups import BackupProgress
 from iOpenPod.app.chaptered_conversion_controller import ChapteredConversionController
 from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.settings.definitions import (
     PLAYER_POSITION,
+    ROCKBOX_METADATA_SUPPORT,
     WINDOW_GEOMETRY,
     PlayerPosition,
 )
@@ -201,6 +203,7 @@ class MainWindow(QMainWindow):
         self._export_controller.failed.connect(self._export_failed)
         self._export_controller.cancelled.connect(self._export_cancelled)
         self._pending_host_media_library: HostMediaLibrary | None = None
+        self._pending_ipod_media_library: IPodMediaLibrary | None = None
         self._review_host: HostMediaLibrary | None = None
         self._review_ipod: IPodMediaLibrary | None = None
         self._review_active: ActiveIPod | None = None
@@ -229,6 +232,9 @@ class MainWindow(QMainWindow):
             self._review_external_playlist_files
         )
         context.host_media_controller.finished.connect(self._media_scan_finished)
+        context.host_media_controller.refreshFinished.connect(
+            self._host_track_refresh_finished
+        )
         context.host_media_controller.failed.connect(self._media_scan_failed)
         context.host_media_controller.cancelled.connect(self._media_scan_cancelled)
         context.ipod_media_controller.progressChanged.connect(
@@ -1652,6 +1658,7 @@ class MainWindow(QMainWindow):
         cancel_scans = self._sync_workspace.stage is SyncStage.SCANNING
         self._sync_workspace.stop_scan()
         self._pending_host_media_library = None
+        self._pending_ipod_media_library = None
         self._review_host = None
         self._review_ipod = None
         self._review_active = None
@@ -1723,7 +1730,43 @@ class MainWindow(QMainWindow):
         )
         if host is None or not isinstance(value, IPodMediaLibrary):
             return
+        active_ipod = self._context.device_controller.active_ipod
+        if active_ipod is not None:
+            comparison = prepare_sync_plan(
+                host,
+                value,
+                active_ipod.library,
+                file_tag_policy=rockbox_tag_policy(active_ipod.profile)
+                if self._context.settings.get(ROCKBOX_METADATA_SUPPORT)
+                else None,
+            )
+            paths = frozenset(
+                HostPath(Path(item.host_path))
+                for item in comparison.items
+                if item.metadata_changed
+                and not item.host_size_changed
+                and not item.host_modified_changed
+                and item.host_path is not None
+            )
+            if paths:
+                self._pending_ipod_media_library = value
+                if self._context.host_media_controller.refresh_tracks(host, paths):
+                    self._show_media_scan_progress(
+                        source_text("Checking Host Track details.")
+                    )
+                    return
+                self._pending_ipod_media_library = None
+                self._media_scan_failed("The Host Track details could not be checked.")
+                return
         self._finish_media_scan(host, value)
+
+    def _host_track_refresh_finished(self, value: object) -> None:
+        ipod, self._pending_ipod_media_library = (
+            self._pending_ipod_media_library,
+            None,
+        )
+        if isinstance(value, HostMediaLibrary) and ipod is not None:
+            self._finish_media_scan(value, ipod)
 
     def _finish_media_scan(
         self,
@@ -1733,7 +1776,14 @@ class MainWindow(QMainWindow):
         if ipod is not None:
             active_ipod = self._context.device_controller.active_ipod
             if active_ipod is not None:
-                plan = prepare_sync_plan(value, ipod, active_ipod.library)
+                plan = prepare_sync_plan(
+                    value,
+                    ipod,
+                    active_ipod.library,
+                    file_tag_policy=rockbox_tag_policy(active_ipod.profile)
+                    if self._context.settings.get(ROCKBOX_METADATA_SUPPORT)
+                    else None,
+                )
                 self._sync_workspace.load_comparison(value, plan, active_ipod, ipod)
                 self._review_host = value
                 self._review_ipod = ipod
@@ -1751,6 +1801,7 @@ class MainWindow(QMainWindow):
 
     def _ipod_media_scan_failed(self, detail: str) -> None:
         self._pending_host_media_library = None
+        self._pending_ipod_media_library = None
         self._exit_sync_workspace()
         QMessageBox.warning(
             self,
@@ -1760,6 +1811,7 @@ class MainWindow(QMainWindow):
 
     def _media_scan_failed(self, detail: str) -> None:
         self._pending_host_media_library = None
+        self._pending_ipod_media_library = None
         self._exit_sync_workspace()
         QMessageBox.warning(
             self,
@@ -1769,6 +1821,7 @@ class MainWindow(QMainWindow):
 
     def _media_scan_cancelled(self) -> None:
         self._pending_host_media_library = None
+        self._pending_ipod_media_library = None
         self._exit_sync_workspace()
 
     def _cancel_media_scans(self) -> None:

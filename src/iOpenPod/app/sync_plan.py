@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from iOpenPod.app.host_media_library import (
     HostMediaFileKind,
 )
+from iOpenPod.app.sync_track_details import track_tag_sha256, track_tag_values
 from iPodDB.library import PhotoRepresentationKind
 
 if TYPE_CHECKING:
@@ -49,6 +50,9 @@ class SyncPlanBasis(StrEnum):
     IPOD_ONLY = "ipod_only"
     HOST_FACTS_CHANGED = "host_facts_changed"
     HOST_FACTS_MATCH = "host_facts_match"
+    TRACK_DETAILS_CHANGED = "track_details_changed"
+    AUDIO_PAYLOAD_CHANGED = "audio_payload_changed"
+    TRACK_DETAILS_MATCH = "track_details_match"
     CONTENT_MATCH = "content_match"
     MISSING_IDENTITY = "missing_identity"
     AMBIGUOUS_IDENTITY = "ambiguous_identity"
@@ -70,6 +74,10 @@ class SyncPlanItem:
     ipod_id: int | None = None
     host_size_changed: bool = False
     host_modified_changed: bool = False
+    metadata_changed: bool = False
+    artwork_changed: bool = False
+    audio_payload_changed: bool = False
+    file_tags_changed: bool = False
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -86,6 +94,16 @@ class SyncPlanItem:
             self.host_size_changed or self.host_modified_changed
         ):
             raise ValueError("Only an Update action may report changed Host facts")
+        if self.action is not SyncPlanAction.UPDATE and (
+            self.metadata_changed or self.artwork_changed
+        ):
+            raise ValueError("Only an Update action may report changed Track details")
+        if self.action is not SyncPlanAction.UPDATE and (
+            self.audio_payload_changed or self.file_tags_changed
+        ):
+            raise ValueError(
+                "Only an Update action may report changed media payload or file tags"
+            )
 
     @property
     def search_text(self) -> str:
@@ -108,6 +126,7 @@ class SyncPlan:
     """One immutable, review-only account of a completed scan comparison."""
 
     items: tuple[SyncPlanItem, ...]
+    file_tag_policy: str | None = field(default=None, kw_only=True)
 
     def count(self, action: SyncPlanAction) -> int:
         return sum(item.action is action for item in self.items)
@@ -140,12 +159,17 @@ class _Candidate:
     size_bytes: int = 0
     modified_ns: int = 0
     sync: SyncDetails | None = None
+    track: Track | None = None
+    artwork_sha256: str | None = None
+    track_details_refreshed: bool = False
 
 
 def prepare_sync_plan(
     host: HostMediaLibrary,
     ipod: IPodMediaLibrary,
     ipod_library: LibrarySnapshot,
+    *,
+    file_tag_policy: str | None = None,
 ) -> SyncPlan:
     """Correlate completed Host and iPod scans without mutating either source.
 
@@ -192,13 +216,17 @@ def prepare_sync_plan(
     )
 
     items = [
-        _paired_item(host_candidates[host_index], ipod_candidates[ipod_index])
+        _paired_item(
+            host_candidates[host_index], ipod_candidates[ipod_index], file_tag_policy
+        )
         for host_index, ipod_index in pairs
     ]
     items.extend(_host_only_item(host_candidates[index]) for index in host_remaining)
     items.extend(_ipod_only_item(ipod_candidates[index]) for index in ipod_remaining)
     items.extend(attention)
-    return SyncPlan(tuple(sorted(items, key=_item_sort_key)))
+    return SyncPlan(
+        tuple(sorted(items, key=_item_sort_key)), file_tag_policy=file_tag_policy
+    )
 
 
 def select_sync_plan(
@@ -268,7 +296,10 @@ def select_sync_plan(
         ):
             items.append(item)
 
-    return SyncPlan(tuple(sorted(items, key=_item_sort_key)))
+    return SyncPlan(
+        tuple(sorted(items, key=_item_sort_key)),
+        file_tag_policy=comparison.file_tag_policy,
+    )
 
 
 def host_path_identity(value: str) -> str:
@@ -375,7 +406,9 @@ def _pair_unique_groups(
             )
 
 
-def _paired_item(host: _Candidate, ipod: _Candidate) -> SyncPlanItem:
+def _paired_item(
+    host: _Candidate, ipod: _Candidate, file_tag_policy: str | None
+) -> SyncPlanItem:
     sync = ipod.sync
     if sync is None:
         return _item(
@@ -384,7 +417,6 @@ def _paired_item(host: _Candidate, ipod: _Candidate) -> SyncPlanItem:
             host,
             ipod,
         )
-
     size_changed = host.size_bytes != sync.host_size_bytes
     modified_changed = host.modified_ns != sync.host_modified_ns
     same_prior_path = host.path is not None and (
@@ -396,7 +428,8 @@ def _paired_item(host: _Candidate, ipod: _Candidate) -> SyncPlanItem:
         else ipod.fingerprint
     )
     fingerprints_conflict = (
-        host.fingerprint is not None
+        host.media_kind is SyncPlanMediaKind.PHOTO
+        and host.fingerprint is not None
         and expected_fingerprint is not None
         and host.fingerprint != expected_fingerprint
     )
@@ -408,6 +441,71 @@ def _paired_item(host: _Candidate, ipod: _Candidate) -> SyncPlanItem:
         return _item(
             SyncPlanAction.ATTENTION,
             SyncPlanBasis.CONFLICTING_IDENTITY,
+            host,
+            ipod,
+        )
+    if host.media_kind is SyncPlanMediaKind.TRACK:
+        # Reuse the bounded Acoustic Fingerprints already calculated by scans.
+        # Equality intentionally accepts re-encodings and changes outside the
+        # analysis window. Missing evidence falls back to changed Host file facts.
+        audio_payload_changed = (
+            host.fingerprint != ipod.fingerprint
+            if host.fingerprint is not None and ipod.fingerprint is not None
+            else size_changed or modified_changed
+        )
+        metadata_changed = False
+        if host.track is not None and ipod.track is not None:
+            if sync.host_tag_sha256 is not None and sync.ipod_tag_sha256 is not None:
+                metadata_changed = (
+                    track_tag_sha256(host.track) != sync.host_tag_sha256
+                    or track_tag_sha256(ipod.track) != sync.ipod_tag_sha256
+                ) and track_tag_values(host.track) != track_tag_values(ipod.track)
+            elif size_changed or modified_changed or host.track_details_refreshed:
+                metadata_changed = track_tag_values(host.track) != track_tag_values(
+                    ipod.track
+                )
+            elif sync.ipod_tag_sha256 is not None:
+                metadata_changed = track_tag_sha256(ipod.track) != sync.ipod_tag_sha256
+            elif sync.ipod_baseline_pending:
+                # A migrated helper has Sync provenance but no post-commit iPod
+                # tag baseline. Compare the two current semantic projections
+                # rather than accepting the current iPod value as that baseline.
+                metadata_changed = track_tag_values(host.track) != track_tag_values(
+                    ipod.track
+                )
+        artwork_changed = _artwork_changed(
+            host, ipod, facts_changed=size_changed or modified_changed
+        )
+        file_tags_changed = (
+            file_tag_policy is not None and sync.file_tag_policy != file_tag_policy
+        )
+        if (
+            audio_payload_changed
+            or metadata_changed
+            or artwork_changed
+            or file_tags_changed
+        ):
+            return _item(
+                SyncPlanAction.UPDATE,
+                (
+                    SyncPlanBasis.AUDIO_PAYLOAD_CHANGED
+                    if audio_payload_changed
+                    else SyncPlanBasis.TRACK_DETAILS_CHANGED
+                ),
+                host,
+                ipod,
+                host_size_changed=size_changed,
+                host_modified_changed=modified_changed,
+                metadata_changed=metadata_changed,
+                artwork_changed=artwork_changed,
+                audio_payload_changed=audio_payload_changed,
+                file_tags_changed=file_tags_changed,
+            )
+        return _item(
+            SyncPlanAction.UNCHANGED,
+            SyncPlanBasis.TRACK_DETAILS_MATCH
+            if size_changed or modified_changed
+            else SyncPlanBasis.HOST_FACTS_MATCH,
             host,
             ipod,
         )
@@ -428,6 +526,30 @@ def _paired_item(host: _Candidate, ipod: _Candidate) -> SyncPlanItem:
     )
 
 
+def _artwork_changed(
+    host: _Candidate, ipod: _Candidate, *, facts_changed: bool
+) -> bool:
+    host_artwork = host.track is not None and host.track.artwork_id != 0
+    ipod_artwork_id = 0 if ipod.track is None else ipod.track.artwork_id
+    sync = ipod.sync
+    if not host_artwork:
+        return ipod_artwork_id != 0 and (
+            facts_changed
+            or (
+                sync is not None
+                and (sync.host_artwork_sha256 is not None or sync.ipod_baseline_pending)
+            )
+        )
+    if ipod_artwork_id == 0 or host.artwork_sha256 is None:
+        return True
+    return (
+        sync is None
+        or sync.ipod_baseline_pending
+        or sync.host_artwork_sha256 != host.artwork_sha256
+        or sync.ipod_artwork_id != ipod_artwork_id
+    )
+
+
 def _item(
     action: SyncPlanAction,
     basis: SyncPlanBasis,
@@ -436,6 +558,10 @@ def _item(
     *,
     host_size_changed: bool = False,
     host_modified_changed: bool = False,
+    metadata_changed: bool = False,
+    artwork_changed: bool = False,
+    audio_payload_changed: bool = False,
+    file_tags_changed: bool = False,
 ) -> SyncPlanItem:
     return SyncPlanItem(
         action=action,
@@ -448,6 +574,10 @@ def _item(
         ipod_id=ipod.item_id,
         host_size_changed=host_size_changed,
         host_modified_changed=host_modified_changed,
+        metadata_changed=metadata_changed,
+        artwork_changed=artwork_changed,
+        audio_payload_changed=audio_payload_changed,
+        file_tags_changed=file_tags_changed,
     )
 
 
@@ -496,6 +626,9 @@ def _host_candidates(library: HostMediaLibrary) -> tuple[_Candidate, ...]:
         for track in library.snapshot.tracks
         if track.metadata.location
     }
+    artwork_by_id = {
+        source.artwork_id: source.content_sha256 for source in library.artwork_sources
+    }
     photo_details: dict[str, str] = {}
     if library.snapshot.photos is not None:
         for photo in library.snapshot.photos.photos:
@@ -509,6 +642,9 @@ def _host_candidates(library: HostMediaLibrary) -> tuple[_Candidate, ...]:
                     break
 
     candidates: list[_Candidate] = []
+    rechecked_paths = {
+        host_path_identity(path) for path in library.rechecked_track_paths
+    }
     for source in library.sources:
         if source.kind is HostMediaFileKind.PLAYLIST:
             continue
@@ -528,6 +664,13 @@ def _host_candidates(library: HostMediaLibrary) -> tuple[_Candidate, ...]:
                     path=path,
                     size_bytes=source.size_bytes,
                     modified_ns=source.modified_ns,
+                    track=track,
+                    track_details_refreshed=host_path_identity(path) in rechecked_paths,
+                    artwork_sha256=(
+                        artwork_by_id.get(track.artwork_id)
+                        if track is not None and track.artwork_id
+                        else ""
+                    ),
                 )
             )
         else:
@@ -563,6 +706,7 @@ def _ipod_candidates(
             detail=_track_detail(track),
             path=track.metadata.location or None,
             item_id=track.track_id,
+            track=track,
         )
         for track in library.tracks
         if track.track_id not in scanned_track_ids
@@ -617,6 +761,7 @@ def _ipod_track_candidate(
         size_bytes=record.size_bytes,
         modified_ns=record.modified_ns,
         sync=record.sync,
+        track=track,
     )
 
 

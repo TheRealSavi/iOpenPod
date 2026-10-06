@@ -23,7 +23,7 @@ from iOpenPod.app.library_write import (
 from iOpenPod.app.media.importing import MusicImporter
 from iOpenPod.app.media.lyrics import embedded_lyrics, rewrite_lyrics
 from iOpenPod.app.services import library_resources
-from iPodDB.library import IssueSeverity, LibrarySnapshot, TrackFieldEdit
+from iPodDB.library import LibrarySnapshot, TrackFieldEdit
 from storage import CapturedHostFile, HostPath
 from storage.media_processing import MediaWorkspace
 
@@ -64,16 +64,10 @@ def test_add_replace_and_clear_publish_with_database_and_restore(
             before = path.read_bytes()
             review = device.prepare(desired_lyrics(device, text))
             assert review.result.prepared is not None, review.result.issues
-            warnings = [
-                issue
+            assert not any(
+                issue.code == "resources.lyrics_disk_staging"
                 for issue in review.result.issues
-                if issue.code == "resources.lyrics_disk_staging"
-            ]
-            assert len(warnings) == int(capture_limited)
-            if warnings:
-                assert warnings[0].severity is IssueSeverity.WARNING
-                assert first.metadata.location in warnings[0].message
-                assert warnings[0].artifact == first.metadata.location
+            )
             assert review.plan is not None and review.plan.required_lyrics == (
                 first.track_id,
             )
@@ -196,15 +190,10 @@ def test_batch_budget_spills_only_overflowing_media_and_preserves_every_track(
         )
         review = device.prepare(snapshot)
         assert review.result.prepared is not None, review.result.issues
-        warnings = [
-            i for i in review.result.issues if i.code == "resources.lyrics_disk_staging"
-        ]
-        in_memory_count = 0 if output_growth else 1
-        assert len(warnings) == len(snapshot.tracks) - in_memory_count
-        assert [i.record_id for i in warnings] == [
-            t.track_id for t in snapshot.tracks[in_memory_count:]
-        ]
-        assert all(i.severity is IssueSeverity.WARNING for i in warnings)
+        assert not any(
+            issue.code == "resources.lyrics_disk_staging"
+            for issue in review.result.issues
+        )
         device.assert_original()
         saved = device.save(review)
         assert saved.active is not None, saved.issues
@@ -354,16 +343,10 @@ def test_import_reads_embedded_lyrics_and_writes_reviewed_text_without_changing_
             Event(),
         )
         assert review.result.prepared is not None, review.result.issues
-        warnings = [
-            issue
+        assert not any(
+            issue.code == "resources.lyrics_disk_staging"
             for issue in review.result.issues
-            if issue.code == "resources.lyrics_disk_staging"
-        ]
-        assert len(warnings) == int(capture_limited)
-        if warnings:
-            assert warnings[0].severity is IssueSeverity.WARNING
-            assert str(host) in warnings[0].message
-            assert warnings[0].artifact == str(host)
+        )
         assert Path(host).read_bytes() == original
         saved = device.save(review)
         assert saved.active is not None, saved.issues

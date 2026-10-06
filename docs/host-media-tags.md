@@ -2,7 +2,7 @@
 
 The Application Layer's `media.tags` adapter interprets native Mutagen values and
 FFprobe metadata for Host Media Scan, music import, and Sync enrichment. Scanning
-is read-only. Normalized fields survive Host Media Scan Cache v9; older caches are
+is read-only. Normalized fields survive Host Media Scan Cache v10; older caches are
 rebuilt. Tags describe Library classification, not codec compatibility.
 
 ## Coverage

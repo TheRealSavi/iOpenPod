@@ -34,8 +34,8 @@ or a firmware display limit. Exceeding it must not truncate audio or block an
 otherwise valid lyrics update. Storage captures private Host files and lends
 seekable streams for focused tag edits. The Application Layer verifies the text
 and fingerprints the result, retaining small outputs in memory and larger outputs
-on disk until their issued review is saved or retired. Disk staging emits a warning
-that identifies the original Host path, or the Device Path for a retained Track.
+on disk until their issued review is saved or retired. Successful disk staging
+does not emit a warning.
 Actual preparation failures also identify the affected file.
 
 Artwork capture reserves memory first; lyrics media uses the remainder or disk.

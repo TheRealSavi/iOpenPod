@@ -174,10 +174,21 @@ after the verified Library commit. The Application Layer then
 prepares an immutable Sync Plan for Tracks and full-resolution Photos. Proven Host
 path relationships are considered before unique content identities; current Host
 size and modification time are compared with the Host facts recorded by a successful
-prior Sync to distinguish Update from In sync. The initial comparison classifies
-Host-only media as Add and iPod-only media as Remove, while missing or ambiguous
-identities remain Needs attention. The Select Media stage defaults correlated Host
-items on and Host-only items off, supports aggregate Album and collection selection,
+prior Sync. With unchanged Host file facts, current iPod Track details are compared
+with the committed Sync Details tag fingerprint; a difference prompts a targeted
+Host reread before the plan is finalized. Artwork is checked independently so a
+changed folder cover can also produce Update. Cached Acoustic Fingerprints decide
+whether media must be replaced, accepting their bounded and encoding-insensitive
+comparison. Tag and artwork updates retain existing payloads, with one verified
+file-tag rewrite for lyrics and optional Rockbox tags. Unchanged covers retain
+their iTHMB bytes. Legacy caches migrate without media rereads. When acoustic
+evidence is unavailable, changed Host file facts conservatively need replacement.
+Separate Host and iPod tag baselines prevent normalization from causing repeated
+Updates. Photos retain the file-fact Update rule. See ADR-0120. The
+initial comparison classifies Host-only media as Add and iPod-only media as Remove,
+while missing or ambiguous identities remain Needs attention. The Select Media stage
+defaults correlated Host items on and Host-only items off, supports aggregate Album
+and collection selection,
 and can group grid items as Selected, Mixed, or Deselected. Opening an Album or
 collection card in Select Media replaces the browser with a full detail page,
 including artwork, metadata, bulk selection, and the shared Track table with its
@@ -212,7 +223,7 @@ See [Host tag coverage](docs/host-media-tags.md) and ADR-0099 for precedence and
 
 Optional acoustic analysis no longer gates readable Host media or explicit Adds.
 Sync checks media tools only for incoming Tracks and preserves committed Host-path
-provenance independently of Acoustic Fingerprints in Library Sync Helper v3.
+provenance independently of Acoustic Fingerprints in Library Sync Helper v4.
 Embedded artwork uses seekable reads, including for large audiobooks. Successful
 FFprobe output remains usable with incidental metadata diagnostics. Preparation
 reports all concurrent Tracks with separate phase progress measured from FFmpeg's
@@ -253,10 +264,10 @@ format files. Profiles without native cover support receive an iOpenPod-only
 support. Preparation writes every native or application-only layout, preserves
 retained variants, and supports older reverse Track links. See ADR-0033 and
 ADR-0118.
-With Rockbox Metadata Support enabled, Sync also embeds the captured cover in
-prepared media files. Non-cover profiles use an optimized grayscale JPEG fitting
-within 120x120 pixels; this file-tag copy is separate from the iOpenPod-only
-ArtworkDB representation.
+With Rockbox Metadata Support enabled, Sync and ordinary Library saves embed
+changed metadata and artwork in media files. Metadata-only edits preserve embedded
+covers; artwork removal clears them. Non-cover profiles use a 120x120 grayscale
+JPEG; this file-tag copy is separate from the iOpenPod-only ArtworkDB representation.
 When preparing new cover artwork, conflicting retained MHIF image sizes are
 corrected automatically when the Device Profile, retained image metadata, and
 captured thumbnail ranges establish the correct size. Unverifiable conflicts
@@ -378,7 +389,7 @@ enabled Sync also embeds captured Track artwork in prepared media files; non-cov
 devices use an optimized grayscale JPEG fitting within 120x120 pixels. Unrelated
 edits preserve file-only lyrics, and incoming music reads embedded lyrics into its
 draft. Preparation exceeding the whole-media memory budget uses private Host disk
-staging with a file-specific warning, preserving complete media and lyrics.
+staging, preserving complete media and lyrics without a warning for normal overflow.
 Sync Add/Update preparation prefers nonempty lyrics in the captured Host file
 over older reviewed text and publishes matching media tags and iTunesDB text.
 This applies with Rockbox Metadata Support on or off. Sync does not inspect
@@ -387,7 +398,7 @@ See ADR-0075 and `docs/research/itunesdb-lyrics.md`.
 
 Artwork capture, generated artwork, and Photo batches also use private Host disk
 staging when preparation memory budgets are reached. Large valid batches continue
-with file-specific warnings while retaining complete content, independent
+while retaining complete content, independent
 verification, and recoverable publication. See ADR-0117.
 
 Backup Snapshots use Backup Archive format v4, continuing the Original iOpenPod v2

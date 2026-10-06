@@ -17,6 +17,7 @@ from iOpenPod.app.host_media_fingerprint import (
     FpcalcUnavailableError,
     normalize_fpcalc_fingerprint,
 )
+from iOpenPod.app.sync_track_details import track_tag_sha256
 from iPodDB.library import PhotoRepresentationKind
 from storage import (
     DeviceEntry,
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
 LIBRARY_SYNC_HELPER_PATH = DevicePath("iPod_Control/iOpenPod/library-sync-helper.json")
 _IPOD_CONTROL_PATH = DevicePath("iPod_Control")
 _PHOTOS_PATH = DevicePath("Photos")
-_FORMAT_VERSION = 3
+_FORMAT_VERSION = 4
 _MAX_HELPER_BYTES = 64 * 1024 * 1024
 _MAX_RECORDS = 250_000
 
@@ -82,6 +83,12 @@ class SyncDetails:
     ipod_format: str
     was_transcoded: bool
     host_content_sha256: str = ""
+    host_artwork_sha256: str | None = None
+    ipod_artwork_id: int | None = None
+    ipod_tag_sha256: str | None = None
+    ipod_baseline_pending: bool = False
+    host_tag_sha256: str | None = None
+    file_tag_policy: str | None = None
 
     def __post_init__(self) -> None:
         if not self.last_synced_at.strip():
@@ -90,6 +97,14 @@ class SyncDetails:
             raise ValueError("Sync Details require non-negative Host file facts")
         if self.host_content_sha256:
             _require_sha256(self.host_content_sha256, "Host content fingerprint")
+        if self.host_artwork_sha256:
+            _require_sha256(self.host_artwork_sha256, "Host artwork fingerprint")
+        if self.ipod_artwork_id is not None and self.ipod_artwork_id < 0:
+            raise ValueError("The iPod artwork identity must not be negative")
+        if self.ipod_tag_sha256 is not None:
+            _require_sha256(self.ipod_tag_sha256, "iPod Track tag fingerprint")
+        if self.host_tag_sha256 is not None:
+            _require_sha256(self.host_tag_sha256, "Host Track tag fingerprint")
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,7 +229,11 @@ def publish_sync_helper(
     tracks: list[IPodTrackFingerprint] = []
     issues: list[IPodMediaScanIssue] = []
     for track in library.tracks:
-        path = _track_path(track)
+        try:
+            path = _track_path(track)
+        except ValueError as error:
+            issues.append(IPodMediaScanIssue(f"Track {track.track_id}", str(error)))
+            continue
         new = updated.get(str(path).casefold())
         old = retained.get(
             ("track", track.track_id)
@@ -249,7 +268,14 @@ def publish_sync_helper(
                     entry.size,
                     entry.modified_ns,
                     new.acoustic_fingerprint,
-                    new.sync,
+                    replace(
+                        new.sync,
+                        ipod_artwork_id=track.artwork_id,
+                        ipod_tag_sha256=track_tag_sha256(track),
+                        ipod_baseline_pending=False,
+                    )
+                    if new.sync is not None
+                    else None,
                 )
             )
         elif old is not None and _matches(session, old, path, entry):
@@ -357,6 +383,7 @@ class _LoadedHelper:
     images: tuple[IPodImageFingerprint, ...] = ()
     library_sha256: str = ""
     updated_at: str = ""
+    version: int = _FORMAT_VERSION
     revision: FileFingerprint | None = None
     writable: bool = True
 
@@ -456,6 +483,11 @@ class IPodMediaScanner:
                         "Fingerprinting iPod Track {index} of {total}…",
                         index=f"{index:,}",
                         total=f"{len(library.tracks):,}",
+                    )
+                if loaded.version < _FORMAT_VERSION and track_record.sync is not None:
+                    track_record = replace(
+                        track_record,
+                        sync=replace(track_record.sync, ipod_baseline_pending=True),
                     )
                 tracks.append(track_record)
                 current = session.stat(track_path)
@@ -710,6 +742,7 @@ def _save_helper(
         tracks == loaded.tracks
         and images == loaded.images
         and library_sha256 == loaded.library_sha256
+        and loaded.version == _FORMAT_VERSION
         and loaded.revision is not None
     )
     if unchanged:
@@ -834,7 +867,13 @@ def _decode_helper(payload: bytes) -> _LoadedHelper:
         "images",
         "catalog_sha256",
     }
-    if set(document) != expected or document["version"] not in (1, 2, _FORMAT_VERSION):
+    version = _nonnegative_integer(document.get("version"), "version")
+    if set(document) != expected or version not in (
+        1,
+        2,
+        3,
+        _FORMAT_VERSION,
+    ):
         raise ValueError("Sync helper fields or version are unsupported")
     tracks_raw = _array(document["tracks"], "tracks")
     images_raw = _array(document["images"], "images")
@@ -858,6 +897,7 @@ def _decode_helper(payload: bytes) -> _LoadedHelper:
         images,
         library_sha256,
         _text(document["updated_at"], "updated_at"),
+        version,
     )
 
 
@@ -896,6 +936,12 @@ def _sync_document(value: SyncDetails | None) -> dict[str, object] | None:
         "ipod_format": value.ipod_format,
         "was_transcoded": value.was_transcoded,
         "host_content_sha256": value.host_content_sha256,
+        "host_artwork_sha256": value.host_artwork_sha256,
+        "ipod_artwork_id": value.ipod_artwork_id,
+        "ipod_tag_sha256": value.ipod_tag_sha256,
+        "ipod_baseline_pending": value.ipod_baseline_pending,
+        "host_tag_sha256": value.host_tag_sha256,
+        "file_tag_policy": value.file_tag_policy,
     }
 
 
@@ -954,27 +1000,34 @@ def _image_from_document(value: object) -> IPodImageFingerprint:
 def _sync_from_document(value: object) -> SyncDetails | None:
     if value is None:
         return None
-    row = _exact_object(
-        value,
-        "Sync details",
-        {
-            "last_synced_at",
-            "host_path_hint",
-            "host_size_bytes",
-            "host_modified_ns",
-            "source_format",
-            "ipod_format",
-            "was_transcoded",
-            *(
-                {"host_content_sha256"}
-                if isinstance(value, dict) and "host_content_sha256" in value
-                else set()
-            ),
-        },
-    )
+    required = {
+        "last_synced_at",
+        "host_path_hint",
+        "host_size_bytes",
+        "host_modified_ns",
+        "source_format",
+        "ipod_format",
+        "was_transcoded",
+    }
+    optional = {
+        "host_content_sha256",
+        "host_artwork_sha256",
+        "ipod_artwork_id",
+        "ipod_tag_sha256",
+        "ipod_baseline_pending",
+        "host_payload_sha256",  # Ignored field from an earlier v4 development build.
+        "host_tag_sha256",
+        "file_tag_policy",
+    }
+    row = _object(value, "Sync details")
+    if not required <= row.keys() or row.keys() - required - optional:
+        raise ValueError("Sync details fields are invalid")
     was_transcoded = row["was_transcoded"]
     if not isinstance(was_transcoded, bool):
         raise ValueError("was_transcoded must be a boolean")
+    baseline_pending = row.get("ipod_baseline_pending", False)
+    if not isinstance(baseline_pending, bool):
+        raise ValueError("ipod_baseline_pending must be a boolean")
     return SyncDetails(
         last_synced_at=_text(row["last_synced_at"], "last_synced_at"),
         host_path_hint=_text(row["host_path_hint"], "host_path_hint"),
@@ -987,6 +1040,32 @@ def _sync_from_document(value: object) -> SyncDetails | None:
         was_transcoded=was_transcoded,
         host_content_sha256=_text(
             row.get("host_content_sha256", ""), "host_content_sha256"
+        ),
+        host_artwork_sha256=(
+            None
+            if row.get("host_artwork_sha256") is None
+            else _text(row["host_artwork_sha256"], "host_artwork_sha256")
+        ),
+        ipod_artwork_id=(
+            None
+            if row.get("ipod_artwork_id") is None
+            else _nonnegative_integer(row["ipod_artwork_id"], "ipod_artwork_id")
+        ),
+        ipod_tag_sha256=(
+            None
+            if row.get("ipod_tag_sha256") is None
+            else _text(row["ipod_tag_sha256"], "ipod_tag_sha256")
+        ),
+        ipod_baseline_pending=baseline_pending,
+        file_tag_policy=(
+            None
+            if row.get("file_tag_policy") is None
+            else _text(row["file_tag_policy"], "file_tag_policy")
+        ),
+        host_tag_sha256=(
+            None
+            if row.get("host_tag_sha256") is None
+            else _text(row["host_tag_sha256"], "host_tag_sha256")
         ),
     )
 

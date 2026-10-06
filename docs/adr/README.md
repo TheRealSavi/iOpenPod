@@ -191,3 +191,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0116: Retain bounded Unknown Data with log-only diagnostics](0116-retain-bounded-unknown-data-with-log-only-diagnostics.md)
 - [ADR-0117: Spill prepared Library content to Host storage](0117-spill-prepared-library-content-to-host-storage.md)
 - [ADR-0118: Write application artwork for non-cover devices](0118-write-application-artwork-for-non-cover-devices.md)
+- [ADR-0119: Compare Track tags and artwork before Sync Update](0119-compare-track-tags-and-artwork-after-host-file-changes.md)
+- [ADR-0120: Separate Track payload replacement from tag and artwork updates](0120-separate-track-payload-replacement-from-tag-and-artwork-updates.md)

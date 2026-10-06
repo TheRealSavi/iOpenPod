@@ -113,6 +113,7 @@ def reconcile(
             old == track
             and track_chunk is not None
             and track.track_id not in required_media
+            and track.track_id not in lyrics
         ):
             track_output.append(track_chunk)
             continue

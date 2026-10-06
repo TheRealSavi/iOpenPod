@@ -29,6 +29,7 @@ from tests.iOpenPod.app.test_music_import import FIXTURES
 
 from iOpenPod.app import sync_execution
 from iOpenPod.app.display_text import SourceText
+from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.host_media_library import (
     HostArtworkKind,
     HostMediaArtworkSource,
@@ -123,6 +124,8 @@ class _SyncArtworkFrame(Protocol):
 class _SyncID3TagView(Protocol):
     def getall(self, key: str) -> list[_SyncArtworkFrame]: ...
 
+    def __getitem__(self, key: str) -> object: ...
+
 
 class _AvailableTools(MediaTranscoder):
     def preflight(self, *, checkpoint: Callable[[], None]) -> MediaTools:
@@ -171,7 +174,7 @@ def _photo_host(tmp_path: Path) -> HostMediaLibrary:
     )
 
 
-@pytest.mark.parametrize("budget", [10, 512 * 1024 * 1024])
+@pytest.mark.parametrize("budget", [10, 2 * 1024 * 1024 * 1024])
 def test_photo_creates_verified_library_files_and_sync_provenance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -185,12 +188,9 @@ def test_photo_creates_verified_library_files_and_sync_provenance(
             request, lambda _: None, Event()
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
-        if budget == 10:
-            assert any(
-                issue.code == "sync.photo_disk_staging"
-                and issue.artifact == str(request.host.sources[0].path)
-                for issue in result.issues
-            )
+        assert not any(
+            issue.code == "sync.photo_disk_staging" for issue in result.issues
+        )
         assert result.active is not None and result.active.library.photos is not None
         assert len(result.active.library.photos.photos) == 1
         added = result.active.library.photos.photos[0]
@@ -757,6 +757,7 @@ def test_update_keeps_track_identity_and_only_removes_unreferenced_old_media(
             if track.title == "Replacement"
         )
         assert updated.track_id == original.track_id
+        assert updated.artwork_id == 0
         assert updated.ipod is not None and original.ipod is not None
         assert updated.ipod.db_track_id == original.ipod.db_track_id
         assert updated.metadata.location != original.metadata.location
@@ -765,6 +766,16 @@ def test_update_keeps_track_identity_and_only_removes_unreferenced_old_media(
         )
         assert (device.root / original.metadata.location).exists() is shared
         assert (device.root / updated.metadata.location).exists()
+        assert result.helper is not None
+        next_plan = prepare_sync_plan(host, result.helper, result.active.library)
+        assert (
+            next(
+                item
+                for item in next_plan.items
+                if item.host_path == str(host.sources[0].path)
+            ).action
+            is SyncPlanAction.UNCHANGED
+        )
     finally:
         device.coordinator.close()
 
@@ -1161,13 +1172,9 @@ def test_real_aac_passes_through_full_sync_without_reencoding(
             for e in events
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
-        warnings = [
-            i for i in result.issues if i.code == "resources.lyrics_disk_staging"
-        ]
-        assert len(warnings) == int(oversized_lyrics_media)
-        if warnings:
-            assert warnings[0].artifact == str(source)
-            assert str(source) in warnings[0].message
+        assert not any(
+            issue.code == "resources.lyrics_disk_staging" for issue in result.issues
+        )
         assert source.read_bytes() == data
         assert result.active is not None
         added = next(
@@ -1307,6 +1314,88 @@ def test_shared_album_artwork_is_captured_once_and_referenced_by_new_tracks(
         device.coordinator.close()
 
 
+def test_folder_artwork_only_update_is_committed_and_recorded(tmp_path: Path) -> None:
+    device = build_device(tmp_path)
+    try:
+        original = device.active.library.tracks[0]
+        assert original.artwork_id > 0
+        host = _host(tmp_path, "Updated cover")
+        path = tmp_path / "cover.png"
+        Image.new("RGB", (180, 180), "blue").save(path)
+        observed = LocalHostFile.observe(HostPath(path))
+        cover = HostMediaArtworkSource(
+            123,
+            HostArtworkKind.FOLDER,
+            observed.path,
+            observed.size_bytes,
+            observed.modified_ns,
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        host = replace(
+            host,
+            snapshot=replace(
+                host.snapshot,
+                tracks=(replace(host.snapshot.tracks[0], artwork_id=123),),
+            ),
+            artwork_sources=(cover,),
+        )
+        request = _request(device, host, update=True)
+        source = host.sources[0]
+        prior = request.ipod.tracks[0].sync
+        assert prior is not None
+        ipod = replace(
+            request.ipod,
+            tracks=(
+                replace(
+                    request.ipod.tracks[0],
+                    acoustic_fingerprint=source.acoustic_fingerprint or "",
+                    sync=replace(
+                        prior,
+                        host_size_bytes=source.size_bytes,
+                        host_modified_ns=source.modified_ns,
+                        host_artwork_sha256="a" * 64,
+                        ipod_artwork_id=original.artwork_id,
+                    ),
+                ),
+                *request.ipod.tracks[1:],
+            ),
+        )
+        plan = prepare_sync_plan(host, ipod, device.active.library)
+        changed = next(
+            item for item in plan.items if item.host_path == str(source.path)
+        )
+        assert changed.action is SyncPlanAction.UPDATE
+        assert changed.artwork_changed and not changed.host_modified_changed
+        assert changed.audio_payload_changed is False
+        request = replace(request, ipod=ipod, plan=plan)
+        result = _Executor(device.coordinator, transcoder=_MissingTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None and result.helper is not None
+        updated = next(
+            track
+            for track in result.active.library.tracks
+            if track.track_id == original.track_id
+        )
+        assert updated.artwork_id != original.artwork_id
+        recorded = next(
+            item for item in result.helper.tracks if item.track_id == original.track_id
+        )
+        assert recorded.sync is not None
+        assert recorded.sync.host_artwork_sha256 == cover.content_sha256
+        assert recorded.sync.ipod_artwork_id == updated.artwork_id
+        next_plan = prepare_sync_plan(host, result.helper, result.active.library)
+        assert (
+            next(
+                item for item in next_plan.items if item.host_path == str(source.path)
+            ).action
+            is SyncPlanAction.UNCHANGED
+        )
+    finally:
+        device.coordinator.close()
+
+
 def test_non_cover_device_publishes_display_only_artwork_for_iopenpod(
     tmp_path: Path,
 ) -> None:
@@ -1388,9 +1477,14 @@ def test_non_cover_device_publishes_display_only_artwork_for_iopenpod(
     any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")),
     reason="Sync media tools required",
 )
+@pytest.mark.parametrize("capture_budget", [None, 0])
 def test_rockbox_sync_embeds_compact_artwork_in_a_non_cover_device_file(
     tmp_path: Path,
+    capture_budget: int | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if capture_budget is not None:
+        monkeypatch.setattr(library_resources, "_MAX_CAPTURE_BYTES", capture_budget)
     device = bare_device(tmp_path, model_number="M9802")
     try:
         media_path = tmp_path / "rockbox-track.mp3"
@@ -1425,6 +1519,7 @@ def test_rockbox_sync_embeds_compact_artwork_in_a_non_cover_device_file(
                     HostMediaFileKind.AUDIO,
                     media.size_bytes,
                     media.modified_ns,
+                    acoustic_fingerprint="1,2,3",
                     content_sha256=hashlib.sha256(media_path.read_bytes()).hexdigest(),
                 ),
             ),
@@ -1489,6 +1584,121 @@ def test_rockbox_sync_embeds_compact_artwork_in_a_non_cover_device_file(
         with Image.open(io.BytesIO(cover_data)) as image:
             assert image.size == (120, 120)
             assert image.mode == "L"
+
+        original_location = added.metadata.location
+        ExportMediaTagger().prepare(
+            HostPath(media_path), replace(added, title="Updated Rockbox track"), None
+        )
+        updated_source = LocalHostFile.observe(HostPath(media_path))
+        updated_host = replace(
+            host,
+            snapshot=replace(
+                host.snapshot,
+                tracks=(
+                    replace(
+                        host.snapshot.tracks[0],
+                        title="Updated Rockbox track",
+                        metadata=replace(
+                            host.snapshot.tracks[0].metadata, lyrics=WORDS
+                        ),
+                    ),
+                ),
+            ),
+            sources=(
+                replace(
+                    host.sources[0],
+                    size_bytes=updated_source.size_bytes,
+                    modified_ns=updated_source.modified_ns,
+                ),
+            ),
+        )
+        assert added.ipod is not None
+        with device.coordinator.sync_session(result.active) as session:
+            observed_device_file = session.stat(DevicePath(original_location))
+        updated_ipod = IPodMediaLibrary(
+            (
+                IPodTrackFingerprint(
+                    added.ipod.db_track_id,
+                    added.track_id,
+                    DevicePath(original_location),
+                    observed_device_file.size,
+                    observed_device_file.modified_ns,
+                    "1,2,3",
+                    SyncDetails(
+                        "2026-01-01T00:00:00+00:00",
+                        str(media_path),
+                        media.size_bytes,
+                        media.modified_ns,
+                        "mp3",
+                        "mp3",
+                        False,
+                        host_artwork_sha256=hashlib.sha256(
+                            cover_path.read_bytes()
+                        ).hexdigest(),
+                        ipod_artwork_id=added.artwork_id,
+                    ),
+                ),
+            ),
+            (),
+            (),
+            IPodMediaCacheStats(),
+            None,
+            False,
+        )
+        updated_plan = prepare_sync_plan(
+            updated_host, updated_ipod, result.active.library
+        )
+        updated_item = next(
+            item for item in updated_plan.items if item.host_path == str(media_path)
+        )
+        assert updated_item.action is SyncPlanAction.UPDATE
+        assert updated_item.audio_payload_changed is False
+        updated_request = SyncExecutionRequest(
+            SyncPlan((updated_item,)),
+            updated_host,
+            updated_ipod,
+            result.active,
+            1,
+            1,
+            options=SyncOptions(rockbox_metadata=True),
+        )
+        updated_result = SyncExecutor(
+            device.coordinator, transcoder=_MissingTools()
+        ).execute(updated_request, lambda _: None, Event())
+        assert updated_result.status is SyncExecutionStatus.SUCCESS, (
+            updated_result.issues
+        )
+        assert updated_result.active is not None
+        assert (
+            next(
+                track
+                for track in updated_result.active.library.tracks
+                if track.metadata.location == original_location
+            ).title
+            == "Updated Rockbox track"
+        )
+        updated_tags = MP3(device.root / original_location).tags  # type: ignore[no-untyped-call]
+        assert updated_tags is not None
+        updated_track = next(
+            track
+            for track in updated_result.active.library.tracks
+            if track.metadata.location == original_location
+        )
+        assert (
+            updated_track.size_bytes == (device.root / original_location).stat().st_size
+        )
+        assert embedded_lyrics(MP3(device.root / original_location)) == WORDS
+        assert (
+            str(cast("_SyncID3TagView", updated_tags)["TIT2"])
+            == "Updated Rockbox track"
+        )
+        updated_cover_data = (
+            cast("_SyncID3TagView", updated_tags).getall("APIC")[0].data
+        )
+        with Image.open(io.BytesIO(updated_cover_data)) as image:
+            assert image.size == (120, 120)
+            assert image.mode == "L"
+
     finally:
         device.coordinator.close()
 

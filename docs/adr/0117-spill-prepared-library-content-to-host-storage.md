@@ -8,7 +8,7 @@ The 512 MiB preparation thresholds protect retained memory; they are not iPod
 format limits. Rejecting artwork prefixes or Photo batches at those thresholds
 prevents otherwise valid changes. Truncating encoded media or thumbnail files
 would corrupt content. Keep complete content and move overflow to private Host
-files, with warnings that name the affected artwork file or Host Photo.
+files. Successful overflow is routine preparation and does not produce a warning.
 
 iPodDB accepts path-free readable content and caller-provided append-only output
 buffers alongside ordinary bytes. It hashes complete content and retained
@@ -32,3 +32,10 @@ images, database models, and temporary working buffers are separate. Individual
 image safety limits, native thumbnail shard sizes and offsets, and device staging
 and recovery space checks still apply. No iPod lyric-text truncation policy is
 introduced. Actual Host storage failures remain errors with actionable details.
+
+## Budget and presentation update (2026-10-06)
+
+The artwork/media capture workspace and the separate Photo Sync workspace each
+retain up to 2 GiB before spilling to private Host files. This is a retained-data
+budget, not a guarantee about total process memory. Routine disk staging does not
+produce a user-visible issue; actual staging failures remain errors.

@@ -108,6 +108,8 @@ def edit_track_metadata(track: Track, edits: tuple[TrackFieldEdit, ...]) -> Trac
     if issues:
         raise TrackEditError(tuple(issues))
     updated = replace(track, **top, metadata=replace(track.metadata, **metadata))
+    if updated.play_count > 0 and not updated.metadata.played:
+        updated = replace(updated, metadata=replace(updated.metadata, played=True))
     issues.extend(metadata_edit_issues(track, updated))
     if issues:
         raise TrackEditError(tuple(issues))

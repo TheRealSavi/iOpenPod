@@ -16,6 +16,7 @@ from uuid import uuid4
 from iOpenPod.app.artwork_policy import (
     application_artwork_formats,
     rockbox_artwork,
+    rockbox_tag_policy,
 )
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
@@ -24,6 +25,7 @@ from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTra
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
     PreparationCancelledError,
+    RockboxMediaUpdate,
     WriteItemProgress,
     WriteProgress,
 )
@@ -62,6 +64,7 @@ from iOpenPod.app.sync_plan import (
     host_path_identity,
     prepare_sync_plan,
 )
+from iOpenPod.app.sync_track_details import apply_track_tags, track_tag_sha256
 from iOpenPod.app.tag_normalizer import normalize_tags, tag_profile
 from iOpenPod.app.track_playback_policy import (
     enforce_library_playback_policy,
@@ -89,11 +92,11 @@ from iPodDB.library import (
     prepared_video,
 )
 from storage import DeviceEntryKind, DevicePath, StorageError
-from storage.content_workspace import StagedContent, content_workspace
+from storage.content_workspace import content_workspace
 from storage.host_input import LocalHostFile
 from storage.media_processing import available_compute_threads
 
-_PHOTO_MEMORY_BUDGET = 512 * 1024 * 1024
+_PHOTO_MEMORY_BUDGET = 2 * 1024 * 1024 * 1024
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
@@ -176,6 +179,13 @@ class _PreparedTrack:
     resources: ExitStack
     warnings: tuple[str, ...]
     output: PreparedTranscode | None = None
+
+
+@dataclass(slots=True)
+class _PreparedMetadataUpdate:
+    item: SyncPlanItem
+    provenance: SyncedTrack
+    artwork: ArtworkPixels | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -346,7 +356,7 @@ class SyncExecutor:
             )
             track_jobs = sum(
                 item.media_kind is SyncPlanMediaKind.TRACK
-                and item.action in (SyncPlanAction.ADD, SyncPlanAction.UPDATE)
+                and _requires_media_preparation(item)
                 for item in request.plan.items
             ) + (len(podcast_plan.additions) if podcast_plan is not None else 0)
             if self._default_transcoder:
@@ -359,6 +369,7 @@ class SyncExecutor:
                 )
             with ExitStack() as resources:
                 prepared: list[_PreparedTrack] = []
+                metadata_updates = self._prepare_metadata_updates(request, checkpoint)
                 podcast_tracks: list[_PreparedPodcast] = []
                 if track_jobs:
                     progress(
@@ -402,7 +413,9 @@ class SyncExecutor:
                             )
                             issues.extend(failures)
                 checkpoint()
-                issues.extend(_capture_artwork(request, prepared, checkpoint))
+                issues.extend(
+                    _capture_artwork(request, prepared, metadata_updates, checkpoint)
+                )
                 if request.options.rockbox_metadata:
                     issues.extend(
                         self._embed_rockbox_artwork(request, prepared, checkpoint)
@@ -427,13 +440,17 @@ class SyncExecutor:
                 issues.extend(photo_issues)
                 stable: list[_PreparedTrack] = []
                 stable_photos: list[_PreparedPhoto] = []
+                stable_metadata: list[_PreparedMetadataUpdate] = []
                 sources = {
                     host_path_identity(str(source.path)): source
                     for source in request.host.sources
                 }
-                candidates: tuple[_PreparedTrack | _PreparedPhoto, ...] = (
+                candidates: tuple[
+                    _PreparedTrack | _PreparedPhoto | _PreparedMetadataUpdate, ...
+                ] = (
                     *prepared,
                     *photos,
+                    *metadata_updates,
                 )
                 for result in candidates:
                     source = sources[host_path_identity(result.item.host_path or "")]
@@ -449,15 +466,19 @@ class SyncExecutor:
                                     name=result.item.name,
                                 ),
                                 detail=exception_text(error),
+                                artifact=result.item.host_path or "",
                             )
                         )
                     else:
                         if isinstance(result, _PreparedTrack):
                             stable.append(result)
-                        else:
+                        elif isinstance(result, _PreparedPhoto):
                             stable_photos.append(result)
+                        else:
+                            stable_metadata.append(result)
                 prepared = stable
                 photos = tuple(stable_photos)
+                metadata_updates = stable_metadata
                 playlist_sources_valid = _validate_playlist_sources(
                     request, issues, checkpoint
                 )
@@ -471,6 +492,7 @@ class SyncExecutor:
                     prepared,
                     issues,
                     photos,
+                    metadata_updates,
                     tuple(podcast_tracks),
                     podcast_plan.removals if podcast_plan is not None else (),
                     podcast_artwork_repairs,
@@ -581,6 +603,7 @@ class SyncExecutor:
                             else None,
                             (
                                 *(item.provenance for item in prepared),
+                                *(item.provenance for item in metadata_updates),
                                 *(
                                     SyncedTrack(
                                         DevicePath(item.song.track.metadata.location),
@@ -831,6 +854,10 @@ class SyncExecutor:
             host_path_identity(str(item.path)): item for item in request.host.sources
         }
         host_tracks = request.host.snapshot.tracks
+        host_tag_hashes = {
+            host_path_identity(track.metadata.location): track_tag_sha256(track)
+            for track in host_tracks
+        }
         if request.options.normalize_tags:
             host_tracks = _normalized_tracks(request, host_tracks, checkpoint)
         tracks = {
@@ -840,7 +867,7 @@ class SyncExecutor:
             item
             for item in request.plan.items
             if item.media_kind is SyncPlanMediaKind.TRACK
-            and item.action in (SyncPlanAction.ADD, SyncPlanAction.UPDATE)
+            and _requires_media_preparation(item)
         ]
         prepared: list[_PreparedTrack] = []
         issues: list[WriteIssue] = []
@@ -905,6 +932,18 @@ class SyncExecutor:
                     checkpoint,
                     lambda update: report_activity(item, update),
                 )
+                # Compare future scans with the original Host projection, before
+                # normalization changes the representation prepared for the iPod.
+                if result.provenance.sync is not None:
+                    result.provenance = replace(
+                        result.provenance,
+                        sync=replace(
+                            result.provenance.sync,
+                            host_tag_sha256=host_tag_hashes[
+                                host_path_identity(item.host_path or "")
+                            ],
+                        ),
+                    )
                 # Register ownership inside the worker before the result is delivered.
                 # Even a failed progress callback then closes every successful capture.
                 # The executor joins workers before the outer ExitStack can close.
@@ -1069,6 +1108,79 @@ class SyncExecutor:
                     )
         return allocated, issues
 
+    def _prepare_metadata_updates(
+        self,
+        request: SyncExecutionRequest,
+        checkpoint: Callable[[], None],
+    ) -> list[_PreparedMetadataUpdate]:
+        """Prepare desired Track metadata without opening an encoder."""
+
+        host_tracks = {
+            host_path_identity(track.metadata.location): track
+            for track in request.host.snapshot.tracks
+        }
+        ipod_tracks = {track.track_id: track for track in request.ipod.tracks}
+        original_tracks = {
+            track.track_id: track for track in request.source.library.tracks
+        }
+        sources = {
+            host_path_identity(str(source.path)): source
+            for source in request.host.sources
+        }
+        updates: list[_PreparedMetadataUpdate] = []
+        for item in request.plan.items:
+            if (
+                item.media_kind is not SyncPlanMediaKind.TRACK
+                or item.action is not SyncPlanAction.UPDATE
+                or item.audio_payload_changed
+            ):
+                continue
+            checkpoint()
+            if item.host_path is None or item.ipod_id is None:
+                raise ValueError("A metadata-only Track update needs both sources.")
+            host_track = host_tracks.get(host_path_identity(item.host_path))
+            old_track = original_tracks.get(item.ipod_id)
+            scanned = ipod_tracks.get(item.ipod_id)
+            source = sources.get(host_path_identity(item.host_path))
+            if (
+                host_track is None
+                or old_track is None
+                or scanned is None
+                or source is None
+            ):
+                raise ValueError(
+                    "A metadata-only Track update lost its scanned source."
+                )
+            _validate_host_source(source)
+            prior = scanned.sync
+            sync = (
+                None
+                if prior is None
+                else replace(
+                    prior,
+                    last_synced_at=datetime.now(UTC).isoformat(),
+                    host_path_hint=str(source.path),
+                    host_size_bytes=source.size_bytes,
+                    host_modified_ns=source.modified_ns,
+                    source_format=source.path.path.suffix.lstrip(".").casefold(),
+                    host_tag_sha256=track_tag_sha256(host_track),
+                    file_tag_policy=rockbox_tag_policy(request.source.profile)
+                    if request.options.rockbox_metadata
+                    else None,
+                )
+            )
+            updates.append(
+                _PreparedMetadataUpdate(
+                    item,
+                    SyncedTrack(
+                        DevicePath(old_track.metadata.location),
+                        scanned.acoustic_fingerprint,
+                        sync,
+                    ),
+                )
+            )
+        return updates
+
     def _embed_rockbox_artwork(
         self,
         request: SyncExecutionRequest,
@@ -1090,6 +1202,11 @@ class SyncExecutor:
             except PreparationCancelledError:
                 raise
             except Exception as error:
+                if result.provenance.sync is not None:
+                    result.provenance = replace(
+                        result.provenance,
+                        sync=replace(result.provenance.sync, file_tag_policy=None),
+                    )
                 issues.append(
                     WriteIssue(
                         "sync.artwork_embedding_skipped",
@@ -1336,6 +1453,14 @@ class SyncExecutor:
                     "The Host file changed since its scan. Rescan before retrying."
                 )
             song = _song(request, track, result)
+            prior_sync = next(
+                (
+                    entry.sync
+                    for entry in request.ipod.tracks
+                    if entry.track_id == item.ipod_id
+                ),
+                None,
+            )
             provenance = SyncedTrack(
                 DevicePath(song.track.metadata.location),
                 source.acoustic_fingerprint or "",
@@ -1347,6 +1472,12 @@ class SyncExecutor:
                     source.path.path.suffix.lstrip(".").casefold(),
                     result.encoding.value,
                     result.was_transcoded,
+                    host_artwork_sha256=prior_sync.host_artwork_sha256
+                    if prior_sync is not None and not item.artwork_changed
+                    else None,
+                    file_tag_policy=rockbox_tag_policy(request.source.profile)
+                    if request.options.rockbox_metadata
+                    else None,
                 ),
             )
             return _PreparedTrack(
@@ -1482,18 +1613,6 @@ class SyncExecutor:
                         for file in asset.files
                     ),
                 )
-                if any(isinstance(file.data, StagedContent) for file in asset.files):
-                    issues.append(
-                        WriteIssue(
-                            "sync.photo_disk_staging",
-                            source_text(
-                                'Photo "{path}" was prepared using temporary disk space because the memory budget was reached.',
-                                path=str(source.path),
-                            ),
-                            severity=IssueSeverity.WARNING,
-                            artifact=str(source.path),
-                        )
-                    )
                 prepared.append(
                     _PreparedPhoto(
                         item,
@@ -1586,7 +1705,19 @@ def _podcast_add_failure_message(title: str, *, replacing: bool) -> str:
 
 
 def _validate_plan(request: SyncExecutionRequest) -> None:
-    comparison = prepare_sync_plan(request.host, request.ipod, request.source.library)
+    if request.plan.file_tag_policy is not None and (
+        not request.options.rockbox_metadata
+        or request.plan.file_tag_policy != rockbox_tag_policy(request.source.profile)
+    ):
+        raise ValueError(
+            "Rockbox settings changed after Review; rebuild the Sync Plan."
+        )
+    comparison = prepare_sync_plan(
+        request.host,
+        request.ipod,
+        request.source.library,
+        file_tag_policy=request.plan.file_tag_policy,
+    )
     allowed = set(comparison.items)
     allowed.update(
         replace(
@@ -1595,6 +1726,10 @@ def _validate_plan(request: SyncExecutionRequest) -> None:
             basis=SyncPlanBasis.USER_DESELECTED,
             host_size_changed=False,
             host_modified_changed=False,
+            metadata_changed=False,
+            artwork_changed=False,
+            audio_payload_changed=False,
+            file_tags_changed=False,
         )
         for item in comparison.items
         if item.ipod_id is not None
@@ -1746,6 +1881,7 @@ def _draft(
     prepared: list[_PreparedTrack],
     issues: list[WriteIssue],
     prepared_photos: tuple[_PreparedPhoto, ...] = (),
+    metadata_updates: list[_PreparedMetadataUpdate] | None = None,
     prepared_podcasts: tuple[_PreparedPodcast, ...] = (),
     podcast_removals: tuple[int, ...] = (),
     podcast_artwork_repairs: tuple[_PodcastArtworkRepair, ...] = (),
@@ -1758,10 +1894,16 @@ def _draft(
         host_path_identity(track.metadata.location): track.track_id
         for track in request.host.snapshot.tracks
     }
+    host_tracks_by_path = {
+        host_path_identity(track.metadata.location): track
+        for track in request.host.snapshot.tracks
+    }
     replaced: list[int] = []
     media: list[LibraryMediaSource] = []
     artwork: list[ArtworkAsset] = []
     artwork_ids: dict[int, int] = {}
+    metadata_updates = [] if metadata_updates is None else metadata_updates
+    rockbox_media: list[RockboxMediaUpdate] = []
 
     def cover_identity(pixels: ArtworkPixels | None) -> int:
         if pixels is None:
@@ -1777,22 +1919,30 @@ def _draft(
     next_track_id = min((0, *tracks)) - 1
     for result in prepared:
         item, song = result.item, result.song
-        cover_id = cover_identity(song.artwork)
+        cover_id = (
+            cover_identity(song.artwork)
+            if item.action is SyncPlanAction.ADD or item.artwork_changed
+            else 0
+        )
         if item.action is SyncPlanAction.UPDATE:
             assert item.ipod_id is not None
             identity = item.ipod_id
             old = tracks[identity]
+            host_track = host_tracks_by_path[host_path_identity(item.host_path or "")]
             track = replace(
                 song.track,
                 track_id=identity,
                 ipod=old.ipod,
                 rating=old.rating,
                 play_count=old.play_count,
-                artwork_id=cover_id or old.artwork_id,
+                artwork_id=(cover_id or old.artwork_id if host_track.artwork_id else 0),
                 metadata=replace(
                     song.track.metadata,
                     date_added=old.metadata.date_added,
                     last_played=old.metadata.last_played,
+                    unscrobbled_play_count=old.metadata.unscrobbled_play_count,
+                    checked=old.metadata.checked,
+                    played=old.metadata.played,
                     skip_count=old.metadata.skip_count,
                     last_skipped=old.metadata.last_skipped,
                     bookmark_time_ms=old.metadata.bookmark_time_ms,
@@ -1815,6 +1965,47 @@ def _draft(
         media.append(
             replace(song.source, media=replace(song.source.media, track_id=identity))
         )
+        mapping[host_tracks[host_path_identity(item.host_path or "")]] = identity
+        completed.append(item)
+    for update in metadata_updates:
+        item = update.item
+        assert item.ipod_id is not None
+        identity = item.ipod_id
+        old = tracks[identity]
+        host_track = host_tracks_by_path[host_path_identity(item.host_path or "")]
+        cover_id = cover_identity(update.artwork) if item.artwork_changed else 0
+        track = apply_track_tags(old, host_track) if item.metadata_changed else old
+        track = replace(
+            track,
+            artwork_id=(cover_id or old.artwork_id if host_track.artwork_id else 0),
+        )
+        if (
+            request.options.compute_sound_check
+            and host_track.metadata.normalization_gain_db is not None
+        ):
+            track = replace(
+                track,
+                metadata=replace(
+                    track.metadata,
+                    normalization_gain_db=host_track.metadata.normalization_gain_db,
+                ),
+            )
+        tracks[identity] = track
+        if request.options.rockbox_metadata:
+            embedded_artwork = (
+                None
+                if update.artwork is None
+                else rockbox_artwork(request.source.profile, update.artwork)
+            )
+            rockbox_media.append(
+                RockboxMediaUpdate(
+                    identity,
+                    embedded_artwork,
+                    preserve_artwork=(
+                        update.artwork is None and host_track.artwork_id != 0
+                    ),
+                )
+            )
         mapping[host_tracks[host_path_identity(item.host_path or "")]] = identity
         completed.append(item)
     podcast_removed = set(podcast_removals)
@@ -1930,6 +2121,7 @@ def _draft(
         media=tuple(media),
         artwork=tuple(artwork),
         replace_media=tuple(replaced),
+        rockbox_media=tuple(rockbox_media),
         photos=tuple(item.asset for item in prepared_photos),
         replace_photos=tuple(
             item.asset.photo.photo_id
@@ -2234,6 +2426,14 @@ def _validate_host_source(source: HostMediaSource) -> None:
         )
 
 
+def _requires_media_preparation(item: SyncPlanItem) -> bool:
+    """Return whether a plan item needs a fresh prepared media payload."""
+
+    return item.action is SyncPlanAction.ADD or (
+        item.action is SyncPlanAction.UPDATE and item.audio_payload_changed
+    )
+
+
 def _validate_playlist_sources(
     request: SyncExecutionRequest,
     issues: list[WriteIssue],
@@ -2272,6 +2472,7 @@ def _validate_playlist_sources(
 def _capture_artwork(
     request: SyncExecutionRequest,
     tracks: list[_PreparedTrack],
+    metadata_updates: list[_PreparedMetadataUpdate],
     checkpoint: Callable[[], None],
 ) -> tuple[WriteIssue, ...]:
     formats = application_artwork_formats(request.source.profile)
@@ -2281,8 +2482,22 @@ def _capture_artwork(
         host_path_identity(track.metadata.location): track
         for track in request.host.snapshot.tracks
     }
-    groups: dict[int, list[_PreparedTrack]] = {}
-    for track in tracks:
+    candidates: tuple[_PreparedTrack | _PreparedMetadataUpdate, ...] = (
+        *(
+            track
+            for track in tracks
+            if track.item.action is SyncPlanAction.ADD
+            or track.item.artwork_changed
+            or request.options.rockbox_metadata
+        ),
+        *(
+            update
+            for update in metadata_updates
+            if update.item.artwork_changed or update.item.file_tags_changed
+        ),
+    )
+    groups: dict[int, list[_PreparedTrack | _PreparedMetadataUpdate]] = {}
+    for track in candidates:
         host_track = by_path[host_path_identity(track.item.host_path or "")]
         if host_track.artwork_id:
             groups.setdefault(host_track.artwork_id, []).append(track)
@@ -2313,7 +2528,34 @@ def _capture_artwork(
             )
         else:
             for track in group:
-                track.song = replace(track.song, artwork=pixels)
+                if isinstance(track, _PreparedTrack):
+                    track.song = replace(track.song, artwork=pixels)
+                else:
+                    track.artwork = pixels
+    for track in candidates:
+        host_track = by_path[host_path_identity(track.item.host_path or "")]
+        source = sources.get(host_track.artwork_id)
+        artwork = (
+            track.song.artwork if isinstance(track, _PreparedTrack) else track.artwork
+        )
+        digest = (
+            ""
+            if not host_track.artwork_id
+            else source.content_sha256
+            if source is not None and artwork is not None
+            else None
+        )
+        if track.provenance.sync is not None:
+            track.provenance = replace(
+                track.provenance,
+                sync=replace(
+                    track.provenance.sync,
+                    host_artwork_sha256=digest,
+                    file_tag_policy=track.provenance.sync.file_tag_policy
+                    if digest is not None
+                    else None,
+                ),
+            )
     return tuple(issues)
 
 

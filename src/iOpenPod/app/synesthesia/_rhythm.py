@@ -64,7 +64,10 @@ def analyze_rhythm(
         units="frames",
     )
     beats: NDArray[np.int32] = np.asarray(detected, dtype=np.int32)
-    beats = beats[(beats >= 0) & (beats < frame_count)]
+    valid_beats: NDArray[np.bool_] = np.logical_and(
+        np.greater_equal(beats, 0), np.less(beats, frame_count)
+    )
+    beats = beats[valid_beats]
     if len(beats) < 2:
         return _unmetered(onset, frame_count, pulse=pulse)
 

@@ -36,6 +36,35 @@ def analyze(
     old_tracks = {t.track_id: t for t in original.tracks}
     tracks = {t.track_id: t for t in draft.snapshot.tracks}
     replacements: set[int] = set()
+    retagged: set[int] = set()
+    for track_id in draft.retag_tracks:
+        if (
+            track_id in retagged
+            or track_id not in old_tracks
+            or track_id not in tracks
+            or track_id in draft.replace_media
+            or old_tracks[track_id].metadata.location
+            != tracks[track_id].metadata.location
+        ):
+            issues.append(
+                WriteIssue(
+                    "draft.invalid_retag",
+                    "Tag rewrites require one retained Track at its existing location.",
+                    subject="track",
+                    record_id=track_id,
+                    field="retag_tracks",
+                )
+            )
+        else:
+            changes.append(
+                LibraryChange(
+                    "media",
+                    track_id,
+                    "retag",
+                    tracks[track_id].title,
+                )
+            )
+        retagged.add(track_id)
     for track_id in draft.replace_media:
         if track_id in replacements:
             issues.append(
@@ -410,6 +439,7 @@ def analyze(
                     else ""
                 )
                 or (track.track_id in media_ids and bool(track.metadata.lyrics))
+                or track.track_id in retagged
             )
         ),
     )

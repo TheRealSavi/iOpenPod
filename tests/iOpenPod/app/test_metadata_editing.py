@@ -149,6 +149,22 @@ def test_app_metadata_edit_repairs_required_playback_flags(kind: MediaType) -> N
     assert not original.metadata.remember_position
 
 
+def test_metadata_edit_auto_resolves_unplayed_positive_count() -> None:
+    track = Track(
+        1,
+        "Played",
+        "Artist",
+        "Album",
+        1_000,
+        play_count=2,
+        metadata=TrackMetadata(played=True),
+    )
+
+    updated = edit_track_metadata(track, (TrackFieldEdit("metadata.played", False),))
+
+    assert updated.metadata.played
+
+
 def test_video_to_tv_show_prepares_without_replacing_retained_media() -> None:
     source = video_source(video=True)
     original = source.serialize()

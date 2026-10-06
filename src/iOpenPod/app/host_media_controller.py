@@ -122,7 +122,41 @@ class _CompleteScan(QRunnable):
             self.signals.completed.emit(self.token, result, "")
 
 
-type _ScanJob = _InitialScan | _CompleteScan
+class _RefreshTracks(QRunnable):
+    def __init__(
+        self,
+        token: int,
+        library: HostMediaLibrary,
+        paths: frozenset[HostPath],
+        scanner: HostMediaScanner,
+    ) -> None:
+        super().__init__()
+        self.token = token
+        self.library = library
+        self.paths = paths
+        self.scanner = scanner
+        self.cancelled = Event()
+        self.signals = _Signals()
+
+    def run(self) -> None:
+        def checkpoint() -> None:
+            if self.cancelled.is_set():
+                raise HostMediaScanCancelledError
+
+        try:
+            result = self.scanner.refresh_tracks(
+                self.library, self.paths, checkpoint=checkpoint
+            )
+        except HostMediaScanCancelledError:
+            self.signals.completed.emit(self.token, None, "")
+        except Exception as error:
+            logger.exception("Host Track detail refresh failed")
+            self.signals.completed.emit(self.token, None, str(error))
+        else:
+            self.signals.completed.emit(self.token, result, "")
+
+
+type _ScanJob = _InitialScan | _CompleteScan | _RefreshTracks
 
 
 class HostMediaScanController(QObject):
@@ -132,6 +166,7 @@ class HostMediaScanController(QObject):
     progressChanged = Signal(object)
     externalReferencesFound = Signal(object)
     finished = Signal(object)
+    refreshFinished = Signal(object)
     failed = Signal(str)
     cancelled = Signal()
 
@@ -178,6 +213,17 @@ class HostMediaScanController(QObject):
         self.changed.emit()
         return True
 
+    def refresh_tracks(
+        self, library: HostMediaLibrary, paths: frozenset[HostPath]
+    ) -> bool:
+        if self._closed or self.busy or not paths:
+            return False
+        self._token += 1
+        self.busy = True
+        self._start_job(_RefreshTracks(self._token, library, paths, self._scanner))
+        self.changed.emit()
+        return True
+
     @Slot()
     def cancel(self) -> None:
         if not self.busy:
@@ -216,7 +262,7 @@ class HostMediaScanController(QObject):
 
     @Slot(int, object, str)
     def _completed(self, token: int, value: object, error: str) -> None:
-        self._jobs.pop(token, None)
+        job = self._jobs.pop(token, None)
         if self._closed or token != self._token or not self.busy:
             return
         if error:
@@ -243,7 +289,10 @@ class HostMediaScanController(QObject):
             return
         self.latest_library = library
         self.busy = False
-        self.finished.emit(library)
+        if isinstance(job, _RefreshTracks):
+            self.refreshFinished.emit(library)
+        else:
+            self.finished.emit(library)
         self.changed.emit()
 
 
