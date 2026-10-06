@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 TOOL_NAMES = ("ffmpeg", "ffprobe", "fpcalc")
-_HELP = "https://therealsavi.github.io/iOpenPod/install-help.html"
+_HELP = "https://iopenpod.com/install-help.html"
 
 
 @dataclass(frozen=True, slots=True)

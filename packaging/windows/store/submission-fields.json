@@ -57,7 +57,7 @@
       "podcast organizer"
     ],
     "copyrightAndTrademarkInfo": "Copyright 2025-2026 John Gibbons. iPod and iTunes are trademarks of Apple Inc. iOpenPod is independent and is not affiliated with or endorsed by Apple Inc.",
-    "licenseTerms": "iOpenPod is licensed under the GNU General Public License, version 3 or (at your option) any later version. The complete license is available at https://www.gnu.org/licenses/gpl-3.0.html and is included with the app. Copyright 2025-2026 John Gibbons. This software is provided without warranty to the extent permitted by law. You may use, study, modify, and redistribute it under the GPL. Third-party components retain their own notices and applicable licenses supplied with the app. Matching source code and build materials accompany each public release; see https://therealsavi.github.io/iOpenPod/iopenpod-2/license.html for the release downloads. No additional restriction on GPL-granted rights is imposed by the developer. Optional donations confer no additional features or license rights. The application icon by DJShott is used under separate permission for iOpenPod updates, not a blanket GPL or standalone-art reuse license.",
+    "licenseTerms": "iOpenPod is licensed under the GNU General Public License, version 3 or (at your option) any later version. The complete license is available at https://www.gnu.org/licenses/gpl-3.0.html and is included with the app. Copyright 2025-2026 John Gibbons. This software is provided without warranty to the extent permitted by law. You may use, study, modify, and redistribute it under the GPL. Third-party components retain their own notices and applicable licenses supplied with the app. Matching source code and build materials accompany each public release; see https://iopenpod.com/ for the release downloads. No additional restriction on GPL-granted rights is imposed by the developer. Optional donations confer no additional features or license rights. The application icon by DJShott is used under separate permission for iOpenPod updates, not a blanket GPL or standalone-art reuse license.",
     "developedBy": "John Gibbons",
     "releaseNotes": "",
     "minimumHardware": [
@@ -110,10 +110,10 @@
     "accessesCollectsOrTransmitsPersonalInformation": true,
     "supportContact": "johngibbons167@gmail.com",
     "privacyPolicyTextFile": "privacy.md",
-    "privacyPolicyCandidateUrl": "https://therealsavi.github.io/iOpenPod/iopenpod-2/privacy.html",
-    "supportCandidateUrl": "https://therealsavi.github.io/iOpenPod/iopenpod-2/support.html",
-    "websiteCandidateUrl": "https://therealsavi.github.io/iOpenPod/iopenpod-2/support.html",
-    "licenseCandidateUrl": "https://therealsavi.github.io/iOpenPod/iopenpod-2/license.html",
+    "privacyPolicyCandidateUrl": "https://iopenpod.com/privacy",
+    "supportCandidateUrl": "https://iopenpod.com/",
+    "websiteCandidateUrl": "https://iopenpod.com/",
+    "licenseCandidateUrl": "https://iopenpod.com/license",
     "candidateUrlsPublishedAndVerified": false,
     "sourceReleaseUrl": null,
     "note": "Publish and anonymously verify candidate URLs and exact matching source artifacts before public distribution. The development repository is private."

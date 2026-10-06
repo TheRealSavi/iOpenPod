@@ -17,8 +17,8 @@ video, photos, and podcasts from your computer. Built-in conversion prepares med
 for your iPod, and Sync Review lets you choose what gets added, updated, or removed.
 Built with Python and Qt6.
 
-[Website](https://therealsavi.github.io/iOpenPod/) ·
-[Install help](https://therealsavi.github.io/iOpenPod/install-help/) ·
+[Website](https://iopenpod.com) ·
+[Install help](https://iopenpod.com/install-help/) ·
 [Discord](https://discord.gg/9Yy499Tf5d) ·
 [Support development](https://ko-fi.com/johngibbons)
 
@@ -39,7 +39,7 @@ Native downloads are available for all three platforms (Windows, MacOS, Linux) o
 Choose the asset for your platform from below.
 
 you do not need Python to install these.
-See the [installation guide](https://therealsavi.github.io/iOpenPod/install-help/) for setup and troubleshooting.
+See the [installation guide](https://iopenpod.com/install-help/) for setup and troubleshooting.
 
 | Platform              | Latest release assets                                                           | Installation                                                           |
 | --------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -54,7 +54,7 @@ on a fixed NTFS drive for in-app updates. Windows users can also install through
 
 On macOS, launch from Applications after copying the app and ejecting the DMG.
 The build targets macOS 12.3 or later. Current downloads are ad-hoc signed and not notarized; so you will have to allow the app to run in System Settings>Privacy and Secutiy. See the
-[Mac setup guide](https://therealsavi.github.io/iOpenPod/install-help/#native-macos)
+[Mac setup guide](https://iopenpod.com/install-help/#native-macos)
 which covers the first-launch prompts. Choose a DMG to install; the ZIPs labeled
 `sparkle-update` are reserved for the built-in updater and arent inteded for users.
 
@@ -64,7 +64,7 @@ including after an update. The binary is built on Ubuntu 24.04 and requires glib
 2.39 or later plus desktop libraries.
 
 Mac App Store, Flathub, and Snap Store remain planned. Check the
-[website](https://therealsavi.github.io/iOpenPod/#install) for channel availability.
+[website](https://iopenpod.com/#install) for channel availability.
 
 ### Updating a GitHub installation
 

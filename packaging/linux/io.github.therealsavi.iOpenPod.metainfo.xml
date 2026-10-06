@@ -11,7 +11,7 @@
     <p>Supports iPod Classic, Mini, and Nano families. iPod touch and shuffle are outside the release target.</p>
   </description>
   <launchable type="desktop-id">io.github.therealsavi.iOpenPod.desktop</launchable>
-  <url type="homepage">https://therealsavi.github.io/iOpenPod/</url>
+  <url type="homepage">https://iopenpod.com</url>
   <url type="bugtracker">https://github.com/TheRealSavi/iOpenPod/issues</url>
   <content_rating type="oars-1.1" />
   <supports><control>pointing</control><control>keyboard</control></supports>

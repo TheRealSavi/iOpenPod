@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://therealsavi.github.io/iOpenPod/sitemap.xml
+Sitemap: https://iopenpod.com/sitemap.xml
