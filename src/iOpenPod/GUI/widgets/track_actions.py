@@ -74,6 +74,7 @@ if TYPE_CHECKING:
 
     from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.device_controller import DeviceController
+    from iOpenPod.app.playback.backend import PlaybackSourceProvider
     from iOpenPod.app.playback_controller import PlaybackController
     from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 
@@ -125,12 +126,14 @@ class TrackActions(QObject):
         settings: SettingsService | None = None,
         device_controller: DeviceController | None = None,
         artwork_provider: ArtworkPixmapProvider | None = None,
+        lyrics_provider: PlaybackSourceProvider | None = None,
     ) -> None:
         super().__init__(parent)
         self.workspace, self.playback, self.window = workspace, playback, parent
         self._settings = settings
         self._device_controller = device_controller
         self._artwork_provider = artwork_provider
+        self._lyrics_provider = lyrics_provider
         self._double_click_selection: _DoubleClickSelection | None = None
 
     def install(self, view: QAbstractItemView) -> None:
@@ -631,6 +634,7 @@ class TrackActions(QObject):
             selection.track_ids,
             self.window,
             artwork_provider=self._artwork_provider,
+            lyrics_provider=self._lyrics_provider,
         )
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         dialog.open()

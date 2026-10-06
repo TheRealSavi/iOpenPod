@@ -347,6 +347,17 @@ class FieldEditor(QFrame):
     def is_modified(self) -> bool:
         return self._modified_state
 
+    def adopt_loaded_text(self, text: str) -> None:
+        """Show a lazily read value without treating it as a user edit."""
+        if self.is_modified() or not isinstance(self.editor, QPlainTextEdit):
+            return
+        self.initial = text
+        self._syncing = True
+        try:
+            self.editor.setPlainText(text)
+        finally:
+            self._syncing = False
+
     def _set_modified(self, modified: bool) -> None:
         if self._modified_state == modified:
             return

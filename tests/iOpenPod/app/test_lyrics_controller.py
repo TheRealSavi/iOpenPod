@@ -67,17 +67,22 @@ def test_reads_only_when_visible_and_does_not_require_the_presence_flag(
     assert provider.opened == [track]
 
 
-def test_known_lyrics_and_draft_clear_take_precedence_over_file_tags(
+def test_file_lyrics_win_for_display_but_explicit_draft_clear_wins(
     system: System,
 ) -> None:
     controller, playback, workspace, provider = system
-    track = replace(tracks(1)[0], metadata=TrackMetadata(lyrics=WORDS, has_lyrics=True))
+    track = replace(
+        tracks(1)[0], metadata=TrackMetadata(lyrics="Database words", has_lyrics=True)
+    )
     workspace.load(LibrarySnapshot(tracks=(track,)))
     playback.enqueue(track)
     controller.set_active(True)
+    assert controller.text == "Database words"
+    settle(controller)
     assert controller.text == WORDS
     assert_state(controller, LyricsState.READY)
-    assert provider.opened == []
+    assert provider.opened == [track]
+    assert not workspace.dirty
 
     workspace.apply_track_edits(
         (TrackUpdate(track.track_id, (TrackFieldEdit("metadata.lyrics", ""),)),),
@@ -86,7 +91,22 @@ def test_known_lyrics_and_draft_clear_take_precedence_over_file_tags(
     playback.reconcile_library(workspace.tracks)
     assert controller.text == ""
     assert_state(controller, LyricsState.READY)
-    assert provider.opened == []
+    assert provider.opened == [track]
+
+
+def test_database_lyrics_are_used_when_file_has_none(system: System) -> None:
+    controller, playback, workspace, provider = system
+    track = replace(
+        tracks(1)[0], metadata=TrackMetadata(lyrics="Database words", has_lyrics=True)
+    )
+    provider.sources[0] = MemorySource(media(lyrics=""))
+    workspace.load(LibrarySnapshot(tracks=(track,)))
+    playback.enqueue(track)
+    controller.set_active(True)
+    settle(controller)
+    assert controller.text == "Database words"
+    assert_state(controller, LyricsState.READY)
+    assert not workspace.dirty
 
 
 @pytest.mark.parametrize("clear_session", [False, True])
@@ -106,6 +126,9 @@ def test_completed_but_undelivered_read_cannot_replace_new_current_track(
         playback.play_now((second,))
     APPLICATION.processEvents()
     assert controller.text == ("" if clear_session else "Second track")
+    if not clear_session:
+        assert controller.state is LyricsState.LOADING
+        settle(controller)
     assert controller.state is (
         LyricsState.NO_TRACK if clear_session else LyricsState.READY
     )

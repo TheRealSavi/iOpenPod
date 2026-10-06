@@ -20,6 +20,7 @@ from typing import Protocol, cast
 
 import pytest
 from mutagen.mp3 import MP3
+from mutagen.mp4 import MP4
 from PIL import Image
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
@@ -50,7 +51,7 @@ from iOpenPod.app.library_sync_helper import (
 from iOpenPod.app.library_write import LibraryReview, LibrarySaveResult, WriteProgress
 from iOpenPod.app.media.importing import ImportedSong, LibraryMediaSource
 from iOpenPod.app.media.inspection import _parse  # pyright: ignore[reportPrivateUsage]
-from iOpenPod.app.media.lyrics import rewrite_lyrics
+from iOpenPod.app.media.lyrics import embedded_lyrics, rewrite_lyrics
 from iOpenPod.app.media.music_paths import MusicPathAllocator
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.media.transcoding import (
@@ -1007,6 +1008,84 @@ def test_duplicate_review_action_is_rejected_before_preparation(tmp_path: Path) 
         assert result.status is SyncExecutionStatus.FAILED
         assert "repeats a Host source" in result.issues[-1].detail
         device.assert_original()
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.skipif(
+    any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe", "fpcalc")),
+    reason="Sync media tools required",
+)
+@pytest.mark.parametrize("rockbox_metadata", [False, True])
+@pytest.mark.parametrize("file_has_lyrics", [False, True])
+def test_sync_writes_lyrics_to_media_and_prefers_existing_file_text(
+    tmp_path: Path, rockbox_metadata: bool, file_has_lyrics: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        source = tmp_path / "lyrics.m4a"
+        original = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
+        source.write_bytes(
+            rewrite_lyrics(original, source.name, WORDS)
+            if file_has_lyrics
+            else original
+        )
+        observed = LocalHostFile.observe(HostPath(source))
+        host = HostMediaLibrary(
+            LibrarySnapshot(
+                tracks=(
+                    Track(
+                        100,
+                        "Lyrics song",
+                        "",
+                        "",
+                        1000,
+                        metadata=TrackMetadata(
+                            location=str(source),
+                            lyrics="Stale database words" if file_has_lyrics else WORDS,
+                        ),
+                    ),
+                )
+            ),
+            (
+                HostMediaSource(
+                    observed.path,
+                    HostMediaFileKind.AUDIO,
+                    observed.size_bytes,
+                    observed.modified_ns,
+                ),
+            ),
+            (),
+            HostMediaCacheStats(),
+        )
+        request = _request(device, host)
+        request = replace(
+            request,
+            plan=select_sync_plan(
+                request.plan,
+                selected_host_paths=frozenset({host_path_identity(str(source))}),
+                selected_ipod_removals=frozenset(),
+            ),
+            options=SyncOptions(rockbox_metadata=rockbox_metadata),
+        )
+        result = SyncExecutor(device.coordinator).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        added = next(
+            track
+            for track in result.active.library.tracks
+            if track.title == "Lyrics song"
+        )
+        assert added.metadata.lyrics == WORDS
+        assert added.metadata.has_lyrics
+        assert (
+            embedded_lyrics(
+                MP4(device.root / added.metadata.location)  # type: ignore[no-untyped-call]
+            )
+            == WORDS
+        )
     finally:
         device.coordinator.close()
 

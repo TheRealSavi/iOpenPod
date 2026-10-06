@@ -444,6 +444,7 @@ class MainWindow(QMainWindow):
             settings=context.settings,
             device_controller=context.device_controller,
             artwork_provider=self._artwork_provider,
+            lyrics_provider=context.device_coordinator,
         )
         self._podcast_page = PodcastPage(
             context.podcast_controller,

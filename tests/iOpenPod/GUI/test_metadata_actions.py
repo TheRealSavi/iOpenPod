@@ -6,7 +6,7 @@ from dataclasses import replace
 from time import monotonic, sleep
 
 import pytest
-from PySide6.QtCore import QItemSelectionModel, QPoint, Qt, QTimer
+from PySide6.QtCore import QItemSelectionModel, QPoint, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QStandardItemModel
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMenu,
+    QPlainTextEdit,
     QPushButton,
     QSlider,
     QToolButton,
@@ -24,6 +25,12 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.lyrics_test_support import (
+    WORDS,
+    MemorySource,
+    SourceProvider,
+    media,
+)
 
 from iOpenPod.app.models.track_table_model import TrackColumn
 from iOpenPod.app.tag_normalization_controller import TagNormalizationController
@@ -59,6 +66,37 @@ _TRACKS = (
     Track(2, "Two", "Artist A", "First", 130_000),
     Track(3, "Three", "Artist B", "Second", 150_000),
 )
+
+
+def test_editor_lazily_displays_file_lyrics_without_editing_the_library() -> None:
+    context = build_context()
+    track = replace(
+        _TRACKS[0], metadata=TrackMetadata(lyrics="Database words", has_lyrics=True)
+    )
+    workspace = context.library_workspace
+    workspace.load(LibrarySnapshot((track,)))
+    provider = SourceProvider({track.track_id: MemorySource(media())})
+    dialog = MetadataEditorDialog(
+        workspace, (track.track_id,), lyrics_provider=provider
+    )
+    try:
+        assert provider.opened == []
+        dialog.show()
+        assert QThreadPool.globalInstance().waitForDone(5000)
+        APPLICATION.processEvents()
+        row = dialog.rows["metadata.lyrics"]
+        assert isinstance(row.editor, QPlainTextEdit)
+        assert row.editor.toPlainText() == WORDS
+        assert not row.is_modified()
+        assert not workspace.dirty
+
+        row.editor.setPlainText("Edited words")
+        dialog.accept()
+        edited = workspace.track(track.track_id)
+        assert edited is not None and edited.metadata.lyrics == "Edited words"
+    finally:
+        dialog.close()
+        context.shutdown()
 
 
 def test_track_actions_import_is_safe_before_qapplication() -> None:

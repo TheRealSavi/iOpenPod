@@ -379,6 +379,10 @@ devices use an optimized grayscale JPEG fitting within 120x120 pixels. Unrelated
 edits preserve file-only lyrics, and incoming music reads embedded lyrics into its
 draft. Preparation exceeding the whole-media memory budget uses private Host disk
 staging with a file-specific warning, preserving complete media and lyrics.
+Sync Add/Update preparation prefers nonempty lyrics in the captured Host file
+over older reviewed text and publishes matching media tags and iTunesDB text.
+This applies with Rockbox Metadata Support on or off. Sync does not inspect
+unchanged iPod media for lyric differences.
 See ADR-0075 and `docs/research/itunesdb-lyrics.md`.
 
 Artwork capture, generated artwork, and Photo batches also use private Host disk
@@ -514,10 +518,13 @@ visible order and Playlist occurrences; explicit queue buttons keep their own
 actions.
 
 The Player's Queue/History/Lyrics slideout displays read-only lyrics for the
-current Track. Known Library text and explicit draft clears take precedence;
-otherwise the visible Lyrics tab loads embedded media tags in a background worker
-through the same identity-bound Playback Source. Reads are bounded, obsolete
-results are discarded, and missing or unreadable lyrics do not interrupt playback.
+current Track. Known Library text appears immediately. When the Lyrics tab is
+visible, a background worker checks that Track's embedded media tags through the
+same identity-bound Playback Source. Nonempty file text wins for display unless
+an explicit Library Draft lyrics edit exists. Reads are bounded, obsolete results
+are discarded, and missing or unreadable tags fall back to Library text without
+interrupting playback. The single-Track metadata editor also reads that file's
+lyrics lazily. Viewing lyrics does not create a draft or device write.
 
 Synesthesia is entered from the Player while a Track is current; it has no sidebar
 entry or separate page controls. The Playback Controller and Playback Backend

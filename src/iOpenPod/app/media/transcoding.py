@@ -6,14 +6,18 @@ import re
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
+import mutagen
 
 from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
+from iOpenPod.app.media.lyrics import embedded_lyrics
 from iOpenPod.app.media.models import StreamKind
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.media.tags import apply_tag_values, inspection_tag_values
 from iPodDB.library import AudioEncoding, MediaKind, TrackChapter
+from storage.host_input import LocalHostFile
 from storage.media_processing import (
     MediaToolError,
     available_compute_threads,
@@ -28,12 +32,19 @@ from storage.media_processing import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
+    from typing import BinaryIO
 
     from device_registry import DeviceProfile
     from iOpenPod.app.media.models import MediaInspection, MediaStream
     from iPodDB.library import ArtworkPixels, Track
     from storage import FileFingerprint, HostPath
     from storage.media_processing import MediaToolProgress
+
+
+class _MutagenReader(Protocol):
+    """The file-like read operation used from Mutagen's untyped API."""
+
+    def File(self, filething: BinaryIO) -> Any: ...
 
 
 class LossyEncoder(StrEnum):
@@ -766,6 +777,23 @@ class MediaTranscoder:
             observed = inspector.inspect_captured(captured, checkpoint=checkpoint)
             if metadata is not None:
                 metadata = enrich_source_metadata(metadata, observed)
+                # The captured file is the authority when it contains lyrics.
+                # Host Scan and the reviewed Track may have older text.
+                try:
+                    with LocalHostFile.observe(captured.snapshot).open_read(
+                        checkpoint=checkpoint
+                    ) as stream:
+                        file_lyrics = embedded_lyrics(
+                            cast("_MutagenReader", mutagen).File(stream)
+                        )
+                except mutagen.MutagenError:
+                    # Other containers can still use reviewed/FFprobe text.
+                    file_lyrics = ""
+                if file_lyrics:
+                    metadata = replace(
+                        metadata,
+                        metadata=replace(metadata.metadata, lyrics=file_lyrics),
+                    )
                 spoken_word = spoken_word or metadata.media_kind in (
                     MediaKind.PODCAST,
                     MediaKind.AUDIOBOOK,

@@ -46,6 +46,21 @@ preconditions, verified publication, and recoverable media/database replacement
 remain required. Source media and full lyric text are preserved; this budget
 establishes no iPod lyric-length policy.
 
+## Lazy file-first reads (2026-10-05)
+
+Opening a Track's Lyrics pane or single-Track metadata editor reads that device
+media file's tags through a bounded Playback Source. Nonempty file lyrics take
+precedence for display over iTunesDB text; missing or unreadable tags fall back
+to iTunesDB. An explicit unsaved Library Draft lyrics edit remains authoritative.
+Merely viewing lyrics does not create a draft or write to the device.
+
+For an Add or Update Track during Sync, preparation reads lyrics from its
+captured Host file. Nonempty file lyrics take precedence over older reviewed
+text. If the file has none, reviewed text remains the source. A requested lyric
+write publishes verified file text and matching iTunesDB text in the same
+transaction, regardless of Rockbox Metadata Support. Unchanged iPod Tracks are
+not scanned for lyric differences during Sync.
+
 [ADR-0117](0117-spill-prepared-library-content-to-host-storage.md) extends disk
 overflow to captured and generated artwork and Photo batches. Artwork and lyrics
 share the capture workspace's retained-memory accounting.

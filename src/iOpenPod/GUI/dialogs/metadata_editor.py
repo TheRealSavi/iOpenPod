@@ -5,8 +5,15 @@ from __future__ import annotations
 from dataclasses import fields, replace
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QEvent, Qt
-from PySide6.QtGui import QStandardItemModel
+from PySide6.QtCore import (
+    QT_TRANSLATE_NOOP,
+    QCoreApplication,
+    QEvent,
+    Qt,
+    QThreadPool,
+    Slot,
+)
+from PySide6.QtGui import QShowEvent, QStandardItemModel
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -26,6 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.library_workspace import LibraryWorkspace, TrackUpdate
+from iOpenPod.app.lyrics_work import LyricsReadWork
 from iOpenPod.app.metadata_fields import (
     FieldKind,
     MetadataField,
@@ -49,6 +57,7 @@ from iOpenPod.GUI.widgets.themed_buttons import (
 from iPodDB.library import MediaType, TrackFieldEdit
 
 if TYPE_CHECKING:
+    from iOpenPod.app.playback.backend import PlaybackSourceProvider
     from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 
 _GROUP_DESCRIPTIONS = {
@@ -237,10 +246,14 @@ class MetadataEditorDialog(QDialog):
         parent: QWidget | None = None,
         *,
         artwork_provider: ArtworkPixmapProvider | None = None,
+        lyrics_provider: PlaybackSourceProvider | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("metadataEditor")
         self._workspace = workspace
+        self._lyrics_provider = lyrics_provider
+        self._lyrics_work: LyricsReadWork | None = None
+        self._lyrics_requested = False
         self._revision = workspace.edit_revision
         self._tracks = tuple(
             t for i in dict.fromkeys(track_ids) if (t := workspace.track(i)) is not None
@@ -370,6 +383,51 @@ class MetadataEditorDialog(QDialog):
             if isinstance(editor, AppComboBox):
                 editor.currentIndexChanged.connect(self._classification_changed)
         self._update_playback_flag_policy()
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self._load_lyrics_if_needed()
+
+    def _load_lyrics_if_needed(self) -> None:
+        if self._lyrics_requested or self._lyrics_provider is None:
+            return
+        self._lyrics_requested = True
+        if len(self._tracks) != 1:
+            return
+        track = self._tracks[0]
+        snapshot = self._workspace.snapshot
+        original = (
+            next(
+                (item for item in snapshot.tracks if item.track_id == track.track_id),
+                None,
+            )
+            if snapshot is not None
+            else None
+        )
+        if original is not None and (
+            original.metadata.lyrics != track.metadata.lyrics
+            or (original.metadata.has_lyrics and not track.metadata.has_lyrics)
+        ):
+            return
+        work = LyricsReadWork(0, self._lyrics_provider, track)
+        work.signals.finished.connect(self._lyrics_loaded)
+        self._lyrics_work = work
+        QThreadPool.globalInstance().start(work)
+
+    @Slot(int, str, bool)
+    def _lyrics_loaded(self, token: int, text: str, succeeded: bool) -> None:
+        work = self._lyrics_work
+        self._lyrics_work = None
+        if (
+            work is None
+            or token != work.token
+            or not succeeded
+            or not text
+            or self._workspace.edit_revision != self._revision
+            or self._workspace.track(work.track.track_id) != work.track
+        ):
+            return
+        self.rows["metadata.lyrics"].adopt_loaded_text(text)
 
     def retranslate_ui(self) -> None:
         count = len(self._tracks)
@@ -815,5 +873,7 @@ class MetadataEditorDialog(QDialog):
         super().accept()
 
     def done(self, result: int) -> None:
+        if self._lyrics_work is not None:
+            self._lyrics_work.cancelled.set()
         self._artwork_editor.shutdown()
         super().done(result)

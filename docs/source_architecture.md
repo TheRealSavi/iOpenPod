@@ -1691,13 +1691,15 @@ that Next selects: forward History first, then the head of the Playback Queue.
 
 `LyricsController` observes the current Track without controlling playback. It
 publishes known semantic lyrics immediately and honors explicit Library Draft
-clears. When the Lyrics tab is visible and the text is unknown, a single worker
+edits. When the Lyrics tab is visible, a single worker
 reads native lyric tags through an independent Playback Source. Mutagen receives a
 read-only seekable adapter with byte and operation limits rather than a Host path
 or complete media copy. Request tokens and cancellation prevent an old result
-from replacing the current Track's lyrics. Loaded text remains presentation state;
-it does not edit the Library Snapshot or device. The pane preserves plain text,
-provides translated empty/loading/failure states, and permits selection and copying.
+from replacing the current Track's lyrics. Nonempty file text wins for display;
+missing or unreadable tags fall back to iTunesDB. Loaded text remains
+presentation state; it does not edit the Library Snapshot or device. The pane
+preserves plain text, provides translated empty/loading/failure states, and
+permits selection and copying.
 
 Host Now Playing surfaces and dedicated media controls sit beside the Playback
 Backend boundary. `SystemMediaBridge` publishes immutable controller-owned state to

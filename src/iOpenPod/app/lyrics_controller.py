@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from enum import Enum, auto
-from threading import Event
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QThreadPool, Signal, Slot
 
-from iOpenPod.app.media.lyrics_reader import read_embedded_lyrics
+from iOpenPod.app.lyrics_work import LyricsReadWork
 
 if TYPE_CHECKING:
     from iOpenPod.app.library_workspace import LibraryWorkspace
@@ -23,36 +22,6 @@ class LyricsState(Enum):
     LOADING = auto()
     READY = auto()
     UNAVAILABLE = auto()
-
-
-class _LyricsSignals(QObject):
-    finished = Signal(int, str, bool)
-
-
-class _LyricsWork(QRunnable):
-    def __init__(
-        self, token: int, provider: PlaybackSourceProvider, track: Track
-    ) -> None:
-        super().__init__()
-        self.token = token
-        self.provider = provider
-        self.track = track
-        self.cancelled = Event()
-        self.signals = _LyricsSignals()
-
-    def run(self) -> None:
-        def checkpoint() -> None:
-            if self.cancelled.is_set():
-                raise ValueError("Lyrics request was cancelled.")
-
-        try:
-            checkpoint()
-            source = self.provider.open_playback_source(self.track)
-            text = read_embedded_lyrics(source, checkpoint=checkpoint)
-        except Exception:
-            self.signals.finished.emit(self.token, "", False)
-        else:
-            self.signals.finished.emit(self.token, text, True)
 
 
 class LyricsController(QObject):
@@ -73,7 +42,7 @@ class LyricsController(QObject):
         self._workspace = workspace
         self._pool = QThreadPool(self)
         self._pool.setMaxThreadCount(1)
-        self._jobs: dict[int, _LyricsWork] = {}
+        self._jobs: dict[int, LyricsReadWork] = {}
         self._token = 0
         self._active = False
         self._closed = False
@@ -107,13 +76,13 @@ class LyricsController(QObject):
             LyricsState.NO_TRACK
             if track is None
             else LyricsState.READY
-            if self._text or self._lyrics_cleared(track)
+            if self._lyrics_edited(track)
             else LyricsState.NOT_LOADED
         )
         self.changed.emit()
         self._load_if_needed()
 
-    def _lyrics_cleared(self, track: Track) -> bool:
+    def _lyrics_edited(self, track: Track) -> bool:
         snapshot = self._workspace.snapshot
         if snapshot is None or self._workspace.track(track.track_id) != track:
             return False
@@ -134,7 +103,7 @@ class LyricsController(QObject):
             or self._state is not LyricsState.NOT_LOADED
         ):
             return
-        work = _LyricsWork(self._token, self._provider, track)
+        work = LyricsReadWork(self._token, self._provider, track)
         work.signals.finished.connect(self._finished)
         self._jobs[self._token] = work
         self._state = LyricsState.LOADING
@@ -143,11 +112,22 @@ class LyricsController(QObject):
 
     @Slot(int, str, bool)
     def _finished(self, token: int, text: str, succeeded: bool) -> None:
-        self._jobs.pop(token, None)
+        work = self._jobs.pop(token, None)
         if self._closed or token != self._token:
             return
-        self._text = text
-        self._state = LyricsState.READY if succeeded else LyricsState.UNAVAILABLE
+        track = self._playback.current_track
+        if track is None or work is None or track != work.track:
+            return
+        current = self._workspace.track(track.track_id)
+        if current is not None and self._lyrics_edited(current):
+            self._text = current.metadata.lyrics
+        elif succeeded and text:
+            self._text = text
+        else:
+            self._text = track.metadata.lyrics
+        self._state = (
+            LyricsState.READY if succeeded or self._text else LyricsState.UNAVAILABLE
+        )
         self.changed.emit()
 
     def _cancel_jobs(self) -> None:

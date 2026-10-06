@@ -362,8 +362,13 @@ Individual image and device-format limits still apply. See ADR-0117.
 No-op drafts and unrelated edits neither read nor rewrite media tags. A retained
 flag without database text remains untouched: an empty projected string alone is
 not authorization to clear unobserved file-only lyrics. Loading those lyrics into
-the editor and general Sync execution remain separate work. Automated payload and
-transaction tests do not establish physical-firmware compatibility.
+the Player or single-Track metadata editor reads only the selected Track's media
+and does not create a draft.
+Sync Add/Update preparation prefers nonempty lyrics in the captured Host file
+over older reviewed text, then verifies matching media tags and iTunesDB text
+when lyrics are written, regardless of Rockbox Metadata Support. Unchanged iPod
+Tracks are not scanned for lyric differences. Automated payload and transaction
+tests do not establish physical-firmware compatibility.
 
 ### Replace content with unchanged metadata
 

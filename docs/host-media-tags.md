@@ -59,7 +59,8 @@ fallback temporarily copies the file; ordinary native inspection remains seekabl
 Unreadable audio keeps the existing basic-facts fallback without invoking another
 decoder during scanning.
 
-Sync enrichment retains reviewed nonempty fields and specialized classification.
+Sync enrichment retains reviewed nonempty fields and specialized classification,
+except that nonempty lyrics in the captured Host file supersede reviewed lyrics.
 Stock iPod lyrics still require verified embedded text and the database presence
 flag under ADR-0075.
 
