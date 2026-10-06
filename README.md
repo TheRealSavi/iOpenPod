@@ -26,55 +26,60 @@ Built with Python and Qt6.
 
 ## Download and install
 
-Native downloads are available for all three platforms on the
+<!-- markdownlint-disable MD033 -->
+
+<a href="https://get.microsoft.com/installer/download/9p2lxchhwlg9?referrer=appbadge" target="_self" >
+    <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
+</a>
+<!-- markdownlint-enable MD033 -->
+
+Native downloads are available for all three platforms (Windows, MacOS, Linux) on the
 [latest release page](https://github.com/TheRealSavi/iOpenPod/releases/latest).
-Choose the asset for your platform below. Native downloads include the application
-runtime, so you do not need a separate Python
-installation. See the [installation guide](https://therealsavi.github.io/iOpenPod/install-help/)
-for setup and troubleshooting.
 
-| Platform | Latest release assets | Installation |
-| --- | --- | --- |
-| Windows x64 | [Windows x86_64 ZIP](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Extract `iOpenPod.exe` and run it. |
-| macOS · Apple Silicon | [macOS arm64 DMG](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Open the image and drag `iOpenPod.app` to Applications. |
-| macOS · Intel | [macOS x86_64 DMG](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Open the image and drag `iOpenPod.app` to Applications. |
-| Linux x64 | [Linux x86_64 tar.gz](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Extract the complete folder and run its top-level `iOpenPod` launcher. |
+Choose the asset for your platform from below.
 
-On Windows, keep the name `iOpenPod.exe` and place it in a folder you can write to
-on a fixed NTFS drive for in-app updates. The executable contains its supporting
-files; unpacking them temporarily at launch can take a moment.
+you do not need Python to install these.
+See the [installation guide](https://therealsavi.github.io/iOpenPod/install-help/) for setup and troubleshooting.
+
+| Platform              | Latest release assets                                                           | Installation                                                           |
+| --------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Windows x64           | [Windows x86\_64 ZIP](https://github.com/TheRealSavi/iOpenPod/releases/latest)  | Extract `iOpenPod.exe` and run it.                                     |
+| macOS · Apple Silicon | [macOS arm64 DMG](https://github.com/TheRealSavi/iOpenPod/releases/latest)      | Open the image and drag `iOpenPod.app` to Applications.                |
+| macOS · Intel         | [macOS x86\_64 DMG](https://github.com/TheRealSavi/iOpenPod/releases/latest)    | Open the image and drag `iOpenPod.app` to Applications.                |
+| Linux x64             | [Linux x86\_64 tar.gz](https://github.com/TheRealSavi/iOpenPod/releases/latest) | Extract the complete folder and run its top-level `iOpenPod` launcher. |
+
+On Windows, keep the file name as `iOpenPod.exe` and place it in a folder you can write to
+on a fixed NTFS drive for in-app updates. Windows users can also install through
+[Microsoft Store](https://apps.microsoft.com/detail/9P2LXCHHWLG9).
 
 On macOS, launch from Applications after copying the app and ejecting the DMG.
-The build targets macOS 12.3 or later; acceptance on 12.3 remains pending.
-Current downloads are ad-hoc signed and not notarized; the
+The build targets macOS 12.3 or later. Current downloads are ad-hoc signed and not notarized; so you will have to allow the app to run in System Settings>Privacy and Secutiy. See the
 [Mac setup guide](https://therealsavi.github.io/iOpenPod/install-help/#native-macos)
-covers first-launch prompts. Choose a DMG to install; the ZIPs labeled
-`sparkle-update` are reserved for the built-in updater.
+which covers the first-launch prompts. Choose a DMG to install; the ZIPs labeled
+`sparkle-update` are reserved for the built-in updater and arent inteded for users.
 
 On Linux, extract into a folder you can write to, preserve executable permissions,
 and keep the whole `iOpenPod` folder together. Always start its top-level launcher,
 including after an update. The binary is built on Ubuntu 24.04 and requires glibc
-2.39 or later plus desktop libraries; compatibility with older distributions is
-not established.
+2.39 or later plus desktop libraries.
 
-Windows users can also install through
-[Microsoft Store](https://apps.microsoft.com/detail/9P2LXCHHWLG9).
 Mac App Store, Flathub, and Snap Store remain planned. Check the
 [website](https://therealsavi.github.io/iOpenPod/#install) for channel availability.
 
 ### Updating a GitHub installation
 
 iOpenPod checks for updates at launch. You can also use **Settings → About →
-Check for updates**; About shows your version and Install Channel.
+Check for updates**. About shows your current version and Install Channel.
 
 * **Windows and Linux:** choose **Update now** to download the update, then
   **Restart to install** when ready. Save any Library Draft and finish running
   workflows first. Close other iOpenPod instances before restarting.
+
 * **macOS:** choose **Update now** after saving your work, then follow the built-in
   updater's installation and relaunch prompts.
 
 Installation requires your choice. If an older build only offers **Open download
-page**, or cannot update itself, install the latest download above manually.
+page**, or cannot update itself, install the latest download from above manually.
 Older Linux directory bundles should be replaced by extracting the new archive
 into a fresh folder.
 Microsoft Store installations update through the Store.
@@ -89,12 +94,16 @@ uv tool install iopenpod
 ```
 
 Launch the app with `iopenpod`. For updates, choose **Update now**, then
-**Restart to install** in the app.
+**Restart to install** in the app. Or manually run
+
+```shell
+uv tool upgrade iopenpod
+```
 
 ### Media tools
 
 **FFmpeg and FFprobe** are installed separately for media conversion and inspection.
-**Chromaprint's fpcalc** is optional and enables acoustic matching during Sync.
+**Chromaprint's fpcalc** is also installed seperately and enables acoustic matching during Sync.
 
 The startup popup or **Settings → Media Tools → Set Up Media Tools** can install
 missing tools after you choose **Install Missing Tools**. Native setup uses WinGet,
@@ -131,12 +140,12 @@ Homebrew, or a supported Linux package manager.
 Library edits save automatically by default. Enable **Draft all changes** to review
 and save those edits together. Sync always has its own selection and review flow.
 
-| Track metadata | Track artwork |
-| --- | --- |
+| Track metadata                                                                                                                                                                                | Track artwork                                                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ![Edit Track dialog with title, artist, album, genre, composer, and track metadata](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/track-metadata.webp) | ![Edit Track artwork tab with cover art and controls to choose or clear artwork](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/track-artwork.webp) |
 
-| Smart Playlists | Backup Snapshots |
-| --- | --- |
+| Smart Playlists                                                                                                                                                              | Backup Snapshots                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ![Smart Playlist editor with rules for music released before 2000](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/smart-playlist.webp) | ![Backups page with saved Backup Snapshots and restore actions for the selected iPod](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/backups.webp) |
 
 ![Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/audio-transcoding-settings.webp)
@@ -157,8 +166,8 @@ Optional acoustic matching helps recognize the same recording after format or
 metadata changes. Sync can also recognize media from a previous successful Sync
 without generating a new fingerprint.
 
-| Media folders | Sync selection |
-| --- | --- |
+| Media folders                                                                                                                                                                              | Sync selection                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ![Choose Media Folders dialog with per-folder media types and subfolder scanning](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/media-folders.webp) | ![Sync media selection with albums grouped as selected, mixed, and deselected](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/sync-media-selection.webp) |
 
 ![Sync Review with selected additions, unchecked removals, and items needing attention](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/sync-change-review.webp)
