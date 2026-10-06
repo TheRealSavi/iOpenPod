@@ -114,7 +114,14 @@ class MediaToolsSettings(QWidget):
             detail = (
                 "\n".join(
                     value
-                    for value in (tool.path, tool.problem, tool.encoder_problem)
+                    for value in (
+                        tool.path,
+                        self.tr("Version: %1").replace("%1", tool.version)
+                        if tool.version
+                        else "",
+                        tool.problem,
+                        tool.encoder_problem,
+                    )
                     if value
                 )
                 if tool

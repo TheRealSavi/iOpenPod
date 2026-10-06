@@ -21,7 +21,9 @@ def _setup(
     *,
     broken: bool = False,
     encoders: frozenset[str] | None = frozenset({"aac", "libmp3lame"}),
+    versions: dict[str, str] | None = None,
 ) -> MediaToolSetup:
+    versions = versions or {}
     return MediaToolSetup(
         tuple(
             MediaToolStatus(
@@ -29,6 +31,8 @@ def _setup(
                 "" if name == missing else f"/tools/{name}",
                 "Cannot run" if broken else "",
                 encoders if name == "ffmpeg" else None,
+                "",
+                versions.get(name, ""),
             )
             for name in ("ffmpeg", "ffprobe", "fpcalc")
         ),
@@ -131,6 +135,25 @@ def test_encoder_failure_details_and_paths_are_plain_text() -> None:
         "Encoder check timed out" in label.text() and "<b>ffmpeg</b>" in label.text()
         for label in view.findChildren(QLabel)
     )
+
+
+def test_installed_tool_versions_are_shown() -> None:
+    view = MediaToolsSettings()
+    view.set_status(
+        _setup(
+            versions={"ffmpeg": "7.1.1", "ffprobe": "7.1.1", "fpcalc": "1.6.0"}
+        ),
+        checking=False,
+        busy=False,
+        message="",
+    )
+    for name, _version in (
+        ("ffmpeg", "7.1.1"),
+        ("ffprobe", "7.1.1"),
+        ("fpcalc", "1.6.0"),
+    ):
+        status = view.findChild(QLabel, f"mediaToolStatus_{name}")
+        assert status is not None and status.text() == "Installed"
 
 
 def test_settings_has_separate_media_tools_tab_and_requests_refresh() -> None:

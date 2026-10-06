@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,7 @@ class MediaToolStatus:
     problem: str = ""
     encoders: frozenset[str] | None = None
     encoder_problem: str = ""
+    version: str = ""
 
     @property
     def usable(self) -> bool:
@@ -68,6 +70,7 @@ def inspect_media_tools(*, checkpoint: Callable[[], None]) -> MediaToolSetup:
             tools.append(MediaToolStatus(name))
             continue
         problem = ""
+        version = ""
         try:
             output = run_media_tool(
                 executable,
@@ -80,6 +83,8 @@ def inspect_media_tools(*, checkpoint: Callable[[], None]) -> MediaToolSetup:
             # A PATH match alone does not prove the expected executable can run.
             if name.encode() not in (output.stdout + output.stderr).lower():
                 problem = "The executable did not identify itself as " + name + "."
+            else:
+                version = _read_tool_version(output.stdout + output.stderr)
         except MediaToolError as error:
             problem = str(error)[:600]
         encoders: frozenset[str] | None = None
@@ -92,12 +97,21 @@ def inspect_media_tools(*, checkpoint: Callable[[], None]) -> MediaToolSetup:
             except MediaToolError as error:
                 encoder_problem = str(error)[:600]
         tools.append(
-            MediaToolStatus(name, str(executable), problem, encoders, encoder_problem)
+            MediaToolStatus(
+                name, str(executable), problem, encoders, encoder_problem, version
+            )
         )
     statuses = tuple(tools)
     return MediaToolSetup(
         statuses, plan_media_tool_install(inspect_tool_environment(), statuses)
     )
+
+
+def _read_tool_version(output: bytes) -> str:
+    """Extract the version token reported by a media tool."""
+    text = output.decode("utf-8", errors="replace")
+    match = re.search(r"\bversion\s+([^\s]+)", text, flags=re.IGNORECASE)
+    return match.group(1).rstrip(",") if match else ""
 
 
 def plan_media_tool_install(

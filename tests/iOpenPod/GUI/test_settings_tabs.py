@@ -10,7 +10,7 @@ import pytest
 from PySide6.QtCore import QEvent, Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QPalette
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QLabel, QScrollArea, QTabWidget, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QTabWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.context import AppContext
@@ -123,6 +123,60 @@ def test_appearance_lists_and_applies_every_theme_without_retranslation_reset(
             assert changes.count() == 0
         assert light.currentData() == LightTheme.SEA_GLASS.value
         assert dark.currentData() == DarkTheme.ORCHID.value
+    finally:
+        page.close()
+
+
+def test_donation_banner_is_at_bottom_of_appearance_and_follows_theme(
+    context: AppContext,
+) -> None:
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    page.resize(960, 600)
+    page.show()
+    try:
+        tabs = page.findChild(QTabWidget, "settingsTabs")
+        assert tabs is not None
+        appearance = tabs.widget(0)
+        about = tabs.widget(tabs.count() - 1)
+        assert isinstance(appearance, QScrollArea)
+        assert isinstance(about, QScrollArea)
+        banner = appearance.findChild(QFrame, "donationBanner")
+        settings_group = appearance.findChild(QFrame, "settingGroup")
+        donate = appearance.findChild(ActionButton, "donate")
+        title = appearance.findChild(QLabel, "donationTitle")
+        description = appearance.findChild(QLabel, "donationDescription")
+        icon = appearance.findChild(QLabel, "donationIcon")
+        assert banner is not None
+        assert settings_group is not None
+        assert donate is not None
+        assert title is not None
+        assert description is not None
+        assert icon is not None
+        assert about.findChild(ActionButton, "donate") is None
+        assert banner.parent() is not about
+        assert (
+            banner.mapTo(appearance, banner.rect().topLeft()).y()
+            > settings_group.mapTo(appearance, settings_group.rect().bottomLeft()).y()
+        )
+        assert title.text() == "Support iOpenPod"
+        assert description.text() == (
+            "iOpenPod is and always will be completely free and open source. "
+            "If you like it and would like to support me, it is so very appreciated."
+        )
+        assert donate.text() == "Support on Ko-fi ↗"
+        context.theme_manager.set_mode(AppearanceMode.LIGHT)
+        APPLICATION.processEvents()
+        first_icon = icon.pixmap()
+        assert not first_icon.isNull()
+
+        context.theme_manager.set_mode(AppearanceMode.DARK)
+        APPLICATION.processEvents()
+        dark_icon = icon.pixmap()
+        assert not dark_icon.isNull()
+        assert dark_icon.cacheKey() != first_icon.cacheKey()
+        assert f"background-color: {context.theme_manager.tokens.surface_alt}" in (
+            APPLICATION.styleSheet()
+        )
     finally:
         page.close()
 

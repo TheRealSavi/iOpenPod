@@ -3,15 +3,25 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QSignalBlocker,
+    QSize,
+    Qt,
+    QUrl,
+    Signal,
+)
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QScrollArea,
+    QSizePolicy,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -51,6 +61,7 @@ from iOpenPod.GUI.dialogs.linux_identity_setup import (
 )
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
+from iOpenPod.GUI.presentation.icons import glyph_icon
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
@@ -180,6 +191,42 @@ class SettingsPage(QWidget):
         appearance.add_row(self._player_position_row)
         appearance.add_row(self._language_row)
 
+        self._donation_banner = QFrame(self)
+        self._donation_banner.setObjectName("donationBanner")
+        self._donation_banner.setMaximumWidth(960)
+        donation_layout = QHBoxLayout(self._donation_banner)
+        donation_layout.setContentsMargins(
+            LAYOUT.space_lg,
+            LAYOUT.space_md,
+            LAYOUT.space_lg,
+            LAYOUT.space_md,
+        )
+        donation_layout.setSpacing(LAYOUT.space_md)
+        self._donation_icon = QLabel(self._donation_banner)
+        self._donation_icon.setObjectName("donationIcon")
+        self._donation_icon.setFixedSize(
+            LAYOUT.icon_button_size, LAYOUT.icon_button_size
+        )
+        self._donation_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        donation_layout.addWidget(self._donation_icon, 0, Qt.AlignmentFlag.AlignTop)
+        donation_copy = QVBoxLayout()
+        donation_copy.setContentsMargins(0, 0, 0, 0)
+        donation_copy.setSpacing(LAYOUT.space_2xs)
+        self._donation_title = QLabel(self._donation_banner)
+        self._donation_title.setObjectName("donationTitle")
+        self._donation_description = QLabel(self._donation_banner)
+        self._donation_description.setObjectName("donationDescription")
+        self._donation_description.setWordWrap(True)
+        self._donation_description.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        donation_copy.addWidget(self._donation_title)
+        donation_copy.addWidget(self._donation_description)
+        donation_layout.addLayout(donation_copy, 1)
+        self._donate = ActionButton(parent=self._donation_banner)
+        self._donate.setObjectName("donate")
+        donation_layout.addWidget(self._donate, 0, Qt.AlignmentFlag.AlignVCenter)
+
         backups = SettingGroup(self)
         backups.setMaximumWidth(960)
         backups.add_row(self._backup_location_row)
@@ -235,15 +282,11 @@ class SettingsPage(QWidget):
         self._open_log_folder = ActionButton(parent=self)
         self._open_log_folder.setObjectName("openLogFolder")
         self._open_log_folder_row = SettingRow("", "", self._open_log_folder, self)
-        self._donate = ActionButton(parent=self)
-        self._donate.setObjectName("donate")
-        self._donation_row = SettingRow("", "", self._donate, self)
         about = SettingGroup(self)
         about.setMaximumWidth(960)
         about.add_row(self._version_row)
         about.add_row(self._open_log_folder_row)
         about.add_row(self._report_issue_row)
-        about.add_row(self._donation_row)
 
         self._credits = QLabel(self)
         self._credits.setObjectName("aboutCredits")
@@ -272,7 +315,10 @@ class SettingsPage(QWidget):
         self._media_tools.checkRequested.connect(self.mediaToolsCheckRequested.emit)
         self._sync_settings = SyncSettings(settings, self)
         self._appearance_tab = self._add_tab(
-            "appearanceSettingsScroll", self._appearance_title, appearance
+            "appearanceSettingsScroll",
+            self._appearance_title,
+            appearance,
+            self._donation_banner,
         )
         self._library_tab = self._add_tab(
             "librarySettingsScroll", self._library_title, library
@@ -368,12 +414,14 @@ class SettingsPage(QWidget):
         theme_manager.lightThemeChanged.connect(self._sync_light_theme_selection)
         theme_manager.darkThemeChanged.connect(self._sync_dark_theme_selection)
         theme_manager.effectiveThemeChanged.connect(self._update_credits)
+        theme_manager.effectiveThemeChanged.connect(self._update_donation_icon)
         theme_manager.colorfulModeChanged.connect(self._sync_colorful_mode_selection)
         theme_manager.trackTitleBarStyleChanged.connect(
             self._sync_track_title_bar_selection
         )
         i18n_manager.languageChanged.connect(self._language_changed)
         self.retranslate_ui()
+        self._update_donation_icon()
         if self._linux_supported:
             self._inspect_udev_rule()
 
@@ -542,11 +590,12 @@ class SettingsPage(QWidget):
         )
         self._open_log_folder.setText(self.tr("Open Log Folder"))
         self._open_log_folder.setEnabled(active_log_path() is not None)
-        self._donation_row.set_copy(
-            self.tr("Support iOpenPod"),
+        self._donation_title.setText(self.tr("Support iOpenPod"))
+        self._donation_description.setText(
             self.tr(
-                "Optional donations on Ko-fi support development. All features are free."
-            ),
+                "iOpenPod is and always will be completely free and open source. "
+                "If you like it and would like to support me, it is so very appreciated."
+            )
         )
         self._choose_backup_location.setText(self.tr("Choose…"))
         self._check_udev_rule.setText(self.tr("Check Again"))
@@ -554,7 +603,7 @@ class SettingsPage(QWidget):
         self._report_issue.setText(
             QCoreApplication.translate("CommonActions", "Report an Issue")
         )
-        self._donate.setText(self.tr("Donate"))
+        self._donate.setText(self.tr("Support on Ko-fi ↗"))
         self._update_saved_note()
         self._ipod_preferences.retranslate_ui()
         self._rebuild_appearance_options()
@@ -609,6 +658,17 @@ class SettingsPage(QWidget):
                 libgpod='<a href="https://github.com/gtkpod/libgpod">libgpod</a>',
                 gtkpod='<a href="https://github.com/gtkpod/gtkpod">gtkpod</a>',
             )
+        )
+
+    def _update_donation_icon(self) -> None:
+        size = LAYOUT.icon_size + LAYOUT.space_xs
+        self._donation_icon.setPixmap(
+            glyph_icon(
+                "heart",
+                size,
+                QColor(self._theme_manager.tokens.accent),
+                self._donation_icon.devicePixelRatioF(),
+            ).pixmap(QSize(size, size), self._donation_icon.devicePixelRatioF())
         )
 
     def _rebuild_appearance_options(self) -> None:

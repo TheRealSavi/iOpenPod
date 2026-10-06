@@ -178,6 +178,7 @@ def test_inspection_verifies_execution_and_reports_failures(
     monkeypatch.setattr(media_tools, "read_media_encoders", read_encoders)
     setup = inspect_media_tools(checkpoint=lambda: None)
     assert setup.tools[0].usable
+    assert setup.tools[0].version == "test"
     assert setup.tools[0].encoders == frozenset({"aac"})
     assert setup.tools[1].problem == "Timed out"
     assert not setup.tools[2].path

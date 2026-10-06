@@ -4988,6 +4988,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Revisa un comando que elimina únicamente la regla local de iOpenPod en /etc. Se conservan las copias gestionadas por paquetes en /usr o /lib.</translation>
     </message>
     <message>
+        <source>iOpenPod is and always will be completely free and open source. If you like it and would like to support me, it is so very appreciated.</source>
+        <translation>iOpenPod es y siempre será completamente gratuito y de código abierto. Si le gusta y desea apoyarme, se lo agradeceré enormemente.</translation>
+    </message>
+    <message>
         <source>Version</source>
         <translation>Versión</translation>
     </message>
@@ -5001,7 +5005,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Optional donations on Ko-fi support development. All features are free.</source>
-        <translation>Las donaciones opcionales en Ko-fi ayudan al desarrollo. Todas las funciones son gratuitas.</translation>
+        <translation type="vanished">Las donaciones opcionales en Ko-fi ayudan al desarrollo. Todas las funciones son gratuitas.</translation>
     </message>
     <message>
         <source>Choose…</source>
@@ -5017,7 +5021,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Donate</source>
-        <translation>Donar</translation>
+        <translation type="vanished">Donar</translation>
     </message>
     <message>
         <source>iPod preferences are read-only.</source>
@@ -5238,6 +5242,18 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Open Log Folder</source>
         <translation>Abrir carpeta de registros</translation>
+    </message>
+    <message>
+        <source>Help keep iPods playing.</source>
+        <translation type="vanished">Ayuda a que los iPods sigan sonando.</translation>
+    </message>
+    <message>
+        <source>iOpenPod is free and open source. Optional donations help support development.</source>
+        <translation type="vanished">iOpenPod es gratuito y de código abierto. Las donaciones voluntarias ayudan a financiar su desarrollo.</translation>
+    </message>
+    <message>
+        <source>Support on Ko-fi ↗</source>
+        <translation>Apoyar en Ko-fi ↗</translation>
     </message>
     <message>
         <source>Media tool status is read-only.</source>
@@ -7525,7 +7541,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Artwork file &quot;{path}&quot; was prepared using temporary disk space because the memory budget was reached.</source>
-        <translation>El archivo de portada &quot;{path}&quot; se preparó usando espacio temporal en disco porque se alcanzó el límite de memoria.</translation>
+        <translation type="vanished">El archivo de portada &quot;{path}&quot; se preparó usando espacio temporal en disco porque se alcanzó el límite de memoria.</translation>
     </message>
     <message>
         <source>Artwork for {name} was skipped. Media can still Sync; any existing iPod artwork was preserved.</source>
@@ -8181,7 +8197,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Photo &quot;{path}&quot; was prepared using temporary disk space because the memory budget was reached.</source>
-        <translation>La foto &quot;{path}&quot; se preparó usando espacio temporal en disco porque se alcanzó el límite de memoria.</translation>
+        <translation type="vanished">La foto &quot;{path}&quot; se preparó usando espacio temporal en disco porque se alcanzó el límite de memoria.</translation>
     </message>
     <message>
         <source>Photo Album creation requires a non-master unsigned 8-bit type.</source>

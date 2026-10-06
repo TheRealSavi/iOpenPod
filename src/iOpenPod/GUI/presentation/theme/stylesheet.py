@@ -2090,6 +2090,56 @@ QFrame#placeholderSurface {{
     border-radius: {LAYOUT.radius_panel}px;
 }}
 
+QFrame#donationBanner {{
+    color: {tokens.text};
+    background-color: {tokens.surface_alt};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QLabel#donationTitle {{
+    color: {tokens.text};
+    font-family: "{typography.display}";
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 600;
+}}
+
+QLabel#donationDescription {{
+    color: {tokens.text_secondary};
+}}
+
+QPushButton#donate {{
+    min-height: {LAYOUT.control_height}px;
+    padding: 0 {LAYOUT.space_md}px;
+    color: {tokens.accent};
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border_strong};
+    border-radius: {LAYOUT.control_height // 2}px;
+    font-weight: 600;
+}}
+
+QPushButton#donate:hover {{
+    color: {tokens.accent_hover};
+    background-color: {tokens.surface_hover};
+    border-color: {tokens.accent_hover};
+}}
+
+QPushButton#donate:pressed {{
+    color: {tokens.accent_pressed};
+    background-color: {tokens.surface_pressed};
+    border-color: {tokens.accent_pressed};
+}}
+
+QPushButton#donate:focus {{
+    border: 2px solid {tokens.focus};
+}}
+
+QPushButton#donate:disabled {{
+    color: {tokens.text_disabled};
+    background-color: {tokens.surface_alt};
+    border-color: {tokens.border};
+}}
+
 QWidget#settingRow {{
     color: {tokens.text};
     background-color: transparent;
