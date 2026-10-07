@@ -1314,11 +1314,75 @@ def test_shared_album_artwork_is_captured_once_and_referenced_by_new_tracks(
         device.coordinator.close()
 
 
-def test_folder_artwork_only_update_is_committed_and_recorded(tmp_path: Path) -> None:
+@pytest.mark.parametrize("problem", ["missing", "truncated", "directory"])
+@pytest.mark.parametrize("update", [False, True])
+def test_artwork_failure_defers_covers_but_commits_media(
+    tmp_path: Path, problem: str, update: bool
+) -> None:
+    device = build_device(tmp_path, artwork_size_multiplier=760)
+    try:
+        original = device.active.library.tracks[0]
+        artwork_path = device.root / "iPod_Control/Artwork/ArtworkDB"
+        before = artwork_path.read_bytes()
+        thumbnail = next((device.root / "iPod_Control/Artwork").glob("*.ithmb"))
+        if problem == "truncated":
+            thumbnail.write_bytes(b"short")
+        else:
+            thumbnail.unlink()
+            if problem == "directory":
+                thumbnail.mkdir()
+        host = _host(tmp_path, "Cover deferred")
+        path = tmp_path / "cover.png"
+        Image.new("RGB", (180, 180), "blue").save(path)
+        observed = LocalHostFile.observe(HostPath(path))
+        cover = HostMediaArtworkSource(
+            123,
+            HostArtworkKind.FOLDER,
+            observed.path,
+            observed.size_bytes,
+            observed.modified_ns,
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        host = replace(
+            host,
+            snapshot=replace(
+                host.snapshot,
+                tracks=(replace(host.snapshot.tracks[0], artwork_id=123),),
+            ),
+            artwork_sources=(cover,),
+        )
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            _request(device, host, update=update), lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.PARTIAL, result.issues
+        assert any(issue.code == "sync.artwork_deferred" for issue in result.issues)
+        assert result.active is not None and result.helper is not None
+        changed = next(
+            t for t in result.active.library.tracks if t.title == "Cover deferred"
+        )
+        assert changed.artwork_id == (original.artwork_id if update else 0)
+        assert (device.root / changed.metadata.location).is_file()
+        assert artwork_path.read_bytes() == before
+        recorded = next(
+            t for t in result.helper.tracks if t.track_id == changed.track_id
+        )
+        assert recorded.sync is not None and recorded.sync.host_artwork_sha256 == ""
+        next_plan = prepare_sync_plan(host, result.helper, result.active.library)
+        assert any(item.artwork_changed for item in next_plan.items)
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("missing_thumbnail", [False, True])
+def test_folder_artwork_only_update_is_committed_and_recorded(
+    tmp_path: Path, missing_thumbnail: bool
+) -> None:
     device = build_device(tmp_path)
     try:
         original = device.active.library.tracks[0]
         assert original.artwork_id > 0
+        if missing_thumbnail:
+            next((device.root / "iPod_Control/Artwork").glob("*.ithmb")).unlink()
         host = _host(tmp_path, "Updated cover")
         path = tmp_path / "cover.png"
         Image.new("RGB", (180, 180), "blue").save(path)
@@ -1371,26 +1435,31 @@ def test_folder_artwork_only_update_is_committed_and_recorded(tmp_path: Path) ->
         result = _Executor(device.coordinator, transcoder=_MissingTools()).execute(
             request, lambda _: None, Event()
         )
-        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.status is (
+            SyncExecutionStatus.PARTIAL
+            if missing_thumbnail
+            else SyncExecutionStatus.SUCCESS
+        ), result.issues
         assert result.active is not None and result.helper is not None
         updated = next(
             track
             for track in result.active.library.tracks
             if track.track_id == original.track_id
         )
-        assert updated.artwork_id != original.artwork_id
+        assert (updated.artwork_id == original.artwork_id) is missing_thumbnail
         recorded = next(
             item for item in result.helper.tracks if item.track_id == original.track_id
         )
         assert recorded.sync is not None
-        assert recorded.sync.host_artwork_sha256 == cover.content_sha256
+        assert recorded.sync.host_artwork_sha256 == (
+            "" if missing_thumbnail else cover.content_sha256
+        )
         assert recorded.sync.ipod_artwork_id == updated.artwork_id
         next_plan = prepare_sync_plan(host, result.helper, result.active.library)
-        assert (
-            next(
-                item for item in next_plan.items if item.host_path == str(source.path)
-            ).action
-            is SyncPlanAction.UNCHANGED
+        assert next(
+            item for item in next_plan.items if item.host_path == str(source.path)
+        ).action is (
+            SyncPlanAction.UPDATE if missing_thumbnail else SyncPlanAction.UNCHANGED
         )
     finally:
         device.coordinator.close()

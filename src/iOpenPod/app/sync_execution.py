@@ -56,6 +56,10 @@ from iOpenPod.app.services.device_coordinator import (
     SyncRecoveryRequiredError,
     SyncRestoredCleanupPendingError,
 )
+from iOpenPod.app.sync_artwork_fallback import (
+    pending_cover_provenance,
+    without_cover_changes,
+)
 from iOpenPod.app.sync_plan import (
     SyncPlanAction,
     SyncPlanBasis,
@@ -238,6 +242,7 @@ class SyncExecutor:
         cancelled: Event,
     ) -> SyncExecutionResult:
         issues: list[WriteIssue] = []
+        artwork_deferred = False
         committed_result: SyncExecutionResult | None = None
 
         def checkpoint() -> None:
@@ -559,8 +564,48 @@ class SyncExecutor:
                     if podcast_history is not None
                     else self._coordinator.prepare_library(draft, progress, cancelled)
                 )
-                issues.extend(review.result.issues)
                 checkpoint()
+                if review.result.prepared is None:
+                    fallback = without_cover_changes(draft)
+                    if fallback is not None:
+                        failed_issues = review.result.issues
+                        progress(
+                            WriteProgress(
+                                "sync.database",
+                                "Retrying Library preparation while keeping existing covers…",
+                            )
+                        )
+                        review = (
+                            self._coordinator.prepare_library(
+                                fallback,
+                                progress,
+                                cancelled,
+                                podcast_state=podcast_history,
+                            )
+                            if podcast_history is not None
+                            else self._coordinator.prepare_library(
+                                fallback, progress, cancelled
+                            )
+                        )
+                        checkpoint()
+                        if review.result.prepared is not None:
+                            artwork_deferred = True
+                            issues.append(
+                                WriteIssue(
+                                    "sync.artwork_deferred",
+                                    "Cover changes were skipped so the remaining Sync changes could continue. "
+                                    "Existing covers were kept; new Tracks may have no cover. "
+                                    "A later Sync can retry the covers.",
+                                    severity=IssueSeverity.WARNING,
+                                    detail="\n".join(
+                                        f"{issue.code}: {issue.message} {issue.detail}"
+                                        for issue in failed_issues
+                                    ),
+                                )
+                            )
+                        else:
+                            issues.extend(failed_issues)
+                issues.extend(review.result.issues)
                 if review.result.prepared is None:
                     return SyncExecutionResult(
                         SyncExecutionStatus.FAILED, issues=tuple(issues)
@@ -602,8 +647,18 @@ class SyncExecutor:
                             if request.reconcile_playlists or request.plan.items
                             else None,
                             (
-                                *(item.provenance for item in prepared),
-                                *(item.provenance for item in metadata_updates),
+                                *(
+                                    pending_cover_provenance(item.provenance)
+                                    if artwork_deferred
+                                    else item.provenance
+                                    for item in prepared
+                                ),
+                                *(
+                                    pending_cover_provenance(item.provenance)
+                                    if artwork_deferred
+                                    else item.provenance
+                                    for item in metadata_updates
+                                ),
                                 *(
                                     SyncedTrack(
                                         DevicePath(item.song.track.metadata.location),
@@ -634,7 +689,8 @@ class SyncExecutor:
                         )
                     )
                 partial = (
-                    len(completed) < request.plan.change_count + podcast_changes
+                    artwork_deferred
+                    or len(completed) < request.plan.change_count + podcast_changes
                     or bool(skipped_playlists)
                     or any(issue.severity is IssueSeverity.ERROR for issue in issues)
                 )

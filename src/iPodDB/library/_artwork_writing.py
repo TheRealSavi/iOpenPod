@@ -1,6 +1,7 @@
 """Coordinated, append-only artwork preparation over caller-supplied assets."""
 
 import logging
+from collections import Counter
 from dataclasses import replace
 from itertools import pairwise
 from pathlib import PurePosixPath
@@ -93,13 +94,23 @@ def artwork_path(name: str) -> str:
     return path
 
 
+def _is_f1061_layout(cover: CoverFormat) -> bool:
+    return (
+        cover.format_id == 1061
+        and cover.width == 56
+        and cover.height in (55, 56)
+        and cover.row_bytes == 112
+        and cover.pixel_format is IthmbPixelFormat.RGB565_LE
+    )
+
+
 def _validate_retained_artwork_format(
     artwork: DatabaseDocument[MhfdHeader],
     cover: CoverFormat,
     size: int,
     resources: WriteResources,
 ) -> None:
-    """Establish a fixed MHIF size from every retained representation and range.
+    """Validate retained rasters and allocations, allowing known F1061 variants.
 
     Raw fixed-size rasters need no content-dependent decoding to establish their
     extent. Captured fingerprints bind even full shards (whose bytes need not be
@@ -108,7 +119,7 @@ def _validate_retained_artwork_format(
     if cover.pixel_format is IthmbPixelFormat.JPEG:
         raise ValueError("Variable-size artwork cannot establish a fixed MHIF size.")
     inventory = {f.relative_path.casefold(): f for f in resources.file_inventory or ()}
-    ranges: dict[str, set[int]] = {}
+    ranges: dict[str, set[tuple[int, int, int]]] = {}
     for selection in artwork.find_chunks(MhiiHeader):
         matches = 0
         for child in selection.chunk.children:
@@ -130,13 +141,27 @@ def _validate_retained_artwork_format(
                 raise ValueError(
                     "A retained image has duplicate representations of this format."
                 )
-            if header.image_size != size or header.image_size_2 != size:
+            image_size, allocation, height = size, size, cover.height
+            if _is_f1061_layout(cover):
+                image_size, allocation = header.image_size, header.image_size_2
+                if (
+                    image_size not in (6160, 6272)
+                    or allocation not in (6160, 6272)
+                    or allocation < image_size
+                ):
+                    raise ValueError(
+                        "Retained F1061 MHNI raster or allocation size is unsupported: "
+                        f"image={selection.chunk.header.image_id}, "
+                        f"raster={image_size}, allocation={allocation}."
+                    )
+                height = image_size // cover.row_bytes
+            elif header.image_size != size or header.image_size_2 != size:
                 raise ValueError(
                     "Retained MHNI image sizes disagree with the target layout."
                 )
             for dimension, padding, expected in (
                 (header.image_width, header.horizontal_padding, cover.width),
-                (header.image_height, header.vertical_padding, cover.height),
+                (header.image_height, header.vertical_padding, height),
             ):
                 # foo_dop records the bottom/right edge of centered content;
                 # other writers record the complete raster dimensions.
@@ -163,17 +188,19 @@ def _validate_retained_artwork_format(
             if (
                 dependency is None
                 or header.ithmb_offset < 0
-                or header.ithmb_offset + size > dependency.size
+                or header.ithmb_offset + allocation > dependency.size
             ):
                 raise ValueError(
                     "A retained image range is missing or outside its captured thumbnail file."
                 )
-            ranges.setdefault(path, set()).add(header.ithmb_offset)
+            ranges.setdefault(path, set()).add(
+                (header.ithmb_offset, header.ithmb_offset + allocation, image_size)
+            )
     if not ranges:
         raise ValueError("No retained MHNI images establish the expected size.")
-    for offsets in ranges.values():
-        ordered = sorted(offsets)
-        if any(right < left + size for left, right in pairwise(ordered)):
+    for extents in ranges.values():
+        ordered = sorted(extents)
+        if any(right[0] < left[1] for left, right in pairwise(ordered)):
             raise ValueError("Retained image ranges partially overlap.")
 
 
@@ -184,33 +211,30 @@ def effective_cover_format(
     retained_size: int | None,
 ) -> CoverFormat:
     """Use the evidenced F1061 row count when extending an existing ArtworkDB."""
-    if (
-        artwork is None
-        or cover.format_id != 1061
-        or cover.width != 56
-        or cover.height not in (55, 56)
-        or cover.row_bytes != 112
-        or cover.pixel_format is not IthmbPixelFormat.RGB565_LE
-    ):
+    if artwork is None or not _is_f1061_layout(cover):
         return cover
-    image_sizes = {
-        size
+    image_sizes = Counter(
+        child.payload.child.header.image_size
         for selection in artwork.find_chunks(MhiiHeader)
         for child in selection.chunk.children
         if isinstance(child.payload, MhodContainerPayload)
         and child.payload.child.header.format_id == 1061
-        for size in (
-            child.payload.child.header.image_size,
-            child.payload.child.header.image_size_2,
-        )
-    }
+    )
     if image_sizes:
-        if len(image_sizes) != 1 or next(iter(image_sizes)) not in (6160, 6272):
-            raise ValueError("Retained F1061 MHNI image sizes are inconsistent.")
-        image_size = next(iter(image_sizes))
-        effective = replace(cover, height=image_size // cover.row_bytes)
-        _validate_retained_artwork_format(artwork, effective, image_size, resources)
-        return effective
+        _validate_retained_artwork_format(
+            artwork, cover, cover.height * cover.row_bytes, resources
+        )
+        # Keep a recognized declaration when both variants occur. A uniform
+        # library still repairs stale MHIF metadata from its actual rasters.
+        if retained_size is not None and retained_size in image_sizes:
+            image_size = retained_size
+        else:
+            default_size = cover.height * cover.row_bytes
+            image_size = max(
+                image_sizes,
+                key=lambda size: (image_sizes[size], size == default_size),
+            )
+        return replace(cover, height=image_size // cover.row_bytes)
     # With no retained F1061 images, the MHIF entry is the only on-disk layout
     # declaration. A new ArtworkDB uses the Device Profile's default instead.
     if retained_size in (6160, 6272):

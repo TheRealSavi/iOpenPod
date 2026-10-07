@@ -462,18 +462,30 @@ partially full shard requires its verified prefix. Allocation uses only the
 compacts, reuses holes, or deletes files. Changed file outputs include the complete
 prefix plus zero-filled frame alignment and appended images. Missing or duplicate
 affected datasets and unverifiable MHIF image sizes block preparation. Consistent
-retained MHNI images can establish a corrected MHIF size. For F1061, they also
-select either the 55-row or 56-row fixed raster before new artwork is encoded.
+retained MHNI images can establish a corrected MHIF size. For F1061, individually
+validated 55-row and 56-row rasters may coexist, with bounds and overlap checks
+covering their full allocations. New artwork follows a recognized retained MHIF
+size present among those rasters, otherwise their most common size with the
+Device Profile breaking ties. Retained bytes and image locations stay unchanged.
 See [ADR-0111](adr/0111-correct-evidenced-artwork-format-sizes-during-preparation.md)
-and [ADR-0121](adr/0121-preserve-retained-f1061-raster-height.md).
+and [ADR-0121](adr/0121-preserve-retained-f1061-raster-height.md), amended by
+[ADR-0124](adr/0124-accept-validated-mixed-f1061-layouts.md).
 
 Packed RGB565 and RGB555 variants, rectangular rotated RGB565, UYVY, tightly packed
 I420, and JPEG use explicit codec layouts. I420 accepts the catalog's aggregate
 row-byte value as well as a tightly packed luma stride. Resizing preserves aspect
 ratio and centers the image on black. Packed row padding is zero-filled. Unsupported
 padding and odd subsampled dimensions are rejected. ArtworkDB file allocation
-requires a consistent image size per format; variable JPEG sizes cannot share one
+requires a consistent size for newly encoded images per format; retained F1061
+variants keep their own validated extents. Variable JPEG sizes cannot share one
 MHIF entry. All catalog cover formats have fixed-size rasters.
+
+Sync handles unfulfillable cover changes with an Application Layer retry: retain
+existing cover associations, clear new cover assets and give incoming Tracks no
+cover, then prepare and verify the remaining draft normally. Successful fallback
+reports deferred artwork and keeps its Sync Details retryable. Direct Library
+reviews keep their strict requested-result contract. See
+[ADR-0125](adr/0125-defer-cover-failures-during-sync.md).
 
 For a first ArtworkDB, the application supplies the known Device Profile's creation
 value through `WriteTarget.artwork_root_value`; application-only `F1060` output

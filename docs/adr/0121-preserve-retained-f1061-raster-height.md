@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-06
 - Extends: ADR-0012 and ADR-0111
+- Amended by: ADR-0124, which accepts individually validated mixed layouts.
 
 ## Context
 

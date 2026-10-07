@@ -283,8 +283,14 @@ corrected automatically when the Device Profile, retained image metadata, and
 captured thumbnail ranges establish the correct size. Unverifiable conflicts
 still block preparation; reads and unrelated edits remain lossless. Corrections
 use the existing recoverable Storage Transaction without an additional prompt.
-For F1061, consistent retained images select either 55 or 56 stored rows for
-new artwork and lazy decoding. See ADR-0111 and ADR-0121.
+For F1061, individually validated 55-row and 56-row rasters may coexist, including
+55-row rasters in 56-row allocations. New artwork follows a recognized retained
+MHIF layout or the most common retained raster size, with the Device Profile
+breaking ties. See ADR-0111, ADR-0121, and ADR-0124.
+If cover changes still prevent Sync preparation, Sync retries once with existing
+cover links retained and new Tracks without covers. A verified retry publishes
+the remaining changes, reports deferred covers and leaves them eligible for a
+later Sync. Source and transaction safety checks still apply. See ADR-0125.
 
 Selection also loads an optional `Photos/Photo Database` into the common Library
 Snapshot as an immutable Photo Library. The Application Layer can request a Photo

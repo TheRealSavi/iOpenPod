@@ -196,3 +196,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0121: Preserve retained F1061 raster height](0121-preserve-retained-f1061-raster-height.md)
 - [ADR-0122: Match Original iOpenPod signing behavior](0122-match-original-signing-behavior.md)
 - [ADR-0123: Reuse bounded media scan analysis](0123-reuse-bounded-media-scan-analysis.md)
+- [ADR-0124: Accept validated mixed F1061 layouts](0124-accept-validated-mixed-f1061-layouts.md)
+- [ADR-0125: Defer cover failures during Sync](0125-defer-cover-failures-during-sync.md)
