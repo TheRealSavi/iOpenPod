@@ -238,6 +238,30 @@ Run Windows SDK `MakeAppx.exe` in a developer shell:
 MakeAppx.exe pack /d build\msix /p dist\iOpenPod.msix
 ```
 
+For a fresh local build and its package checks, run:
+
+```powershell
+uv run --locked --no-dev --group packaging python -m scripts.build_msix
+```
+
+The script rebuilds the audited Windows libsndfile and one-file executable, stages
+the saved Store identity in a temporary directory, and uses MakeAppx to create
+`dist/iOpenPod-<version>-Windows-x64.msix`. It checks the MSIX member integrity,
+manifest identity, assets, and exact embedded executable; it checks the frozen
+payload, build version, license inventory, and runtime smoke test from the package.
+It writes a SHA-256 sidecar only after those checks pass and preserves an existing
+MSIX. Use `--makeappx PATH` if the SDK tool is not on `PATH` or in a standard SDK
+directory; `--output PATH` selects a new output file. These checks do not install
+the MSIX or run the Windows App Certification Kit. `--reuse-bundle` repackages an
+existing `dist/iOpenPod.exe` after checking its embedded version and notices;
+use it when only MSIX staging or validation needs another run. Use the
+signed-package test workflow above for the installed gates.
+
+The current Store-kit assembler still looks for the older directory-bundle
+`app/_internal/licenses/` layout. It needs a separate update before it can
+assemble a kit from the one-file MSIX; passing this script does not mark that
+release gate complete.
+
 When the SDK is not installed, Microsoft's standalone
 [`Microsoft.Windows.SDK.BuildTools` NuGet package](https://www.nuget.org/packages/Microsoft.Windows.SDK.BuildTools/10.0.28000.2705)
 also supplies MakeAppx. Extract that build-only package outside the application

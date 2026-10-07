@@ -231,7 +231,13 @@ def windows_store_identity() -> tuple[str, str, str]:
     return values[0], values[1], values[2]
 
 
-def stage_msix(identity: str, publisher: str, display_name: str) -> Path:
+def stage_msix(
+    identity: str,
+    publisher: str,
+    display_name: str,
+    *,
+    destination: Path | None = None,
+) -> Path:
     """Use Partner Center identity, never a fabricated signing/publisher identity."""
     if sys.platform != "win32":
         raise ValueError("Stage MSIX from the Windows build on Windows")
@@ -253,7 +259,7 @@ def stage_msix(identity: str, publisher: str, display_name: str) -> Path:
     if not executable.is_file():
         raise ValueError("Build the native bundle first")
     # Re-running must not silently retain obsolete binaries or assets.
-    destination = ROOT / "build/msix"
+    destination = destination if destination is not None else ROOT / "build/msix"
     destination.mkdir(parents=True, exist_ok=False)
     (destination / "app").mkdir()
     shutil.copy2(executable, destination / "app/iOpenPod.exe")
