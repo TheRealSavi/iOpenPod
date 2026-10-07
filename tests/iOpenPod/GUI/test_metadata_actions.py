@@ -42,6 +42,7 @@ from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.widgets import track_actions
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
@@ -457,7 +458,11 @@ def test_context_menu_volume_adjustment_uses_original_slider_behavior() -> None:
         context.shutdown()
 
 
-def test_context_menu_shortcuts_are_visible_and_use_native_platform_text() -> None:
+@pytest.mark.parametrize("platform_name", ("darwin", "win32", "linux"))
+def test_context_menu_shortcuts_are_visible_and_use_native_platform_text(
+    platform_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(track_actions, "platform", platform_name)
     context = build_context()
     context.library_workspace.load(LibrarySnapshot(_TRACKS))
     window = MainWindow(context, auto_discover=False)
@@ -473,10 +478,11 @@ def test_context_menu_shortcuts_are_visible_and_use_native_platform_text() -> No
         )
         menu = actions.build_menu(selection)
 
+        queue_modifier = "Meta" if platform_name == "darwin" else "Ctrl"
         expected = {
             "Edit Metadata…": "Ctrl+E",
-            "Play Next": "Ctrl+Shift+Q",
-            "Add to Queue": "Ctrl+Q",
+            "Play Next": f"{queue_modifier}+Shift+Q",
+            "Add to Queue": f"{queue_modifier}+Q",
             "Move Up": "Ctrl+Up",
             "Move Down": "Ctrl+Down",
             "Copy as Text": "Ctrl+C",
@@ -491,10 +497,10 @@ def test_context_menu_shortcuts_are_visible_and_use_native_platform_text() -> No
             )
             native = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
             if sys.platform == "darwin":
-                assert "⌘" in native
+                assert ("⌃" if portable.startswith("Meta+") else "⌘") in native
                 assert "Ctrl" not in native
             else:
-                assert "Ctrl" in native
+                assert native == portable
 
         installed = {
             shortcut.property("trackAction")
@@ -515,9 +521,14 @@ def test_context_menu_shortcuts_are_visible_and_use_native_platform_text() -> No
 
 @pytest.mark.parametrize("page_id", ("tracks", "albums"))
 @pytest.mark.parametrize("prepend", (False, True))
+@pytest.mark.parametrize("platform_name", ("darwin", "win32", "linux"))
 def test_queue_shortcuts_use_focused_selection_and_preserve_track_order(
-    page_id: str, prepend: bool
+    page_id: str,
+    prepend: bool,
+    platform_name: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(track_actions, "platform", platform_name)
     context = build_context()
     context.library_workspace.load(LibrarySnapshot(_TRACKS))
     context.track_model.replace_tracks(_TRACKS)
@@ -549,7 +560,11 @@ def test_queue_shortcuts_use_focused_selection_and_preserve_track_order(
         playback.enqueue(_TRACKS[2])
         playback.enqueue(_TRACKS[2])
         current_entry_id = playback.current_entry_id
-        modifiers = Qt.KeyboardModifier.ControlModifier
+        modifiers = (
+            Qt.KeyboardModifier.MetaModifier
+            if platform_name == "darwin"
+            else Qt.KeyboardModifier.ControlModifier
+        )
         if prepend:
             modifiers |= Qt.KeyboardModifier.ShiftModifier
         view.setFocus()

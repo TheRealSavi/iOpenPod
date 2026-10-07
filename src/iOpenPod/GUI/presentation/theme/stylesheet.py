@@ -252,6 +252,7 @@ QDialog#mediaFoldersDialog,
 QDialog#mediaFolderSettingsDialog,
 QDialog#mediaToolsSetup,
 QDialog#externalPlaylistFilesDialog,
+QDialog#syncDuplicatesDialog,
 QDialog#linuxIdentitySetup,
 QDialog#linuxIdentityUninstall,
     QFileDialog,
@@ -494,6 +495,118 @@ QLabel#syncPlanEmpty {{
     border: 1px solid {tokens.border};
     border-radius: {LAYOUT.radius_panel}px;
     padding: {LAYOUT.space_xl}px;
+}}
+
+QLabel#syncDuplicateTitle {{
+    color: {tokens.text};
+    font-family: "{typography.display}";
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#syncDuplicateGroupTitle {{
+    color: {tokens.text};
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#syncDuplicateDescription,
+QLabel#syncDuplicateOverview,
+QLabel#syncDuplicateGroupStatus,
+QLabel#syncDuplicateChoiceHelp,
+QLabel#syncDuplicateIPodSummary,
+QLabel#syncDuplicateHostDetails,
+QLabel#syncDuplicateIPodDetails,
+QLabel#syncDuplicateRemovalContext,
+QLabel#syncDuplicateFooterNote {{
+    color: {tokens.text_secondary};
+}}
+
+QLabel#syncDuplicateOverview,
+QLabel#syncDuplicateFooterNote,
+QLabel#syncDuplicateHostDetails,
+QLabel#syncDuplicateIPodDetails {{
+    font-size: {typography.small_pt:g}pt;
+}}
+
+QLabel#syncDuplicateSectionTitle,
+QLabel#syncDuplicateChoiceLabel {{
+    color: {tokens.text};
+    font-weight: 600;
+}}
+
+QLabel#syncDuplicateStatus {{
+    color: {tokens.text_secondary};
+    background-color: {tokens.surface_alt};
+    border-radius: {LAYOUT.radius_control}px;
+    padding: {LAYOUT.space_2xs}px {LAYOUT.space_xs}px;
+    font-weight: 600;
+}}
+
+QLabel#syncDuplicateStatus[tone="attention"] {{
+    color: {tokens.warning};
+}}
+
+QLabel#syncDuplicateStatus[tone="ready"] {{
+    color: {tokens.success};
+}}
+
+QLabel#syncDuplicateRemovalNote {{
+    color: {tokens.warning};
+}}
+
+QLabel#syncDuplicateEmpty {{
+    color: {tokens.text_secondary};
+    background-color: {tokens.surface};
+    border-radius: {LAYOUT.radius_control}px;
+    padding: {LAYOUT.space_md}px;
+}}
+
+QScrollArea#syncDuplicateDetailScroll,
+QScrollArea#syncDuplicateDetailScroll > QWidget > QWidget {{
+    color: {tokens.text};
+    background-color: {tokens.window};
+    border: none;
+}}
+
+QListWidget#syncDuplicateGroups {{
+    color: {tokens.text};
+    background-color: {tokens.window};
+    border: none;
+    outline: none;
+}}
+
+QListWidget#syncDuplicateGroups::item {{
+    padding: {LAYOUT.space_sm}px {LAYOUT.space_xs}px;
+    border: 2px solid transparent;
+    border-radius: {LAYOUT.radius_control}px;
+}}
+
+QListWidget#syncDuplicateGroups::item:hover {{
+    background-color: {tokens.surface_hover};
+}}
+
+QListWidget#syncDuplicateGroups::item:selected {{
+    color: {tokens.text};
+    background-color: {tokens.surface_selected};
+}}
+
+QListWidget#syncDuplicateGroups::item:focus {{
+    border-color: {tokens.focus};
+}}
+
+QTreeWidget#syncDuplicateHosts,
+QTreeWidget#syncDuplicateIPods {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_control}px;
+}}
+
+QTreeWidget#syncDuplicateHosts::item,
+QTreeWidget#syncDuplicateIPods::item {{
+    min-height: {LAYOUT.control_height_large}px;
+    padding: {LAYOUT.space_2xs}px;
 }}
 
 QLabel#mediaFolderSummary,

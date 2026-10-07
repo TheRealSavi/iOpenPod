@@ -693,7 +693,8 @@ def transaction(
     original_photos: bytes | None,
     *,
     primary_database: DevicePath = ITUNESDB,
-) -> StorageTransaction:
+    allow_unchanged: bool = False,
+) -> StorageTransaction | None:
     before = {f.path: f.fingerprint for f in captured.files}
     writes: list[TransactionWrite] = list(captured.media_writes)
     for file in prepared.artwork_files:
@@ -773,6 +774,10 @@ def transaction(
             dependency.sha256,
         ):
             raise ValueError(f"Prepared dependency was not captured: {path}")
+    if allow_unchanged and not writes and not captured.removals:
+        # Sync may establish an association without changing Library bytes. Keep
+        # dependency verification, but never invent an empty Storage transaction.
+        return None
     plan = StorageTransaction(
         tuple(writes),
         captured.removals,

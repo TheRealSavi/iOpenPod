@@ -1,5 +1,9 @@
 # ADR-0066: Prepare Sync Plans from correlated media
 
+> ADR-0127 adds explicit resolution of duplicate groups. Ambiguous correlations
+> remain non-actionable until the user chooses a validated association or a separate
+> Add or Remove; successful associations then establish Sync Details.
+
 - Status: Accepted
 - Date: 2026-09-18
 - Extends: ADR-0005, ADR-0025, ADR-0063, and ADR-0065

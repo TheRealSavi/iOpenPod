@@ -89,6 +89,8 @@ class SyncReviewGroup(QFrame):
         action: SyncPlanAction,
         media: SyncPlanMediaKind | None,
         parent: QWidget | None = None,
+        *,
+        header_action: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("syncReviewGroup")
@@ -97,6 +99,7 @@ class SyncReviewGroup(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.action = action
         self.media = media
+        self._header_action = header_action
         self.proxy = SyncPlanFilterModel(self)
         self.proxy.setSourceModel(source)
         self.proxy.set_actions(frozenset({action}))
@@ -151,6 +154,8 @@ class SyncReviewGroup(QFrame):
         toggle_layout.addWidget(self._symbol)
         toggle_layout.addLayout(title_layout, 1)
         toggle_layout.addWidget(self._selected)
+        if header_action is not None:
+            toggle_layout.addWidget(header_action)
         toggle_layout.addWidget(self._count)
         toggle_layout.addWidget(self._chevron)
         header = QHBoxLayout()
@@ -203,7 +208,14 @@ class SyncReviewGroup(QFrame):
 
     def refresh(self) -> None:
         count = self.proxy.rowCount()
-        self.setVisible(count > 0)
+        self.setVisible(
+            count > 0
+            or (self._header_action is not None and not self._header_action.isHidden())
+        )
+        self.toggle.setCheckable(count > 0)
+        self._chevron.setVisible(count > 0)
+        if not count:
+            self.set_expanded(False)
         states = tuple(
             self.proxy.index(row, SyncPlanColumn.ACTION).data(
                 Qt.ItemDataRole.CheckStateRole
@@ -239,6 +251,7 @@ class SyncReviewGroup(QFrame):
         )
 
     def set_expanded(self, expanded: bool) -> None:
+        expanded = expanded and self.proxy.rowCount() > 0
         self.toggle.setChecked(expanded)
         self.table.setVisible(expanded)
         self._chevron.setArrowType(

@@ -1274,6 +1274,45 @@ Tracks correlate through unique Acoustic Fingerprints; remaining full-resolution
 Photos correlate through unique Image Content Fingerprints. Missing, conflicting,
 or non-unique evidence produces Needs attention rather than a guessed action.
 
+Sync Duplicate Groups retain matching candidates on either or both sides and their
+established pairs. A user resolution explicitly names one-to-one pairs, separate
+Host Adds, and independent iPod Removes. It cannot claim an established pair,
+reuse an identity, or silently pair leftover candidates. Unmentioned ambiguous
+Host candidates are skipped and unmentioned iPod candidates are retained, allowing
+unrelated selected work to continue. Playlists containing skipped ambiguous Host
+candidates retain their current membership, including after an explicit skip
+resolution; excluding a paired metadata Update still retains its chosen Playlist
+mapping. Separate files with matching audio remain
+independent selection candidates, including different Album entries. Normalized
+Host-path deduplication applies only to repeated discovery of the same source;
+Playlist occurrences keep their distinct identities and order.
+
+Sync Review automatically opens duplicate choices when selected Host candidates
+still have ambiguous relationships. Those groups and their selected Host files
+appear before optional duplicate cleanup. Cancelling the dialog preserves the
+pending selection; the execution action returns to these choices until the user
+applies a match, separate Add, or Skip. Unselected ambiguous groups do not prevent
+unrelated Sync work. This also prevents automatic Podcast work from making a Sync
+appear to honor selected songs that would otherwise be silently skipped.
+
+Duplicate Review distinguishes established matches from unresolved choices. It
+compares Host and iPod copies by Album, follows the selected Host file's existing
+match, and explains Match, Add, and Skip beside the choice. File paths and removal
+controls expand separately; playback and Playlist history remain available before
+an explicit removal. Narrow windows stack the comparison vertically.
+
+An explicit pair derives a user-confirmed Update so successful execution publishes
+durable Sync Details even when metadata is unchanged. Matching Acoustic Fingerprints
+retain Track payloads; independent tag and artwork policy still applies. Existing
+Track identity and playback state remain attached to that Track. Explicit removals
+use the ordinary Library and Storage removal contract, including removal of that
+Track's Playlist occurrences, without redirecting them or merging playback history,
+ratings, or positions. Resolution choices are tied to the comparison generation and
+are revalidated before execution. If the verified prepared artifacts contain no file
+changes, an explicitly enabled unchanged review revalidates its captured source and
+dependencies without a Storage Transaction. Atomic helper publication then commits
+the association; failure reports an uncommitted association. See ADR-0127.
+
 Host-only items are Add, and iPod-only items are Remove. For a correlated item with
 Sync Details, the current Host size and modification time are compared with the Host
 facts recorded by that successful Sync. For Tracks with unchanged Host file facts,

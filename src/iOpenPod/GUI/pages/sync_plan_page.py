@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtWidgets import (
+    QDialog,
     QHBoxLayout,
     QLabel,
     QScrollArea,
@@ -21,6 +22,7 @@ from iOpenPod.app.models.sync_plan_table_model import (
     SyncPlanTableModel,
 )
 from iOpenPod.app.sync_plan import SyncPlan, SyncPlanAction, SyncPlanMediaKind
+from iOpenPod.GUI.dialogs.sync_duplicates import SyncDuplicatesDialog
 from iOpenPod.GUI.presentation.i18n.text import (
     english_count_fallback,
     item_count_text,
@@ -54,6 +56,8 @@ class SyncPlanPage(QWidget):
         self.setObjectName("syncPlanPage")
         self._plan: SyncPlan | None = None
         self._selection: SyncSelection | None = None
+        self._duplicate_dialog: SyncDuplicatesDialog | None = None
+        self._duplicate_comparison: SyncPlan | None = None
         self._model = SyncPlanTableModel(self)
         self._proxy = SyncPlanFilterModel(self)
         self._proxy.setSourceModel(self._model)
@@ -71,6 +75,12 @@ class SyncPlanPage(QWidget):
         self._attention.setObjectName("syncPlanAttention")
         self._attention.setWordWrap(True)
         self._attention.hide()
+        self._duplicate_summary = QLabel(self)
+        self._duplicate_summary.setObjectName("syncDuplicateSummary")
+        self._duplicate_summary.setWordWrap(True)
+        self._duplicates = ActionButton(parent=self)
+        self._duplicates.setObjectName("syncReviewDuplicates")
+        self._duplicates.clicked.connect(self._review_duplicates)
 
         self._action_filter = AppComboBox(self)
         self._action_filter.setObjectName("syncPlanActionFilter")
@@ -106,7 +116,15 @@ class SyncPlanPage(QWidget):
             (SyncPlanAction.ATTENTION, None),
             (SyncPlanAction.UNCHANGED, None),
         ):
-            group = SyncReviewGroup(self._proxy, action, media, groups_body)
+            group = SyncReviewGroup(
+                self._proxy,
+                action,
+                media,
+                groups_body,
+                header_action=(
+                    self._duplicates if action is SyncPlanAction.ATTENTION else None
+                ),
+            )
             group.checkedRequested.connect(partial(self._set_group_checked, group))
             groups_layout.addWidget(group)
             self._groups.append(group)
@@ -163,6 +181,7 @@ class SyncPlanPage(QWidget):
         body.setSpacing(LAYOUT.space_sm)
         body.addWidget(self._description)
         body.addWidget(self._attention)
+        body.addWidget(self._duplicate_summary)
         body.addLayout(filters)
         body.addWidget(self._content, 1)
         layout = QVBoxLayout(self)
@@ -215,6 +234,14 @@ class SyncPlanPage(QWidget):
         self._set_selection(selection)
         self._refresh_review()
 
+    def review_pending_duplicates(self) -> bool:
+        """Ask about selected ambiguous copies before they can be silently skipped."""
+
+        if self._selection is None or not self._selection.pending_duplicate_groups:
+            return False
+        self._review_duplicates()
+        return True
+
     def clear_plan(self) -> None:
         self._set_selection(None)
         self._plan = None
@@ -266,6 +293,7 @@ class SyncPlanPage(QWidget):
         )
         self._expand_all.setText(self.tr("Expand All"))
         self._collapse_all.setText(self.tr("Collapse All"))
+        self._duplicates.setText(self.tr("Review similar media…"))
         for group in self._groups:
             group.retranslate_ui()
         self._model.retranslate()
@@ -307,6 +335,22 @@ class SyncPlanPage(QWidget):
                 ),
             )
         )
+        comparison = self._selection.comparison if self._selection is not None else plan
+        groups = len(comparison.duplicate_groups)
+        self._duplicate_summary.setText(
+            self._count_text(
+                groups,
+                self.tr(
+                    "1 group of similar media. Review links, separate copies, or optional cleanup."
+                ),
+                self.tr(
+                    "%1 groups of similar media. Review links, separate copies, or optional cleanup."
+                ),
+            )
+        )
+        self._duplicate_summary.setVisible(groups > 0)
+        self._duplicates.setVisible(groups > 0)
+        self._duplicates.setEnabled(self._selection is not None)
         editable = self._selection is not None and self._model.plan.change_count > 0
         self._select_all.setEnabled(editable)
         self._select_none.setEnabled(editable)
@@ -314,6 +358,8 @@ class SyncPlanPage(QWidget):
     def _set_selection(self, selection: SyncSelection | None) -> None:
         if selection is self._selection:
             return
+        if self._duplicate_dialog is not None:
+            self._duplicate_dialog.reject()
         if self._selection is not None:
             self._selection.changed.disconnect(self._refresh_review)
         self._selection = selection
@@ -323,10 +369,41 @@ class SyncPlanPage(QWidget):
     def _refresh_review(self) -> None:
         if self._selection is None:
             return
+        if (
+            self._duplicate_dialog is not None
+            and self._selection.comparison is not self._duplicate_comparison
+        ):
+            self._duplicate_dialog.reject()
         self._plan = self._selection.selected_plan
         self._model.replace_plan(self._selection.review_plan, self._selection)
         self._update_summary()
         self._filtered()
+
+    def _review_duplicates(self) -> None:
+        if self._selection is None or self._duplicate_dialog is not None:
+            return
+        self._duplicate_comparison = self._selection.comparison
+        dialog = SyncDuplicatesDialog(self._selection, self)
+        self._duplicate_dialog = dialog
+        dialog.finished.connect(partial(self._duplicates_finished, dialog))
+        dialog.open()
+
+    def _duplicates_finished(self, dialog: SyncDuplicatesDialog, result: int) -> None:
+        self._duplicate_dialog = None
+        if (
+            result == QDialog.DialogCode.Accepted
+            and self._selection is not None
+            and self._selection.comparison is self._duplicate_comparison
+        ):
+            for resolution in dialog.resolutions:
+                self._selection.set_duplicate_resolution(
+                    resolution,
+                    preserved_host_paths=dialog.preserved_host_paths(
+                        resolution.group_id
+                    ),
+                )
+        self._duplicate_comparison = None
+        dialog.deleteLater()
 
     def _set_group_checked(self, group: SyncReviewGroup, checked: bool) -> None:
         if self._selection is not None:
@@ -370,7 +447,7 @@ class SyncPlanPage(QWidget):
             group.refresh()
         self._expand_all.setEnabled(count > 0)
         self._collapse_all.setEnabled(count > 0)
-        if count:
+        if any(not group.isHidden() for group in self._groups):
             self._content.setCurrentWidget(self._scroll)
             return
         if self._plan is None:

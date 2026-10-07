@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -58,6 +59,7 @@ class SyncPlanBasis(StrEnum):
     AMBIGUOUS_IDENTITY = "ambiguous_identity"
     CONFLICTING_IDENTITY = "conflicting_identity"
     USER_DESELECTED = "user_deselected"
+    USER_MATCH = "user_match"
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +129,10 @@ class SyncPlan:
 
     items: tuple[SyncPlanItem, ...]
     file_tag_policy: str | None = field(default=None, kw_only=True)
+    duplicate_groups: tuple[SyncDuplicateGroup, ...] = field(default=(), kw_only=True)
+    duplicate_resolutions: tuple[SyncDuplicateResolution, ...] = field(
+        default=(), kw_only=True
+    )
 
     def count(self, action: SyncPlanAction) -> int:
         return sum(item.action is action for item in self.items)
@@ -162,6 +168,149 @@ class _Candidate:
     track: Track | None = None
     artwork_sha256: str | None = None
     track_details_refreshed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SyncDuplicateHost:
+    """One distinct Host file, with details that distinguish Library entries."""
+
+    host_path: str
+    name: str
+    detail: str = ""
+    album: str = ""
+    disc_number: int = 0
+    track_number: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class SyncDuplicateIPod:
+    """An existing iPod item and the user-owned history removal would discard."""
+
+    ipod_id: int
+    ipod_path: str | None
+    name: str
+    detail: str = ""
+    album: str = ""
+    disc_number: int = 0
+    track_number: int = 0
+    play_count: int = 0
+    rating: int = 0
+    playlist_names: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SyncDuplicatePair:
+    """One explicit one-to-one Host-to-iPod association."""
+
+    host_path: str
+    ipod_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class SyncDuplicateResolution:
+    """User intent for a duplicate group; omitted files skip and iPod items stay."""
+
+    group_id: str
+    pairs: tuple[SyncDuplicatePair, ...] = ()
+    added_host_paths: frozenset[str] = frozenset()
+    removed_ipod_ids: frozenset[int] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class SyncDuplicateGroup:
+    """Similar media and proven relationships, never an instruction to merge."""
+
+    group_id: str
+    media_kind: SyncPlanMediaKind
+    hosts: tuple[SyncDuplicateHost, ...]
+    ipods: tuple[SyncDuplicateIPod, ...]
+    established_pairs: tuple[SyncDuplicatePair, ...] = ()
+    requires_resolution: bool = False
+    _hosts: tuple[_Candidate, ...] = field(default=(), repr=False, kw_only=True)
+    _ipods: tuple[_Candidate, ...] = field(default=(), repr=False, kw_only=True)
+
+    def pairable_ipod_ids(self, host_path: str) -> tuple[int, ...]:
+        """Return candidates for one Host file without storing a Cartesian product."""
+
+        identity = host_path_identity(host_path)
+        if any(
+            host_path_identity(p.host_path) == identity for p in self.established_pairs
+        ):
+            return ()
+        host = next(
+            (
+                h
+                for h in self._hosts
+                if h.path and host_path_identity(h.path) == identity
+            ),
+            None,
+        )
+        if host is None:
+            return ()
+        established_ids = {pair.ipod_id for pair in self.established_pairs}
+        return tuple(
+            item.item_id
+            for item in self._ipods
+            if item.item_id is not None
+            and item.item_id not in established_ids
+            and _can_pair_duplicate(host, item)
+            and (
+                host.media_kind is SyncPlanMediaKind.TRACK
+                or _paired_item(host, item, None).action is not SyncPlanAction.ATTENTION
+            )
+        )
+
+    def resolved_items(
+        self,
+        resolution: SyncDuplicateResolution,
+        *,
+        file_tag_policy: str | None,
+    ) -> tuple[SyncPlanItem, ...]:
+        """Validate choices and derive items from this group's captured evidence."""
+
+        if resolution.group_id != self.group_id:
+            raise ValueError("The resolution refers to a different duplicate group")
+        hosts = {host_path_identity(h.path): h for h in self._hosts if h.path}
+        ipods = {i.item_id: i for i in self._ipods if i.item_id is not None}
+        paired_hosts = {host_path_identity(p.host_path) for p in self.established_pairs}
+        paired_ipods = {p.ipod_id for p in self.established_pairs}
+        items: list[SyncPlanItem] = []
+        for pair in resolution.pairs:
+            path = host_path_identity(pair.host_path)
+            if path in paired_hosts or pair.ipod_id in paired_ipods:
+                raise ValueError(
+                    "Duplicate associations must be one-to-one and preserve known pairs"
+                )
+            if path not in hosts or pair.ipod_id not in ipods:
+                raise ValueError("A duplicate association refers to a different group")
+            host, ipod = hosts[path], ipods[pair.ipod_id]
+            if not _can_pair_duplicate(host, ipod):
+                raise ValueError(
+                    "The duplicate association has no matching scan evidence"
+                )
+            items.append(_explicit_paired_item(host, ipod, file_tag_policy))
+            paired_hosts.add(path)
+            paired_ipods.add(pair.ipod_id)
+        added = {host_path_identity(path) for path in resolution.added_host_paths}
+        if not added <= hosts.keys() or added & paired_hosts:
+            raise ValueError(
+                "A separate Add must name an unpaired Host file in this group"
+            )
+        if (
+            not resolution.removed_ipod_ids <= ipods.keys()
+            or resolution.removed_ipod_ids & paired_ipods
+        ):
+            raise ValueError("A removal must name an unpaired iPod item in this group")
+
+        items.extend(
+            _host_only_item(h) for path, h in hosts.items() if path not in paired_hosts
+        )
+        items.extend(
+            _ipod_only_item(i)
+            for item_id, i in ipods.items()
+            if item_id not in paired_ipods
+        )
+        return tuple(items)
 
 
 def prepare_sync_plan(
@@ -225,7 +374,11 @@ def prepare_sync_plan(
     items.extend(_ipod_only_item(ipod_candidates[index]) for index in ipod_remaining)
     items.extend(attention)
     return SyncPlan(
-        tuple(sorted(items, key=_item_sort_key)), file_tag_policy=file_tag_policy
+        tuple(sorted(items, key=_item_sort_key)),
+        file_tag_policy=file_tag_policy,
+        duplicate_groups=_duplicate_groups(
+            host_candidates, ipod_candidates, pairs, attention, ipod_library
+        ),
     )
 
 
@@ -234,6 +387,7 @@ def select_sync_plan(
     *,
     selected_host_paths: frozenset[str],
     selected_ipod_removals: frozenset[tuple[SyncPlanMediaKind, int]],
+    duplicate_resolutions: tuple[SyncDuplicateResolution, ...] | None = None,
 ) -> SyncPlan:
     """Derive the reviewed plan from explicit desired-device membership.
 
@@ -245,6 +399,8 @@ def select_sync_plan(
     explicit one-way Add does not require correlation.
     """
 
+    if duplicate_resolutions is not None:
+        comparison = resolve_sync_duplicates(comparison, duplicate_resolutions)
     items: list[SyncPlanItem] = []
     for item in comparison.items:
         if item.host_path is not None:
@@ -299,6 +455,8 @@ def select_sync_plan(
     return SyncPlan(
         tuple(sorted(items, key=_item_sort_key)),
         file_tag_policy=comparison.file_tag_policy,
+        duplicate_groups=comparison.duplicate_groups,
+        duplicate_resolutions=comparison.duplicate_resolutions,
     )
 
 
@@ -306,6 +464,237 @@ def host_path_identity(value: str) -> str:
     """Return the normalized identity used for Host-path correlation and selection."""
 
     return os.path.normcase(os.path.normpath(os.path.abspath(value)))
+
+
+def resolve_sync_duplicates(
+    comparison: SyncPlan,
+    resolutions: tuple[SyncDuplicateResolution, ...],
+) -> SyncPlan:
+    """Apply checked one-to-one choices, leaving all other copies as opt-in actions.
+
+    Callers retain Host membership and removal selection independently. A resolution
+    never adds or removes a file merely because it resembles another file. Candidate
+    evidence is captured with the comparison; execution must derive it again from
+    its bound scans before accepting this plan.
+    """
+
+    groups = {group.group_id: group for group in comparison.duplicate_groups}
+    seen_groups: set[str] = set()
+    replaced_hosts: set[tuple[SyncPlanMediaKind, str]] = set()
+    replaced_ipods: set[tuple[SyncPlanMediaKind, int]] = set()
+    preserved_pairs: set[tuple[SyncPlanMediaKind, str, int]] = set()
+    replacements: list[SyncPlanItem] = []
+    for resolution in resolutions:
+        if resolution.group_id in seen_groups:
+            raise ValueError("A duplicate group may only be resolved once")
+        seen_groups.add(resolution.group_id)
+        group = groups.get(resolution.group_id)
+        if group is None:
+            raise ValueError("The duplicate group is not part of this comparison")
+        replaced_hosts.update(
+            (group.media_kind, host_path_identity(host.host_path))
+            for host in group.hosts
+        )
+        replaced_ipods.update((group.media_kind, ipod.ipod_id) for ipod in group.ipods)
+        preserved_pairs.update(
+            (group.media_kind, host_path_identity(pair.host_path), pair.ipod_id)
+            for pair in group.established_pairs
+        )
+        replacements.extend(
+            group.resolved_items(resolution, file_tag_policy=comparison.file_tag_policy)
+        )
+    items: list[SyncPlanItem] = []
+    for item in comparison.items:
+        host_key = host_path_identity(item.host_path) if item.host_path else None
+        belongs = (
+            host_key is not None and (item.media_kind, host_key) in replaced_hosts
+        ) or (
+            item.ipod_id is not None
+            and (item.media_kind, item.ipod_id) in replaced_ipods
+        )
+        established = (
+            host_key is not None
+            and item.ipod_id is not None
+            and (item.media_kind, host_key, item.ipod_id) in preserved_pairs
+        )
+        if not belongs or established:
+            items.append(item)
+    items.extend(replacements)
+    return SyncPlan(
+        tuple(sorted(items, key=_item_sort_key)),
+        file_tag_policy=comparison.file_tag_policy,
+        duplicate_groups=comparison.duplicate_groups,
+        duplicate_resolutions=resolutions,
+    )
+
+
+def _can_pair_duplicate(host: _Candidate, ipod: _Candidate) -> bool:
+    return host.media_kind is ipod.media_kind and (
+        (host.fingerprint is not None and host.fingerprint == ipod.fingerprint)
+        or (
+            host.path is not None
+            and ipod.sync is not None
+            and bool(ipod.sync.host_path_hint.strip())
+            and host_path_identity(host.path)
+            == host_path_identity(ipod.sync.host_path_hint)
+        )
+    )
+
+
+def _explicit_paired_item(
+    host: _Candidate, ipod: _Candidate, file_tag_policy: str | None
+) -> SyncPlanItem:
+    item = _paired_item(host, ipod, file_tag_policy)
+    if item.action is SyncPlanAction.ATTENTION:
+        raise ValueError("Conflicting source facts need a fresh scan before pairing")
+    metadata_changed = (
+        host.track is not None
+        and ipod.track is not None
+        and track_tag_values(host.track) != track_tag_values(ipod.track)
+    )
+    return replace(
+        item,
+        action=SyncPlanAction.UPDATE,
+        basis=SyncPlanBasis.USER_MATCH,
+        metadata_changed=metadata_changed,
+        artwork_changed=_artwork_changed(host, ipod, facts_changed=True),
+        file_tags_changed=host.media_kind is SyncPlanMediaKind.TRACK
+        and file_tag_policy is not None
+        and (ipod.sync is None or ipod.sync.file_tag_policy != file_tag_policy),
+    )
+
+
+def _duplicate_groups(
+    hosts: tuple[_Candidate, ...],
+    ipods: tuple[_Candidate, ...],
+    pairs: list[tuple[int, int]],
+    attention: list[SyncPlanItem],
+    library: LibrarySnapshot,
+) -> tuple[SyncDuplicateGroup, ...]:
+    """Find connected evidence groups in linear space, including already paired copies."""
+
+    candidates = (*hosts, *ipods)
+    parents = list(range(len(candidates)))
+
+    def root(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def join(first: int, second: int) -> None:
+        parents[root(second)] = root(first)
+
+    fingerprints: dict[tuple[SyncPlanMediaKind, str], int] = {}
+    paths: dict[tuple[SyncPlanMediaKind, str], int] = {}
+    for index, candidate in enumerate(candidates):
+        if candidate.fingerprint:
+            fingerprint_key = (candidate.media_kind, candidate.fingerprint)
+            if fingerprint_key in fingerprints:
+                join(fingerprints[fingerprint_key], index)
+            else:
+                fingerprints[fingerprint_key] = index
+        path = (
+            candidate.path
+            if index < len(hosts)
+            else (candidate.sync.host_path_hint if candidate.sync else None)
+        )
+        if path:
+            path_key = (candidate.media_kind, host_path_identity(path))
+            if path_key in paths:
+                join(paths[path_key], index)
+            else:
+                paths[path_key] = index
+    components: dict[int, list[int]] = defaultdict(list)
+    for index in range(len(candidates)):
+        components[root(index)].append(index)
+    component_pairs: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    for host_index, ipod_index in pairs:
+        component_pairs[root(host_index)].append((host_index, ipod_index))
+    playlist_names: dict[int, list[str]] = defaultdict(list)
+    for playlist in library.playlists:
+        for track_id in set(playlist.track_ids):
+            playlist_names[track_id].append(playlist.name)
+    ambiguous_hosts = {
+        host_path_identity(item.host_path)
+        for item in attention
+        if item.host_path and item.basis is SyncPlanBasis.AMBIGUOUS_IDENTITY
+    }
+    groups: list[SyncDuplicateGroup] = []
+    for component_id, indexes in components.items():
+        host_indexes = {index for index in indexes if index < len(hosts)}
+        ipod_indexes = {index - len(hosts) for index in indexes if index >= len(hosts)}
+        if len(host_indexes) < 2 and len(ipod_indexes) < 2:
+            continue
+        group_hosts = tuple(
+            sorted(
+                (hosts[index] for index in host_indexes),
+                key=lambda h: host_path_identity(h.path or ""),
+            )
+        )
+        group_ipods = tuple(
+            sorted(
+                (ipods[index] for index in ipod_indexes),
+                key=lambda i: i.item_id if i.item_id is not None else -1,
+            )
+        )
+        media_kind = candidates[indexes[0]].media_kind
+        host_members = tuple(
+            SyncDuplicateHost(
+                h.path,
+                h.name,
+                h.detail,
+                h.track.album if h.track else "",
+                h.track.metadata.disc_number if h.track else 0,
+                h.track.track_number if h.track else 0,
+            )
+            for h in group_hosts
+            if h.path is not None
+        )
+        ipod_members = tuple(
+            SyncDuplicateIPod(
+                i.item_id,
+                i.path,
+                i.name,
+                i.detail,
+                i.track.album if i.track else "",
+                i.track.metadata.disc_number if i.track else 0,
+                i.track.track_number if i.track else 0,
+                i.track.play_count if i.track else 0,
+                i.track.rating if i.track else 0,
+                tuple(playlist_names[i.item_id])
+                if media_kind is SyncPlanMediaKind.TRACK
+                else (),
+            )
+            for i in group_ipods
+            if i.item_id is not None
+        )
+        identity = repr(
+            (
+                media_kind.value,
+                tuple(host_path_identity(h.host_path) for h in host_members),
+                tuple(i.ipod_id for i in ipod_members),
+            )
+        )
+        groups.append(
+            SyncDuplicateGroup(
+                group_id=hashlib.sha256(identity.encode()).hexdigest(),
+                media_kind=media_kind,
+                hosts=host_members,
+                ipods=ipod_members,
+                established_pairs=tuple(
+                    SyncDuplicatePair(hosts[h].path or "", ipods[i].item_id or 0)
+                    for h, i in sorted(component_pairs[component_id])
+                ),
+                requires_resolution=any(
+                    host_path_identity(h.host_path) in ambiguous_hosts
+                    for h in host_members
+                ),
+                _hosts=group_hosts,
+                _ipods=group_ipods,
+            )
+        )
+    return tuple(sorted(groups, key=lambda group: group.group_id))
 
 
 def _pair_by_prior_path(
@@ -642,6 +1031,7 @@ def _host_candidates(library: HostMediaLibrary) -> tuple[_Candidate, ...]:
                     break
 
     candidates: list[_Candidate] = []
+    seen_paths: set[str] = set()
     rechecked_paths = {
         host_path_identity(path) for path in library.rechecked_track_paths
     }
@@ -649,6 +1039,10 @@ def _host_candidates(library: HostMediaLibrary) -> tuple[_Candidate, ...]:
         if source.kind is HostMediaFileKind.PLAYLIST:
             continue
         path = os.fspath(source.path)
+        identity = host_path_identity(path)
+        if identity in seen_paths:
+            continue
+        seen_paths.add(identity)
         if source.kind in {HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO}:
             track = tracks_by_path.get(host_path_identity(path))
             candidates.append(
@@ -814,6 +1208,11 @@ def _item_sort_key(item: SyncPlanItem) -> tuple[int, str, str]:
 
 
 __all__ = [
+    "SyncDuplicateGroup",
+    "SyncDuplicateHost",
+    "SyncDuplicateIPod",
+    "SyncDuplicatePair",
+    "SyncDuplicateResolution",
     "SyncPlan",
     "SyncPlanAction",
     "SyncPlanBasis",
@@ -821,5 +1220,6 @@ __all__ = [
     "SyncPlanMediaKind",
     "host_path_identity",
     "prepare_sync_plan",
+    "resolve_sync_duplicates",
     "select_sync_plan",
 ]

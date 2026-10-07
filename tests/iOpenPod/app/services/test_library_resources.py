@@ -34,6 +34,7 @@ from iPodDB.library import (
 from storage import (
     AccessMode,
     DevicePath,
+    FileFingerprint,
     FilesystemSession,
     HardwareIdentifiers,
     Storage,
@@ -624,6 +625,66 @@ def test_copied_review_has_no_save_authority(device: Device) -> None:
     saved = device.save(replace(review))
     assert saved.active is None and saved.issues[0].code == "save.stale"
     device.assert_original()
+
+
+def test_sync_can_verify_unchanged_library_without_a_storage_transaction(
+    device: Device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    active = device.active
+    ordinary = device.prepare(active.library)
+    assert ordinary.result.prepared is None
+    fingerprint = FilesystemSession.fingerprint
+
+    def check_without_media(
+        session: FilesystemSession, path: DevicePath
+    ) -> FileFingerprint:
+        assert not path.is_relative_to(DevicePath("iPod_Control/Music"))
+        return fingerprint(session, path)
+
+    monkeypatch.setattr(FilesystemSession, "fingerprint", check_without_media)
+    review = device.coordinator.prepare_library(
+        LibraryPreparationRequest(active.library, active, 1, 1),
+        lambda _: None,
+        Event(),
+        allow_unchanged=True,
+    )
+    assert review.result.prepared is not None, review.result.issues
+    assert review.file_changes == ()
+
+    def forbid_transaction(*args: object, **kwargs: object) -> None:
+        raise AssertionError("An unchanged association review must not rewrite files")
+
+    monkeypatch.setattr(FilesystemSession, "execute_transaction", forbid_transaction)
+    saved = device.save(review)
+    assert saved.active is active, saved.issues
+    assert not saved.issues and not saved.recovery_path
+    device.assert_original()
+    assert device.save(review).issues[0].code == "save.stale"
+
+
+@pytest.mark.parametrize("changed_database", [False, True])
+def test_unchanged_sync_review_rechecks_source_and_captured_dependencies(
+    device: Device, changed_database: bool
+) -> None:
+    active = device.active
+    review = device.coordinator.prepare_library(
+        LibraryPreparationRequest(active.library, active, 1, 1),
+        lambda _: None,
+        Event(),
+        allow_unchanged=True,
+    )
+    assert review.result.prepared is not None, review.result.issues
+    path = device.root / (
+        "iPod_Control/iTunes/iTunesDB"
+        if changed_database
+        else "iPod_Control/Device/Preferences"
+    )
+    path.write_bytes(b"external change after review")
+    saved = device.save(review)
+    assert saved.active is None
+    assert saved.issues[0].code == "save.source_unavailable"
+    assert path.read_bytes() == b"external change after review"
+    assert not saved.recovery_path
 
 
 def test_interrupted_artwork_save_retains_draft_and_recovers_after_reconnect(

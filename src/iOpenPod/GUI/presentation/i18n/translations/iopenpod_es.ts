@@ -5432,6 +5432,391 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
 </context>
 <context>
+    <name>SyncDuplicatesDialog</name>
+    <message>
+        <source>Review similar media</source>
+        <translation>Revisar medios similares</translation>
+    </message>
+    <message>
+        <source>Similar media can represent separate Library entries. Choose which Host file links to each existing iPod item, or add separate copies. Unresolved files are skipped while the rest of Sync continues. Nothing changes on the iPod until Sync.</source>
+        <translation type="vanished">Los medios similares pueden ser entradas distintas de la biblioteca. Elige qué archivo del equipo corresponde a cada elemento existente del iPod o añade copias por separado. Los archivos sin resolver se omiten mientras continúa el resto de la sincronización. El iPod no cambia hasta que sincronices.</translation>
+    </message>
+    <message>
+        <source>Groups of similar media</source>
+        <translation>Grupos de medios similares</translation>
+    </message>
+    <message>
+        <source>Host files</source>
+        <translation type="vanished">Archivos del equipo</translation>
+    </message>
+    <message>
+        <source>Existing iPod items</source>
+        <translation type="vanished">Elementos existentes del iPod</translation>
+    </message>
+    <message>
+        <source>Host files in this group</source>
+        <translation>Archivos del equipo en este grupo</translation>
+    </message>
+    <message>
+        <source>iPod items in this group</source>
+        <translation>Elementos del iPod en este grupo</translation>
+    </message>
+    <message>
+        <source>For the selected Host file:</source>
+        <translation type="vanished">Para el archivo seleccionado del equipo:</translation>
+    </message>
+    <message>
+        <source>Action for the selected Host file</source>
+        <translation>Acción para el archivo seleccionado del equipo</translation>
+    </message>
+    <message>
+        <source>Remove the selected iPod item during Sync</source>
+        <translation type="vanished">Quitar el elemento seleccionado del iPod al sincronizar</translation>
+    </message>
+    <message>
+        <source>Removal also removes this item&apos;s Playlist entries and playback history. History and Playlist entries are not merged into another copy. Host files are kept.</source>
+        <translation>Al quitar este elemento también se eliminan sus entradas en listas de reproducción y su historial de reproducción. El historial y las entradas no se combinan con los de otra copia. Los archivos del equipo se conservan.</translation>
+    </message>
+    <message>
+        <source>Skip unlinked Host files in this group</source>
+        <translation>Omitir archivos del equipo sin vincular en este grupo</translation>
+    </message>
+    <message>
+        <source>Keep the copies you want</source>
+        <translation>Conserva las copias que quieras</translation>
+    </message>
+    <message>
+        <source>Match existing iPod copies, add separate entries, or skip files. Different albums can keep the same recording.</source>
+        <translation>Vincula copias existentes del iPod, añade entradas separadas u omite archivos. La misma grabación puede estar en distintos álbumes.</translation>
+    </message>
+    <message>
+        <source>Audio matching is approximate. Compare the album and file details before choosing a match.</source>
+        <translation>La comparación de audio es aproximada. Compara los detalles del álbum y del archivo antes de vincularlos.</translation>
+    </message>
+    <message>
+        <source>Groups: %1 · Need choices: %2</source>
+        <translation>Grupos: %1 · Por decidir: %2</translation>
+    </message>
+    <message>
+        <source>Next group →</source>
+        <translation>Siguiente grupo →</translation>
+    </message>
+    <message>
+        <source>Nothing changes on your iPod until Sync.</source>
+        <translation>No se cambia nada en tu iPod hasta el Sync.</translation>
+    </message>
+    <message>
+        <source>For this Host file</source>
+        <translation>Para este archivo del Host</translation>
+    </message>
+    <message>
+        <source>Remove this iPod copy during Sync</source>
+        <translation>Eliminar esta copia del iPod durante el Sync</translation>
+    </message>
+    <message>
+        <source>Remove iPod copies…</source>
+        <translation>Eliminar copias del iPod…</translation>
+    </message>
+    <message>
+        <source>File details…</source>
+        <translation>Detalles del archivo…</translation>
+    </message>
+    <message>
+        <source>Skip remaining files</source>
+        <translation>Omitir archivos restantes</translation>
+    </message>
+    <message>
+        <source>Apply choices</source>
+        <translation>Aplicar opciones</translation>
+    </message>
+    <message>
+        <source>Back to Review</source>
+        <translation>Volver a la revisión</translation>
+    </message>
+    <message>
+        <source>Done</source>
+        <translation>Listo</translation>
+    </message>
+    <message>
+        <source>No Host files in this group. Keep the iPod copies or review removal below.</source>
+        <translation>No hay archivos del Host en este grupo. Conserva las copias del iPod o revisa su eliminación abajo.</translation>
+    </message>
+    <message>
+        <source>No copies on your iPod yet. Each file you add becomes a separate entry.</source>
+        <translation>Todavía no hay copias en tu iPod. Cada archivo que añadas será una entrada separada.</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation>Archivo</translation>
+    </message>
+    <message>
+        <source>Album / position</source>
+        <translation>Álbum / posición</translation>
+    </message>
+    <message>
+        <source>During Sync</source>
+        <translation>Durante el Sync</translation>
+    </message>
+    <message>
+        <source>Removal selected</source>
+        <translation>Eliminación seleccionada</translation>
+    </message>
+    <message>
+        <source>Matched</source>
+        <translation>Vinculado</translation>
+    </message>
+    <message>
+        <source>Match</source>
+        <translation>Vincular</translation>
+    </message>
+    <message>
+        <source>Choose…</source>
+        <translation>Elegir…</translation>
+    </message>
+    <message>
+        <source>Host files (%1)</source>
+        <translation>Archivos del Host (%1)</translation>
+    </message>
+    <message>
+        <source>On your iPod (%1)</source>
+        <translation>En tu iPod (%1)</translation>
+    </message>
+    <message>
+        <source>Some copies are being removed by your Host selection. Edit that selection to keep them.</source>
+        <translation>Tu selección del Host elimina algunas copias. Cambia la selección para conservarlas.</translation>
+    </message>
+    <message>
+        <source>These copies already have matches. No decision needed; each entry stays separate.</source>
+        <translation>Estas copias ya están vinculadas. No tienes que decidir nada; cada entrada se mantiene separada.</translation>
+    </message>
+    <message>
+        <source>Choose an existing iPod copy for each Host file, or add it separately.</source>
+        <translation>Elige una copia existente del iPod para cada archivo del Host o añádelo por separado.</translation>
+    </message>
+    <message>
+        <source>Your choices are ready. Skipped Host files leave existing iPod copies untouched.</source>
+        <translation>Tus opciones están listas. Omitir archivos del Host no modifica las copias existentes del iPod.</translation>
+    </message>
+    <message>
+        <source>Existing matches are kept. Review extra copies only if you want to change them.</source>
+        <translation>Se conservan los vínculos existentes. Revisa las copias adicionales solo si quieres cambiarlas.</translation>
+    </message>
+    <message>
+        <source>Keep existing match</source>
+        <translation>Conservar el vínculo existente</translation>
+    </message>
+    <message>
+        <source>This copy is being removed by your Host selection. Edit that selection to keep it.</source>
+        <translation>Tu selección del Host elimina esta copia. Cambia la selección para conservarla.</translation>
+    </message>
+    <message>
+        <source>A previous Sync matched these copies. Future Syncs keep using this match.</source>
+        <translation>Un Sync anterior vinculó estas copias. Los próximos Syncs seguirán usando este vínculo.</translation>
+    </message>
+    <message>
+        <source>Choose an action…</source>
+        <translation>Elegir una acción…</translation>
+    </message>
+    <message>
+        <source>Skip this file</source>
+        <translation>Omitir este archivo</translation>
+    </message>
+    <message>
+        <source>Add a separate copy</source>
+        <translation>Añadir una copia separada</translation>
+    </message>
+    <message>
+        <source>Match: %2 · #%1</source>
+        <translation>Vincular: %2 · #%1</translation>
+    </message>
+    <message>
+        <source>Choose a match, add a new copy, or explicitly skip this file.</source>
+        <translation>Elige un vínculo, añade una copia nueva u omite este archivo explícitamente.</translation>
+    </message>
+    <message>
+        <source>Use the existing iPod copy. Its play history and Playlists are kept.</source>
+        <translation>Usa la copia existente del iPod. Se conservan su historial de reproducción y sus Playlists.</translation>
+    </message>
+    <message>
+        <source>Create another iPod entry using this file&apos;s album details.</source>
+        <translation>Crea otra entrada del iPod con los datos de álbum de este archivo.</translation>
+    </message>
+    <message>
+        <source>Create another Photo entry on your iPod.</source>
+        <translation>Crea otra entrada de Foto en tu iPod.</translation>
+    </message>
+    <message>
+        <source>Leave this Host file out of Sync. Existing iPod copies are kept.</source>
+        <translation>Excluye este archivo del Host del Sync. Se conservan las copias existentes del iPod.</translation>
+    </message>
+    <message>
+        <source>%1 plays · %2 / 5 rating
+Playlists: %3</source>
+        <translation>%1 reproducciones · Valoración: %2 / 5
+Playlists: %3</translation>
+    </message>
+    <message>
+        <source>Planned action</source>
+        <translation type="vanished">Acción prevista</translation>
+    </message>
+    <message>
+        <source>iPod item</source>
+        <translation>Elemento del iPod</translation>
+    </message>
+    <message>
+        <source>Plays</source>
+        <translation>Reproducciones</translation>
+    </message>
+    <message>
+        <source>Rating</source>
+        <translation>Valoración</translation>
+    </message>
+    <message>
+        <source>Playlists</source>
+        <translation>Listas de reproducción</translation>
+    </message>
+    <message>
+        <source>Choices ready to apply</source>
+        <translation type="vanished">Opciones listas para aplicar</translation>
+    </message>
+    <message>
+        <source>Choices applied</source>
+        <translation type="vanished">Opciones aplicadas</translation>
+    </message>
+    <message>
+        <source>Needs choices</source>
+        <translation type="vanished">Necesita una decisión</translation>
+    </message>
+    <message>
+        <source>Optional review</source>
+        <translation type="vanished">Revisión opcional</translation>
+    </message>
+    <message>
+        <source>%1 Host files · %2 iPod items</source>
+        <translation>%1 archivos del equipo · %2 elementos del iPod</translation>
+    </message>
+    <message>
+        <source>Ready to apply</source>
+        <translation>Listo para aplicar</translation>
+    </message>
+    <message>
+        <source>Reviewed</source>
+        <translation>Revisado</translation>
+    </message>
+    <message>
+        <source>Needs a choice</source>
+        <translation>Requiere una elección</translation>
+    </message>
+    <message>
+        <source>Already matched</source>
+        <translation>Ya vinculado</translation>
+    </message>
+    <message>
+        <source>Optional</source>
+        <translation>Opcional</translation>
+    </message>
+    <message>
+        <source>Remove (Host selection)</source>
+        <translation>Quitar (selección del equipo)</translation>
+    </message>
+    <message>
+        <source>Established link to #%1</source>
+        <translation type="vanished">Vínculo establecido con #%1</translation>
+    </message>
+    <message>
+        <source>Link to #%1</source>
+        <translation type="vanished">Vincular con #%1</translation>
+    </message>
+    <message>
+        <source>Add separately</source>
+        <translation>Añadir por separado</translation>
+    </message>
+    <message>
+        <source>Skip</source>
+        <translation>Omitir</translation>
+    </message>
+    <message>
+        <source>%1 / 5</source>
+        <translation>%1 / 5</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Ninguna</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Quitar</translation>
+    </message>
+    <message>
+        <source>Linked</source>
+        <translation type="vanished">Vinculado</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>Conservar</translation>
+    </message>
+    <message>
+        <source>Audio matching is approximate. Different albums can intentionally contain the same recording. </source>
+        <translation type="vanished">La comparación de audio es aproximada. Distintos álbumes pueden contener intencionadamente la misma grabación. </translation>
+    </message>
+    <message>
+        <source>Established links are retained. Linking an existing item records your choice and may update its details; it does not remove other copies.</source>
+        <translation type="vanished">Los vínculos establecidos se conservan. Vincular un elemento existente guarda tu elección y puede actualizar sus detalles; no elimina otras copias.</translation>
+    </message>
+    <message>
+        <source>Matching Photos may be separate entries. Established links are retained; keeping or linking an item does not remove other copies.</source>
+        <translation type="vanished">Las fotos coincidentes pueden ser entradas distintas. Los vínculos establecidos se conservan; conservar o vincular un elemento no elimina otras copias.</translation>
+    </message>
+    <message>
+        <source>Removal also removes this Photo from its Photo Albums. Host files are kept.</source>
+        <translation>Al quitar esta foto también se elimina de sus álbumes de fotos. Los archivos del equipo se conservan.</translation>
+    </message>
+    <message>
+        <source>Keep established link</source>
+        <translation type="vanished">Conservar el vínculo establecido</translation>
+    </message>
+    <message>
+        <source>Skip this Host file</source>
+        <translation type="vanished">Omitir este archivo del equipo</translation>
+    </message>
+    <message>
+        <source>Add as a separate iPod item</source>
+        <translation type="vanished">Añadir como elemento independiente del iPod</translation>
+    </message>
+    <message>
+        <source>Link existing #%1 · %2 · %3</source>
+        <translation type="vanished">Vincular con el existente #%1 · %2 · %3</translation>
+    </message>
+    <message>
+        <source>Established links follow Host selection. Change that selection to remove this item.</source>
+        <translation>Los vínculos establecidos siguen la selección del equipo. Cambia esa selección para quitar este elemento.</translation>
+    </message>
+    <message>
+        <source>A linked item is retained. Skip its Host link before removing it.</source>
+        <translation>Un elemento vinculado se conserva. Elige omitir su archivo del equipo antes de quitarlo.</translation>
+    </message>
+    <message>
+        <source>Choose removal explicitly; keeping another copy does not remove this one.</source>
+        <translation>Elige quitarlo de forma explícita; conservar otra copia no elimina esta.</translation>
+    </message>
+    <message>
+        <source>Selected copy: %1</source>
+        <translation>Copia seleccionada: %1</translation>
+    </message>
+    <message>
+        <source>Unknown album</source>
+        <translation>Álbum desconocido</translation>
+    </message>
+    <message>
+        <source>Disc %1</source>
+        <translation>Disco %1</translation>
+    </message>
+    <message>
+        <source>Track %1</source>
+        <translation>Pista %1</translation>
+    </message>
+</context>
+<context>
     <name>SyncExecutionPage</name>
     <message>
         <source>Recover previous Library</source>
@@ -5765,6 +6150,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Contraer todo</translation>
     </message>
     <message>
+        <source>Review similar media…</source>
+        <translation>Revisar medios similares…</translation>
+    </message>
+    <message>
         <source>No plan prepared</source>
         <translation>No hay un plan preparado</translation>
     </message>
@@ -5783,6 +6172,14 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>%1 items need attention and are excluded from Sync. Expand Needs Attention to inspect them.</source>
         <translation>%1 elementos necesitan atención y quedan fuera de la sincronización. Expande Necesita atención para revisarlos.</translation>
+    </message>
+    <message>
+        <source>1 group of similar media. Review links, separate copies, or optional cleanup.</source>
+        <translation>1 grupo de medios similares. Revisa los vínculos, las copias separadas o la limpieza opcional.</translation>
+    </message>
+    <message>
+        <source>%1 groups of similar media. Review links, separate copies, or optional cleanup.</source>
+        <translation>%1 grupos de medios similares. Revisa los vínculos, las copias separadas o la limpieza opcional.</translation>
     </message>
     <message>
         <source>Run Sync with Host to prepare a plan.</source>
@@ -5922,6 +6319,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Deselected from the desired iPod contents</source>
         <translation>Se deseleccionó del contenido deseado del iPod</translation>
+    </message>
+    <message>
+        <source>Record the chosen Host link and apply its details</source>
+        <translation>Guardar el vínculo elegido con el archivo del equipo y aplicar sus detalles</translation>
     </message>
     <message>
         <source>Host: %1</source>
@@ -6239,6 +6640,14 @@ Usa Editar para revisar sus reglas.</translation>
         </translation>
     </message>
     <message>
+        <source>Resolve selected duplicates…</source>
+        <translation>Resolver los duplicados seleccionados…</translation>
+    </message>
+    <message>
+        <source>Choose which selected copies to link, add separately, or skip.</source>
+        <translation>Elige qué copias seleccionadas vincular, añadir por separado u omitir.</translation>
+    </message>
+    <message>
         <source>%1 of %2 selected</source>
         <translation>%1 de %2 seleccionados</translation>
     </message>
@@ -6248,6 +6657,10 @@ Usa Editar para revisar sus reglas.</translation>
             <numerusform> · %Ln cambio en listas de reproducción</numerusform>
             <numerusform> · %Ln cambios en listas de reproducción</numerusform>
         </translation>
+    </message>
+    <message>
+        <source>Selected duplicates need choices</source>
+        <translation>Debes elegir qué hacer con los duplicados seleccionados</translation>
     </message>
     <message numerus="yes">
         <source>%n Podcast(s) will sync using their saved settings. Episodes may be added or removed.</source>
@@ -7618,6 +8031,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Se encontró una operación interrumpida. Restaura la biblioteca anterior o elige Conservar contenido actual. Conservar el contenido actual puede dejar la sincronización interrumpida incompleta.</translation>
     </message>
     <message>
+        <source>An unchanged review must retain the existing Library.</source>
+        <translation>Una revisión sin cambios debe conservar la biblioteca existente.</translation>
+    </message>
+    <message>
         <source>An unrelated firmware Playlist changed.</source>
         <translation>Una lista del firmware ajena a los cambios se modificó.</translation>
     </message>
@@ -8422,6 +8839,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Se conservó la lista {name} porque una de sus pistas seleccionadas falló. Reintenta esas pistas para actualizar esta lista.</translation>
     </message>
     <message>
+        <source>Playlist {name} was preserved because some of its Tracks have unresolved matches. Review those matches before updating this Playlist.</source>
+        <translation>Se ha conservado la lista de reproducción {name} porque algunas de sus pistas tienen coincidencias sin resolver. Revisa esas coincidencias antes de actualizar esta lista.</translation>
+    </message>
+    <message>
         <source>Playlist {name} was preserved because some source entries were excluded or could not be read. Resolve its missing or declined references and rescan before updating this Playlist.</source>
         <translation>Se conservó la lista {name} porque algunas entradas de origen se excluyeron o no se pudieron leer. Resuelve sus referencias ausentes o rechazadas y vuelve a analizar antes de actualizar esta lista.</translation>
     </message>
@@ -9122,6 +9543,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>La biblioteca cambió. Vuelve a analizar antes de aplicar las sugerencias.</translation>
     </message>
     <message>
+        <source>The Library was left unchanged, but the chosen matches could not be saved. Rescan and review these matches before retrying Sync.</source>
+        <translation>La biblioteca no se ha modificado, pero no se han podido guardar las coincidencias elegidas. Vuelve a analizar y revisa estas coincidencias antes de reintentar la sincronización.</translation>
+    </message>
+    <message>
         <source>The Master Playlist is not first in its dataset.</source>
         <translation>La lista principal no es la primera de su conjunto de datos.</translation>
     </message>
@@ -9240,6 +9665,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>The device name contains invalid Unicode.</source>
         <translation>El nombre del dispositivo contiene Unicode no válido.</translation>
+    </message>
+    <message>
+        <source>The duplicate choices no longer match the captured groups. Review a fresh plan.</source>
+        <translation>Las opciones de duplicados ya no corresponden a los grupos analizados. Revisa un plan nuevo.</translation>
     </message>
     <message>
         <source>The existing Podcast listening-history file is invalid. iOpenPod left it unchanged.</source>

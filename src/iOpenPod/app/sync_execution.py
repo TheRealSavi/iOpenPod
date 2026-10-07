@@ -9,6 +9,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
+from pathlib import Path
 from threading import Event, Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -67,6 +68,7 @@ from iOpenPod.app.sync_plan import (
     SyncPlanMediaKind,
     host_path_identity,
     prepare_sync_plan,
+    resolve_sync_duplicates,
 )
 from iOpenPod.app.sync_track_details import apply_track_tags, track_tag_sha256
 from iOpenPod.app.tag_normalizer import normalize_tags, tag_profile
@@ -557,13 +559,25 @@ class SyncExecutor:
                     if podcast_sync is not None and podcast_plan is not None
                     else None
                 )
-                review = (
-                    self._coordinator.prepare_library(
+                has_user_match = any(
+                    item.basis is SyncPlanBasis.USER_MATCH for item in completed
+                )
+                if has_user_match:
+                    review = self._coordinator.prepare_library(
+                        draft,
+                        progress,
+                        cancelled,
+                        podcast_state=podcast_history,
+                        allow_unchanged=True,
+                    )
+                elif podcast_history is not None:
+                    review = self._coordinator.prepare_library(
                         draft, progress, cancelled, podcast_state=podcast_history
                     )
-                    if podcast_history is not None
-                    else self._coordinator.prepare_library(draft, progress, cancelled)
-                )
+                else:
+                    review = self._coordinator.prepare_library(
+                        draft, progress, cancelled
+                    )
                 checkpoint()
                 if review.result.prepared is None:
                     fallback = without_cover_changes(draft)
@@ -575,18 +589,25 @@ class SyncExecutor:
                                 "Retrying Library preparation while keeping existing covers…",
                             )
                         )
-                        review = (
-                            self._coordinator.prepare_library(
+                        if has_user_match:
+                            review = self._coordinator.prepare_library(
+                                fallback,
+                                progress,
+                                cancelled,
+                                podcast_state=podcast_history,
+                                allow_unchanged=True,
+                            )
+                        elif podcast_history is not None:
+                            review = self._coordinator.prepare_library(
                                 fallback,
                                 progress,
                                 cancelled,
                                 podcast_state=podcast_history,
                             )
-                            if podcast_history is not None
-                            else self._coordinator.prepare_library(
+                        else:
+                            review = self._coordinator.prepare_library(
                                 fallback, progress, cancelled
                             )
-                        )
                         checkpoint()
                         if review.result.prepared is not None:
                             artwork_deferred = True
@@ -618,7 +639,7 @@ class SyncExecutor:
                     return self._failed_save(
                         request, saved.recovery_path, issues, cancelled, progress
                     )
-                if cancelled.is_set():
+                if cancelled.is_set() and review.file_changes:
                     issues.append(
                         WriteIssue(
                             "sync.cancellation_after_publication",
@@ -636,6 +657,16 @@ class SyncExecutor:
                             "sync.helper", "Recording successful Sync details…"
                         )
                     )
+                    if not review.file_changes:
+                        # For an unchanged Library this helper is the first write.
+                        # Cancellation may still stop before its atomic publication.
+                        checkpoint()
+                        self._validate_sources(request, checkpoint)
+                        for update in metadata_updates:
+                            _validate_host_source(
+                                sources[host_path_identity(update.item.host_path or "")]
+                            )
+                        checkpoint()
                     if (
                         request.plan.change_count
                         or requested_playlists
@@ -678,7 +709,23 @@ class SyncExecutor:
                             )
                             for item in helper.issues
                         )
+                except PreparationCancelledError:
+                    raise
                 except Exception as error:
+                    if not review.file_changes:
+                        return SyncExecutionResult(
+                            SyncExecutionStatus.FAILED,
+                            active=saved.active,
+                            issues=(
+                                *issues,
+                                WriteIssue(
+                                    "sync.association_failed",
+                                    "The Library was left unchanged, but the chosen matches could not be saved. "
+                                    "Rescan and review these matches before retrying Sync.",
+                                    detail=exception_text(error),
+                                ),
+                            ),
+                        )
                     issues.append(
                         WriteIssue(
                             "sync.helper_failed",
@@ -1210,8 +1257,23 @@ class SyncExecutor:
             _validate_host_source(source)
             prior = scanned.sync
             sync = (
-                None
-                if prior is None
+                SyncDetails(
+                    last_synced_at=datetime.now(UTC).isoformat(),
+                    host_path_hint=str(source.path),
+                    host_size_bytes=source.size_bytes,
+                    host_modified_ns=source.modified_ns,
+                    source_format=source.path.path.suffix.lstrip(".").casefold(),
+                    ipod_format=Path(old_track.metadata.location)
+                    .suffix.lstrip(".")
+                    .casefold(),
+                    was_transcoded=False,
+                    host_tag_sha256=track_tag_sha256(host_track),
+                    host_artwork_sha256="" if not host_track.artwork_id else None,
+                    file_tag_policy=rockbox_tag_policy(request.source.profile)
+                    if request.options.rockbox_metadata
+                    else None,
+                )
+                if prior is None or item.basis is SyncPlanBasis.USER_MATCH
                 else replace(
                     prior,
                     last_synced_at=datetime.now(UTC).isoformat(),
@@ -1232,6 +1294,7 @@ class SyncExecutor:
                         DevicePath(old_track.metadata.location),
                         scanned.acoustic_fingerprint,
                         sync,
+                        track_id=old_track.track_id,
                     ),
                 )
             )
@@ -1768,12 +1831,24 @@ def _validate_plan(request: SyncExecutionRequest) -> None:
         raise ValueError(
             "Rockbox settings changed after Review; rebuild the Sync Plan."
         )
-    comparison = prepare_sync_plan(
-        request.host,
-        request.ipod,
-        request.source.library,
-        file_tag_policy=request.plan.file_tag_policy,
+    comparison = resolve_sync_duplicates(
+        prepare_sync_plan(
+            request.host,
+            request.ipod,
+            request.source.library,
+            file_tag_policy=request.plan.file_tag_policy,
+        ),
+        request.plan.duplicate_resolutions,
     )
+    if (
+        request.plan.duplicate_resolutions
+        and request.plan.duplicate_groups != comparison.duplicate_groups
+    ):
+        raise ValueError(
+            source_text(
+                "The duplicate choices no longer match the captured groups. Review a fresh plan."
+            )
+        )
     allowed = set(comparison.items)
     allowed.update(
         replace(
@@ -2031,10 +2106,11 @@ def _draft(
         host_track = host_tracks_by_path[host_path_identity(item.host_path or "")]
         cover_id = cover_identity(update.artwork) if item.artwork_changed else 0
         track = apply_track_tags(old, host_track) if item.metadata_changed else old
-        track = replace(
-            track,
-            artwork_id=(cover_id or old.artwork_id if host_track.artwork_id else 0),
-        )
+        if item.artwork_changed:
+            track = replace(
+                track,
+                artwork_id=(cover_id or old.artwork_id if host_track.artwork_id else 0),
+            )
         if (
             request.options.compute_sound_check
             and host_track.metadata.normalization_gain_db is not None
@@ -2235,8 +2311,9 @@ def _retained_playlist_mapping(request: SyncExecutionRequest) -> dict[int, int]:
         if item.host_path is not None
     }
     mapping: dict[int, int] = {}
-    for item in prepare_sync_plan(
-        request.host, request.ipod, request.source.library
+    for item in resolve_sync_duplicates(
+        prepare_sync_plan(request.host, request.ipod, request.source.library),
+        request.plan.duplicate_resolutions,
     ).items:
         if (
             item.host_path is not None
@@ -2390,10 +2467,50 @@ def _playlists(
         and item.action
         in (SyncPlanAction.ADD, SyncPlanAction.UPDATE, SyncPlanAction.UNCHANGED)
     }
+    unresolved = {
+        host_tracks[host_path_identity(item.host_path)]
+        for item in request.plan.items
+        if item.media_kind is SyncPlanMediaKind.TRACK
+        and item.host_path is not None
+        and item.action is SyncPlanAction.ATTENTION
+    }
+    removed_hosts = {
+        host_tracks[host_path_identity(item.host_path)]
+        for item in request.plan.items
+        if item.media_kind is SyncPlanMediaKind.TRACK
+        and item.host_path is not None
+        and item.action is SyncPlanAction.REMOVE
+    }
+    # Skipping a duplicate is not permission to erase its Playlist occurrences.
+    # Resolved groups expose optional Adds, so skipped copies may no longer have
+    # Attention rows. Keep their original ambiguity until an explicit selected
+    # Add or a chosen existing mapping can account for the Playlist reference.
+    unresolved.update(
+        host_tracks[host_path_identity(host.host_path)]
+        for group in request.plan.duplicate_groups
+        if group.media_kind is SyncPlanMediaKind.TRACK and group.requires_resolution
+        for host in group.hosts
+        if host_tracks[host_path_identity(host.host_path)] not in mapping
+        and host_tracks[host_path_identity(host.host_path)] not in selected
+        and host_tracks[host_path_identity(host.host_path)] not in removed_hosts
+    )
     next_playlist_id = min((0, *playlists)) - 1
     incomplete = frozenset(request.host.incomplete_playlist_ids)
     for host in hosts:
         if host.kind is not PlaylistKind.PLAYLIST or host.parent_id is not None:
+            continue
+        if unresolved.intersection(host.track_ids):
+            issues.append(
+                WriteIssue(
+                    "sync.playlist_unresolved_matches",
+                    source_text(
+                        "Playlist {name} was preserved because some of its Tracks have unresolved matches. "
+                        "Review those matches before updating this Playlist.",
+                        name=host.name,
+                    ),
+                    severity=IssueSeverity.WARNING,
+                )
+            )
             continue
         if host.playlist_id in incomplete:
             issues.append(

@@ -195,7 +195,14 @@ evidence is unavailable, changed Host file facts conservatively need replacement
 Separate Host and iPod tag baselines prevent normalization from causing repeated
 Updates. Photos retain the file-fact Update rule. See ADR-0120. The
 initial comparison classifies Host-only media as Add and iPod-only media as Remove,
-while missing or ambiguous identities remain Needs attention. The Select Media stage
+while missing or ambiguous identities remain Needs attention. Sync Duplicate Groups
+expose possible copies on either side, preserving established pairs and separate
+Album entries. Users can resolve ambiguous one-to-one associations, select separate
+Adds, and independently select iPod removals. Unresolved candidates are skipped
+while unrelated work proceeds. Successful associations record durable Sync Details;
+cleanup never merges playback history or redirects Playlist occurrences. Repeated
+references to one Host path share one Track while preserving Playlist repetitions.
+See ADR-0127. The Select Media stage
 defaults correlated Host items on and Host-only items off, supports aggregate Album
 and collection selection,
 and can group grid items as Selected, Mixed, or Deselected. Opening an Album or

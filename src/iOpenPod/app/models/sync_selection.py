@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Qt, Signal
 
 from iOpenPod.app.sync_plan import (
+    SyncDuplicateResolution,
     SyncPlan,
     SyncPlanAction,
     SyncPlanBasis,
     SyncPlanItem,
     SyncPlanMediaKind,
     host_path_identity,
+    resolve_sync_duplicates,
     select_sync_plan,
 )
 from iPodDB.library import PhotoRepresentationKind
@@ -21,6 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from iOpenPod.app.host_media_library import HostMediaLibrary
+    from iOpenPod.app.sync_plan import SyncDuplicateGroup
 
 
 class SyncSelection(QObject):
@@ -34,6 +38,8 @@ class SyncSelection(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._comparison = SyncPlan(())
+        self._duplicate_resolutions: tuple[SyncDuplicateResolution, ...] = ()
+        self._resolved_comparison: SyncPlan | None = None
         self._track_paths: dict[int, str] = {}
         self._photo_paths: dict[int, str] = {}
         self._selected_host_paths: set[str] = set()
@@ -47,14 +53,151 @@ class SyncSelection(QObject):
         return self._comparison
 
     @property
+    def duplicate_resolutions(self) -> tuple[SyncDuplicateResolution, ...]:
+        return self._duplicate_resolutions
+
+    @property
+    def resolved_comparison(self) -> SyncPlan:
+        """Return the scan comparison with validated, explicit matching choices."""
+
+        if self._resolved_comparison is None:
+            self._resolved_comparison = resolve_sync_duplicates(
+                self._comparison, self._duplicate_resolutions
+            )
+        return self._resolved_comparison
+
+    def set_duplicate_resolution(
+        self,
+        resolution: SyncDuplicateResolution,
+        *,
+        preserved_host_paths: frozenset[str] = frozenset(),
+    ) -> bool:
+        """Apply explicit choices atomically, preserving untouched dialog rows.
+
+        Callers editing part of a group name its untouched Host paths so browser
+        membership and Review exclusions remain independent of the changed rows.
+        Reapplying an explicitly chosen pair or Add restores its selected action.
+        """
+
+        choices = {item.group_id: item for item in self._duplicate_resolutions}
+        choices[resolution.group_id] = resolution
+        # Validate the complete choices before changing any visible selection.
+        resolutions = tuple(choices.values())
+        resolved = resolve_sync_duplicates(self._comparison, resolutions)
+        group = next(
+            item
+            for item in self._comparison.duplicate_groups
+            if item.group_id == resolution.group_id
+        )
+        established_hosts = {
+            host_path_identity(pair.host_path) for pair in group.established_pairs
+        }
+        established_ipods = {pair.ipod_id for pair in group.established_pairs}
+        preserved = {host_path_identity(path) for path in preserved_host_paths}
+        group_paths = {host_path_identity(host.host_path) for host in group.hosts}
+        if not preserved <= group_paths:
+            raise ValueError("Untouched Host paths must belong to the duplicate group")
+        # Checked ambiguous sources do not yet authorize an Add. An untouched
+        # Skip row must not become an Add when another row resolves the group.
+        preserved.intersection_update(
+            host_path_identity(item.host_path)
+            for item in self.resolved_comparison.items
+            if item.host_path is not None
+            and item.action is not SyncPlanAction.ATTENTION
+        )
+        selected_hosts = self._selected_host_paths.copy()
+        selected_hosts.difference_update(
+            host_path_identity(host.host_path)
+            for host in group.hosts
+            if host_path_identity(host.host_path) not in established_hosts
+            and host_path_identity(host.host_path) not in preserved
+        )
+        explicitly_selected = {
+            host_path_identity(path) for path in resolution.added_host_paths
+        } | {host_path_identity(pair.host_path) for pair in resolution.pairs}
+        explicitly_selected.difference_update(preserved)
+        selected_hosts.update(explicitly_selected)
+        selected_removals = self._selected_ipod_removals.copy()
+        selected_removals.difference_update(
+            (group.media_kind, ipod.ipod_id)
+            for ipod in group.ipods
+            if ipod.ipod_id not in established_ipods
+        )
+        selected_removals.update(
+            (group.media_kind, identity) for identity in resolution.removed_ipod_ids
+        )
+        selected = select_sync_plan(
+            resolved,
+            selected_host_paths=frozenset(selected_hosts),
+            selected_ipod_removals=frozenset(),
+        )
+        review_items = frozenset(
+            (
+                *selected.items,
+                *(item for item in resolved.items if _removal_key(item) is not None),
+            )
+        )
+        exclusions = {
+            item
+            for item in self._excluded_review_items
+            if item in review_items
+            and not (
+                item.host_path is not None
+                and host_path_identity(item.host_path) in explicitly_selected
+            )
+        }
+        if (
+            resolutions == self._duplicate_resolutions
+            and selected_hosts == self._selected_host_paths
+            and selected_removals == self._selected_ipod_removals
+            and exclusions == self._excluded_review_items
+        ):
+            return False
+        self._selected_host_paths = selected_hosts
+        self._selected_ipod_removals = selected_removals
+        self._duplicate_resolutions = resolutions
+        self._resolved_comparison = resolved
+        self._review_plan = None
+        self._excluded_review_items = exclusions
+        self.hostSelectionChanged.emit()
+        self.removalSelectionChanged.emit()
+        self.reviewSelectionChanged.emit()
+        self.changed.emit()
+        return True
+
+    @property
     def selected_host_count(self) -> int:
         return len(self._selected_host_paths)
+
+    @property
+    def unresolved_selected_host_paths(self) -> frozenset[str]:
+        """Selected ambiguous sources still need an explicit Match, Add, or Skip."""
+
+        return frozenset(
+            host_path_identity(item.host_path)
+            for item in self.resolved_comparison.items
+            if item.action is SyncPlanAction.ATTENTION
+            and item.basis is SyncPlanBasis.AMBIGUOUS_IDENTITY
+            and item.host_path is not None
+            and host_path_identity(item.host_path) in self._selected_host_paths
+        )
+
+    @property
+    def pending_duplicate_groups(self) -> tuple[SyncDuplicateGroup, ...]:
+        """Return the duplicate groups blocking the user's selected Host intent."""
+
+        paths = self.unresolved_selected_host_paths
+        return tuple(
+            group
+            for group in self._comparison.duplicate_groups
+            if any(host_path_identity(host.host_path) in paths for host in group.hosts)
+        )
 
     @property
     def potential_removals(self) -> tuple[SyncPlanItem, ...]:
         return tuple(
             item
-            for item in self._comparison.items
+            for item in self.resolved_comparison.items
             if item.action is SyncPlanAction.REMOVE
             and item.basis is SyncPlanBasis.IPOD_ONLY
             and item.host_path is None
@@ -63,13 +206,13 @@ class SyncSelection(QObject):
 
     @property
     def selected_plan(self) -> SyncPlan:
-        return SyncPlan(
-            tuple(
+        return replace(
+            self.review_plan,
+            items=tuple(
                 item
                 for item in self.review_plan.items
                 if self.review_check_state(item) is not Qt.CheckState.Unchecked
             ),
-            file_tag_policy=self.review_plan.file_tag_policy,
         )
 
     @property
@@ -78,13 +221,13 @@ class SyncSelection(QObject):
 
         if self._review_plan is None:
             selected = select_sync_plan(
-                self._comparison,
+                self.resolved_comparison,
                 selected_host_paths=frozenset(self._selected_host_paths),
                 selected_ipod_removals=frozenset(),
             )
-            self._review_plan = SyncPlan(
-                (*selected.items, *self.potential_removals),
-                file_tag_policy=selected.file_tag_policy,
+            self._review_plan = replace(
+                selected,
+                items=(*selected.items, *self.potential_removals),
             )
             self._review_items = frozenset(self._review_plan.items)
         return self._review_plan
@@ -142,6 +285,8 @@ class SyncSelection(QObject):
         """Adopt a completed scan; only already-correlated Host media starts checked."""
 
         self._comparison = comparison
+        self._duplicate_resolutions = ()
+        self._resolved_comparison = None
         self._track_paths = {
             track.track_id: host_path_identity(track.metadata.location)
             for track in library.snapshot.tracks
@@ -180,6 +325,8 @@ class SyncSelection(QObject):
 
     def clear(self) -> None:
         self._comparison = SyncPlan(())
+        self._duplicate_resolutions = ()
+        self._resolved_comparison = None
         self._track_paths.clear()
         self._photo_paths.clear()
         self._selected_host_paths.clear()

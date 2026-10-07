@@ -3,7 +3,6 @@
 ## Todo
 
 * Progress reporting in the Capturing required resources stage of sync
-* Per Device settings profiles
 * Look into FFMPEG's AAC Update
 
 ## Future work

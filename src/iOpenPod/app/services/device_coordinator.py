@@ -256,9 +256,10 @@ class _VolumePresentationPolicy:
 @dataclass(frozen=True, slots=True)
 class _PreparedLibraryWrite:
     review: LibraryReview
-    transaction: StorageTransaction
+    transaction: StorageTransaction | None
     presentation_policy: _VolumePresentationPolicy
     temporary_files: contextlib.ExitStack
+    files: tuple[FilePrecondition, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1055,8 +1056,13 @@ class DeviceCoordinator:
         cancelled: threading.Event,
         *,
         podcast_state: LoadedPodcastState | None = None,
+        allow_unchanged: bool = False,
     ) -> LibraryReview:
-        """Prepare a review with private Host staging and read-only device access."""
+        """Prepare a review with private Host staging and read-only device access.
+
+        Sync may explicitly retain an unchanged review to verify a new association
+        before committing its helper. Ordinary Library saves require file changes.
+        """
         from iOpenPod.app.library_tag_updates import with_rockbox_edits
         from iOpenPod.app.library_write import (
             LibraryReview,
@@ -1314,13 +1320,21 @@ class DeviceCoordinator:
                     primary_database=library_resources.database_path(
                         expected.database_name
                     ),
+                    allow_unchanged=allow_unchanged,
                 )
                 if podcast_state is not None:
                     history = self._podcast_store.history_transaction(podcast_state)
-                    write = replace(
-                        write,
-                        writes=(*write.writes, *history.writes),
-                        dependencies=(*write.dependencies, *history.dependencies),
+                    write = (
+                        replace(
+                            history,
+                            dependencies=(*captured.files, *history.dependencies),
+                        )
+                        if write is None
+                        else replace(
+                            write,
+                            writes=(*write.writes, *history.writes),
+                            dependencies=(*write.dependencies, *history.dependencies),
+                        )
                     )
                     active.session.validate_transaction(write)
             review = LibraryReview(
@@ -1334,12 +1348,17 @@ class DeviceCoordinator:
             with self._lock:
                 if (
                     self._active is active
-                    and write is not None
+                    and result.prepared is not None
+                    and (write is not None or allow_unchanged)
                     and preparation_generation == self._preparation_generation
                     and presentation_policy is self._current_presentation_policy()
                 ):
                     self._prepared_for_save = _PreparedLibraryWrite(
-                        review, write, presentation_policy, temporary_files.pop_all()
+                        review,
+                        write,
+                        presentation_policy,
+                        temporary_files.pop_all(),
+                        captured.files,
                     )
             return review
         except (StorageError, DeviceChangedError, ValueError, OSError) as error:
@@ -1498,7 +1517,9 @@ class DeviceCoordinator:
                             plan.requires_sidecar_inventory
                             and library_resources.pending_sidecars(
                                 session,
-                                tuple(
+                                tuple(file.path for file in issued.files)
+                                if issued.transaction is None
+                                else tuple(
                                     file.path
                                     for file in issued.transaction.dependencies
                                 )
@@ -1544,6 +1565,16 @@ class DeviceCoordinator:
                         )
                     )
                     checkpoint()
+                    if issued.transaction is None:
+                        if prepared.snapshot != expected.library:
+                            return failure(
+                                "save.verification_failed",
+                                "An unchanged review must retain the existing Library.",
+                            )
+                        library_resources.recheck(session, issued.files)
+                        checkpoint()
+                        self._discard_prepared_write()
+                        return LibrarySaveResult((), expected)
                     progress(
                         WriteProgress(
                             "save.storage_transaction",

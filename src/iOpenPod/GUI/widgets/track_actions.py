@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
+from sys import platform
 from time import monotonic
 from typing import TYPE_CHECKING
 
@@ -862,4 +863,11 @@ class TrackActions(QObject):
 def _key_sequence(shortcut: ShortcutSpec) -> QKeySequence:
     """Resolve platform bindings only after the GUI application exists."""
 
+    if (
+        platform == "darwin"
+        and isinstance(shortcut, str)
+        and shortcut in (_ENQUEUE_SHORTCUT, _PLAY_NEXT_SHORTCUT)
+    ):
+        # Qt maps Meta to physical Control on macOS; Ctrl means Command.
+        shortcut = shortcut.replace("Ctrl+", "Meta+", 1)
     return QKeySequence(shortcut)

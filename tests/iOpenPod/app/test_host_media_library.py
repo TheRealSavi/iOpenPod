@@ -753,6 +753,67 @@ def test_folder_drop_scope_respects_recursion_and_deduplicates_files(
     assert len(result.snapshot.tracks) == (2 if recurse else 1)
 
 
+@pytest.mark.parametrize("external", [False, True])
+def test_overlapping_sources_share_one_track_and_preserve_playlist_occurrences(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, external: bool
+) -> None:
+    selected = tmp_path / "Selected"
+    album = selected / "Album"
+    album.mkdir(parents=True)
+    song = (tmp_path if external else album) / "Song.wav"
+    _write_wav(song)
+    first_playlist = selected / "First.m3u8"
+    second_playlist = album / "Second.m3u8"
+    first_playlist.write_text(f"{song}\n{song}\n", encoding="utf-8")
+    second_playlist.write_text(f"{song}\n", encoding="utf-8")
+    fingerprinted: list[HostPath] = []
+
+    def fingerprint(
+        _self: FpcalcFingerprinter,
+        source: HostPath,
+        *,
+        checkpoint: Callable[[], None],
+    ) -> str:
+        checkpoint()
+        fingerprinted.append(source)
+        return "1,2,3"
+
+    monkeypatch.setattr(FpcalcFingerprinter, "fingerprint", fingerprint)
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (create_host_media_folder(selected), create_host_media_folder(album)),
+        files=(HostPath(first_playlist),)
+        if external
+        else (HostPath(first_playlist), HostPath(song)),
+        checkpoint=lambda: None,
+    )
+    if external:
+        assert len(pending.external_references) == 1
+        assert set(pending.external_references[0].playlists) == {
+            HostPath(first_playlist),
+            HostPath(second_playlist),
+        }
+    else:
+        assert pending.external_references == ()
+    library = scanner.complete(
+        pending,
+        frozenset({HostPath(song)}) if external else frozenset(),
+        checkpoint=lambda: None,
+    )
+
+    assert len(library.snapshot.tracks) == 1
+    track = library.snapshot.tracks[0]
+    assert sum(source.path == HostPath(song) for source in library.sources) == 1
+    assert len(fingerprinted) == 1
+    playlists = {playlist.name: playlist for playlist in library.snapshot.playlists}
+    assert len(playlists["First"].entries) == 2
+    assert len(playlists["Second"].entries) == 1
+    entries = (*playlists["First"].entries, *playlists["Second"].entries)
+    assert {entry.track_id for entry in entries} == {track.track_id}
+    assert len({entry.entry_id for entry in entries}) == 3
+    assert library.incomplete_playlist_ids == ()
+
+
 @pytest.mark.parametrize("parent_recursive", [False, True])
 @pytest.mark.parametrize("child_recursive", [False, True])
 @pytest.mark.parametrize("child_first", [False, True])

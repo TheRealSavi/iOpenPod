@@ -430,7 +430,7 @@ class SyncWorkspace(QWidget):
         self._review_button.clicked.connect(self.show_review)
         self._back.clicked.connect(self.show_selection)
         self._review_cancel.clicked.connect(self.exitRequested.emit)
-        self._execute.clicked.connect(self.executeRequested.emit)
+        self._execute.clicked.connect(self._request_execution)
         self._reconcile_playlists.toggled.connect(self._playlist_reconciliation_toggled)
         self.execution.cancelRequested.connect(self.executionCancelRequested.emit)
         self.execution.exitRequested.connect(self.exitRequested.emit)
@@ -515,6 +515,11 @@ class SyncWorkspace(QWidget):
     def show_review(self) -> None:
         self._review.load_review(self.selection)
         self._set_stage(SyncStage.REVIEW)
+        self._review.review_pending_duplicates()
+
+    def _request_execution(self) -> None:
+        if not self._review.review_pending_duplicates():
+            self.executeRequested.emit()
 
     def set_execution_available(self, available: bool) -> None:
         self._execution_available = available
@@ -585,7 +590,6 @@ class SyncWorkspace(QWidget):
         self._review_cancel.setText(
             QCoreApplication.translate("CommonActions", "Cancel")
         )
-        self._execute.setText(self.tr("Sync Selected"))
         self._reconcile_playlists.setText(self.tr("Reconcile Playlists"))
         self._reconcile_playlists.setToolTip(
             self.tr(
@@ -598,12 +602,6 @@ class SyncWorkspace(QWidget):
         self._playlist_changes.setAccessibleDescription(
             self.tr(
                 "Read-only preview of Playlist creation, membership, and order changes."
-            )
-        )
-        self._execute.setToolTip(
-            self.tr(
-                "Validate and apply the selected changes using your transcoding and Sync settings. "
-                "Independent items that fail preparation are skipped and reported."
             )
         )
         self._refresh_selection_summary()
@@ -699,6 +697,20 @@ class SyncWorkspace(QWidget):
 
     def _refresh_review_summary(self) -> None:
         playlist_count = len(self._playlist_preview) if self.reconcile_playlists else 0
+        pending_duplicates = bool(self.selection.pending_duplicate_groups)
+        self._execute.setText(
+            self.tr("Resolve selected duplicates…")
+            if pending_duplicates
+            else self.tr("Sync Selected")
+        )
+        self._execute.setToolTip(
+            self.tr("Choose which selected copies to link, add separately, or skip.")
+            if pending_duplicates
+            else self.tr(
+                "Validate and apply the selected changes using your transcoding and Sync settings. "
+                "Independent items that fail preparation are skipped and reported."
+            )
+        )
         self._execute.setEnabled(
             self._execution_available
             and self._stage is SyncStage.REVIEW
@@ -706,6 +718,7 @@ class SyncWorkspace(QWidget):
                 self.selection.selected_plan.change_count > 0
                 or playlist_count > 0
                 or self._podcast_count > 0
+                or pending_duplicates
             )
         )
         summary = (
@@ -719,6 +732,8 @@ class SyncWorkspace(QWidget):
                 self.tr(" · %Ln Playlist change(s)", "", playlist_count),
                 playlist_count,
             )
+        if pending_duplicates:
+            summary += " · " + self.tr("Selected duplicates need choices")
         self._review_summary.setText(summary)
         self._podcast_detail.setVisible(self._podcast_count > 0)
         self._podcast_detail.setText(

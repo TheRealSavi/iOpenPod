@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack, closing
@@ -193,6 +194,7 @@ class SyncedTrack:
     path: DevicePath
     acoustic_fingerprint: str
     sync: SyncDetails | None = None
+    track_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,7 +234,32 @@ def publish_sync_helper(
         raise LibrarySyncHelperError(
             "The Sync helper changed after Review. Rescan the iPod before retrying."
         )
-    updated = {str(item.path).casefold(): item for item in synced}
+    updated = {
+        str(item.path).casefold(): item for item in synced if item.track_id is None
+    }
+    updated_ids = {item.track_id: item for item in synced if item.track_id is not None}
+    successful: tuple[SyncedTrack | SyncedImage, ...] = (*synced, *synced_images)
+    claimed_host_paths = {
+        os.path.normcase(os.path.abspath(item.sync.host_path_hint))
+        for item in successful
+        if item.sync is not None and item.sync.host_path_hint.strip()
+    }
+
+    def retained_sync(sync: SyncDetails | None) -> SyncDetails | None:
+        # A successful explicit match can supersede another copy's old path claim.
+        # Retain its historical facts and acoustic evidence, but stop claiming the
+        # Host file now associated with a different committed Library identity.
+        if (
+            sync is not None
+            and sync.host_path_hint.strip()
+            and (
+                os.path.normcase(os.path.abspath(sync.host_path_hint))
+                in claimed_host_paths
+            )
+        ):
+            return replace(sync, host_path_hint="")
+        return sync
+
     retained = {
         ("track", item.track_id) if previous is not None else _track_key(item): item
         for item in (loaded.tracks if previous is None else previous.tracks)
@@ -245,7 +272,11 @@ def publish_sync_helper(
         except ValueError as error:
             issues.append(IPodMediaScanIssue(f"Track {track.track_id}", str(error)))
             continue
-        new = updated.get(str(path).casefold())
+        new = updated_ids.get(track.track_id) or updated.get(str(path).casefold())
+        if new is not None and str(new.path).casefold() != str(path).casefold():
+            raise LibrarySyncHelperError(
+                "A committed Sync association no longer matches its iPod file."
+            )
         old = retained.get(
             ("track", track.track_id)
             if previous is not None
@@ -295,6 +326,7 @@ def publish_sync_helper(
                     old,
                     track_id=track.track_id,
                     database_track_id=_database_track_id(track),
+                    sync=retained_sync(old.sync),
                 )
             )
     old_images = {
@@ -335,7 +367,7 @@ def publish_sync_helper(
             try:
                 path = _photo_path(photo)
                 if _matches(session, prior, path, _regular_file(session, path)):
-                    images.append(prior)
+                    images.append(replace(prior, sync=retained_sync(prior.sync)))
             except FilesystemSessionError:
                 raise
             except (OSError, StorageError, ValueError) as error:

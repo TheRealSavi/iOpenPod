@@ -359,6 +359,9 @@ def _basis_label(item: SyncPlanItem) -> str:
         SyncPlanBasis.USER_DESELECTED: QCoreApplication.translate(
             "SyncPlanTableModel", "Deselected from the desired iPod contents"
         ),
+        SyncPlanBasis.USER_MATCH: QCoreApplication.translate(
+            "SyncPlanTableModel", "Record the chosen Host link and apply its details"
+        ),
         SyncPlanBasis.HOST_FACTS_CHANGED: "",
         SyncPlanBasis.TRACK_DETAILS_CHANGED: "",
         SyncPlanBasis.AUDIO_PAYLOAD_CHANGED: "",
