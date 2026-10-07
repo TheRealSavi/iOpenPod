@@ -64,7 +64,7 @@ def check_macos_dmg() -> None:
             assert (mount / "Applications").is_symlink()
             assert (mount / "Applications").readlink() == Path("/Applications")
         finally:
-            detach_macos_image(mount)
+            detach_macos_image(mount, output)
     print("PASS: macOS DMG packaging, checksum, contents, and saved layout file")
 
 

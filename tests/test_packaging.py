@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import os
 import platform
+import plistlib
 import re
 import shutil
 import subprocess
@@ -414,7 +415,7 @@ def test_macos_dmg_arrow_stays_between_the_finder_icons() -> None:
 
 @pytest.mark.parametrize("architecture", ["arm64", "x86_64"])
 @pytest.mark.parametrize(
-    "finder_state", ["ready", "late", "missing", "denied", "timeout"]
+    "finder_state", ["ready", "late", "missing", "denied", "timeout", "detach-race"]
 )
 def test_macos_archive_adds_a_drag_to_applications_disk_image(
     tmp_path: Path,
@@ -451,7 +452,7 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
         capture_output: bool = False,
         text: bool = False,
         timeout: float | None = None,
-    ) -> None:
+    ) -> subprocess.CompletedProcess[bytes] | None:
         assert check
         calls.append(command)
         if command[:2] == ["ditto", "-c"]:
@@ -499,12 +500,35 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
         elif command[:2] == ["hdiutil", "detach"]:
             if Path(command[2], ".DS_Store").exists():
                 assert Path(command[2], ".DS_Store").read_bytes() == b"Finder layout"
+            if finder_state == "detach-race":
+                if sum(call[:2] == ["hdiutil", "detach"] for call in calls) == 1:
+                    raise subprocess.CalledProcessError(16, command)
+                raise subprocess.CalledProcessError(1, command)
+        elif command[:2] == ["hdiutil", "info"]:
+            assert finder_state == "detach-race" and capture_output and timeout == 30
+            writable = next(
+                call[-1] for call in calls if call[:2] == ["hdiutil", "attach"]
+            )
+            images = (
+                [
+                    {
+                        "image-path": writable,
+                        "system-entities": [{"dev-entry": "/dev/disk4"}],
+                    }
+                ]
+                if sum(call[:2] == ["hdiutil", "info"] for call in calls) == 1
+                else []
+            )
+            return subprocess.CompletedProcess(
+                command, 0, stdout=plistlib.dumps({"images": images})
+            )
         elif command[:2] == ["hdiutil", "convert"]:
             assert command[command.index("-format") + 1] == "UDZO"
             Path(command[-1]).write_bytes(b"compressed disk image")
         else:
             assert command[:2] == ["hdiutil", "verify"]
             assert Path(command[-1]).is_file()
+        return None
 
     monkeypatch.setattr(Path, "symlink_to", fake_symlink)
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -530,7 +554,9 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
     dmg = archive.parent / f"iOpenPod-{version}-macOS-{architecture}.dmg"
 
     assert archive.is_file() and dmg.is_file()
-    assert waits == ([2] if finder_state == "late" else [])
+    assert waits == (
+        [2] if finder_state == "late" else [1] if finder_state == "detach-race" else []
+    )
     assert [command[:2] for command in calls] == [
         ["ditto", "-c"],
         ["ditto", str(app)],
@@ -542,6 +568,15 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
             * (2 if finder_state == "late" else 1)
         ),
         ["hdiutil", "detach"],
+        *(
+            [
+                ["hdiutil", "info"],
+                ["hdiutil", "detach"],
+                ["hdiutil", "info"],
+            ]
+            if finder_state == "detach-race"
+            else []
+        ),
         ["hdiutil", "convert"],
         ["hdiutil", "verify"],
     ]
@@ -580,6 +615,65 @@ def test_macos_detach_retries_only_busy_images(
         package_app.detach_macos_image(tmp_path)
     assert len(calls) == expected_attempts
     assert waits == [2**attempt for attempt in range(expected_attempts - 1)]
+
+
+@pytest.mark.parametrize("still_attached", [False, True])
+def test_macos_detach_handles_mountpoint_disappearing_after_busy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, still_attached: bool
+) -> None:
+    image = tmp_path / "writable.dmg"
+    mountpoint = tmp_path / "mounted"
+    commands: list[list[str]] = []
+    waits: list[float] = []
+
+    def fake_run(
+        command: list[str],
+        *,
+        check: bool,
+        timeout: int | None = None,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[bytes] | None:
+        commands.append(command)
+        if command[:2] == ["hdiutil", "detach"]:
+            assert check and timeout == 30
+            if sum(call[:2] == ["hdiutil", "detach"] for call in commands) == 1:
+                raise subprocess.CalledProcessError(
+                    16, command, stderr=b"Resource busy"
+                )
+            raise subprocess.CalledProcessError(
+                1, command, stderr=b"No such file or directory"
+            )
+        assert command == ["hdiutil", "info", "-plist"]
+        assert check and capture_output
+        images = (
+            [
+                {
+                    "image-path": str(image),
+                    "system-entities": [{"dev-entry": "/dev/disk4"}],
+                }
+            ]
+            if sum(call[:2] == ["hdiutil", "info"] for call in commands) == 1
+            or still_attached
+            else []
+        )
+        return subprocess.CompletedProcess(
+            command, 0, stdout=plistlib.dumps({"images": images})
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(time, "sleep", waits.append)
+    if still_attached:
+        with pytest.raises(subprocess.CalledProcessError):
+            package_app.detach_macos_image(mountpoint, image)
+    else:
+        package_app.detach_macos_image(mountpoint, image)
+    assert commands == [
+        ["hdiutil", "detach", str(mountpoint)],
+        ["hdiutil", "info", "-plist"],
+        ["hdiutil", "detach", "/dev/disk4"],
+        ["hdiutil", "info", "-plist"],
+    ]
+    assert waits == [1]
 
 
 @pytest.mark.parametrize("status,expected_calls", [(15700, 1), (122, 0), (5, 0)])

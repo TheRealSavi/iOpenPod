@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import platform
+import plistlib
 import re
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ import time
 import tomllib
 from importlib import metadata
 from pathlib import Path
+from typing import cast
 from xml.sax.saxutils import escape
 
 from packaging.requirements import Requirement
@@ -321,15 +323,57 @@ def _write_checksum(path: Path) -> None:
     )
 
 
-def detach_macos_image(mountpoint: Path) -> None:
-    """Allow Finder to release the image without forcing an unmount."""
+def attached_macos_image_device(image: Path) -> str | None:
+    """Find this image's whole-disk device, or confirm that it is detached."""
+    result = subprocess.run(
+        ["hdiutil", "info", "-plist"], check=True, capture_output=True, timeout=30
+    )
+    raw_listing: object = plistlib.loads(result.stdout)
+    if not isinstance(raw_listing, dict):
+        raise ValueError("hdiutil did not return an attached-image list")
+    listing = cast("dict[str, object]", raw_listing)
+    raw_images = listing.get("images")
+    if not isinstance(raw_images, list):
+        raise ValueError("hdiutil did not return an attached-image list")
+    for raw_entry in cast("list[object]", raw_images):
+        if not isinstance(raw_entry, dict):
+            raise ValueError("hdiutil returned an invalid attached-image entry")
+        entry = cast("dict[str, object]", raw_entry)
+        path = entry.get("image-path")
+        if not isinstance(path, str) or Path(path).resolve() != image.resolve():
+            continue
+        raw_entities = entry.get("system-entities")
+        if not isinstance(raw_entities, list):
+            raise ValueError("Attached disk image has no device list")
+        for raw_entity in cast("list[object]", raw_entities):
+            if isinstance(raw_entity, dict):
+                entity = cast("dict[str, object]", raw_entity)
+                device = entity.get("dev-entry")
+                if isinstance(device, str) and re.fullmatch(r"/dev/disk\d+", device):
+                    return device
+        raise ValueError("Attached disk image has no whole-disk device")
+    return None
+
+
+def detach_macos_image(mountpoint: Path, image: Path | None = None) -> None:
+    """Detach an image without forcing Finder's open files closed."""
+    target = str(mountpoint)
     for attempt in range(5):
         try:
-            subprocess.run(
-                ["hdiutil", "detach", str(mountpoint)], check=True, timeout=30
-            )
+            subprocess.run(["hdiutil", "detach", target], check=True, timeout=30)
         except subprocess.CalledProcessError as error:
-            if error.returncode != 16 or attempt == 4:
+            if image is not None:
+                # Detach may unmount the filesystem before reporting a busy
+                # image. A retry by mount path then fails with ENOENT even when
+                # the image is still attached; use its whole-disk device.
+                device = attached_macos_image_device(image)
+                if device is None:
+                    return
+                changed_target = target != device
+                target = device
+            else:
+                changed_target = False
+            if (error.returncode != 16 and not changed_target) or attempt == 4:
                 raise
             print("Waiting for the mounted DMG to become idle...", flush=True)
             time.sleep(2**attempt)
@@ -424,7 +468,7 @@ def macos_dmg(app: Path, output: Path, version: str) -> Path:
                 else:
                     break
         finally:
-            detach_macos_image(mountpoint)
+            detach_macos_image(mountpoint, writable)
         subprocess.run(
             ["hdiutil", "convert", str(writable), "-format", "UDZO", "-o", str(output)],
             check=True,

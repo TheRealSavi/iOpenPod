@@ -83,7 +83,10 @@ error (`-1728`) up to ten attempts, two seconds apart, with a 60-second timeout 
 script invocation. Other failures stop immediately; the image is detached before
 the error propagates, and conversion and checksum generation require a saved layout.
 The layout window closes before detach. If macOS still reports a busy image,
-detach retries up to five times with bounded backoff; it never forces an unmount.
+detach retries up to five times with bounded backoff. After a detach error, it
+checks the attached-image list: if the image remains attached but its mount point
+has disappeared, it retries by the image's whole-disk device. It never forces an
+unmount or treats an attached image as successfully detached.
 For troubleshooting on macOS, run `uv run python -m scripts.check_macos_dmg` to
 exercise packaging with a small app fixture and check the finished image's contents.
 This diagnostic is manual; normal builds validate only the finished release DMG.
