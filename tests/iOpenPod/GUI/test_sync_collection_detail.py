@@ -24,6 +24,10 @@ from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.album_list_model import AlbumRole
 from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 from iOpenPod.app.models.collection_list_model import CollectionRole
+from iOpenPod.app.models.selection_grouping import (
+    SelectionGroup,
+    SelectionGroupingProxyModel,
+)
 from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackRole
 from iOpenPod.app.sync_plan import SyncPlan
@@ -280,6 +284,64 @@ def test_back_retains_grid_query_and_new_scan_closes_detail(
     assert host.library is not None
     host.load(host.library)
     assert grid.isVisible() and not detail.isVisible()
+
+
+@pytest.mark.parametrize("checked", (False, True))
+@pytest.mark.parametrize("album_count, target", ((30, 16), (240, 160)))
+def test_grouped_album_checkbox_preserves_scroll_position(
+    browser: SyncBrowser, checked: bool, album_count: int, target: int
+) -> None:
+    host, selection, parent, theme = browser
+    assert host.library is not None
+    library = replace(
+        host.library,
+        snapshot=LibrarySnapshot(
+            tuple(
+                replace(
+                    host.library.snapshot.tracks[0],
+                    track_id=number,
+                    album=f"Album {number:03}",
+                )
+                for number in range(album_count)
+            )
+        ),
+    )
+    selection.reset(library, SyncPlan(()))
+    if checked:
+        selection.set_tracks_checked(tuple(range(album_count)), True)
+    host.load(library)
+    parent.setCurrentWidget(host.page_widgets[PageId.ALBUMS])
+    grid = host.page_widgets[PageId.ALBUMS].findChild(AlbumGridView)
+    assert grid is not None and grid.sectioned_layout
+    QTest.qWait(100)
+    index = _card(grid, f"Album {target:03}")
+    grid.scrollTo(index, QListView.ScrollHint.PositionAtCenter)
+    APPLICATION.processEvents()
+    scrollbar = grid.verticalScrollBar()
+    before = scrollbar.value()
+    assert before > 0
+    option = QStyleOptionViewItem()
+    option.initFrom(grid)
+    option.font = grid.font()
+    option.rect = grid.visualRect(index)
+    point = library_card_checkbox_rect(option, theme.typography).center().toPoint()
+    assert grid.viewport().rect().contains(point)
+    QTest.mouseClick(grid.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    QTest.qWait(30)
+    assert selection.track_check_state(target) is (
+        Qt.CheckState.Unchecked if checked else Qt.CheckState.Checked
+    )
+    assert scrollbar.value() == before
+
+    # Preserve only the temporary batch range, never a range the content has
+    # actually outgrown: collapsing both groups must still return to the top.
+    model = grid.model()
+    assert isinstance(model, SelectionGroupingProxyModel)
+    model.set_expanded(SelectionGroup.SELECTED, False)
+    model.set_expanded(SelectionGroup.DESELECTED, False)
+    QTest.qWait(30)
+    assert scrollbar.maximum() == 0
+    assert scrollbar.value() == 0
 
 
 @pytest.mark.parametrize("page_id", (PageId.ARTISTS, PageId.GENRES))

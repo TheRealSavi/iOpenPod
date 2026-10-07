@@ -1,6 +1,8 @@
 """Stable equal-width cells for virtualized card grids."""
 
-from PySide6.QtCore import QEvent, QModelIndex, QSize, QTimer
+from typing import cast
+
+from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QSize, QTimer
 from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import QListView, QStyle, QStyleOptionViewItem, QWidget
 
@@ -78,6 +80,26 @@ class EqualizedGridView(QListView):
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._equalize_cells()
+
+    def updateGeometries(self) -> None:
+        scrollbar = self.verticalScrollBar()
+        position = scrollbar.value()
+        maximum = scrollbar.maximum()
+        super().updateGeometries()
+        # PySide's stub omits None, which Qt returns before a model is installed.
+        model = cast("QAbstractItemModel | None", self.model())
+        if (
+            self._sectioned_layout
+            and self.layoutMode() is QListView.LayoutMode.Batched
+            and model is not None
+            and model.rowCount() > 0
+            and not self.visualRect(model.index(model.rowCount() - 1, 0)).isValid()
+        ):
+            # Regrouping restarts batched layout. Its temporary first-batch range
+            # must not clamp an existing viewport back toward the start. Once the
+            # last row is laid out, Qt can clamp against the actual content size.
+            scrollbar.setMaximum(max(maximum, scrollbar.maximum()))
+            scrollbar.setValue(position)
 
     def viewportEvent(self, event: QEvent) -> bool:
         handled = super().viewportEvent(event)
