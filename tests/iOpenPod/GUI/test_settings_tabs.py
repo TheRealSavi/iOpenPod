@@ -231,18 +231,20 @@ def test_categories_show_only_their_controls_and_platform_integration(
         ("Media Tools", "mediaToolsStatus"),
         ("Sync", "computeSoundCheck"),
         ("Backups", "maxBackups"),
-        ("iPod Preferences", "ipodPreferencesStatus"),
     ]
     if platform == "linux":
         categories.append(("Linux", "checkUdevRule"))
     categories.append(("About", "currentAppVersion"))
-    assert [tabs.tabText(index) for index in range(tabs.count())] == [
+    visible_indices = [
+        index for index in range(tabs.count()) if tabs.isTabVisible(index)
+    ]
+    assert [tabs.tabText(index) for index in visible_indices] == [
         label for label, _ in categories
     ]
     assert len(checks) == (1 if platform == "linux" else 0)
     changes = QSignalSpy(context.settings.settingChanged)
 
-    for index, (_, control_name) in enumerate(categories):
+    for index, (_, control_name) in zip(visible_indices, categories, strict=True):
         QTest.mouseClick(
             tabs.tabBar(),
             Qt.MouseButton.LeftButton,
@@ -250,7 +252,7 @@ def test_categories_show_only_their_controls_and_platform_integration(
         )
         APPLICATION.processEvents()
         assert tabs.currentIndex() == index
-        for other, (_, other_name) in enumerate(categories):
+        for other, (_, other_name) in zip(visible_indices, categories, strict=True):
             control = page.findChild(QWidget, other_name)
             assert control is not None
             assert control.isVisible() == (other == index)
@@ -258,7 +260,7 @@ def test_categories_show_only_their_controls_and_platform_integration(
 
     tabs.tabBar().setFocus()
     QTest.keyClick(tabs.tabBar(), Qt.Key.Key_Left)
-    assert tabs.currentIndex() == tabs.count() - 2
+    assert tabs.currentIndex() == visible_indices[-2]
     assert changes.count() == 0
     page.close()
 

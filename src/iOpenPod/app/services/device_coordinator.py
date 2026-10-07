@@ -29,6 +29,11 @@ from iOpenPod.app.artwork_policy import (
     application_artwork_root_value,
     application_cover_formats,
 )
+from iOpenPod.app.core.settings.device import (
+    DeviceSettings,
+    load_device_settings,
+    save_device_settings,
+)
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.library_sync_helper import (
     IPodMediaLibrary,
@@ -86,8 +91,11 @@ from storage import (
     HardwareProbeResult,
     HostPath,
     MountedVolume,
+    MountInspectionError,
     RecoverableWriteError,
     ScsiVpdPagePlan,
+    SessionClosedError,
+    SessionInvalidatedError,
     Storage,
     StorageCapacityError,
     StorageError,
@@ -972,6 +980,33 @@ class DeviceCoordinator:
                     ),
                     requires_persistence=False,
                 )
+
+    def save_settings(
+        self,
+        expected: ActiveIPod,
+        previous: DeviceSettings,
+        values: dict[str, object],
+    ) -> DeviceSettings:
+        """Bind settings publication to the selected connection and captured revision."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before settings were saved."
+                )
+            try:
+                with self._storage.open_session(
+                    active.record.mounted_volume, access=AccessMode.READ_WRITE
+                ) as session:
+                    if not active.session.is_active:
+                        raise SessionClosedError(
+                            "The iPod disconnected before settings were saved."
+                        )
+                    self._check_sync_recovery(session)
+                    return save_device_settings(session, previous, values)
+            except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+                self._deactivate_locked()
+                raise
 
     def save_podcast_state(
         self,
@@ -1950,6 +1985,7 @@ class DeviceCoordinator:
                     artwork_database_fingerprint=artwork_fingerprint,
                     photos_database_fingerprint=photos_fingerprint,
                     preferences=preferences.sections,
+                    settings=load_device_settings(session),
                 )
                 if reconcile_metadata:
                     presentation_issues = self._reconcile_volume_presentation(

@@ -50,6 +50,7 @@ def encoder_bitrate_mode(encoder: LossyEncoder) -> SettingDefinition[str]:
         key=_key(encoder, "bitrate-mode"),
         value_type=str,
         default=BitrateMode.VBR.value,
+        device_overridable=True,
         validator=lambda value: value in SUPPORTED_BITRATE_MODES[encoder],
     )
 
@@ -60,6 +61,7 @@ def encoder_bitrate(encoder: LossyEncoder) -> SettingDefinition[int]:
         key=_key(encoder, "bitrate-kbps"),
         value_type=int,
         default=192,
+        device_overridable=True,
         validator=lambda value: type(value) is int and value in ENCODER_BITRATES,
     )
 
@@ -70,6 +72,7 @@ def encoder_vbr_quality(encoder: LossyEncoder) -> SettingDefinition[int]:
         key=_key(encoder, "vbr-quality"),
         value_type=int,
         default=2 if encoder is LossyEncoder.AAC else 3,
+        device_overridable=True,
         validator=lambda value: type(value) is int and value in VBR_QUALITIES[encoder],
     )
 
@@ -80,6 +83,7 @@ def encoder_cutoff(encoder: LossyEncoder) -> SettingDefinition[int]:
         key=_key(encoder, "bandwidth-cutoff-hz"),
         value_type=int,
         default=0,
+        device_overridable=True,
         validator=lambda value: type(value) is int and value in BANDWIDTH_CUTOFFS,
     )
 
@@ -98,7 +102,10 @@ def encoder_option(encoder: LossyEncoder, option: str) -> SettingDefinition[bool
     if option not in allowed:
         raise ValueError(f"{encoder.value} does not support {option}")
     return SettingDefinition[bool](
-        key=_key(encoder, option), value_type=bool, default=option != "pns"
+        key=_key(encoder, option),
+        value_type=bool,
+        default=option != "pns",
+        device_overridable=True,
     )
 
 

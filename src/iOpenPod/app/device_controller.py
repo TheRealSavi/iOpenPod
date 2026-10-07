@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, Slot
 
@@ -13,6 +13,7 @@ from iOpenPod.app.core.settings.definitions import (
     LAST_SELECTED_IPOD_VOLUME_ID,
     MANAGE_VOLUME_PRESENTATION,
 )
+from iOpenPod.app.core.settings.device import DeviceSettings
 from iOpenPod.app.display_text import exception_text
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -38,6 +39,7 @@ class DeviceOperation(StrEnum):
     DISCOVER = "discover"
     SELECT = "select"
     EJECT = "eject"
+    SAVE_SETTINGS = "save_settings"
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +121,7 @@ class DeviceController(QObject):
         self._thread_pool.setMaxThreadCount(1)
         self._discovery = coordinator.discovery
         self._active_ipod = coordinator.active_ipod
+        self._device_settings = DeviceSettings()
         self._busy = False
         self._read_only_operation_count = 0
         self._recovery_required = False
@@ -136,6 +139,34 @@ class DeviceController(QObject):
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self._refresh_automatically)
+        settings.deviceSaveRequested.connect(self._save_settings)
+        self.deviceWritesAllowedChanged.connect(self._settings_availability_changed)
+        if self._active_ipod is not None:
+            self._replace_active_ipod(self._active_ipod, force_model_reset=True)
+
+    def _settings_availability_changed(self, allowed: bool) -> None:
+        self._settings.set_device_available(allowed and self._device_settings.writable)
+
+    def _save_settings(self, payload: object) -> None:
+        expected = self._active_ipod
+        if (
+            not self.device_writes_allowed
+            or expected is None
+            or not isinstance(payload, dict)
+        ):
+            self._settings.complete_device_save(
+                None,
+                self.tr(
+                    "Settings could not be saved. Wait for the current operation to finish."
+                ),
+            )
+            return
+        previous = self._device_settings
+        values = dict(cast("dict[str, object]", payload))
+        self._begin(
+            DeviceOperation.SAVE_SETTINGS,
+            lambda: self._coordinator.save_settings(expected, previous, values),
+        )
 
     @Slot(str, object)
     def _setting_changed(self, key: str, value: object) -> None:
@@ -353,6 +384,7 @@ class DeviceController(QObject):
         self._thread_pool.waitForDone()
         self._work_items.clear()
         self._coordinator.close()
+        self._settings.unload_device()
         self._set_searching(False)
 
     def _begin(
@@ -399,6 +431,12 @@ class DeviceController(QObject):
         result: object,
     ) -> None:
         if self._closed or token != self._active_token:
+            return
+        if operation == DeviceOperation.SAVE_SETTINGS and isinstance(
+            result, DeviceSettings
+        ):
+            self._device_settings = result
+            self._settings.complete_device_save(dict(result.values), result.message)
             return
         if operation == DeviceOperation.DISCOVER and isinstance(
             result,
@@ -459,6 +497,28 @@ class DeviceController(QObject):
         error: object,
     ) -> None:
         if self._closed or token != self._active_token:
+            return
+        if operation == DeviceOperation.SAVE_SETTINGS:
+            message = (
+                exception_text(error) if isinstance(error, Exception) else str(error)
+            )
+            if self._coordinator.active_ipod is None:
+                self._replace_active_ipod(None)
+            self._device_settings = DeviceSettings(
+                message=message,
+                values=self._device_settings.values,
+                revision=self._device_settings.revision,
+            )
+            self._settings.complete_device_save(
+                None,
+                self.tr(
+                    "Settings could not be saved. Reload the iPod before trying again. "
+                )
+                + message,
+            )
+            if isinstance(error, SyncRecoveryRequiredError):
+                self.set_recovery_required(True)
+                self.recoveryRequired.emit(error.recovery_path)
             return
         if isinstance(error, SyncRecoveryRequiredError):
             self._pending_automatic_selection = None
@@ -536,6 +596,18 @@ class DeviceController(QObject):
             return
         writes_were_allowed = self.device_writes_allowed
         self._active_ipod = active_ipod
+        if active_ipod is None:
+            self._device_settings = DeviceSettings()
+            self._settings.unload_device()
+        else:
+            self._device_settings = active_ipod.settings
+            self._settings.load_device(
+                active_ipod.candidate.id.value,
+                dict(active_ipod.settings.values),
+                writable=active_ipod.settings.writable and self.device_writes_allowed,
+                managed=True,
+                message=active_ipod.settings.message,
+            )
         tracks = active_ipod.library.tracks if active_ipod is not None else ()
         self._track_model.reset_tracks(tracks)
         self.activeIPodChanged.emit(active_ipod)

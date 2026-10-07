@@ -70,6 +70,8 @@ from iOpenPod.GUI.widgets.ipod_preferences import IPodPreferencesView
 from iOpenPod.GUI.widgets.media_tools_settings import MediaToolsSettings
 from iOpenPod.GUI.widgets.scrobbling_settings import ScrobblingSettings
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
+from iOpenPod.GUI.widgets.settings_editor import ScopedSettingBinding, SettingsEditor
+from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
@@ -83,6 +85,7 @@ class SettingsPage(QWidget):
     mediaToolsRequested = Signal()
     mediaToolsCheckRequested = Signal()
     appUpdatesRequested = Signal()
+    chooseIPodRequested = Signal()
 
     def __init__(
         self,
@@ -95,6 +98,8 @@ class SettingsPage(QWidget):
     ) -> None:
         super().__init__(parent)
         self._settings = settings
+        self._editor = SettingsEditor(settings, self)
+        self._active_ipod: ActiveIPod | None = None
         self._theme_manager = theme_manager
         self._i18n_manager = i18n_manager
         self._version = get_version()
@@ -102,6 +107,25 @@ class SettingsPage(QWidget):
         self._update_busy = False
 
         self._header = PageHeader(self)
+        self._scope_switcher = SettingsScopeSwitcher(self._header)
+        self._header.add_action(self._scope_switcher)
+        self._scope_notice = QWidget(self)
+        self._scope_notice.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
+        )
+        notice_layout = QHBoxLayout(self._scope_notice)
+        notice_layout.setContentsMargins(
+            LAYOUT.space_lg, LAYOUT.space_xs, LAYOUT.space_lg, LAYOUT.space_xs
+        )
+        self._scope_description = QLabel(self._scope_notice)
+        self._scope_description.setObjectName("settingsScopeDescription")
+        self._scope_description.setTextFormat(Qt.TextFormat.PlainText)
+        self._scope_description.setWordWrap(True)
+        notice_layout.addWidget(self._scope_description, 1)
+        self._choose_ipod = ActionButton(parent=self._scope_notice)
+        self._choose_ipod.setObjectName("settingsChooseIPod")
+        self._choose_ipod.clicked.connect(self.chooseIPodRequested.emit)
+        notice_layout.addWidget(self._choose_ipod)
         self._appearance_title = QLabel(self)
         self._appearance_title.setObjectName("sectionTitle")
 
@@ -309,11 +333,13 @@ class SettingsPage(QWidget):
         self._tabs.tabBar().setExpanding(False)
         # Keep tab clicks from restoring an off-screen control and jumping the scroll.
         self._tabs.tabBar().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._transcoding_settings = TranscodingSettings(settings, self)
+        self._transcoding_settings = TranscodingSettings(
+            settings, self, editor=self._editor
+        )
         self._media_tools = MediaToolsSettings(self)
         self._media_tools.setupRequested.connect(self.mediaToolsRequested.emit)
         self._media_tools.checkRequested.connect(self.mediaToolsCheckRequested.emit)
-        self._sync_settings = SyncSettings(settings, self)
+        self._sync_settings = SyncSettings(settings, self, editor=self._editor)
         self._appearance_tab = self._add_tab(
             "appearanceSettingsScroll",
             self._appearance_title,
@@ -362,6 +388,21 @@ class SettingsPage(QWidget):
             self._update_message,
             self._credits,
         )
+        self._view_binding = ScopedSettingBinding(
+            self._editor,
+            IPOD_LIBRARY_VIEW_MODE,
+            self._ipod_view_mode_row,
+            self._ipod_view_mode_combo,
+        )
+        self._shortcut_binding = ScopedSettingBinding(
+            self._editor,
+            LIBRARY_DOUBLE_CLICK_SHORTCUT,
+            self._double_click_row,
+            self._double_click_combo,
+        )
+        self._backups_binding = ScopedSettingBinding(
+            self._editor, MAX_BACKUPS, self._max_backups_row, self._max_backups
+        )
 
         footer = QHBoxLayout()
         footer.setContentsMargins(
@@ -372,7 +413,10 @@ class SettingsPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self._header)
+        layout.addWidget(self._scope_notice)
         layout.addWidget(self._tabs, 1)
+        self._empty_scope = QWidget(self)
+        layout.addWidget(self._empty_scope, 1)
         layout.addLayout(footer)
 
         self._mode_combo.currentIndexChanged.connect(self._mode_selected)
@@ -394,14 +438,7 @@ class SettingsPage(QWidget):
         self._volume_presentation_combo.currentIndexChanged.connect(
             self._volume_presentation_selected
         )
-        self._ipod_view_mode_combo.currentIndexChanged.connect(
-            self._ipod_view_mode_selected
-        )
-        self._double_click_combo.currentIndexChanged.connect(
-            self._double_click_selected
-        )
         self._choose_backup_location.clicked.connect(self._choose_backup_folder)
-        self._max_backups.currentIndexChanged.connect(self._max_backups_selected)
         self._check_udev_rule.clicked.connect(self._inspect_udev_rule)
         self._uninstall_udev_rule.clicked.connect(self._show_udev_uninstall)
         self._report_issue.clicked.connect(self._open_issue_tracker)
@@ -410,6 +447,8 @@ class SettingsPage(QWidget):
         self._tabs.currentChanged.connect(self._update_saved_note)
         self._tabs.currentChanged.connect(self._check_media_tools_tab)
         settings.settingChanged.connect(self._setting_changed)
+        settings.deviceStateChanged.connect(self._update_scope_state)
+        self._scope_switcher.deviceSelected.connect(self._select_scope)
         theme_manager.modeChanged.connect(self._sync_mode_selection)
         theme_manager.lightThemeChanged.connect(self._sync_light_theme_selection)
         theme_manager.darkThemeChanged.connect(self._sync_dark_theme_selection)
@@ -421,6 +460,7 @@ class SettingsPage(QWidget):
         )
         i18n_manager.languageChanged.connect(self._language_changed)
         self.retranslate_ui()
+        self._select_scope(False)
         self._update_donation_icon()
         if self._linux_supported:
             self._inspect_udev_rule()
@@ -481,6 +521,8 @@ class SettingsPage(QWidget):
         self._update_version()
         self._media_tools.retranslate_ui()
         self._header.set_title(self.tr("Settings"))
+        self._scope_switcher.retranslate_ui()
+        self._choose_ipod.setText(self.tr("Choose iPod…"))
         self._tabs.setAccessibleName(self.tr("Settings categories"))
         self._tabs.setTabText(self._appearance_tab, self.tr("Appearance"))
         self._tabs.setTabText(self._library_tab, self.tr("Library"))
@@ -617,18 +659,92 @@ class SettingsPage(QWidget):
         self._sync_backup_location(self._settings.get(BACKUP_LOCATION))
         self._transcoding_settings.retranslate_ui()
         self._sync_settings.retranslate_ui()
+        self._update_scope_state()
 
     def set_active_ipod(self, active: ActiveIPod | None) -> None:
+        self._active_ipod = active
         self._ipod_preferences.set_active_ipod(active)
+        self._update_scope_state()
+
+    def _select_scope(self, device: bool) -> None:
+        current = self._tabs.currentIndex()
+        self._editor.set_device(device)
+        host_only = {self._appearance_tab, self._media_tools_tab, self._about_tab}
+        if self._linux_tab is not None:
+            host_only.add(self._linux_tab)
+        blocker = QSignalBlocker(self._tabs)
+        for index in range(self._tabs.count()):
+            self._tabs.setTabVisible(
+                index,
+                device
+                if index == self._ipod_preferences_tab
+                else not device
+                if index in host_only
+                else True,
+            )
+        self._tabs.setCurrentIndex(
+            current
+            if self._tabs.isTabVisible(current)
+            else self._library_tab
+            if device
+            else self._appearance_tab
+        )
+        del blocker
+        self._draft_all_changes_row.setVisible(not device)
+        self._volume_presentation_row.setVisible(not device)
+        self._backup_location_row.setVisible(not device)
+        if self._scrobbling_settings is not None:
+            self._scrobbling_settings.setVisible(not device)
+        self._update_scope_state()
+
+    def _update_scope_state(self) -> None:
+        device = self._editor.device
+        connected = self._settings.device_connected
+        self._tabs.setVisible(not device or connected)
+        self._empty_scope.setVisible(device and not connected)
+        self._choose_ipod.setVisible(device and not connected)
+        if not device:
+            text = self.tr(
+                "Global defaults for your iPods. Individual iPod overrides take priority."
+            )
+        elif not connected:
+            text = self.tr(
+                "Choose an iPod to customize its settings. Unset settings follow the Host automatically."
+            )
+        else:
+            name = (
+                self._active_ipod.display_name
+                if self._active_ipod is not None
+                else self.tr("Active iPod")
+            )
+            text = self.tr(
+                "%1 · Settings saved on this iPod. Choose Use Host to follow global defaults."
+            ).replace("%1", name)
+        self._scope_description.setText(text)
+        self._update_saved_note()
 
     def _update_saved_note(self, _index: int = -1) -> None:
-        text = (
-            self.tr("Media tool status is read-only.")
-            if self._tabs.currentIndex() == self._media_tools_tab
-            else self.tr("iPod preferences are read-only.")
-            if self._tabs.currentIndex() == self._ipod_preferences_tab
-            else self.tr("Changes are saved automatically.")
-        )
+        if self._editor.device:
+            if self._settings.device_busy:
+                text = self.tr("Saving settings to your iPod…")
+            elif self._settings.device_message:
+                text = workflow_text(self._settings.device_message)
+            elif not self._settings.device_connected:
+                text = self.tr("Choose an iPod to view its settings.")
+            elif self._tabs.currentIndex() == self._ipod_preferences_tab:
+                text = self.tr("iPod preferences are read-only.")
+            elif not self._settings.device_writable:
+                text = self.tr(
+                    "iPod settings are read-only or another device operation is in progress."
+                )
+            else:
+                text = self.tr("Changes are saved automatically to this iPod.")
+        elif self._tabs.currentIndex() == self._media_tools_tab:
+            text = self.tr("Media tool status is read-only.")
+        elif self._tabs.currentIndex() == self._ipod_preferences_tab:
+            text = self.tr("iPod preferences are read-only.")
+        else:
+            text = self.tr("Changes are saved automatically.")
         if self._saved_note.text() != text:
             self._saved_note.setText(text)
 
@@ -763,13 +879,12 @@ class SettingsPage(QWidget):
         del blocker
 
     def _rebuild_backup_options(self) -> None:
-        blocker = QSignalBlocker(self._max_backups)
-        self._max_backups.clear()
-        self._max_backups.addItem(self.tr("Unlimited"), 0)
-        for count in (1, 3, 5, 10, 20):
-            self._max_backups.addItem(str(count), count)
-        self._sync_max_backups(self._settings.get(MAX_BACKUPS))
-        del blocker
+        self._backups_binding.configure(
+            (
+                (self.tr("Unlimited"), 0),
+                *((str(count), count) for count in (1, 3, 5, 10, 20)),
+            )
+        )
 
     def _rebuild_draft_all_changes_options(self) -> None:
         blocker = QSignalBlocker(self._draft_all_changes_combo)
@@ -780,56 +895,28 @@ class SettingsPage(QWidget):
         del blocker
 
     def _rebuild_ipod_view_mode_options(self) -> None:
-        blocker = QSignalBlocker(self._ipod_view_mode_combo)
-        self._ipod_view_mode_combo.clear()
-        self._ipod_view_mode_combo.addItem(
-            self.tr("Split Table"), IPodLibraryViewMode.SPLIT_TABLE.value
+        self._view_binding.configure(
+            (
+                (self.tr("Split Table"), IPodLibraryViewMode.SPLIT_TABLE.value),
+                (
+                    self.tr("Whole Page Table"),
+                    IPodLibraryViewMode.WHOLE_PAGE_TABLE.value,
+                ),
+            )
         )
-        self._ipod_view_mode_combo.addItem(
-            self.tr("Whole Page Table"), IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
-        )
-        self._sync_ipod_view_mode(self._settings.get(IPOD_LIBRARY_VIEW_MODE))
-        del blocker
-
-    def _sync_ipod_view_mode(self, value: str) -> None:
-        blocker = QSignalBlocker(self._ipod_view_mode_combo)
-        self._ipod_view_mode_combo.setCurrentIndex(
-            self._ipod_view_mode_combo.findData(value)
-        )
-        del blocker
-
-    def _ipod_view_mode_selected(self, index: int) -> None:
-        value = self._ipod_view_mode_combo.itemData(index)
-        if isinstance(value, str):
-            self._settings.set_global(IPOD_LIBRARY_VIEW_MODE, value)
 
     def _rebuild_double_click_options(self) -> None:
-        blocker = QSignalBlocker(self._double_click_combo)
-        self._double_click_combo.clear()
-        for label, action in (
+        self._shortcut_binding.configure(
             (
-                QCoreApplication.translate("CommonActions", "Add to Queue"),
-                LibraryDoubleClickShortcut.ADD_TO_QUEUE,
-            ),
-            (self.tr("Play next"), LibraryDoubleClickShortcut.PLAY_NEXT),
-            (self.tr("Play now"), LibraryDoubleClickShortcut.PLAY_NOW),
-            (self.tr("Edit"), LibraryDoubleClickShortcut.EDIT),
-        ):
-            self._double_click_combo.addItem(label, action.value)
-        self._sync_double_click(self._settings.get(LIBRARY_DOUBLE_CLICK_SHORTCUT))
-        del blocker
-
-    def _sync_double_click(self, value: str) -> None:
-        blocker = QSignalBlocker(self._double_click_combo)
-        self._double_click_combo.setCurrentIndex(
-            self._double_click_combo.findData(value)
+                (
+                    QCoreApplication.translate("CommonActions", "Add to Queue"),
+                    LibraryDoubleClickShortcut.ADD_TO_QUEUE.value,
+                ),
+                (self.tr("Play next"), LibraryDoubleClickShortcut.PLAY_NEXT.value),
+                (self.tr("Play now"), LibraryDoubleClickShortcut.PLAY_NOW.value),
+                (self.tr("Edit"), LibraryDoubleClickShortcut.EDIT.value),
+            )
         )
-        del blocker
-
-    def _double_click_selected(self, index: int) -> None:
-        value = self._double_click_combo.itemData(index)
-        if isinstance(value, str):
-            self._settings.set_global(LIBRARY_DOUBLE_CLICK_SHORTCUT, value)
 
     def _rebuild_volume_presentation_options(self) -> None:
         blocker = QSignalBlocker(self._volume_presentation_combo)
@@ -938,11 +1025,6 @@ class SettingsPage(QWidget):
         if selected:
             self._settings.set_global(BACKUP_LOCATION, str(Path(selected).resolve()))
 
-    def _max_backups_selected(self, index: int) -> None:
-        value = self._max_backups.itemData(index)
-        if isinstance(value, int):
-            self._settings.set_global(MAX_BACKUPS, value)
-
     def _inspect_udev_rule(self) -> None:
         if not self._linux_supported:
             return
@@ -1000,11 +1082,7 @@ class SettingsPage(QWidget):
         self.retranslate_ui()
 
     def _setting_changed(self, key: str, value: object) -> None:
-        if key == IPOD_LIBRARY_VIEW_MODE.key and isinstance(value, str):
-            self._sync_ipod_view_mode(value)
-        elif key == LIBRARY_DOUBLE_CLICK_SHORTCUT.key and isinstance(value, str):
-            self._sync_double_click(value)
-        elif key == DRAFT_ALL_CHANGES.key and isinstance(value, bool):
+        if key == DRAFT_ALL_CHANGES.key and isinstance(value, bool):
             self._sync_draft_all_changes(value)
         elif key == MANAGE_VOLUME_PRESENTATION.key and isinstance(value, bool):
             self._sync_volume_presentation(value)
@@ -1012,8 +1090,6 @@ class SettingsPage(QWidget):
             self._sync_player_position_selection(value)
         elif key == BACKUP_LOCATION.key and isinstance(value, str):
             self._sync_backup_location(value)
-        elif key == MAX_BACKUPS.key and isinstance(value, int):
-            self._sync_max_backups(value)
 
     def _sync_player_position_selection(self, position_value: str) -> None:
         blocker = QSignalBlocker(self._player_position_combo)
@@ -1024,12 +1100,3 @@ class SettingsPage(QWidget):
     def _sync_backup_location(self, value: str) -> None:
         self._backup_location.setText(value)
         self._backup_location.setToolTip(value)
-
-    def _sync_max_backups(self, value: int) -> None:
-        blocker = QSignalBlocker(self._max_backups)
-        index = self._max_backups.findData(value)
-        if index < 0:
-            self._max_backups.addItem(str(value), value)
-            index = self._max_backups.findData(value)
-        self._max_backups.setCurrentIndex(max(0, index))
-        del blocker

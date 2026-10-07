@@ -53,6 +53,11 @@ class SettingRow(QWidget):
         copy_layout.setSpacing(LAYOUT.space_3xs)
         copy_layout.addWidget(self._title)
         copy_layout.addWidget(self._description)
+        self._scope_hint = QLabel(self)
+        self._scope_hint.setObjectName("settingDescription")
+        self._scope_hint.setWordWrap(True)
+        self._scope_hint.hide()
+        copy_layout.addWidget(self._scope_hint)
 
         control.setMinimumWidth(220)
         control.setMaximumWidth(320)
@@ -73,3 +78,7 @@ class SettingRow(QWidget):
         self._title.setText(title)
         self._description.setText(description)
         self._description.setVisible(bool(description))
+
+    def set_scope_hint(self, text: str) -> None:
+        self._scope_hint.setText(text)
+        self._scope_hint.setVisible(bool(text))

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from iOpenPod.app.core.settings.definitions import (
@@ -43,6 +42,7 @@ from iOpenPod.app.scrobbling.settings import SCROBBLE_DURING_SYNC
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
+from iOpenPod.GUI.widgets.settings_editor import ScopedSettingBinding, SettingsEditor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -55,7 +55,7 @@ class _Choice[Value](SettingRow):
 
     def __init__(
         self,
-        settings: SettingsService,
+        settings: SettingsEditor,
         definition: SettingDefinition[Value],
         name: str,
         parent: QWidget,
@@ -63,59 +63,43 @@ class _Choice[Value](SettingRow):
         self.combo = AppComboBox(parent)
         self.combo.setObjectName(name)
         super().__init__("", "", self.combo, parent)
-        self._settings = settings
-        self._definition = definition
-        self.combo.currentIndexChanged.connect(self._selected)
-        settings.settingChanged.connect(self._changed)
+        self._binding = ScopedSettingBinding(settings, definition, self, self.combo)
 
     def configure(
         self,
         choices: Sequence[tuple[str, Value]],
         definition: SettingDefinition[Value] | None = None,
     ) -> None:
-        if definition is not None:
-            self._definition = definition
-        blocker = QSignalBlocker(self.combo)
-        self.combo.clear()
-        for label, value in choices:
-            self.combo.addItem(label, value)
-        self.combo.setCurrentIndex(
-            self.combo.findData(self._settings.get(self._definition))
-        )
-        del blocker
-
-    def _selected(self, index: int) -> None:
-        value = self.combo.itemData(index)
-        if self._definition.validate(value):
-            self._settings.set_global(self._definition, value)
-
-    def _changed(self, key: str, value: object) -> None:
-        if key == self._definition.key:
-            blocker = QSignalBlocker(self.combo)
-            self.combo.setCurrentIndex(self.combo.findData(value))
-            del blocker
+        self._binding.configure(choices, definition)
 
 
 class SyncSettings(QWidget):
     """Optional Sync behavior, persisted through the shared Settings service."""
 
-    def __init__(self, settings: SettingsService, parent: QWidget) -> None:
+    def __init__(
+        self,
+        settings: SettingsService,
+        parent: QWidget,
+        *,
+        editor: SettingsEditor | None = None,
+    ) -> None:
         super().__init__(parent)
+        scope = editor or SettingsEditor(settings, self)
         self._title = QLabel(self)
         self._title.setObjectName("sectionTitle")
         self._sound_check = _Choice(
-            settings, COMPUTE_SOUND_CHECK, "computeSoundCheck", self
+            scope, COMPUTE_SOUND_CHECK, "computeSoundCheck", self
         )
         self._normalize = _Choice(
-            settings, NORMALIZE_TAGS_AFTER_SYNC, "normalizeTagsAfterSync", self
+            scope, NORMALIZE_TAGS_AFTER_SYNC, "normalizeTagsAfterSync", self
         )
-        self._rotate = _Choice(settings, ROTATE_TALL_PHOTOS, "rotateTallPhotos", self)
-        self._fit = _Choice(settings, FIT_THUMBNAILS, "fitThumbnails", self)
+        self._rotate = _Choice(scope, ROTATE_TALL_PHOTOS, "rotateTallPhotos", self)
+        self._fit = _Choice(scope, FIT_THUMBNAILS, "fitThumbnails", self)
         self._rockbox = _Choice(
-            settings, ROCKBOX_METADATA_SUPPORT, "rockboxMetadataSupport", self
+            scope, ROCKBOX_METADATA_SUPPORT, "rockboxMetadataSupport", self
         )
         self._scrobble = _Choice(
-            settings, SCROBBLE_DURING_SYNC, "scrobbleDuringSync", self
+            scope, SCROBBLE_DURING_SYNC, "scrobbleDuringSync", self
         )
         self._rows = (
             self._scrobble,
@@ -188,65 +172,91 @@ class SyncSettings(QWidget):
 class TranscodingSettings(QWidget):
     """Present only the controls supported by the selected encoder."""
 
-    def __init__(self, settings: SettingsService, parent: QWidget) -> None:
+    def __init__(
+        self,
+        settings: SettingsService,
+        parent: QWidget,
+        *,
+        editor: SettingsEditor | None = None,
+    ) -> None:
         super().__init__(parent)
-        self._settings = settings
+        self._settings = editor or SettingsEditor(settings, self)
         self._audio_title = QLabel(self)
         self._spoken_title = QLabel(self)
         self._advanced_title = QLabel(self)
         for title in (self._audio_title, self._spoken_title, self._advanced_title):
             title.setObjectName("sectionTitle")
-        self._encoder = _Choice(settings, LOSSY_ENCODER, "lossyEncoder", self)
-        self._quality = _Choice(settings, LOSSY_QUALITY, "lossyQuality", self)
+        self._encoder = _Choice(self._settings, LOSSY_ENCODER, "lossyEncoder", self)
+        self._quality = _Choice(self._settings, LOSSY_QUALITY, "lossyQuality", self)
         self._mode = _Choice(
-            settings, encoder_bitrate_mode(LossyEncoder.FDK_AAC), "bitrateMode", self
+            self._settings,
+            encoder_bitrate_mode(LossyEncoder.FDK_AAC),
+            "bitrateMode",
+            self,
         )
         self._bitrate = _Choice(
-            settings, encoder_bitrate(LossyEncoder.FDK_AAC), "encoderBitrate", self
+            self._settings,
+            encoder_bitrate(LossyEncoder.FDK_AAC),
+            "encoderBitrate",
+            self,
         )
         self._vbr = _Choice(
-            settings, encoder_vbr_quality(LossyEncoder.FDK_AAC), "vbrQuality", self
+            self._settings,
+            encoder_vbr_quality(LossyEncoder.FDK_AAC),
+            "vbrQuality",
+            self,
         )
         self._lossless = _Choice(
-            settings, TRANSCODE_LOSSLESS_TO_LOSSY, "transcodeLosslessToLossy", self
+            self._settings,
+            TRANSCODE_LOSSLESS_TO_LOSSY,
+            "transcodeLosslessToLossy",
+            self,
         )
-        self._lossy = _Choice(settings, RETRANSCODE_LOSSY, "retranscodeLossy", self)
+        self._lossy = _Choice(
+            self._settings, RETRANSCODE_LOSSY, "retranscodeLossy", self
+        )
         self._alac = _Choice(
-            settings, TRANSCODE_PCM_TO_ALAC, "transcodePcmToAlac", self
+            self._settings, TRANSCODE_PCM_TO_ALAC, "transcodePcmToAlac", self
         )
         self._sample_rate = _Choice(
-            settings, NORMALIZE_SAMPLE_RATE, "normalizeSampleRate", self
+            self._settings, NORMALIZE_SAMPLE_RATE, "normalizeSampleRate", self
         )
         self._smart = _Choice(
-            settings, SMART_QUALITY_BY_CONTENT_TYPE, "smartQualityByContentType", self
+            self._settings,
+            SMART_QUALITY_BY_CONTENT_TYPE,
+            "smartQualityByContentType",
+            self,
         )
-        self._mono = _Choice(settings, SPOKEN_WORD_MONO, "spokenWordMono", self)
+        self._mono = _Choice(self._settings, SPOKEN_WORD_MONO, "spokenWordMono", self)
         self._spoken_bitrate = _Choice(
-            settings, SPOKEN_WORD_BITRATE, "spokenWordBitrate", self
+            self._settings, SPOKEN_WORD_BITRATE, "spokenWordBitrate", self
         )
         self._cutoff = _Choice(
-            settings, encoder_cutoff(LossyEncoder.FDK_AAC), "bandwidthCutoff", self
+            self._settings,
+            encoder_cutoff(LossyEncoder.FDK_AAC),
+            "bandwidthCutoff",
+            self,
         )
         self._afterburner = _Choice(
-            settings,
+            self._settings,
             encoder_option(LossyEncoder.FDK_AAC, "afterburner"),
             "encoderAfterburner",
             self,
         )
         self._tns = _Choice(
-            settings, encoder_option(LossyEncoder.AAC, "tns"), "encoderTns", self
+            self._settings, encoder_option(LossyEncoder.AAC, "tns"), "encoderTns", self
         )
         self._pns = _Choice(
-            settings, encoder_option(LossyEncoder.AAC, "pns"), "encoderPns", self
+            self._settings, encoder_option(LossyEncoder.AAC, "pns"), "encoderPns", self
         )
         self._mid_side = _Choice(
-            settings,
+            self._settings,
             encoder_option(LossyEncoder.AAC, "mid-side-stereo"),
             "encoderMidSideStereo",
             self,
         )
         self._intensity = _Choice(
-            settings,
+            self._settings,
             encoder_option(LossyEncoder.AAC, "intensity-stereo"),
             "encoderIntensityStereo",
             self,
@@ -301,7 +311,7 @@ class TranscodingSettings(QWidget):
             for row in rows:
                 group.add_row(row)
             layout.addWidget(group)
-        settings.settingChanged.connect(self._setting_changed)
+        self._settings.changed.connect(self._refresh_encoder)
         self.retranslate_ui()
 
     def retranslate_ui(self) -> None:
@@ -448,10 +458,6 @@ class TranscodingSettings(QWidget):
         )
         self._refresh_encoder()
 
-    def _setting_changed(self, key: str, _value: object) -> None:
-        if key.startswith("transcoding/"):
-            self._refresh_encoder()
-
     def _refresh_encoder(self) -> None:
         encoder = LossyEncoder(self._settings.get(LOSSY_ENCODER))
         manual = encoder is not LossyEncoder.AUTO
@@ -481,7 +487,11 @@ class TranscodingSettings(QWidget):
                 ),
                 encoder_cutoff(encoder),
             )
-        vbr = manual and self._mode.combo.currentData() == BitrateMode.VBR.value
+        vbr = (
+            manual
+            and self._settings.get(encoder_bitrate_mode(encoder))
+            == BitrateMode.VBR.value
+        )
         self._bitrate.setVisible(manual and not vbr)
         self._vbr.setVisible(vbr)
         self._vbr.set_copy(
@@ -505,6 +515,9 @@ class TranscodingSettings(QWidget):
             ),
         )
         spoken = self._settings.get(SMART_QUALITY_BY_CONTENT_TYPE)
-        self._mono.setEnabled(spoken)
-        self._spoken_bitrate.setEnabled(spoken)
-        self._alac.setEnabled(not self._settings.get(TRANSCODE_LOSSLESS_TO_LOSSY))
+        # Device overrides remain editable so even an unused value can be unset.
+        self._mono.setEnabled(spoken or self._settings.device)
+        self._spoken_bitrate.setEnabled(spoken or self._settings.device)
+        self._alac.setEnabled(
+            self._settings.device or not self._settings.get(TRANSCODE_LOSSLESS_TO_LOSSY)
+        )

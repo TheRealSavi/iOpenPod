@@ -1098,6 +1098,14 @@
 <context>
     <name>DeviceController</name>
     <message>
+        <source>Settings could not be saved. Wait for the current operation to finish.</source>
+        <translation>No se pudo guardar la configuración. Espera a que termine la operación actual.</translation>
+    </message>
+    <message>
+        <source>Settings could not be saved. Reload the iPod before trying again. </source>
+        <translation>No se pudo guardar la configuración. Vuelve a cargar el iPod antes de intentarlo de nuevo. </translation>
+    </message>
+    <message>
         <source>The device operation failed.</source>
         <translation>La operación del dispositivo falló.</translation>
     </message>
@@ -4663,6 +4671,25 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
 </context>
 <context>
+    <name>ScopedSettingBinding</name>
+    <message>
+        <source>Use Host · %1</source>
+        <translation>Usar Host · %1</translation>
+    </message>
+    <message>
+        <source>Override for this iPod · Host: %1</source>
+        <translation>Valor para este iPod · Host: %1</translation>
+    </message>
+    <message>
+        <source>Following Host changes automatically</source>
+        <translation>Sigue automáticamente los cambios del Host</translation>
+    </message>
+    <message>
+        <source>The Active iPod has its own override.</source>
+        <translation>El iPod activo tiene su propio valor.</translation>
+    </message>
+</context>
+<context>
     <name>ScrobbleController</name>
     <message>
         <source>Scrobbling cancelled. Pending listens are saved.</source>
@@ -4822,6 +4849,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Settings</source>
         <translation>Ajustes</translation>
+    </message>
+    <message>
+        <source>Choose iPod…</source>
+        <translation>Elegir iPod…</translation>
     </message>
     <message>
         <source>Settings categories</source>
@@ -5030,6 +5061,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>iPod preferences are read-only.</source>
         <translation>Las preferencias del iPod son de solo lectura.</translation>
+    </message>
+    <message>
+        <source>Changes are saved automatically to this iPod.</source>
+        <translation>Los cambios se guardan automáticamente en este iPod.</translation>
     </message>
     <message>
         <source>Changes are saved automatically.</source>
@@ -5260,8 +5295,67 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Apoyar en Ko-fi ↗</translation>
     </message>
     <message>
+        <source>Global defaults for your iPods. Individual iPod overrides take priority.</source>
+        <translation>Valores globales para tus iPods. Los valores propios de cada iPod tienen prioridad.</translation>
+    </message>
+    <message>
+        <source>Choose an iPod to customize its settings. Unset settings follow the Host automatically.</source>
+        <translation>Elige un iPod para personalizar su configuración. Los ajustes sin un valor propio siguen automáticamente al Host.</translation>
+    </message>
+    <message>
+        <source>Active iPod</source>
+        <translation>iPod activo</translation>
+    </message>
+    <message>
+        <source>%1 · Settings saved on this iPod. Choose Use Host to follow global defaults.</source>
+        <translation>%1 · Configuración guardada en este iPod. Elige Usar Host para seguir los valores globales.</translation>
+    </message>
+    <message>
+        <source>Choose an iPod to view its settings.</source>
+        <translation>Elige un iPod para ver su configuración.</translation>
+    </message>
+    <message>
+        <source>Saving settings to your iPod…</source>
+        <translation>Guardando la configuración en tu iPod…</translation>
+    </message>
+    <message>
+        <source>iPod settings are read-only or another device operation is in progress.</source>
+        <translation>La configuración del iPod es de solo lectura o hay otra operación del dispositivo en curso.</translation>
+    </message>
+    <message>
         <source>Media tool status is read-only.</source>
         <translation>El estado de las herramientas multimedia es de solo lectura.</translation>
+    </message>
+</context>
+<context>
+    <name>SettingsScopeSwitcher</name>
+    <message>
+        <source>Settings scope</source>
+        <translation>Ámbito de la configuración</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>Host</translation>
+    </message>
+    <message>
+        <source>Host settings — global defaults</source>
+        <translation>Configuración del Host — valores globales</translation>
+    </message>
+    <message>
+        <source>Global defaults on this computer</source>
+        <translation>Valores globales en este ordenador</translation>
+    </message>
+    <message>
+        <source>iPod</source>
+        <translation>iPod</translation>
+    </message>
+    <message>
+        <source>iPod settings — device overrides</source>
+        <translation>Configuración del iPod — valores del dispositivo</translation>
+    </message>
+    <message>
+        <source>Overrides saved on the Active iPod</source>
+        <translation>Valores propios guardados en el iPod activo</translation>
     </message>
 </context>
 <context>
@@ -7812,6 +7906,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Los dispositivos con Cover Flow son sensibles a las diferencias de artista y álbum y a los álbumes con el mismo nombre.</translation>
     </message>
     <message>
+        <source>Cover changes were skipped so the remaining Sync changes could continue. Existing covers were kept; new Tracks may have no cover. A later Sync can retry the covers.</source>
+        <translation>Se omitieron los cambios de carátulas para continuar con los demás cambios de Sync. Se conservaron las carátulas existentes; las pistas nuevas podrían no tener carátula. Otro Sync puede volver a intentarlo.</translation>
+    </message>
+    <message>
         <source>Cover format identities must have one unambiguous layout.</source>
         <translation>Las identidades de formato de portada deben tener una única disposición sin ambigüedades.</translation>
     </message>
@@ -8688,6 +8786,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Se omitió la información conservada del índice auxiliar de sincronización porque no se pudo comprobar su archivo multimedia: {error}</translation>
     </message>
     <message>
+        <source>Retrying Library preparation while keeping existing covers…</source>
+        <translation>Reintentando la preparación de la biblioteca y conservando las carátulas existentes…</translation>
+    </message>
+    <message>
         <source>Reusing external file {index} of {total}…</source>
         <translation>Reutilizando archivo externo {index} de {total}…</translation>
     </message>
@@ -8810,6 +8912,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Serializing database artifacts</source>
         <translation>Serializando archivos de bases de datos</translation>
+    </message>
+    <message>
+        <source>Settings were verified, but the device flush was incomplete. Safe-eject the iPod before unplugging.</source>
+        <translation>La configuración se verificó, pero no se confirmó la escritura completa en el dispositivo. Expulsa el iPod de forma segura antes de desconectarlo.</translation>
     </message>
     <message>
         <source>Show artwork</source>
@@ -9390,6 +9496,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Windows package (sideloaded)</source>
         <translation>Paquete de Windows (instalación manual)</translation>
+    </message>
+    <message>
+        <source>iPod settings could not be read. Reload the iPod to try again. {detail}</source>
+        <translation>No se pudo leer la configuración del iPod. Vuelve a cargar el iPod para intentarlo de nuevo. {detail}</translation>
     </message>
     <message>
         <source>{value} (units unknown)</source>

@@ -416,6 +416,7 @@ class MainWindow(QMainWindow):
         self._settings_page.mediaToolsRequested.connect(self._open_media_tools)
         self._settings_page.mediaToolsCheckRequested.connect(self._media_tools.check)
         self._settings_page.appUpdatesRequested.connect(self._updates.check_now)
+        self._settings_page.chooseIPodRequested.connect(self._open_device_picker)
         self._updates.changed.connect(self._app_update_status_changed)
         self._app_update_status_changed()
         self._sidebar.scrobbleRequested.connect(self._scrobble_now)

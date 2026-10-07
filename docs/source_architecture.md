@@ -1457,6 +1457,15 @@ boundary for platform path resolution and atomic byte replacement. They are not
 device-facing operations and do not use a Filesystem Session. Other application
 file categories remain separate decisions.
 
+Portable iPod settings use an application-owned document captured during device
+selection. SettingsService resolves individual overrides over Host values and
+typed defaults; the Settings editor reads its chosen scope independently of the
+effective runtime values. DeviceController reserves and saves changes in a worker,
+and DeviceCoordinator binds publication to the Active iPod Filesystem Session.
+Storage verifies atomic replacement against the captured file revision. Selection
+and disconnect propagate effective-value changes; only confirmed saves update the
+device layer. See ADR-0126 for eligible settings, inheritance, and error handling.
+
 `ApplicationStatus` is the process-wide seam for user-visible statuses. Callers set
 the default text or publish and clear source-owned statuses containing text, optional
 determinate or indeterminate progress, and an optional named action. Action requests

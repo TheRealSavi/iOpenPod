@@ -208,6 +208,7 @@ IPOD_LIBRARY_VIEW_MODE = SettingDefinition[str](
     key="library/ipod-view-mode",
     value_type=str,
     default=IPodLibraryViewMode.SPLIT_TABLE.value,
+    device_overridable=True,
     validator=_one_of(*(mode.value for mode in IPodLibraryViewMode)),
 )
 
@@ -215,6 +216,7 @@ LIBRARY_DOUBLE_CLICK_SHORTCUT = SettingDefinition[str](
     key="library/double-click-shortcut",
     value_type=str,
     default=LibraryDoubleClickShortcut.ADD_TO_QUEUE.value,
+    device_overridable=True,
     validator=_one_of(*(action.value for action in LibraryDoubleClickShortcut)),
 )
 
@@ -229,6 +231,7 @@ MAX_BACKUPS = SettingDefinition[int](
     key="backups/max-per-device",
     value_type=int,
     default=0,
+    device_overridable=True,
     validator=lambda value: not isinstance(value, bool) and 0 <= value <= 1_000,
 )
 
@@ -237,52 +240,85 @@ LOSSY_ENCODER = SettingDefinition[str](
     key="transcoding/lossy-encoder",
     value_type=str,
     default="auto",
+    device_overridable=True,
     validator=_one_of("auto", "aac_at", "libfdk_aac", "aac", "libmp3lame"),
 )
 LOSSY_QUALITY = SettingDefinition[str](
     key="transcoding/quality",
     value_type=str,
     default="balanced",
+    device_overridable=True,
     validator=_one_of("compact", "balanced", "high"),
 )
 TRANSCODE_LOSSLESS_TO_LOSSY = SettingDefinition[bool](
-    key="transcoding/lossless-to-lossy", value_type=bool, default=False
+    key="transcoding/lossless-to-lossy",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
 )
 RETRANSCODE_LOSSY = SettingDefinition[bool](
-    key="transcoding/retranscode-lossy", value_type=bool, default=False
+    key="transcoding/retranscode-lossy",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
 )
 TRANSCODE_PCM_TO_ALAC = SettingDefinition[bool](
-    key="transcoding/wav-aiff-to-alac", value_type=bool, default=True
+    key="transcoding/wav-aiff-to-alac",
+    value_type=bool,
+    default=True,
+    device_overridable=True,
 )
 NORMALIZE_SAMPLE_RATE = SettingDefinition[bool](
-    key="transcoding/normalize-44100", value_type=bool, default=False
+    key="transcoding/normalize-44100",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
 )
 SMART_QUALITY_BY_CONTENT_TYPE = SettingDefinition[bool](
-    key="transcoding/smart-spoken-word", value_type=bool, default=True
+    key="transcoding/smart-spoken-word",
+    value_type=bool,
+    default=True,
+    device_overridable=True,
 )
 SPOKEN_WORD_MONO = SettingDefinition[bool](
-    key="transcoding/spoken-word-mono", value_type=bool, default=True
+    key="transcoding/spoken-word-mono",
+    value_type=bool,
+    default=True,
+    device_overridable=True,
 )
 SPOKEN_WORD_BITRATE = SettingDefinition[int](
     key="transcoding/spoken-word-bitrate-kbps",
     value_type=int,
     default=64,
+    device_overridable=True,
     validator=lambda value: type(value) is int and value in (32, 48, 64, 80, 96),
 )
 COMPUTE_SOUND_CHECK = SettingDefinition[bool](
-    key="sync/compute-sound-check", value_type=bool, default=False
+    key="sync/compute-sound-check",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
 )
 NORMALIZE_TAGS_AFTER_SYNC = SettingDefinition[bool](
-    key="sync/normalize-tags-after-sync", value_type=bool, default=False
+    key="sync/normalize-tags-after-sync",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
 )
 ROTATE_TALL_PHOTOS = SettingDefinition[bool](
-    key="sync/rotate-tall-photos", value_type=bool, default=False
+    key="sync/rotate-tall-photos",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
 )
 FIT_THUMBNAILS = SettingDefinition[bool](
-    key="sync/fit-thumbnails", value_type=bool, default=False
+    key="sync/fit-thumbnails", value_type=bool, default=False, device_overridable=True
 )
 ROCKBOX_METADATA_SUPPORT = SettingDefinition[bool](
-    key="sync/rockbox-metadata-support", value_type=bool, default=False
+    key="sync/rockbox-metadata-support",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
 )
 
 

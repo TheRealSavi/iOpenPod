@@ -14,6 +14,12 @@ then beyond it.
 
 ## Current stage
 
+Settings offers Host defaults and portable iPod overrides. Each eligible iPod
+setting can follow the Host or hold an explicit value; reconnecting reloads the
+saved choices. Library presentation, transcoding, optional Sync behavior, and
+Backup Snapshot retention support overrides. Computer-specific preferences and
+credentials remain on the Host. See ADR-0126 for persistence and failure behavior.
+
 Microsoft Store installs now check for application updates at launch and expose
 progress and an Update now action through the status bar. Installation waits for
 unsaved Library Drafts and running workflows to be resolved, then hands consent and
@@ -64,7 +70,7 @@ explicit fixed-offset fallback, UTC-only release/purchase fields, and local Mac
 conversion for Photo dates. Preferences are checked again before publication;
 ambiguous dates remain unavailable and losslessly retained. See ADR-0098 and
 [the time contract](docs/ipod-time.md).
-Settings now includes a read-only iPod Preferences tab. Device selection captures
+Settings includes a read-only iPod Preferences tab under the iPod scope. Device selection captures
 both binary preference files through Storage and publishes display summaries with
 the Active iPod; switching or disconnecting clears the previous device's values.
 See [the Preferences contract](docs/ipod-preferences.md) and ADR-0097.

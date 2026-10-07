@@ -1,9 +1,10 @@
 """Path-free Application Layer state for device discovery and selection."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from device_registry import DeviceProfile, IdentificationStatus
+from iOpenPod.app.core.settings.device import DeviceSettings
 from iOpenPod.app.models.ipod_preferences import IPodPreferenceSection
 from iPodDB.library import LibrarySnapshot
 from storage import FileFingerprint
@@ -132,6 +133,7 @@ class ActiveIPod:
     artwork_database_fingerprint: FileFingerprint | None = None
     photos_database_fingerprint: FileFingerprint | None = None
     preferences: tuple[IPodPreferenceSection, ...] = ()
+    settings: DeviceSettings = field(default_factory=DeviceSettings)
 
     @property
     def display_name(self) -> str:

@@ -137,6 +137,10 @@ class DeviceSettingsStore:
     def connected(self) -> bool:
         return self._device_id is not None
 
+    @property
+    def values(self) -> dict[str, object]:
+        return dict(self._values)
+
     def has(self, key: str) -> bool:
         return key in self._values
 
@@ -162,7 +166,7 @@ class DeviceSettingsStore:
         self._values.clear()
 
     def sync(self) -> None:
-        """Device persistence will be introduced with the device workflow."""
+        """DeviceController coordinates persistence outside the GUI thread."""
 
 
 def create_global_settings_store(storage: Storage) -> JsonSettingsStore:

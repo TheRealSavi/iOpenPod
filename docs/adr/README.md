@@ -198,3 +198,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0123: Reuse bounded media scan analysis](0123-reuse-bounded-media-scan-analysis.md)
 - [ADR-0124: Accept validated mixed F1061 layouts](0124-accept-validated-mixed-f1061-layouts.md)
 - [ADR-0125: Defer cover failures during Sync](0125-defer-cover-failures-during-sync.md)
+- [ADR-0126: Persist individual iPod setting overrides](0126-persist-individual-ipod-setting-overrides.md)
