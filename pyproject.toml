@@ -18,7 +18,7 @@ packages = ["src/iOpenPod", "src/device_registry", "src/iPodDB", "src/storage"]
 
 [project]
 name = "iOpenPod"
-version = "2.0.6"
+version = "2.0.7"
 description = "iPod sync tool. Manage your iPod media library without iTunes."
 authors = [{ name = "John Gibbons", email = "johngibbons167@gmail.com" }]
 readme = "README.md"
