@@ -3,9 +3,11 @@
 import base64
 import hashlib
 import json
+import logging
 import os
 import threading
 import wave
+from collections import Counter
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
@@ -32,8 +34,10 @@ from iOpenPod.app.host_media_library import (
     HostMediaArtworkLoader,
     HostMediaCacheStats,
     HostMediaPhotoLoader,
+    HostMediaScanCancelledError,
     HostMediaScanner,
     HostMediaScanProgress,
+    HostMediaScanStage,
     HostMediaTreeChangedError,
 )
 from iOpenPod.app.models.artwork import ArtworkRequest
@@ -58,10 +62,20 @@ def test_one_unreadable_subfolder_does_not_hide_later_siblings(
         *,
         checkpoint: Callable[[], None],
         on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
+        include_file: Callable[[str], bool] | None = None,
+        include_directories: bool = True,
+        on_entry: Callable[[HostDirectoryEntry], None] | None = None,
     ) -> tuple[HostDirectoryEntry, ...]:
         if self.path.path.name == "a-denied":
             raise PermissionError("folder unavailable")
-        return native(self, checkpoint=checkpoint, on_issue=on_issue)
+        return native(
+            self,
+            checkpoint=checkpoint,
+            on_issue=on_issue,
+            include_file=include_file,
+            include_directories=include_directories,
+            on_entry=on_entry,
+        )
 
     monkeypatch.setattr(LocalHostDirectory, "list_entries", listing)
     scanner = HostMediaScanner()
@@ -213,6 +227,75 @@ def test_fast_file_progress_is_published_while_earlier_file_is_still_reading(
     assert isinstance(finished.message, SourceText)
     assert finished.message.source == "Read file {index} of {total}…"
     assert dict(finished.message.parameters) == {"index": "1", "total": "2"}
+
+
+def test_inspection_refills_workers_before_the_first_batch_finishes(
+    tmp_path: Path,
+) -> None:
+    for index in range(12):
+        _write_wav(tmp_path / f"{index:02d}.wav")
+    later_published = threading.Event()
+
+    class Fingerprinter:
+        def fingerprint(
+            self, source: HostPath, *, checkpoint: Callable[[], None]
+        ) -> str:
+            if source.path.name == "00.wav":
+                assert later_published.wait(5), "A slow file blocked later batches"
+            checkpoint()
+            return "1,2,3"
+
+    def progress(event: HostMediaScanProgress) -> None:
+        if (
+            event.stage is HostMediaScanStage.READING
+            and event.completed
+            and event.path == HostPath(tmp_path / "08.wav")
+        ):
+            later_published.set()
+
+    pending = HostMediaScanner(fingerprinter=Fingerprinter(), max_workers=2).scan(
+        (create_host_media_folder(tmp_path),),
+        checkpoint=lambda: None,
+        progress=progress,
+    )
+    assert later_published.is_set()
+    assert pending.cache == HostMediaCacheStats(inspected=12)
+    assert [record.path.path.name for record in pending.records] == [
+        f"{index:02d}.wav" for index in range(12)
+    ]
+
+
+def test_inspection_cancellation_stops_queued_work(tmp_path: Path) -> None:
+    for index in range(40):
+        _write_wav(tmp_path / f"{index:02d}.wav")
+    cancelled = threading.Event()
+    called: list[HostPath] = []
+
+    def checkpoint() -> None:
+        if cancelled.is_set():
+            raise HostMediaScanCancelledError()
+
+    class Fingerprinter:
+        def fingerprint(
+            self, source: HostPath, *, checkpoint: Callable[[], None]
+        ) -> str:
+            called.append(source)
+            if source.path.name != "00.wav":
+                assert cancelled.wait(5), "Cancellation was not published"
+            checkpoint()
+            return "1,2,3"
+
+    def progress(event: HostMediaScanProgress) -> None:
+        if event.stage is HostMediaScanStage.READING and event.completed:
+            cancelled.set()
+
+    with pytest.raises(HostMediaScanCancelledError):
+        HostMediaScanner(fingerprinter=Fingerprinter(), max_workers=2).scan(
+            (create_host_media_folder(tmp_path),),
+            checkpoint=checkpoint,
+            progress=progress,
+        )
+    assert 1 <= len(called) <= 3
 
 
 class _FrameTags(Protocol):
@@ -406,6 +489,152 @@ def test_folder_drop_scope_respects_recursion_and_deduplicates_files(
     )
     result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(result.snapshot.tracks) == (2 if recurse else 1)
+
+
+@pytest.mark.parametrize("parent_recursive", [False, True])
+@pytest.mark.parametrize("child_recursive", [False, True])
+@pytest.mark.parametrize("child_first", [False, True])
+def test_overlapping_folders_are_listed_once_with_each_selection_preserved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    parent_recursive: bool,
+    child_recursive: bool,
+    child_first: bool,
+) -> None:
+    root = tmp_path / "Selected"
+    child = root / "Album"
+    nested = child / "Nested"
+    nested.mkdir(parents=True)
+    for directory in (root, child, nested):
+        _write_wav(directory / "Track.wav")
+        Image.new("RGB", (8, 8), "red").save(directory / "Photo.png")
+    parent_selection = HostMediaFolder(
+        HostPath(root), parent_recursive, frozenset({HostMediaType.AUDIO})
+    )
+    child_selection = HostMediaFolder(
+        HostPath(child), child_recursive, frozenset({HostMediaType.PHOTOS})
+    )
+    folders: tuple[HostMediaFolder, ...] = (parent_selection, child_selection)
+    if child_first:
+        folders = tuple(reversed(folders))
+    native = LocalHostDirectory.list_entries
+    listings: list[HostPath] = []
+
+    def listing(
+        self: LocalHostDirectory,
+        *,
+        checkpoint: Callable[[], None],
+        on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
+        include_file: Callable[[str], bool] | None = None,
+        include_directories: bool = True,
+        on_entry: Callable[[HostDirectoryEntry], None] | None = None,
+    ) -> tuple[HostDirectoryEntry, ...]:
+        listings.append(self.path)
+        return native(
+            self,
+            checkpoint=checkpoint,
+            on_issue=on_issue,
+            include_file=include_file,
+            include_directories=include_directories,
+            on_entry=on_entry,
+        )
+
+    monkeypatch.setattr(LocalHostDirectory, "list_entries", listing)
+    pending = HostMediaScanner().scan(folders, checkpoint=lambda: None)
+    expected = {HostPath(root / "Track.wav"), HostPath(child / "Photo.png")}
+    if parent_recursive:
+        expected.update((HostPath(child / "Track.wav"), HostPath(nested / "Track.wav")))
+    if child_recursive:
+        expected.add(HostPath(nested / "Photo.png"))
+    assert {record.path for record in pending.records} == expected
+    expected_directories = {HostPath(root): 2, HostPath(child): 2}
+    if parent_recursive or child_recursive:
+        expected_directories[HostPath(nested)] = 2
+    assert Counter(listings) == expected_directories
+
+
+def test_explicit_files_reuse_folder_observations_even_when_their_type_is_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    track = HostPath(tmp_path / "Track.wav")
+    _write_wav(Path(track.path))
+    _write_wav(tmp_path / "Excluded.wav")
+    folder = HostMediaFolder(
+        HostPath(tmp_path), media_types=frozenset({HostMediaType.PHOTOS})
+    )
+    scanner = HostMediaScanner(AtomicHostFile(tmp_path / "cache.json"))
+    scanner.scan((folder,), files=(track,), checkpoint=lambda: None)
+
+    def unexpected_observation(*args: object, **kwargs: object) -> NoReturn:
+        pytest.fail("An explicitly selected file already listed must not be restatted")
+
+    monkeypatch.setattr(LocalHostFile, "observe", unexpected_observation)
+    pending = scanner.scan((folder,), files=(track, track), checkpoint=lambda: None)
+    assert [record.path for record in pending.records] == [track]
+    assert pending.cache == HostMediaCacheStats(reused=1)
+
+
+def test_discovery_progress_is_live_throttled_and_finishes_with_exact_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for index in range(20):
+        _write_wav(tmp_path / f"{index:02d}.wav")
+    native = LocalHostDirectory.list_entries
+    clock = 0.0
+    listing_active = False
+    events: list[tuple[HostMediaScanProgress, bool]] = []
+    monkeypatch.setattr("iOpenPod.app.host_media_library.perf_counter", lambda: clock)
+
+    def listing(
+        self: LocalHostDirectory,
+        *,
+        checkpoint: Callable[[], None],
+        on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
+        include_file: Callable[[str], bool] | None = None,
+        include_directories: bool = True,
+        on_entry: Callable[[HostDirectoryEntry], None] | None = None,
+    ) -> tuple[HostDirectoryEntry, ...]:
+        nonlocal clock, listing_active
+
+        def discovered(entry: HostDirectoryEntry) -> None:
+            nonlocal clock
+            clock += 0.02
+            if on_entry is not None:
+                on_entry(entry)
+
+        listing_active = True
+        try:
+            return native(
+                self,
+                checkpoint=checkpoint,
+                on_issue=on_issue,
+                include_file=include_file,
+                include_directories=include_directories,
+                on_entry=discovered,
+            )
+        finally:
+            listing_active = False
+
+    monkeypatch.setattr(LocalHostDirectory, "list_entries", listing)
+    HostMediaScanner().scan(
+        (create_host_media_folder(tmp_path),),
+        checkpoint=lambda: None,
+        progress=lambda event: events.append((event, listing_active)),
+    )
+    discovery = [
+        (event, active)
+        for event, active in events
+        if event.stage is HostMediaScanStage.DISCOVERING
+        and isinstance(event.message, SourceText)
+    ]
+    assert any(active for _event, active in discovery)
+    assert 3 <= len(discovery) <= 6
+    assert all(event.total == event.completed == 0 for event, _active in discovery)
+    final = discovery[-1][0]
+    assert isinstance(final.message, SourceText)
+    assert dict(final.message.parameters) == {"folders": "1", "files": "20"}
+    assert final.path is not None
+    assert not discovery[-1][1]
 
 
 def test_unavailable_explicit_file_is_reported_without_scanning_parent(
@@ -876,6 +1105,173 @@ def test_partial_scan_preserves_other_folder_cover_facts(
     monkeypatch.setattr(LocalHostFile, "open_read", reject_right_cover_read)
     right = scanner.scan((folders[1],), checkpoint=lambda: None)
     assert right.cache.reused == 1
+
+
+@pytest.mark.parametrize("has_cover", [False, True])
+def test_folder_scan_lists_each_directory_once_per_pass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    has_cover: bool,
+) -> None:
+    selected = tmp_path / "Selected"
+    album = selected / "Album"
+    album.mkdir(parents=True)
+    for name in ("First.wav", "Second.wav"):
+        _write_wav(album / name)
+    (album / "notes.txt").write_text("Not media", encoding="utf-8")
+    if has_cover:
+        Image.new("RGB", (12, 8), "red").save(album / "COVER.PNG")
+    folder = HostMediaFolder(
+        HostPath(selected), media_types=frozenset({HostMediaType.AUDIO})
+    )
+    native = LocalHostDirectory.list_entries
+    listings: list[HostPath] = []
+    entry_counts: list[int] = []
+
+    def listing(
+        self: LocalHostDirectory,
+        *,
+        checkpoint: Callable[[], None],
+        on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
+        include_file: Callable[[str], bool] | None = None,
+        include_directories: bool = True,
+        on_entry: Callable[[HostDirectoryEntry], None] | None = None,
+    ) -> tuple[HostDirectoryEntry, ...]:
+        listings.append(self.path)
+        entries = native(
+            self,
+            checkpoint=checkpoint,
+            on_issue=on_issue,
+            include_file=include_file,
+            include_directories=include_directories,
+            on_entry=on_entry,
+        )
+        entry_counts.append(len(entries))
+        return entries
+
+    def unexpected_read(*args: object, **kwargs: object) -> NoReturn:
+        pytest.fail("A warm scan must not reread unchanged media or artwork")
+
+    monkeypatch.setattr(LocalHostDirectory, "list_entries", listing)
+    caplog.set_level(logging.INFO, logger="iOpenPod.app.host_media_library")
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    for warm in (False, True):
+        listings.clear()
+        entry_counts.clear()
+        caplog.clear()
+        if warm:
+            monkeypatch.setattr(LocalHostFile, "open_read", unexpected_read)
+        scanner = HostMediaScanner(cache)
+        pending = scanner.scan((folder,), checkpoint=lambda: None)
+        library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+        assert library.audio_count == 2
+        assert library.photo_count == 0
+        assert all(
+            bool(track.artwork_id) == has_cover for track in library.snapshot.tracks
+        )
+        assert library.cache == (
+            HostMediaCacheStats(reused=2) if warm else HostMediaCacheStats(inspected=2)
+        )
+        assert listings == [HostPath(selected), HostPath(album)] * 2
+        assert sum(entry_counts) == 2 * (3 + has_cover)
+        assert caplog.text.count("directory_listings=2") == 2
+        assert caplog.text.count("reused_listings=1, fallback_listings=0") == 2
+        assert "tracks_without_fingerprint=0" in caplog.text
+
+
+@pytest.mark.parametrize("change", ["add", "replace", "remove", "prefer"])
+def test_final_pass_refreshes_shared_folder_artwork_observations(
+    tmp_path: Path, change: str
+) -> None:
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    _write_wav(selected / "Track.wav")
+    cover = selected / "cover.png"
+    old_cover = selected / "front.png" if change == "prefer" else cover
+    if change != "add":
+        Image.new("RGB", (12, 8), "red").save(old_cover)
+    folder = HostMediaFolder(
+        HostPath(selected), media_types=frozenset({HostMediaType.AUDIO})
+    )
+    scanner = HostMediaScanner(AtomicHostFile(tmp_path / "cache.json"))
+    initial = scanner.scan((folder,), checkpoint=lambda: None)
+    original = scanner.complete(initial, frozenset(), checkpoint=lambda: None)
+    changed = False
+
+    def change_cover(progress: HostMediaScanProgress) -> None:
+        nonlocal changed
+        if progress.stage is HostMediaScanStage.FINALIZING and not changed:
+            changed = True
+            if change == "remove":
+                cover.unlink()
+            else:
+                Image.new("RGB", (16, 10), "blue").save(cover)
+
+    pending = scanner.scan((folder,), checkpoint=lambda: None, progress=change_cover)
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert library.cache == HostMediaCacheStats(reused=1)
+    assert (
+        library.snapshot.tracks[0].artwork_id != original.snapshot.tracks[0].artwork_id
+    )
+    if change == "remove":
+        assert library.snapshot.tracks[0].artwork_id == 0
+        assert not library.artwork_sources
+    else:
+        assert library.artwork_sources[0].path == HostPath(cover)
+        assert (
+            library.artwork_sources[0].content_sha256
+            == hashlib.sha256(cover.read_bytes()).hexdigest()
+        )
+
+
+def test_explicit_track_retains_folder_artwork_without_scanning_sibling_media(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    track = tmp_path / "Selected.wav"
+    _write_wav(track)
+    _write_wav(tmp_path / "Sibling.wav")
+    Image.new("RGB", (12, 8), "red").save(tmp_path / "cover.png")
+    native = LocalHostFile._from_stat  # pyright: ignore[reportPrivateUsage]
+
+    def observe(
+        cls: type[LocalHostFile], path: HostPath, value: os.stat_result
+    ) -> LocalHostFile:
+        assert path.path.name != "Sibling.wav", "Artwork lookup inspected sibling media"
+        return native(path, value)
+
+    monkeypatch.setattr(LocalHostFile, "_from_stat", classmethod(observe))
+    caplog.set_level(logging.INFO, logger="iOpenPod.app.host_media_library")
+    scanner = HostMediaScanner()
+    pending = scanner.scan((), files=(HostPath(track),), checkpoint=lambda: None)
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert library.audio_count == 1
+    assert library.snapshot.tracks[0].title == "Selected"
+    assert library.snapshot.tracks[0].artwork_id > 0
+    assert caplog.text.count("reused_listings=0, fallback_listings=1") == 2
+
+
+def test_shared_folder_artwork_observations_do_not_follow_links(
+    tmp_path: Path,
+) -> None:
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    _write_wav(selected / "Track.wav")
+    external_cover = tmp_path / "private.png"
+    Image.new("RGB", (12, 8), "red").save(external_cover)
+    try:
+        (selected / "cover.png").symlink_to(external_cover)
+    except OSError as error:
+        pytest.skip(f"Host does not permit symlink creation: {error}")
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (create_host_media_folder(selected),), checkpoint=lambda: None
+    )
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert library.audio_count == 1
+    assert library.snapshot.tracks[0].artwork_id == 0
 
 
 def test_unavailable_folder_artwork_does_not_abort_a_host_scan(

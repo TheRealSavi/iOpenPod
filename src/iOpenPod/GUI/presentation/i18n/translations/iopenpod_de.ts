@@ -9839,6 +9839,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <source>Your system may ask for administrator approval. Installs missing packages and their dependencies. No repositories are added. Available codecs depend on the distribution&apos;s FFmpeg build.</source>
         <translation>Ihr System fordert möglicherweise eine Administratorfreigabe an. Installiert fehlende Pakete und ihre Abhängigkeiten. Es werden keine Paketquellen hinzugefügt. Verfügbare Codecs hängen vom FFmpeg-Build der Distribution ab.</translation>
     </message>
+    <message>
+        <source>Checking source files… Folders visited: {folders}; media files found: {files}.</source>
+        <translation>Quelldateien werden geprüft… Durchsuchte Ordner: {folders}; gefundene Mediendateien: {files}.</translation>
+    </message>
+    <message>
+        <source>Finding media… Folders visited: {folders}; media files found: {files}.</source>
+        <translation>Medien werden gesucht… Durchsuchte Ordner: {folders}; gefundene Mediendateien: {files}.</translation>
+    </message>
 </context>
 <context>
     <name>_ExternalPlaylistFilesModel</name>

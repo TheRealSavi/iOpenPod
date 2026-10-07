@@ -9,12 +9,13 @@ import logging
 import math
 import os
 from collections.abc import Callable, Iterable
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from io import BytesIO
-from itertools import chain
 from pathlib import Path
+from threading import Event
+from time import perf_counter
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import mutagen
@@ -59,10 +60,15 @@ from iPodDB.library import (
     TrackMetadata,
 )
 from storage import AtomicHostFile, HostPath, StorageError
-from storage.host_directory import HostEntryKind, LocalHostDirectory
+from storage.host_directory import (
+    HostDirectoryEntry,
+    HostEntryKind,
+    LocalHostDirectory,
+)
 from storage.host_input import LocalHostFile
 
 if TYPE_CHECKING:
+    from pathlib import PurePath
     from typing import BinaryIO
 
 logger = logging.getLogger(__name__)
@@ -72,6 +78,7 @@ _MAX_CACHE_BYTES = 64 * 1024 * 1024
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
 _MAX_INSPECTION_WORKERS = 8
+_DISCOVERY_PROGRESS_INTERVAL = 0.1
 
 _AUDIO_EXTENSIONS = frozenset(
     {
@@ -523,6 +530,18 @@ class _Observation:
         )
 
 
+@dataclass(slots=True)
+class _DirectoryCatalog:
+    """Artwork candidates from one enumeration, never shared between passes."""
+
+    artwork_entries: dict[str, tuple[HostDirectoryEntry, ...]] = field(
+        default_factory=dict
+    )
+    listings: int = 0
+    entries: int = 0
+    media_files: int = 0
+
+
 @dataclass(frozen=True, slots=True)
 class _ArtworkReference:
     kind: HostArtworkKind
@@ -787,13 +806,17 @@ class HostMediaScanner:
             else "Finding media in the selected folders…",
         )
         checkpoint()
-        before, enumeration_issues = _enumerate(
-            folders, files=files, checkpoint=checkpoint
+        before, enumeration_issues, before_directories = _enumerate(
+            folders, files=files, checkpoint=checkpoint, progress=progress
         )
         cached, cached_artwork = self._load_cache()
         before_artwork = _folder_artwork_catalog(
-            before, cached=cached_artwork, checkpoint=checkpoint
+            before,
+            directories=before_directories,
+            cached=cached_artwork,
+            checkpoint=checkpoint,
         )
+        del before_directories
         issues = list(enumeration_issues)
         total = len(before)
         records, inspection_issues, reused, inspected = _inspect_selected_files(
@@ -811,15 +834,26 @@ class HostMediaScanner:
         _emit(
             progress,
             HostMediaScanStage.FINALIZING,
-            total,
-            total,
+            0,
+            0,
             "Checking for files that changed during the scan…",
             cache_hits=reused,
         )
-        after, final_issues = _enumerate(folders, files=files, checkpoint=checkpoint)
-        after_artwork = _folder_artwork_catalog(
-            after, cached=before_artwork, checkpoint=checkpoint
+        after, final_issues, after_directories = _enumerate(
+            folders,
+            files=files,
+            checkpoint=checkpoint,
+            progress=progress,
+            stage=HostMediaScanStage.FINALIZING,
+            cache_hits=reused,
         )
+        after_artwork = _folder_artwork_catalog(
+            after,
+            directories=after_directories,
+            cached=before_artwork,
+            checkpoint=checkpoint,
+        )
+        del after_directories
         if _folder_artwork_states(before_artwork) != _folder_artwork_states(
             after_artwork
         ):
@@ -1038,8 +1072,13 @@ class HostMediaScanner:
 
         checkpoint()
         if pending.external_references:
-            after, final_issues = _enumerate(
-                pending.folders, files=pending.files, checkpoint=checkpoint
+            after, final_issues, _ = _enumerate(
+                pending.folders,
+                files=pending.files,
+                checkpoint=checkpoint,
+                progress=progress,
+                stage=HostMediaScanStage.FINALIZING,
+                cache_hits=reused,
             )
             if tuple(item.state for item in after) != tuple(
                 item.state for item in pending.observations
@@ -1261,20 +1300,68 @@ def _enumerate(
     *,
     checkpoint: CancellationCheck,
     files: tuple[HostPath, ...] = (),
-) -> tuple[tuple[_Observation, ...], tuple[HostMediaScanIssue, ...]]:
+    progress: ProgressCallback | None = None,
+    stage: HostMediaScanStage = HostMediaScanStage.DISCOVERING,
+    cache_hits: int = 0,
+) -> tuple[tuple[_Observation, ...], tuple[HostMediaScanIssue, ...], _DirectoryCatalog]:
+    started = perf_counter()
+    logger.info("Host Media Scan enumeration started")
     observations: dict[str, _Observation] = {}
     issues: list[HostMediaScanIssue] = []
-    for folder in folders:
+    directories = _DirectoryCatalog()
+    last_progress = -math.inf
+    current_path: HostPath | None = None
+
+    def publish(path: HostPath | None, *, force: bool = False) -> None:
+        nonlocal last_progress, current_path
+        current_path = path
+        if progress is None:
+            return
+        now = perf_counter()
+        if not force and now - last_progress < _DISCOVERY_PROGRESS_INTERVAL:
+            return
+        last_progress = now
+        message = (
+            source_text(
+                "Finding media… Folders visited: {folders}; media files found: {files}.",
+                folders=f"{directories.listings:,}",
+                files=f"{directories.media_files:,}",
+            )
+            if stage is HostMediaScanStage.DISCOVERING
+            else source_text(
+                "Checking source files… Folders visited: {folders}; media files found: {files}.",
+                folders=f"{directories.listings:,}",
+                files=f"{directories.media_files:,}",
+            )
+        )
+        _emit(progress, stage, 0, 0, message, path=path, cache_hits=cache_hits)
+
+    selected_folders = tuple(folder for folder in folders if folder.media_types)
+    explicit_paths = frozenset(_path_identity(path.path) for path in files)
+    # Ancestors go first so one traversal can cover nested selections. Each
+    # directory uses the union of *all* applicable settings, independent of order.
+    for folder in sorted(
+        selected_folders,
+        key=lambda item: (len(item.path.path.parts), _path_identity(item.path.path)),
+    ):
         checkpoint()
+        identity = _path_identity(folder.path.path)
+        if identity in directories.artwork_entries:
+            continue
+        publish(folder.path)
         try:
             _walk_folder(
                 LocalHostDirectory.observe(folder.path),
-                folder,
+                selected_folders,
+                explicit_paths,
                 observations,
                 issues,
+                directories,
                 checkpoint=checkpoint,
+                progress=publish,
             )
         except (OSError, StorageError) as error:
+            directories.artwork_entries[identity] = ()
             issues.append(
                 HostMediaScanIssue(
                     folder.path,
@@ -1284,8 +1371,14 @@ def _enumerate(
                     ),
                 )
             )
+    visited_files: set[str] = set()
     for path in files:
         checkpoint()
+        identity = _path_identity(path.path)
+        if identity in observations or identity in visited_files:
+            continue
+        visited_files.add(identity)
+        publish(path)
         kind = classify_host_media_file(Path(path.path))
         if kind is None:
             issues.append(
@@ -1304,22 +1397,39 @@ def _enumerate(
                 )
             )
             continue
-        observations[_path_identity(path.path)] = _Observation(
+        observations[identity] = _Observation(
             path, kind, file.size_bytes, file.modified_ns, file=file
         )
+        directories.media_files += 1
+        publish(path)
+    directories.media_files = len(observations)
+    publish(current_path, force=True)
+    logger.info(
+        "Host Media Scan enumeration: %.3fs, directory_listings=%d, "
+        "listed_entries=%d, selected_files=%d, issues=%d",
+        perf_counter() - started,
+        directories.listings,
+        directories.entries,
+        len(observations),
+        len(issues),
+    )
     return (
         tuple(sorted(observations.values(), key=lambda item: item.state)),
         tuple(issues),
+        directories,
     )
 
 
 def _walk_folder(
     directory: LocalHostDirectory,
-    folder: HostMediaFolder,
+    folders: tuple[HostMediaFolder, ...],
+    explicit_paths: frozenset[str],
     observations: dict[str, _Observation],
     issues: list[HostMediaScanIssue],
+    directories: _DirectoryCatalog,
     *,
     checkpoint: CancellationCheck,
+    progress: Callable[[HostPath], None],
 ) -> None:
     checkpoint()
 
@@ -1334,11 +1444,59 @@ def _walk_folder(
             )
         )
 
+    # Remember even an empty or unavailable directory so artwork discovery does
+    # not retry the same remote listing in this pass. The final pass starts fresh.
+    identity = _path_identity(directory.path.path)
+    if identity in directories.artwork_entries:
+        return
+    folder = _folder_scope(directory.path, folders)
+    directories.artwork_entries[identity] = ()
+    directories.listings += 1
+    progress(directory.path)
+
+    selected_kinds: dict[str, HostMediaFileKind] = {}
+
+    def include_file(name: str) -> bool:
+        path = Path(name)
+        kind = _classify(path, folder.media_types)
+        if (
+            kind is None
+            and explicit_paths
+            and _path_identity(directory.path.path / name) in explicit_paths
+        ):
+            kind = _classify(path)
+        if kind is not None:
+            selected_kinds[name] = kind
+            return True
+        return _is_folder_cover(path)
+
+    def discovered(entry: HostDirectoryEntry) -> None:
+        if entry.kind is HostEntryKind.FILE and entry.path.path.name in selected_kinds:
+            directories.media_files += 1
+        progress(entry.path)
+
+    def enumeration_checkpoint() -> None:
+        checkpoint()
+        progress(directory.path)
+
     try:
-        entries = directory.list_entries(checkpoint=checkpoint, on_issue=report)
+        entries = directory.list_entries(
+            checkpoint=enumeration_checkpoint,
+            on_issue=report,
+            include_file=include_file,
+            include_directories=folder.recurse,
+            on_entry=discovered,
+        )
     except (OSError, StorageError) as error:
         report(directory.path, error)
         return
+    directories.entries += len(entries)
+    # Retain only plausible covers, not every unsupported file in a large tree.
+    directories.artwork_entries[identity] = tuple(
+        entry
+        for entry in entries
+        if entry.kind is HostEntryKind.FILE and _is_folder_cover(entry.path.path)
+    )
     for entry in sorted(
         entries, key=lambda item: os.path.normcase(item.path.path.name)
     ):
@@ -1347,16 +1505,19 @@ def _walk_folder(
             if folder.recurse and entry.directory is not None:
                 _walk_folder(
                     entry.directory,
-                    folder,
+                    folders,
+                    explicit_paths,
                     observations,
                     issues,
+                    directories,
                     checkpoint=checkpoint,
+                    progress=progress,
                 )
             continue
         if entry.kind is not HostEntryKind.FILE:
             continue
         path = Path(entry.path.path)
-        kind = _classify(path, folder.media_types)
+        kind = selected_kinds.get(path.name)
         if kind is None:
             continue
         observations[_path_identity(path)] = _Observation(
@@ -1368,8 +1529,38 @@ def _walk_folder(
         )
 
 
+def _folder_scope(
+    path: HostPath, folders: tuple[HostMediaFolder, ...]
+) -> HostMediaFolder:
+    """Combine overlapping selections without widening their individual scope."""
+
+    identity = Path(_path_identity(path.path))
+    applicable = tuple(
+        folder
+        for folder in folders
+        if identity == Path(_path_identity(folder.path.path))
+        or (
+            folder.recurse and identity.is_relative_to(_path_identity(folder.path.path))
+        )
+    )
+    return HostMediaFolder(
+        path,
+        recurse=any(folder.recurse for folder in applicable),
+        media_types=frozenset(
+            kind for folder in applicable for kind in folder.media_types
+        ),
+    )
+
+
+def _is_folder_cover(path: PurePath) -> bool:
+    return (
+        path.stem.casefold() in _FOLDER_ARTWORK_STEMS
+        and path.suffix.casefold() in _FOLDER_ARTWORK_EXTENSIONS
+    )
+
+
 def _classify(
-    path: Path,
+    path: PurePath,
     allowed: frozenset[HostMediaType] | None = None,
 ) -> HostMediaFileKind | None:
     extension = path.suffix.casefold()
@@ -1416,20 +1607,27 @@ def _review_reference(
 def _folder_artwork_catalog(
     observations: tuple[_Observation, ...],
     *,
+    directories: _DirectoryCatalog,
     cached: dict[str, _ArtworkReference],
     checkpoint: CancellationCheck,
 ) -> dict[str, _ArtworkReference]:
+    started = perf_counter()
     catalog: dict[str, _ArtworkReference] = {}
-    directories = {
+    media_directories = {
         _path_identity(observation.path.path.parent): observation
         for observation in observations
         if observation.kind in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO)
     }
-    for identity, observation in directories.items():
+    reused_listings = 0
+    for identity, observation in media_directories.items():
         checkpoint()
+        entries = directories.artwork_entries.get(identity)
+        if entries is not None:
+            reused_listings += 1
         try:
             artwork = _folder_artwork_for(
                 observation,
+                entries=entries,
                 cached=cached.get(identity),
                 checkpoint=checkpoint,
             )
@@ -1439,12 +1637,22 @@ def _folder_artwork_catalog(
             artwork = None
         if artwork is not None:
             catalog[identity] = artwork
+    logger.info(
+        "Host Media Scan folder artwork: %.3fs, directories=%d, "
+        "reused_listings=%d, fallback_listings=%d, covers=%d",
+        perf_counter() - started,
+        len(media_directories),
+        reused_listings,
+        len(media_directories) - reused_listings,
+        len(catalog),
+    )
     return catalog
 
 
 def _folder_artwork_for(
     observation: _Observation,
     *,
+    entries: tuple[HostDirectoryEntry, ...] | None = None,
     cached: _ArtworkReference | None = None,
     checkpoint: CancellationCheck,
 ) -> _ArtworkReference | None:
@@ -1452,9 +1660,14 @@ def _folder_artwork_for(
         return None
     directory = observation.path.path.parent
     try:
-        entries = LocalHostDirectory.observe(HostPath(directory)).list_entries(
-            checkpoint=checkpoint
-        )
+        if entries is None:
+            # Explicitly selected files may have no folder enumeration. Preserve
+            # their existing artwork lookup without adding sibling media.
+            entries = LocalHostDirectory.observe(HostPath(directory)).list_entries(
+                checkpoint=checkpoint,
+                include_file=lambda name: _is_folder_cover(Path(name)),
+                include_directories=False,
+            )
         files = sorted(
             (entry for entry in entries if entry.kind is HostEntryKind.FILE),
             key=lambda entry: (entry.path.path.name.casefold(), entry.path.path.name),
@@ -1560,87 +1773,118 @@ def _inspect_selected_files(
 ]:
     """Inspect cache misses concurrently while publishing ordered progress."""
 
+    started = perf_counter()
     records: list[_CachedRecord] = []
     issues: list[HostMediaScanIssue] = []
     reused = 0
     inspected = 0
     total = len(observations)
-    batch_size = max_workers * 4
+    in_flight_limit = max_workers * 4
+    stopped = Event()
+
+    def inspection_checkpoint() -> None:
+        checkpoint()
+        if stopped.is_set():
+            raise HostMediaScanCancelledError("Host media inspection stopped")
+
+    def publish(
+        observation: _Observation, record: _CachedRecord, *, from_cache: bool
+    ) -> None:
+        nonlocal reused, inspected
+        if from_cache:
+            reused += 1
+            label = source_text(
+                "Reusing unchanged file {index} of {total}…",
+                index=f"{len(records) + 1:,}",
+                total=f"{total:,}",
+            )
+        else:
+            inspected += 1
+            label = source_text(
+                "Read file {index} of {total}…",
+                index=f"{len(records) + 1:,}",
+                total=f"{total:,}",
+            )
+        records.append(record)
+        if record.warning:
+            issues.append(HostMediaScanIssue(record.path, record.warning))
+        _emit(
+            progress,
+            HostMediaScanStage.READING,
+            len(records),
+            total,
+            label,
+            path=observation.path,
+            cache_hits=reused,
+        )
+
+    _emit(
+        progress,
+        HostMediaScanStage.READING,
+        0,
+        total,
+        "Reading metadata and calculating matching fingerprints…",
+    )
     with ThreadPoolExecutor(
         max_workers=max_workers,
         thread_name_prefix="host-media-inspection",
     ) as executor:
-        for batch_start in range(0, total, batch_size):
-            batch = observations[batch_start : batch_start + batch_size]
-            ready: dict[int, _CachedRecord] = {}
-            pending: dict[int, Future[_CachedRecord]] = {}
-            for offset, observation in enumerate(batch):
+        pending: dict[Future[_CachedRecord], _Observation] = {}
+        index = 0
+        try:
+            while index < total or pending:
                 checkpoint()
-                index = batch_start + offset
-                previous = cached.get(_path_identity(observation.path.path))
-                fallback = folder_artwork.get(
-                    _path_identity(observation.path.path.parent)
-                )
-                if previous is not None and previous.matches(observation, fallback):
-                    ready[index] = (
-                        _track_with_folder_artwork(previous, fallback)
-                        if isinstance(previous, _CachedTrackRecord)
-                        else previous
+                while index < total and len(pending) < in_flight_limit:
+                    checkpoint()
+                    observation = observations[index]
+                    index += 1
+                    previous = cached.get(_path_identity(observation.path.path))
+                    fallback = folder_artwork.get(
+                        _path_identity(observation.path.path.parent)
                     )
+                    if previous is not None and previous.matches(observation, fallback):
+                        record = (
+                            _track_with_folder_artwork(previous, fallback)
+                            if isinstance(previous, _CachedTrackRecord)
+                            else previous
+                        )
+                        publish(observation, record, from_cache=True)
+                        continue
+                    future = executor.submit(
+                        _inspect_file,
+                        observation,
+                        fingerprinter,
+                        folder_artwork=fallback,
+                        checkpoint=inspection_checkpoint,
+                    )
+                    pending[future] = observation
+                if not pending:
                     continue
-                pending[index] = executor.submit(
-                    _inspect_file,
-                    observation,
-                    fingerprinter,
-                    folder_artwork=fallback,
-                    checkpoint=checkpoint,
-                )
-
-            _emit(
-                progress,
-                HostMediaScanStage.READING,
-                len(records),
-                total,
-                "Reading metadata and calculating matching fingerprints…",
-                path=batch[0].path,
-                cache_hits=reused,
-            )
-            # Publish finished work immediately, even when an earlier file is slow.
-            by_future = {future: index for index, future in pending.items()}
-            for index in chain(ready, (by_future[f] for f in as_completed(by_future))):
+                # Refill as soon as work finishes, even if an earlier file stalls.
+                # The timeout also lets the owning worker observe cancellation.
+                finished, _ = wait(pending, timeout=0.1, return_when=FIRST_COMPLETED)
                 checkpoint()
-                observation = observations[index]
-                future = pending.get(index)
-                if future is None:
-                    record = ready[index]
-                    reused += 1
-                    label = source_text(
-                        "Reusing unchanged file {index} of {total}…",
-                        index=f"{len(records) + 1:,}",
-                        total=f"{total:,}",
-                    )
-                else:
-                    record = future.result()
-                    inspected += 1
-                    label = source_text(
-                        "Read file {index} of {total}…",
-                        index=f"{len(records) + 1:,}",
-                        total=f"{total:,}",
-                    )
-                records.append(record)
-                if record.warning:
-                    issues.append(HostMediaScanIssue(record.path, record.warning))
-                _emit(
-                    progress,
-                    HostMediaScanStage.READING,
-                    len(records),
-                    total,
-                    label,
-                    path=observation.path,
-                    cache_hits=reused,
-                )
+                for future in finished:
+                    checkpoint()
+                    observation = pending.pop(future)
+                    publish(observation, future.result(), from_cache=False)
+        finally:
+            stopped.set()
+            for future in pending:
+                future.cancel()
     records.sort(key=lambda record: _path_identity(record.path.path))
     issues.sort(key=lambda issue: _path_identity(issue.path.path))
+    logger.info(
+        "Host Media Scan inspection: %.3fs, reused=%d, inspected=%d, "
+        "tracks_without_fingerprint=%d",
+        perf_counter() - started,
+        reused,
+        inspected,
+        sum(
+            isinstance(record, _CachedTrackRecord) and not record.acoustic_fingerprint
+            for record in records
+        ),
+    )
     return records, issues, reused, inspected
 
 

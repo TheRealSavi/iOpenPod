@@ -2,6 +2,8 @@
 
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -43,6 +45,78 @@ def test_listing_returns_typed_entries_with_reusable_identity_observations(
     assert len(children) == 1 and children[0].file is not None
     with children[0].file.open_read() as stream:
         assert stream.read() == b"second"
+
+
+@pytest.mark.parametrize("include_directories", [False, True])
+def test_filtered_listing_skips_unneeded_file_metadata_and_preserves_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, include_directories: bool
+) -> None:
+    (tmp_path / "track.wav").write_bytes(b"track")
+    (tmp_path / "cover.png").write_bytes(b"cover")
+    (tmp_path / "notes.txt").write_text("unneeded", encoding="utf-8")
+    (tmp_path / "album.txt").mkdir()
+    observed = LocalHostDirectory.observe(HostPath(tmp_path))
+    native_scandir = os.scandir
+    native_lstat = Path.lstat
+    statted: list[str] = []
+
+    class Entry:
+        def __init__(self, original: os.DirEntry[str]) -> None:
+            self.original = original
+            self.name = original.name
+
+        def is_dir(self, *, follow_symlinks: bool) -> bool:
+            return self.original.is_dir(follow_symlinks=follow_symlinks)
+
+        def stat(self, *, follow_symlinks: bool) -> os.stat_result:
+            statted.append(self.name)
+            return self.original.stat(follow_symlinks=follow_symlinks)
+
+    @contextmanager
+    def scandir(path: Path | int) -> Iterator[Iterator[Entry]]:
+        with native_scandir(path) as iterator:
+            yield (Entry(entry) for entry in iterator)
+
+    def lstat(path: Path) -> os.stat_result:
+        if path.parent == tmp_path:
+            statted.append(path.name)
+        return native_lstat(path)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    monkeypatch.setattr(Path, "lstat", lstat)
+    discovered: list[HostPath] = []
+    entries = observed.list_entries(
+        checkpoint=lambda: None,
+        include_file=lambda name: name in {"track.wav", "cover.png"},
+        include_directories=include_directories,
+        on_entry=lambda entry: discovered.append(entry.path),
+    )
+    expected = {"track.wav", "cover.png"}
+    if include_directories:
+        expected.add("album.txt")
+    assert set(statted) == expected
+    assert {entry.path.path.name for entry in entries} == expected
+    assert set(discovered) == {entry.path for entry in entries}
+    assert all(
+        entry.file is not None for entry in entries if entry.kind is HostEntryKind.FILE
+    )
+
+
+def test_filtered_listing_still_rejects_directory_replacement(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    observed = LocalHostDirectory.observe(HostPath(root))
+    root.rename(tmp_path / "old-root")
+    root.mkdir()
+    with pytest.raises(ConcurrentModificationError):
+        observed.list_entries(
+            checkpoint=lambda: None,
+            include_file=lambda name: False,
+            include_directories=False,
+            on_issue=lambda path, error: None,
+        )
 
 
 @pytest.mark.parametrize("parent_link", [False, True])

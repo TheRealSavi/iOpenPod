@@ -1117,13 +1117,35 @@ then repeats the metadata-only enumeration. New or changed audio and video files
 receive a cancellable, bounded raw Chromaprint algorithm-2 fingerprint from `fpcalc`;
 new and changed files are inspected by a bounded pool of at most eight workers so
 independent metadata reads and fingerprint processes can overlap without moving
-progress publication, cache mutation, or final validation off the owning scan worker;
-the fingerprint is retained in the Host source adapter and its versioned cache for
+progress publication, cache mutation, or final validation off the owning scan worker.
+The bounded queue replenishes as files finish, so a slow file does not block later
+work behind a batch boundary. Cancellation stops queued work and reaches running
+inspections through cooperative checkpoints. The fingerprint is retained in the
+Host source adapter and its versioned cache for
 later Sync matching. A changed catalog becomes a scan diagnostic and the best-effort
 snapshot remains available for Review; Sync execution revalidates current source
 facts before any device write. This preserves the metadata-first reuse pattern
 without making cloud-backed folders fail on ordinary source churn. The cache is not
 source authority. See ADR-0082.
+
+Within each enumeration pass, folder-artwork discovery reuses Storage's directory
+entry observations from media discovery. Only plausible cover entries are retained;
+an empty listing is also reusable. The final pass always obtains fresh observations.
+Explicit file selections without a folder listing retain their separate artwork
+lookup. Scan logs report enumeration, artwork, and inspection timings and cache use
+to distinguish slow filesystem metadata from repeated media reads. See
+[Host Media Scan performance](research/host-media-scan-performance.md).
+
+Directory traversal remains serial. Overlapping folder selections share one listing
+per directory per pass, with the union of the media types and recursion settings
+that apply at that path. Explicit files reuse an existing observation when possible.
+Storage can filter unneeded filenames before requesting metadata while retaining
+required directories and cover candidates; filesystem type information may still
+require a lookup on some mounts. Directory identity and no-link checks remain in
+force. Discovery and final enumeration publish provisional folder/file counts and
+the current path at most ten times per second, plus a final count. Their progress
+stays indeterminate until the total is known, and the messages retain translation
+templates for live language changes.
 
 External Host file drops on the main Library browser provide another entry to the
 same workflow. A visible drop zone accepts supported local folders and files only

@@ -75,6 +75,9 @@ class LocalHostDirectory:
         *,
         checkpoint: Callable[[], None],
         on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
+        include_file: Callable[[str], bool] | None = None,
+        include_directories: bool = True,
+        on_entry: Callable[[HostDirectoryEntry], None] | None = None,
     ) -> tuple[HostDirectoryEntry, ...]:
         """Stat each child once while pinning this directory and its parents.
 
@@ -83,6 +86,11 @@ class LocalHostDirectory:
         concurrently edited directory fails instead of publishing a partial list.
         Supplying on_issue permits best-effort enumeration of changing contents,
         while directory identity and no-link checks remain mandatory.
+        An optional filename predicate skips unneeded non-directory entries before
+        stat where the Host supplies directory-entry type information. Directories
+        are retained independently when include_directories is true. on_entry
+        reports provisional observations for progress; only a successfully returned
+        listing has passed the final directory identity checks.
         """
         checkpoint()
         entries: list[HostDirectoryEntry] = []
@@ -101,6 +109,15 @@ class LocalHostDirectory:
                     # handles are already pinned, so one leaf lstat supplies it
                     # without rescanning the ancestor chain for each child.
                     try:
+                        if (
+                            include_file is not None
+                            and not include_file(entry.name)
+                            and (
+                                not include_directories
+                                or not entry.is_dir(follow_symlinks=False)
+                            )
+                        ):
+                            continue
                         metadata = (
                             Path(path).lstat()
                             if os.name == "nt"
@@ -112,20 +129,23 @@ class LocalHostDirectory:
                         on_issue(path, error)
                         continue
                     kind = _entry_kind(metadata)
-                    entries.append(
-                        HostDirectoryEntry(
-                            path,
-                            kind,
-                            metadata.st_size,
-                            metadata.st_mtime_ns,
-                            LocalHostFile._from_stat(path, metadata)  # pyright: ignore[reportPrivateUsage]
-                            if kind is HostEntryKind.FILE
-                            else None,
-                            self._from_stat(path, metadata)
-                            if kind is HostEntryKind.DIRECTORY
-                            else None,
-                        )
+                    if kind is HostEntryKind.DIRECTORY and not include_directories:
+                        continue
+                    observation = HostDirectoryEntry(
+                        path,
+                        kind,
+                        metadata.st_size,
+                        metadata.st_mtime_ns,
+                        LocalHostFile._from_stat(path, metadata)  # pyright: ignore[reportPrivateUsage]
+                        if kind is HostEntryKind.FILE
+                        else None,
+                        self._from_stat(path, metadata)
+                        if kind is HostEntryKind.DIRECTORY
+                        else None,
                     )
+                    entries.append(observation)
+                    if on_entry is not None:
+                        on_entry(observation)
             checkpoint()
             after = _directory_stat(pinned)
             current = self.observe(self.path)
