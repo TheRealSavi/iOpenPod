@@ -21,7 +21,7 @@ from iOpenPod.app.media.models import MediaTag
 from iPodDB.library import ContentAdvisory, MediaType, Track
 
 if TYPE_CHECKING:
-    from iOpenPod.app.media.models import MediaInspection
+    from iOpenPod.app.media.models import MediaInspection, MediaScanMetadata
 
 # Native names precede editor/FFprobe aliases. Order defines conflict precedence.
 _ALIASES: dict[str, tuple[str, ...]] = {
@@ -254,7 +254,9 @@ def read_tag_values(tags: object) -> tuple[MediaTag, ...]:
     return tuple(MediaTag(name, value) for name, value in sorted(result.items()))
 
 
-def inspection_tag_values(observed: MediaInspection) -> tuple[MediaTag, ...]:
+def inspection_tag_values(
+    observed: MediaInspection | MediaScanMetadata,
+) -> tuple[MediaTag, ...]:
     """Container tags win; a preferred playable stream fills missing fields."""
     streams = observed.audio_streams or observed.video_streams
     preferred = next(

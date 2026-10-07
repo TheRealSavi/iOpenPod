@@ -8,13 +8,14 @@ import json
 import logging
 import math
 import os
+from collections import deque
 from collections.abc import Callable, Iterable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from io import BytesIO
 from pathlib import Path
-from threading import Event
+from threading import Event, Lock
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -26,7 +27,6 @@ from iOpenPod.app.display_text import source_text
 from iOpenPod.app.host_media_fingerprint import (
     FpcalcError,
     FpcalcFingerprinter,
-    normalize_fpcalc_fingerprint,
 )
 from iOpenPod.app.host_media_folders import HostMediaFolder, HostMediaType
 from iOpenPod.app.host_playlists import (
@@ -35,6 +35,7 @@ from iOpenPod.app.host_playlists import (
     parse_host_playlist,
 )
 from iOpenPod.app.media.content_type import classify_content_type
+from iOpenPod.app.media.fingerprint_codec import decode_fingerprint, encode_fingerprint
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.models import MediaTag
 from iOpenPod.app.media.tags import (
@@ -73,12 +74,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 10
+_CACHE_VERSION = 11
 _MAX_CACHE_BYTES = 64 * 1024 * 1024
+_MAX_DECODED_FINGERPRINT_BYTES = 256 * 1024 * 1024
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
 _MAX_INSPECTION_WORKERS = 8
+_MAX_DIRECTORY_WORKERS = 4
 _DISCOVERY_PROGRESS_INTERVAL = 0.1
+_READING_PROGRESS_INTERVAL = 0.1
+_FINGERPRINT_WARNING = (
+    "Acoustic fingerprint unavailable; this file can still be selected for Add: "
+)
 
 _AUDIO_EXTENSIONS = frozenset(
     {
@@ -153,6 +160,7 @@ _TRACK_METADATA_FIELDS = frozenset(
         "media_type",
         "tag_values",
         "acoustic_fingerprint",
+        "metadata_complete",
         "artwork_content_sha256",
         "artwork_kind",
         "artwork_modified_ns",
@@ -535,7 +543,7 @@ class _DirectoryCatalog:
     """Artwork candidates from one enumeration, never shared between passes."""
 
     artwork_entries: dict[str, tuple[HostDirectoryEntry, ...]] = field(
-        default_factory=dict
+        default_factory=dict[str, tuple[HostDirectoryEntry, ...]]
     )
     listings: int = 0
     entries: int = 0
@@ -609,6 +617,7 @@ class _CachedFileRecord:
 
 @dataclass(frozen=True, slots=True)
 class _CachedTrackRecord(_CachedFileRecord):
+    metadata_complete: bool = False
     title: str = ""
     artist: str = ""
     album: str = ""
@@ -663,9 +672,7 @@ class _CachedTrackRecord(_CachedFileRecord):
         folder_artwork: _ArtworkReference | None = None,
     ) -> bool:
         del folder_artwork
-        return bool(self.acoustic_fingerprint) and _CachedFileRecord.matches(
-            self, observation
-        )
+        return self.metadata_complete and _CachedFileRecord.matches(self, observation)
 
 
 @dataclass(frozen=True, slots=True)
@@ -771,6 +778,7 @@ class HostMediaScanner:
         fingerprinter: _AcousticFingerprinter | None = None,
         *,
         max_workers: int | None = None,
+        max_directory_workers: int = _MAX_DIRECTORY_WORKERS,
     ) -> None:
         resolved_workers = (
             min(_MAX_INSPECTION_WORKERS, max(1, os.cpu_count() or 1))
@@ -782,9 +790,19 @@ class HostMediaScanner:
                 "Host media inspection workers must be between 1 and "
                 f"{_MAX_INSPECTION_WORKERS}"
             )
+        if not 1 <= max_directory_workers <= _MAX_DIRECTORY_WORKERS:
+            raise ValueError(
+                f"Host directory workers must be between 1 and {_MAX_DIRECTORY_WORKERS}"
+            )
         self._cache_file = cache_file
         self._fingerprinter = fingerprinter or FpcalcFingerprinter()
         self._max_workers = resolved_workers
+        self._max_directory_workers = max_directory_workers
+        self._cached_records: dict[str, _CachedRecord] = {}
+        self._cached_artwork: dict[str, _ArtworkReference] = {}
+        self._cache_revision: tuple[int, int, int, int] | None = None
+        self._cache_loaded = False
+        self._cache_dirty = False
 
     def scan(
         self,
@@ -806,8 +824,13 @@ class HostMediaScanner:
             else "Finding media in the selected folders…",
         )
         checkpoint()
+        fingerprinter = self._scan_fingerprinter()
         before, enumeration_issues, before_directories = _enumerate(
-            folders, files=files, checkpoint=checkpoint, progress=progress
+            folders,
+            files=files,
+            checkpoint=checkpoint,
+            progress=progress,
+            max_workers=self._max_directory_workers,
         )
         cached, cached_artwork = self._load_cache()
         before_artwork = _folder_artwork_catalog(
@@ -818,11 +841,10 @@ class HostMediaScanner:
         )
         del before_directories
         issues = list(enumeration_issues)
-        total = len(before)
         records, inspection_issues, reused, inspected = _inspect_selected_files(
             before,
             cached,
-            self._fingerprinter,
+            fingerprinter,
             folder_artwork=before_artwork,
             max_workers=self._max_workers,
             checkpoint=checkpoint,
@@ -846,6 +868,7 @@ class HostMediaScanner:
             progress=progress,
             stage=HostMediaScanStage.FINALIZING,
             cache_hits=reused,
+            max_workers=self._max_directory_workers,
         )
         after_artwork = _folder_artwork_catalog(
             after,
@@ -963,6 +986,7 @@ class HostMediaScanner:
         inspected = pending.cache.inspected
         total = len(accepted_by_identity)
         approved_external_files: list[LocalHostFile] = []
+        fingerprinter = self._scan_fingerprinter()
         for index, (identity, path) in enumerate(
             sorted(accepted_by_identity.items()),
             start=1,
@@ -994,8 +1018,16 @@ class HostMediaScanner:
                 reviewed.modified_ns,
             )
             previous = cached.get(identity)
-            if previous is not None and previous.matches(observation, None):
-                record = previous
+            record: _CachedRecord
+            metadata_reusable = isinstance(
+                previous, _CachedTrackRecord
+            ) and previous.matches(observation, None)
+            if (
+                metadata_reusable
+                and isinstance(previous, _CachedTrackRecord)
+                and previous.acoustic_fingerprint
+            ):
+                record = _track_with_folder_artwork(previous, None)
                 reused += 1
                 label = source_text(
                     "Reusing external file {index} of {total}…",
@@ -1007,15 +1039,35 @@ class HostMediaScanner:
                     # Decoders receive a private Storage capture, never an untrusted
                     # path that can be retargeted after the user's decision.
                     with reviewed.capture(checkpoint=checkpoint) as snapshot:
-                        record = _inspect_file(
-                            replace(
-                                observation,
-                                path=snapshot,
-                                file=LocalHostFile.observe(snapshot),
-                            ),
-                            self._fingerprinter,
-                            folder_artwork=None,
-                            checkpoint=checkpoint,
+                        captured = replace(
+                            observation,
+                            path=snapshot,
+                            file=LocalHostFile.observe(snapshot),
+                        )
+                        record = (
+                            _fingerprint_track(
+                                captured,
+                                replace(
+                                    _track_with_folder_artwork(previous, None),
+                                    warning="",
+                                ),
+                                fingerprinter,
+                                checkpoint=checkpoint,
+                            )
+                            if metadata_reusable
+                            and isinstance(previous, _CachedTrackRecord)
+                            else _inspect_file(
+                                captured,
+                                fingerprinter,
+                                folder_artwork=None,
+                                checkpoint=checkpoint,
+                                cached_fingerprint=(
+                                    previous.acoustic_fingerprint
+                                    if isinstance(previous, _CachedTrackRecord)
+                                    and _CachedFileRecord.matches(previous, observation)
+                                    else ""
+                                ),
+                            )
                         )
                         assert isinstance(record, _CachedTrackRecord)
                         record = replace(
@@ -1079,6 +1131,7 @@ class HostMediaScanner:
                 progress=progress,
                 stage=HostMediaScanStage.FINALIZING,
                 cache_hits=reused,
+                max_workers=self._max_directory_workers,
             )
             if tuple(item.state for item in after) != tuple(
                 item.state for item in pending.observations
@@ -1206,24 +1259,43 @@ class HostMediaScanner:
         self._store_cache(cached_records.values(), folder_artwork.values())
         return updated
 
+    def _scan_fingerprinter(self) -> _AcousticFingerprinter:
+        if isinstance(self._fingerprinter, FpcalcFingerprinter):
+            return self._fingerprinter.for_scan()
+        return self._fingerprinter
+
     def _load_cache(
         self,
     ) -> tuple[dict[str, _CachedRecord], dict[str, _ArtworkReference]]:
         if self._cache_file is None:
             return {}, {}
         try:
-            payload = self._cache_file.read_bytes()
+            revision = self._cache_file.revision()
+            if self._cache_loaded and revision == self._cache_revision:
+                return dict(self._cached_records), dict(self._cached_artwork)
+            self._cache_loaded = False
+            self._cached_records = {}
+            self._cached_artwork = {}
+            self._cache_revision = revision
+            self._cache_dirty = True
+            payload = self._cache_file.read_bytes(max_bytes=_MAX_CACHE_BYTES)
             if payload is None or len(payload) > _MAX_CACHE_BYTES:
                 return {}, {}
-            records, artwork = _decode_cache(payload)
-            return (
-                {_path_identity(record.path.path): record for record in records},
-                {
-                    _path_identity(reference.path.path.parent): reference
-                    for reference in artwork
-                },
-            )
+            records, artwork, version = _decode_cache(payload)
+            self._cached_records = {
+                _path_identity(record.path.path): record for record in records
+            }
+            self._cached_artwork = {
+                _path_identity(reference.path.path.parent): reference
+                for reference in artwork
+            }
+            # A concurrent replacement may be used as a one-scan hint, but must
+            # not bind these decoded records to a different file revision.
+            self._cache_loaded = revision == self._cache_file.revision()
+            self._cache_dirty = version != _CACHE_VERSION
+            return dict(self._cached_records), dict(self._cached_artwork)
         except (OSError, StorageError, ValueError, UnicodeError):
+            self._cache_loaded = False
             return {}, {}
 
     def _store_cache(
@@ -1233,9 +1305,28 @@ class HostMediaScanner:
     ) -> None:
         if self._cache_file is None:
             return
+        records_by_path = {
+            _path_identity(record.path.path): record for record in records
+        }
+        artwork_by_directory = {
+            _path_identity(reference.path.path.parent): reference
+            for reference in folder_artwork
+        }
+        try:
+            revision = self._cache_file.revision()
+            if (
+                self._cache_loaded
+                and not self._cache_dirty
+                and revision == self._cache_revision
+                and records_by_path == self._cached_records
+                and artwork_by_directory == self._cached_artwork
+            ):
+                return
+        except (OSError, StorageError):
+            revision = None
         ordered = tuple(
             sorted(
-                _unique_records(records),
+                records_by_path.values(),
                 key=lambda record: _path_identity(record.path.path),
             )
         )
@@ -1243,15 +1334,27 @@ class HostMediaScanner:
             ordered = ordered[-_MAX_CACHE_ENTRIES:]
         ordered_artwork = tuple(
             sorted(
-                folder_artwork,
+                artwork_by_directory.values(),
                 key=lambda reference: _path_identity(reference.path.path),
             )
         )
         if len(ordered_artwork) > _MAX_CACHE_ENTRIES:
             ordered_artwork = ordered_artwork[-_MAX_CACHE_ENTRIES:]
+        self._cached_records = {
+            _path_identity(record.path.path): record for record in ordered
+        }
+        self._cached_artwork = {
+            _path_identity(reference.path.path.parent): reference
+            for reference in ordered_artwork
+        }
+        self._cache_revision = revision
+        self._cache_loaded = True
+        self._cache_dirty = True
         try:
             self._cache_file.replace_bytes(_encode_cache(ordered, ordered_artwork))
-        except (OSError, StorageError, HostMediaScanError):
+            self._cache_revision = self._cache_file.revision()
+            self._cache_dirty = False
+        except (OSError, StorageError, HostMediaScanError, ValueError):
             logger.warning(
                 "Host Media Scan cache could not be updated",
                 exc_info=True,
@@ -1303,6 +1406,7 @@ def _enumerate(
     progress: ProgressCallback | None = None,
     stage: HostMediaScanStage = HostMediaScanStage.DISCOVERING,
     cache_hits: int = 0,
+    max_workers: int = _MAX_DIRECTORY_WORKERS,
 ) -> tuple[tuple[_Observation, ...], tuple[HostMediaScanIssue, ...], _DirectoryCatalog]:
     started = perf_counter()
     logger.info("Host Media Scan enumeration started")
@@ -1340,10 +1444,22 @@ def _enumerate(
     explicit_paths = frozenset(_path_identity(path.path) for path in files)
     # Ancestors go first so one traversal can cover nested selections. Each
     # directory uses the union of *all* applicable settings, independent of order.
-    for folder in sorted(
+    ordered_folders = sorted(
         selected_folders,
         key=lambda item: (len(item.path.path.parts), _path_identity(item.path.path)),
-    ):
+    )
+    if max_workers > 1:
+        _walk_folders_parallel(
+            tuple(ordered_folders),
+            explicit_paths,
+            observations,
+            issues,
+            directories,
+            checkpoint=checkpoint,
+            progress=publish,
+            max_workers=max_workers,
+        )
+    for folder in ordered_folders if max_workers == 1 else ():
         checkpoint()
         identity = _path_identity(folder.path.path)
         if identity in directories.artwork_entries:
@@ -1415,9 +1531,160 @@ def _enumerate(
     )
     return (
         tuple(sorted(observations.values(), key=lambda item: item.state)),
-        tuple(issues),
+        tuple(
+            sorted(
+                issues, key=lambda item: (_path_identity(item.path.path), item.detail)
+            )
+        ),
         directories,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _DirectoryScanResult:
+    observations: tuple[_Observation, ...]
+    issues: tuple[HostMediaScanIssue, ...]
+    catalog: _DirectoryCatalog
+    descendants: tuple[LocalHostDirectory, ...]
+
+
+def _walk_folders_parallel(
+    folders: tuple[HostMediaFolder, ...],
+    explicit_paths: frozenset[str],
+    observations: dict[str, _Observation],
+    issues: list[HostMediaScanIssue],
+    directories: _DirectoryCatalog,
+    *,
+    checkpoint: CancellationCheck,
+    progress: Callable[[HostPath], None],
+    max_workers: int,
+) -> None:
+    """Overlap independent validated listings, with one owner of scan state."""
+
+    queued: set[str] = set()
+    remaining: deque[LocalHostDirectory] = deque()
+    for folder in folders:
+        checkpoint()
+        identity = _path_identity(folder.path.path)
+        if identity in queued:
+            continue
+        queued.add(identity)
+        progress(folder.path)
+        try:
+            remaining.append(LocalHostDirectory.observe(folder.path))
+        except (OSError, StorageError) as error:
+            directories.artwork_entries[identity] = ()
+            issues.append(
+                HostMediaScanIssue(
+                    folder.path,
+                    source_text(
+                        "The selected folder could not be fully scanned: {error}",
+                        error=str(error),
+                    ),
+                )
+            )
+
+    stopped = Event()
+    lock = Lock()
+    # One replaceable counter pair per in-flight directory: no per-file event
+    # queue can grow behind the owning thread or flood the GUI with callbacks.
+    live_counts: dict[str, tuple[int, int]] = {}
+    latest_path: HostPath | None = None
+    completed_listings = 0
+    completed_media = 0
+
+    def worker_checkpoint() -> None:
+        checkpoint()
+        if stopped.is_set():
+            raise HostMediaScanCancelledError("Host directory discovery stopped")
+
+    def read(directory: LocalHostDirectory) -> _DirectoryScanResult:
+        local_observations: dict[str, _Observation] = {}
+        local_issues: list[HostMediaScanIssue] = []
+        local_catalog = _DirectoryCatalog()
+        children: list[LocalHostDirectory] = []
+        identity = _path_identity(directory.path.path)
+
+        def report(path: HostPath) -> None:
+            nonlocal latest_path
+            with lock:
+                latest_path = path
+                live_counts[identity] = (
+                    local_catalog.listings,
+                    local_catalog.media_files,
+                )
+
+        _walk_folder(
+            directory,
+            folders,
+            explicit_paths,
+            local_observations,
+            local_issues,
+            local_catalog,
+            checkpoint=worker_checkpoint,
+            progress=report,
+            descendants=children,
+        )
+        return _DirectoryScanResult(
+            tuple(local_observations.values()),
+            tuple(local_issues),
+            local_catalog,
+            tuple(children),
+        )
+
+    def publish_live() -> None:
+        with lock:
+            directories.listings = completed_listings + sum(
+                count[0] for count in live_counts.values()
+            )
+            directories.media_files = completed_media + sum(
+                count[1] for count in live_counts.values()
+            )
+            path = latest_path
+        if path is not None:
+            progress(path)
+
+    with ThreadPoolExecutor(
+        max_workers=max_workers, thread_name_prefix="host-media-discovery"
+    ) as executor:
+        pending: dict[Future[_DirectoryScanResult], str] = {}
+        try:
+            while remaining or pending:
+                checkpoint()
+                while remaining and len(pending) < max_workers * 2:
+                    directory = remaining.popleft()
+                    pending[executor.submit(read, directory)] = _path_identity(
+                        directory.path.path
+                    )
+                publish_live()
+                finished, _ = wait(pending, timeout=0.05, return_when=FIRST_COMPLETED)
+                checkpoint()
+                for future in finished:
+                    checkpoint()
+                    identity = pending.pop(future)
+                    result = future.result()
+                    with lock:
+                        live_counts.pop(identity, None)
+                    completed_listings += result.catalog.listings
+                    completed_media += result.catalog.media_files
+                    directories.entries += result.catalog.entries
+                    directories.artwork_entries.update(result.catalog.artwork_entries)
+                    observations.update(
+                        (_path_identity(item.path.path), item)
+                        for item in result.observations
+                    )
+                    issues.extend(result.issues)
+                    for child in result.descendants:
+                        checkpoint()
+                        identity = _path_identity(child.path.path)
+                        if identity not in queued:
+                            queued.add(identity)
+                            remaining.append(child)
+                publish_live()
+        finally:
+            stopped.set()
+            for future in pending:
+                future.cancel()
 
 
 def _walk_folder(
@@ -1430,6 +1697,7 @@ def _walk_folder(
     *,
     checkpoint: CancellationCheck,
     progress: Callable[[HostPath], None],
+    descendants: list[LocalHostDirectory] | None = None,
 ) -> None:
     checkpoint()
 
@@ -1503,6 +1771,9 @@ def _walk_folder(
         checkpoint()
         if entry.kind is HostEntryKind.DIRECTORY:
             if folder.recurse and entry.directory is not None:
+                if descendants is not None:
+                    descendants.append(entry.directory)
+                    continue
                 _walk_folder(
                     entry.directory,
                     folders,
@@ -1746,6 +2017,8 @@ def _track_with_folder_artwork(
     artwork = record.artwork
     if artwork is not None and artwork.kind is HostArtworkKind.EMBEDDED:
         return record
+    if artwork == current:
+        return record
     return replace(
         record,
         artwork_kind=None if current is None else current.kind,
@@ -1781,6 +2054,7 @@ def _inspect_selected_files(
     total = len(observations)
     in_flight_limit = max_workers * 4
     stopped = Event()
+    last_progress = -math.inf
 
     def inspection_checkpoint() -> None:
         checkpoint()
@@ -1790,24 +2064,31 @@ def _inspect_selected_files(
     def publish(
         observation: _Observation, record: _CachedRecord, *, from_cache: bool
     ) -> None:
-        nonlocal reused, inspected
+        nonlocal reused, inspected, last_progress
         if from_cache:
             reused += 1
-            label = source_text(
-                "Reusing unchanged file {index} of {total}…",
-                index=f"{len(records) + 1:,}",
-                total=f"{total:,}",
-            )
         else:
             inspected += 1
-            label = source_text(
-                "Read file {index} of {total}…",
-                index=f"{len(records) + 1:,}",
-                total=f"{total:,}",
-            )
         records.append(record)
         if record.warning:
             issues.append(HostMediaScanIssue(record.path, record.warning))
+        if progress is None:
+            return
+        now = perf_counter()
+        if (
+            from_cache
+            and len(records) != total
+            and now - last_progress < _READING_PROGRESS_INTERVAL
+        ):
+            return
+        last_progress = now
+        label = source_text(
+            "Reusing unchanged file {index} of {total}…"
+            if from_cache
+            else "Read file {index} of {total}…",
+            index=f"{len(records):,}",
+            total=f"{total:,}",
+        )
         _emit(
             progress,
             HostMediaScanStage.READING,
@@ -1848,7 +2129,22 @@ def _inspect_selected_files(
                             if isinstance(previous, _CachedTrackRecord)
                             else previous
                         )
-                        publish(observation, record, from_cache=True)
+                        if (
+                            not isinstance(record, _CachedTrackRecord)
+                            or record.acoustic_fingerprint
+                        ):
+                            publish(observation, record, from_cache=True)
+                            continue
+                        # Missing optional acoustic evidence must not discard
+                        # readable cached metadata or suppress later retries.
+                        future: Future[_CachedRecord] = executor.submit(
+                            _fingerprint_track,
+                            observation,
+                            replace(record, warning=""),
+                            fingerprinter,
+                            checkpoint=inspection_checkpoint,
+                        )
+                        pending[future] = observation
                         continue
                     future = executor.submit(
                         _inspect_file,
@@ -1856,6 +2152,12 @@ def _inspect_selected_files(
                         fingerprinter,
                         folder_artwork=fallback,
                         checkpoint=inspection_checkpoint,
+                        cached_fingerprint=(
+                            previous.acoustic_fingerprint
+                            if isinstance(previous, _CachedTrackRecord)
+                            and _CachedFileRecord.matches(previous, observation)
+                            else ""
+                        ),
                     )
                     pending[future] = observation
                 if not pending:
@@ -1894,6 +2196,7 @@ def _inspect_file(
     *,
     folder_artwork: _ArtworkReference | None = None,
     checkpoint: CancellationCheck,
+    cached_fingerprint: str = "",
 ) -> _CachedRecord:
     if observation.kind in (
         HostMediaFileKind.AUDIO,
@@ -1916,18 +2219,11 @@ def _inspect_file(
             )
             assert isinstance(fallback, _CachedTrackRecord)
             record = fallback
-        try:
-            acoustic_fingerprint = fingerprinter.fingerprint(
-                observation.path,
-                checkpoint=checkpoint,
-            )
-        except FpcalcError as error:
-            warning = _combine_warnings(
-                record.warning,
-                f"Acoustic fingerprint unavailable; this file can still be selected for Add: {error}",
-            )
-            return replace(record, warning=warning)
-        return replace(record, acoustic_fingerprint=acoustic_fingerprint)
+        if cached_fingerprint:
+            return replace(record, acoustic_fingerprint=cached_fingerprint)
+        return _fingerprint_track(
+            observation, record, fingerprinter, checkpoint=checkpoint
+        )
     try:
         if observation.kind is HostMediaFileKind.PHOTO:
             return _inspect_photo(observation, checkpoint=checkpoint)
@@ -1947,6 +2243,25 @@ def _inspect_file(
 
 def _combine_warnings(*values: str) -> str:
     return " ".join(value for value in values if value)
+
+
+def _fingerprint_track(
+    observation: _Observation,
+    record: _CachedTrackRecord,
+    fingerprinter: _AcousticFingerprinter,
+    *,
+    checkpoint: CancellationCheck,
+) -> _CachedTrackRecord:
+    try:
+        acoustic_fingerprint = fingerprinter.fingerprint(
+            observation.path, checkpoint=checkpoint
+        )
+    except FpcalcError as error:
+        return replace(
+            record,
+            warning=_combine_warnings(record.warning, f"{_FINGERPRINT_WARNING}{error}"),
+        )
+    return replace(record, acoustic_fingerprint=acoustic_fingerprint)
 
 
 def _inspect_track(
@@ -1973,10 +2288,13 @@ def _inspect_track(
     # Containers without native tag support, including Matroska and AVI, use
     # the existing bounded, single-file FFprobe adapter instead.
     try:
-        observed = MediaInspector().inspect(observation.path, checkpoint=checkpoint)
+        observed = MediaInspector().scan_metadata(
+            observation.path, checkpoint=checkpoint
+        )
     except MediaInspectionError as error:
         return replace(
             record,
+            metadata_complete=False,
             warning=_combine_warnings(
                 record.warning,
                 f"Metadata inspection unavailable; basic file facts were retained: {error}",
@@ -2001,6 +2319,7 @@ def _inspect_track(
     )
     return replace(
         record,
+        metadata_complete=True,
         warning="",
         tag_values=values,
         media_type=tagged.media_types[0],
@@ -2068,6 +2387,7 @@ def _read_track(
         kind=observation.kind,
         size_bytes=observation.size_bytes,
         modified_ns=observation.modified_ns,
+        metadata_complete=parsed is not None,
         title=tagged.title,
         artist=tagged.artist,
         album=tagged.album,
@@ -2414,6 +2734,15 @@ def _encode_cache(
     records: tuple[_CachedRecord, ...],
     folder_artwork: tuple[_ArtworkReference, ...],
 ) -> bytes:
+    if (
+        sum(
+            len(record.acoustic_fingerprint)
+            for record in records
+            if isinstance(record, _CachedTrackRecord)
+        )
+        > _MAX_DECODED_FINGERPRINT_BYTES
+    ):
+        raise HostMediaScanError("Host media cache fingerprint data exceeds 256 MiB")
     entries = [_record_document(record) for record in records]
     catalog = _canonical_json(entries)
     artwork_entries = [
@@ -2442,13 +2771,24 @@ def _encode_cache(
 
 def _decode_cache(
     payload: bytes,
-) -> tuple[tuple[_CachedRecord, ...], tuple[_ArtworkReference, ...]]:
+) -> tuple[tuple[_CachedRecord, ...], tuple[_ArtworkReference, ...], int]:
+    try:
+        return _decode_cache_contents(payload)
+    except RecursionError as error:
+        raise ValueError(
+            "Host media cache nesting exceeds its structural limit"
+        ) from error
+
+
+def _decode_cache_contents(
+    payload: bytes,
+) -> tuple[tuple[_CachedRecord, ...], tuple[_ArtworkReference, ...], int]:
     raw: object = json.loads(payload.decode("utf-8"), object_pairs_hook=_pairs)
     document = _object(raw, "cache")
     version = _integer(document.get("version"), "version")
     if version == 9:
         expected = {"version", "entries", "catalog_sha256"}
-    elif version == _CACHE_VERSION:
+    elif version in (10, _CACHE_VERSION):
         expected = {
             "version",
             "entries",
@@ -2469,9 +2809,18 @@ def _decode_cache(
         or hashlib.sha256(_canonical_json(entries)).hexdigest() != digest
     ):
         raise ValueError("Host media cache checksum does not match")
-    records = tuple(_record_from_document(entry) for entry in entries)
+    decoded_records: list[_CachedRecord] = []
+    fingerprint_bytes = 0
+    for entry in entries:
+        record = _record_from_document(entry, version=version)
+        if isinstance(record, _CachedTrackRecord):
+            fingerprint_bytes += len(record.acoustic_fingerprint)
+            if fingerprint_bytes > _MAX_DECODED_FINGERPRINT_BYTES:
+                raise ValueError("Host media cache fingerprint data exceeds 256 MiB")
+        decoded_records.append(record)
+    records = tuple(decoded_records)
     if version == 9:
-        return records, _folder_artwork_from_records(records)
+        return records, _folder_artwork_from_records(records), version
     artwork_entries = _array(document["folder_artwork"], "folder_artwork")
     if len(artwork_entries) > _MAX_CACHE_ENTRIES:
         raise ValueError("Host media cache contains too many folder covers")
@@ -2508,7 +2857,7 @@ def _decode_cache(
                 _sha256(row["content_sha256"], "content_sha256"),
             )
         )
-    return records, tuple(artwork)
+    return records, tuple(artwork), version
 
 
 def _folder_artwork_from_records(
@@ -2561,7 +2910,10 @@ def _record_document(record: _CachedRecord) -> dict[str, object]:
             "length_ms": record.length_ms,
             "bitrate_kbps": record.bitrate_kbps,
             "sample_rate_hz": record.sample_rate_hz,
-            "acoustic_fingerprint": record.acoustic_fingerprint,
+            "acoustic_fingerprint": encode_fingerprint(record.acoustic_fingerprint)
+            if record.acoustic_fingerprint
+            else "",
+            "metadata_complete": record.metadata_complete,
             "artwork_kind": (
                 "" if record.artwork_kind is None else record.artwork_kind.value
             ),
@@ -2597,7 +2949,7 @@ def _record_document(record: _CachedRecord) -> dict[str, object]:
     }
 
 
-def _record_from_document(value: object) -> _CachedRecord:
+def _record_from_document(value: object, *, version: int) -> _CachedRecord:
     row = _object(value, "cache entry")
     if frozenset(row) != _CACHE_ENTRY_FIELDS:
         raise ValueError("Host media cache entry fields are invalid")
@@ -2612,18 +2964,29 @@ def _record_from_document(value: object) -> _CachedRecord:
     metadata = _object(row["metadata"], "metadata")
     if kind in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO):
         # Ignore the unused digest emitted by an earlier v10 development build.
-        if frozenset(metadata) - {"payload_sha256"} != _TRACK_METADATA_FIELDS:
+        expected = (
+            _TRACK_METADATA_FIELDS
+            if version == _CACHE_VERSION
+            else _TRACK_METADATA_FIELDS - {"metadata_complete"}
+        )
+        if frozenset(metadata) - {"payload_sha256"} != expected:
             raise ValueError("Cached Track metadata fields are invalid")
+        metadata_complete = metadata.get("metadata_complete")
+        if version == _CACHE_VERSION:
+            if not isinstance(metadata_complete, bool):
+                raise ValueError("Cached Track metadata status is invalid")
+        else:
+            # Legacy versions combined optional acoustic failures with metadata
+            # diagnostics. Infer their success only during migration.
+            metadata_complete = not warning or warning.startswith(_FINGERPRINT_WARNING)
         acoustic_fingerprint = _text(
             metadata["acoustic_fingerprint"],
             "acoustic_fingerprint",
         )
         if acoustic_fingerprint:
             try:
-                acoustic_fingerprint = normalize_fpcalc_fingerprint(
-                    acoustic_fingerprint
-                )
-            except FpcalcError as error:
+                acoustic_fingerprint = decode_fingerprint(acoustic_fingerprint)
+            except ValueError as error:
                 raise ValueError("Cached Acoustic Fingerprint is invalid") from error
         artwork_kind_value = _text(metadata["artwork_kind"], "artwork_kind")
         artwork_path_value = _text(metadata["artwork_path"], "artwork_path")
@@ -2654,6 +3017,7 @@ def _record_from_document(value: object) -> _CachedRecord:
             size_bytes=size_bytes,
             modified_ns=modified_ns,
             warning=warning,
+            metadata_complete=metadata_complete,
             tag_values=_cached_tag_values(metadata["tag_values"]),
             title=_text(metadata["title"], "title"),
             artist=_text(metadata["artist"], "artist"),

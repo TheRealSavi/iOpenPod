@@ -1,6 +1,7 @@
 # Host Media Scan performance
 
-Investigation date: 2026-10-07. Baseline: `b378219` (2.0.6).
+Investigation date: 2026-10-07. Initial baseline: `b378219` (2.0.6).
+The later cache and concurrency measurements use `564fc006` as their baseline.
 
 ## Finding
 
@@ -33,10 +34,9 @@ embedded-artwork-only access policy.
 This is an implementation optimization within ADR-0063, ADR-0074, ADR-0082, and
 ADR-0084. It preserves both selected-tree passes, best-effort diagnostics,
 cancellation, Storage identity/path/read checks, and Sync source revalidation.
-Missing Acoustic Fingerprints still cause reinspection on the next scan, as
-specified by ADR-0063; cached metadata alone does not establish a complete cache
-hit. Retrying optional analysis separately from metadata would require a separate
-cache policy change.
+The initial optimization retained ADR-0063's complete reinspection on a missing
+Acoustic Fingerprint. ADR-0123 subsequently separates successful metadata from
+optional acoustic retries, as described below.
 
 ## Local operation-count comparison
 
@@ -78,7 +78,7 @@ tasks and signals running inspections through their checkpoints. Tests hold the
 first file open until a file beyond the former batch boundary finishes, so this
 behavior does not depend on timing-based speed assertions.
 
-Directory enumeration remains serial. The scanner visits overlapping selections
+The initial change kept directory enumeration serial. The scanner visits overlapping selections
 once per directory per pass. At each path it combines the media types from every
 applicable selection; a nonrecursive selection only applies at its own root.
 Processing ancestor selections first avoids relisting a selected child directory.
@@ -102,7 +102,68 @@ remains unknown during traversal, so the progress bar is indeterminate. Spanish 
 German catalogs include both new progress templates. Blocking filesystem calls can
 still delay progress and cancellation until control returns to the scanner.
 
-Acoustic Fingerprint retry policy and end-of-scan cache persistence are unchanged.
+The initial change retained the existing Acoustic Fingerprint retry policy and
+end-of-scan persistence. The following changes extend that work.
+
+## Cache reuse and bounded concurrency
+
+ADR-0123 introduces independent metadata/acoustic reuse, compact fingerprints,
+dirty-only cache writes, revision-bound decoded caches, four directory workers,
+and a Host-side iPod Analysis Cache. iPod scans overlap one serialized device
+capture with one decoder and keep at most two temporary captures. Descriptive
+video probing uses a pinned, seekable input without copying the entire Host file.
+All selected-tree passes and Storage identity/path checks remain in place.
+
+The local fixture has 1,000 WAVE Tracks across 50 albums and a virtual iPod with
+200 files of 64 KiB each. Fingerprinting is stubbed with a 948-value decimal
+sequence. Both versions perform the same 102 Host directory listings and return
+2,100 entries across two passes. Measurements exclude native decoding, GUI work,
+NAS requests, and physical USB latency. Wall times are illustrative, not a device
+performance guarantee; operation counts are the more stable comparison.
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Warm Host scan, 1,000 Tracks | 0.688 s | 0.231 s |
+| Warm Host cache writes | 2 (22.0 MB total) | 0 |
+| Warm Host progress events | 1,009 | 11 |
+| Host cache size | 11.0 MB | 2.41 MB |
+| Metadata parses when retrying 20 missing fingerprints | 20 | 0 |
+| Cached iPod scan, 200 Tracks | 0.409 s | 0.167 s |
+| Cached iPod stat calls, including helper | 401 | 201 |
+| Cached iPod Volume reinspections, including helper | 804 | 204 |
+| Repeat iPod scan before Sync | 0.947 s | 0.120 s |
+| Repeat pre-Sync device copies / acoustic calculations | 200 / 200 | 0 / 0 |
+
+The first Host scan writes its cache once instead of twice. A new scanner instance
+reads and decodes the cache once: the restarted warm Host run took 0.373 seconds.
+The 6,500-record capacity probe previously exceeded 64 MiB for both caches; it now
+fits in 15.6 MB for Host metadata and 12.8 MB for the helper. Compression depends on
+the values: this sequential stub compresses particularly well. A separate test
+with mixed unsigned 32-bit values verifies exact round trips below 60% of decimal
+text size. Catalog limits remain enforced on both encoded and decoded data.
+
+These decoder-free fixtures do not establish a first-scan speedup: the measured
+Host first scan changed from 1.60 to 1.76 seconds and the virtual iPod first scan
+from 3.50 to 4.09 seconds. They cannot exercise useful copy/decode overlap with an
+instantaneous stub, and local file timings include cache and scheduling noise.
+Regression tests instead require later device copying to proceed while the first
+decoder is blocked, and require independent directory listings to overlap without
+exceeding the configured worker bound. Real first-scan timing still needs a
+representative device or mounted library.
+
+A controlled latency experiment isolates directory overlap: 400 Tracks in 40 album
+directories, three repetitions, and an added 20 ms delay per listing. Median first
+scan time with one versus four workers was 2.287 versus 0.997 seconds; warm time was
+1.829 versus 0.544 seconds. All runs made 82 listings, returned 880 entries, and
+produced identical Track counts without issues. This demonstrates tolerance of
+simulated latency, not a measured WebDAV speedup. A flat 400-Track directory with
+no added latency had about 3.5 ms of extra warm-scan overhead with four workers,
+because there were no independent directory listings to overlap.
+
+Canonical raw fingerprint validation also avoids rebuilding unchanged decimal
+strings. Across 24 distinct mixed 948-value sequences, the local median fell from
+208 to 85.8 microseconds per fingerprint. Leading-zero legacy values still
+normalize, and unsigned range, syntax, and value-count checks remain enforced.
 
 ## Diagnosing the affected mount
 
@@ -121,7 +182,8 @@ For a fully cached folder scan, expect `inspected=0` and `fallback_listings=0`.
 Slow enumeration with those values points toward filesystem metadata and directory
 validation work. Slow inspection with cache misses needs investigation of content
 reads or fingerprinting. A repeated nonzero `tracks_without_fingerprint` count
-explains why unchanged Tracks may still be reinspected.
+explains why unchanged Tracks may still need acoustic retries. Successful metadata
+is retained during those retries under ADR-0123.
 
 Collect the macOS version, how WebDAV is mounted (Finder, rclone, or another
 client), relevant mount metadata-cache settings, copyparty version, HTTP/HTTPS and
@@ -139,8 +201,9 @@ depend on the mount. See the
 
 ## Remaining work
 
-Metadata enumeration remains serial, and Storage still validates ancestors.
-Measure those costs before adding directory concurrency or changing path checks.
+Metadata enumeration now overlaps up to four directories, and Storage still
+validates ancestors. Measure actual mount request counts before changing path checks
+or increasing concurrency.
 The extra selected-tree pass after external Playlist review remains intentional.
 
 A direct remote directory-metadata adapter could avoid mounted-filesystem round

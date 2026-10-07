@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from storage import FilePreconditionError, Storage
+from storage import FilePreconditionError, Storage, StorageOperationError
 from storage.host_files import (
     AtomicHostFile,
     application_cache_file,
@@ -130,6 +130,30 @@ def test_atomic_host_file_replaces_complete_bytes_and_creates_parent(
 
     assert host_file.read_bytes() == b'{"generation":2}'
     assert tuple(path.parent.iterdir()) == (path,)
+
+
+def test_host_file_revision_observes_replace_change_and_removal(tmp_path: Path) -> None:
+    host_file = AtomicHostFile(tmp_path / "cache.json")
+    assert host_file.revision() is None
+    host_file.replace_bytes(b"first")
+    original = host_file.revision()
+    assert original is not None and original[2] == 5
+    assert host_file.revision() == original
+    host_file.replace_bytes(b"other")
+    assert host_file.revision() != original
+    host_file.path.unlink()
+    assert host_file.revision() is None
+
+
+def test_host_file_bounded_read_rejects_oversized_cache(tmp_path: Path) -> None:
+    host_file = AtomicHostFile(tmp_path / "cache.json")
+    assert host_file.read_bytes(max_bytes=4) is None
+    host_file.replace_bytes(b"1234")
+    assert host_file.read_bytes(max_bytes=4) == b"1234"
+    with pytest.raises(StorageOperationError, match="limit"):
+        host_file.read_bytes(max_bytes=3)
+    with pytest.raises(ValueError, match="non-negative"):
+        host_file.read_bytes(max_bytes=-1)
 
 
 def test_atomic_host_file_can_create_without_replacing_existing_output(

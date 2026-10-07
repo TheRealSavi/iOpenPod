@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-18
 - Extends: ADR-0005 and ADR-0019
+- Amended by: ADR-0123 for independent metadata and Acoustic Fingerprint reuse
 
 ## Context
 

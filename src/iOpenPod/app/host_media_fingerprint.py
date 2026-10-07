@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from copy import copy
+from threading import Lock
 from typing import TYPE_CHECKING
 
 from storage import HostPath, StorageError
@@ -76,6 +78,25 @@ class FpcalcFingerprinter:
         self._timeout = timeout_seconds
         self._output_limit = max_output_bytes
         self._input_suffix = input_suffix
+        self._cache_resolution = False
+        self._resolution_lock = Lock()
+        self._resolved_executable: HostPath | None = None
+        self._resolution_error: str | None = None
+
+    def for_scan(self) -> FpcalcFingerprinter:
+        """Return an independent lazy tool lookup shared by this scan's workers.
+
+        Positive and missing-tool results live only for the scan. A later scan
+        can discover a newly installed tool, and an all-cache-hit scan needs no
+        executable lookup at all. Copying preserves custom subclass behavior.
+        """
+
+        result = copy(self)
+        result._cache_resolution = True
+        result._resolution_lock = Lock()
+        result._resolved_executable = None
+        result._resolution_error = None
+        return result
 
     def fingerprint(
         self,
@@ -103,6 +124,21 @@ class FpcalcFingerprinter:
     def _resolve_executable(self) -> HostPath:
         if self._executable is not None:
             return self._executable
+        if not self._cache_resolution:
+            return self._discover_executable()
+        with self._resolution_lock:
+            if self._resolution_error is not None:
+                raise FpcalcUnavailableError(self._resolution_error)
+            if self._resolved_executable is None:
+                try:
+                    self._resolved_executable = self._discover_executable()
+                except FpcalcUnavailableError as error:
+                    self._resolution_error = str(error)
+                    raise
+            return self._resolved_executable
+
+    @staticmethod
+    def _discover_executable() -> HostPath:
         discovered = find_media_tool("fpcalc")
         if discovered is None:
             raise FpcalcUnavailableError(
@@ -190,12 +226,22 @@ def normalize_fpcalc_fingerprint(value: str) -> str:
     parts = value.split(",")
     if len(parts) > 250_000:
         raise FpcalcError("fpcalc returned too many fingerprint values")
-    if not value or any(not part.isascii() or not part.isdigit() for part in parts):
+    if not value.isascii():
         raise FpcalcError("fpcalc returned an invalid raw fingerprint")
-    numbers = tuple(int(part) for part in parts)
-    if any(number > 2**32 - 1 for number in numbers):
-        raise FpcalcError("fpcalc returned an out-of-range fingerprint value")
-    return ",".join(str(number) for number in numbers)
+    changed = False
+    for index, part in enumerate(parts):
+        if not part.isdigit():
+            raise FpcalcError("fpcalc returned an invalid raw fingerprint")
+        if part[0] == "0" and len(part) > 1:
+            part = part.lstrip("0") or "0"
+            parts[index] = part
+            changed = True
+        # Canonical ASCII decimals have numeric order by length, then lexical
+        # order. Cache hits need no integer conversions or rebuilt result string.
+        length = len(part)
+        if length > 10 or (length == 10 and part > "4294967295"):
+            raise FpcalcError("fpcalc returned an out-of-range fingerprint value")
+    return ",".join(parts) if changed else value
 
 
 __all__ = [

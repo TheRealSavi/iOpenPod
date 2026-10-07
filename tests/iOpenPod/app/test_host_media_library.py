@@ -94,7 +94,10 @@ def test_one_unreadable_subfolder_does_not_hide_later_siblings(
     assert dict(diagnostic.parameters)["error"] == "folder unavailable"
 
 
-@pytest.mark.parametrize("payload", [b"not-json", b"{}", b'{"version": 10}'])
+@pytest.mark.parametrize(
+    "payload",
+    [b"not-json", b"{}", b'{"version": 10}', b"[" * 2000 + b"0" + b"]" * 2000],
+)
 def test_malformed_cache_falls_back_to_scanning(tmp_path: Path, payload: bytes) -> None:
     _write_wav(tmp_path / "song.wav")
     cache_path = tmp_path / "cache.json"
@@ -106,7 +109,7 @@ def test_malformed_cache_falls_back_to_scanning(tmp_path: Path, payload: bytes) 
     result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(result.snapshot.tracks) == 1
     assert result.cache.reused == 0
-    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 10
+    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 11
 
 
 def test_changed_tracks_use_existing_acoustic_analysis_without_full_stream_hashing(
@@ -170,6 +173,261 @@ def test_missing_fingerprinting_tool_keeps_readable_media(
     result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(result.snapshot.tracks) == 1
     assert result.sources[0].acoustic_fingerprint is None
+
+
+def test_cached_scans_reuse_decoded_records_and_never_rewrite_unchanged_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_wav(tmp_path / "song.wav")
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    folder = create_host_media_folder(tmp_path)
+    reads = 0
+    writes = 0
+    native_read = AtomicHostFile.read_bytes
+    native_write = AtomicHostFile.replace_bytes
+
+    def read(self: AtomicHostFile, *, max_bytes: int | None = None) -> bytes | None:
+        nonlocal reads
+        reads += 1
+        return native_read(self, max_bytes=max_bytes)
+
+    def write(self: AtomicHostFile, data: bytes) -> None:
+        nonlocal writes
+        writes += 1
+        native_write(self, data)
+
+    monkeypatch.setattr(AtomicHostFile, "read_bytes", read)
+    monkeypatch.setattr(AtomicHostFile, "replace_bytes", write)
+    scanner = HostMediaScanner(cache)
+    first = scanner.scan((folder,), checkpoint=lambda: None)
+    scanner.complete(first, frozenset(), checkpoint=lambda: None)
+    assert (reads, writes) == (1, 1)
+
+    second = scanner.scan((folder,), checkpoint=lambda: None)
+    scanner.complete(second, frozenset(), checkpoint=lambda: None)
+    assert second.cache == HostMediaCacheStats(reused=1)
+    assert (reads, writes) == (1, 1)
+
+    restarted = HostMediaScanner(cache)
+    third = restarted.scan((folder,), checkpoint=lambda: None)
+    restarted.complete(third, frozenset(), checkpoint=lambda: None)
+    assert third.cache == HostMediaCacheStats(reused=1)
+    assert (reads, writes) == (2, 1)
+
+
+@pytest.mark.parametrize("change", ["delete", "replace", "edit"])
+def test_in_memory_cache_notices_external_invalidation(
+    tmp_path: Path, change: str
+) -> None:
+    _write_wav(tmp_path / "song.wav")
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    scanner = HostMediaScanner(cache)
+    folder = create_host_media_folder(tmp_path)
+    scanner.scan((folder,), checkpoint=lambda: None)
+    if change == "delete":
+        cache.path.unlink()
+    elif change == "replace":
+        cache.replace_bytes(b"invalid")
+    else:
+        cache.path.write_bytes(b"invalid")
+    changed = scanner.scan((folder,), checkpoint=lambda: None)
+    assert changed.cache == HostMediaCacheStats(inspected=1)
+    assert json.loads(cache.path.read_bytes())["version"] == 11
+
+
+def test_cache_save_failure_retains_work_in_memory_and_retries_persistence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_wav(tmp_path / "song.wav")
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    scanner = HostMediaScanner(cache)
+    folder = create_host_media_folder(tmp_path)
+    native_write = AtomicHostFile.replace_bytes
+    attempts = 0
+
+    def fail_once(self: AtomicHostFile, data: bytes) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise PermissionError("cache temporarily unavailable")
+        native_write(self, data)
+
+    monkeypatch.setattr(AtomicHostFile, "replace_bytes", fail_once)
+    scanner.scan((folder,), checkpoint=lambda: None)
+    assert not cache.path.exists()
+    retried = scanner.scan((folder,), checkpoint=lambda: None)
+    scanner.complete(retried, frozenset(), checkpoint=lambda: None)
+    assert retried.cache == HostMediaCacheStats(reused=1)
+    assert cache.path.exists()
+    assert attempts == 2
+
+
+def test_failed_acoustic_analysis_reuses_metadata_and_recovers_without_stale_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_wav(tmp_path / "song.wav")
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    folder = create_host_media_folder(tmp_path)
+    calls = 0
+
+    class Fingerprinter:
+        def fingerprint(
+            self, source: HostPath, *, checkpoint: Callable[[], None]
+        ) -> str:
+            nonlocal calls
+            calls += 1
+            if calls < 3:
+                raise FpcalcUnavailableError("Install Chromaprint")
+            return "1,2,3"
+
+    fingerprinter = Fingerprinter()
+    scanner = HostMediaScanner(cache, fingerprinter)
+    scanner.scan((folder,), checkpoint=lambda: None)
+
+    def reject_metadata(*args: object, **kwargs: object) -> NoReturn:
+        pytest.fail("Unchanged readable metadata was inspected again")
+
+    monkeypatch.setattr(mutagen, "File", reject_metadata)
+    restarted = HostMediaScanner(cache, fingerprinter)
+    second = restarted.scan((folder,), checkpoint=lambda: None)
+    assert len(second.issues) == 1
+    recovered = restarted.scan((folder,), checkpoint=lambda: None)
+    library = restarted.complete(recovered, frozenset(), checkpoint=lambda: None)
+    assert calls == 3
+    assert not library.issues
+    assert library.sources[0].acoustic_fingerprint == "1,2,3"
+    assert restarted.scan((folder,), checkpoint=lambda: None).cache.reused == 1
+    assert calls == 3
+
+
+def test_cached_reading_progress_is_throttled_with_exact_final_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for index in range(30):
+        _write_wav(tmp_path / f"{index}.wav")
+    scanner = HostMediaScanner(AtomicHostFile(tmp_path / "cache.json"))
+    folder = create_host_media_folder(tmp_path)
+    scanner.scan((folder,), checkpoint=lambda: None)
+    monkeypatch.setattr("iOpenPod.app.host_media_library.perf_counter", lambda: 0.0)
+    events: list[HostMediaScanProgress] = []
+    scanner.scan((folder,), checkpoint=lambda: None, progress=events.append)
+    reading = [event for event in events if event.stage is HostMediaScanStage.READING]
+    assert [event.completed for event in reading] == [0, 1, 30]
+    assert reading[-1].total == 30
+    assert reading[-1].cache_hits == 30
+
+
+def test_failed_metadata_retries_without_repeating_successful_acoustic_analysis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_wav(tmp_path / "song.wav")
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    native_parse = cast("_MutagenReader", mutagen).File
+    fingerprint_calls = 0
+    metadata_unavailable = True
+
+    def parse(source: BinaryIO, *, easy: bool = False) -> object:
+        if metadata_unavailable:
+            raise mutagen.MutagenError("Temporarily unreadable tags")
+        return native_parse(source, easy=easy)
+
+    def fingerprint(*args: object, **kwargs: object) -> str:
+        nonlocal fingerprint_calls
+        fingerprint_calls += 1
+        return "1,2,3"
+
+    monkeypatch.setattr(mutagen, "File", parse)
+    monkeypatch.setattr(FpcalcFingerprinter, "fingerprint", fingerprint)
+    folder = create_host_media_folder(tmp_path)
+    first = HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
+    assert first.issues
+    stored = json.loads(cache.path.read_bytes())
+    assert stored["entries"][0]["metadata"]["metadata_complete"] is False
+    metadata_unavailable = False
+    recovered = HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
+    assert not recovered.issues
+    assert recovered.cache == HostMediaCacheStats(inspected=1)
+    assert fingerprint_calls == 1
+    stored = json.loads(cache.path.read_bytes())
+    assert stored["entries"][0]["metadata"]["metadata_complete"] is True
+
+
+def test_cache_limits_combined_decoded_fingerprints_on_both_read_and_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("first.wav", "second.wav"):
+        _write_wav(tmp_path / name)
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    folder = create_host_media_folder(tmp_path)
+    scanner = HostMediaScanner(cache)
+    with monkeypatch.context() as bounded:
+        bounded.setattr(
+            "iOpenPod.app.host_media_library._MAX_DECODED_FINGERPRINT_BYTES", 8
+        )
+        scanner.scan((folder,), checkpoint=lambda: None)
+        assert not cache.path.exists()
+    # Failed persistence retains inspected records and retries after recovery.
+    assert scanner.scan((folder,), checkpoint=lambda: None).cache.reused == 2
+    with monkeypatch.context() as bounded:
+        bounded.setattr(
+            "iOpenPod.app.host_media_library._MAX_DECODED_FINGERPRINT_BYTES", 8
+        )
+        rejected = HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
+        assert rejected.cache == HostMediaCacheStats(inspected=2)
+
+
+def test_long_acoustic_fingerprints_are_packed_losslessly_in_the_scan_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_wav(tmp_path / "song.wav")
+    fingerprint = ",".join(str(3_000_000_000 + value) for value in range(948))
+
+    def calculate_fingerprint(*args: object, **kwargs: object) -> str:
+        return fingerprint
+
+    monkeypatch.setattr(FpcalcFingerprinter, "fingerprint", calculate_fingerprint)
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    folder = create_host_media_folder(tmp_path)
+    HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
+    encoded = cache.path.read_bytes()
+    stored = json.loads(encoded)["entries"][0]["metadata"]["acoustic_fingerprint"]
+    assert stored.startswith("u32z:")
+    assert len(encoded) < len(fingerprint)
+    scanner = HostMediaScanner(cache)
+    pending = scanner.scan((folder,), checkpoint=lambda: None)
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert pending.cache == HostMediaCacheStats(reused=1)
+    assert library.sources[0].acoustic_fingerprint == fingerprint
+
+
+def test_external_cache_reuse_does_not_retain_previously_selected_folder_artwork(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "Outside"
+    outside.mkdir()
+    song = outside / "song.wav"
+    _write_wav(song)
+    Image.new("RGB", (8, 8), "blue").save(outside / "cover.png")
+    selected = tmp_path / "Selected"
+    selected.mkdir()
+    (selected / "external.m3u8").write_text(f"{song}\n", encoding="utf-8")
+    scanner = HostMediaScanner(AtomicHostFile(tmp_path / "cache.json"))
+    original = scanner.scan(
+        (create_host_media_folder(outside),), checkpoint=lambda: None
+    )
+    assert scanner.complete(
+        original, frozenset(), checkpoint=lambda: None
+    ).artwork_sources
+    pending = scanner.scan(
+        (create_host_media_folder(selected),), checkpoint=lambda: None
+    )
+    assert pending.external_references[0].target == HostPath(song)
+    library = scanner.complete(
+        pending, frozenset({HostPath(song)}), checkpoint=lambda: None
+    )
+    assert library.cache.reused == 1
+    assert len(library.snapshot.tracks) == 1
+    assert not library.artwork_sources
 
 
 def test_wave_id3_text_is_used_instead_of_the_filename(tmp_path: Path) -> None:
@@ -296,6 +554,10 @@ def test_inspection_cancellation_stops_queued_work(tmp_path: Path) -> None:
             progress=progress,
         )
     assert 1 <= len(called) <= 3
+
+
+class _MutagenReader(Protocol):
+    def File(self, source: BinaryIO, *, easy: bool = False) -> object: ...
 
 
 class _FrameTags(Protocol):
@@ -616,7 +878,7 @@ def test_discovery_progress_is_live_throttled_and_finishes_with_exact_counts(
             listing_active = False
 
     monkeypatch.setattr(LocalHostDirectory, "list_entries", listing)
-    HostMediaScanner().scan(
+    HostMediaScanner(max_directory_workers=1).scan(
         (create_host_media_folder(tmp_path),),
         checkpoint=lambda: None,
         progress=lambda event: events.append((event, listing_active)),
@@ -635,6 +897,133 @@ def test_discovery_progress_is_live_throttled_and_finishes_with_exact_counts(
     assert dict(final.message.parameters) == {"folders": "1", "files": "20"}
     assert final.path is not None
     assert not discovery[-1][1]
+
+
+def test_directory_listings_overlap_with_bounded_workers_and_owner_thread_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("a", "b", "c", "d", "e"):
+        directory = tmp_path / name
+        directory.mkdir()
+        _write_wav(directory / "song.wav")
+    native = LocalHostDirectory.list_entries
+    both_running = threading.Event()
+    lock = threading.Lock()
+    active = 0
+    maximum = 0
+    owner = threading.get_ident()
+    listings: list[HostPath] = []
+    events: list[HostMediaScanProgress] = []
+
+    def listing(
+        self: LocalHostDirectory,
+        *,
+        checkpoint: Callable[[], None],
+        on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
+        include_file: Callable[[str], bool] | None = None,
+        include_directories: bool = True,
+        on_entry: Callable[[HostDirectoryEntry], None] | None = None,
+    ) -> tuple[HostDirectoryEntry, ...]:
+        nonlocal active, maximum
+        with lock:
+            listings.append(self.path)
+            active += 1
+            maximum = max(maximum, active)
+            if active == 2:
+                both_running.set()
+        try:
+            if self.path.path != tmp_path:
+                assert both_running.wait(5), "Directory listings did not overlap"
+            return native(
+                self,
+                checkpoint=checkpoint,
+                on_issue=on_issue,
+                include_file=include_file,
+                include_directories=include_directories,
+                on_entry=on_entry,
+            )
+        finally:
+            with lock:
+                active -= 1
+
+    def progress(event: HostMediaScanProgress) -> None:
+        assert threading.get_ident() == owner
+        events.append(event)
+
+    monkeypatch.setattr(LocalHostDirectory, "list_entries", listing)
+    pending = HostMediaScanner(max_directory_workers=2).scan(
+        (
+            create_host_media_folder(tmp_path),
+            create_host_media_folder(tmp_path / "a"),
+        ),
+        checkpoint=lambda: None,
+        progress=progress,
+    )
+    assert maximum == 2
+    assert len(pending.records) == 5
+    assert Counter(listings) == {
+        HostPath(path): 2 for path in [tmp_path, *(tmp_path / name for name in "abcde")]
+    }
+    discovery = [
+        event
+        for event in events
+        if event.stage is HostMediaScanStage.DISCOVERING
+        and isinstance(event.message, SourceText)
+    ]
+    assert isinstance(discovery[-1].message, SourceText)
+    assert dict(discovery[-1].message.parameters) == {"folders": "6", "files": "5"}
+
+
+def test_parallel_discovery_publishes_live_progress_and_cancels_blocked_listings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_wav(tmp_path / "song.wav")
+    entered = threading.Event()
+    cancelled = threading.Event()
+    owner = threading.get_ident()
+    native = LocalHostDirectory.list_entries
+    calls = 0
+
+    def checkpoint() -> None:
+        if cancelled.is_set():
+            raise HostMediaScanCancelledError()
+
+    def listing(
+        self: LocalHostDirectory,
+        *,
+        checkpoint: Callable[[], None],
+        on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
+        include_file: Callable[[str], bool] | None = None,
+        include_directories: bool = True,
+        on_entry: Callable[[HostDirectoryEntry], None] | None = None,
+    ) -> tuple[HostDirectoryEntry, ...]:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        assert cancelled.wait(5), "No live directory progress was published"
+        return native(
+            self,
+            checkpoint=checkpoint,
+            on_issue=on_issue,
+            include_file=include_file,
+            include_directories=include_directories,
+            on_entry=on_entry,
+        )
+
+    def progress(event: HostMediaScanProgress) -> None:
+        assert threading.get_ident() == owner
+        if event.stage is HostMediaScanStage.DISCOVERING and entered.is_set():
+            cancelled.set()
+
+    monkeypatch.setattr(LocalHostDirectory, "list_entries", listing)
+    with pytest.raises(HostMediaScanCancelledError):
+        HostMediaScanner(max_directory_workers=2).scan(
+            (create_host_media_folder(tmp_path),),
+            checkpoint=checkpoint,
+            progress=progress,
+        )
+    assert cancelled.is_set()
+    assert calls == 1
 
 
 def test_unavailable_explicit_file_is_reported_without_scanning_parent(
@@ -728,7 +1117,10 @@ def _fixture_library(tmp_path: Path) -> tuple[Path, Path]:
     internal = selected / "Internal.wav"
     _write_wav(internal)
     _write_wav(external)
-    (selected / "Movie.mp4").write_bytes(b"not a complete MP4")
+    fixtures = Path(__file__).resolve().parents[2] / "fixtures" / "media"
+    (selected / "Movie.mp4").write_bytes(
+        base64.decodebytes((fixtures / "tone.m4a.b64").read_bytes())
+    )
     Image.new("RGB", (12, 8), "#31547a").save(selected / "Cover.png")
     (selected / "Road Trip.m3u8").write_text(
         f"#EXTM3U\n{internal.name}\n{external}\n",
@@ -980,6 +1372,7 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
     document["version"] = version
+    document["entries"][0]["metadata"].pop("metadata_complete")
     if version == 10:
         document["entries"][0]["metadata"]["payload_sha256"] = "a" * 64
     document["catalog_sha256"] = hashlib.sha256(
@@ -1030,7 +1423,7 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
         == "1,2,3"
     )
     stored = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert stored["version"] == 10
+    assert stored["version"] == 11
     assert "payload_sha256" not in stored["entries"][0]["metadata"]
 
 
@@ -1467,7 +1860,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 10
+    assert document["version"] == 11
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {
@@ -1496,6 +1889,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
         "media_type",
         "tag_values",
         "acoustic_fingerprint",
+        "metadata_complete",
         "artwork_content_sha256",
         "artwork_kind",
         "artwork_modified_ns",

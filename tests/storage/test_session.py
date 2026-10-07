@@ -411,6 +411,28 @@ def test_modified_time_comparison_uses_the_bound_filesystem_precision(
     assert not session.modified_time_matches(10_000_000_000, 12_000_000_001)
 
 
+def test_time_comparison_uses_session_facts_without_reinspecting_the_volume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, platform, session = _session(tmp_path, filesystem_type="fat32")
+
+    def unexpected_reinspection(*_args: object) -> None:
+        pytest.fail("Comparing already observed times must not inspect the Volume")
+
+    monkeypatch.setattr(platform, "reinspect", unexpected_reinspection)
+    assert session.modified_time_matches(10_000_000_000, 11_000_000_000)
+    session.invalidate("disconnected")
+    with pytest.raises(SessionInvalidatedError):
+        session.modified_time_matches(10_000_000_000, 11_000_000_000)
+
+
+def test_time_comparison_rejects_closed_session(tmp_path: Path) -> None:
+    _, _, session = _session(tmp_path)
+    session.close()
+    with pytest.raises(SessionClosedError):
+        session.modified_time_matches(0, 0)
+
+
 def test_host_source_symlink_is_rejected_when_the_host_supports_symlinks(
     tmp_path: Path,
 ) -> None:

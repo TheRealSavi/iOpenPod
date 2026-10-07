@@ -1136,7 +1136,8 @@ lookup. Scan logs report enumeration, artwork, and inspection timings and cache 
 to distinguish slow filesystem metadata from repeated media reads. See
 [Host Media Scan performance](research/host-media-scan-performance.md).
 
-Directory traversal remains serial. Overlapping folder selections share one listing
+Directory traversal uses at most four workers with bounded pending work.
+Overlapping folder selections share one listing
 per directory per pass, with the union of the media types and recursion settings
 that apply at that path. Explicit files reuse an existing observation when possible.
 Storage can filter unneeded filenames before requesting metadata while retaining
@@ -1159,9 +1160,9 @@ the existing explicit review. Other application pages and the Sync Workspace do
 not accept external media drops; internal Library drags retain their behavior.
 
 Optional acoustic analysis does not gate explicit incoming Adds. Previously proven
-Sync paths match before missing acoustic evidence is classified. Helper v3 permits
+Sync paths match before missing acoustic evidence is classified. Helper v5 permits
 an empty fingerprint only alongside committed Sync Details and continues reading
-v1 and v2. Converted Photos retain separate Host and iPod content digests; oversized
+v1 through v4. Converted Photos retain separate Host and iPod content digests; oversized
 image containers are streamed into bounded PNG stills (ADR-0086).
 FFmpeg/FFprobe preflight applies only to incoming Tracks; fpcalc is a matching
 aid. Storage's explicit best-effort Host enumeration retains independent readable
@@ -1184,10 +1185,14 @@ media file or loading it entirely into memory. Storage also launches fingerprint
 processes against validated inputs and owns temporary device-scan captures.
 
 Host scanning, music import, and Sync enrichment share `app/media/tags.py` for native
-tag interpretation and common Track projection. Cache v9 retains recognized tag
+tag interpretation and common Track projection. Cache v11 retains recognized tag
 values, including classification, TV/Podcast details, sorting, and lyrics. Videos
-without useful native tags or timing can use bounded FFprobe inspection through a
-private Storage capture. See ADR-0099 and [Host tag coverage](host-media-tags.md).
+without useful native tags or timing can use bounded FFprobe metadata inspection
+through a pinned, seekable Storage input without a whole-file capture. Successful
+metadata is reused when optional fingerprint analysis must be retried. Unchanged
+decoded caches remain in memory under a Storage file-revision hint, and unchanged
+catalogs are not rewritten. See ADR-0099, ADR-0123, and
+[Host tag coverage](host-media-tags.md).
 
 The Host Library Source projects scanned Tracks, Photos, and Playlists into the same
 immutable `iPodDB.library.LibrarySnapshot` records used by the iPod source. Absolute
@@ -1234,7 +1239,10 @@ The Application Layer loads the versioned, checksummed
 indexes it by persistent database Track ID and Photo ID. An entry is reusable only
 while its Device Path, size, and filesystem-aware modification time still match.
 Only missing or stale Track entries are copied through Storage to verified temporary
-Host snapshots for bounded Chromaprint calculation. Full-resolution Photo files use
+Host snapshots for bounded Chromaprint calculation. One serialized Storage capture
+can overlap one acoustic calculation, retaining at most two captures. Cached entries
+need one current stat; content analysis also rechecks facts after the read.
+Full-resolution Photo files use
 Storage-calculated SHA-256 fingerprints; Photos with only packed iTHMB
 representations report that exact correlation is unavailable.
 
@@ -1243,17 +1251,21 @@ Host size and modification time, source and device formats, and conversion statu
 Scanning existing media never invents those facts. The current Library database is
 fingerprint-checked before helper publication, and publication uses an atomic,
 generation-checked Storage write. Invalid helpers remain untouched for explicit
-recovery. Read-only devices can still be scanned for the current run but cannot cache
-the new evidence. Host Photo records carry matching SHA-256 evidence in Host Media
-Scan cache format v10. A v9 Host Media Scan cache is upgraded during the next
-scan by recovering folder-cover references already embedded in Track records and
-reusing unchanged media and artwork. An iPod Media Scan upgrades a v3 Library Sync Helper in
+recovery. A separate iPod Analysis Cache in Host storage retains completed analysis
+for repeated pre-Review scans, including on read-only devices. It is bound to device
+and Volume identities, validates current file facts, checkpoints on cancellation,
+and contains no Sync Details. Host Photo records carry matching SHA-256 evidence in
+Host Media Scan Cache v11. Versions 9 and 10 migrate while reusing unchanged media
+and artwork. Long Acoustic Fingerprints use a lossless bounded binary encoding in
+Host cache v11 and helper v5; readers retain prior decimal support.
+An iPod Media Scan upgrades a v3 Library Sync Helper in
 memory by reusing unchanged device records without recapturing media. Because v3
 does not contain a committed iPod Track tag or artwork baseline, migration does not
 stamp the current Track as that baseline; until a successful Sync records v4
 provenance, Sync conservatively compares current Host and iPod Track semantics.
-The first writable helper publication writes v4. Neither cache is part of the common Library Snapshot or grants
-permission to mutate a device. See ADR-0065.
+The next writable helper publication writes v5, retaining existing v4 provenance.
+None of these caches is part of the common Library Snapshot or grants
+permission to mutate a device. See ADR-0065 and ADR-0123.
 
 After both scans complete, the Application Layer prepares one immutable Sync Plan.
 It first uses the proven Host path hints in Sync Details so changed content remains

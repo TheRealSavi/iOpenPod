@@ -557,7 +557,7 @@ def test_unavailable_probe_retains_basic_file_facts(
     def unavailable(*args: object, **kwargs: object) -> None:
         raise MediaInspectionError("media.probe_unavailable", "FFprobe missing")
 
-    monkeypatch.setattr(MediaInspector, "inspect", unavailable)
+    monkeypatch.setattr(MediaInspector, "scan_metadata", unavailable)
     scanner = HostMediaScanner(fingerprinter=Fingerprinter())
     pending = scanner.scan(
         (create_host_media_folder(selected),), checkpoint=lambda: None

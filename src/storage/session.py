@@ -384,13 +384,18 @@ class FilesystemSession:
         return fingerprint
 
     def modified_time_matches(self, actual_ns: int, expected_ns: int) -> bool:
-        """Compare timestamps using this Volume's representable precision."""
+        """Compare observed times using the bound Volume's timestamp precision.
 
-        observation = self._revalidate()
+        Filesystem type cannot change within a valid Connection Generation.
+        File operations revalidate that identity; comparing their returned facts
+        needs no additional device I/O and is not a connection health check.
+        """
+
+        self._assert_active()
         return _modified_time_matches(
             actual_ns,
             expected_ns,
-            observation.volume.filesystem_type,
+            self._mounted_volume.volume.filesystem_type,
         )
 
     def free_space(self) -> int:

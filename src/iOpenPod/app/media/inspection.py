@@ -14,13 +14,14 @@ from typing import TYPE_CHECKING, cast
 from iOpenPod.app.media.models import (
     MediaChapter,
     MediaInspection,
+    MediaScanMetadata,
     MediaStream,
     MediaTag,
     StreamKind,
 )
 from storage import HostPath, capture_host_file
 from storage.media_probe import MediaInspectionError as MediaInspectionError
-from storage.media_probe import probe
+from storage.media_probe import probe, probe_host_metadata
 from storage.media_processing import find_media_tool
 
 if TYPE_CHECKING:
@@ -63,6 +64,24 @@ class MediaInspector:
         self._resolve_executable()
         with capture_host_file(source, checkpoint=checkpoint) as captured:
             return self.inspect_captured(captured, checkpoint=checkpoint)
+
+    def scan_metadata(
+        self,
+        source: HostPath,
+        *,
+        checkpoint: Callable[[], None],
+    ) -> MediaScanMetadata:
+        """Read scan facts from a pinned source without copying or hashing it."""
+        observed = probe_host_metadata(
+            self._resolve_executable(),
+            source,
+            checkpoint,
+            timeout_seconds=self._timeout,
+            max_output_bytes=self._output_limit,
+        )
+        result = _parse_metadata(observed.data, observed.size_bytes)
+        checkpoint()
+        return result
 
     def _resolve_executable(self) -> HostPath:
         if self._executable is not None:
@@ -329,6 +348,21 @@ def _chapter(value: object) -> MediaChapter:
 
 
 def _parse(data: bytes, captured: CapturedHostFile) -> MediaInspection:
+    metadata = _parse_metadata(data, captured.fingerprint.size)
+    return MediaInspection(
+        captured.source,
+        captured.fingerprint,
+        metadata.containers,
+        metadata.duration_seconds,
+        metadata.start_seconds,
+        metadata.bitrate_bps,
+        metadata.tags,
+        metadata.streams,
+        metadata.chapters,
+    )
+
+
+def _parse_metadata(data: bytes, expected_size: int) -> MediaScanMetadata:
     try:
         raw: object = json.loads(
             data.decode("utf-8"),
@@ -341,8 +375,8 @@ def _parse(data: bytes, captured: CapturedHostFile) -> MediaInspection:
     root = _object(raw, "FFprobe result")
     format_row = _object(root.get("format"), "format")
     size = _integer(format_row.get("size"), "format size")
-    if size != captured.fingerprint.size:
-        raise _invalid("FFprobe size does not match the captured file")
+    if size != expected_size:
+        raise _invalid("FFprobe size does not match the observed file")
     containers = tuple(_text(format_row.get("format_name"), "format_name").split(","))
     if any(not name for name in containers):
         raise _invalid("FFprobe did not identify the container")
@@ -355,9 +389,7 @@ def _parse(data: bytes, captured: CapturedHostFile) -> MediaInspection:
     count = _integer(format_row.get("nb_streams"), "nb_streams")
     if count is not None and count != len(streams):
         raise _invalid("FFprobe did not report every stream")
-    return MediaInspection(
-        captured.source,
-        captured.fingerprint,
+    return MediaScanMetadata(
         containers,
         _rational(format_row.get("duration"), "format duration"),
         _rational(format_row.get("start_time"), "format start", signed=True),

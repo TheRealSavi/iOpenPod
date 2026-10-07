@@ -2,7 +2,7 @@
 
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -73,7 +73,7 @@ def test_filtered_listing_skips_unneeded_file_metadata_and_preserves_directories
             return self.original.stat(follow_symlinks=follow_symlinks)
 
     @contextmanager
-    def scandir(path: Path | int) -> Iterator[Iterator[Entry]]:
+    def scandir(path: Path | int) -> Generator[Iterator[Entry]]:
         with native_scandir(path) as iterator:
             yield (Entry(entry) for entry in iterator)
 

@@ -86,5 +86,5 @@
   "[css][html][javascript][json][jsonc][yaml]": {
     "editor.tabSize": 2
   },
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv"
+  "python.defaultInterpreterPath": "c:\\Users\\JohnG\\Coding\\iOpenPod\\.venv\\Scripts\\python.exe"
 }

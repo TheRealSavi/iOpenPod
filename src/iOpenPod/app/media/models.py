@@ -93,3 +93,32 @@ class MediaInspection:
     @property
     def pictures(self) -> tuple[MediaStream, ...]:
         return tuple(s for s in self.streams if s.attached_picture is True)
+
+
+@dataclass(frozen=True, slots=True)
+class MediaScanMetadata:
+    """Metadata observed during a scan, with no captured content identity.
+
+    These facts can populate the Host browser. Import and publication still need
+    a separate captured MediaInspection and its verified FileFingerprint.
+    """
+
+    containers: tuple[str, ...]
+    duration_seconds: Fraction | None
+    start_seconds: Fraction | None
+    bitrate_bps: int | None
+    tags: tuple[MediaTag, ...]
+    streams: tuple[MediaStream, ...]
+    chapters: tuple[MediaChapter, ...]
+
+    @property
+    def audio_streams(self) -> tuple[MediaStream, ...]:
+        return tuple(s for s in self.streams if s.kind is StreamKind.AUDIO)
+
+    @property
+    def video_streams(self) -> tuple[MediaStream, ...]:
+        return tuple(
+            s
+            for s in self.streams
+            if s.kind is StreamKind.VIDEO and s.attached_picture is False
+        )

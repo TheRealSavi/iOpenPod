@@ -11,7 +11,9 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
+from storage.host_input import LocalHostFile
 from storage.host_tools import host_tool_environment
+from storage.media_processing import MediaToolError, run_media_tool
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -64,17 +66,55 @@ class _Output:
             self.failed.set()
 
 
-def probe(
+@dataclass(frozen=True, slots=True)
+class HostMetadataProbe:
+    """Bounded tool output and the unchanged source size; no content hash."""
+
+    data: bytes
+    size_bytes: int
+
+
+def probe_host_metadata(
     executable: HostPath,
     source: HostPath,
     checkpoint: Callable[[], None],
     *,
     timeout_seconds: float,
     max_output_bytes: int,
-) -> bytes:
+) -> HostMetadataProbe:
+    """Probe one identity-pinned, seekable Host input without a full capture.
+
+    The shared runner pins the source until its child is reaped, then validates
+    unchanged identity and file facts. The outer observation binds the expected
+    size to that same source for the caller's structured-output validation.
+    """
     checkpoint()
-    args = [
-        os.fspath(executable),
+    observed = LocalHostFile.observe(source)
+    try:
+        output = run_media_tool(
+            executable,
+            _arguments(),
+            input_file=source,
+            checkpoint=checkpoint,
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+            max_stderr_bytes=min(max_output_bytes, 65536),
+        )
+    except MediaToolError as error:
+        raise MediaInspectionError(
+            error.code.replace("media.tool_", "media.probe_", 1), str(error)
+        ) from error
+    observed.validate()
+    if output.stderr.strip():
+        logging.getLogger(__name__).debug(
+            "FFprobe returned usable scan metadata with diagnostics: %s",
+            output.stderr.decode("utf-8", errors="replace")[:2000],
+        )
+    return HostMetadataProbe(output.stdout, observed.size_bytes)
+
+
+def _arguments() -> tuple[str, ...]:
+    return (
         "-v",
         "error",
         "-hide_banner",
@@ -93,8 +133,19 @@ def probe(
         "-of",
         "json",
         "-i",
-        os.fspath(source),
-    ]
+    )
+
+
+def probe(
+    executable: HostPath,
+    source: HostPath,
+    checkpoint: Callable[[], None],
+    *,
+    timeout_seconds: float,
+    max_output_bytes: int,
+) -> bytes:
+    checkpoint()
+    args = [os.fspath(executable), *_arguments(), os.fspath(source)]
     stdout = _Output(max_output_bytes)
     stderr = _Output(min(max_output_bytes, 65536))
     try:

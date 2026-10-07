@@ -2,8 +2,9 @@
 
 The Application Layer's `media.tags` adapter interprets native Mutagen values and
 FFprobe metadata for Host Media Scan, music import, and Sync enrichment. Scanning
-is read-only. Normalized fields survive Host Media Scan Cache v10; older caches are
-rebuilt. Tags describe Library classification, not codec compatibility.
+is read-only. Normalized fields survive Host Media Scan Cache v11; versions 9 and 10
+migrate while reusing unchanged media. Tags describe Library classification, not
+codec compatibility.
 
 ## Coverage
 
@@ -52,10 +53,12 @@ policy without depending on the Host timezone. Invalid or unrepresentable option
 values leave existing/default fields intact.
 
 When Mutagen provides neither useful tags nor timing for a video file, scanning
-tries bounded, cancellable FFprobe inspection on a private Storage capture. This covers containers
+tries bounded, cancellable FFprobe metadata inspection on a pinned, seekable Storage
+input. This covers containers
 such as Matroska and AVI. Container tags precede a preferred playable stream.
 Missing tools or failed inspection retain basic facts and a diagnostic. This
-fallback temporarily copies the file; ordinary native inspection remains seekable.
+fallback avoids copying the whole file. Approved external Playlist references still
+use their reviewed private Storage captures. See ADR-0123.
 Unreadable audio keeps the existing basic-facts fallback without invoking another
 decoder during scanning.
 

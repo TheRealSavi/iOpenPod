@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-30
 - Extends: ADR-0031, ADR-0063, ADR-0075, ADR-0084
+- Amended by: ADR-0123 for seekable scan metadata probes without private captures
 
 Host Media Scan retained a small metadata subset, while music import and Sync
 interpreted different names. ID3 PCST was read as text instead of an integer, and

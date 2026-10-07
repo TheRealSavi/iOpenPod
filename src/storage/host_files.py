@@ -28,11 +28,39 @@ class AtomicHostFile:
 
     path: Path
 
-    def read_bytes(self) -> bytes | None:
+    def read_bytes(self, *, max_bytes: int | None = None) -> bytes | None:
+        """Read an optional file, with a caller-selected allocation bound."""
+
+        if max_bytes is not None and max_bytes < 0:
+            raise ValueError("Host file read limit must be non-negative")
         try:
-            return self.path.read_bytes()
+            with self.path.open("rb") as stream:
+                data = (
+                    stream.read() if max_bytes is None else stream.read(max_bytes + 1)
+                )
         except FileNotFoundError:
             return None
+        if max_bytes is not None and len(data) > max_bytes:
+            raise StorageOperationError("The Host file exceeds its read size limit")
+        return data
+
+    def revision(self) -> tuple[int, int, int, int] | None:
+        """Return device, inode, size and mtime as a cheap cache freshness hint.
+
+        This notices ordinary replacement and edits; it is not a content digest
+        or authorization for a write. A missing file has no revision.
+        """
+
+        try:
+            metadata = self.path.stat()
+        except FileNotFoundError:
+            return None
+        return (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_size,
+            metadata.st_mtime_ns,
+        )
 
     def exists(self) -> bool:
         return os.path.lexists(self.path)

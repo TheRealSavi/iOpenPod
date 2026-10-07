@@ -170,7 +170,10 @@ stale Tracks and full-resolution Photos. Newly discovered media gets no invented
 history; Sync Details are written only after a successful Sync commit. The
 helper remains matching evidence rather than Library or mutation authority. The
 pre-Review scan does not persist it; successful Sync publishes its new provenance
-after the verified Library commit. The Application Layer then
+after the verified Library commit. A separate, device-bound iPod Analysis Cache on
+the Host retains completed analysis across pre-Review scans and cancellation,
+including for read-only devices; it contains no Sync Details. See ADR-0123.
+The Application Layer then
 prepares an immutable Sync Plan for Tracks and full-resolution Photos. Proven Host
 path relationships are considered before unique content identities; current Host
 size and modification time are compared with the Host facts recorded by a successful
@@ -218,12 +221,15 @@ read-only, and foreign or declined journals remain untouched. Only actual cleanu
 failures require a cleanup warning and retry. See ADR-0089 and ADR-0093.
 Host tag interpretation now shares native ID3, MP4, Vorbis/APE, ASF, and FFprobe
 aliases across scanning and import. Media classification, TV and Podcast fields,
-lyrics, sorting, advisory, and normalization metadata survive Scan Cache v9.
+lyrics, sorting, advisory, and normalization metadata survive Scan Cache v11.
+Successful metadata and optional Acoustic Fingerprints are reused independently.
+Compact fingerprints, unchanged-cache reuse, and bounded directory concurrency
+reduce scan overhead; both selected-tree passes retain fresh Storage observations.
 See [Host tag coverage](docs/host-media-tags.md) and ADR-0099 for precedence and limits.
 
 Optional acoustic analysis no longer gates readable Host media or explicit Adds.
 Sync checks media tools only for incoming Tracks and preserves committed Host-path
-provenance independently of Acoustic Fingerprints in Library Sync Helper v4.
+provenance independently of Acoustic Fingerprints in Library Sync Helper v5.
 Embedded artwork uses seekable reads, including for large audiobooks. Successful
 FFprobe output remains usable with incidental metadata diagnostics. Preparation
 reports all concurrent Tracks with separate phase progress measured from FFmpeg's

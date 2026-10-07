@@ -195,3 +195,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0120: Separate Track payload replacement from tag and artwork updates](0120-separate-track-payload-replacement-from-tag-and-artwork-updates.md)
 - [ADR-0121: Preserve retained F1061 raster height](0121-preserve-retained-f1061-raster-height.md)
 - [ADR-0122: Match Original iOpenPod signing behavior](0122-match-original-signing-behavior.md)
+- [ADR-0123: Reuse bounded media scan analysis](0123-reuse-bounded-media-scan-analysis.md)

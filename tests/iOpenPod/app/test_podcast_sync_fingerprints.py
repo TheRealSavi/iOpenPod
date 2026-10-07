@@ -38,6 +38,7 @@ from iOpenPod.app.host_media_fingerprint import (
     normalize_fpcalc_fingerprint,
 )
 from iOpenPod.app.library_sync_helper import LIBRARY_SYNC_HELPER_PATH
+from iOpenPod.app.media.fingerprint_codec import decode_fingerprint
 from iOpenPod.app.media.transcoding import TranscodeSettings
 from iOpenPod.app.podcasts import media
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan
@@ -142,7 +143,10 @@ def test_real_podcast_fingerprint_is_published_without_temporary_host_provenance
         persisted = next(
             row for row in document["tracks"] if row["track_id"] == podcast.track_id
         )
-        assert persisted["acoustic_fingerprint"] == record.acoustic_fingerprint
+        assert (
+            decode_fingerprint(persisted["acoustic_fingerprint"])
+            == record.acoustic_fingerprint
+        )
         assert persisted["sync"] is None
         assert not any(
             issue.code == "sync.podcast_fingerprint_unavailable"

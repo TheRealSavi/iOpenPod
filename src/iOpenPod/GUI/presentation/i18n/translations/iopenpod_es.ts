@@ -9184,8 +9184,8 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>El iPod no está disponible de forma segura para esta operación.</translation>
     </message>
     <message>
-        <source>The iPod is not safely writable, so newly calculated fingerprints were not persisted.</source>
-        <translation>No se puede escribir de forma segura en el iPod, por lo que no se guardaron las nuevas huellas calculadas.</translation>
+        <source>The iPod is not safely writable, so newly calculated fingerprints were not persisted to the iPod.</source>
+        <translation>No se puede escribir de forma segura en el iPod, por lo que no se guardaron las nuevas huellas calculadas en el iPod.</translation>
     </message>
     <message>
         <source>The iPod name was saved, but its desktop name or icon could not be applied exactly.</source>

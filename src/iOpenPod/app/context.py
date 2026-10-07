@@ -17,6 +17,7 @@ from iOpenPod.app.device_controller import DeviceController
 from iOpenPod.app.host_media_controller import HostMediaScanController
 from iOpenPod.app.host_media_library import HostMediaScanner
 from iOpenPod.app.ipod_media_controller import IPodMediaScanController
+from iOpenPod.app.library_sync_helper import IPodMediaScanner
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.library_write_controller import LibraryWriteController
 from iOpenPod.app.lyrics_controller import LyricsController
@@ -106,7 +107,14 @@ class AppContext:
             CollectionKind.MUSIC_VIDEO_ALBUM,
             application,
         )
-        device_coordinator = DeviceCoordinator(storage)
+        device_coordinator = DeviceCoordinator(
+            storage,
+            ipod_media_scanner=IPodMediaScanner(
+                analysis_cache_file=lambda identity: storage.host_cache_file(
+                    "iOpenPod", f"ipod-analysis-v1-{identity}.json"
+                ),
+            ),
+        )
         device_controller = DeviceController(
             device_coordinator,
             track_model,
