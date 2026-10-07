@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
@@ -42,6 +43,14 @@ _UDEV_DATA = Path("/run/udev/data")
 _SYS_CLASS_BLOCK = Path("/sys/class/block")
 _SG_IO = 0x2285
 _SG_DXFER_FROM_DEVICE = -3
+_CONNECTION_UDEV_PROPERTIES = (
+    "ID_BUS",
+    "ID_DRIVE_FLASH",
+    "ID_SERIAL",
+    "ID_PATH",
+    "ID_FS_UUID",
+    "ID_PART_ENTRY_UUID",
+)
 
 
 class _SgIoHeader(ctypes.Structure):
@@ -130,6 +139,10 @@ def parse_udev_properties(content: str) -> dict[str, str]:
 class LinuxPlatformAdapter:
     def __init__(self) -> None:
         self._device_ejector = LinuxDeviceEjector()
+        self._identity_lock = threading.Lock()
+        self._connection_properties: dict[
+            tuple[str, str, Path, str], dict[str, str]
+        ] = {}
 
     @property
     def name(self) -> str:
@@ -145,8 +158,15 @@ class LinuxPlatformAdapter:
                 observations=(),
                 issues=(DiscoveryIssue("linux.mountinfo", str(error)),),
             )
+        current_mounts = {_mount_key(record) for record in records}
+        with self._identity_lock:
+            self._connection_properties = {
+                key: properties
+                for key, properties in self._connection_properties.items()
+                if key in current_mounts
+            }
         for record in records:
-            properties = self.udev_properties_for_record(record)
+            properties = self._connection_identity_properties(record)
             if not _is_removable(record, properties):
                 continue
             try:
@@ -183,7 +203,7 @@ class LinuxPlatformAdapter:
         try:
             return self._observation(
                 record,
-                self.udev_properties_for_record(record),
+                self._connection_identity_properties(record),
             )
         except OSError as error:
             raise MountInspectionError(
@@ -231,7 +251,7 @@ class LinuxPlatformAdapter:
         record = max(matching, key=lambda item: len(os.fspath(item.mount_point)))
         identity = _linux_physical_device_identity(
             record,
-            self.udev_properties_for_record(record),
+            self._connection_identity_properties(record),
             stable_only=True,
         )
         return PhysicalDeviceId(f"linux:{identity}") if identity is not None else None
@@ -370,6 +390,26 @@ class LinuxPlatformAdapter:
         properties.update(cls._udev_properties(record.device_number))
         return properties
 
+    def _connection_identity_properties(
+        self,
+        record: LinuxMountRecord,
+    ) -> dict[str, str]:
+        """Retain identity facts during udev gaps on the same kernel mount."""
+
+        properties = self.udev_properties_for_record(record)
+        key = _mount_key(record)
+        with self._identity_lock:
+            retained = self._connection_properties.get(key, {})
+            for name in _CONNECTION_UDEV_PROPERTIES:
+                if not properties.get(name) and retained.get(name):
+                    properties[name] = retained[name]
+            self._connection_properties[key] = {
+                name: properties[name]
+                for name in _CONNECTION_UDEV_PROPERTIES
+                if properties.get(name)
+            }
+        return properties
+
     @staticmethod
     def _observation(
         record: LinuxMountRecord,
@@ -440,6 +480,15 @@ def _decode_mountinfo_field(value: str) -> str:
         r"\\([0-7]{3})",
         lambda match: chr(int(match.group(1), 8)),
         value,
+    )
+
+
+def _mount_key(record: LinuxMountRecord) -> tuple[str, str, Path, str]:
+    return (
+        record.mount_id,
+        record.device_number,
+        record.mount_point,
+        record.source,
     )
 
 

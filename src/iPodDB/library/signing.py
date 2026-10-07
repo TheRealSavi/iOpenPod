@@ -62,3 +62,14 @@ def recover_hash72_material(data: bytes) -> Hash72Material:
 
     iv, random_part = extract_hash72_material(data)
     return Hash72Material(None, random_part, iv)
+
+
+def recover_hash72_checksum_book_material(
+    locations: bytes, cbk: bytes
+) -> Hash72Material:
+    """Recover unbound material from a verified retained Locations checksum book."""
+
+    from iPodDB.SQLiteDB.checksum import recover_hash72_cbk_material
+
+    iv, random_part = recover_hash72_cbk_material(locations, cbk)
+    return Hash72Material(None, random_part, iv)

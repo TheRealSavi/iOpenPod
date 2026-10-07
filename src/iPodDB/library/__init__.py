@@ -82,6 +82,7 @@ from iPodDB.library.playlists import (
 from iPodDB.library.signing import (
     Hash72Material,
     parse_hash72_info,
+    recover_hash72_checksum_book_material,
     recover_hash72_material,
 )
 from iPodDB.library.smart_rules import (
@@ -222,6 +223,7 @@ __all__ = [
     "prepared_audio",
     "prepared_video",
     "read_content",
+    "recover_hash72_checksum_book_material",
     "recover_hash72_material",
     "remap_playback_sidecar",
     "select_photo_thumbnail",

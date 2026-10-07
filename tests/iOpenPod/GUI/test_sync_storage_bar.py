@@ -44,7 +44,7 @@ def test_bar_paints_used_change_and_free_segments(
         if incoming == 600:
             assert remaining.text() == "About 200 B over capacity"
             assert remaining.property("status") == "over"
-        assert "Final size after conversion is not yet available" in (
+        assert "Converted file sizes may differ after preparation" in (
             segments.accessibleDescription()
         )
     finally:
@@ -70,7 +70,7 @@ def test_missing_capacity_and_partial_estimates_remain_explicit() -> None:
 
         bar.set_estimate(SyncStorageEstimate(1_000, 600, 200, 0, 2))
         assert not segments.isHidden()
-        assert title.text() == "Partial source-size estimate"
+        assert title.text() == "Partial iPod storage estimate"
         assert "2 unresolved items excluded" in note.text()
         assert remaining.property("status") == "partial"
         APPLICATION.sendEvent(bar, QEvent(QEvent.Type.LanguageChange))
@@ -79,7 +79,7 @@ def test_missing_capacity_and_partial_estimates_remain_explicit() -> None:
         bar.set_estimate(None)
         assert segments.isHidden()
         assert remaining.text() == "Device capacity unavailable"
-        assert title.text() == "Source-size estimate"
+        assert title.text() == "Estimated iPod storage"
     finally:
         bar.close()
         bar.deleteLater()

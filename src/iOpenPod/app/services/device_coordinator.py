@@ -1145,12 +1145,18 @@ class DeviceCoordinator:
             if WriteChecksum.HASH72 in (checksum, sqlite_checksum):
                 if active.session.exists(_HASHINFO_PATH):
                     hash72_material = _read_hash72_material(
-                        active.session, source.serialize().itunes, guid
+                        active.session,
+                        source.serialize().itunes,
+                        guid,
+                        max_database_bytes=capabilities.database.max_database_bytes,
                     )
                 else:
                     with contextlib.suppress(ValueError, StorageError):
                         hash72_material = _read_hash72_material(
-                            active.session, source.serialize().itunes, guid
+                            active.session,
+                            source.serialize().itunes,
+                            guid,
+                            max_database_bytes=capabilities.database.max_database_bytes,
                         )
             sqlite_postprocess_commands: tuple[str, ...] = ()
             sqlite_postprocess_preconditions: tuple[FilePrecondition, ...] = ()
@@ -1486,6 +1492,7 @@ class DeviceCoordinator:
                                     session,
                                     active.library_source.serialize().itunes,
                                     plan.target.firewire_guid,
+                                    max_database_bytes=plan.target.max_database_bytes,
                                 )
                             except ValueError as error:
                                 raise DeviceChangedError(
@@ -3743,9 +3750,12 @@ def _read_hash72_material(
     session: FilesystemSession,
     retained_database: bytes,
     guid: bytes,
+    *,
+    max_database_bytes: int,
 ) -> Hash72Material:
     from iPodDB.library import (
         parse_hash72_info,
+        recover_hash72_checksum_book_material,
         recover_hash72_material,
     )
 
@@ -3758,7 +3768,17 @@ def _read_hash72_material(
                 "The device HashInfo UUID does not match its FireWire GUID"
             )
         return material
-    return recover_hash72_material(retained_database)
+    try:
+        return recover_hash72_material(retained_database)
+    except ValueError:
+        locations_path = library_resources.sqlite_database_path("Locations.itdb")
+        cbk_path = library_resources.sqlite_database_path("Locations.itdb.cbk")
+        if not session.exists(locations_path) or not session.exists(cbk_path):
+            raise
+    locations = session.read(locations_path, max_bytes=max_database_bytes)
+    cbk_limit = 66 + 20 * ((max_database_bytes + 1023) // 1024)
+    cbk = session.read(cbk_path, max_bytes=cbk_limit)
+    return recover_hash72_checksum_book_material(locations, cbk)
 
 
 def _read_sqlite_postprocess_commands(

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from device_registry import IdentificationStatus
+from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
 from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,
     HostMediaFileKind,
@@ -16,6 +16,7 @@ from iOpenPod.app.library_sync_helper import (
     IPodMediaLibrary,
     IPodTrackFingerprint,
 )
+from iOpenPod.app.media.transcoding import TranscodeQuality, TranscodeSettings
 from iOpenPod.app.models.device import (
     DeviceCandidate,
     DeviceCandidateId,
@@ -29,7 +30,7 @@ from iOpenPod.app.sync_plan import (
     SyncPlanMediaKind,
 )
 from iOpenPod.app.sync_storage import SyncStorageProjection
-from iPodDB.library import LibrarySnapshot
+from iPodDB.library import LibrarySnapshot, MediaType, Track, TrackMetadata
 from storage import DevicePath, HostPath
 
 
@@ -80,6 +81,7 @@ def _item(tmp_path: Path, action: SyncPlanAction) -> SyncPlanItem:
         "Song",
         host_path=str(tmp_path / "song.flac"),
         ipod_id=1,
+        audio_payload_changed=action is SyncPlanAction.UPDATE,
     )
 
 
@@ -132,7 +134,7 @@ def test_unknown_changes_and_attention_do_not_invent_sizes(tmp_path: Path) -> No
         (
             replace(item, host_path=str(tmp_path / "missing.flac")),
             replace(item, ipod_id=999),
-            replace(item, action=SyncPlanAction.ATTENTION),
+            replace(item, action=SyncPlanAction.ATTENTION, audio_payload_changed=False),
         )
     )
     estimate = SyncStorageProjection(host, ipod, _candidate()).estimate(plan)
@@ -176,3 +178,84 @@ def test_zero_length_files_are_known_sizes(tmp_path: Path) -> None:
     )
     assert estimate.net_bytes == -90
     assert estimate.unknown_items == 0
+
+
+def test_metadata_only_track_update_does_not_project_media_replacement(
+    tmp_path: Path,
+) -> None:
+    host, ipod = _sources(tmp_path)
+    item = replace(_item(tmp_path, SyncPlanAction.UPDATE), audio_payload_changed=False)
+    estimate = SyncStorageProjection(host, ipod, _candidate()).estimate(
+        SyncPlan((item,))
+    )
+    assert estimate.incoming_bytes == 0
+    assert estimate.outgoing_bytes == 0
+
+
+def test_transcoding_settings_change_estimated_device_bytes(tmp_path: Path) -> None:
+    host, ipod = _sources(tmp_path)
+    track = Track(
+        7,
+        "Song",
+        "Artist",
+        "Album",
+        60_000,
+        metadata=TrackMetadata(
+            location=str(tmp_path / "song.flac"), file_format="flac"
+        ),
+    )
+    host = replace(host, snapshot=LibrarySnapshot(tracks=(track,)))
+    profile = next(
+        p for p in DEFAULT_DEVICE_REGISTRY.profiles if p.model_number == "MB565"
+    )
+    projection = SyncStorageProjection(host, ipod, _candidate(), profile)
+    plan = SyncPlan((_item(tmp_path, SyncPlanAction.ADD),))
+
+    assert projection.estimate(plan).incoming_bytes == 330
+    compact = projection.estimate(
+        plan,
+        settings=TranscodeSettings(
+            lossless_to_lossy=True, quality=TranscodeQuality.COMPACT
+        ),
+    )
+    high = projection.estimate(
+        plan,
+        settings=TranscodeSettings(
+            lossless_to_lossy=True, quality=TranscodeQuality.HIGH
+        ),
+    )
+    assert compact.incoming_bytes == 979_200
+    assert high.incoming_bytes == 1_958_400
+
+
+def test_video_projection_uses_ipod_bitrate_limit(tmp_path: Path) -> None:
+    host, ipod = _sources(tmp_path)
+    source = replace(
+        host.sources[0],
+        path=HostPath(tmp_path / "movie.mkv"),
+        kind=HostMediaFileKind.VIDEO,
+        size_bytes=40_000_000,
+    )
+    track = Track(
+        7,
+        "Movie",
+        "",
+        "",
+        60_000,
+        media_types=(MediaType.VIDEO,),
+        metadata=TrackMetadata(location=str(source.path), file_format="mkv"),
+    )
+    host = replace(
+        host,
+        sources=(source,),
+        snapshot=LibrarySnapshot(tracks=(track,)),
+    )
+    profile = next(
+        p for p in DEFAULT_DEVICE_REGISTRY.profiles if p.model_number == "MB565"
+    )
+    plan = SyncPlan(
+        (replace(_item(tmp_path, SyncPlanAction.ADD), host_path=str(source.path)),)
+    )
+    estimate = SyncStorageProjection(host, ipod, _candidate(), profile).estimate(plan)
+
+    assert estimate.incoming_bytes == 20_349_000

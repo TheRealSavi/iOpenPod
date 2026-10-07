@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from contextlib import suppress
 from dataclasses import fields, replace
 from time import perf_counter
 from typing import TYPE_CHECKING, cast
@@ -27,6 +28,8 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.iTunesDB.shared.constants import MhodPayloadKind
 from iPodDB.iTunesDB.writer.mhod_encoder import encode_mhod_body
 from iPodDB.iTunesDB.writer.signature import (
+    extract_hash72_material,
+    has_hash72_signature,
     sign_hash58,
     sign_hash72,
     sign_hashab,
@@ -97,7 +100,10 @@ def _blocked(issues: list[WriteIssue]) -> bool:
 
 
 def _finalize_itunes(
-    logical: bytes, target: WriteTarget, framing: ITunesCDB | None = None
+    logical: bytes,
+    target: WriteTarget,
+    framing: ITunesCDB | None = None,
+    retained: bytes | None = None,
 ) -> bytes:
     if (
         not target.compressed_database
@@ -111,8 +117,18 @@ def _finalize_itunes(
         else logical
     )
     if target.checksum is WriteChecksum.HASH58:
+        retained_hash72: tuple[bytes, bytes] | None = None
+        if retained is not None and has_hash72_signature(retained):
+            with suppress(ValueError):
+                retained_hash72 = extract_hash72_material(retained)
+            if retained_hash72 is not None:
+                iv, random_part = retained_hash72
+                data = sign_hash72(data, iv, random_part, hashing_scheme=1)
         data = sign_hash58(data, target.firewire_guid)
         valid = verify_hash58(data, target.firewire_guid)
+        if retained_hash72 is not None:
+            iv, random_part = retained_hash72
+            valid = valid and verify_hash72(data, iv, random_part, hashing_scheme=1)
     elif target.checksum is WriteChecksum.HASH72:
         material = target.hash72_material
         if material is None:
@@ -617,7 +633,9 @@ def _prepare(
             artifact = "iTunesCDB" if plan.target.compressed_database else "iTunesDB"
             notify(WritePhase.SIGNING)
         itunes = (
-            _finalize_itunes(logical_itunes, plan.target, cdb_framing)
+            _finalize_itunes(
+                logical_itunes, plan.target, cdb_framing, retained_output.itunes
+            )
             if plan.changes_itunes
             else retained_output.itunes
         )
@@ -709,7 +727,9 @@ def _prepare(
         checked_logical = write_iTunesDB(checked_document)
         if (
             (
-                _finalize_itunes(checked_logical, plan.target, cdb_framing)
+                _finalize_itunes(
+                    checked_logical, plan.target, cdb_framing, retained_output.itunes
+                )
                 if plan.changes_itunes
                 else retained_output.itunes
             )

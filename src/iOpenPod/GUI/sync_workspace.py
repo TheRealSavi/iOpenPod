@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app.core.settings.transcoding import read_transcoder_settings
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.sync_storage import SyncStorageProjection
@@ -437,6 +438,7 @@ class SyncWorkspace(QWidget):
         self._library_navigation.playlist_tree.selected.connect(self._playlist_selected)
         self.selection.changed.connect(self._refresh_selection_summary)
         self.selection.changed.connect(self._refresh_storage_estimate)
+        self._settings.settingChanged.connect(self._storage_settings_changed)
         self.selection.changed.connect(self._refresh_review_summary)
         self._set_stage(SyncStage.SCANNING)
         self.retranslate_ui()
@@ -494,7 +496,7 @@ class SyncWorkspace(QWidget):
     ) -> None:
         self._reset_playlist_preview()
         self._storage_projection = SyncStorageProjection(
-            library, ipod_media, active_ipod.candidate
+            library, ipod_media, active_ipod.candidate, active_ipod.profile
         )
         self._storage_bar.set_device(active_ipod)
         browser = self._ensure_browser()
@@ -683,10 +685,17 @@ class SyncWorkspace(QWidget):
     def _refresh_storage_estimate(self) -> None:
         projection = self._storage_projection
         self._storage_bar.set_estimate(
-            projection.estimate(self.selection.selected_plan)
+            projection.estimate(
+                self.selection.selected_plan,
+                settings=read_transcoder_settings(self._settings),
+            )
             if projection is not None
             else None
         )
+
+    def _storage_settings_changed(self, key: str, _value: object) -> None:
+        if key.startswith("transcoding/") and self._storage_projection is not None:
+            self._refresh_storage_estimate()
 
     def _refresh_review_summary(self) -> None:
         playlist_count = len(self._playlist_preview) if self.reconcile_playlists else 0

@@ -12,7 +12,7 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhod_payloads.container_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
-from iPodDB.library._artwork_writing import artwork_path
+from iPodDB.library._artwork_writing import artwork_path, effective_cover_format
 from iPodDB.library._resolved_write import ResolvedWrite
 from iPodDB.library.file_content import read_content
 from iPodDB.library.writing import IdentityMapping, PreparedFile, WriteResources
@@ -61,8 +61,25 @@ def verify_artwork(
     index = build_artwork_index(artwork)
     outputs = {f.relative_path.casefold(): f.data for f in files}
     assets = {a.artwork_id: a.pixels for a in resources.artwork}
-    formats = {f.format_id: f for f in target.cover_formats}
     file_formats = tuple(s.chunk.header for s in artwork.find_chunks(MhifHeader))
+    original_sizes = (
+        {
+            s.chunk.header.format_id: s.chunk.header.image_size
+            for s in original.find_chunks(MhifHeader)
+        }
+        if original is not None
+        else {}
+    )
+    formats = {
+        f.format_id: (
+            effective_cover_format(
+                original, f, resources, original_sizes.get(f.format_id)
+            )
+            if generated
+            else f
+        )
+        for f in target.cover_formats
+    }
     for mapping in generated:
         pixels = assets.get(mapping.draft_id)
         if pixels is None:

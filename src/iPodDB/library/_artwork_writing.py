@@ -177,6 +177,47 @@ def _validate_retained_artwork_format(
             raise ValueError("Retained image ranges partially overlap.")
 
 
+def effective_cover_format(
+    artwork: DatabaseDocument[MhfdHeader] | None,
+    cover: CoverFormat,
+    resources: WriteResources,
+    retained_size: int | None,
+) -> CoverFormat:
+    """Use the evidenced F1061 row count when extending an existing ArtworkDB."""
+    if (
+        artwork is None
+        or cover.format_id != 1061
+        or cover.width != 56
+        or cover.height not in (55, 56)
+        or cover.row_bytes != 112
+        or cover.pixel_format is not IthmbPixelFormat.RGB565_LE
+    ):
+        return cover
+    image_sizes = {
+        size
+        for selection in artwork.find_chunks(MhiiHeader)
+        for child in selection.chunk.children
+        if isinstance(child.payload, MhodContainerPayload)
+        and child.payload.child.header.format_id == 1061
+        for size in (
+            child.payload.child.header.image_size,
+            child.payload.child.header.image_size_2,
+        )
+    }
+    if image_sizes:
+        if len(image_sizes) != 1 or next(iter(image_sizes)) not in (6160, 6272):
+            raise ValueError("Retained F1061 MHNI image sizes are inconsistent.")
+        image_size = next(iter(image_sizes))
+        effective = replace(cover, height=image_size // cover.row_bytes)
+        _validate_retained_artwork_format(artwork, effective, image_size, resources)
+        return effective
+    # With no retained F1061 images, the MHIF entry is the only on-disk layout
+    # declaration. A new ArtworkDB uses the Device Profile's default instead.
+    if retained_size in (6160, 6272):
+        return replace(cover, height=retained_size // cover.row_bytes)
+    return cover
+
+
 def reconcile_artwork(
     itunes: DatabaseDocument[MhbdHeader],
     artwork: DatabaseDocument[MhfdHeader] | None,
@@ -274,7 +315,16 @@ def reconcile_artwork(
         raise ValueError(
             "Artwork file inventory contains case-insensitive path collisions."
         )
-    formats = {f.format_id: f for f in target.cover_formats}
+    formats = {
+        f.format_id: (
+            effective_cover_format(
+                artwork, f, resources, retained_sizes.get(f.format_id)
+            )
+            if assets
+            else f
+        )
+        for f in target.cover_formats
+    }
     next_id = max(
         artwork.header.next_mhii_id,
         max(rows, default=0) + 1,

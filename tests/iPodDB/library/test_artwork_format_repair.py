@@ -8,6 +8,8 @@ import pytest
 from tests.iPodDB.library.test_write_artwork import BLUE, COVER, RED, TARGET
 from tests.iPodDB.library.test_writing import library
 
+from device_registry import DEFAULT_DEVICE_REGISTRY
+from iOpenPod.app.artwork_policy import application_cover_formats
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhii import MhiiHeader
@@ -26,6 +28,7 @@ from iPodDB.library import (
     WriteResources,
     WriteTarget,
     content_sha256,
+    read_content,
 )
 
 NANO_FORMATS = (
@@ -128,6 +131,109 @@ def test_nano_sizes_are_corrected_automatically_without_other_changes(
         for s in parse_ArtworkDB(actual.prepared.artwork).find_chunks(MhifHeader)
     } == {1010: 115200, 1013: 5000, 1015: 6728, 1016: 6612}
     assert "87552000" in caplog.text and "115200" in caplog.text
+
+
+@pytest.mark.parametrize("height", [55, 56])
+def test_consistent_retained_f1061_layout_accepts_new_artwork(height: int) -> None:
+    retained = replace(COVER, format_id=1061, width=56, height=height, row_bytes=112)
+    classic = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
+    assert classic is not None
+    catalog = next(
+        cover for cover in application_cover_formats(classic) if cover.format_id == 1061
+    )
+    source, target, resources = retained_source((retained,))
+    result = prepare_cover(source, replace(target, cover_formats=(catalog,)), resources)
+
+    assert result.prepared is not None, " | ".join(
+        f"{issue.code}: {issue.message}" for issue in result.issues
+    )
+    assert result.prepared.artwork is not None
+    document = parse_ArtworkDB(result.prepared.artwork)
+    expected_size = 112 * height
+    assert {
+        entry.chunk.header.image_size for entry in document.find_chunks(MhifHeader)
+    } == {expected_size}
+    assert {
+        location.header.image_size
+        for image in document.find_chunks(MhiiHeader)
+        for child in image.chunk.children
+        if isinstance(child.payload, MhodContainerPayload)
+        for location in (child.payload.child,)
+    } == {expected_size}
+    updated = IPodLibrary(result.prepared.itunes).with_artwork(result.prepared.artwork)
+    read = updated.artwork_read(updated.snapshot.tracks[0].artwork_id, (catalog,), 56)
+    assert read is not None
+    output = next(
+        file
+        for file in result.prepared.artwork_files
+        if file.relative_path == read.relative_path
+    )
+    pixels = read.decode(read_content(output.data, read.offset, read.length))
+    assert (pixels.width, pixels.height) == (56, height)
+
+
+@pytest.mark.parametrize("height", [55, 56])
+def test_f1061_mhni_evidence_corrects_stale_mhif_for_either_layout(
+    height: int,
+) -> None:
+    retained = replace(COVER, format_id=1061, width=56, height=height, row_bytes=112)
+    source, target, resources = retained_source((retained,))
+    original = source.serialize()
+    assert original.artwork is not None
+    document = parse_ArtworkDB(original.artwork)
+    selection = document.find_chunks(MhifHeader)[0]
+    document = document.replace_chunk(
+        selection,
+        replace(
+            selection.chunk,
+            header=replace(
+                selection.chunk.header,
+                image_size=112 * (56 if height == 55 else 55),
+            ),
+        ),
+    )
+    source = IPodLibrary(original.itunes).with_artwork(write_ArtworkDB(document))
+    classic = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
+    assert classic is not None
+    catalog = next(
+        cover for cover in application_cover_formats(classic) if cover.format_id == 1061
+    )
+
+    result = prepare_cover(source, replace(target, cover_formats=(catalog,)), resources)
+
+    assert result.prepared is not None, result.issues
+    assert result.prepared.artwork is not None
+    corrected = parse_ArtworkDB(result.prepared.artwork)
+    assert corrected.find_chunks(MhifHeader)[0].chunk.header.image_size == 112 * height
+
+
+def test_f1061_conflicting_mhni_size_fields_still_block_preparation() -> None:
+    retained = replace(COVER, format_id=1061, width=56, height=56, row_bytes=112)
+    source, target, resources = retained_source((retained,))
+    original = source.serialize()
+    assert original.artwork is not None
+    document = parse_ArtworkDB(original.artwork)
+    selection = document.find_chunks(MhiiHeader)[0]
+    row = selection.chunk
+    container = row.children[0]
+    assert isinstance(container.payload, MhodContainerPayload)
+    location = container.payload.child
+    location = replace(location, header=replace(location.header, image_size_2=6160))
+    document = document.replace_chunk(
+        selection,
+        replace(
+            row,
+            children=(
+                replace(container, payload=replace(container.payload, child=location)),
+                *row.children[1:],
+            ),
+        ),
+    )
+    source = IPodLibrary(original.itunes).with_artwork(write_ArtworkDB(document))
+    result = prepare_cover(source, target, resources)
+
+    assert result.prepared is None
+    assert any(issue.code == "preparation.cannot_encode" for issue in result.issues)
 
 
 @pytest.mark.parametrize("change", [False, True])

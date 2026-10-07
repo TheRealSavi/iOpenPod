@@ -16,6 +16,13 @@ def test_device_profiles_assign_product_images_and_cover_formats() -> None:
         artwork_format.format_id
         for artwork_format in classic.capabilities.artwork.cover_formats
     } == {1055, 1060, 1061, 1068}
+    small_classic = classic.capabilities.artwork.cover_format(1061)
+    assert small_classic is not None
+    assert (small_classic.width, small_classic.height, small_classic.row_bytes) == (
+        56,
+        56,
+        112,
+    )
 
     assert nano_7g is not None
     assert nano_7g.product_image == "iPod18A-Pink.png"

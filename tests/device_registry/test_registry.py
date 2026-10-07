@@ -370,7 +370,7 @@ def test_profiles_expose_grouped_operational_capabilities() -> None:
 
     assert nano5 is not None
     assert nano5.capabilities.database.uses_sqlite_database
-    assert nano5.capabilities.database.checksum is DatabaseChecksum.HASH58
+    assert nano5.capabilities.database.checksum is DatabaseChecksum.HASH72
     assert nano5.capabilities.database.sqlite_checksum is DatabaseChecksum.HASH72
 
     assert nano is not None

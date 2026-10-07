@@ -46,6 +46,21 @@ def build_locations_cbk(
     return header + final + blocks
 
 
+def recover_hash72_cbk_material(locations: bytes, cbk: bytes) -> tuple[bytes, bytes]:
+    """Recover HASH72 material only from a checksum book matching Locations bytes."""
+
+    from iPodDB.iTunesDB.writer.signature import recover_hash72_signature
+
+    final, blocks = _cbk_parts(locations)
+    if len(cbk) != 46 + 20 + len(blocks) or not hmac.compare_digest(
+        cbk[46:], final + blocks
+    ):
+        raise ValueError(
+            "The retained Locations checksum book does not match Locations."
+        )
+    return recover_hash72_signature(final, cbk[:46])
+
+
 def verify_locations_cbk(
     databases: SQLiteDatabaseSet,
     checksum: WriteChecksum,

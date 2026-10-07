@@ -258,17 +258,7 @@ def _lossy_arguments(
             if automatic
             else f"The selected encoder ({settings.lossy_encoder}) is unavailable in this FFmpeg build. Choose Auto or install an FFmpeg build containing that encoder, then retry this item.",
         )
-    bitrate = (
-        settings.spoken_word_bitrate_kbps
-        if spoken
-        else {
-            TranscodeQuality.COMPACT: 128,
-            TranscodeQuality.BALANCED: 192,
-            TranscodeQuality.HIGH: 256,
-        }[settings.quality]
-        if automatic
-        else settings.bitrate_kbps
-    )
+    bitrate = nominal_lossy_bitrate_kbps(settings, spoken=spoken)
     mode = BitrateMode.CBR if spoken or automatic else settings.bitrate_mode
     args = ["-c:a", encoder.value]
     if encoder in (LossyEncoder.FDK_AAC, LossyEncoder.AAC):
@@ -318,6 +308,24 @@ def _lossy_arguments(
     return (
         AudioEncoding.MP3 if encoder is LossyEncoder.MP3 else AudioEncoding.AAC
     ), tuple(args)
+
+
+def nominal_lossy_bitrate_kbps(settings: TranscodeSettings, *, spoken: bool) -> int:
+    """Return the nominal output rate selected by the shared encoding policy.
+
+    VBR encoders use quality controls, so this remains an estimate for those modes.
+    """
+    return (
+        settings.spoken_word_bitrate_kbps
+        if spoken
+        else {
+            TranscodeQuality.COMPACT: 128,
+            TranscodeQuality.BALANCED: 192,
+            TranscodeQuality.HIGH: 256,
+        }[settings.quality]
+        if settings.lossy_encoder is LossyEncoder.AUTO
+        else settings.bitrate_kbps
+    )
 
 
 def resolve_transcode(

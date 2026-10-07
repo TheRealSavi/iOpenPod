@@ -2214,6 +2214,10 @@
         <translation>Instalado</translation>
     </message>
     <message>
+        <source>Version: %1</source>
+        <translation>Versión: %1</translation>
+    </message>
+    <message>
         <source>Unavailable</source>
         <translation>No disponible</translation>
     </message>
@@ -5995,11 +5999,19 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Source-size estimate</source>
-        <translation>Estimación según el tamaño original</translation>
+        <translation type="vanished">Estimación según el tamaño original</translation>
     </message>
     <message>
         <source>Based on source file sizes. Final size after conversion is not yet available.</source>
-        <translation>Basada en el tamaño de los archivos originales. El tamaño final tras la conversión aún no está disponible.</translation>
+        <translation type="vanished">Basada en el tamaño de los archivos originales. El tamaño final tras la conversión aún no está disponible.</translation>
+    </message>
+    <message>
+        <source>Estimated iPod storage</source>
+        <translation>Almacenamiento estimado en el iPod</translation>
+    </message>
+    <message>
+        <source>Uses the selected transcoding settings and scanned media facts. Converted file sizes may differ after preparation.</source>
+        <translation>Usa los ajustes de transcodificación seleccionados y los datos de los medios analizados. El tamaño de los archivos convertidos puede variar tras la preparación.</translation>
     </message>
     <message>
         <source>Uses the last observed device capacity and scanned media sizes. Excludes changes to artwork, photo thumbnails, databases, and temporary space needed during Sync.</source>
@@ -6026,8 +6038,12 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Unos %1 libres después de sincronizar</translation>
     </message>
     <message>
+        <source>Partial iPod storage estimate</source>
+        <translation>Estimación parcial del almacenamiento en el iPod</translation>
+    </message>
+    <message>
         <source>Partial source-size estimate</source>
-        <translation>Estimación parcial según el tamaño original</translation>
+        <translation type="vanished">Estimación parcial según el tamaño original</translation>
     </message>
     <message numerus="yes">
         <source>%n unresolved item excluded.</source>
@@ -6045,7 +6061,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Source-size storage estimate</source>
-        <translation>Estimación de almacenamiento según el tamaño original</translation>
+        <translation type="vanished">Estimación de almacenamiento según el tamaño original</translation>
     </message>
 </context>
 <context>

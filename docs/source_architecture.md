@@ -783,6 +783,9 @@ artifact names with bytes; it knows neither device paths nor persistence. Device
 Registry chooses required artifacts and per-artifact checksums. iOpenPod maps those
 artifacts to device-relative paths and publishes them through Storage, but never
 loads them as Library input.
+During preparation, iOpenPod may inspect a retained Locations Checksum Book and
+its Locations file as device-bound signing evidence when `HashInfo` is absent.
+Those reads do not project SQLite Library state. See ADR-0122.
 
 Each public parser returns a `DatabaseDocument[RootHeaderType]`, which is the parsed
 root `ParsedChunk` rather than a wrapper or a second writer model. A consumer finds a
@@ -1311,11 +1314,15 @@ remapping rules. See ADR-0100 and [the sidecar contract](playback-sidecars.md).
 
 Select Media and Review share a storage bar above their content. It combines the
 Active iPod's last observed Volume capacity with the selected Sync Plan and captured
-media file sizes; changing a selection performs no filesystem I/O. Incoming media
-currently uses Host source sizes because transcoder output estimates are not yet
-available. Removals and replaced files use scanned iPod sizes, and shared files are
+media file sizes; changing a selection performs no filesystem I/O. Incoming Tracks
+use the current transcoding settings, scanned duration and format, and Device Profile
+limits to estimate output bytes when a conversion can be inferred. Compatible copies
+and sources without enough facts retain their Host size; full-resolution Photos use
+Host size. Variable-rate encoding, lossless compression, and video CRF output can
+deviate from these estimates. Metadata-only Track Updates do not count as media
+replacements. Removals and replaced files use scanned iPod sizes, and shared files are
 credited only once after their last scanned reference is removed. The bar explicitly
-labels this a source-size estimate, identifies unresolved items excluded from the
+labels this a provisional iPod storage estimate, identifies unresolved items excluded from the
 projection, and reports provisional over-capacity values.
 Artwork, packed Photo representations, database growth, and temporary transaction
 space are not estimated. This preview is not a capacity validation or a guarantee

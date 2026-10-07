@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
+from iOpenPod.app.core.settings.definitions import RETRANSCODE_LOSSY
 from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,
     HostMediaFileKind,
@@ -411,7 +412,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         "Artist",
         "Album",
         180_000,
-        metadata=TrackMetadata(location=str(host_path)),
+        metadata=TrackMetadata(location=str(host_path), file_format="mp3"),
     )
     added_path = HostPath(tmp_path / "new-song.mp3")
     added_track = Track(
@@ -420,7 +421,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         "Artist",
         "Album",
         181_000,
-        metadata=TrackMetadata(location=str(added_path)),
+        metadata=TrackMetadata(location=str(added_path), file_format="mp3"),
     )
     host = HostMediaLibrary(
         LibrarySnapshot(
@@ -622,6 +623,10 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert bar.estimate is not None
         assert bar.estimate.projected_used_bytes == 600
         workspace.selection.set_tracks_checked((2,), True)
+        assert bar.estimate.projected_used_bytes == 701
+        context.settings.set_global(RETRANSCODE_LOSSY, True)
+        assert bar.estimate.projected_used_bytes > 701
+        context.settings.reset_global(RETRANSCODE_LOSSY)
         assert bar.estimate.projected_used_bytes == 701
         workspace.selection.set_tracks_checked((1,), False)
         assert bar.estimate.projected_used_bytes == 611

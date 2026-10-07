@@ -41,7 +41,11 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhni import MhniHeader
 from iPodDB.ArtworkDB.shared.constants import ArtworkMhodType
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
 from iPodDB.iTunesDB.cdb import compress_iTunesCDB
-from iPodDB.iTunesDB.writer.signature import verify_hash58, verify_hashab
+from iPodDB.iTunesDB.writer.signature import (
+    sign_hash72,
+    verify_hash72,
+    verify_hashab,
+)
 from iPodDB.library import IPodLibrary, SQLiteDatabaseSet
 from iPodDB.library.writing import WriteChecksum
 from iPodDB.PhotosDB.builder.build_PhotosDB import (
@@ -60,7 +64,7 @@ from iPodDB.PhotosDB.shared.chunk_defs.mhni import DEFINITION as PHOTO_MHNI_DEFI
 from iPodDB.PhotosDB.shared.chunk_defs.mhni import MhniHeader as PhotoMhniHeader
 from iPodDB.PhotosDB.shared.constants import PhotosMhodType
 from iPodDB.PhotosDB.writer.write_PhotosDB import write_PhotosDB
-from iPodDB.SQLiteDB.checksum import verify_locations_cbk
+from iPodDB.SQLiteDB.checksum import build_locations_cbk, verify_locations_cbk
 from storage import (
     AccessMode,
     DevicePath,
@@ -963,6 +967,7 @@ def test_nano_library_save_publishes_cdb_and_sqlite_as_one_generation(
     assert review.result.prepared is not None, review.result.issues
     assert saved.active is not None, saved.issues
     assert IPodLibrary.parse(cdb.read_bytes()).snapshot.tracks[0].title == "Late Nano"
+    assert verify_hash72(cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)))
     assert (root / "iPod_Control" / "iTunes" / "iTunesDB").read_bytes() == b""
     assert review.result.prepared.sqlite is not None
     library_database = sqlite3.connect(":memory:")
@@ -975,6 +980,118 @@ def test_nano_library_save_publishes_cdb_and_sqlite_as_one_generation(
         for name, data in review.result.prepared.sqlite.artifacts()
     )
     assert saved.active.library.tracks[0].title == "Late Nano"
+
+
+def test_nano5_recovers_missing_hashinfo_from_retained_checksum_book(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(
+        tmp_path / "nano", model_number="MC027", database_name="iTunesCDB"
+    )
+    cdb = root / "iPod_Control" / "iTunes" / "iTunesCDB"
+    cdb.write_bytes(compress_iTunesCDB(_database_with_track()))
+    guid = bytes.fromhex("000A270012345678")
+    _install_nano5_hash72_metadata(root, guid)
+    (root / "iPod_Control" / "Device" / "HashInfo").unlink()
+    sqlite_directory = root / "iPod_Control" / "iTunes" / "iTunes Library.itlp"
+    sqlite_directory.mkdir()
+    locations = b"retained Locations database"
+    (sqlite_directory / "Locations.itdb").write_bytes(locations)
+    (sqlite_directory / "Locations.itdb.cbk").write_bytes(
+        build_locations_cbk(
+            locations,
+            WriteChecksum.HASH72,
+            iv=bytes(range(16)),
+            random_part=bytes(range(20, 32)),
+        )
+    )
+    platform.add_volume(root, label="Nano")
+    coordinator = DeviceCoordinator(Storage(platform))
+    active = coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+    edited = replace(
+        active.library,
+        tracks=(replace(active.library.tracks[0], title="Recovered HASH72"),),
+    )
+
+    review = coordinator.prepare_library(
+        LibraryPreparationRequest(edited, active, 1, 1),
+        lambda _progress: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+    saved = coordinator.save_library(review, active, lambda _: None, Event())
+
+    assert saved.active is not None, saved.issues
+    assert verify_hash72(cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)))
+    coordinator.close()
+
+
+def test_nano5_recovers_missing_hashinfo_from_retained_cdb(tmp_path: Path) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(
+        tmp_path / "nano", model_number="MC027", database_name="iTunesCDB"
+    )
+    cdb = root / "iPod_Control" / "iTunes" / "iTunesCDB"
+    iv = bytes(range(16))
+    random_part = bytes(range(20, 32))
+    cdb.write_bytes(
+        sign_hash72(compress_iTunesCDB(_database_with_track()), iv, random_part)
+    )
+    guid = bytes.fromhex("000A270012345678")
+    _install_nano5_hash72_metadata(root, guid)
+    (root / "iPod_Control" / "Device" / "HashInfo").unlink()
+    platform.add_volume(root, label="Nano")
+    coordinator = DeviceCoordinator(Storage(platform))
+    active = coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+    edited = replace(
+        active.library,
+        tracks=(replace(active.library.tracks[0], title="Retained HASH72"),),
+    )
+
+    review = coordinator.prepare_library(
+        LibraryPreparationRequest(edited, active, 1, 1),
+        lambda _progress: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+    saved = coordinator.save_library(review, active, lambda _: None, Event())
+
+    assert saved.active is not None, saved.issues
+    assert verify_hash72(cdb.read_bytes(), iv, random_part)
+    coordinator.close()
+
+
+def test_nano5_without_retained_hash72_material_blocks_before_mutation(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(
+        tmp_path / "nano", model_number="MC027", database_name="iTunesCDB"
+    )
+    cdb = root / "iPod_Control" / "iTunes" / "iTunesCDB"
+    original = compress_iTunesCDB(_database_with_track())
+    cdb.write_bytes(original)
+    platform.add_volume(root, label="Nano")
+    coordinator = DeviceCoordinator(Storage(platform))
+    active = coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+    edited = replace(
+        active.library,
+        tracks=(replace(active.library.tracks[0], title="Cannot sign"),),
+    )
+
+    review = coordinator.prepare_library(
+        LibraryPreparationRequest(edited, active, 1, 1),
+        lambda _progress: None,
+        Event(),
+    )
+
+    assert review.result.prepared is None
+    assert any(
+        issue.code == "target.missing_hash72_material" for issue in review.result.issues
+    )
+    assert cdb.read_bytes() == original
+    coordinator.close()
 
 
 @pytest.mark.parametrize("metadata", [None, b""])
@@ -1034,7 +1151,7 @@ def test_nano5_selection_commits_playback_without_postprocess_metadata(
         )
         assert not (directory / "OTGPlaylistInfo").exists()
         assert (directory / "OTGPlaylistInfo.bak").read_bytes() == playlist
-        assert verify_hash58(cdb.read_bytes(), guid)
+        assert verify_hash72(cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)))
         sqlite_directory = directory / "iTunes Library.itlp"
         for name in ("Library", "Locations", "Dynamic", "Extras", "Genius"):
             connection = sqlite3.connect(":memory:")
@@ -1262,7 +1379,7 @@ def test_nano5_signing_does_not_require_sysinfo(tmp_path: Path, source: str) -> 
             (metadata / "SysInfoExtended").unlink()
         saved = coordinator.save_library(review, active, lambda _: None, Event())
         assert saved.active is not None, saved.issues
-        assert verify_hash58(cdb.read_bytes(), guid)
+        assert verify_hash72(cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)))
         assert saved.active.library.tracks[0].title == "Signing fallback"
     finally:
         coordinator.close()

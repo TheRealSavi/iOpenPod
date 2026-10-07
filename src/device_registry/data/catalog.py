@@ -94,6 +94,8 @@ _ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
     1055: _artwork_format(1055, 128, 128, 256),
     1056: _artwork_format(1056, 128, 128, 256),
     1060: _artwork_format(1060, 320, 320, 640),
+    # Original iOpenPod creates 56-row F1061 images; retained 55-row images
+    # are selected from ArtworkDB evidence during preparation.
     1061: _artwork_format(1061, 56, 56, 112),
     1066: _artwork_format(1066, 64, 64, 128, usage=ArtworkUsage.PHOTO),
     1067: _artwork_format(
@@ -319,7 +321,7 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         video=(640, 480, 2500, "3.0"),
         subtitles=True,
         captions=True,
-        checksum=DatabaseChecksum.HASH58,
+        checksum=DatabaseChecksum.HASH72,
         database_version=0x30,
         music_directories=14,
         database_limit=_LARGE_DATABASE_LIMIT,

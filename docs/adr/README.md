@@ -193,3 +193,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0118: Write application artwork for non-cover devices](0118-write-application-artwork-for-non-cover-devices.md)
 - [ADR-0119: Compare Track tags and artwork before Sync Update](0119-compare-track-tags-and-artwork-after-host-file-changes.md)
 - [ADR-0120: Separate Track payload replacement from tag and artwork updates](0120-separate-track-payload-replacement-from-tag-and-artwork-updates.md)
+- [ADR-0121: Preserve retained F1061 raster height](0121-preserve-retained-f1061-raster-height.md)
+- [ADR-0122: Match Original iOpenPod signing behavior](0122-match-original-signing-behavior.md)

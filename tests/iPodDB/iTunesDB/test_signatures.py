@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import struct
 
 import pytest
 
 from iPodDB.iTunesDB.writer.signature import (
+    compute_hash72_signature,
     compute_hashab,
     extract_hash72_material,
     sign_hash72,
@@ -33,6 +35,29 @@ def test_hash72_signs_verifies_and_recovers_device_material() -> None:
     assert signed[0x72:0x74] == b"\x01\x00"
     assert verify_hash72(signed, iv, random_part)
     assert extract_hash72_material(signed) == (iv, random_part)
+
+
+def test_hash72_envelope_matches_original_iopenpod_vector() -> None:
+    assert compute_hash72_signature(
+        bytes(range(20)), bytes(range(16)), bytes(range(20, 32))
+    ).hex() == (
+        "01001415161718191a1b1c1d1e1f34a8f220c7c4330b3ceab271e37a96"
+        "6339a42961b1a767e6747e0fb951a38bce"
+    )
+
+
+def test_hash72_recovery_uses_the_retained_scheme_for_a_dual_signed_database() -> None:
+    iv = bytes(range(16))
+    random_part = bytes(range(20, 32))
+    retained = bytearray(_database())
+    struct.pack_into("<H", retained, 0x30, 1)
+    normalized = bytearray(retained)
+    normalized[0x18:0x20] = bytes(8)
+    retained[0x72:0xA0] = compute_hash72_signature(
+        hashlib.sha1(normalized).digest(), iv, random_part
+    )
+
+    assert extract_hash72_material(bytes(retained)) == (iv, random_part)
 
 
 @pytest.mark.parametrize("offset", [0x80, 0x90])

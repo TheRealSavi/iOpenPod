@@ -30,7 +30,11 @@ from iPodDB.library import (
 )
 from iPodDB.library.playlists import Playlist, playlist_entries
 from iPodDB.library.writing import WriteChecksum
-from iPodDB.SQLiteDB.checksum import verify_locations_cbk
+from iPodDB.SQLiteDB.checksum import (
+    build_locations_cbk,
+    recover_hash72_cbk_material,
+    verify_locations_cbk,
+)
 from iPodDB.SQLiteDB.database import build_sqlite_databases
 
 if TYPE_CHECKING:
@@ -500,6 +504,19 @@ def test_hashab_checksum_book_is_device_bound() -> None:
 
     assert verify_locations_cbk(databases, WriteChecksum.HASHAB, guid)
     assert not verify_locations_cbk(databases, WriteChecksum.HASHAB, bytes(8))
+
+
+def test_hash72_material_can_be_recovered_from_a_valid_retained_checksum_book() -> None:
+    locations = b"retained Locations database"
+    iv = bytes(range(16))
+    random_part = bytes(range(20, 32))
+    cbk = build_locations_cbk(
+        locations, WriteChecksum.HASH72, iv=iv, random_part=random_part
+    )
+
+    assert recover_hash72_cbk_material(locations, cbk) == (iv, random_part)
+    with pytest.raises(ValueError, match="checksum book"):
+        recover_hash72_cbk_material(locations + b"changed", cbk)
 
 
 def test_duplicate_native_artist_references_get_distinct_projection_ids() -> None:

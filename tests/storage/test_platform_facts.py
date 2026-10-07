@@ -2,11 +2,17 @@
 
 import plistlib
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from storage import MountInspectionError, PhysicalDeviceId
+from storage import (
+    MountInspectionError,
+    PhysicalDeviceId,
+    Storage,
+    VolumeIdentityChangedError,
+)
 from storage.platform import macos_vpd
 from storage.platform.common import capabilities
 from storage.platform.linux import (
@@ -227,6 +233,124 @@ def test_linux_probe_includes_whole_disk_udev_properties(
 
     assert properties["ID_IOPENPOD_PRODUCT_SERIAL"] == "8P840FN62C7"
     assert properties["ID_FS_UUID"] == "volume-id"
+
+
+@pytest.mark.parametrize(
+    "missing_properties",
+    [
+        ("ID_SERIAL",),
+        ("ID_FS_UUID",),
+        ("ID_BUS", "ID_SERIAL", "ID_FS_UUID"),
+    ],
+)
+def test_linux_session_survives_transient_missing_udev_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing_properties: tuple[str, ...],
+) -> None:
+    import storage.platform.linux as linux
+
+    record = LinuxMountRecord(
+        mount_id="42",
+        device_number="8:17",
+        mount_point=tmp_path,
+        filesystem_type="vfat",
+        source="/dev/sdb1",
+        options=("rw",),
+    )
+    properties = {
+        "ID_BUS": "usb",
+        "ID_SERIAL": "Apple_iPod_Classic_000A270012345678",
+        "ID_FS_UUID": "ABCD-1234",
+    }
+
+    def udev_properties_for_record(_record: LinuxMountRecord) -> dict[str, str]:
+        return properties.copy()
+
+    def whole_disk_device_number(_source: str) -> str:
+        return "8:16"
+
+    adapter = LinuxPlatformAdapter()
+    monkeypatch.setattr(adapter, "_records", lambda: (record,))
+    monkeypatch.setattr(
+        adapter, "udev_properties_for_record", udev_properties_for_record
+    )
+    monkeypatch.setattr(linux, "_whole_disk_device_number", whole_disk_device_number)
+    storage = Storage(adapter)
+    mounted = storage.discover().volumes[0]
+
+    # udev may briefly omit optional identity properties while the same kernel
+    # mount and block device remain connected.
+    for name in missing_properties:
+        del properties[name]
+    with storage.open_session(mounted) as session:
+        assert session.is_active
+
+    assert (
+        storage.discover().volumes[0].connection_generation
+        == mounted.connection_generation
+    )
+    assert adapter.physical_device_id_for_path(tmp_path) == mounted.physical_device.id
+    with storage.open_session(mounted) as session:
+        assert session.mounted_volume.mount_instance == "linux-mount:42"
+
+
+@pytest.mark.parametrize(
+    "change", ["remount", "different_serial", "discovered_disconnect"]
+)
+def test_linux_new_connection_expires_cached_udev_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+) -> None:
+    import storage.platform.linux as linux
+
+    record = LinuxMountRecord(
+        mount_id="42",
+        device_number="8:17",
+        mount_point=tmp_path,
+        filesystem_type="vfat",
+        source="/dev/sdb1",
+        options=("rw",),
+    )
+    properties = {
+        "ID_BUS": "usb",
+        "ID_SERIAL": "Apple_iPod_Classic_000A270012345678",
+        "ID_FS_UUID": "ABCD-1234",
+    }
+
+    def udev_properties_for_record(_record: LinuxMountRecord) -> dict[str, str]:
+        return properties.copy()
+
+    def whole_disk_device_number(_source: str) -> str:
+        return "8:16"
+
+    adapter = LinuxPlatformAdapter()
+    monkeypatch.setattr(adapter, "_records", lambda: (record,))
+    monkeypatch.setattr(
+        adapter, "udev_properties_for_record", udev_properties_for_record
+    )
+    monkeypatch.setattr(linux, "_whole_disk_device_number", whole_disk_device_number)
+    storage = Storage(adapter)
+    old = storage.discover().volumes[0]
+
+    if change == "remount":
+        record = replace(record, mount_id="43")
+        del properties["ID_SERIAL"]
+    elif change == "different_serial":
+        properties["ID_SERIAL"] = "Apple_iPod_Classic_different"
+    else:
+        monkeypatch.setattr(adapter, "_records", lambda: ())
+        assert storage.discover().volumes == ()
+        monkeypatch.setattr(adapter, "_records", lambda: (record,))
+        del properties["ID_SERIAL"]
+    current = storage.discover().volumes[0]
+
+    assert current.connection_generation != old.connection_generation
+    if change == "discovered_disconnect":
+        assert current.physical_device.id != old.physical_device.id
+    with pytest.raises(VolumeIdentityChangedError):
+        storage.open_session(old)
 
 
 def test_linux_host_path_identity_collapses_sibling_partitions(

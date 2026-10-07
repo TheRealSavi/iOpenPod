@@ -145,21 +145,31 @@ def compute_hash72_signature(digest: bytes, iv: bytes, random_part: bytes) -> by
     return b"\x01\x00" + random_part + encrypted
 
 
-def sign_hash72(data: bytes, iv: bytes, random_part: bytes) -> bytes:
+def sign_hash72(
+    data: bytes,
+    iv: bytes,
+    random_part: bytes,
+    *,
+    hashing_scheme: int = 2,
+) -> bytes:
     """Finalize one physical iTunesDB/iTunesCDB with a HASH72 signature.
 
     ``iv`` and ``random_part`` are device-bound material retained in the
     device's HashInfo record or recoverable from its valid iTunes signature.
     They are explicit byte inputs so iPodDB remains independent of Storage.
+    A retained Classic dual signature uses scheme 1 before HASH58 is signed;
+    standalone HASH72 output uses scheme 2.
     """
 
     if len(iv) != 16 or len(random_part) != 12:
         raise ValueError("HASH72 requires a 16-byte IV and 12 random bytes.")
+    if hashing_scheme not in (1, 2):
+        raise ValueError("HASH72 requires a HASH58 or HASH72 hashing scheme.")
     output, normalized, header_size = _signature_buffers(data)
     _zero_signature_field(normalized, header_size, "db_id")
     _zero_signature_field(normalized, header_size, "hash58")
     _zero_signature_field(normalized, header_size, "hash72")
-    _set_scheme(output, normalized, header_size, 2)
+    _set_scheme(output, normalized, header_size, hashing_scheme)
     digest = hashlib.sha1(normalized).digest()
     signature = compute_hash72_signature(digest, iv, random_part)
     schema = _FIELDS["hash72"]
@@ -167,8 +177,16 @@ def sign_hash72(data: bytes, iv: bytes, random_part: bytes) -> bytes:
     return bytes(output)
 
 
-def verify_hash72(data: bytes, iv: bytes, random_part: bytes) -> bool:
-    return hmac.compare_digest(data, sign_hash72(data, iv, random_part))
+def verify_hash72(
+    data: bytes,
+    iv: bytes,
+    random_part: bytes,
+    *,
+    hashing_scheme: int = 2,
+) -> bool:
+    return hmac.compare_digest(
+        data, sign_hash72(data, iv, random_part, hashing_scheme=hashing_scheme)
+    )
 
 
 @cache
@@ -230,6 +248,16 @@ def verify_hashab(data: bytes, guid: bytes) -> bool:
     return hmac.compare_digest(data, sign_hashab(data, guid))
 
 
+def has_hash72_signature(data: bytes) -> bool:
+    """Identify a retained HASH72 envelope using the shared root field layout."""
+
+    schema = _FIELDS["hash72"]
+    return (
+        len(data) >= schema.offset + schema.size
+        and data[schema.offset : schema.offset + 2] == b"\x01\x00"
+    )
+
+
 def extract_hash72_material(data: bytes) -> tuple[bytes, bytes]:
     """Recover the IV and random bytes from one internally valid HASH72 record.
 
@@ -243,13 +271,21 @@ def extract_hash72_material(data: bytes) -> tuple[bytes, bytes]:
     _output, normalized, header_size = _signature_buffers(data)
     for name in ("db_id", "hash58", "hash72"):
         _zero_signature_field(normalized, header_size, name)
-    _set_scheme(bytearray(data), normalized, header_size, 2)
     schema = _FIELDS["hash72"]
     signature = data[schema.offset : schema.offset + schema.size]
-    if len(signature) != schema.size or signature[:2] != b"\x01\x00":
+    if len(signature) != schema.size:
         raise ValueError("The retained database has no recoverable HASH72 signature.")
+    return recover_hash72_signature(hashlib.sha1(normalized).digest(), signature)
+
+
+def recover_hash72_signature(digest: bytes, signature: bytes) -> tuple[bytes, bytes]:
+    """Recover and verify the material in one database or checksum-book envelope."""
+
+    if len(digest) != 20:
+        raise ValueError("HASH72 recovery requires a 20-byte SHA1 digest.")
+    if len(signature) != 46 or signature[:2] != b"\x01\x00":
+        raise ValueError("The retained artifact has no recoverable HASH72 signature.")
     random_part = signature[2:14]
-    digest = hashlib.sha1(normalized).digest()
     first_plain_xor_iv = _AES_NEW(_HASH72_KEY, AES.MODE_ECB).decrypt(signature[14:30])
     iv = bytes(
         left ^ right
@@ -257,7 +293,7 @@ def extract_hash72_material(data: bytes) -> tuple[bytes, bytes]:
     )
     plaintext = _AES_NEW(_HASH72_KEY, AES.MODE_CBC, iv).decrypt(signature[14:])
     if not hmac.compare_digest(plaintext, digest + random_part):
-        raise ValueError("The retained database has an invalid HASH72 signature.")
+        raise ValueError("The retained artifact has an invalid HASH72 signature.")
     return iv, random_part
 
 

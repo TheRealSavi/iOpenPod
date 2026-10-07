@@ -461,7 +461,11 @@ partially full shard requires its verified prefix. Allocation uses only the
 `F<format>_<shard>.ithmb` policy, checks case-insensitive collisions, and never
 compacts, reuses holes, or deletes files. Changed file outputs include the complete
 prefix plus zero-filled frame alignment and appended images. Missing or duplicate
-affected datasets and conflicting MHIF image sizes block preparation.
+affected datasets and unverifiable MHIF image sizes block preparation. Consistent
+retained MHNI images can establish a corrected MHIF size. For F1061, they also
+select either the 55-row or 56-row fixed raster before new artwork is encoded.
+See [ADR-0111](adr/0111-correct-evidenced-artwork-format-sizes-during-preparation.md)
+and [ADR-0121](adr/0121-preserve-retained-f1061-raster-height.md).
 
 Packed RGB565 and RGB555 variants, rectangular rotated RGB565, UYVY, tightly packed
 I420, and JPEG use explicit codec layouts. I420 accepts the catalog's aggregate
@@ -519,16 +523,20 @@ command set in an isolated in-memory database group, creates and verifies
 verification also checks target layouts, both
 image sizes, file-format records, allocation alignment, next image ID, native Track
 flags, and required reverse links. HASH58 uses the supplied eight-byte FireWire GUID.
-HASH72 uses the selected device's retained HashInfo IV and random bytes. HASHAB uses
+HASH72 uses the selected device's retained HashInfo IV and random bytes, or material
+recovered from a verified retained database or Locations Checksum Book. HASHAB uses
 the FireWire GUID and the clean-room `calcHashAB` WebAssembly implementation. Fixed
-reference vectors cover HASH58 and HASHAB; HASH72 has envelope, round-trip, and
+reference vectors cover HASH58, HASH72, and HASHAB; HASH72 also has round-trip and
 corruption checks against its retained inputs. Signed ArtworkDB remains an explicit
 blocker.
 
 Device Registry describes the binary/CDB checksum separately from the SQLite CBK
-checksum. Nano 5 uses HASH58 for iTunesCDB and HASH72 for the SQLite checksum book;
+checksum. Nano 5 uses HASH72 for iTunesCDB and the SQLite checksum book;
 Nano 6 and 7 use HASHAB for both. Missing HashInfo or FireWire GUID evidence blocks
-changed output. iTunesCDB is the sole readable Library authority: device selection
+changed output when no valid retained signing source can supply the material.
+Classic HASH58 output refreshes a valid retained HASH72 signature first. See
+[ADR-0122](adr/0122-match-original-signing-behavior.md). iTunesCDB is the sole
+readable Library authority: device selection
 does not require or parse the SQLite files. A true no-op returns the exact retained
 CDB and does not touch SQLite. Every CDB-changing save generates and publishes all
 six SQLite artifacts from the independently reparsed candidate snapshot, replacing

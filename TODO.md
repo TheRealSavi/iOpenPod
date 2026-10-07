@@ -5,7 +5,6 @@
 * Progress reporting in the Capturing required resources stage of sync
 * Per Device settings profiles
 * Look into FFMPEG's AAC Update
-* Device storage updates preview in sync should use transcoded estimates
 
 ## Future work
 
@@ -16,6 +15,8 @@
 * Add intelligent music understanding features like live djing and dj playlists
 
 * Connections to external sources for sync
+
+* Publish to snap store, flathub, AUR, mac app store.
 
 * More translations
 

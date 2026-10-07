@@ -33,7 +33,12 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import DEFINITION as MHYP
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
-from iPodDB.iTunesDB.writer.signature import sign_hash58, verify_hash58
+from iPodDB.iTunesDB.writer.signature import (
+    sign_hash58,
+    sign_hash72,
+    verify_hash58,
+    verify_hash72,
+)
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library import (
     ArtworkPixels,
@@ -516,4 +521,31 @@ def test_hash58_detects_tampering_and_preserves_non_signature_header_data() -> N
         )
     )
     assert result.prepared is not None, result.issues
+    assert verify_hash58(result.prepared.itunes, guid)
+
+
+def test_hash58_refreshes_a_retained_classic_hash72_before_signing() -> None:
+    guid = bytes.fromhex("0011223344556677")
+    iv = bytes(range(16))
+    random_part = bytes(range(20, 32))
+    original = library().serialize().itunes
+    dual_signed = sign_hash58(
+        sign_hash72(original, iv, random_part, hashing_scheme=1), guid
+    )
+    source = IPodLibrary.parse(dual_signed)
+    desired = replace(
+        source.snapshot,
+        playlists=(replace(source.snapshot.playlists[0], name="Signed twice"),),
+    )
+
+    result = source.prepare(
+        source.analyze(
+            source.begin_draft(desired),
+            WriteTarget(checksum=WriteChecksum.HASH58, firewire_guid=guid),
+        )
+    )
+
+    assert result.prepared is not None, result.issues
+    assert result.prepared.itunes[0x72:0xA0] != dual_signed[0x72:0xA0]
+    assert verify_hash72(result.prepared.itunes, iv, random_part, hashing_scheme=1)
     assert verify_hash58(result.prepared.itunes, guid)

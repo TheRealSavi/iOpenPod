@@ -64,7 +64,7 @@ class _StorageSegments(QWidget):
 
 
 class SyncStorageBar(QFrame):
-    """Show observed usage and a source-size approximation, with explicit limits."""
+    """Show observed usage and projected media bytes, with explicit limits."""
 
     def __init__(self, theme: ThemeManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -135,9 +135,10 @@ class SyncStorageBar(QFrame):
     def retranslate_ui(self) -> None:
         self._name.setText(self._device_name or self.tr("iPod storage"))
         self._refresh_image()
-        self._title.setText(self.tr("Source-size estimate"))
+        self._title.setText(self.tr("Estimated iPod storage"))
         note = self.tr(
-            "Based on source file sizes. Final size after conversion is not yet available."
+            "Uses the selected transcoding settings and scanned media facts. "
+            "Converted file sizes may differ after preparation."
         )
         self.setToolTip(
             self.tr(
@@ -180,7 +181,7 @@ class SyncStorageBar(QFrame):
                 remaining.replace("%1", _format_bytes(abs(estimate.free_bytes)))
             )
             if estimate.unknown_items:
-                self._title.setText(self.tr("Partial source-size estimate"))
+                self._title.setText(self.tr("Partial iPod storage estimate"))
                 note += " " + (
                     self.tr(
                         "%n unresolved item excluded.", None, estimate.unknown_items
@@ -199,7 +200,7 @@ class SyncStorageBar(QFrame):
             style = label.style()
             style.unpolish(label)
             style.polish(label)
-        self._segments.setAccessibleName(self.tr("Source-size storage estimate"))
+        self._segments.setAccessibleName(self.tr("Estimated iPod storage"))
         self._segments.setAccessibleDescription(
             " · ".join(
                 (

@@ -252,6 +252,10 @@ companions. When a CDB change is prepared, the Application Layer captures the
 current companion paths as write preconditions and publishes the CDB, the complete
 replacement SQLite set, and compatibility iTunesDB truncation in one recoverable
 Storage Transaction. See ADR-0061.
+Nano 5 now follows Original iOpenPod's HASH72 signing for both iTunesCDB and the
+Locations Checksum Book. Preparation can recover missing HashInfo material from a
+verified retained database or checksum book, while selection still uses only CDB
+for Library state. See ADR-0122.
 Recognized Device Profiles now include typed artwork formats and packaged product
 images. Selection optionally loads ArtworkDB metadata, while visible album covers
 are read from iTHMB ranges and decoded lazily through a generation-scoped,
@@ -273,7 +277,8 @@ corrected automatically when the Device Profile, retained image metadata, and
 captured thumbnail ranges establish the correct size. Unverifiable conflicts
 still block preparation; reads and unrelated edits remain lossless. Corrections
 use the existing recoverable Storage Transaction without an additional prompt.
-See ADR-0111.
+For F1061, consistent retained images select either 55 or 56 stored rows for
+new artwork and lazy decoding. See ADR-0111 and ADR-0121.
 
 Selection also loads an optional `Photos/Photo Database` into the common Library
 Snapshot as an immutable Photo Library. The Application Layer can request a Photo
