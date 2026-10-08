@@ -16,6 +16,7 @@ from iPodDB.library import (
     IPodLibrary,
     PreparedLyrics,
     Track,
+    TrackChapter,
     WriteResources,
 )
 
@@ -143,3 +144,34 @@ def test_unrelated_edit_and_noop_preserve_flag_only_source_without_file_reads() 
     result = source.prepare(plan)
     assert result.prepared is not None, result.issues
     assert result.prepared.snapshot.tracks[0].metadata.has_lyrics
+
+
+@pytest.mark.parametrize("clear_reported_issues", [False, True])
+def test_invalid_draft_reports_chapters_without_cascading_missing_lyrics(
+    clear_reported_issues: bool,
+) -> None:
+    source = lyrics_source()
+    before, second = source.snapshot.tracks
+    changed = replace(
+        before,
+        metadata=replace(
+            before.metadata,
+            chapters=(TrackChapter("Beyond duration", before.length_ms + 1),),
+            lyrics="Words",
+        ),
+    )
+    plan = source.analyze(
+        source.begin_draft(replace(source.snapshot, tracks=(changed, second)))
+    )
+    assert plan.blocked and plan.required_lyrics == (before.track_id,)
+    if clear_reported_issues:
+        plan = replace(plan, issues=())
+    result = source.prepare(plan)
+    assert result.prepared is None
+    assert any(
+        issue.code == "track.invalid_value"
+        and issue.record_id == before.track_id
+        and issue.field == "metadata.chapters"
+        for issue in result.issues
+    )
+    assert not any(issue.code.startswith("resources.") for issue in result.issues)

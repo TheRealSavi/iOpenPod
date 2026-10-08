@@ -20,7 +20,7 @@ from iOpenPod.app.sync_plan import (
 from iOpenPod.GUI.pages.backup_page import BackupSnapshotCard
 from iOpenPod.GUI.pages.sync_execution_page import SyncExecutionPage
 from iOpenPod.GUI.pages.sync_plan_page import SyncPlanPage
-from iPodDB.library import WriteIssue
+from iPodDB.library import IssueSeverity, WriteIssue
 
 
 @pytest.mark.parametrize("count", [1, 2])
@@ -45,7 +45,12 @@ def test_sync_selection_and_extra_diagnostic_paths_use_count_forms(count: int) -
             SyncExecutionResult(
                 SyncExecutionStatus.FAILED,
                 issues=tuple(
-                    WriteIssue("failed", "Failed", artifact=f"file-{index}")
+                    WriteIssue(
+                        "sync.media_warning",
+                        "Media notice",
+                        severity=IssueSeverity.INFO,
+                        artifact=f"file-{index}",
+                    )
                     for index in range(count + 3)
                 ),
             )

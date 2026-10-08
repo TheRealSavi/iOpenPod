@@ -6,23 +6,27 @@ import base64
 import io
 import json
 import shutil
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING
 
 import pytest
 from PIL import Image
+from tests.iOpenPod.app.podcast_sync_test_support import (
+    FixedPodcastPlan,
+    PodcastOpener,
+    PodcastOpenerFactory,
+    podcast_addition,
+    podcast_request,
+)
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_music_import import FIXTURES
 
 from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
-from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
-    IPodMediaCacheStats,
-    IPodMediaLibrary,
     SyncDetails,
     SyncedTrack,
 )
@@ -35,140 +39,42 @@ from iOpenPod.app.podcasts.feed_client import FeedparserPodcastClient
 from iOpenPod.app.podcasts.identity import episode_identity, subscription_identity
 from iOpenPod.app.podcasts.models import (
     PodcastClearAge,
-    PodcastEpisode,
     PodcastFillMode,
-    PodcastSnapshot,
     PodcastSubscription,
     PodcastSyncSettings,
-    SubscriptionSource,
 )
 from iOpenPod.app.podcasts.store import HISTORY_PATH
 from iOpenPod.app.podcasts.sync import (
-    PodcastEpisodeAddition,
     PodcastSyncPlan,
     PodcastSyncRequest,
 )
-from iOpenPod.app.podcasts.sync_preparation import PreparedPodcastSync
 from iOpenPod.app.sync_execution import (
-    SyncExecutionRequest,
     SyncExecutionResult,
     SyncExecutionStatus,
     SyncExecutor,
 )
-from iOpenPod.app.sync_plan import SyncPlan, SyncPlanAction
+from iOpenPod.app.sync_plan import SyncPlanAction
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
-from iPodDB.library import LibrarySnapshot, MediaKind
+from iPodDB.library import MediaKind
 from storage import DevicePath, StorageOperationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from urllib.request import Request
 
     from iOpenPod.app.library_sync_helper import IPodTrackFingerprint
     from iOpenPod.app.library_write import WriteProgress
-    from iOpenPod.app.models.device import ActiveIPod
-    from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from storage import HostPath
     from storage.media_processing import MediaTools
-
-
-def _addition() -> PodcastEpisodeAddition:
-    episode = PodcastEpisode(
-        "episode",
-        guid="publisher-guid",
-        title="Downloaded Episode",
-        description="Publisher description",
-        enclosure_url="https://publisher.example/episode.m4a",
-        published_at=1_700_000_000,
-        episode_number=7,
-        season_number=2,
-    )
-    show = PodcastSubscription(
-        "show",
-        "https://publisher.example/feed",
-        "Show",
-        SubscriptionSource.USER,
-        author="Publisher",
-        episodes=(episode,),
-    )
-    return PodcastEpisodeAddition(show, episode)
-
-
-class _Response(io.BytesIO):
-    def __init__(self, content: bytes, length: int | None = None) -> None:
-        super().__init__(content)
-        self.headers = {
-            "Content-Length": str(len(content) if length is None else length)
-        }
-
-    def geturl(self) -> str:
-        return "https://publisher.example/media.m4a"
-
-
-class _Opener:
-    def __init__(self, content: bytes, length: int | None = None) -> None:
-        self.content = content
-        self.length = length
-
-    def open(self, request: Request, *, timeout: int) -> _Response:
-        assert request.full_url.startswith("https://publisher.example/")
-        assert timeout > 0
-        return _Response(self.content, self.length)
-
-
-@dataclass(frozen=True)
-class _OpenerFactory:
-    content: bytes
-    length: int | None = None
-
-    def __call__(self, *_handlers: object) -> _Opener:
-        return _Opener(self.content, self.length)
-
-
-@dataclass(frozen=True)
-class _FixedPodcastPlan:
-    plan: PodcastSyncPlan
-
-    def __call__(
-        self,
-        request: PodcastSyncRequest,
-        source: ActiveIPod,
-        coordinator: DeviceCoordinator,
-        checkpoint: Callable[[], None],
-    ) -> PreparedPodcastSync:
-        del request
-        checkpoint()
-        return PreparedPodcastSync(self.plan, coordinator.load_podcast_state(source))
-
-
-def _request(source: ActiveIPod) -> SyncExecutionRequest:
-    addition = _addition()
-    return SyncExecutionRequest(
-        SyncPlan(()),
-        HostMediaLibrary(LibrarySnapshot(), (), (), HostMediaCacheStats()),
-        IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False),
-        source,
-        1,
-        1,
-        reconcile_playlists=False,
-        podcasts=PodcastSyncRequest(
-            PodcastSnapshot(subscriptions=(addition.subscription,), writable=True),
-            automatic=False,
-            additions=(
-                (addition.subscription.subscription_id, addition.episode.episode_id),
-            ),
-        ),
-    )
 
 
 def test_download_checks_actual_size_and_cleans_private_capture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(b"episode media"))
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(b"episode media"))
     samples: list[int] = []
     with media.download_episode(
-        _addition(),
+        podcast_addition(),
         checkpoint=lambda: None,
         progress=lambda size, _total: samples.append(size),
     ) as captured:
@@ -176,10 +82,10 @@ def test_download_checks_actual_size_and_cleans_private_capture(
         assert path.read_bytes() == b"episode media"
     assert not path.exists()
     assert samples == [len(b"episode media")]
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(b"short", 100))
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(b"short", 100))
     with (
         pytest.raises(ValueError, match="incomplete"),
-        media.download_episode(_addition(), checkpoint=lambda: None),
+        media.download_episode(podcast_addition(), checkpoint=lambda: None),
     ):
         pytest.fail("An incomplete enclosure must never reach media preparation")
 
@@ -193,7 +99,7 @@ def test_download_checks_actual_size_and_cleans_private_capture(
     ],
 )
 def test_download_rejects_unsupported_or_credentialed_enclosures(url: str) -> None:
-    addition = _addition()
+    addition = podcast_addition()
     addition = replace(addition, episode=replace(addition.episode, enclosure_url=url))
     with (
         pytest.raises(ValueError, match="HTTP or HTTPS"),
@@ -212,18 +118,18 @@ def test_podcast_add_replace_and_remove_publish_verified_media_without_overwriti
 ) -> None:
     device = build_device(tmp_path)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(data))
-    addition = _addition()
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    addition = podcast_addition()
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
-        _FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
+        FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
     )
     helper = device.root / str(LIBRARY_SYNC_HELPER_PATH)
     helper.parent.mkdir(parents=True, exist_ok=True)
     helper.write_bytes(b"existing host provenance is outside this Podcast Sync")
     try:
         result = SyncExecutor(device.coordinator).execute(
-            _request(device.active), lambda _: None, Event()
+            podcast_request(device.active), lambda _: None, Event()
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None
@@ -270,10 +176,10 @@ def test_podcast_add_replace_and_remove_publish_verified_media_without_overwriti
         )
         monkeypatch.setattr(
             "iOpenPod.app.sync_execution.prepare_podcast_sync",
-            _FixedPodcastPlan(PodcastSyncPlan(additions=(replacement,))),
+            FixedPodcastPlan(PodcastSyncPlan(additions=(replacement,))),
         )
         replaced = SyncExecutor(device.coordinator).execute(
-            _request(device.active), lambda _: None, Event()
+            podcast_request(device.active), lambda _: None, Event()
         )
         assert replaced.status is SyncExecutionStatus.SUCCESS, replaced.issues
         assert [item.action for item in replaced.completed] == [
@@ -292,10 +198,10 @@ def test_podcast_add_replace_and_remove_publish_verified_media_without_overwriti
         assert path.exists()
         monkeypatch.setattr(
             "iOpenPod.app.sync_execution.prepare_podcast_sync",
-            _FixedPodcastPlan(PodcastSyncPlan(removals=(podcast.track_id,))),
+            FixedPodcastPlan(PodcastSyncPlan(removals=(podcast.track_id,))),
         )
         removed = SyncExecutor(device.coordinator).execute(
-            _request(device.active), lambda _: None, Event()
+            podcast_request(device.active), lambda _: None, Event()
         )
         assert removed.status is SyncExecutionStatus.SUCCESS, removed.issues
         assert removed.active is not None
@@ -318,15 +224,15 @@ def test_failed_podcast_replacement_preserves_existing_track_and_file(
 ) -> None:
     device = build_device(tmp_path)
     old = device.active.library.tracks[0]
-    addition = replace(_addition(), replaces_track_id=old.track_id)
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(b"short", 100))
+    addition = replace(podcast_addition(), replaces_track_id=old.track_id)
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(b"short", 100))
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
-        _FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
+        FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
     )
     try:
         result = SyncExecutor(device.coordinator).execute(
-            _request(device.active), lambda _: None, Event()
+            podcast_request(device.active), lambda _: None, Event()
         )
         assert result.status is SyncExecutionStatus.FAILED
         failure = next(
@@ -355,10 +261,10 @@ def test_podcast_add_records_committed_episode_in_sync_helper(
 ) -> None:
     device = build_device(tmp_path)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(data))
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
-        _FixedPodcastPlan(PodcastSyncPlan(additions=(_addition(),))),
+        FixedPodcastPlan(PodcastSyncPlan(additions=(podcast_addition(),))),
     )
     fingerprinted: list[HostPath] = []
 
@@ -379,7 +285,7 @@ def test_podcast_add_records_committed_episode_in_sync_helper(
         if existing_helper:
             baseline = device.coordinator.publish_sync_success(
                 device.active,
-                _request(device.active).ipod,
+                podcast_request(device.active).ipod,
                 (
                     SyncedTrack(
                         DevicePath(device.active.library.tracks[0].metadata.location),
@@ -398,7 +304,7 @@ def test_podcast_add_records_committed_episode_in_sync_helper(
             )
             retained = baseline.tracks
         result = SyncExecutor(device.coordinator).execute(
-            _request(device.active), lambda _: None, Event()
+            podcast_request(device.active), lambda _: None, Event()
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None
@@ -424,16 +330,18 @@ def test_podcast_add_records_committed_episode_in_sync_helper(
         assert not Path(fingerprinted[0]).exists()
 
         replacement = replace(
-            _addition(),
-            episode=replace(_addition().episode, episode_id="new", title="New Episode"),
+            podcast_addition(),
+            episode=replace(
+                podcast_addition().episode, episode_id="new", title="New Episode"
+            ),
             replaces_track_id=podcast.track_id,
         )
         monkeypatch.setattr(
             "iOpenPod.app.sync_execution.prepare_podcast_sync",
-            _FixedPodcastPlan(PodcastSyncPlan(additions=(replacement,))),
+            FixedPodcastPlan(PodcastSyncPlan(additions=(replacement,))),
         )
         replaced = SyncExecutor(device.coordinator).execute(
-            _request(device.active), lambda _: None, Event()
+            podcast_request(device.active), lambda _: None, Event()
         )
         assert replaced.status is SyncExecutionStatus.SUCCESS, replaced.issues
         assert replaced.helper is not None
@@ -443,10 +351,10 @@ def test_podcast_add_records_committed_episode_in_sync_helper(
         assert new.acoustic_fingerprint == "1,2,3" and new.sync is None
         monkeypatch.setattr(
             "iOpenPod.app.sync_execution.prepare_podcast_sync",
-            _FixedPodcastPlan(PodcastSyncPlan(removals=(new.track_id,))),
+            FixedPodcastPlan(PodcastSyncPlan(removals=(new.track_id,))),
         )
         removed = SyncExecutor(device.coordinator).execute(
-            _request(device.active), lambda _: None, Event()
+            podcast_request(device.active), lambda _: None, Event()
         )
         assert removed.status is SyncExecutionStatus.SUCCESS, removed.issues
         assert removed.helper is not None
@@ -467,15 +375,15 @@ def test_downloaded_podcast_persists_publisher_cover_in_device_artwork(
 ) -> None:
     device = build_device(tmp_path)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(data))
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
     cover = io.BytesIO()
     Image.new("RGB", (64, 64), "red").save(cover, format="PNG")
     monkeypatch.setattr(
         feed_client,
         "urlopen",
-        _Opener(cover.getvalue() if cover_available else b"not an image").open,
+        PodcastOpener(cover.getvalue() if cover_available else b"not an image").open,
     )
-    addition = _addition()
+    addition = podcast_addition()
     addition = replace(
         addition,
         subscription=replace(
@@ -484,11 +392,11 @@ def test_downloaded_podcast_persists_publisher_cover_in_device_artwork(
     )
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
-        _FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
+        FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
     )
     try:
         result = SyncExecutor(device.coordinator).execute(
-            _request(device.active), lambda _: None, Event()
+            podcast_request(device.active), lambda _: None, Event()
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         reloaded = device.coordinator.select_device(device.active.candidate.id)
@@ -535,7 +443,7 @@ def test_podcast_sync_repairs_retained_cover_without_replacing_media(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = build_device(tmp_path)
-    seed = _addition()
+    seed = podcast_addition()
     episode = replace(
         seed.episode,
         episode_id=episode_identity(
@@ -561,7 +469,7 @@ def test_podcast_sync_repairs_retained_cover_without_replacing_media(
 
     monkeypatch.setattr(FeedparserPodcastClient, "fetch", fetch)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(data))
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
 
     def sync(*, repair_only: bool = False) -> SyncExecutionResult:
         state = device.coordinator.load_podcast_state(device.active)
@@ -570,7 +478,8 @@ def test_podcast_sync_repairs_retained_cover_without_replacing_media(
             transcoder=_NoMediaPreparation() if repair_only else None,
         ).execute(
             replace(
-                _request(device.active), podcasts=PodcastSyncRequest(state.snapshot)
+                podcast_request(device.active),
+                podcasts=PodcastSyncRequest(state.snapshot),
             ),
             lambda _: None,
             Event(),
@@ -594,7 +503,9 @@ def test_podcast_sync_repairs_retained_cover_without_replacing_media(
         original_media = media_path.read_bytes()
         cover = io.BytesIO()
         Image.new("RGB", (64, 64), "blue").save(cover, format="PNG")
-        monkeypatch.setattr(feed_client, "urlopen", _Opener(cover.getvalue()).open)
+        monkeypatch.setattr(
+            feed_client, "urlopen", PodcastOpener(cover.getvalue()).open
+        )
         show = replace(show, artwork_url="https://publisher.example/cover.png")
 
         repaired = sync(repair_only=True)
@@ -635,7 +546,7 @@ def test_saved_policy_sync_is_idempotent_and_retains_history_after_removal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = build_device(tmp_path)
-    seed = _addition()
+    seed = podcast_addition()
     episode = replace(
         seed.episode,
         episode_id=episode_identity(
@@ -662,7 +573,7 @@ def test_saved_policy_sync_is_idempotent_and_retains_history_after_removal(
 
     monkeypatch.setattr(FeedparserPodcastClient, "fetch", fetch)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(data))
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
     try:
         loaded = device.coordinator.load_podcast_state(device.active)
         device.coordinator.save_podcast_state(
@@ -673,7 +584,7 @@ def test_saved_policy_sync_is_idempotent_and_retains_history_after_removal(
         def sync() -> SyncExecutionResult:
             state = device.coordinator.load_podcast_state(device.active)
             request = replace(
-                _request(device.active),
+                podcast_request(device.active),
                 podcasts=PodcastSyncRequest(state.snapshot),
             )
             return SyncExecutor(device.coordinator).execute(
@@ -729,7 +640,7 @@ def test_age_clears_commit_with_library_and_do_not_redownload_after_reconnect(
     fill_mode: PodcastFillMode,
 ) -> None:
     device = build_device(tmp_path)
-    seed = _addition()
+    seed = podcast_addition()
     episodes = tuple(
         replace(
             seed.episode,
@@ -769,7 +680,7 @@ def test_age_clears_commit_with_library_and_do_not_redownload_after_reconnect(
 
     monkeypatch.setattr(FeedparserPodcastClient, "fetch", fetch)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(data))
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
 
     def sync(
         *,
@@ -795,7 +706,8 @@ def test_age_clears_commit_with_library_and_do_not_redownload_after_reconnect(
 
         return SyncExecutor(device.coordinator).execute(
             replace(
-                _request(device.active), podcasts=PodcastSyncRequest(state.snapshot)
+                podcast_request(device.active),
+                podcasts=PodcastSyncRequest(state.snapshot),
             ),
             progress,
             cancellation,

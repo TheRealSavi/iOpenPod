@@ -17,6 +17,7 @@ from iPodDB.library.editing import (
     TrackFieldEdit,
     edit_track_metadata,
     editable_track_fields,
+    incoming_track_issues,
     metadata_edit_issues,
 )
 from iPodDB.library.file_content import (
@@ -215,6 +216,7 @@ __all__ = [
     "edit_track_metadata",
     "editable_track_fields",
     "encode_photo_thumbnail",
+    "incoming_track_issues",
     "is_playback_sidecar",
     "metadata_edit_issues",
     "order_playlist_entries",

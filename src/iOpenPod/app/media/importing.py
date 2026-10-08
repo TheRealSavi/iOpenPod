@@ -11,6 +11,7 @@ import mutagen
 from mutagen.mp3 import BitrateMode
 from PIL import Image, ImageOps
 
+from iOpenPod.app.media.chapters import imported_chapters
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.models import StreamKind
 from iOpenPod.app.media.music_paths import MusicPathAllocator
@@ -25,7 +26,6 @@ from iPodDB.library import (
     FileDependency,
     PreparedMedia,
     Track,
-    TrackChapter,
     TrackMetadata,
     prepared_audio,
 )
@@ -148,16 +148,7 @@ class MusicImporter:
                 date_added=int(time.time()),
                 last_modified=observed.fingerprint.modified_ns // 1_000_000_000,
                 location=location,
-                chapters=tuple(
-                    TrackChapter(
-                        next(
-                            (t.value for t in c.tags if t.name.casefold() == "title"),
-                            "",
-                        ),
-                        round(c.start_seconds * 1000),
-                    )
-                    for c in observed.chapters
-                ),
+                chapters=imported_chapters(observed.chapters),
             ),
         )
         track = apply_tag_values(

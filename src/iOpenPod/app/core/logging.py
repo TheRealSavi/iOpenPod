@@ -8,6 +8,10 @@ _REPORT_ISSUE_MESSAGE = (
 )
 
 
+class _ApplicationFileHandler(RotatingFileHandler):
+    """Identify the rotating file installed by iOpenPod's logging setup."""
+
+
 class _ReportIssueSuggestionHandler(logging.Handler):
     """Follow serious log records with the issue-reporting suggestion."""
 
@@ -30,7 +34,12 @@ class _ReportIssueSuggestionHandler(logging.Handler):
 
 def active_log_path() -> Path | None:
     """Return the file currently used by the application's rotating log handler."""
-    for handler in logging.getLogger().handlers:
+    handlers = logging.getLogger().handlers
+    for handler in handlers:
+        if isinstance(handler, _ApplicationFileHandler):
+            return Path(handler.baseFilename)
+    # Also support a caller that configures rotating file logging itself.
+    for handler in handlers:
         if isinstance(handler, RotatingFileHandler):
             return Path(handler.baseFilename)
     return None
@@ -44,7 +53,7 @@ def setup_logger(log_path: str | Path) -> logging.Logger:
     logging.getLogger("numba").setLevel(logging.INFO)
     logging.getLogger("PIL").setLevel(logging.INFO)
 
-    if logger.handlers:
+    if any(isinstance(handler, _ApplicationFileHandler) for handler in logger.handlers):
         return logger
 
     formatter = logging.Formatter(
@@ -58,7 +67,7 @@ def setup_logger(log_path: str | Path) -> logging.Logger:
     log_path = Path(log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    file_handler = RotatingFileHandler(
+    file_handler = _ApplicationFileHandler(
         log_path, maxBytes=5 * 0x0400**2, backupCount=5, encoding="utf-8"
     )
     file_handler.setLevel(logging.DEBUG)

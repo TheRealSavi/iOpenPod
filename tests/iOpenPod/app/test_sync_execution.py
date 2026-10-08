@@ -2972,3 +2972,43 @@ def test_short_filename_appearing_after_review_is_never_overwritten(
         assert not (device.root / str(LIBRARY_SYNC_HELPER_PATH)).exists()
     finally:
         device.coordinator.close()
+
+
+def test_library_retry_reports_each_track_error_once_with_readable_context(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _host(tmp_path, "Invalid year")
+        path = tmp_path / "cover.png"
+        Image.new("RGB", (64, 64), "blue").save(path)
+        observed = LocalHostFile.observe(HostPath(path))
+        host = replace(
+            host,
+            snapshot=replace(
+                host.snapshot,
+                tracks=(replace(host.snapshot.tracks[0], year=2**32, artwork_id=123),),
+            ),
+            artwork_sources=(
+                HostMediaArtworkSource(
+                    123,
+                    HostArtworkKind.FOLDER,
+                    observed.path,
+                    observed.size_bytes,
+                    observed.modified_ns,
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                ),
+            ),
+        )
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            _request(device, host), lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.FAILED
+        failures = [i for i in result.issues if i.code == "track.invalid_value"]
+        assert len(failures) == 1, result.issues
+        assert "Invalid year" in failures[0].detail
+        assert "Album" in failures[0].detail
+        assert failures[0].artifact
+        device.assert_original()
+    finally:
+        device.coordinator.close()

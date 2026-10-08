@@ -5834,6 +5834,14 @@ Playlists: %3</translation>
 <context>
     <name>SyncExecutionPage</name>
     <message>
+        <source>Track %1</source>
+        <translation>Pista %1</translation>
+    </message>
+    <message>
+        <source>Record %1</source>
+        <translation>Registro %1</translation>
+    </message>
+    <message>
         <source>Recover previous Library</source>
         <translation>Recuperar biblioteca anterior</translation>
     </message>
@@ -7865,6 +7873,28 @@ Playlists: %3</translation>
 </context>
 <context>
     <name>Workflow</name>
+    <message>
+        <source>{title}</source>
+        <translation>{title}</translation>
+    </message>
+    <message>
+        <source>Untitled Track</source>
+        <translation>Pista sin título</translation>
+    </message>
+    <message>
+        <source>{title} — {collection}</source>
+        <translation>{title} — {collection}</translation>
+    </message>
+    <message>
+        <source>{name}
+{detail}</source>
+        <translation>{name}
+{detail}</translation>
+    </message>
+    <message>
+        <source>Correct this Episode's metadata or exclude it from the next Sync.</source>
+        <translation>Corrige los metadatos de este episodio o exclúyelo de la próxima sincronización.</translation>
+    </message>
     <message>
         <source>Playback history and On-The-Go Playlists could not be saved while loading the iPod. {detail}</source>
         <translation>No se pudieron guardar el historial de reproducción y las listas On-The-Go al cargar el iPod. {detail}</translation>

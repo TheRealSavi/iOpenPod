@@ -9,6 +9,7 @@ from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 from iOpenPod.app.display_text import source_text
 from iOpenPod.app.library_write import WriteItemProgress, WriteProgress
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
+from iOpenPod.app.sync_diagnostics import describe_track_issues
 from iOpenPod.app.sync_execution import SyncExecutionResult, SyncExecutionStatus
 from iOpenPod.app.sync_plan import (
     SyncPlanAction,
@@ -18,7 +19,7 @@ from iOpenPod.app.sync_plan import (
 )
 from iOpenPod.GUI.pages.sync_execution_page import SyncExecutionPage
 from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
-from iPodDB.library import IssueSeverity, WriteIssue
+from iPodDB.library import IssueSeverity, Track, WriteIssue
 
 
 def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_titles() -> (
@@ -248,6 +249,141 @@ def test_routine_conversion_notices_are_grouped_in_the_result() -> None:
         assert details.toPlainText().count("Re-encoding a lossy") == 1
         assert "5 items" in details.toPlainText()
         assert "INFO" in details.toPlainText()
+        assert "book-2.m4b" in details.toPlainText()
+        assert "book-3.m4b" not in details.toPlainText()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_error_groups_show_every_affected_file_and_ignore_repeated_diagnostics() -> (
+    None
+):
+    page = SyncExecutionPage()
+    try:
+        issues = tuple(
+            WriteIssue(
+                "track.invalid_value",
+                "Chapter positions must be ordered and fit within the Track duration.",
+                subject="track",
+                record_id=index,
+                field="metadata.chapters",
+                artifact=f"https://publisher.example/episode-{index}.mp3",
+            )
+            for index in range(5)
+        )
+        page.show_result(
+            SyncExecutionResult(SyncExecutionStatus.FAILED, issues=issues + issues)
+        )
+        details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
+        assert details is not None
+        text = details.toPlainText()
+        assert text.count("Chapter positions") == 1
+        assert "5 items" in text and "10 items" not in text
+        for issue in issues:
+            assert text.count(issue.artifact) == 1
+        assert "more files" not in text
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize("diagnostic", ["", "Check the chapter positions."])
+def test_unlabeled_errors_show_track_identity_and_field_and_retranslate(
+    monkeypatch: pytest.MonkeyPatch,
+    diagnostic: str,
+) -> None:
+    page = SyncExecutionPage()
+    try:
+        page.show_result(
+            SyncExecutionResult(
+                SyncExecutionStatus.FAILED,
+                issues=(
+                    WriteIssue(
+                        "track.invalid_value",
+                        "Chapter positions must be ordered and fit within the Track duration.",
+                        subject="track",
+                        record_id=-7,
+                        field="metadata.chapters",
+                        detail=diagnostic,
+                    ),
+                ),
+            )
+        )
+        details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
+        assert details is not None
+        assert "Track -7 · metadata.chapters" in details.toPlainText()
+
+        def translate(_page: SyncExecutionPage, text: str, *_args: object) -> str:
+            return "Titel %1" if text == "Track %1" else text
+
+        monkeypatch.setattr(SyncExecutionPage, "tr", translate)
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert "Titel -7 · metadata.chapters" in details.toPlainText()
+        assert "Track -7" not in details.toPlainText()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_episode_error_shows_publisher_label_and_enclosure_without_numeric_fallback() -> (
+    None
+):
+    page = SyncExecutionPage()
+    try:
+        page.show_result(
+            SyncExecutionResult(
+                SyncExecutionStatus.FAILED,
+                issues=(
+                    WriteIssue(
+                        "track.invalid_value",
+                        "Chapter positions must be ordered and fit within the Track duration.",
+                        subject="track",
+                        record_id=-1,
+                        detail="Episode {one} — My Podcast",
+                        artifact="https://publisher.example/episode.mp3",
+                    ),
+                ),
+            )
+        )
+        details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
+        assert details is not None
+        text = details.toPlainText()
+        assert "Episode {one} — My Podcast" in text
+        assert "https://publisher.example/episode.mp3" in text
+        assert "Track -1" not in text
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_track_diagnostic_keeps_a_user_title_matching_a_catalog_source_literal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    title = "Untitled Track"
+    track = Track(track_id=1, title=title, artist="", album="", length_ms=1000)
+    issues = describe_track_issues(
+        (
+            WriteIssue(
+                "track.invalid_value", "Invalid chapter", subject="track", record_id=1
+            ),
+        ),
+        (track,),
+    )
+
+    def translate(context: str, source: str, *_args: object) -> str:
+        if context == "Workflow" and source == title:
+            return "Unbenannter Titel"
+        return source
+
+    monkeypatch.setattr(QCoreApplication, "translate", translate)
+    page = SyncExecutionPage()
+    try:
+        page.show_result(SyncExecutionResult(SyncExecutionStatus.FAILED, issues=issues))
+        details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
+        assert details is not None
+        assert title in details.toPlainText()
+        assert "Unbenannter Titel" not in details.toPlainText()
     finally:
         page.deleteLater()
         APPLICATION.processEvents()

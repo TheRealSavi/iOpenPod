@@ -26,6 +26,7 @@ from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
 if TYPE_CHECKING:
     from iOpenPod.app.library_write import WriteProgress
+    from iPodDB.library import WriteIssue
 
 
 class SyncExecutionPage(QWidget):
@@ -487,15 +488,18 @@ class SyncExecutionPage(QWidget):
                 "Review the Library and scan again before making further changes."
             )
         self._detail.setText(detail)
-        grouped: dict[tuple[str, str, str, str], list[str]] = {}
-        for issue in result.issues:
+        grouped: dict[tuple[str, str, str, str], list[WriteIssue]] = {}
+        for issue in dict.fromkeys(result.issues):
             key = (issue.severity.value, issue.code, issue.message, issue.detail)
-            grouped.setdefault(key, []).append(issue.artifact)
+            grouped.setdefault(key, []).append(issue)
         lines: list[str] = []
-        for (severity, code, message, diagnostic), artifacts in grouped.items():
+        for (severity, code, message, diagnostic), issues in grouped.items():
+            item_count = len(
+                {(issue.subject, issue.record_id, issue.artifact) for issue in issues}
+            )
             count = (
-                self.tr(" (%1)").replace("%1", item_count_text(len(artifacts)))
-                if len(artifacts) > 1
+                self.tr(" (%1)").replace("%1", item_count_text(item_count))
+                if item_count > 1
                 else ""
             )
             severity_label = {
@@ -506,14 +510,22 @@ class SyncExecutionPage(QWidget):
             line = f"{severity_label} [{code}] {workflow_text(message)}{count}"
             if diagnostic:
                 line += "\n" + workflow_text(diagnostic)
-            paths = [path for path in artifacts if path]
-            if paths:
-                line += "\n" + "\n".join(paths[:3])
-                if len(paths) > 3:
+            references = list(
+                dict.fromkeys(
+                    reference
+                    for issue in issues
+                    if (reference := self._issue_reference(issue))
+                )
+            )
+            if references:
+                shown = references if severity == "error" else references[:3]
+                line += "\n" + "\n".join(shown)
+                if len(references) > len(shown):
+                    remaining = len(references) - len(shown)
                     line += "\n" + english_count_fallback(
                         "…and %n more file(s)",
-                        self.tr("…and %n more file(s)", "", len(paths) - 3),
-                        len(paths) - 3,
+                        self.tr("…and %n more file(s)", "", remaining),
+                        remaining,
                     )
             lines.append(line)
         if result.recovery_path:
@@ -522,6 +534,17 @@ class SyncExecutionPage(QWidget):
             )
         self._issues.setPlainText("\n\n".join(lines))
         self._issues.setVisible(bool(lines))
+
+    def _issue_reference(self, issue: WriteIssue) -> str:
+        if issue.artifact:
+            return issue.artifact
+        if issue.record_id is None:
+            return issue.field
+        label = (
+            self.tr("Track %1") if issue.subject == "track" else self.tr("Record %1")
+        )
+        reference = label.replace("%1", str(issue.record_id))
+        return reference + (" · " + issue.field if issue.field else "")
 
     def _stage_index(self, phase: str) -> int:
         if phase == "sync.prepare" or phase == "sync.photos":

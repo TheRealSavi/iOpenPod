@@ -11,12 +11,13 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 import mutagen
 
 from iOpenPod.app.export_tagging import ExportMediaTagger
+from iOpenPod.app.media.chapters import imported_chapters
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.lyrics import embedded_lyrics
 from iOpenPod.app.media.models import StreamKind
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.media.tags import apply_tag_values, inspection_tag_values
-from iPodDB.library import AudioEncoding, MediaKind, TrackChapter
+from iPodDB.library import AudioEncoding, MediaKind
 from storage.host_input import LocalHostFile
 from storage.media_processing import (
     MediaToolError,
@@ -1063,20 +1064,6 @@ def enrich_source_metadata(track: Track, observed: MediaInspection) -> Track:
         enriched,
         metadata=replace(
             metadata,
-            chapters=metadata.chapters
-            or tuple(
-                TrackChapter(
-                    next(
-                        (
-                            tag.value
-                            for tag in chapter.tags
-                            if tag.name.casefold() == "title"
-                        ),
-                        "",
-                    ),
-                    round(chapter.start_seconds * 1000),
-                )
-                for chapter in observed.chapters
-            ),
+            chapters=metadata.chapters or imported_chapters(observed.chapters),
         ),
     )

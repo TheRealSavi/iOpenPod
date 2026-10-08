@@ -76,6 +76,16 @@ def metadata_edit_issues(before: Track, after: Track) -> tuple[WriteIssue, ...]:
     return validate_track(before, after, check_date_encoding=False)
 
 
+def incoming_track_issues(track: Track) -> tuple[WriteIssue, ...]:
+    """Check an incoming Track before it joins a Library Draft.
+
+    Media facts must already describe the prepared output. Device-dependent date
+    encoding, relationships, and resource evidence still require Library analysis
+    and preparation; this check does not authorize publication.
+    """
+    return validate_track(None, track, check_date_encoding=False)
+
+
 def edit_track_metadata(track: Track, edits: tuple[TrackFieldEdit, ...]) -> Track:
     """Return a validated replacement, or reject all edits with structured issues.
 

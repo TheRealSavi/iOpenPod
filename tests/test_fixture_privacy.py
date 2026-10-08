@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from contextlib import suppress
 from dataclasses import fields, is_dataclass
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -37,10 +38,10 @@ PERSONAL_PATH = re.compile(
 
 def _embedded_bytes(value: object) -> Iterator[bytes]:
     if isinstance(value, dict):
-        for child in value.values():
+        for child in cast("dict[object, object]", value).values():
             yield from _embedded_bytes(child)
     elif isinstance(value, list):
-        for child in value:
+        for child in cast("list[object]", value):
             yield from _embedded_bytes(child)
     elif isinstance(value, str) and len(value) >= 64:
         if re.fullmatch(r"[0-9a-fA-F]+", value) and len(value) % 2 == 0:
@@ -73,7 +74,7 @@ def test_stored_fixtures_have_no_emails_or_personal_host_paths(path: Path) -> No
 
 def _clean_chunk(chunk: ParsedChunk[ChunkHeader]) -> ParsedChunk[ChunkHeader]:
     marker = chunk.generic_header.header_marker
-    allowed = {
+    allowed: dict[bytes, set[str]] = {
         b"mhbd": {"child_count"},
         b"mhsd": {"dataset_type"},
         b"mhlt": set(),

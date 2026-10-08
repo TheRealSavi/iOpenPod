@@ -63,6 +63,7 @@ from iOpenPod.app.sync_artwork_fallback import (
     pending_cover_provenance,
     without_cover_changes,
 )
+from iOpenPod.app.sync_diagnostics import describe_track_issues, unique_issues
 from iOpenPod.app.sync_plan import (
     SyncPlanAction,
     SyncPlanBasis,
@@ -95,6 +96,7 @@ from iPodDB.library import (
     WriteIssue,
     content_chunks,
     edit_track_metadata,
+    incoming_track_issues,
     playlist_entries,
     prepared_audio,
     prepared_video,
@@ -647,6 +649,12 @@ class SyncExecutor:
                         else:
                             issues.extend(failed_issues)
                 issues.extend(review.result.issues)
+                issues = list(
+                    describe_track_issues(
+                        unique_issues(issues),
+                        (*request.source.library.tracks, *draft.snapshot.tracks),
+                    )
+                )
                 if review.result.prepared is None:
                     return SyncExecutionResult(
                         SyncExecutionStatus.FAILED, issues=tuple(issues)
@@ -1486,6 +1494,29 @@ class SyncExecutor:
                             ),
                         )
                         song = _song(request, track, replace(output, metadata=track))
+                        invalid = incoming_track_issues(song.track)
+                        if invalid:
+                            issues.extend(
+                                replace(issue, record_id=None)
+                                for issue in describe_track_issues(
+                                    invalid, (song.track,)
+                                )
+                            )
+                            issues.append(
+                                WriteIssue(
+                                    "sync.podcast_failed",
+                                    _podcast_add_failure_message(
+                                        episode.title,
+                                        replacing=addition.replaces_track_id
+                                        is not None,
+                                    ),
+                                    detail=source_text(
+                                        "Correct this Episode's metadata or exclude it from the next Sync."
+                                    ),
+                                    artifact=episode.enclosure_url,
+                                )
+                            )
+                            continue
                         extension = song.source.media.file.relative_path.rsplit(".", 1)[
                             -1
                         ]

@@ -289,7 +289,9 @@ def _prepare(
     resolved = resolve(requested_plan.draft, requested_plan.target)
     plan = resolved.plan
     issues = list(plan.issues)
-    if any(issue.code == "draft.wrong_source" for issue in issues):
+    # A blocked draft cannot prepare resources. Report its actionable errors
+    # before diagnosing evidence the caller intentionally has not produced.
+    if plan.blocked:
         return LibraryWriteResult(tuple(issues))
     notify(WritePhase.RESOURCES)
     media = {m.track_id: m for m in resources.media}

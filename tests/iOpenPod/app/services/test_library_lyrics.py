@@ -23,7 +23,7 @@ from iOpenPod.app.library_write import (
 from iOpenPod.app.media.importing import MusicImporter
 from iOpenPod.app.media.lyrics import embedded_lyrics, rewrite_lyrics
 from iOpenPod.app.services import library_resources
-from iPodDB.library import LibrarySnapshot, TrackFieldEdit
+from iPodDB.library import LibrarySnapshot, TrackChapter, TrackFieldEdit
 from storage import CapturedHostFile, HostPath
 from storage.media_processing import MediaWorkspace
 
@@ -46,6 +46,49 @@ def desired_lyrics(device: Device, text: str) -> LibrarySnapshot:
 def read_lyrics(data: bytes) -> str:
     reader: Any = MP4
     return embedded_lyrics(reader(io.BytesIO(data)))
+
+
+def test_invalid_chapters_do_not_report_unprepared_lyrics_as_missing(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path, media_payload=fixture("tone.m4a"))
+    try:
+        first, second = device.active.library.tracks
+        invalid = replace(
+            first,
+            metadata=replace(
+                first.metadata,
+                chapters=(TrackChapter("Beyond duration", first.length_ms + 1),),
+            ),
+        )
+        with_lyrics = replace(second, metadata=replace(second.metadata, lyrics=WORDS))
+        review = device.prepare(
+            replace(device.active.library, tracks=(invalid, with_lyrics))
+        )
+        assert review.result.prepared is None
+        assert review.plan is not None and review.plan.required_lyrics == (
+            second.track_id,
+        )
+        assert review.resources is not None and not review.resources.lyrics
+        assert any(
+            issue.code == "track.invalid_value" and issue.record_id == first.track_id
+            for issue in review.result.issues
+        )
+        assert not any(
+            issue.code == "resources.missing_lyrics" for issue in review.result.issues
+        )
+        device.assert_original()
+
+        corrected = device.prepare(
+            replace(device.active.library, tracks=(first, with_lyrics))
+        )
+        assert corrected.result.prepared is not None, corrected.result.issues
+        assert corrected.resources is not None
+        assert len(corrected.resources.lyrics) == 1
+        assert corrected.resources.lyrics[0].lyrics == WORDS
+        device.assert_original()
+    finally:
+        device.coordinator.close()
 
 
 @pytest.mark.parametrize("capture_limited", [False, True])

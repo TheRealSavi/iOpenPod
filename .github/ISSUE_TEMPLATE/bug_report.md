@@ -26,7 +26,7 @@ What you expected to happen.
 **Screenshots / logs**
 If applicable, add screenshots and attach `iopenpod.log`.
 
-To find it in iOpenPod: open **Settings > Storage**, then click **Open** next to **Log Location**.
+To find it in iOpenPod: open **Settings > About**, then click **Open Log Folder**.
 
 ## Environment
 

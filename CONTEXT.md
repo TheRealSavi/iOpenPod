@@ -501,9 +501,14 @@ and per-show Sync settings select and retain Episodes during ordinary Sync or th
 Sync Podcast and Sync Podcasts actions. These operations refresh feeds, preserve
 Listening History, prepare compatible media on the Host, and publish through the
 shared verified Library and Storage Transaction workflow. Failed feed refreshes
-leave that show's media unchanged. Publisher covers use the shared ArtworkDB and
-thumbnail preparation; Podcast Sync also fills missing covers on retained Episodes
-without downloading their media again. Episode slots are an automatic filling target;
+leave that show's media unchanged. Imported chapters are ordered chronologically;
+invalid incoming Episode metadata is reported by title and show and skipped before
+the shared Library build. Independent Episodes can still Sync, and failed
+replacements keep their existing Tracks. Blocking Library errors do not generate
+secondary missing-lyrics errors, and cover retries do not inflate diagnostic counts.
+Publisher covers use the shared ArtworkDB and thumbnail preparation; Podcast Sync
+also fills missing covers on retained Episodes without downloading their media again.
+Episode slots are an automatic filling target;
 manual additions may exceed it. Episode count alone never authorizes removal.
 Both Newest and Next clear by listened state or time on the iPod. Newest replaces
 only clear-eligible Episodes with newer publications. Next starts after the furthest listened

@@ -13,16 +13,16 @@ from threading import Event
 from typing import TYPE_CHECKING
 
 import pytest
-from tests.iOpenPod.app.services.test_library_resources import build_device
-from tests.iOpenPod.app.test_music_import import FIXTURES
 
 # Reuse the sync tests' fixtures so fingerprint tests exercise the same setup.
-from tests.iOpenPod.app.test_podcast_sync_execution import (
-    _addition,  # pyright: ignore[reportPrivateUsage]
-    _FixedPodcastPlan,  # pyright: ignore[reportPrivateUsage]
-    _OpenerFactory,  # pyright: ignore[reportPrivateUsage]
-    _request,  # pyright: ignore[reportPrivateUsage]
+from tests.iOpenPod.app.podcast_sync_test_support import (
+    FixedPodcastPlan,
+    PodcastOpenerFactory,
+    podcast_addition,
+    podcast_request,
 )
+from tests.iOpenPod.app.services.test_library_resources import build_device
+from tests.iOpenPod.app.test_music_import import FIXTURES
 from tests.iOpenPod.app.test_sync_execution import (
     _Executor,  # pyright: ignore[reportPrivateUsage]
     _host,  # pyright: ignore[reportPrivateUsage]
@@ -71,10 +71,10 @@ def _mock_fingerprint(
 
 def _prepare_addition(monkeypatch: pytest.MonkeyPatch) -> None:
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(data))
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
-        _FixedPodcastPlan(PodcastSyncPlan(additions=(_addition(),))),
+        FixedPodcastPlan(PodcastSyncPlan(additions=(podcast_addition(),))),
     )
 
 
@@ -92,21 +92,21 @@ def test_real_podcast_fingerprint_is_published_without_temporary_host_provenance
         audio.setsampwidth(2)
         audio.setframerate(44100)
         audio.writeframes(bytes(44100 * 12 * 2))
-    addition = _addition()
+    addition = podcast_addition()
     addition = replace(
         addition,
         episode=replace(
             addition.episode, enclosure_url="https://publisher.example/episode.wav"
         ),
     )
-    monkeypatch.setattr(media, "build_opener", _OpenerFactory(content.getvalue()))
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(content.getvalue()))
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
-        _FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
+        FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
     )
     try:
         request = replace(
-            _request(device.active),
+            podcast_request(device.active),
             settings=TranscodeSettings(
                 smart_spoken_word=transcode, wav_aiff_to_alac=transcode
             ),
@@ -178,7 +178,7 @@ def test_optional_fingerprint_failure_keeps_committed_episode_without_invented_e
     monkeypatch.setattr(FpcalcFingerprinter, "fingerprint", unavailable)
     try:
         result = SyncExecutor(device.coordinator).execute(
-            _request(device.active), lambda _: None, Event()
+            podcast_request(device.active), lambda _: None, Event()
         )
 
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
@@ -224,12 +224,12 @@ def test_cancellation_before_publication_preserves_existing_helper(
 
     try:
         baseline = device.coordinator.publish_sync_success(
-            device.active, _request(device.active).ipod, ()
+            device.active, podcast_request(device.active).ipod, ()
         )
         assert baseline.persisted
         original_helper = helper.read_bytes()
         result = SyncExecutor(device.coordinator).execute(
-            _request(device.active), progress, cancellation
+            podcast_request(device.active), progress, cancellation
         )
 
         assert result.status is SyncExecutionStatus.CANCELLED, result.issues
@@ -250,7 +250,7 @@ def test_combined_host_and_podcast_sync_publishes_both_fingerprints(
     monkeypatch.setattr(FpcalcFingerprinter, "fingerprint", _mock_fingerprint)
     host = _host(tmp_path, "Host song")
     request = replace(
-        _host_request(device, host), podcasts=_request(device.active).podcasts
+        _host_request(device, host), podcasts=podcast_request(device.active).podcasts
     )
     try:
         result = _Executor(device.coordinator).execute(request, lambda _: None, Event())
@@ -261,7 +261,7 @@ def test_combined_host_and_podcast_sync_publishes_both_fingerprints(
         tracks = {track.title: track for track in result.active.library.tracks}
         records = {record.track_id: record for record in result.helper.tracks}
         host_record = records[tracks["Host song"].track_id]
-        podcast_record = records[tracks[_addition().episode.title].track_id]
+        podcast_record = records[tracks[podcast_addition().episode.title].track_id]
         assert host_record.acoustic_fingerprint == host.sources[0].acoustic_fingerprint
         assert host_record.sync is not None
         assert host_record.sync.host_path_hint == str(host.sources[0].path)

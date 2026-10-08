@@ -1731,8 +1731,15 @@ cancellation, result, and recovery lifecycle. The worker refreshes scoped feeds,
 reconciles membership, and persists observed Listening History before publication.
 Failed feeds cannot authorize retention changes. Storage owns bounded temporary
 downloads, and the common media pipeline prepares audio or video Podcast Tracks for
-the Device Profile. The worker reuses bounded publisher artwork loading and submits
-owned cover pixels to the same ArtworkDB and thumbnail preparation as Host media.
+the Device Profile. Imported chapter positions are sorted before entering Track
+metadata. Each incoming Episode is checked against its prepared media duration
+before joining the shared Library Draft; an invalid Episode is skipped while its
+paired existing Track is retained. Complete Library validation remains mandatory.
+Diagnostics identify the Episode and show, retain the source URL, and count each
+affected record once across cover retries. Blocked semantic plans return their
+primary errors before validating resources deliberately left unprepared.
+The worker reuses bounded publisher artwork loading and submits owned cover pixels
+to the same ArtworkDB and thumbnail preparation as Host media.
 Successfully refreshed subscriptions can also fill missing covers on retained
 Episodes without downloading their media. Existing covers survive, and cover
 failures produce warnings rather than dropping otherwise valid Episodes.
