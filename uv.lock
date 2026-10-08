@@ -540,7 +540,7 @@ wheels = [
 
 [[package]]
 name = "iopenpod"
-version = "2.0.7"
+version = "2.0.8"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
