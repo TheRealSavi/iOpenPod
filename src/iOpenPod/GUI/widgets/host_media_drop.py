@@ -12,7 +12,7 @@ from iOpenPod.app.host_media_library import classify_host_media_file
 
 
 def dropped_host_paths(mime: QMimeData | None) -> tuple[Path, ...]:
-    """Accept a complete selection of existing local folders or supported files."""
+    """Accept local media and explicit links for validation by the scan worker."""
 
     if mime is None or not mime.hasUrls():
         return ()
@@ -25,6 +25,9 @@ def dropped_host_paths(mime: QMimeData | None) -> tuple[Path, ...]:
             supported = path.is_absolute() and (
                 path.is_dir()
                 or (path.is_file() and classify_host_media_file(path) is not None)
+                # A file alias need not share its target's suffix. Broken links
+                # also need a scan diagnostic rather than an unexplained no-op.
+                or path.is_symlink()
             )
         except OSError:
             return ()

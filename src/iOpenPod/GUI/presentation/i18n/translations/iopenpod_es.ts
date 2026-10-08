@@ -1465,6 +1465,21 @@
     </message>
 </context>
 <context>
+    <name>HostScanIssues</name>
+    <message>
+        <source>Scan issues: {count}. Some media may be unavailable.</source>
+        <translation>Problemas del análisis: {count}. Es posible que algunos archivos multimedia no estén disponibles.</translation>
+    </message>
+    <message>
+        <source>Show details</source>
+        <translation>Mostrar detalles</translation>
+    </message>
+    <message>
+        <source>Showing the first 50 scan issues.</source>
+        <translation>Se muestran los primeros 50 problemas del análisis.</translation>
+    </message>
+</context>
+<context>
     <name>I18nManager</name>
     <message>
         <source>System default</source>
@@ -6466,8 +6481,12 @@ Playlists: %3</translation>
         <translation>Ajustar miniaturas</translation>
     </message>
     <message>
+        <source>Fit the entire Photo inside small grid and list thumbnails, adding padding as needed. Off crops only those thumbnails to fill. All other Photo viewing copies always fit the entire image with padding.</source>
+        <translation>Muestra la foto completa en las miniaturas pequeñas de las vistas de cuadrícula y lista, añadiendo márgenes si es necesario. Si se desactiva, recorta solo esas miniaturas para llenarlas. Todas las demás copias para visualizar fotos muestran siempre la imagen completa con márgenes.</translation>
+    </message>
+    <message>
         <source>Fit the entire Photo inside device thumbnails, leaving borders as needed. Off crops Photos to fill each thumbnail.</source>
-        <translation>Muestra la foto completa en las miniaturas del dispositivo, dejando bordes si es necesario. Si se desactiva, recorta las fotos para llenar cada miniatura.</translation>
+        <translation type="vanished">Muestra la foto completa en las miniaturas del dispositivo, dejando bordes si es necesario. Si se desactiva, recorta las fotos para llenar cada miniatura.</translation>
     </message>
     <message>
         <source>Rockbox Metadata Support</source>
@@ -9431,6 +9450,10 @@ Playlists: %3</translation>
         <translation>Proporciona letras integradas verificadas y la identidad del archivo multimedia resultante.</translation>
     </message>
     <message>
+        <source>Symbolic link skipped because Follow symbolic links is disabled.</source>
+        <translation>Se omitió el enlace simbólico porque Seguir enlaces simbólicos está desactivado.</translation>
+    </message>
+    <message>
         <source>Sync checked tracks only</source>
         <translation>Sincronizar solo las pistas marcadas</translation>
     </message>
@@ -9895,6 +9918,10 @@ Playlists: %3</translation>
         <translation>Los medios seleccionados cambiaron durante la revisión de listas; el análisis original sigue disponible. La sincronización volverá a comprobar los archivos de origen antes de escribir en el iPod.</translation>
     </message>
     <message>
+        <source>The selected path could not be resolved: {error}</source>
+        <translation>No se pudo resolver la ruta seleccionada: {error}</translation>
+    </message>
+    <message>
         <source>The selection contains a missing or repeated Photo.</source>
         <translation>La selección contiene una foto ausente o repetida.</translation>
     </message>
@@ -9909,6 +9936,10 @@ Playlists: %3</translation>
     <message>
         <source>The source database is signed; supply its supported signature target before editing.</source>
         <translation>La base de datos de origen está firmada; proporciona su destino de firma compatible antes de editar.</translation>
+    </message>
+    <message>
+        <source>The symbolic link could not be followed: {error}</source>
+        <translation>No se pudo seguir el enlace simbólico: {error}</translation>
     </message>
     <message>
         <source>Unknown source</source>
@@ -10513,6 +10544,10 @@ Reiniciar iOpenPod no borra las propiedades ya guardadas en la caché de udev. E
     <message>
         <source>Recurse into subfolders</source>
         <translation>Incluir subcarpetas</translation>
+    </message>
+    <message>
+        <source>Follow symbolic links</source>
+        <translation>Seguir enlaces simbólicos</translation>
     </message>
     <message>
         <source>Scan for</source>

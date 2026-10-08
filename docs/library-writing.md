@@ -85,7 +85,19 @@ the controller captures that choice. A Track missing from an ordinary request is
 still protected by default. Request capture and preparation perform no physical
 saving. Save requires the exact review issued for the current source and publishes
 one recoverable transaction containing all required song, thumbnail, ArtworkDB,
-PhotosDB, and iTunesDB changes, followed by obsolete-media removal.
+PhotosDB, and iTunesDB changes. Ordinary Remove from Library actions delete obsolete
+Track media permanently after that transaction commits and its recovery files are
+cleaned up; other removals retain the transaction recovery policy (ADR-0128).
+
+Preparation validates loaded databases early and the complete captured resource set
+once when issuing the transaction. Device captures compute their source fingerprints
+while copying. Save delegates database/file preconditions to Storage; its application
+checkpoints retain signing, sidecar, cancellation, and Active iPod checks. Successful
+Storage commits reuse their final verified observations without another complete
+recovery inspection. Independent recovery still rechecks full content. See
+[ADR-0129](adr/0129-validate-library-files-at-workflow-boundaries.md) for the validation
+boundaries and read-count regressions. Rockbox tag edits still rewrite the media;
+database-only metadata edits do not read or rewrite unchanged media.
 
 ## Requested edits and resolved consequences
 
@@ -467,9 +479,18 @@ validated 55-row and 56-row rasters may coexist, with bounds and overlap checks
 covering their full allocations. New artwork follows a recognized retained MHIF
 size present among those rasters, otherwise their most common size with the
 Device Profile breaking ties. Retained bytes and image locations stay unchanged.
+Packed RGB565 and RGB555 representations, including rotated RGB565, with an
+explicit positive row stride may describe smaller visible dimensions within the
+validated raster: each axis requires `0 <= padding < dimension <= raster dimension`,
+without requiring the visible dimension or its sum with padding to fill the raster.
+New artwork still fills the selected output layout, so retained 55-by-56 and
+56-by-56 visible images do
+not prevent writing new 56-by-56 artwork. Other codecs retain their existing
+geometry rules.
 See [ADR-0111](adr/0111-correct-evidenced-artwork-format-sizes-during-preparation.md)
 and [ADR-0121](adr/0121-preserve-retained-f1061-raster-height.md), amended by
-[ADR-0124](adr/0124-accept-validated-mixed-f1061-layouts.md).
+[ADR-0124](adr/0124-accept-validated-mixed-f1061-layouts.md) and
+[ADR-0131](adr/0131-accept-bounded-visible-dimensions-in-packed-artwork.md).
 
 Packed RGB565 and RGB555 variants, rectangular rotated RGB565, UYVY, tightly packed
 I420, and JPEG use explicit codec layouts. I420 accepts the catalog's aggregate
@@ -634,9 +655,10 @@ concise failure. Preparing leaves the workspace dirty. Save to iPod commits the
 exact reviewed metadata, device-name, Playlist, Photo, artwork, and Track-removal candidate
 in the background, holding workspace edits and device selection until the outcome
 is known. Storage stages and verifies file writes, retains originals and a journal,
-publishes thumbnail files followed by ArtworkDB, PhotosDB, and iTunesDB, then moves obsolete
-media into recovery. Files referenced by surviving Tracks remain. Only success
-adopts a new source and clears the draft. Failed or stale
+publishes thumbnail files followed by ArtworkDB, PhotosDB, and iTunesDB. Ordinary
+Remove from Library saves delete obsolete Track media permanently after the transaction
+commits and its recovery files are cleaned up. Files referenced by surviving Tracks
+remain. Only success adopts a new source and clears the draft. Failed or stale
 results cannot overwrite current draft state. Successful saves automatically clean
 their committed recovery files. The review displays save diagnostics and a retained
 recovery path only when recovery or cleanup is still needed. See
@@ -645,10 +667,11 @@ recovery path only when recovery or cleanup is still needed. See
 The workspace retains artwork assets and explicit deletion intent in each captured
 request. The Track metadata editor exposes artwork clearing, while shared context
 menus expose Remove from Library as a reversible draft edit. Source thumbnail
-inventories, eligible prefixes, and removed media fingerprints are captured through
-Storage. Review Changes lists planned file writes and recoverable removals with sizes
-and hashes available in detail. Those descriptions cannot authorize saving a copied
-or fabricated review.
+inventories and eligible prefixes are captured through Storage. Ordinary Track
+deletions capture cheap file identities without reading the media contents. Review
+Changes labels permanent Track deletions with sizes and no content hash; recoverable
+removals retain their hashes. Those descriptions cannot authorize saving a copied or
+fabricated review.
 
 Saving revalidates all retained database fingerprints, signing identity, captured file
 preconditions, and any required positional sidecar inventory before publication.

@@ -516,7 +516,6 @@ def _execute_external(
             publication_started=False,
             content_verified=False,
         )
-        _check_preconditions(session, _preconditions(plan))
         journal = replace(journal, state=TransactionState.PREPARED)
         fingerprint = _persist(session, path, journal, fingerprint)
         _require_complete_flush(
@@ -548,7 +547,9 @@ def _execute_external(
                 write.content,
                 checkpoint=None,
             ).fingerprint
-            _check_preconditions(session, _preconditions(plan)[index:])
+            # The complete plan was checked before publication. The move checks
+            # this destination again, and dependencies are checked before commit;
+            # rereading every later destination here makes N writes quadratic.
             publication_started = True
             written = session._move_file(  # pyright: ignore[reportPrivateUsage]
                 _stage(root, index),
@@ -579,13 +580,18 @@ def _execute_external(
             notify(TransactionState.PUBLISHING, index + 1, removal.path)
 
         _check_preconditions(session, plan.dependencies)
-        for entry in journal.entries:
-            _expected_file(
-                session,
+        verified = tuple(
+            FilePrecondition(
                 entry.path,
-                entry.after,
-                entry.after_modified_ns,
+                _expected_file(
+                    session,
+                    entry.path,
+                    entry.after,
+                    entry.after_modified_ns,
+                ),
             )
+            for entry in journal.entries
+        )
         content_verified = True
         _require_complete_flush(
             session.flush(),
@@ -595,7 +601,7 @@ def _execute_external(
             content_verified=True,
         )
         journal = replace(journal, state=TransactionState.COMMITTED)
-        _persist(session, path, journal, fingerprint)
+        fingerprint = _persist(session, path, journal, fingerprint)
         _require_complete_flush(
             session.flush(),
             path,
@@ -604,8 +610,11 @@ def _execute_external(
             content_verified=True,
         )
         notify(TransactionState.COMMITTED, len(journal.entries))
+        session._revalidate(write=True)  # pyright: ignore[reportPrivateUsage]
         return TransactionResult(
-            inspect(session, path),
+            _recovery_observation(
+                path, fingerprint, journal, (*verified, *plan.dependencies)
+            ),
             FlushResult(True, "transaction writes flushed"),
         )
     except (
@@ -708,7 +717,6 @@ def execute(
                     checkpoint=checkpoint,
                 ).fingerprint
             )
-        _check_preconditions(session, _preconditions(plan), activity=activity)
         journal = replace(journal, state=TransactionState.PREPARED)
         fingerprint = _persist(session, path, journal, fingerprint)
         _activity(activity, TransactionActivityPhase.FLUSHING)
@@ -755,20 +763,23 @@ def execute(
                 write.modified_ns,
             )
             notify(TransactionState.PUBLISHING, index + 1, write.path)
-        for index, write in enumerate(plan.writes):
-            _activity(
-                activity,
-                TransactionActivityPhase.VERIFYING_WRITES,
-                index,
-                len(plan.writes),
-                write.path,
-            )
-            _expected_file(
-                session,
-                write.path,
-                write.content,
-                write.modified_ns,
-            )
+        # Removals require verified replacements first. Without removals the
+        # final verification below is sufficient; do not scan every output twice.
+        if plan.removals:
+            for index, write in enumerate(plan.writes):
+                _activity(
+                    activity,
+                    TransactionActivityPhase.VERIFYING_WRITES,
+                    index,
+                    len(plan.writes),
+                    write.path,
+                )
+                _expected_file(
+                    session,
+                    write.path,
+                    write.content,
+                    write.modified_ns,
+                )
         for offset, removal in enumerate(plan.removals):
             index = len(plan.writes) + offset
             session._move_file(  # pyright: ignore[reportPrivateUsage]
@@ -780,6 +791,7 @@ def execute(
             )
             notify(TransactionState.PUBLISHING, index + 1, removal.path)
         _check_preconditions(session, plan.dependencies, activity=activity)
+        verified: list[FilePrecondition] = []
         for index, entry in enumerate(journal.entries):
             _activity(
                 activity,
@@ -788,23 +800,32 @@ def execute(
                 len(journal.entries),
                 entry.path,
             )
-            _expected_file(
-                session,
-                entry.path,
-                entry.after,
-                entry.after_modified_ns,
+            verified.append(
+                FilePrecondition(
+                    entry.path,
+                    _expected_file(
+                        session,
+                        entry.path,
+                        entry.after,
+                        entry.after_modified_ns,
+                    ),
+                )
             )
             if entry.before is not None:
                 _expected_content(session, _backup(root, index), entry.before)
         _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
         journal = replace(journal, state=TransactionState.COMMITTED)
-        _persist(session, path, journal, fingerprint)
+        fingerprint = _persist(session, path, journal, fingerprint)
         _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
         notify(TransactionState.COMMITTED, len(journal.entries))
+        session._revalidate(write=True)  # pyright: ignore[reportPrivateUsage]
         return TransactionResult(
-            inspect(session, path, activity=activity), _flush_result(flushes)
+            _recovery_observation(
+                path, fingerprint, journal, (*verified, *plan.dependencies)
+            ),
+            _flush_result(flushes),
         )
     except Exception as error:
         logger.debug(
@@ -911,6 +932,24 @@ def _finalize_terminal(
     )
 
 
+def _recovery_observation(
+    path: DevicePath,
+    fingerprint: FileFingerprint,
+    journal: TransactionJournal,
+    files: tuple[FilePrecondition, ...],
+) -> TransactionRecovery:
+    """Retain verified observations; restore always rechecks their full content."""
+
+    return TransactionRecovery(
+        path,
+        fingerprint,
+        journal.state,
+        files,
+        journal.recovery_material_identity,
+        tuple(entry.path for entry in journal.entries if entry.before is not None),
+    )
+
+
 def inspect(
     session: FilesystemSession,
     path: DevicePath,
@@ -932,14 +971,7 @@ def inspect(
     if session.fingerprint(path) != fingerprint:
         raise FilePreconditionError("Transaction journal changed during inspection")
     _check_preconditions(session, files, activity=activity)
-    return TransactionRecovery(
-        path,
-        fingerprint,
-        journal.state,
-        files,
-        journal.recovery_material_identity,
-        tuple(entry.path for entry in journal.entries if entry.before is not None),
-    )
+    return _recovery_observation(path, fingerprint, journal, files)
 
 
 def finalize(

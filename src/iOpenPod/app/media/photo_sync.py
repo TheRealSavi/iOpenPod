@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 from io import BytesIO
+from math import ceil
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -25,6 +26,7 @@ from iPodDB.library import (
     SourceFile,
     encode_photo_thumbnail,
 )
+from iPodDB.shared.photo_image import photo_source_size, photo_viewing_image
 from storage import DevicePath
 
 if TYPE_CHECKING:
@@ -40,14 +42,7 @@ def photo_still_from_stream(source: BinaryIO) -> bytes:
     Animated sources need only their first frame for the iPod Photo viewer. Read
     it through a seekable Storage stream instead of retaining the animation.
     """
-    with Image.open(source) as opened:
-        width, height = opened.size
-        if max(width, height) > 8192 or width * height > 32 * 1024 * 1024:
-            raise ValueError("Photo dimensions exceed safe decoding limits.")
-        opened.seek(0)
-        image = ImageOps.exif_transpose(opened).convert("RGB")
-        # Bound the encoded full-resolution viewing copy as well as its raster.
-        image.thumbnail((4096, 4096), Image.Resampling.LANCZOS)
+    with photo_viewing_image(source, (4096, 4096)) as image:
         output = BytesIO()
         image.save(output, format="PNG")
     data = output.getvalue()
@@ -65,16 +60,17 @@ def prepare_sync_photo(
     formats: tuple[PhotoThumbnailFormat, ...],
     rotate_tall_photos: bool = False,
     fit_thumbnails: bool = False,
-    always_fit_format_ids: Collection[int] | None = None,
+    crop_format_ids: Collection[int] = (),
     original: Photo | None = None,
 ) -> PreparedPhoto:
     """Build a complete Photo with fresh, individually verifiable device files.
 
     The caller allocates unused paths and Storage enforces absence at publication.
     Original bytes remain unchanged; EXIF orientation, rotation and fitting affect
-    only the viewing copies. ``always_fit_format_ids`` identifies high-resolution
-    device renditions that always preserve the whole source. Each fresh shard
-    avoids a read/rewrite of old USB data.
+    only the viewing copies. ``crop_format_ids`` identifies small grid/list
+    thumbnails that may crop when fitting is disabled. Every other rendition
+    always preserves the whole source. Each fresh shard avoids a read/rewrite of
+    old USB data.
     """
 
     if not data or len(data) > MAX_PHOTO_SOURCE_BYTES:
@@ -90,14 +86,25 @@ def prepare_sync_photo(
         raise ValueError("A Photo original must be inside Photos/Full Resolution.")
     if not formats or len({item.format_id for item in formats}) != len(formats):
         raise ValueError("The iPod requires an unambiguous set of Photo formats.")
+    crop_ids: set[int] = set() if fit_thumbnails else set(crop_format_ids)
     try:
-        with Image.open(BytesIO(data)) as opened:
-            width, height = opened.size
-            if max(width, height) > 8192 or width * height > 32 * 1024 * 1024:
-                raise ValueError(
-                    "Photo dimensions exceed safe limits; resize it and retry."
-                )
-            image = ImageOps.exif_transpose(opened).convert("RGB")
+        width, height = photo_source_size(BytesIO(data))
+        # A working raster needs only enough pixels for the largest rendition.
+        # Keep source dimensions and bytes separately for the retained original.
+        edge = max(max(item.width, item.height) for item in formats)
+        if crop_ids:
+            crop_edge = max(
+                (
+                    max(item.width, item.height)
+                    for item in formats
+                    if item.format_id in crop_ids
+                ),
+                default=0,
+            )
+            # A panorama's short edge must still contain enough pixels for a
+            # cropped thumbnail, including when its display orientation rotates.
+            edge = max(edge, ceil(crop_edge * max(width, height) / min(width, height)))
+        image = photo_viewing_image(BytesIO(data), (edge, edge))
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
         raise ValueError(
             "Photo could not be decoded; repair or replace the source image."
@@ -114,26 +121,13 @@ def prepare_sync_photo(
             height,
         )
     ]
-    if always_fit_format_ids is None:
-        high_resolution_area = max(
-            image_format.width * image_format.height for image_format in formats
-        )
-        always_fit_ids = {
-            image_format.format_id
-            for image_format in formats
-            if image_format.width * image_format.height == high_resolution_area
-        }
-    else:
-        always_fit_ids = set(always_fit_format_ids)
     for image_format in formats:
         source = image
         target_size = (image_format.width, image_format.height)
         if rotate_tall_photos and _rotation_improves_fit(image.size, target_size):
             source = image.transpose(Image.Transpose.ROTATE_270)
-        # High-resolution Photo renditions always preserve the complete source;
-        # the setting controls only the smaller thumbnail renditions.
-        always_fit = image_format.format_id in always_fit_ids
-        if fit_thumbnails or always_fit:
+        # Only explicitly identified small grid/list thumbnails may crop.
+        if image_format.format_id not in crop_ids:
             source, horizontal_padding, vertical_padding = _fit_thumbnail(
                 source, target_size
             )

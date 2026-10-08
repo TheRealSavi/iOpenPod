@@ -68,6 +68,9 @@ def test_filtered_listing_skips_unneeded_file_metadata_and_preserves_directories
         def is_dir(self, *, follow_symlinks: bool) -> bool:
             return self.original.is_dir(follow_symlinks=follow_symlinks)
 
+        def is_symlink(self) -> bool:
+            return self.original.is_symlink()
+
         def stat(self, *, follow_symlinks: bool) -> os.stat_result:
             statted.append(self.name)
             return self.original.stat(follow_symlinks=follow_symlinks)

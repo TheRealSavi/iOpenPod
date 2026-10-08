@@ -39,6 +39,7 @@ class HostMediaFolder:
     path: HostPath
     recurse: bool = True
     media_types: frozenset[HostMediaType] = frozenset(ALL_HOST_MEDIA_TYPES)
+    follow_symlinks: bool = False
 
 
 type HostMediaFoldersSetting = list[object]
@@ -50,7 +51,10 @@ def _valid_folder_setting(value: HostMediaFoldersSetting) -> bool:
         if not isinstance(candidate, dict):
             return False
         item = cast("dict[object, object]", candidate)
-        if set(item) != {"media_types", "path", "recurse"}:
+        if set(item) not in (
+            {"media_types", "path", "recurse"},
+            {"media_types", "path", "recurse", "follow_symlinks"},
+        ):
             return False
         path = item.get("path")
         recurse = item.get("recurse")
@@ -61,6 +65,7 @@ def _valid_folder_setting(value: HostMediaFoldersSetting) -> bool:
             or "\x00" in path
             or not Path(path).is_absolute()
             or not isinstance(recurse, bool)
+            or not isinstance(item.get("follow_symlinks", False), bool)
             or not isinstance(media_types, list)
         ):
             return False
@@ -114,6 +119,7 @@ def load_host_media_folders(settings: SettingsService) -> tuple[HostMediaFolder,
                 path=HostPath(path),
                 recurse=recurse,
                 media_types=media_types,
+                follow_symlinks=cast("bool", item.get("follow_symlinks", False)),
             )
         )
     return tuple(folders)
@@ -129,6 +135,7 @@ def save_host_media_folders(
         {
             "path": os.fspath(folder.path),
             "recurse": folder.recurse,
+            "follow_symlinks": folder.follow_symlinks,
             "media_types": [
                 media_type.value
                 for media_type in ALL_HOST_MEDIA_TYPES

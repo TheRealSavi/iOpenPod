@@ -32,7 +32,9 @@ from device_registry.models import (
 
 _MIB = 1024 * 1024
 _STANDARD_DATABASE_LIMIT = 32 * _MIB
-_LARGE_DATABASE_LIMIT = 64 * _MIB
+# Large iTunes libraries can exceed the former 64 MiB bound, especially on
+# upgraded Classics. This bound is shared by database reads and prepared writes.
+_LARGE_DATABASE_LIMIT = 1024 * _MIB
 
 
 def _artwork_format(
@@ -54,9 +56,9 @@ def _artwork_format(
 
 
 _ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
-    1005: _artwork_format(1005, 80, 80, 160, usage=ArtworkUsage.PHOTO),
+    1005: _artwork_format(1005, 80, 80, 160, usage=ArtworkUsage.PHOTO_THUMBNAIL),
     1007: _artwork_format(1007, 480, 864, 960, usage=ArtworkUsage.PHOTO),
-    1009: _artwork_format(1009, 42, 30, 84, usage=ArtworkUsage.PHOTO),
+    1009: _artwork_format(1009, 42, 30, 84, usage=ArtworkUsage.PHOTO_THUMBNAIL),
     1013: _artwork_format(
         1013,
         220,
@@ -89,15 +91,15 @@ _ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
     1028: _artwork_format(1028, 100, 100, 200),
     1029: _artwork_format(1029, 200, 200, 400),
     1031: _artwork_format(1031, 42, 42, 84),
-    1032: _artwork_format(1032, 42, 37, 84, usage=ArtworkUsage.PHOTO),
-    1036: _artwork_format(1036, 50, 41, 100, usage=ArtworkUsage.PHOTO),
+    1032: _artwork_format(1032, 42, 37, 84, usage=ArtworkUsage.PHOTO_THUMBNAIL),
+    1036: _artwork_format(1036, 50, 41, 100, usage=ArtworkUsage.PHOTO_THUMBNAIL),
     1055: _artwork_format(1055, 128, 128, 256),
     1056: _artwork_format(1056, 128, 128, 256),
     1060: _artwork_format(1060, 320, 320, 640),
     # Original iOpenPod creates 56-row F1061 images; retained 55-row images
     # are selected from ArtworkDB evidence during preparation.
     1061: _artwork_format(1061, 56, 56, 112),
-    1066: _artwork_format(1066, 64, 64, 128, usage=ArtworkUsage.PHOTO),
+    1066: _artwork_format(1066, 64, 64, 128, usage=ArtworkUsage.PHOTO_THUMBNAIL),
     1067: _artwork_format(
         1067,
         720,
@@ -111,13 +113,13 @@ _ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
     1073: _artwork_format(1073, 240, 240, 480),
     1074: _artwork_format(1074, 50, 50, 100),
     1078: _artwork_format(1078, 80, 80, 160),
-    1079: _artwork_format(1079, 80, 80, 160, usage=ArtworkUsage.PHOTO),
+    1079: _artwork_format(1079, 80, 80, 160, usage=ArtworkUsage.PHOTO_THUMBNAIL),
     1083: _artwork_format(1083, 240, 320, 480, usage=ArtworkUsage.PHOTO),
     1084: _artwork_format(1084, 240, 240, 480),
     1085: _artwork_format(1085, 88, 88, 176),
     1087: _artwork_format(1087, 384, 384, 768, usage=ArtworkUsage.PHOTO),
     1089: _artwork_format(1089, 58, 58, 116),
-    1092: _artwork_format(1092, 80, 80, 160, usage=ArtworkUsage.PHOTO),
+    1092: _artwork_format(1092, 80, 80, 160, usage=ArtworkUsage.PHOTO_THUMBNAIL),
     1093: _artwork_format(1093, 512, 512, 1024, usage=ArtworkUsage.PHOTO),
 }
 

@@ -69,6 +69,20 @@ directory.
 
 ## Additional scan improvements
 
+### Opt-in symbolic links
+
+ADR-0132 adds per-folder symbolic-link traversal while retaining the normal scan
+path. A 2026-10-08 Windows operation-count check used 40 album directories with
+20 WAVE Tracks each, 40 directory aliases, and a link back to the selected root in
+each album. With link following either disabled or enabled, the warm scan reused
+all 800 Tracks, inspected none, made 82 directory listings across both enumeration
+passes, and opened no media streams. These are local operation counts, not NAS
+timings. Regression tests also verify that hard links are inspected once and that
+ordinary ancestor probes are shared within one resolution pass without bypassing
+read-time validation.
+
+### Inspection and ordinary traversal
+
 Inspection uses a continuously replenished queue with at most four pending tasks
 per worker and at most eight workers. Completed results are published by the owning
 scan worker and the final records remain sorted. A slow file no longer prevents

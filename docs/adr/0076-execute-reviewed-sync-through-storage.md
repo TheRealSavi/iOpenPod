@@ -62,6 +62,12 @@ thumbnail shards avoid rewriting old packed data across USB. Cleanup may reclaim
 wholly unreferenced file under the supported Photo thumbnail namespace, extending
 ADR-0059; unused ranges inside files still referenced by another Photo are retained.
 
+Photo fitting preserves the Original iOpenPod baseline: only small grid and list
+thumbnails identified by Device Registry may crop to fill, and only when Fit
+Thumbnails is off. Screen, preview, large, and TV viewing copies always fit the
+entire Photo with padding as needed. Formats with an unknown role also fit with
+padding; dimensions alone do not authorize cropping.
+
 iPodDB prepares and independently verifies the complete desired Library. The
 Application Layer submits media and database artifacts through the existing issued
 Library Review and Storage Transaction. Storage stages and verifies media before

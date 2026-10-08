@@ -1,5 +1,8 @@
 # ADR-0056: Preview retained full-resolution Photos safely
 
+> ADR-0130 replaces the application source-dimension limits with Pillow's limits
+> and raises the encoded full-resolution preview bound to 64 MiB.
+
 - Status: Accepted
 - Date: 2026-09-15
 - Extends: ADR-0054 and ADR-0055

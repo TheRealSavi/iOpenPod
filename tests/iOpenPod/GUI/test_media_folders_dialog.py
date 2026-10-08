@@ -68,8 +68,12 @@ def test_dropped_folder_settings_render_the_theme_surface(
         APPLICATION.processEvents()
         assert dialog.grab().toImage().pixelColor(2, 2) == QColor(tokens.window)
         controls = dialog.findChildren(QCheckBox)
-        assert len(controls) == 5
-        assert all(control.isVisible() and control.isChecked() for control in controls)
+        assert len(controls) == 6
+        assert all(control.isVisible() for control in controls)
+        assert all(
+            control.isChecked() == (control.objectName() != "followMediaFolderSymlinks")
+            for control in controls
+        )
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -106,7 +110,11 @@ def test_native_picker_adds_once_with_enabled_default_settings(
         assert len(dialog.folders) == 1
         assert dialog.folders[0] == create_host_media_folder(selected)
         assert calls[0][1] == QFileDialog.Option.ShowDirsOnly
-        assert all(checkbox.isChecked() for checkbox in dialog.findChildren(QCheckBox))
+        assert all(
+            checkbox.isChecked()
+            == (checkbox.objectName() != "followMediaFolderSymlinks")
+            for checkbox in dialog.findChildren(QCheckBox)
+        )
     finally:
         dialog.close()
 
@@ -125,15 +133,18 @@ def test_folder_settings_and_removal_are_staged_then_persisted(
         assert len(rows) == 2
         settings_button = rows[0].findChild(QToolButton, "mediaFolderSettingsButton")
         recurse = rows[0].findChild(QCheckBox, "recurseMediaFolder")
+        follow = rows[0].findChild(QCheckBox, "followMediaFolderSymlinks")
         video = rows[0].findChild(QCheckBox, "scanVideo")
         playlists = rows[0].findChild(QCheckBox, "scanPlaylists")
         assert settings_button is not None
         assert recurse is not None
+        assert follow is not None and not follow.isChecked()
         assert video is not None
         assert playlists is not None
 
         settings_button.click()
         recurse.setChecked(False)
+        follow.setChecked(True)
         video.setChecked(False)
         playlists.setChecked(False)
 
@@ -147,6 +158,7 @@ def test_folder_settings_and_removal_are_staged_then_persisted(
         assert load_host_media_folders(service) == dialog.folders
         assert len(dialog.folders) == 1
         assert dialog.folders[0].recurse is False
+        assert dialog.folders[0].follow_symlinks is True
         assert dialog.folders[0].media_types == frozenset(
             {HostMediaType.AUDIO, HostMediaType.PHOTOS}
         )

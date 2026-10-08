@@ -32,6 +32,7 @@ from storage import (
     DeviceEntryKind,
     DevicePath,
     FileContent,
+    FileIdentity,
     FilePrecondition,
     FilePreconditionError,
     HostPath,
@@ -94,6 +95,12 @@ def sqlite_database_path(artifact_name: str) -> DevicePath:
 
 
 @dataclass(frozen=True, slots=True)
+class DiscardedTrackMedia:
+    path: DevicePath
+    identity: FileIdentity
+
+
+@dataclass(frozen=True, slots=True)
 class CapturedLibraryResources:
     resources: WriteResources
     files: tuple[FilePrecondition, ...]
@@ -101,6 +108,7 @@ class CapturedLibraryResources:
     media_writes: tuple[TransactionWrite, ...] = ()
     presentation_writes: tuple[TransactionWrite, ...] = ()
     issues: tuple[WriteIssue, ...] = ()
+    discarded_track_media: tuple[DiscardedTrackMedia, ...] = ()
 
 
 def pending_sidecars(
@@ -227,6 +235,16 @@ def recheck(session: FilesystemSession, files: tuple[FilePrecondition, ...]) -> 
             )
 
 
+def recheck_discarded_track_media(
+    session: FilesystemSession, files: tuple[DiscardedTrackMedia, ...]
+) -> None:
+    for file in files:
+        if session.file_identity(file.path) != file.identity:
+            raise FilePreconditionError(
+                f"Track media changed before deletion: {file.path}"
+            )
+
+
 def capture(
     session: FilesystemSession,
     request: LibraryPreparationRequest,
@@ -286,13 +304,13 @@ def capture(
         media_writes.extend(sidecar_writes)
     if len({m.media.track_id for m in request.media}) != len(request.media):
         raise ValueError("Incoming media repeats a Track identity.")
+    required_media = set(plan.required_media)
     for incoming in request.media:
         checkpoint()
         media_file = incoming.media.file
         path = DevicePath(media_file.relative_path)
-        if (
-            incoming.media.track_id not in plan.required_media
-            or not path.is_relative_to(_MUSIC)
+        if incoming.media.track_id not in required_media or not path.is_relative_to(
+            _MUSIC
         ):
             raise ValueError(
                 "Incoming media is unrequested or outside iPod_Control/Music."
@@ -315,9 +333,10 @@ def capture(
         )
     if len({asset.photo.photo_id for asset in request.photos}) != len(request.photos):
         raise ValueError("Incoming Photos repeat a Photo identity.")
+    required_photos = set(plan.required_photos)
     incoming_photo_paths: set[DevicePath] = set()
     for asset in request.photos:
-        if asset.photo.photo_id not in plan.required_photos:
+        if asset.photo.photo_id not in required_photos:
             raise ValueError("Incoming Photo was not requested by the Library draft.")
         for photo_file in asset.files:
             checkpoint()
@@ -364,9 +383,10 @@ def capture(
                 and entry.path.name.casefold().startswith(cover_prefixes)
                 and entry.size < plan.target.max_artwork_file_bytes
             ):
-                fingerprint = session.fingerprint(entry.path)
                 try:
-                    data, content = staging.capture_device(session, entry.path)
+                    data, fingerprint = staging.capture_device_snapshot(
+                        session, entry.path
+                    )
                 except StorageError as error:
                     raise StorageError(
                         f"Could not capture artwork file {entry.path}: {error}"
@@ -375,10 +395,6 @@ def capture(
                     raise OSError(
                         f"Could not capture artwork file {entry.path}: {error}"
                     ) from error
-                if content != FileContent.from_fingerprint(fingerprint):
-                    raise FilePreconditionError(
-                        f"Artwork file changed during capture: {entry.path}"
-                    )
                 dependency = FileDependency(
                     str(entry.path), fingerprint.size, fingerprint.sha256
                 )
@@ -420,15 +436,14 @@ def capture(
         if t.metadata.location
     }
     desired_ids = {t.track_id for t in request.snapshot.tracks}
+    replaced_media = set(request.replace_media)
     removed_paths: set[str] = set()
     removals: list[TransactionRemoval] = list(sidecar_removals)
+    discarded_track_media: list[DiscardedTrackMedia] = []
     for track in request.source.library.tracks:
         location = track.metadata.location
         if (
-            (
-                track.track_id in desired_ids
-                and track.track_id not in request.replace_media
-            )
+            (track.track_id in desired_ids and track.track_id not in replaced_media)
             or not location
             or location.casefold() in retained
             or location.casefold() in removed_paths
@@ -438,15 +453,26 @@ def capture(
         path = DevicePath(location)
         if not path.is_relative_to(_MUSIC):
             raise ValueError(f"Removed media is outside iPod_Control/Music: {path}")
-        media_fingerprint = session.fingerprint(path) if session.exists(path) else None
-        files.append(FilePrecondition(path, media_fingerprint))
-        if media_fingerprint is not None:
-            removals.append(TransactionRemoval(path, media_fingerprint))
+        if request.discard_removed_track_media and track.track_id not in desired_ids:
+            if session.exists(path):
+                discarded_track_media.append(
+                    DiscardedTrackMedia(path, session.file_identity(path))
+                )
+            else:
+                files.append(FilePrecondition(path, None))
+        else:
+            media_fingerprint = (
+                session.fingerprint(path) if session.exists(path) else None
+            )
+            files.append(FilePrecondition(path, media_fingerprint))
+            if media_fingerprint is not None:
+                removals.append(TransactionRemoval(path, media_fingerprint))
         removed_paths.add(location.casefold())
     source_photos = request.source.library.photos
     desired_photos = request.snapshot.photos
     if source_photos is not None and desired_photos is not None:
         desired_photo_ids = {photo.photo_id for photo in desired_photos.photos}
+        replaced_photos = set(request.replace_photos)
         retained_photo_paths = {
             representation.relative_path.casefold()
             for photo in desired_photos.photos
@@ -457,7 +483,7 @@ def capture(
         for photo in source_photos.photos:
             if (
                 photo.photo_id in desired_photo_ids
-                and photo.photo_id not in request.replace_photos
+                and photo.photo_id not in replaced_photos
             ):
                 continue
             for representation in photo.representations:
@@ -498,7 +524,8 @@ def capture(
                 if photo_fingerprint is not None:
                     removals.append(TransactionRemoval(path, photo_fingerprint))
                 removed_photo_paths.add(normalized)
-    recheck(session, tuple(files))
+    # Captures pin individual source contents. The coordinator validates the
+    # complete set once after preparation, when issuing the reviewed transaction.
     resources = WriteResources(
         media=media,
         lyrics=lyrics,
@@ -522,6 +549,7 @@ def capture(
         tuple(media_writes),
         presentation_writes,
         lyric_issues,
+        tuple(discarded_track_media),
     )
 
 
@@ -594,18 +622,11 @@ def _capture_file_tags(
                         raise ValueError(
                             "Lyrics require captured media at the retained Track location."
                         )
-                    expected = session.fingerprint(path)
                     private_source = workspace.output_path(".media")
                     copied = session.copy_to_host(
                         path, private_source, progress=lambda _copied: checkpoint()
                     )
-                    if (copied.bytes_copied, copied.sha256) != (
-                        expected.size,
-                        expected.sha256,
-                    ):
-                        raise FilePreconditionError(
-                            "Lyrics media changed during capture."
-                        )
+                    expected = copied.source_fingerprint
                 update = rockbox.get(identity)
                 artwork = update.artwork if update is not None else None
                 if update is not None and update.artwork_read is not None:
@@ -755,10 +776,13 @@ def transaction(
     # Names follow the Library's publication, with icons before their text references.
     writes.extend(captured.presentation_writes)
     changed = {w.path for w in writes} | {r.path for r in captured.removals}
+    if changed & {file.path for file in captured.discarded_track_media}:
+        raise ValueError("A Track media file cannot be written and deleted together.")
     # Prepared dependencies are content assertions, never authority to open a new path.
+    incoming_by_path = {write.path: write for write in captured.media_writes}
     for dependency in prepared.retained_files:
         path = DevicePath(dependency.relative_path)
-        incoming = next((w for w in captured.media_writes if w.path == path), None)
+        incoming = incoming_by_path.get(path)
         if incoming is not None:
             if (incoming.content.size, incoming.content.sha256) != (
                 dependency.size,
@@ -774,7 +798,12 @@ def transaction(
             dependency.sha256,
         ):
             raise ValueError(f"Prepared dependency was not captured: {path}")
-    if allow_unchanged and not writes and not captured.removals:
+    if (
+        allow_unchanged
+        and not writes
+        and not captured.removals
+        and not captured.discarded_track_media
+    ):
         # Sync may establish an association without changing Library bytes. Keep
         # dependency verification, but never invent an empty Storage transaction.
         return None
@@ -805,7 +834,10 @@ def _transaction_source(data: FileContentData) -> bytes | HostPath:
     raise ValueError("Prepared content must belong to a Storage workspace.")
 
 
-def describe(plan: StorageTransaction) -> tuple[LibraryFileChange, ...]:
+def describe(
+    plan: StorageTransaction,
+    discarded_track_media: tuple[DiscardedTrackMedia, ...] = (),
+) -> tuple[LibraryFileChange, ...]:
     return (
         *(
             LibraryFileChange(str(w.path), "write", w.content.size, w.content.sha256)
@@ -814,5 +846,9 @@ def describe(plan: StorageTransaction) -> tuple[LibraryFileChange, ...]:
         *(
             LibraryFileChange(str(r.path), "remove", r.expected.size, r.expected.sha256)
             for r in plan.removals
+        ),
+        *(
+            LibraryFileChange(str(r.path), "delete", r.identity.size, None)
+            for r in discarded_track_media
         ),
     )

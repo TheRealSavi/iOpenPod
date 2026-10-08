@@ -1,5 +1,8 @@
 # ADR-0086: Prepare bounded stills for oversized Photos
 
+> ADR-0130 retains Pillow's limits instead of the old application dimension caps
+> and also converts originals whose dimensions cannot fit PhotosDB.
+
 - Status: Accepted
 - Date: 2026-09-26
 - Extends: ADR-0076 and ADR-0084

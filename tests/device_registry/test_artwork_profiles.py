@@ -3,6 +3,7 @@
 from device_registry import (
     DEFAULT_DEVICE_REGISTRY,
     ArtworkPixelFormat,
+    ArtworkUsage,
 )
 
 
@@ -73,3 +74,40 @@ def test_f1019_catalog_format_declares_field_separated_uyvy() -> None:
     }
 
     assert formats[1019].pixel_format is ArtworkPixelFormat.UYVY_FIELDS
+
+
+def test_catalog_marks_only_small_photo_grid_and_list_formats_as_thumbnails() -> None:
+    formats = {
+        artwork_format.format_id: artwork_format
+        for profile in DEFAULT_DEVICE_REGISTRY.profiles
+        for artwork_format in profile.capabilities.artwork.photo_formats
+    }
+
+    assert {
+        format_id
+        for format_id, artwork_format in formats.items()
+        if artwork_format.usage is ArtworkUsage.PHOTO_THUMBNAIL
+    } == {1005, 1009, 1032, 1036, 1066, 1079, 1092}
+    assert formats[1015].usage is ArtworkUsage.PHOTO
+    assert formats[1024].usage is ArtworkUsage.PHOTO
+
+
+def test_nano_5g_identifies_both_small_photo_formats_as_thumbnails() -> None:
+    profiles = tuple(
+        profile
+        for profile in DEFAULT_DEVICE_REGISTRY.profiles
+        if profile.family == "iPod Nano" and profile.generation == "5th Gen"
+    )
+
+    assert profiles
+    for profile in profiles:
+        assert {
+            artwork_format.format_id
+            for artwork_format in profile.capabilities.artwork.photo_formats
+            if artwork_format.usage is ArtworkUsage.PHOTO_THUMBNAIL
+        } == {1066, 1079}
+        assert {
+            artwork_format.format_id
+            for artwork_format in profile.capabilities.artwork.photo_formats
+            if artwork_format.usage is ArtworkUsage.PHOTO
+        } == {1087}

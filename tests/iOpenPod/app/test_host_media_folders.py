@@ -32,6 +32,7 @@ def test_new_folder_enables_recursion_and_every_media_type(tmp_path: Path) -> No
 
     assert os.fspath(folder.path) == os.fspath(tmp_path / "Media")
     assert folder.recurse is True
+    assert folder.follow_symlinks is False
     assert folder.media_types == frozenset(ALL_HOST_MEDIA_TYPES)
 
 
@@ -44,6 +45,7 @@ def test_folders_and_individual_settings_round_trip_as_readable_json(
     photos = HostMediaFolder(
         path=create_host_media_folder(tmp_path / "Photos").path,
         recurse=False,
+        follow_symlinks=True,
         media_types=frozenset({HostMediaType.PHOTOS}),
     )
 
@@ -56,11 +58,13 @@ def test_folders_and_individual_settings_round_trip_as_readable_json(
             {
                 "path": os.fspath(tmp_path / "Music"),
                 "recurse": True,
+                "follow_symlinks": False,
                 "media_types": ["audio", "video", "photos", "playlists"],
             },
             {
                 "path": os.fspath(tmp_path / "Photos"),
                 "recurse": False,
+                "follow_symlinks": True,
                 "media_types": ["photos"],
             },
         ]
@@ -79,3 +83,29 @@ def test_duplicate_persisted_folders_are_rejected(tmp_path: Path) -> None:
     duplicated_setting: list[object] = [duplicate, duplicate]
     with pytest.raises(ValueError, match=HOST_MEDIA_FOLDERS.key):
         service.set_global(HOST_MEDIA_FOLDERS, duplicated_setting)
+
+
+def test_legacy_folders_default_to_not_following_links(tmp_path: Path) -> None:
+    service = _settings(tmp_path / "settings.json")
+    legacy: list[object] = [
+        {"path": str(tmp_path), "recurse": True, "media_types": ["audio"]}
+    ]
+    service.set_global(HOST_MEDIA_FOLDERS, legacy)
+    (folder,) = load_host_media_folders(service)
+    assert not folder.follow_symlinks
+    assert folder.media_types == frozenset({HostMediaType.AUDIO})
+
+
+@pytest.mark.parametrize("value", [0, 1, "true", None])
+def test_link_preference_requires_a_boolean(tmp_path: Path, value: object) -> None:
+    service = _settings(tmp_path / "settings.json")
+    invalid: list[object] = [
+        {
+            "path": str(tmp_path),
+            "recurse": True,
+            "media_types": ["audio"],
+            "follow_symlinks": value,
+        }
+    ]
+    with pytest.raises(ValueError, match=HOST_MEDIA_FOLDERS.key):
+        service.set_global(HOST_MEDIA_FOLDERS, invalid)

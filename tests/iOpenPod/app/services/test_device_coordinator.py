@@ -11,6 +11,7 @@ from threading import Event, Thread
 
 import pytest
 from PIL import Image
+from tests.iOpenPod.app.media.test_photo_sync import large_photo_png
 from tests.iPodDB.sidecars.test_sidecar_readers import otg
 
 from iOpenPod.app.backups import BackupIdentityClaimKind
@@ -20,6 +21,7 @@ from iOpenPod.app.models.artwork import ArtworkRequest
 from iOpenPod.app.models.device import DeviceCandidateIssueCode, DeviceReadiness
 from iOpenPod.app.models.photos import FULL_RESOLUTION_REQUEST_ID, PhotoRequest
 from iOpenPod.app.playback.backend import PlaybackSourceError
+from iOpenPod.app.services import device_coordinator
 from iOpenPod.app.services.device_coordinator import (
     DeviceAccessError,
     DeviceChangedError,
@@ -1764,19 +1766,32 @@ def test_photo_thumbnail_is_decoded_only_when_requested(tmp_path: Path) -> None:
     coordinator.close()
 
 
-def test_full_resolution_photo_is_read_safely_and_scaled_for_display(
+@pytest.mark.parametrize(
+    ("source_size", "orientation", "expected_size"),
+    [((80, 40), 1, (32, 16)), ((80, 40), 6, (16, 32))],
+)
+def test_full_resolution_photo_is_read_beyond_thumbnail_limit_and_scaled_for_display(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_size: tuple[int, int],
+    orientation: int,
+    expected_size: tuple[int, int],
 ) -> None:
     platform = VirtualStoragePlatform()
     root = _ipod_volume(tmp_path / "classic", model_number="MB565")
     photo_directory = root / "Photos"
     full_resolution = photo_directory / "Full Resolution" / "iOpenPod" / "Sunrise.jpg"
     full_resolution.parent.mkdir(parents=True)
-    image = Image.new("RGB", (80, 40), (10, 20, 30))
+    image = Image.new("RGB", source_size, (10, 20, 30))
     try:
-        image.save(full_resolution, format="PNG")
+        exif = Image.Exif()
+        exif[274] = orientation
+        image.save(full_resolution, format="PNG", exif=exif)
     finally:
         image.close()
+    monkeypatch.setattr(
+        device_coordinator, "_PHOTO_PAYLOAD_LIMIT", full_resolution.stat().st_size - 1
+    )
     fixture = (
         Path(__file__).parents[3]
         / "fixtures"
@@ -1804,9 +1819,42 @@ def test_full_resolution_photo_is_read_safely_and_scaled_for_display(
     assert result is not None
     assert result.photo_id == 100
     assert result.format_id == FULL_RESOLUTION_REQUEST_ID
-    assert (result.width, result.height) == (32, 16)
+    assert (result.width, result.height) == expected_size
     assert result.rgb888[:3] == bytes((10, 20, 30))
     assert result.byte_count == 32 * 16 * 3
+    coordinator.close()
+
+
+def test_large_full_resolution_photo_is_scaled_for_display(tmp_path: Path) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    photo_directory = root / "Photos"
+    full_resolution = photo_directory / "Full Resolution" / "iOpenPod" / "Sunrise.jpg"
+    full_resolution.parent.mkdir(parents=True)
+    full_resolution.write_bytes(large_photo_png(15360, 8640))
+    fixture = (
+        Path(__file__).parents[3]
+        / "fixtures"
+        / "PhotosDB"
+        / "original-photo-library.b64"
+    )
+    photo_directory.joinpath("Photo Database").write_bytes(
+        base64.b64decode(fixture.read_text(encoding="ascii").strip(), validate=True)
+    )
+    platform.add_volume(root, label="Classic")
+    coordinator = DeviceCoordinator(Storage(platform))
+    coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+
+    with pytest.warns(Image.DecompressionBombWarning):
+        result = coordinator.load_photo(
+            PhotoRequest(
+                photo_id=100, target_px=32, format_id=FULL_RESOLUTION_REQUEST_ID
+            )
+        )
+
+    assert result is not None
+    assert (result.width, result.height) == (32, 18)
+    assert result.rgb888 == b"\xff" * (32 * 18 * 3)
     coordinator.close()
 
 

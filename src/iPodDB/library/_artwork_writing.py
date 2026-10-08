@@ -118,6 +118,14 @@ def _validate_retained_artwork_format(
     """
     if cover.pixel_format is IthmbPixelFormat.JPEG:
         raise ValueError("Variable-size artwork cannot establish a fixed MHIF size.")
+    packed_rgb = cover.row_bytes > 0 and cover.pixel_format in {
+        IthmbPixelFormat.RGB565_LE,
+        IthmbPixelFormat.RGB565_BE,
+        IthmbPixelFormat.RGB565_BE_90,
+        IthmbPixelFormat.RGB555_LE,
+        IthmbPixelFormat.RGB555_BE,
+        IthmbPixelFormat.REC_RGB555_LE,
+    }
     inventory = {f.relative_path.casefold(): f for f in resources.file_inventory or ()}
     ranges: dict[str, set[tuple[int, int, int]]] = {}
     for selection in artwork.find_chunks(MhiiHeader):
@@ -163,14 +171,23 @@ def _validate_retained_artwork_format(
                 (header.image_width, header.horizontal_padding, cover.width),
                 (header.image_height, header.vertical_padding, height),
             ):
-                # foo_dop records the bottom/right edge of centered content;
-                # other writers record the complete raster dimensions.
+                # Packed RGB stride and size establish the raster independently
+                # of its visible dimensions; content need not fill or be centered
+                # in that raster. Planar/field layouts retain their stricter rule.
                 if not (
                     0 <= padding < dimension <= expected
-                    and (dimension == expected or dimension + padding == expected)
+                    and (
+                        packed_rgb
+                        or dimension == expected
+                        or dimension + padding == expected
+                    )
                 ):
                     raise ValueError(
-                        "Retained MHNI dimensions or padding disagree with the target layout."
+                        "Retained MHNI dimensions or padding disagree with the target layout: "
+                        f"format={cover.format_id}, image={selection.chunk.header.image_id}, "
+                        f"dimensions={header.image_width}x{header.image_height}, "
+                        f"padding={header.horizontal_padding}x{header.vertical_padding}, "
+                        f"raster={cover.width}x{height}."
                     )
             names = tuple(
                 c.payload.value

@@ -1,7 +1,8 @@
 """Read-only access to individual local files named by untrusted documents.
 
 Resolving a reference grants no read authority. Observe before review, then read or
-capture only the exact approved observation. Never follow links or reparse points.
+capture only the exact approved observation. Reads never follow links or reparse
+points. Explicit user selections have a separate canonical target resolver.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import re
 import stat
 import sys
 import tempfile
+from collections import deque
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +46,89 @@ _FILE_SHARE_WRITE = 0x2
 _OPEN_EXISTING = 3
 _FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 _FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+
+
+class HostSelectionResolver:
+    """Reuse ordinary ancestor probes within one selection or enumeration pass.
+
+    Cached directories never authorize reads. If an ancestor is replaced, the
+    mandatory no-link observation/open checks reject it. Link targets themselves
+    are not cached here, and callers must discard this resolver between passes.
+    """
+
+    def __init__(self) -> None:
+        self._directories: set[Path] = set()
+
+    def resolve(self, path: HostPath) -> HostPath:
+        return _resolve_host_selection(path, self._directories)
+
+
+def resolve_host_selection(path: HostPath) -> HostPath:
+    """Resolve one explicit selection without sharing any observations."""
+    return HostSelectionResolver().resolve(path)
+
+
+def _resolve_host_selection(path: HostPath, directories: set[Path]) -> HostPath:
+    """Resolve an explicitly authorized selection, never an indirect reference.
+
+    Only symbolic links are permitted. Other reparse points, network/device path
+    syntax and special files remain unavailable. The returned spelling grants no
+    read authority: callers must retain a normal no-link Storage observation.
+    """
+    source = Path(path)
+
+    def validate(value: Path) -> None:
+        spelling = os.fspath(value)
+        validate_host_path_spelling(
+            spelling.replace("\\", "/") if os.name == "nt" else spelling
+        )
+        _check_local_drive(value)
+
+    validate(source)
+    current = Path(source.anchor)
+    remaining = deque(source.parts[1:])
+    links = 0
+    while remaining:
+        component = remaining.popleft()
+        if component == "..":
+            current = current.parent
+            continue
+        candidate = current / component
+        if candidate in directories:
+            current = candidate
+            continue
+        metadata = candidate.lstat()
+        if stat.S_ISLNK(metadata.st_mode):
+            links += 1
+            if links > 40:
+                raise UnsafeFilesystemPathError("Symbolic link cycle or too many links")
+            target = candidate.readlink()
+            # Native Windows links can return a local extended-length spelling.
+            raw_target = os.fspath(target)
+            if os.name == "nt" and raw_target.startswith("\\\\?\\"):
+                raw_target = raw_target[4:]
+                if not _DRIVE.match(raw_target.replace("\\", "/")):
+                    raise InvalidHostPathError(
+                        "Network and device paths are not allowed"
+                    )
+                target = Path(raw_target)
+            target = target if target.is_absolute() else current / target
+            validate(target)
+            current = Path(target.anchor)
+            remaining.extendleft(reversed(target.parts[1:]))
+            continue
+        if is_link_or_reparse(metadata):
+            raise UnsafeFilesystemPathError("Unsupported Host reparse point")
+        if not stat.S_ISDIR(metadata.st_mode) and (
+            remaining or not stat.S_ISREG(metadata.st_mode)
+        ):
+            raise UnsafeFilesystemPathError(
+                "Host selection is not a regular file or directory"
+            )
+        current = candidate
+        if stat.S_ISDIR(metadata.st_mode):
+            directories.add(candidate)
+    return HostPath(current)
 
 
 def resolve_local_file_reference(

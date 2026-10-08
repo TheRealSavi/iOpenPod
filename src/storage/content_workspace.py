@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Iterable
     from typing import BinaryIO
 
+    from storage.models import FileFingerprint
     from storage.session import FilesystemSession
 
 
@@ -117,7 +118,14 @@ class ContentWorkspace:
     def capture_device(
         self, session: FilesystemSession, path: DevicePath
     ) -> tuple[bytes | StagedContent, FileContent]:
-        """Capture through Storage; the caller separately pins device preconditions."""
+        """Capture complete Device content within the retained-memory budget."""
+        data, fingerprint = self.capture_device_snapshot(session, path)
+        return data, FileContent.from_fingerprint(fingerprint)
+
+    def capture_device_snapshot(
+        self, session: FilesystemSession, path: DevicePath
+    ) -> tuple[bytes | StagedContent, FileFingerprint]:
+        """Capture bytes and their Device precondition in the same read."""
         destination = self._path()
         copied = session.copy_to_host(
             path, destination, progress=lambda _: self._checkpoint()
@@ -129,8 +137,11 @@ class ContentWorkspace:
             )
             self._budget.retained += len(data)
             Path(destination).unlink()
-            return data, content
-        return StagedContent(destination, content, self._checkpoint), content
+            return data, copied.source_fingerprint
+        return (
+            StagedContent(destination, content, self._checkpoint),
+            copied.source_fingerprint,
+        )
 
     def close(self) -> None:
         self._closed = True

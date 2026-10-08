@@ -18,6 +18,7 @@ import pytest
 from mutagen.id3 import APIC, TIT2, TPE1, PictureType
 from mutagen.wave import WAVE
 from PIL import Image
+from tests.iOpenPod.app.media.test_photo_sync import large_photo_png
 
 from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.host_media_fingerprint import (
@@ -1269,6 +1270,54 @@ def test_completed_scan_lazily_loads_bounded_host_photo_pixels(
     assert image.format_id == 0
     assert (image.width, image.height) == (6, 4)
     assert len(image.rgb888) == 6 * 4 * 3
+
+
+def test_large_host_photo_scans_and_loads_bounded_pixels(tmp_path: Path) -> None:
+    payload = large_photo_png(15360, 8640)
+    (tmp_path / "16k.png").write_bytes(payload)
+    scanner = HostMediaScanner()
+    with pytest.warns(Image.DecompressionBombWarning):
+        pending = scanner.scan(
+            (create_host_media_folder(tmp_path),), checkpoint=lambda: None
+        )
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert library.snapshot.photos is not None
+    assert not library.issues
+    photo = library.snapshot.photos.photos[0]
+    representation = photo.representations[0]
+    assert (representation.width, representation.height) == (15360, 8640)
+    assert library.sources[0].content_sha256 == hashlib.sha256(payload).hexdigest()
+    loader = HostMediaPhotoLoader()
+    loader.replace_library(library)
+
+    with pytest.warns(Image.DecompressionBombWarning):
+        image = loader.load_photo(PhotoRequest(photo.photo_id, target_px=32))
+
+    assert image is not None
+    assert (image.width, image.height) == (32, 18)
+    assert image.rgb888 == b"\xff" * (32 * 18 * 3)
+
+
+def test_host_photo_preview_preserves_exif_orientation(tmp_path: Path) -> None:
+    with Image.new("RGB", (80, 40), (10, 20, 30)) as source:
+        exif = Image.Exif()
+        exif[274] = 6
+        source.save(tmp_path / "portrait.png", exif=exif)
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (create_host_media_folder(tmp_path),), checkpoint=lambda: None
+    )
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert library.snapshot.photos is not None
+    photo = library.snapshot.photos.photos[0]
+    loader = HostMediaPhotoLoader()
+    loader.replace_library(library)
+
+    image = loader.load_photo(PhotoRequest(photo.photo_id, target_px=32))
+
+    assert image is not None
+    assert (image.width, image.height) == (16, 32)
+    assert image.rgb888 == bytes((10, 20, 30)) * (16 * 32)
 
 
 def test_host_track_artwork_prefers_embedded_front_cover_over_folder_art(

@@ -29,6 +29,7 @@ from iOpenPod.app.host_media_fingerprint import (
     FpcalcFingerprinter,
 )
 from iOpenPod.app.host_media_folders import HostMediaFolder, HostMediaType
+from iOpenPod.app.host_media_traversal import walk_linked_folders
 from iOpenPod.app.host_playlists import (
     MAX_PLAYLIST_BYTES,
     PLAYLIST_EXTENSIONS,
@@ -60,13 +61,14 @@ from iPodDB.library import (
     Track,
     TrackMetadata,
 )
+from iPodDB.shared.photo_image import photo_source_size, photo_viewing_image
 from storage import AtomicHostFile, HostPath, StorageError
 from storage.host_directory import (
     HostDirectoryEntry,
     HostEntryKind,
     LocalHostDirectory,
 )
-from storage.host_input import LocalHostFile
+from storage.host_input import HostSelectionResolver, LocalHostFile
 
 if TYPE_CHECKING:
     from pathlib import PurePath
@@ -491,13 +493,12 @@ class HostMediaPhotoLoader:
                 raise HostMediaTreeChangedError(
                     "The Host Photo changed after the Library scan. Run Sync again."
                 )
-            with observed.open_read() as stream, Image.open(stream) as opened:
-                oriented = ImageOps.exif_transpose(opened)
-                oriented.thumbnail(
-                    (request.target_px, request.target_px),
-                    Image.Resampling.LANCZOS,
-                )
-                pixels = oriented.convert("RGB")
+            with (
+                observed.open_read() as stream,
+                photo_viewing_image(
+                    stream, (request.target_px, request.target_px)
+                ) as pixels,
+            ):
                 width, height = pixels.size
                 rgb888 = pixels.tobytes()
         except (OSError, StorageError) as error:
@@ -548,6 +549,7 @@ class _DirectoryCatalog:
     listings: int = 0
     entries: int = 0
     media_files: int = 0
+    file_aliases: dict[str, HostPath] = field(default_factory=dict[str, HostPath])
 
 
 @dataclass(frozen=True, slots=True)
@@ -824,6 +826,9 @@ class HostMediaScanner:
             else "Finding media in the selected folders…",
         )
         checkpoint()
+        folders, files, selection_issues = _resolve_scan_selection(
+            folders, files, checkpoint=checkpoint
+        )
         fingerprinter = self._scan_fingerprinter()
         before, enumeration_issues, before_directories = _enumerate(
             folders,
@@ -839,8 +844,9 @@ class HostMediaScanner:
             cached=cached_artwork,
             checkpoint=checkpoint,
         )
+        file_aliases = before_directories.file_aliases
         del before_directories
-        issues = list(enumeration_issues)
+        issues = [*selection_issues, *enumeration_issues]
         records, inspection_issues, reused, inspected = _inspect_selected_files(
             before,
             cached,
@@ -902,9 +908,26 @@ class HostMediaScanner:
                 )
             )
 
-        scanned_paths = {_path_identity(record.path.path) for record in records}
+        # Fold only aliases proven by this scan's regular-file observations.
+        # Indirect Playlist links still receive no resolution authority. Keep
+        # the original parsed references in the cache for future selections.
+        selected_records = tuple(
+            replace(
+                record,
+                references=tuple(
+                    file_aliases.get(_path_identity(path.path), path)
+                    for path in record.references
+                ),
+            )
+            if isinstance(record, _CachedPlaylistRecord)
+            else record
+            for record in records
+        )
+        scanned_paths = {
+            _path_identity(record.path.path) for record in selected_records
+        }
         external_targets: dict[str, tuple[HostPath, list[HostPath]]] = {}
-        for record in records:
+        for record in selected_records:
             checkpoint()
             if not isinstance(record, _CachedPlaylistRecord):
                 continue
@@ -942,7 +965,7 @@ class HostMediaScanner:
         merged_artwork.update(after_artwork)
         self._store_cache(merged_cache.values(), merged_artwork.values())
         return PendingHostMediaScan(
-            records=tuple(records),
+            records=selected_records,
             external_references=tuple(external),
             issues=tuple(issues),
             cache=HostMediaCacheStats(reused, inspected),
@@ -1170,6 +1193,14 @@ class HostMediaScanner:
             HostMediaCacheStats(reused, inspected),
         )
         result = replace(result, approved_external_files=tuple(approved_external_files))
+        for issue in result.issues[:50]:
+            logger.info(
+                "Host Media Scan issue: path=%s detail=%s", issue.path, issue.detail
+            )
+        if len(result.issues) > 50:
+            logger.info(
+                "Host Media Scan: %d further issues omitted", len(result.issues) - 50
+            )
         self._store_cache(cached.values(), pending.folder_artwork)
         _emit(
             progress,
@@ -1398,6 +1429,68 @@ def _scan_issue(
     return HostMediaScanIssue(path, detail)
 
 
+def _resolve_scan_selection(
+    folders: tuple[HostMediaFolder, ...],
+    files: tuple[HostPath, ...],
+    *,
+    checkpoint: CancellationCheck,
+) -> tuple[
+    tuple[HostMediaFolder, ...], tuple[HostPath, ...], tuple[HostMediaScanIssue, ...]
+]:
+    """Resolve user selections once; later passes never re-follow their aliases."""
+    resolved: dict[str, HostPath | None] = {}
+    resolver = HostSelectionResolver()
+    issues: list[HostMediaScanIssue] = []
+
+    def resolve(path: HostPath) -> HostPath | None:
+        checkpoint()
+        identity = _path_identity(path.path)
+        if identity not in resolved:
+            try:
+                resolved[identity] = resolver.resolve(path)
+            except (OSError, StorageError) as error:
+                resolved[identity] = None
+                issues.append(
+                    HostMediaScanIssue(
+                        path,
+                        source_text(
+                            "The selected path could not be resolved: {error}",
+                            error=str(error),
+                        ),
+                    )
+                )
+        return resolved[identity]
+
+    selected_folders = tuple(
+        replace(folder, path=path)
+        for folder in folders
+        if folder.media_types and (path := resolve(folder.path)) is not None
+    )
+    selected_files: dict[HostPath, None] = {}
+    for original in files:
+        resolved_file = resolve(original)
+        if resolved_file is not None:
+            selected_files[resolved_file] = None
+    return selected_folders, tuple(selected_files), tuple(issues)
+
+
+def _deduplicate_files(
+    observations: dict[str, _Observation], directories: _DirectoryCatalog
+) -> None:
+    """Use existing stat identities, never additional samefile/stat probes."""
+    physical: dict[tuple[int, int], _Observation] = {}
+    for path in sorted(observations):
+        observation = observations[path]
+        file = observation.file
+        if file is None or not file.inode:
+            continue
+        identity = (file.device, file.inode)
+        previous = physical.setdefault(identity, observation)
+        if previous is not observation:
+            directories.file_aliases[path] = previous.path
+            del observations[path]
+
+
 def _enumerate(
     folders: tuple[HostMediaFolder, ...],
     *,
@@ -1448,7 +1541,40 @@ def _enumerate(
         selected_folders,
         key=lambda item: (len(item.path.path.parts), _path_identity(item.path.path)),
     )
-    if max_workers > 1:
+    linked = any(folder.follow_symlinks for folder in selected_folders)
+    if linked:
+
+        def linked_progress(path: HostPath, listings: int, files: int) -> None:
+            directories.listings = listings
+            directories.media_files = files
+            publish(path)
+
+        traversal = walk_linked_folders(
+            tuple(ordered_folders),
+            explicit_paths,
+            selected=lambda path, kinds: _classify(path, kinds) is not None,
+            cover=_is_folder_cover,
+            checkpoint=checkpoint,
+            progress=linked_progress,
+            max_workers=max_workers,
+        )
+        directories.listings = traversal.listings
+        directories.entries = traversal.entries
+        directories.artwork_entries.update(traversal.artwork)
+        issues.extend(
+            HostMediaScanIssue(path, detail) for path, detail in traversal.issues
+        )
+        for entry in traversal.files:
+            kind = _classify(entry.path.path)
+            if kind is not None:
+                observations[_path_identity(entry.path.path)] = _Observation(
+                    entry.path,
+                    kind,
+                    entry.size_bytes,
+                    entry.modified_ns,
+                    file=entry.file,
+                )
+    elif max_workers > 1:
         _walk_folders_parallel(
             tuple(ordered_folders),
             explicit_paths,
@@ -1459,7 +1585,7 @@ def _enumerate(
             progress=publish,
             max_workers=max_workers,
         )
-    for folder in ordered_folders if max_workers == 1 else ():
+    for folder in ordered_folders if max_workers == 1 and not linked else ():
         checkpoint()
         identity = _path_identity(folder.path.path)
         if identity in directories.artwork_entries:
@@ -1518,6 +1644,7 @@ def _enumerate(
         )
         directories.media_files += 1
         publish(path)
+    _deduplicate_files(observations, directories)
     directories.media_files = len(observations)
     publish(current_path, force=True)
     logger.info(
@@ -1784,6 +1911,16 @@ def _walk_folder(
                     checkpoint=checkpoint,
                     progress=progress,
                 )
+            continue
+        if entry.kind is HostEntryKind.LINK_OR_REPARSE_POINT:
+            issues.append(
+                HostMediaScanIssue(
+                    entry.path,
+                    source_text(
+                        "Symbolic link skipped because Follow symbolic links is disabled."
+                    ),
+                )
+            )
             continue
         if entry.kind is not HostEntryKind.FILE:
             continue
@@ -2519,8 +2656,7 @@ def _inspect_photo(
             checkpoint()
             digest.update(chunk)
         source.seek(0)
-        with Image.open(source) as image:
-            width, height = image.size
+        width, height = photo_source_size(source)
     return _CachedPhotoRecord(
         path=observation.path,
         kind=observation.kind,

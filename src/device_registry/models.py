@@ -105,6 +105,8 @@ class ArtworkUsage(StrEnum):
 
     COVER = "cover"
     PHOTO = "photo"
+    # Small grid/list renditions may crop; other Photo renditions preserve the image.
+    PHOTO_THUMBNAIL = "photo_thumbnail"
     TV_OUTPUT = "tv_output"
 
 

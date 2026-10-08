@@ -1,5 +1,7 @@
 """Photo Sync preserves originals and publishes verified, independent viewing copies."""
 
+import struct
+import zlib
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
@@ -45,6 +47,91 @@ FORMATS = (
 )
 
 
+def large_photo_png(width: int, height: int) -> bytes:
+    """Encode a large 1-bit raster without allocating its full decoded image."""
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload))
+        )
+
+    compressor = zlib.compressobj()
+    row = b"\x00" + b"\xff" * ((width + 7) // 8)
+    payload = b"".join(compressor.compress(row) for _ in range(height))
+    payload += compressor.flush()
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 1, 0, 0, 0, 0))
+        + chunk(b"IDAT", payload)
+        + chunk(b"IEND", b"")
+    )
+
+
+@pytest.mark.parametrize("size", [(6016, 6016), (15360, 8640), (32768, 512)])
+def test_large_photos_prepare_and_verify_without_rejecting_source_dimensions(
+    size: tuple[int, int],
+) -> None:
+    data = large_photo_png(*size)
+    asset = prepare_sync_photo(
+        data,
+        photo_id=101,
+        original_relative_path="Photos/Full Resolution/iOpenPod/large.png",
+        thumbnail_shard=1,
+        formats=FORMATS,
+    )
+    assert asset.files[0].data == data
+    assert (
+        asset.photo.representations[0].width,
+        asset.photo.representations[0].height,
+    ) == size
+    source = library()
+    plan = source.analyze(
+        source.begin_draft(
+            replace(source.snapshot, photos=photo_library_with_asset(None, asset))
+        ),
+        WriteTarget(photo_formats=FORMATS, photos_root_value=6),
+    )
+    result = source.prepare(plan, WriteResources(photos=(asset,)))
+    assert result.prepared is not None, result.issues
+
+
+def test_photo_preparation_keeps_pillows_own_pixel_limit() -> None:
+    pixel_limit = Image.MAX_IMAGE_PIXELS
+    with pytest.raises(ValueError, match="could not be decoded"):
+        prepare_sync_photo(
+            large_photo_png(16384, 16384),
+            photo_id=101,
+            original_relative_path="Photos/Full Resolution/iOpenPod/large.png",
+            thumbnail_shard=1,
+            formats=FORMATS,
+        )
+    assert pixel_limit == Image.MAX_IMAGE_PIXELS
+
+
+def test_reduced_panorama_keeps_enough_detail_for_cropped_thumbnails() -> None:
+    with Image.new("RGB", (4096, 64), "red") as image:
+        image.paste("blue", (0, 32, 4096, 64))
+        output = BytesIO()
+        image.save(output, format="PNG")
+    asset = prepare_sync_photo(
+        output.getvalue(),
+        photo_id=101,
+        original_relative_path="Photos/Full Resolution/iOpenPod/panorama.png",
+        thumbnail_shard=1,
+        formats=FORMATS,
+        crop_format_ids=(1024,),
+    )
+    read = select_photo_thumbnail(asset.photo, FORMATS, 8, format_id=1024)
+    assert read is not None
+    assert isinstance(asset.files[1].data, bytes)
+    pixels = read.decode(asset.files[1].data)
+    assert pixels.rgb888[0] > 200 and pixels.rgb888[2] < 50
+    assert pixels.rgb888[-3] < 50 and pixels.rgb888[-1] > 200
+
+
 def _image() -> bytes:
     image = Image.new("RGB", (20, 40), "red")
     image.paste(Image.new("RGB", (20, 20), "blue"), (0, 20))
@@ -71,6 +158,7 @@ def _asset(
         thumbnail_shard=shard,
         formats=FORMATS,
         fit_thumbnails=fit,
+        crop_format_ids=(1024,),
         rotate_tall_photos=rotate,
     )
 

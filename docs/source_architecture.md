@@ -582,11 +582,20 @@ terminal transaction namespace after verifying either the selected target or the
 Host safety snapshot. Rolling an interrupted publication forward is not implemented.
 See ADR-0029, ADR-0039, and ADR-0093.
 
-The application now captures artwork inventories/prefixes and removed-media
-dependencies, and privately binds their Storage Transaction to the exact issued
-Library Review. It publishes thumbnail files, ArtworkDB, PhotosDB, iTunesDB, then obsolete
-media removals. Shared media remains; newly pending positional sidecars block
-structural changes. Review file descriptions are read-only information. See ADR-0030.
+Library preparation and Storage each validate at their workflow boundaries rather
+than repeating the same scan across adjacent layers. Capturing a Device file also
+returns its source fingerprint. A committed transaction returns its final verified
+observations without an additional recovery inspection; independent restoration
+continues to recheck complete content. Sync execution scopes media validation to
+selected changes and explicit associations. See ADR-0129.
+
+The application captures artwork inventories/prefixes and privately binds the
+Storage Transaction to the exact issued Library Review. It publishes thumbnail
+files, ArtworkDB, PhotosDB, and iTunesDB. For ordinary Remove from Library actions,
+Storage permanently deletes obsolete Track media only after the verified transaction
+and recovery cleanup. Sync and other removal workflows retain transaction recovery.
+Shared media remains; newly pending positional sidecars block structural changes.
+Review file descriptions are read-only information. See ADR-0030 and ADR-0128.
 Incoming-media transaction composition and general Sync remain unfinished. iOpenPod must
 not reproduce these transactions with raw filesystem mutations outside Storage.
 
@@ -989,12 +998,21 @@ request and publish tag edits with the Library transaction. Metadata-only edits
 preserve embedded covers; clearing artwork also removes its file-tag copy.
 
 During cover preparation, iPodDB automatically reconciles conflicting MHIF image
-sizes only when the target's fixed-size encoding, every retained MHNI representation
-of that format, and captured thumbnail ranges agree. This changes only the affected
-size fields, preserves retained image bytes, and uses the existing Storage
+sizes when the fixed-size encoding, individually validated retained MHNI
+representations, and captured thumbnail ranges establish a supported layout.
+F1061 permits its known 55-row and 56-row rasters to coexist. New artwork follows
+a retained MHIF size present among those rasters, otherwise the most common size
+with the Device Profile breaking ties. Packed RGB formats with an explicit row
+stride may have visible dimensions smaller than the validated raster without
+requiring full or exactly centered content; new images still fill the selected
+output layout. Other codecs retain their existing geometry rules. Preparation
+corrects only the affected MHIF size fields, preserves retained image bytes and
+locations, and uses the existing Storage
 Transaction without a separate confirmation. Reads and unrelated edits remain
-lossless; ambiguous conflicts still block preparation. See
-[ADR-0111](adr/0111-correct-evidenced-artwork-format-sizes-during-preparation.md).
+lossless; unverifiable layouts still block preparation. See
+[ADR-0111](adr/0111-correct-evidenced-artwork-format-sizes-during-preparation.md),
+[ADR-0124](adr/0124-accept-validated-mixed-f1061-layouts.md), and
+[ADR-0131](adr/0131-accept-bounded-visible-dimensions-in-packed-artwork.md).
 
 #### `ArtworkDB/Writer`
 
@@ -1129,7 +1147,7 @@ without making cloud-backed folders fail on ordinary source churn. The cache is 
 source authority. See ADR-0082.
 
 Within each enumeration pass, folder-artwork discovery reuses Storage's directory
-entry observations from media discovery. Only plausible cover entries are retained;
+entry observations from media discovery. Artwork lookup retains only plausible cover entries;
 an empty listing is also reusable. The final pass always obtains fresh observations.
 Explicit file selections without a folder listing retain their separate artwork
 lookup. Scan logs report enumeration, artwork, and inspection timings and cache use
@@ -1137,6 +1155,14 @@ to distinguish slow filesystem metadata from repeated media reads. See
 [Host Media Scan performance](research/host-media-scan-performance.md).
 
 Directory traversal uses at most four workers with bounded pending work.
+Explicitly selected Host paths resolve through symbolic links once at scan setup.
+Each folder also offers Follow symbolic links, disabled by default. Opt-in graph
+traversal carries each selection's media types, recursion, and link permission
+together, reuses filtered listings when scopes overlap, and detects cycles using
+observed directory identities. Canonical target paths and regular-file identities
+prevent duplicate media inspection. Indirect Playlist links, unsupported reparse
+points, and Device Path links retain their restrictions. Scan issues remain visible
+beside Select Media and Review. See ADR-0132.
 Overlapping folder selections share one listing
 per directory per pass, with the union of the media types and recursion settings
 that apply at that path. Explicit files reuse an existing observation when possible.
@@ -1163,7 +1189,11 @@ Optional acoustic analysis does not gate explicit incoming Adds. Previously prov
 Sync paths match before missing acoustic evidence is classified. Helper v5 permits
 an empty fingerprint only alongside committed Sync Details and continues reading
 v1 through v4. Converted Photos retain separate Host and iPod content digests; oversized
-image containers are streamed into bounded PNG stills (ADR-0086).
+image containers are streamed into bounded PNG stills (ADR-0086). Photo originals
+use Pillow's own pixel limits, while generated thumbnails retain their device-format
+bounds. Path-free decoding reduces working images before orientation and RGB copies;
+full-resolution preview shares publication's 64 MiB encoded-size bound. Sources
+whose dimensions cannot fit PhotosDB use the same bounded PNG conversion (ADR-0130).
 FFmpeg/FFprobe preflight applies only to incoming Tracks; fpcalc is a matching
 aid. Storage's explicit best-effort Host enumeration retains independent readable
 entries while checking directory identity. Inspection progress follows completion

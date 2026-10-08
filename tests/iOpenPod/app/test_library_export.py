@@ -24,7 +24,7 @@ from iPodDB.library import (
     PhotoRepresentationKind,
     Track,
 )
-from storage import CopyResult, HostPath
+from storage import CopyResult, FileFingerprint, HostPath
 
 
 class _Source:
@@ -47,7 +47,12 @@ class _Source:
         if prepare_staged is not None:
             prepare_staged(destination)
         self.copied.append((track.track_id, path))
-        return CopyResult(path.stat().st_size, str(track.track_id).zfill(64))
+        content_hash = str(track.track_id).zfill(64)
+        return CopyResult(
+            path.stat().st_size,
+            content_hash,
+            FileFingerprint(path.stat().st_size, 0, 0, 0, content_hash),
+        )
 
     def artwork_for_track(self, track: Track) -> None:
         del track
@@ -235,7 +240,12 @@ class _PhotoSource:
         path = Path(os.fspath(destination))
         shutil.copyfile(reference, path)
         self.copied.append((photo.photo_id, path))
-        return CopyResult(path.stat().st_size, str(photo.photo_id).zfill(64))
+        content_hash = str(photo.photo_id).zfill(64)
+        return CopyResult(
+            path.stat().st_size,
+            content_hash,
+            FileFingerprint(path.stat().st_size, 0, 0, 0, content_hash),
+        )
 
     def image_for_photo_export(
         self,

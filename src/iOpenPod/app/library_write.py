@@ -60,6 +60,7 @@ class LibraryPreparationRequest:
     rockbox_metadata: bool = field(default=False, kw_only=True)
     photos: tuple[PreparedPhoto, ...] = field(default=(), kw_only=True)
     replace_photos: tuple[int, ...] = field(default=(), kw_only=True)
+    discard_removed_track_media: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,9 +108,9 @@ class LibraryFileChange:
     """Reviewable file effects; these descriptions confer no save authority."""
 
     path: str
-    action: Literal["write", "remove"]
+    action: Literal["write", "remove", "delete"]
     size_bytes: int
-    sha256: str
+    sha256: str | None
 
 
 @dataclass(frozen=True, slots=True)

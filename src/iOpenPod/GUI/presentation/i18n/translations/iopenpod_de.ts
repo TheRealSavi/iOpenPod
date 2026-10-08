@@ -1465,6 +1465,21 @@
     </message>
 </context>
 <context>
+    <name>HostScanIssues</name>
+    <message>
+        <source>Scan issues: {count}. Some media may be unavailable.</source>
+        <translation>Scan-Probleme: {count}. Einige Medien sind möglicherweise nicht verfügbar.</translation>
+    </message>
+    <message>
+        <source>Show details</source>
+        <translation>Details anzeigen</translation>
+    </message>
+    <message>
+        <source>Showing the first 50 scan issues.</source>
+        <translation>Die ersten 50 Scan-Probleme werden angezeigt.</translation>
+    </message>
+</context>
+<context>
     <name>I18nManager</name>
     <message>
         <source>System default</source>
@@ -6466,8 +6481,12 @@ Playlists: %3</translation>
         <translation>Vorschaubilder einpassen</translation>
     </message>
     <message>
+        <source>Fit the entire Photo inside small grid and list thumbnails, adding padding as needed. Off crops only those thumbnails to fill. All other Photo viewing copies always fit the entire image with padding.</source>
+        <translation>Das gesamte Foto in kleine Vorschaubilder der Raster- und Listenansicht einpassen, bei Bedarf mit Rändern. Bei deaktivierter Option werden nur diese Vorschaubilder zugeschnitten, um sie auszufüllen. Alle anderen Fotoansichten zeigen immer das gesamte Bild mit Rändern.</translation>
+    </message>
+    <message>
         <source>Fit the entire Photo inside device thumbnails, leaving borders as needed. Off crops Photos to fill each thumbnail.</source>
-        <translation>Das gesamte Foto in die Vorschaubilder des Geräts einpassen, bei Bedarf mit Rändern. Bei deaktivierter Option werden Fotos zugeschnitten, um jedes Vorschaubild auszufüllen.</translation>
+        <translation type="vanished">Das gesamte Foto in die Vorschaubilder des Geräts einpassen, bei Bedarf mit Rändern. Bei deaktivierter Option werden Fotos zugeschnitten, um jedes Vorschaubild auszufüllen.</translation>
     </message>
     <message>
         <source>Rockbox Metadata Support</source>
@@ -9431,6 +9450,10 @@ Playlists: %3</translation>
         <translation>Stellen Sie geprüfte eingebettete Liedtexte und die daraus resultierende Mediendateikennung bereit.</translation>
     </message>
     <message>
+        <source>Symbolic link skipped because Follow symbolic links is disabled.</source>
+        <translation>Symbolischer Link übersprungen, da „Symbolischen Links folgen“ deaktiviert ist.</translation>
+    </message>
+    <message>
         <source>Sync checked tracks only</source>
         <translation>Nur markierte Titel synchronisieren</translation>
     </message>
@@ -9895,6 +9918,10 @@ Playlists: %3</translation>
         <translation>Die ausgewählten Medien haben sich während der Wiedergabelistenprüfung geändert. Die ursprüngliche Suche bleibt verfügbar. Vor dem Schreiben auf den iPod prüft die Synchronisierung die Quelldateien erneut.</translation>
     </message>
     <message>
+        <source>The selected path could not be resolved: {error}</source>
+        <translation>Der ausgewählte Pfad konnte nicht aufgelöst werden: {error}</translation>
+    </message>
+    <message>
         <source>The selection contains a missing or repeated Photo.</source>
         <translation>Die Auswahl enthält ein fehlendes oder mehrfach ausgewähltes Foto.</translation>
     </message>
@@ -9909,6 +9936,10 @@ Playlists: %3</translation>
     <message>
         <source>The source database is signed; supply its supported signature target before editing.</source>
         <translation>Die Quelldatenbank ist signiert. Geben Sie vor der Bearbeitung das unterstützte Signaturziel an.</translation>
+    </message>
+    <message>
+        <source>The symbolic link could not be followed: {error}</source>
+        <translation>Dem symbolischen Link konnte nicht gefolgt werden: {error}</translation>
     </message>
     <message>
         <source>Unknown source</source>
@@ -10513,6 +10544,10 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     <message>
         <source>Recurse into subfolders</source>
         <translation>Unterordner durchsuchen</translation>
+    </message>
+    <message>
+        <source>Follow symbolic links</source>
+        <translation>Symbolischen Links folgen</translation>
     </message>
     <message>
         <source>Scan for</source>

@@ -146,6 +146,206 @@ def _assert_original(session: FilesystemSession) -> None:
     assert session.read(DevicePath("retained.bin")) == b"retained"
 
 
+@pytest.mark.parametrize("external_recovery", [False, True])
+def test_successful_transaction_reuses_verified_files_after_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    external_recovery: bool,
+) -> None:
+    root, _, session = _session(tmp_path)
+    plan = (
+        _external_plan(tmp_path, session)[0]
+        if external_recovery
+        else _plan(root, session)
+    )
+    committed = False
+    post_commit_reads: list[Path] = []
+    fingerprint_path = session._fingerprint_path  # pyright: ignore[reportPrivateUsage]
+    fingerprint = session.fingerprint
+
+    def observe(event: TransactionProgress) -> None:
+        nonlocal committed
+        committed = event.state is TransactionState.COMMITTED
+
+    def count_private(path: Path) -> FileFingerprint:
+        if committed:
+            post_commit_reads.append(path)
+        return fingerprint_path(path)
+
+    def count_public(path: DevicePath) -> FileFingerprint:
+        if committed:
+            post_commit_reads.append(root / str(path))
+        return fingerprint(path)
+
+    monkeypatch.setattr(session, "_fingerprint_path", count_private)
+    monkeypatch.setattr(session, "fingerprint", count_public)
+    result = session.execute_transaction(plan, progress=observe)
+
+    assert post_commit_reads == []
+    # Independent recovery inspection remains a full read and produces the same
+    # authority as the final verification performed during execution.
+    assert session.inspect_transaction(result.recovery.journal_path) == result.recovery
+
+
+def test_move_checks_each_original_once_before_rename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _, session = _session(tmp_path)
+    source = DevicePath("source.bin")
+    destination = DevicePath("destination.bin")
+    source_fingerprint = session.atomic_write(source, b"source").fingerprint
+    destination_fingerprint = session.atomic_write(
+        destination, b"destination"
+    ).fingerprint
+    fingerprint_path = session._fingerprint_path  # pyright: ignore[reportPrivateUsage]
+    reads: list[Path] = []
+
+    def count(path: Path) -> FileFingerprint:
+        reads.append(path)
+        return fingerprint_path(path)
+
+    monkeypatch.setattr(session, "_fingerprint_path", count)
+    session.move(
+        source,
+        destination,
+        expected_source=source_fingerprint,
+        expected_destination=destination_fingerprint,
+    )
+
+    assert reads == [
+        root / str(source),
+        root / str(destination),
+        root / str(destination),
+    ]
+
+
+@pytest.mark.parametrize("external_recovery", [False, True])
+def test_replacement_validation_reads_scale_with_the_number_of_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    external_recovery: bool,
+) -> None:
+    root, _, session = _session(tmp_path)
+    writes: list[TransactionWrite] = []
+    originals: list[TransactionRecoveryFile] = []
+    for index in range(4):
+        path = DevicePath(f"media-{index}.bin")
+        previous = session.atomic_write(path, b"original").fingerprint
+        original = tmp_path / f"original-{index}.bin"
+        original.write_bytes(b"original")
+        desired = tmp_path / f"desired-{index}.bin"
+        desired.write_bytes(b"replacement")
+        writes.append(
+            TransactionWrite(
+                path, HostPath(desired), _content(b"replacement"), previous
+            )
+        )
+        originals.append(_recovery_file(path, original, previous))
+    plan = StorageTransaction(
+        tuple(writes),
+        recovery_material=(
+            TransactionRecoveryMaterial("originals", tuple(originals))
+            if external_recovery
+            else None
+        ),
+    )
+    fingerprint_path = session._fingerprint_path  # pyright: ignore[reportPrivateUsage]
+    fingerprint = session.fingerprint
+    reads: list[DevicePath] = []
+    targets = {write.path for write in writes}
+
+    def count_private(path: Path) -> FileFingerprint:
+        relative = DevicePath(path.relative_to(root).as_posix())
+        if relative in targets:
+            reads.append(relative)
+        return fingerprint_path(path)
+
+    def count_public(path: DevicePath) -> FileFingerprint:
+        if path in targets:
+            reads.append(path)
+        return fingerprint(path)
+
+    monkeypatch.setattr(session, "_fingerprint_path", count_private)
+    monkeypatch.setattr(session, "fingerprint", count_public)
+    session.execute_transaction(plan)
+
+    maximum_reads = 6 if external_recovery else 5
+    assert len(reads) <= maximum_reads * len(writes)
+    assert all(reads.count(write.path) <= maximum_reads for write in writes)
+
+
+def test_add_without_removals_has_one_final_output_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _, session = _session(tmp_path)
+    path = DevicePath("media.bin")
+    plan = StorageTransaction((TransactionWrite(path, b"media", _content(b"media")),))
+    fingerprint = session.fingerprint
+    reads: list[DevicePath] = []
+
+    def count(target: DevicePath) -> FileFingerprint:
+        if target == path:
+            reads.append(target)
+        return fingerprint(target)
+
+    monkeypatch.setattr(session, "fingerprint", count)
+    session.execute_transaction(plan)
+    assert reads == [path]
+
+
+@pytest.mark.parametrize("replacing", [False, True])
+def test_write_without_removals_still_verifies_content_before_commit(
+    tmp_path: Path,
+    replacing: bool,
+) -> None:
+    root, _, session = _session(tmp_path)
+    path = DevicePath("media.bin")
+    expected = (
+        session.atomic_write(path, b"original").fingerprint if replacing else None
+    )
+    plan = StorageTransaction(
+        (TransactionWrite(path, b"media", _content(b"media"), expected),)
+    )
+
+    def corrupt(event: TransactionProgress) -> None:
+        if event.state is TransactionState.PUBLISHING and event.completed == 1:
+            (root / str(path)).write_bytes(b"wrong")
+
+    with pytest.raises(RecoverableWriteError, match="did not verify"):
+        session.execute_transaction(plan, progress=corrupt)
+
+
+@pytest.mark.parametrize("external_recovery", [False, True])
+def test_reused_commit_observation_cannot_restore_over_a_later_edit(
+    tmp_path: Path,
+    external_recovery: bool,
+) -> None:
+    root, _, session = _session(tmp_path)
+    plan = (
+        _external_plan(tmp_path, session)[0]
+        if external_recovery
+        else _plan(root, session)
+    )
+
+    def edit_after_commit(event: TransactionProgress) -> None:
+        if event.state is TransactionState.COMMITTED:
+            target = root / "database.bin"
+            metadata = target.stat()
+            target.write_bytes(b"bad database")
+            # Hash validation must still reject a same-size edit even on a
+            # coarse-timestamp filesystem or after the modification time is reset.
+            os.utime(target, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+
+    result = session.execute_transaction(plan, progress=edit_after_commit)
+    with pytest.raises(FilePreconditionError, match="changed"):
+        session.restore_transaction(
+            result.recovery, recovery_material=plan.recovery_material
+        )
+    assert session.read(DevicePath("database.bin")) == b"bad database"
+
+
 def test_transaction_publishes_in_order_and_restores_all_originals(
     tmp_path: Path,
 ) -> None:

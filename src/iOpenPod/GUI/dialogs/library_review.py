@@ -193,6 +193,8 @@ class LibraryReviewDialog(QDialog):
                     self.tr("Write")
                     if file_change.action == "write"
                     else self.tr("Move to recovery")
+                    if file_change.action == "remove"
+                    else self.tr("Delete permanently")
                 )
                 item = QTreeWidgetItem(files, (action, file_change.path))
                 item.setData(0, Qt.ItemDataRole.UserRole, file_change)
@@ -284,7 +286,10 @@ class LibraryReviewDialog(QDialog):
 
         elif isinstance(value, LibraryFileChange):
             size = self.tr("%1 bytes").replace("%1", f"{value.size_bytes:,}")
-            self._details.setPlainText(f"{value.path}\n{size}\nSHA-256: {value.sha256}")
+            details = f"{value.path}\n{size}"
+            if value.sha256 is not None:
+                details += f"\nSHA-256: {value.sha256}"
+            self._details.setPlainText(details)
         elif isinstance(value, LibraryChange):
             request, review = self._controller.request, self._controller.review
             self._details.setPlainText(

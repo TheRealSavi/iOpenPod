@@ -187,3 +187,63 @@ def test_mixed_f1061_full_shard_requires_only_captured_inventory() -> None:
     assert [f.relative_path for f in result.prepared.artwork_files] == [
         "iPod_Control/Artwork/F1061_2.ithmb"
     ]
+
+
+def test_mixed_f1061_visible_widths_accept_new_artwork() -> None:
+    source, target, resources = mixed_source(6272, allocation=6272)
+    original = source.serialize()
+    assert original.artwork is not None
+    document = parse_ArtworkDB(original.artwork)
+    selection = document.find_chunks(MhiiHeader)[1]
+    row = selection.chunk
+    container = row.children[0]
+    assert isinstance(container.payload, MhodContainerPayload)
+    location = container.payload.child
+    location = replace(
+        location,
+        header=replace(
+            location.header, image_width=55, image_height=56, image_size=6272
+        ),
+    )
+    retained = replace(
+        row,
+        children=(
+            replace(container, payload=replace(container.payload, child=location)),
+            *row.children[1:],
+        ),
+    )
+    document = document.replace_chunk(selection, retained)
+    artwork = write_ArtworkDB(document)
+    retained = parse_ArtworkDB(artwork).find_chunks(MhiiHeader)[1].chunk
+    source = IPodLibrary(original.itunes).with_artwork(artwork)
+    read = source.artwork_read(
+        source.snapshot.tracks[1].artwork_id, target.cover_formats, 56
+    )
+    assert read is not None
+    decoded = read.decode(
+        read_content(resources.files[0].data, read.offset, read.length)
+    )
+    assert (decoded.width, decoded.height) == (55, 56)
+
+    result = prepare_cover(source, target, resources)
+
+    assert result.prepared is not None, [i.message for i in result.issues]
+    assert result.prepared.artwork is not None
+    output = result.prepared.artwork_files[0]
+    assert (
+        read_content(output.data, 0, len(resources.files[0].data))
+        == resources.files[0].data
+    )
+    updated = IPodLibrary(result.prepared.itunes).with_artwork(result.prepared.artwork)
+    assert retained in [
+        s.chunk
+        for s in parse_ArtworkDB(result.prepared.artwork).find_chunks(MhiiHeader)
+    ]
+    new_read = updated.artwork_read(
+        updated.snapshot.tracks[0].artwork_id, target.cover_formats, 56
+    )
+    assert new_read is not None and new_read.length == 6272
+    pixels = new_read.decode(
+        read_content(output.data, new_read.offset, new_read.length)
+    )
+    assert (pixels.width, pixels.height) == (56, 56)

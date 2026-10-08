@@ -22,6 +22,7 @@ import pytest
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
 from PIL import Image
+from tests.iOpenPod.app.media.test_photo_sync import large_photo_png
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
 from tests.iOpenPod.app.test_media_lyrics import WORDS
@@ -30,12 +31,14 @@ from tests.iOpenPod.app.test_music_import import FIXTURES
 from iOpenPod.app import sync_execution
 from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.export_tagging import ExportMediaTagger
+from iOpenPod.app.host_media_folders import create_host_media_folder
 from iOpenPod.app.host_media_library import (
     HostArtworkKind,
     HostMediaArtworkSource,
     HostMediaCacheStats,
     HostMediaFileKind,
     HostMediaLibrary,
+    HostMediaScanner,
     HostMediaSource,
     _build_library,  # pyright: ignore[reportPrivateUsage]
     _CachedPlaylistRecord,  # pyright: ignore[reportPrivateUsage]
@@ -104,6 +107,7 @@ from iPodDB.library import (
     prepared_audio,
 )
 from storage import (
+    DeviceEntry,
     DevicePath,
     FilesystemSession,
     FlushResult,
@@ -175,15 +179,21 @@ def _photo_host(tmp_path: Path) -> HostMediaLibrary:
 
 
 @pytest.mark.parametrize("budget", [10, 2 * 1024 * 1024 * 1024])
+@pytest.mark.parametrize("fit_thumbnails", [False, True])
 def test_photo_creates_verified_library_files_and_sync_provenance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     budget: int,
+    fit_thumbnails: bool,
 ) -> None:
     monkeypatch.setattr(sync_execution, "_PHOTO_MEMORY_BUDGET", budget)
     device = build_device(tmp_path)
     try:
         request = _request(device, _photo_host(tmp_path))
+        request = replace(
+            request,
+            options=replace(request.options, fit_thumbnails=fit_thumbnails),
+        )
         result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
             request, lambda _: None, Event()
         )
@@ -199,6 +209,23 @@ def test_photo_creates_verified_library_files_and_sync_provenance(
             (device.root / representation.relative_path).exists()
             for representation in added.representations
         )
+        saved = IPodLibrary(
+            (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
+        ).with_photos((device.root / "Photos/Photo Database").read_bytes())
+        assert saved.snapshot.photos is not None
+        representations = {
+            representation.format_id: representation
+            for representation in saved.snapshot.photos.photos[0].representations
+        }
+        for format_id in (1024, 1067):
+            assert representations[format_id].horizontal_padding > 0
+            assert representations[format_id].vertical_padding == 0
+        thumbnail = representations[1066]
+        if fit_thumbnails:
+            assert thumbnail.horizontal_padding > 0
+        else:
+            assert thumbnail.horizontal_padding == 0
+        assert thumbnail.vertical_padding == 0
         assert result.helper is not None and len(result.helper.images) == 1
         assert result.helper.images[0].sync is not None
         assert result.helper.images[0].sync.host_path_hint == str(
@@ -297,6 +324,67 @@ def test_large_animated_photo_converts_and_matches_again_after_reload(
                 item for item in changed_plan.items if item.host_path == str(path)
             ).action
             is SyncPlanAction.ATTENTION
+        )
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize(
+    ("source_size", "stored_size", "converted"),
+    [((6016, 6016), (6016, 6016), False), ((65536, 8), (4096, 1), True)],
+)
+def test_large_photo_sync_preserves_host_original_and_matches_again_after_reload(
+    tmp_path: Path,
+    source_size: tuple[int, int],
+    stored_size: tuple[int, int],
+    converted: bool,
+) -> None:
+    source_directory = tmp_path / "source"
+    source_directory.mkdir()
+    path = source_directory / "large.png"
+    original = large_photo_png(*source_size)
+    path.write_bytes(original)
+    digest = hashlib.sha256(original).hexdigest()
+    facts = LocalHostFile.observe(HostPath(path))
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (create_host_media_folder(source_directory),), checkpoint=lambda: None
+    )
+    host = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert not host.issues
+    device = build_device(tmp_path)
+    try:
+        result = _Executor(device.coordinator, transcoder=_MissingTools()).execute(
+            _request(device, host), lambda _: None, Event()
+        )
+
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None and result.active.library.photos is not None
+        assert len(result.active.library.photos.photos) == 1
+        assert result.helper is not None and len(result.helper.images) == 1
+        synced = result.helper.images[0]
+        assert synced.sync is not None
+        assert synced.sync.was_transcoded is converted
+        assert synced.sync.host_content_sha256 == digest
+        stored = (device.root / str(synced.path)).read_bytes()
+        assert synced.content_sha256 == hashlib.sha256(stored).hexdigest()
+        assert (stored != original) is converted
+        with Image.open(io.BytesIO(stored)) as image:
+            assert image.size == stored_size
+        assert path.read_bytes() == original
+        assert path.stat().st_mtime_ns == facts.modified_ns
+        assert (
+            any(issue.code == "sync.photo_converted" for issue in result.issues)
+            is converted
+        )
+
+        reloaded = device.coordinator.scan_ipod_media(
+            result.active, lambda _: None, Event()
+        )
+        plan = prepare_sync_plan(host, reloaded, result.active.library)
+        assert (
+            next(item for item in plan.items if item.host_path == str(path)).action
+            is SyncPlanAction.UNCHANGED
         )
     finally:
         device.coordinator.close()
@@ -595,6 +683,190 @@ def _request(
         )
     )
     return SyncExecutionRequest(plan, host, ipod, device.active, 1, 1)
+
+
+@pytest.mark.parametrize("action", [SyncPlanAction.ADD, SyncPlanAction.REMOVE])
+def test_execution_validation_does_not_revisit_unchanged_media(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action: SyncPlanAction
+) -> None:
+    device = build_device(tmp_path)
+    validations: list[tuple[DevicePath, ...]] = []
+    original_stat = FilesystemSession.stat
+
+    class CountingExecutor(_Executor):
+        def _validate_sources(
+            self, request: SyncExecutionRequest, checkpoint: Callable[[], None]
+        ) -> None:
+            paths: list[DevicePath] = []
+
+            def record_stat(
+                session: FilesystemSession, path: DevicePath
+            ) -> DeviceEntry:
+                paths.append(path)
+                return original_stat(session, path)
+
+            with monkeypatch.context() as scoped:
+                scoped.setattr(FilesystemSession, "stat", record_stat)
+                super()._validate_sources(request, checkpoint)
+            validations.append(tuple(paths))
+
+    try:
+        host = _host(tmp_path, "Unchanged", "New")
+        if action is SyncPlanAction.REMOVE:
+            host = replace(
+                host,
+                snapshot=replace(host.snapshot, tracks=host.snapshot.tracks[:1]),
+                sources=host.sources[:1],
+            )
+        ipod = _ipod(device)
+        unchanged = ipod.tracks[1]
+        acoustic = host.sources[0].acoustic_fingerprint
+        assert acoustic is not None
+        ipod = replace(
+            ipod,
+            tracks=(
+                ipod.tracks[0],
+                replace(unchanged, acoustic_fingerprint=acoustic),
+            ),
+        )
+        comparison = prepare_sync_plan(host, ipod, device.active.library)
+        plan = replace(
+            comparison,
+            items=tuple(
+                item
+                for item in comparison.items
+                if item.action is SyncPlanAction.UNCHANGED or item.action is action
+            ),
+        )
+        assert any(item.action is SyncPlanAction.UNCHANGED for item in plan.items)
+        request = SyncExecutionRequest(plan, host, ipod, device.active, 1, 1)
+        result = CountingExecutor(
+            device.coordinator, transcoder=_AvailableTools()
+        ).execute(request, lambda _: None, Event())
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert len(validations) == 2
+        assert all(unchanged.path not in paths for paths in validations), validations
+        changed_path = ipod.tracks[0].path
+        assert [paths.count(changed_path) for paths in validations] == (
+            [1, 1] if action is SyncPlanAction.REMOVE else [0, 0]
+        )
+    finally:
+        device.coordinator.close()
+
+
+def test_execution_validates_shared_media_once_per_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = build_device(tmp_path, shared_media=True)
+    validations: list[tuple[DevicePath, ...]] = []
+    original_stat = FilesystemSession.stat
+
+    class CountingExecutor(_Executor):
+        def _validate_sources(
+            self, request: SyncExecutionRequest, checkpoint: Callable[[], None]
+        ) -> None:
+            paths: list[DevicePath] = []
+
+            def record_stat(
+                session: FilesystemSession, path: DevicePath
+            ) -> DeviceEntry:
+                paths.append(path)
+                return original_stat(session, path)
+
+            with monkeypatch.context() as scoped:
+                scoped.setattr(FilesystemSession, "stat", record_stat)
+                super()._validate_sources(request, checkpoint)
+            validations.append(tuple(paths))
+
+    try:
+        host = _host(tmp_path)
+        ipod = _ipod(device)
+        plan = prepare_sync_plan(host, ipod, device.active.library)
+        assert plan.change_count == 2
+        request = SyncExecutionRequest(plan, host, ipod, device.active, 1, 1)
+        result = CountingExecutor(
+            device.coordinator, transcoder=_AvailableTools()
+        ).execute(request, lambda _: None, Event())
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert validations == [(ipod.tracks[0].path,), (ipod.tracks[0].path,)]
+    finally:
+        device.coordinator.close()
+
+
+def test_execution_builds_one_comparison_for_validation_and_playlists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = build_device(tmp_path)
+    comparisons = 0
+
+    def count_comparison(
+        host: HostMediaLibrary,
+        ipod: IPodMediaLibrary,
+        library: LibrarySnapshot,
+        *,
+        file_tag_policy: str | None = None,
+    ) -> SyncPlan:
+        nonlocal comparisons
+        comparisons += 1
+        return prepare_sync_plan(host, ipod, library, file_tag_policy=file_tag_policy)
+
+    try:
+        request = _request(device, _host(tmp_path, "New", playlists=True))
+        monkeypatch.setattr(sync_execution, "prepare_sync_plan", count_comparison)
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.playlist_change_count == 1
+        assert comparisons == 1
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("change_during_preparation", [False, True])
+def test_selected_device_media_is_revalidated_before_publication(
+    tmp_path: Path, change_during_preparation: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _host(tmp_path, "New")
+        ipod = _ipod(device)
+        plan = prepare_sync_plan(host, ipod, device.active.library)
+        request = SyncExecutionRequest(plan, host, ipod, device.active, 1, 1)
+        changed_path = device.root / str(ipod.tracks[0].path)
+        database_path = device.root / str(
+            library_resources.database_path(device.active.database_name)
+        )
+        original_database = database_path.read_bytes()
+        changed = False
+
+        def change() -> None:
+            nonlocal changed
+            changed_path.write_bytes(b"Changed after scanning")
+            changed = True
+
+        def progress(event: WriteProgress) -> None:
+            if (
+                change_during_preparation
+                and event.phase == "sync.prepare"
+                and not changed
+            ):
+                change()
+
+        if not change_during_preparation:
+            change()
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, progress, Event()
+        )
+        assert result.status is SyncExecutionStatus.FAILED, result.issues
+        assert any(
+            "the iPod file changed after scanning" in issue.detail
+            for issue in result.issues
+        ), result.issues
+        assert database_path.read_bytes() == original_database
+        assert changed_path.read_bytes() == b"Changed after scanning"
+    finally:
+        device.coordinator.close()
 
 
 @pytest.mark.parametrize("outcome", ["success", "failure", "cancel"])

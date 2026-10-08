@@ -9,11 +9,13 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
+from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from device_registry import ArtworkUsage
 from iOpenPod.app.artwork_policy import (
     application_artwork_formats,
     rockbox_artwork,
@@ -97,7 +99,8 @@ from iPodDB.library import (
     prepared_audio,
     prepared_video,
 )
-from storage import DeviceEntryKind, DevicePath, StorageError
+from iPodDB.shared.photo_image import photo_source_size
+from storage import DeviceEntry, DeviceEntryKind, DevicePath, StorageError
 from storage.content_workspace import content_workspace
 from storage.host_input import LocalHostFile
 from storage.media_processing import available_compute_threads
@@ -256,7 +259,7 @@ class SyncExecutor:
             progress(
                 WriteProgress("sync.validate", "Validating the selected Sync Plan…")
             )
-            _validate_plan(request)
+            comparison = _validate_plan(request)
             self._validate_sources(request, checkpoint)
             if request.options.scrobble and request.scrobble_accounts:
                 progress(
@@ -355,9 +358,7 @@ class SyncExecutor:
                 else 0
             )
             requested_playlists = (
-                preview_playlist_sync(
-                    request.plan, request.host, request.ipod, request.source
-                )
+                _preview_playlist_sync(request, comparison=comparison)
                 if request.reconcile_playlists
                 else ()
             )
@@ -503,6 +504,7 @@ class SyncExecutor:
                     tuple(podcast_tracks),
                     podcast_plan.removals if podcast_plan is not None else (),
                     podcast_artwork_repairs,
+                    comparison=comparison,
                 )
                 playlist_changes = (
                     _playlist_changes(
@@ -920,9 +922,18 @@ class SyncExecutor:
         tracks = {item.track_id: item for item in request.ipod.tracks}
         images = {item.image_id: item for item in request.ipod.images}
         with self._coordinator.sync_session(request.source) as session:
+            observed: dict[DevicePath, DeviceEntry] = {}
             for item in request.plan.items:
                 checkpoint()
                 if item.action is SyncPlanAction.ATTENTION:
+                    continue
+                # Unchanged media is neither consumed nor mutated by this Sync.
+                # The Library source is still checked by sync_session, and helper
+                # publication separately validates retained matching evidence.
+                if (
+                    item.action is SyncPlanAction.UNCHANGED
+                    and item.basis is not SyncPlanBasis.USER_MATCH
+                ):
                     continue
                 if item.ipod_id is not None:
                     recorded = (
@@ -930,7 +941,10 @@ class SyncExecutor:
                         if item.media_kind is SyncPlanMediaKind.TRACK
                         else images[item.ipod_id]
                     )
-                    actual = session.stat(recorded.path)
+                    actual = observed.get(recorded.path)
+                    if actual is None:
+                        actual = session.stat(recorded.path)
+                        observed[recorded.path] = actual
                     if (
                         actual.kind is not DeviceEntryKind.FILE
                         or actual.size != recorded.size_bytes
@@ -1647,6 +1661,11 @@ class SyncExecutor:
             )
             for item in request.source.profile.capabilities.artwork.photo_formats
         )
+        crop_format_ids = {
+            item.format_id
+            for item in request.source.profile.capabilities.artwork.photo_formats
+            if item.usage is ArtworkUsage.PHOTO_THUMBNAIL
+        }
         prepared: list[_PreparedPhoto] = []
         issues: list[WriteIssue] = []
         staging = resources.enter_context(
@@ -1697,6 +1716,13 @@ class SyncExecutor:
                         max_bytes=MAX_PHOTO_SOURCE_BYTES, checkpoint=checkpoint
                     )
                     digest = hashlib.sha256(data).hexdigest()
+                    if max(photo_source_size(BytesIO(data))) > 0xFFFF:
+                        # Original representation dimensions use u16 fields in
+                        # PhotosDB. Keep the Host original, and use the existing
+                        # viewing-copy path when only that format bound is hit.
+                        data = photo_still_from_stream(BytesIO(data))
+                        converted = True
+                        suffix = ".png"
                 if digest != source.content_sha256:
                     raise ValueError(
                         source_text(
@@ -1719,6 +1745,7 @@ class SyncExecutor:
                     formats=formats,
                     rotate_tall_photos=request.options.rotate_tall_photos,
                     fit_thumbnails=request.options.fit_thumbnails,
+                    crop_format_ids=crop_format_ids,
                     original=originals.get(identity),
                 )
                 # Check the retained album shape before this item can enter the batch.
@@ -1823,7 +1850,7 @@ def _podcast_add_failure_message(title: str, *, replacing: bool) -> str:
     )
 
 
-def _validate_plan(request: SyncExecutionRequest) -> None:
+def _validate_plan(request: SyncExecutionRequest) -> SyncPlan:
     if request.plan.file_tag_policy is not None and (
         not request.options.rockbox_metadata
         or request.plan.file_tag_policy != rockbox_tag_policy(request.source.profile)
@@ -1894,6 +1921,7 @@ def _validate_plan(request: SyncExecutionRequest) -> None:
             if identity in devices:
                 raise ValueError("The selected Sync Plan repeats an iPod identity.")
             devices.add(identity)
+    return comparison
 
 
 def _song(
@@ -2016,11 +2044,13 @@ def _draft(
     prepared_podcasts: tuple[_PreparedPodcast, ...] = (),
     podcast_removals: tuple[int, ...] = (),
     podcast_artwork_repairs: tuple[_PodcastArtworkRepair, ...] = (),
+    *,
+    comparison: SyncPlan | None = None,
 ) -> tuple[LibraryPreparationRequest, tuple[SyncPlanItem, ...], bool]:
     """Build desired state, completed actions, and whether implicit changes exist."""
     original = request.source.library
     tracks = {track.track_id: track for track in original.tracks}
-    mapping = _retained_playlist_mapping(request)
+    mapping = _retained_playlist_mapping(request, comparison=comparison)
     host_tracks = {
         host_path_identity(track.metadata.location): track.track_id
         for track in request.host.snapshot.tracks
@@ -2299,7 +2329,9 @@ def _normalized_tracks(
     )
 
 
-def _retained_playlist_mapping(request: SyncExecutionRequest) -> dict[int, int]:
+def _retained_playlist_mapping(
+    request: SyncExecutionRequest, *, comparison: SyncPlan | None = None
+) -> dict[int, int]:
     """Retain correlations when Review excludes an Update of an existing copy."""
     host_tracks = {
         host_path_identity(track.metadata.location): track.track_id
@@ -2311,10 +2343,17 @@ def _retained_playlist_mapping(request: SyncExecutionRequest) -> dict[int, int]:
         if item.host_path is not None
     }
     mapping: dict[int, int] = {}
-    for item in resolve_sync_duplicates(
-        prepare_sync_plan(request.host, request.ipod, request.source.library),
-        request.plan.duplicate_resolutions,
-    ).items:
+    if comparison is None:
+        comparison = resolve_sync_duplicates(
+            prepare_sync_plan(
+                request.host,
+                request.ipod,
+                request.source.library,
+                file_tag_policy=request.plan.file_tag_policy,
+            ),
+            request.plan.duplicate_resolutions,
+        )
+    for item in comparison.items:
         if (
             item.host_path is not None
             and item.ipod_id is not None
@@ -2348,14 +2387,21 @@ def preview_playlist_sync(
     media removal, so that automatic cleanup is excluded from this preview.
     """
     request = SyncExecutionRequest(plan, host, ipod, source, 0, 0)
-    mapping = _retained_playlist_mapping(request)
+    return _preview_playlist_sync(request)
+
+
+def _preview_playlist_sync(
+    request: SyncExecutionRequest, *, comparison: SyncPlan | None = None
+) -> tuple[PlaylistSyncChange, ...]:
+    """Reuse execution's validated comparison while keeping preview drafts isolated."""
+    mapping = _retained_playlist_mapping(request, comparison=comparison)
     host_tracks = {
         host_path_identity(track.metadata.location): track.track_id
-        for track in host.snapshot.tracks
+        for track in request.host.snapshot.tracks
     }
-    retained_ids = {track.track_id for track in source.library.tracks}
+    retained_ids = {track.track_id for track in request.source.library.tracks}
     next_track_id = min((0, *retained_ids)) - 1
-    for item in plan.items:
+    for item in request.plan.items:
         if item.media_kind is not SyncPlanMediaKind.TRACK:
             continue
         if item.action is SyncPlanAction.REMOVE:

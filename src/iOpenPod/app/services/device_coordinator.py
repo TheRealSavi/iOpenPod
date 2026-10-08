@@ -76,6 +76,7 @@ from iPodDB.library import (
     PhotoRepresentationKind,
     PhotoThumbnailFormat,
 )
+from iPodDB.shared.photo_image import photo_viewing_image
 from storage import (
     AccessMode,
     ConnectionGeneration,
@@ -141,6 +142,7 @@ _ARTWORK_DATABASE_LIMIT = 128 * 1024 * 1024
 _PHOTOS_DATABASE_LIMIT = 128 * 1024 * 1024
 _ARTWORK_PAYLOAD_LIMIT = 32 * 1024 * 1024
 _PHOTO_PAYLOAD_LIMIT = 32 * 1024 * 1024
+_PHOTO_ORIGINAL_PAYLOAD_LIMIT = 64 * 1024 * 1024
 _TRANSACTION_CLEANUP_ISSUE_CODES = {
     DeviceCandidateIssueCode.TRANSACTION_CLEANUP_PENDING,
     DeviceCandidateIssueCode.TRANSACTION_CLEANUP_FLUSH_PENDING,
@@ -260,6 +262,7 @@ class _PreparedLibraryWrite:
     presentation_policy: _VolumePresentationPolicy
     temporary_files: contextlib.ExitStack
     files: tuple[FilePrecondition, ...]
+    discarded_track_media: tuple[library_resources.DiscardedTrackMedia, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1280,35 +1283,11 @@ class DeviceCoordinator:
                     raise DeviceChangedError(
                         "The Active iPod disconnected or changed during preparation."
                     )
-            if (
-                active.session.fingerprint(
-                    library_resources.database_path(expected.database_name)
-                )
-                != expected.database_fingerprint
-            ):
-                raise DeviceChangedError(
-                    "The source database changed during preparation. Reload and review again."
-                )
-            if (
-                expected.artwork_database_fingerprint is not None
-                and active.session.fingerprint(_ARTWORKDB_PATH)
-                != expected.artwork_database_fingerprint
-            ):
-                raise DeviceChangedError(
-                    "The source ArtworkDB changed during preparation. Reload and review again."
-                )
-            photos_fingerprint = (
-                active.session.fingerprint(_PHOTOSDB_PATH)
-                if active.session.exists(_PHOTOSDB_PATH)
-                else None
-            )
-            if photos_fingerprint != expected.photos_database_fingerprint:
-                raise DeviceChangedError(
-                    "The source Photo Database changed during preparation. Reload and review again."
-                )
             write = None
             if result.prepared is not None:
-                library_resources.recheck(active.session, captured.files)
+                library_resources.recheck_discarded_track_media(
+                    active.session, captured.discarded_track_media
+                )
                 original = source.serialize()
                 write = library_resources.transaction(
                     active.session,
@@ -1322,6 +1301,10 @@ class DeviceCoordinator:
                     ),
                     allow_unchanged=allow_unchanged,
                 )
+                if write is None:
+                    # Changed reviews validate all captured files through their
+                    # transaction. Association-only Sync has no transaction.
+                    library_resources.recheck(active.session, captured.files)
                 if podcast_state is not None:
                     history = self._podcast_store.history_transaction(podcast_state)
                     write = (
@@ -1341,7 +1324,9 @@ class DeviceCoordinator:
                 plan,
                 result,
                 resources=resources,
-                file_changes=library_resources.describe(write)
+                file_changes=library_resources.describe(
+                    write, captured.discarded_track_media
+                )
                 if write is not None
                 else (),
             )
@@ -1359,6 +1344,7 @@ class DeviceCoordinator:
                         presentation_policy,
                         temporary_files.pop_all(),
                         captured.files,
+                        captured.discarded_track_media,
                     )
             return review
         except (StorageError, DeviceChangedError, ValueError, OSError) as error:
@@ -1461,6 +1447,11 @@ class DeviceCoordinator:
                     "save.stale",
                     "The review no longer belongs to the Active iPod. Prepare again.",
                 )
+            if issued.discarded_track_media and retain_recovery:
+                return failure(
+                    "save.incompatible_recovery",
+                    "Permanent Track deletion requires ordinary Library save cleanup.",
+                )
             # Construct the next authoritative source before touching the device.
             updated_source = IPodLibrary.parse(
                 prepared.itunes, device_time=active.library_source.device_time
@@ -1486,33 +1477,10 @@ class DeviceCoordinator:
                             raise DeviceChangedError(
                                 "The Active iPod changed before publication"
                             )
-                        if (
-                            session.fingerprint(
-                                library_resources.database_path(expected.database_name)
-                            )
-                            != expected.database_fingerprint
-                        ):
-                            raise DeviceChangedError(
-                                "The iTunesDB changed; reload before retrying"
-                            )
-                        artwork_fingerprint = (
-                            session.fingerprint(_ARTWORKDB_PATH)
-                            if session.exists(_ARTWORKDB_PATH)
-                            else None
-                        )
-                        if artwork_fingerprint != expected.artwork_database_fingerprint:
-                            raise DeviceChangedError(
-                                "The ArtworkDB changed; reload before retrying"
-                            )
-                        photos_fingerprint = (
-                            session.fingerprint(_PHOTOSDB_PATH)
-                            if session.exists(_PHOTOSDB_PATH)
-                            else None
-                        )
-                        if photos_fingerprint != expected.photos_database_fingerprint:
-                            raise DeviceChangedError(
-                                "The Photo Database changed; reload before retrying"
-                            )
+                        # Database fingerprints are already transaction write
+                        # preconditions or dependencies. Storage checks the full
+                        # set before staging and again before publication. Keep
+                        # only application-owned checks at this callback.
                         if (
                             plan.requires_sidecar_inventory
                             and library_resources.pending_sidecars(
@@ -1565,6 +1533,9 @@ class DeviceCoordinator:
                         )
                     )
                     checkpoint()
+                    library_resources.recheck_discarded_track_media(
+                        session, issued.discarded_track_media
+                    )
                     if issued.transaction is None:
                         if prepared.snapshot != expected.library:
                             return failure(
@@ -1603,6 +1574,9 @@ class DeviceCoordinator:
                         )
                         if event.state is TransactionState.PREPARED:
                             checkpoint()
+                            library_resources.recheck_discarded_track_media(
+                                session, issued.discarded_track_media
+                            )
 
                     committed = session.execute_transaction(
                         issued.transaction,
@@ -1673,6 +1647,7 @@ class DeviceCoordinator:
                                 ),
                             )
                     recovery_path = str(committed.recovery.journal_path)
+                    recovery_finalized = False
                     if not retain_recovery:
                         try:
                             progress(
@@ -1685,6 +1660,7 @@ class DeviceCoordinator:
                                 session, committed.recovery.journal_path
                             )
                             recovery_path = ""
+                            recovery_finalized = True
                         except SyncCleanupCompletedError as error:
                             recovery_path = ""
                             issues += (
@@ -1712,6 +1688,80 @@ class DeviceCoordinator:
                                     artifact=recovery_path,
                                 ),
                             )
+                    if issued.discarded_track_media:
+                        if not recovery_finalized or not committed.flush.complete:
+                            issues += (
+                                WriteIssue(
+                                    "save.media_deletion_skipped",
+                                    "The Library was saved, but obsolete Track files remain because device durability or recovery cleanup could not be confirmed.",
+                                    severity=IssueSeverity.WARNING,
+                                    phase="save",
+                                ),
+                            )
+                        else:
+                            failed: list[str] = []
+                            deleted = 0
+                            total = len(issued.discarded_track_media)
+                            progress(
+                                WriteProgress(
+                                    "save.media_deletion",
+                                    "Deleting obsolete Track files.",
+                                    completed=0,
+                                    total=total,
+                                    unit="files",
+                                )
+                            )
+                            for index, file in enumerate(issued.discarded_track_media):
+                                try:
+                                    session.delete_unrecoverably(
+                                        file.path, expected=file.identity
+                                    )
+                                    deleted += 1
+                                except StorageError as error:
+                                    failed.append(f"{file.path}: {error}")
+                                    if not session.is_active:
+                                        failed.extend(
+                                            str(item.path)
+                                            for item in issued.discarded_track_media[
+                                                index + 1 :
+                                            ]
+                                        )
+                                        break
+                                if (index + 1) % 25 == 0 or index + 1 == total:
+                                    progress(
+                                        WriteProgress(
+                                            "save.media_deletion",
+                                            "Deleting obsolete Track files.",
+                                            completed=index + 1,
+                                            total=total,
+                                            unit="files",
+                                        )
+                                    )
+                            if failed:
+                                issues += (
+                                    WriteIssue(
+                                        "save.media_deletion_incomplete",
+                                        f"The Library was saved, but {len(failed)} obsolete Track files could not be deleted.",
+                                        severity=IssueSeverity.WARNING,
+                                        phase="save",
+                                        detail="\n".join(failed[:10]),
+                                    ),
+                                )
+                            if deleted:
+                                try:
+                                    deletion_flush = session.flush()
+                                    if not deletion_flush.complete:
+                                        raise StorageError(deletion_flush.detail)
+                                except (StorageError, OSError) as error:
+                                    issues += (
+                                        WriteIssue(
+                                            "save.media_deletion_flush_pending",
+                                            "Track files were deleted, but the device flush could not be confirmed. Safely eject before unplugging.",
+                                            severity=IssueSeverity.WARNING,
+                                            phase="save",
+                                            detail=str(error),
+                                        ),
+                                    )
                     return LibrarySaveResult(issues, updated, recovery_path)
             except RecoverableWriteError as error:
                 self._discard_prepared_write()
@@ -2384,7 +2434,7 @@ class DeviceCoordinator:
             try:
                 snapshot = active.session.read_snapshot(
                     full_resolution_path,
-                    max_bytes=_PHOTO_PAYLOAD_LIMIT,
+                    max_bytes=_PHOTO_ORIGINAL_PAYLOAD_LIMIT,
                 )
                 width, height, rgb888 = _decode_full_resolution_photo(
                     snapshot.data,
@@ -3391,32 +3441,12 @@ def _decode_full_resolution_photo(
 
     from io import BytesIO
 
-    from PIL import Image, ImageOps, UnidentifiedImageError
+    from PIL import Image, UnidentifiedImageError
 
     try:
-        with Image.open(BytesIO(payload)) as opened:
-            if (
-                max(opened.size) > 8192
-                or opened.width * opened.height > 32 * 1024 * 1024
-            ):
-                raise ValueError(
-                    "Full-resolution Photo dimensions exceed the display limit"
-                )
-            oriented = ImageOps.exif_transpose(opened)
-            try:
-                edge = min(target_px, 8192)
-                oriented.thumbnail(
-                    (edge, edge),
-                    Image.Resampling.LANCZOS,
-                    reducing_gap=2.0,
-                )
-                rgb = oriented.convert("RGB")
-                try:
-                    return rgb.width, rgb.height, rgb.tobytes()
-                finally:
-                    rgb.close()
-            finally:
-                oriented.close()
+        edge = min(target_px, 8192)
+        with photo_viewing_image(BytesIO(payload), (edge, edge)) as rgb:
+            return rgb.width, rgb.height, rgb.tobytes()
     except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as error:
         raise ValueError("Full-resolution Photo is not a supported image") from error
 

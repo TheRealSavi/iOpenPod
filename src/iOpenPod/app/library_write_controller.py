@@ -343,8 +343,9 @@ class LibraryWriteController(QObject):
             return
         self._attempted_revision = self._workspace.edit_revision
         self._token += 1
+        desired = enforce_library_playback_policy(self._workspace.desired_snapshot())
         self._request = LibraryPreparationRequest(
-            enforce_library_playback_policy(self._workspace.desired_snapshot()),
+            desired,
             active,
             self._workspace.generation,
             self._workspace.revision,
@@ -352,6 +353,13 @@ class LibraryWriteController(QObject):
             artwork=self._workspace.artwork_assets,
             media=self._workspace.media_sources,
             rockbox_metadata=self._settings.get(ROCKBOX_METADATA_SUPPORT),
+            discard_removed_track_media=(
+                not self._workspace.media_sources
+                and bool(
+                    {track.track_id for track in active.library.tracks}
+                    - {track.track_id for track in desired.tracks}
+                )
+            ),
         )
         logger.debug(
             "Library write request attempt=%d workspace_generation=%d workspace_revision=%d "
@@ -495,7 +503,14 @@ class LibraryWriteController(QObject):
         if result.active is None:
             self._report_automatic_failure()
         elif not self.draft_all_changes and any(
-            issue.code in ("save.cleanup_pending", "save.cleanup_flush_pending")
+            issue.code
+            in (
+                "save.cleanup_pending",
+                "save.cleanup_flush_pending",
+                "save.media_deletion_skipped",
+                "save.media_deletion_incomplete",
+                "save.media_deletion_flush_pending",
+            )
             for issue in result.issues
         ):
             self.automaticSaveWarning.emit()

@@ -200,3 +200,8 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0125: Defer cover failures during Sync](0125-defer-cover-failures-during-sync.md)
 - [ADR-0126: Persist individual iPod setting overrides](0126-persist-individual-ipod-setting-overrides.md)
 - [ADR-0127: Resolve Sync duplicates with explicit Track associations](0127-resolve-sync-duplicates-with-explicit-track-associations.md)
+- [ADR-0128: Discard explicitly removed Track media after Library save](0128-discard-explicitly-removed-track-media-after-save.md)
+- [ADR-0129: Validate Library files at workflow boundaries](0129-validate-library-files-at-workflow-boundaries.md)
+- [ADR-0130: Use Pillow limits for Photo sources](0130-use-pillow-limits-for-photo-sources.md)
+- [ADR-0131: Accept bounded visible dimensions in packed artwork](0131-accept-bounded-visible-dimensions-in-packed-artwork.md)
+- [ADR-0132: Follow explicitly authorized Host symbolic links](0132-follow-explicitly-authorized-host-symbolic-links.md)

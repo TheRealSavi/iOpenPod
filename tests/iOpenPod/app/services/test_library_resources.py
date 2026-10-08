@@ -19,7 +19,7 @@ from iOpenPod.app.library_write import (
 )
 from iOpenPod.app.library_write_inspection import inspect_library_write
 from iOpenPod.app.models.device import ActiveIPod
-from iOpenPod.app.services import library_resources
+from iOpenPod.app.services import device_coordinator, library_resources
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
@@ -38,6 +38,7 @@ from storage import (
     FilesystemSession,
     HardwareIdentifiers,
     Storage,
+    StorageOperationError,
 )
 from storage.content_workspace import ContentFileBuffer, StagedContent
 from storage.testing import VirtualStoragePlatform
@@ -209,7 +210,7 @@ def device(tmp_path: Path) -> Iterator[Device]:
         fixture.coordinator.close()
 
 
-def _cover_snapshot(device: Device) -> LibrarySnapshot:
+def cover_snapshot(device: Device) -> LibrarySnapshot:
     first, second = device.active.library.tracks
     return replace(
         device.active.library,
@@ -217,7 +218,7 @@ def _cover_snapshot(device: Device) -> LibrarySnapshot:
     )
 
 
-def _without_first(device: Device) -> LibrarySnapshot:
+def without_first(device: Device) -> LibrarySnapshot:
     first, second = device.active.library.tracks
     return replace(
         device.active.library,
@@ -237,7 +238,7 @@ def _without_first(device: Device) -> LibrarySnapshot:
 def test_ordinary_library_save_cleans_recovery_and_keeps_saved_contents(
     device: Device,
 ) -> None:
-    desired = _cover_snapshot(device)
+    desired = cover_snapshot(device)
     review = device.prepare(desired, cover=True)
     assert review.result.prepared is not None, review.result.issues
 
@@ -269,7 +270,7 @@ def test_ordinary_library_save_cleans_recovery_and_keeps_saved_contents(
 def test_ordinary_library_save_cleanup_failure_keeps_success_and_retries_on_selection(
     device: Device, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    desired = _cover_snapshot(device)
+    desired = cover_snapshot(device)
     review = device.prepare(desired, cover=True)
     assert review.result.prepared is not None, review.result.issues
 
@@ -298,7 +299,7 @@ def test_ordinary_library_save_cleanup_failure_keeps_success_and_retries_on_sele
 
 def test_cover_replacement_publishes_all_formats_then_restores(device: Device) -> None:
     before = device.active.library
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is not None, review.result.issues
     assert len(review.result.prepared.artwork_files) == 4
     assert [f.path for f in review.file_changes][-2:] == [
@@ -330,7 +331,7 @@ def test_cover_preparation_spills_past_memory_budget_and_restores(
     device: Device, monkeypatch: pytest.MonkeyPatch, budget: int
 ) -> None:
     monkeypatch.setattr(library_resources, "_MAX_CAPTURE_BYTES", budget)
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is not None, review.result.issues
     staged = {
         file.relative_path: file.data
@@ -363,7 +364,7 @@ def test_cover_disk_output_is_cleaned_when_review_is_replaced(
     device: Device, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(library_resources, "_MAX_CAPTURE_BYTES", 0)
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is not None
     paths = [
         Path(file.data.path)
@@ -383,7 +384,7 @@ def test_artwork_host_storage_failure_is_actionable_and_leaves_device_unchanged(
         raise OSError("No space left on Host disk")
 
     monkeypatch.setattr(ContentFileBuffer, "append", fail)
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is None
     issue = next(
         issue
@@ -399,7 +400,7 @@ def test_changed_staged_artwork_cannot_be_published(
     device: Device, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(library_resources, "_MAX_CAPTURE_BYTES", 0)
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is not None
     data = review.result.prepared.artwork_files[0].data
     assert isinstance(data, StagedContent)
@@ -432,7 +433,7 @@ def test_clear_artwork_leaves_shared_cover_and_all_thumbnail_bytes(
 
 def test_track_removal_moves_media_after_database_publication(device: Device) -> None:
     first = device.active.library.tracks[0]
-    review = device.prepare(_without_first(device), delete=True)
+    review = device.prepare(without_first(device), delete=True)
     assert review.result.prepared is not None, review.result.issues
     deleted_media = device.root / first.metadata.location
     assert review.file_changes[-1].action == "remove"
@@ -453,6 +454,174 @@ def test_track_removal_moves_media_after_database_publication(device: Device) ->
     assert removed
     assert saved.active.library.tracks[0].track_id != first.track_id
     device.restore(saved.recovery_path)
+
+
+def test_ordinary_track_deletion_never_hashes_or_retains_removed_media(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = build_device(tmp_path)
+    first, second = device.active.library.tracks
+    removed_path = DevicePath(first.metadata.location)
+    original_fingerprint = FilesystemSession.fingerprint
+
+    def fingerprint(self: FilesystemSession, path: DevicePath) -> FileFingerprint:
+        if path == removed_path:
+            raise AssertionError("Removed media must not be read for a full hash")
+        return original_fingerprint(self, path)
+
+    monkeypatch.setattr(FilesystemSession, "fingerprint", fingerprint)
+    review = device.coordinator.prepare_library(
+        LibraryPreparationRequest(
+            without_first(device),
+            device.active,
+            1,
+            1,
+            delete_omissions=True,
+            discard_removed_track_media=True,
+        ),
+        lambda _: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+    assert review.file_changes[-1].action == "delete"
+    assert review.file_changes[-1].sha256 is None
+    assert (device.root / first.metadata.location).exists()
+
+    saved = device.coordinator.save_library(
+        review, device.active, lambda _: None, Event()
+    )
+    assert saved.active is not None, saved.issues
+    assert saved.recovery_path == ""
+    assert not (device.root / first.metadata.location).exists()
+    assert (device.root / second.metadata.location).exists()
+    assert not tuple(device.root.glob(".iopenpod-recovery/*/transaction.json"))
+
+
+def test_changed_track_media_blocks_unrecoverable_deletion_before_saving(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    first = device.active.library.tracks[0]
+    database = device.root / "iPod_Control/iTunes/iTunesDB"
+    before = database.read_bytes()
+    review = device.coordinator.prepare_library(
+        LibraryPreparationRequest(
+            without_first(device),
+            device.active,
+            1,
+            1,
+            delete_omissions=True,
+            discard_removed_track_media=True,
+        ),
+        lambda _: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+    media = device.root / first.metadata.location
+    media.write_bytes(media.read_bytes() + b"changed")
+
+    saved = device.coordinator.save_library(
+        review, device.active, lambda _: None, Event()
+    )
+    assert saved.active is None
+    assert media.exists()
+    assert database.read_bytes() == before
+
+
+def test_permanent_deletion_preserves_media_shared_with_surviving_track(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path, shared_media=True)
+    first, second = device.active.library.tracks
+    assert first.metadata.location == second.metadata.location
+    review = device.coordinator.prepare_library(
+        LibraryPreparationRequest(
+            without_first(device),
+            device.active,
+            1,
+            1,
+            delete_omissions=True,
+            discard_removed_track_media=True,
+        ),
+        lambda _: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+    assert not any(change.action == "delete" for change in review.file_changes)
+
+    saved = device.coordinator.save_library(
+        review, device.active, lambda _: None, Event()
+    )
+    assert saved.active is not None, saved.issues
+    assert (device.root / second.metadata.location).exists()
+
+
+def test_failed_post_commit_media_deletion_reports_saved_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = build_device(tmp_path)
+    first = device.active.library.tracks[0]
+    review = device.coordinator.prepare_library(
+        LibraryPreparationRequest(
+            without_first(device),
+            device.active,
+            1,
+            1,
+            delete_omissions=True,
+            discard_removed_track_media=True,
+        ),
+        lambda _: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+
+    def fail_delete(
+        self: FilesystemSession, path: DevicePath, *, expected: object
+    ) -> None:
+        raise StorageOperationError("injected delete failure")
+
+    monkeypatch.setattr(FilesystemSession, "delete_unrecoverably", fail_delete)
+    saved = device.coordinator.save_library(
+        review, device.active, lambda _: None, Event()
+    )
+    assert saved.active is not None
+    assert any(i.code == "save.media_deletion_incomplete" for i in saved.issues)
+    assert (device.root / first.metadata.location).exists()
+    assert first.track_id not in {t.track_id for t in saved.active.library.tracks}
+
+
+def test_recovery_cleanup_failure_skips_permanent_media_deletion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = build_device(tmp_path)
+    first = device.active.library.tracks[0]
+    review = device.coordinator.prepare_library(
+        LibraryPreparationRequest(
+            without_first(device),
+            device.active,
+            1,
+            1,
+            delete_omissions=True,
+            discard_removed_track_media=True,
+        ),
+        lambda _: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+
+    def fail_cleanup(*_args: object) -> None:
+        raise StorageOperationError("injected cleanup failure")
+
+    monkeypatch.setattr(
+        device_coordinator, "_finalize_committed_transaction", fail_cleanup
+    )
+    saved = device.coordinator.save_library(
+        review, device.active, lambda _: None, Event()
+    )
+    assert saved.active is not None
+    assert saved.recovery_path
+    assert any(i.code == "save.media_deletion_skipped" for i in saved.issues)
+    assert (device.root / first.metadata.location).exists()
 
 
 def test_photo_removal_moves_full_resolution_file_after_photosdb_publication(
@@ -508,7 +677,7 @@ def test_removing_one_shared_track_keeps_media(tmp_path: Path) -> None:
     device = build_device(tmp_path, shared_media=True)
     try:
         path = device.root / device.active.library.tracks[0].metadata.location
-        review = device.prepare(_without_first(device), delete=True)
+        review = device.prepare(without_first(device), delete=True)
         assert review.result.prepared is not None, review.result.issues
         saved = device.save(review)
         assert saved.active is not None, saved.issues
@@ -524,7 +693,7 @@ def test_removing_one_shared_track_keeps_media(tmp_path: Path) -> None:
 def test_new_sidecar_blocks_removal_before_publication(
     device: Device, phase: str
 ) -> None:
-    review = device.prepare(_without_first(device), delete=True)
+    review = device.prepare(without_first(device), delete=True)
     assert review.result.prepared is not None, review.result.issues
     sidecar = device.root / "iPod_Control/iTunes/OTGPlaylistInfo-new"
     if phase == "after_review":
@@ -550,7 +719,7 @@ def test_pending_play_counts_are_remapped_with_the_library_and_restored(
     sidecar = device.root / "iPod_Control/iTunes/Play Counts"
     original = play_counts(rows)
     sidecar.write_bytes(original)
-    review = device.prepare(_without_first(device), delete=True)
+    review = device.prepare(without_first(device), delete=True)
     assert review.result.prepared is not None, review.result.issues
     assert sidecar.read_bytes() == original
     saved = device.save(review)
@@ -569,7 +738,7 @@ def test_changed_captured_play_counts_stop_publication(
     sidecar = device.root / "iPod_Control/iTunes/Play Counts"
     original = play_counts(tuple(b"\x01" * 28 for _ in device.active.library.tracks))
     sidecar.write_bytes(original)
-    review = device.prepare(_without_first(device), delete=True)
+    review = device.prepare(without_first(device), delete=True)
     assert review.result.prepared is not None, review.result.issues
     changed = original[:-1] + b"\x02"
     if phase == "after_review":
@@ -586,7 +755,7 @@ def test_changed_captured_play_counts_stop_publication(
 
 
 def test_changed_thumbnail_blocks_whole_save(device: Device) -> None:
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is not None, review.result.issues
     path = device.root / next(
         name for name in device.original if name.endswith(".ithmb")
@@ -606,7 +775,7 @@ def test_appledouble_artwork_churn_is_not_a_library_dependency(device: Device) -
     actual = device.root / name
     companion = actual.with_name("._" + actual.name)
     companion.write_bytes(b"macOS metadata before publication")
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is not None, review.result.issues
 
     def progress(event: WriteProgress) -> None:
@@ -620,7 +789,7 @@ def test_appledouble_artwork_churn_is_not_a_library_dependency(device: Device) -
 
 
 def test_copied_review_has_no_save_authority(device: Device) -> None:
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is not None, review.result.issues
     saved = device.save(replace(review))
     assert saved.active is None and saved.issues[0].code == "save.stale"
@@ -691,7 +860,7 @@ def test_interrupted_artwork_save_retains_draft_and_recovers_after_reconnect(
     device: Device,
 ) -> None:
     original_active = device.active
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is not None, review.result.issues
 
     def unplug(event: WriteProgress) -> None:
@@ -710,7 +879,7 @@ def test_interrupted_artwork_save_retains_draft_and_recovers_after_reconnect(
 def test_missing_removed_media_is_not_recreated_or_required(device: Device) -> None:
     path = device.root / device.active.library.tracks[0].metadata.location
     path.unlink()
-    review = device.prepare(_without_first(device), delete=True)
+    review = device.prepare(without_first(device), delete=True)
     assert review.result.prepared is not None, review.result.issues
     saved = device.save(review)
     assert saved.active is not None, saved.issues
@@ -718,7 +887,7 @@ def test_missing_removed_media_is_not_recreated_or_required(device: Device) -> N
 
 
 def test_deletions_require_explicit_draft_intent(device: Device) -> None:
-    review = device.prepare(_without_first(device))
+    review = device.prepare(without_first(device))
     assert review.result.prepared is None
     assert any(i.code == "draft.deletion_not_enabled" for i in review.result.issues)
     device.assert_original()
@@ -738,7 +907,7 @@ def test_older_preparation_cannot_replace_newer_save_authority(device: Device) -
 
     older = device.coordinator.prepare_library(
         LibraryPreparationRequest(
-            _cover_snapshot(device), active, 1, 1, artwork=(BLUE,)
+            cover_snapshot(device), active, 1, 1, artwork=(BLUE,)
         ),
         interleave,
         Event(),
@@ -754,7 +923,7 @@ def test_older_preparation_cannot_replace_newer_save_authority(device: Device) -
 def test_cancellation_during_staging_is_reported_without_publication(
     device: Device,
 ) -> None:
-    review = device.prepare(_cover_snapshot(device), cover=True)
+    review = device.prepare(cover_snapshot(device), cover=True)
     assert review.result.prepared is not None, review.result.issues
     cancelled = Event()
 

@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QDialog, QLabel, QPlainTextEdit, QPushButton, QTreeWidget
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
+from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 from tests.iPodDB.library.test_video_flags import video_source
 from tests.iPodDB.library.test_writing import library
@@ -782,6 +783,7 @@ def test_workspace_track_deletion_is_reviewed_saved_and_cleared(
         controller.prepare()
         wait_for(lambda: controller.state is not PreparationState.PREPARING)
         assert controller.request is not None and controller.request.delete_omissions
+        assert controller.request.discard_removed_track_media
         assert controller.can_save, controller.review
         controller.save()
         wait_for(lambda: controller.state is not PreparationState.SAVING)
@@ -791,6 +793,41 @@ def test_workspace_track_deletion_is_reviewed_saved_and_cleared(
         assert IPodLibrary(database.read_bytes()).snapshot == workspace.snapshot
     finally:
         controller.shutdown()
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+def test_workspace_track_deletion_permanently_removes_media(
+    tmp_path: Path, automatic: bool
+) -> None:
+    device = build_device(tmp_path)
+    settings = (
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+        if automatic
+        else manual_settings()
+    )
+    devices = DeviceController(device.coordinator, TrackTableModel(), settings)
+    workspace = LibraryWorkspace()
+    workspace.load(device.active.library)
+    removed = workspace.tracks[0]
+    media = device.root / removed.metadata.location
+    workspace.remove_tracks((removed.track_id,), workspace.edit_revision)
+    controller = LibraryWriteController(
+        device.coordinator, workspace, devices, settings
+    )
+    try:
+        if not automatic:
+            controller.prepare()
+            wait_for(lambda: controller.state is PreparationState.READY)
+            controller.save()
+        wait_for(lambda: controller.state is PreparationState.SAVED)
+        assert controller.request is not None
+        assert controller.request.discard_removed_track_media
+        assert not media.exists()
+        assert controller.save_result is not None
+        assert controller.save_result.recovery_path == ""
+    finally:
+        controller.shutdown()
+        devices.shutdown()
 
 
 def test_workspace_playlist_removal_is_reviewed_saved_and_cleared(

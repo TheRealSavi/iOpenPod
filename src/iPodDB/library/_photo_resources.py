@@ -110,13 +110,17 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
             raise ValueError(
                 "Fresh Photo representations must cover the complete captured file."
             )
+        full_resolution = representation.kind is PhotoRepresentationKind.FULL_RESOLUTION
         if (
-            not 0 < representation.width <= 8192
-            or not 0 < representation.height <= 8192
-            or representation.width * representation.height > 32 * 1024 * 1024
+            not 0 < representation.width <= (0xFFFF if full_resolution else 8192)
+            or not 0 < representation.height <= (0xFFFF if full_resolution else 8192)
+            or (
+                not full_resolution
+                and representation.width * representation.height > 32 * 1024 * 1024
+            )
         ):
             raise ValueError(
-                "New Photo representations require bounded full-raster dimensions."
+                "Photo dimensions must fit their original or thumbnail representation."
             )
         if representation.kind is PhotoRepresentationKind.FULL_RESOLUTION:
             if (

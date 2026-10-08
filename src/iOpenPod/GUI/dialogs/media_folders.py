@@ -112,6 +112,11 @@ class _MediaFolderRow(QFrame):
         self._recurse.setChecked(folder.recurse)
         settings_layout.addWidget(self._recurse)
 
+        self._follow_symlinks = QCheckBox(self._settings_panel)
+        self._follow_symlinks.setObjectName("followMediaFolderSymlinks")
+        self._follow_symlinks.setChecked(folder.follow_symlinks)
+        settings_layout.addWidget(self._follow_symlinks)
+
         self._scan_label = QLabel(self._settings_panel)
         self._scan_label.setObjectName("mediaFolderScanLabel")
         settings_layout.addWidget(self._scan_label)
@@ -146,6 +151,7 @@ class _MediaFolderRow(QFrame):
         self._settings_button.toggled.connect(self._set_expanded)
         self._remove_button.clicked.connect(self._remove_requested)
         self._recurse.toggled.connect(self._settings_changed)
+        self._follow_symlinks.toggled.connect(self._settings_changed)
         self.set_index(index)
         self.retranslate_ui()
 
@@ -170,6 +176,7 @@ class _MediaFolderRow(QFrame):
         self._remove_button.setAccessibleName(self.tr("Remove folder"))
         self._remove_button.setToolTip(self.tr("Remove folder"))
         self._recurse.setText(self.tr("Recurse into subfolders"))
+        self._follow_symlinks.setText(self.tr("Follow symbolic links"))
         self._scan_label.setText(self.tr("Scan for"))
         labels = {
             HostMediaType.AUDIO: self.tr("Audio"),
@@ -193,6 +200,7 @@ class _MediaFolderRow(QFrame):
         self._folder = HostMediaFolder(
             path=self._folder.path,
             recurse=self._recurse.isChecked(),
+            follow_symlinks=self._follow_symlinks.isChecked(),
             media_types=frozenset(
                 media_type
                 for media_type, checkbox in self._media_checkboxes.items()

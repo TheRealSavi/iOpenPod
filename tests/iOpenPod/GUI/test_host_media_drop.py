@@ -26,6 +26,7 @@ from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.sync_workspace import SyncStage, SyncWorkspace
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.host_media_drop import HostMediaDropTarget, dropped_host_paths
+from iOpenPod.GUI.widgets.host_scan_issues import HostScanIssues
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from storage import HostPath
 
@@ -152,8 +153,11 @@ def test_folder_drop_uses_shared_scan_settings_and_cancel_aborts(
     def configure(dialog: MediaFolderSettingsDialog) -> int:
         label = dialog.findChild(QLabel, "mediaFolderPath")
         recursion = dialog.findChild(QCheckBox, "recurseMediaFolder")
+        follow = dialog.findChild(QCheckBox, "followMediaFolderSymlinks")
         assert label is not None and recursion is not None
         assert recursion.isVisibleTo(dialog) and recursion.isChecked()
+        assert follow is not None and not follow.isChecked()
+        follow.setChecked(True)
         prompts.append(label.text())
         recursion.setChecked(recurse)
         for kind in HostMediaType:
@@ -187,6 +191,7 @@ def test_folder_drop_uses_shared_scan_settings_and_cancel_aborts(
                     HostPath(source),
                     recurse=recurse,
                     media_types=frozenset((media_type,)),
+                    follow_symlinks=True,
                 ),
             )
         ]
@@ -244,6 +249,21 @@ def test_unsupported_remote_and_mixed_selections_are_rejected(tmp_path: Path) ->
     assert not dropped_host_paths(QMimeData())
 
 
+@pytest.mark.parametrize("broken", [False, True])
+def test_explicit_link_with_no_media_suffix_reaches_scan_validation(
+    tmp_path: Path, broken: bool
+) -> None:
+    target = tmp_path / "song.mp3"
+    if not broken:
+        target.write_bytes(b"fixture")
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"Host cannot create symbolic links: {error}")
+    assert dropped_host_paths(_mime(alias)) == (alias,)
+
+
 def test_real_drop_scan_reaches_sync_selection_with_only_selected_photo(
     shell: tuple[MainWindow, AppContext],
     tmp_path: Path,
@@ -285,6 +305,48 @@ def test_no_active_ipod_rejects_drop(tmp_path: Path) -> None:
         context.shutdown()
         window.deleteLater()
         APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
+
+
+def test_skipped_link_stays_visible_in_empty_selection_and_review(
+    shell: tuple[MainWindow, AppContext],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window, context = shell
+    selected = tmp_path / "selected"
+    selected.mkdir()
+    photo = tmp_path / "outside.png"
+    Image.new("RGB", (8, 8), "red").save(photo)
+    try:
+        (selected / "linked.png").symlink_to(photo)
+    except OSError as error:
+        pytest.skip(f"Host cannot create symbolic links: {error}")
+
+    def accept_settings(_dialog: MediaFolderSettingsDialog) -> int:
+        return 1
+
+    monkeypatch.setattr(MediaFolderSettingsDialog, "exec", accept_settings)
+    monkeypatch.setattr(context.ipod_media_controller, "start", lambda: True)
+    pages = window.findChild(QStackedWidget, "pageStack")
+    sync = window.findChild(SyncWorkspace)
+    assert pages is not None and sync is not None
+    mime = _mime(selected)
+    assert _enter(pages, mime).isAccepted()
+    assert _drop(pages, mime).isAccepted()
+    APPLICATION.processEvents()
+    wait_for(lambda: not context.host_media_controller.busy)
+    library = context.host_media_controller.latest_library
+    assert library is not None and library.issues
+    context.ipod_media_controller.finished.emit(
+        IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False)
+    )
+    panel = sync.findChild(HostScanIssues)
+    assert panel is not None and panel.has_issues and panel.isVisible()
+    assert sync.stage is SyncStage.SELECT
+    sync.show_review()
+    assert panel.isVisible()
+    sync.show_scan("Rescanning")
+    assert panel.isHidden() and not panel.has_issues
 
 
 def test_queued_drop_does_not_outlive_its_library_surface(tmp_path: Path) -> None:

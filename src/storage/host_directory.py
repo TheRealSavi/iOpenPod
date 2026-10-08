@@ -18,6 +18,7 @@ from storage.errors import (
     UnsafeFilesystemPathError,
 )
 from storage.host_input import (
+    HostSelectionResolver,
     LocalHostFile,
     _check_local_drive,  # pyright: ignore[reportPrivateUsage]
     validate_host_path_spelling,
@@ -77,6 +78,7 @@ class LocalHostDirectory:
         on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
         include_file: Callable[[str], bool] | None = None,
         include_directories: bool = True,
+        include_links: bool = False,
         on_entry: Callable[[HostDirectoryEntry], None] | None = None,
     ) -> tuple[HostDirectoryEntry, ...]:
         """Stat each child once while pinning this directory and its parents.
@@ -88,7 +90,9 @@ class LocalHostDirectory:
         while directory identity and no-link checks remain mandatory.
         An optional filename predicate skips unneeded non-directory entries before
         stat where the Host supplies directory-entry type information. Directories
-        are retained independently when include_directories is true. on_entry
+        are retained independently when include_directories is true.
+        Symbolic links are retained with directories, or independently when
+        include_links is true, without following their targets. on_entry
         reports provisional observations for progress; only a successfully returned
         listing has passed the final directory identity checks.
         """
@@ -112,6 +116,10 @@ class LocalHostDirectory:
                         if (
                             include_file is not None
                             and not include_file(entry.name)
+                            and not (
+                                (include_links or include_directories)
+                                and entry.is_symlink()
+                            )
                             and (
                                 not include_directories
                                 or not entry.is_dir(follow_symlinks=False)
@@ -178,6 +186,31 @@ def _entry_kind(value: os.stat_result) -> HostEntryKind:
     if stat.S_ISDIR(value.st_mode):
         return HostEntryKind.DIRECTORY
     return HostEntryKind.OTHER
+
+
+def resolve_host_entry(
+    path: HostPath, *, resolver: HostSelectionResolver | None = None
+) -> HostDirectoryEntry:
+    """Observe the canonical target of an explicitly authorized symbolic link."""
+    resolved = (resolver or HostSelectionResolver()).resolve(path)
+    metadata = Path(resolved).lstat()
+    kind = _entry_kind(metadata)
+    if kind not in (HostEntryKind.FILE, HostEntryKind.DIRECTORY):
+        raise UnsafeFilesystemPathError(
+            "The resolved Host target is not a file or directory"
+        )
+    return HostDirectoryEntry(
+        resolved,
+        kind,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        LocalHostFile._from_stat(resolved, metadata)  # pyright: ignore[reportPrivateUsage]
+        if kind is HostEntryKind.FILE
+        else None,
+        LocalHostDirectory._from_stat(resolved, metadata)  # pyright: ignore[reportPrivateUsage]
+        if kind is HostEntryKind.DIRECTORY
+        else None,
+    )
 
 
 def _require_directory(value: os.stat_result) -> None:

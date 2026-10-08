@@ -35,6 +35,7 @@ from iOpenPod.GUI.presentation.i18n.text import english_count_fallback
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.eta_label import EtaLabel
+from iOpenPod.GUI.widgets.host_scan_issues import HostScanIssues
 from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.sync_storage_bar import SyncStorageBar
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -423,6 +424,9 @@ class SyncWorkspace(QWidget):
         layout.setSpacing(0)
         layout.addWidget(header)
         layout.addWidget(self._storage_bar)
+        self._scan_issues = HostScanIssues(self)
+        self._scan_issues.hide()
+        layout.addWidget(self._scan_issues)
         layout.addWidget(self._content, 1)
 
         self._scan.cancelRequested.connect(self.scanCancelRequested.emit)
@@ -462,6 +466,7 @@ class SyncWorkspace(QWidget):
         )
 
     def show_scan(self, detail: str) -> None:
+        self._scan_issues.load(())
         self._podcast_execution = False
         self.retranslate_ui()
         self.stop_scan()
@@ -495,6 +500,7 @@ class SyncWorkspace(QWidget):
         ipod_media: IPodMediaLibrary,
     ) -> None:
         self._reset_playlist_preview()
+        self._scan_issues.load(library.issues)
         self._storage_projection = SyncStorageProjection(
             library, ipod_media, active_ipod.candidate, active_ipod.profile
         )
@@ -545,6 +551,7 @@ class SyncWorkspace(QWidget):
         self._set_stage(SyncStage.SYNC)
 
     def clear(self) -> None:
+        self._scan_issues.load(())
         self.stop_scan()
         self._reset_playlist_preview()
         self._storage_projection = None
@@ -619,6 +626,10 @@ class SyncWorkspace(QWidget):
         self._stage = stage
         self._refresh_review_summary()
         self._storage_bar.setVisible(stage in {SyncStage.SELECT, SyncStage.REVIEW})
+        self._scan_issues.setVisible(
+            self._scan_issues.has_issues
+            and stage in {SyncStage.SELECT, SyncStage.REVIEW}
+        )
         self._content.setCurrentWidget(self._stage_pages[stage])
         order = (SyncStage.SOURCES, SyncStage.SELECT, SyncStage.REVIEW, SyncStage.SYNC)
         current = 0 if stage is SyncStage.SCANNING else order.index(stage)

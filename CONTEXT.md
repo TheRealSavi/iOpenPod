@@ -140,7 +140,11 @@ global settings. Discovery automatically restores that choice only when exactly 
 matching Device Candidate is ready; the connection-scoped Device Candidate ID is
 never persisted.
 The GUI first opens a modal folder dialog that stages Host Media Library folders and
-their recursive, per-media-type scan settings. Accepting the dialog persists that
+their recursive, per-media-type scan settings. Explicit selections may use symbolic
+links. A per-folder Follow symbolic links option, disabled by default, also permits
+discovered links; cycle detection and shared observations prevent duplicate work.
+Scan issues remain visible in Select Media and Review. See ADR-0132.
+Accepting the dialog persists that
 configuration in global settings, starts a cancellable background Host Media Scan,
 and opens the full-window Sync Workspace for scan progress, media selection, and
 Review. The scan covers audio, video, Photos, and Playlists and projects the result
@@ -152,7 +156,7 @@ explicitly reviews Playlist references outside the selected media catalog, inclu
 excluded media types and subfolders. M3U/M3U8, PLS, XSPF, WPL, and ASX/WAX/WVX
 documents use bounded Storage reads; only explicitly accepted local audio/video
 references can extend the scan, through identity-checked private Storage captures.
-Network references, nested Playlists, links, and XML entity declarations cannot
+Network references, nested Playlists, indirect Playlist links, and XML entity declarations cannot
 expand access. Host file and folder-artwork churn during scanning is retained as a
 diagnostic instead of failing the best-effort scan; Sync revalidates current source
 facts before writing. See ADR-0074 and ADR-0082. On completion,
@@ -257,7 +261,10 @@ selection; no pending projected Library is published. Unsupported
 positional data retains the conservative preservation/remapping policy. See
 [the sidecar contract](docs/playback-sidecars.md) and ADR-0100.
 Oversized Photo containers become bounded PNG stills, with separate Host and iPod
-content digests. Publication verification and automatic recovery report their
+content digests. Photo sources now use Pillow's existing pixel limits; ordinary
+6K and 16K widescreen originals retain their encoded bytes. Preparation and previews
+reduce working images before orientation and color copies. See ADR-0130.
+Publication verification and automatic recovery report their
 current files; verified restoration cleanup retries do not repeat media reads.
 macOS AppleDouble companions are excluded from artwork dependencies, and cleanup
 tolerates entries already removed by filesystem metadata maintenance.
@@ -299,7 +306,11 @@ use the existing recoverable Storage Transaction without an additional prompt.
 For F1061, individually validated 55-row and 56-row rasters may coexist, including
 55-row rasters in 56-row allocations. New artwork follows a recognized retained
 MHIF layout or the most common retained raster size, with the Device Profile
-breaking ties. See ADR-0111, ADR-0121, and ADR-0124.
+breaking ties. Packed RGB artwork with an explicit row stride may retain smaller
+visible dimensions inside the validated raster; new images still fill the selected
+output layout. For example, retained 55-by-56 and 56-by-56 visible images can receive
+new 56-by-56 artwork without rewriting either retained image. Other codecs keep
+their existing geometry rules. See ADR-0111, ADR-0121, ADR-0124, and ADR-0131.
 If cover changes still prevent Sync preparation, Sync retries once with existing
 cover links retained and new Tracks without covers. A verified retry publishes
 the remaining changes, reports deferred covers and leaves them eligible for a
@@ -388,8 +399,10 @@ background and rejects stale or cancelled results. With Draft all changes on,
 Review Changes labels success Prepared for review and Save to iPod requires manual
 acceptance; with it off, acceptance is automatic. Both modes commit verified
 metadata, device-name, Playlist, Photo, artwork, and Track-removal changes through a
-captured Storage Transaction with retained originals and a recovery journal. General Sync stays
-disabled. Missing device-bound signing material, unsupported ArtworkDB signatures,
+captured Storage Transaction with retained originals and a recovery journal. Ordinary
+Remove from Library actions permanently delete obsolete Track media after the
+transaction commits and its recovery files are cleaned up (ADR-0128). General Sync
+stays disabled. Missing device-bound signing material, unsupported ArtworkDB signatures,
 pending positional sidecars, and ambiguous affected structures block preparation.
 See ADR-0021, ADR-0022, ADR-0061, and `docs/library-writing.md`.
 Preparation requests capture source and workspace revisions together. Read-only

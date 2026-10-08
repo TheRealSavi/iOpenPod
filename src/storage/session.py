@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, BinaryIO, cast
 from storage._filesystem import (
     COPY_CHUNK_SIZE,
     allocated_size,
+    fingerprint_from_stat,
     flush_parent_directory,
     flush_written_file,
     is_link_or_reparse,
@@ -341,6 +342,49 @@ class FilesystemSession:
             ) from error
         self._revalidate()
         return identity
+
+    def delete_unrecoverably(self, path: DevicePath, *, expected: FileIdentity) -> None:
+        """Delete one unchanged regular file without retaining a recovery copy."""
+
+        with self._writer_lease():
+            observation = self._revalidate(write=True)
+            target = resolve_device_path(
+                self._root,
+                path,
+                observation.volume.capabilities,
+                require_leaf=True,
+            )
+            try:
+                with open_read_no_follow(target) as source:
+                    if _file_identity(os.fstat(source.fileno())) != expected:
+                        raise FilePreconditionError(
+                            f"Device file changed before deletion: {path}"
+                        )
+                # Check the named entry again after closing its handle (required
+                # for deletion on Windows).
+                metadata = os.lstat(target)
+                if is_link_or_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
+                    raise UnsafeFilesystemPathError(
+                        f"Device Path is not a regular file: {path}"
+                    )
+                if _file_identity(metadata) != expected:
+                    raise FilePreconditionError(
+                        f"Device file changed before deletion: {path}"
+                    )
+                self._revalidate(write=True)
+                target.unlink()
+                if os.path.lexists(target):
+                    raise StorageOperationError(
+                        f"Deleted device file is still present: {path}"
+                    )
+                flush_parent_directory(target)
+                self._revalidate(write=True)
+            except StorageError:
+                raise
+            except OSError as error:
+                raise StorageOperationError(
+                    f"Could not delete device file {path}: {error}"
+                ) from error
 
     def read_snapshot(
         self,
@@ -999,7 +1043,7 @@ class FilesystemSession:
         prepare_staged: Callable[[HostPath], None] | None = None,
         progress: Callable[[int], None] | None = None,
     ) -> CopyResult:
-        """Stream one Device file to the Host and report source bytes read."""
+        """Stream to the Host and retain the original Device content fingerprint."""
 
         observation = self._revalidate()
         source_path = resolve_device_path(
@@ -1044,11 +1088,15 @@ class FilesystemSession:
                     if progress is not None:
                         progress(copied)
                 after = os.fstat(device_file.fileno())
-                if _stat_identity(before) != _stat_identity(after):
+                if (
+                    _stat_identity(before) != _stat_identity(after)
+                    or copied != after.st_size
+                ):
                     raise ConcurrentModificationError(
                         f"Device file changed while it was exported: {source}"
                     )
                 flush_written_file(host_file)
+            source_fingerprint = fingerprint_from_stat(after, digest.hexdigest())
             self._revalidate()
             if prepare_staged is not None:
                 prepare_staged(HostPath(temp_path))
@@ -1061,9 +1109,26 @@ class FilesystemSession:
                         digest.update(chunk)
                         copied += len(chunk)
                 self._revalidate()
+            # The opened file's identity may stay valid after its Device Path is
+            # replaced. Bind the captured fingerprint to the named regular file
+            # before it can become a later write precondition.
+            current_source = resolve_device_path(
+                self._root,
+                source,
+                self._current_observation.volume.capabilities,
+                require_leaf=True,
+            )
+            if _stat_identity(os.lstat(current_source)) != _stat_identity(after):
+                raise ConcurrentModificationError(
+                    f"Device file changed while it was exported: {source}"
+                )
             _publish_new_host_file(temp_path, destination_path)
             temp_path = None
-            return CopyResult(bytes_copied=copied, sha256=digest.hexdigest())
+            return CopyResult(
+                bytes_copied=copied,
+                sha256=digest.hexdigest(),
+                source_fingerprint=source_fingerprint,
+            )
         except OSError as error:
             raise StorageOperationError(
                 f"Could not export {source} to the Host: {error}"
@@ -1334,13 +1399,11 @@ class FilesystemSession:
             raise StorageOperationError(
                 f"The destination parent does not exist for {destination}"
             )
+        self._revalidate(write=True)
         self._check_precondition(source_path, expected_source)
         replaced = (
             self._check_precondition(destination_path, expected_destination) is not None
         )
-        self._revalidate(write=True)
-        self._check_precondition(source_path, expected_source)
-        self._check_precondition(destination_path, expected_destination)
         try:
             os.replace(source_path, destination_path)
             flush_parent_directory(source_path)

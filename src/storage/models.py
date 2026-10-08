@@ -338,6 +338,7 @@ class RecoveryWriteResult:
 class CopyResult:
     bytes_copied: int
     sha256: str
+    source_fingerprint: FileFingerprint
 
 
 @dataclass(frozen=True, slots=True)

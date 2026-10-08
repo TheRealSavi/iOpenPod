@@ -258,7 +258,9 @@ def test_reading_and_unrelated_edits_preserve_wrong_sizes(change: bool) -> None:
         "primary_size",
         "secondary_size",
         "dimensions",
+        "zero_dimension",
         "padding",
+        "padding_without_content",
         "missing_name",
         "duplicate_name",
         "missing_file",
@@ -284,9 +286,13 @@ def test_unsafe_retained_evidence_still_blocks_repair(problem: str) -> None:
     elif problem == "secondary_size":
         location = replace(location, header=replace(header, image_size_2=31))
     elif problem == "dimensions":
-        location = replace(location, header=replace(header, image_width=3))
+        location = replace(location, header=replace(header, image_width=5))
+    elif problem == "zero_dimension":
+        location = replace(location, header=replace(header, image_height=0))
     elif problem == "padding":
         location = replace(location, header=replace(header, vertical_padding=-1))
+    elif problem == "padding_without_content":
+        location = replace(location, header=replace(header, horizontal_padding=4))
     elif problem == "missing_name":
         location = replace(location, children=())
     elif problem == "duplicate_name":
@@ -394,8 +400,24 @@ def test_corrected_database_needs_no_further_repair(
     assert "Automatically corrected" not in caplog.text
 
 
-def test_centered_retained_image_dimensions_allow_automatic_repair() -> None:
-    healthy, target, resources = retained_source()
+@pytest.mark.parametrize(
+    "pixel_format",
+    [
+        CoverPixelFormat.RGB565_LE,
+        CoverPixelFormat.RGB565_BE,
+        CoverPixelFormat.RGB565_BE_90,
+        CoverPixelFormat.RGB555_LE,
+        CoverPixelFormat.RGB555_BE,
+        CoverPixelFormat.REC_RGB555_LE,
+    ],
+)
+@pytest.mark.parametrize("padding", [0, 1])
+def test_visible_packed_rgb_dimensions_allow_automatic_repair(
+    pixel_format: CoverPixelFormat, padding: int
+) -> None:
+    healthy, target, resources = retained_source(
+        (replace(COVER, pixel_format=pixel_format),)
+    )
     original = with_wrong_sizes(healthy).serialize()
     assert original.artwork is not None
     document = parse_ArtworkDB(original.artwork)
@@ -406,7 +428,13 @@ def test_centered_retained_image_dimensions_allow_automatic_repair() -> None:
         location = container.payload.child
         location = replace(
             location,
-            header=replace(location.header, image_height=3, vertical_padding=1),
+            header=replace(
+                location.header,
+                image_width=3,
+                horizontal_padding=padding,
+                image_height=3,
+                vertical_padding=padding,
+            ),
         )
         container = replace(
             container, payload=replace(container.payload, child=location)
@@ -417,3 +445,43 @@ def test_centered_retained_image_dimensions_allow_automatic_repair() -> None:
     source = IPodLibrary(original.itunes).with_artwork(write_ArtworkDB(document))
     result = prepare_cover(source, target, resources)
     assert result.prepared is not None, result.issues
+
+
+@pytest.mark.parametrize(
+    "cover",
+    [
+        replace(COVER, pixel_format=CoverPixelFormat.UYVY),
+        replace(COVER, pixel_format=CoverPixelFormat.UYVY_FIELDS),
+        replace(COVER, pixel_format=CoverPixelFormat.I420_LE, row_bytes=6),
+        replace(COVER, row_bytes=0),
+    ],
+)
+def test_non_packed_or_implicit_stride_geometry_keeps_strict_validation(
+    cover: CoverFormat,
+) -> None:
+    healthy, target, resources = retained_source((cover,))
+    original = with_wrong_sizes(healthy).serialize()
+    assert original.artwork is not None
+    document = parse_ArtworkDB(original.artwork)
+    selection = document.find_chunks(MhiiHeader)[0]
+    row = selection.chunk
+    container = row.children[0]
+    assert isinstance(container.payload, MhodContainerPayload)
+    location = container.payload.child
+    location = replace(location, header=replace(location.header, image_width=2))
+    document = document.replace_chunk(
+        selection,
+        replace(
+            row,
+            children=(
+                replace(container, payload=replace(container.payload, child=location)),
+                *row.children[1:],
+            ),
+        ),
+    )
+    source = IPodLibrary(original.itunes).with_artwork(write_ArtworkDB(document))
+
+    result = prepare_cover(source, target, resources)
+
+    assert result.prepared is None
+    assert any("dimensions or padding" in issue.message for issue in result.issues)

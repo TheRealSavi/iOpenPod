@@ -155,8 +155,9 @@ class SyncSettings(QWidget):
         self._fit.set_copy(
             self.tr("Fit Thumbnails"),
             self.tr(
-                "Fit the entire Photo inside device thumbnails, leaving borders as "
-                "needed. Off crops Photos to fill each thumbnail."
+                "Fit the entire Photo inside small grid and list thumbnails, adding "
+                "padding as needed. Off crops only those thumbnails to fill. All "
+                "other Photo viewing copies always fit the entire image with padding."
             ),
         )
         self._rockbox.set_copy(
