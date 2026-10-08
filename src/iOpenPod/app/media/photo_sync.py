@@ -63,14 +63,15 @@ def prepare_sync_photo(
     crop_format_ids: Collection[int] = (),
     original: Photo | None = None,
 ) -> PreparedPhoto:
-    """Build a complete Photo with fresh, individually verifiable device files.
+    """Build a complete Photo with independently verifiable original and frames.
 
-    The caller allocates unused paths and Storage enforces absence at publication.
+    The caller allocates an unused original path. The thumbnail shard identifies
+    temporary frame resources; Sync packs successful frames into final shared
+    shards after checking Host sources again.
     Original bytes remain unchanged; EXIF orientation, rotation and fitting affect
     only the viewing copies. ``crop_format_ids`` identifies small grid/list
     thumbnails that may crop when fitting is disabled. Every other rendition
-    always preserves the whole source. Each fresh shard avoids a read/rewrite of
-    old USB data.
+    always preserves the whole source.
     """
 
     if not data or len(data) > MAX_PHOTO_SOURCE_BYTES:

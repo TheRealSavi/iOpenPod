@@ -205,3 +205,6 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0130: Use Pillow limits for Photo sources](0130-use-pillow-limits-for-photo-sources.md)
 - [ADR-0131: Accept bounded visible dimensions in packed artwork](0131-accept-bounded-visible-dimensions-in-packed-artwork.md)
 - [ADR-0132: Follow explicitly authorized Host symbolic links](0132-follow-explicitly-authorized-host-symbolic-links.md)
+- [ADR-0133: Recover evidenced artwork without clearing unavailable covers](0133-recover-evidenced-artwork-without-clearing-unavailable-covers.md)
+- [ADR-0134: Verify unconfirmed durability before recovery cleanup](0134-verify-unconfirmed-durability-before-recovery-cleanup.md)
+- [ADR-0135: Pack Photos into bounded shared shards](0135-pack-photos-into-bounded-shared-shards.md)

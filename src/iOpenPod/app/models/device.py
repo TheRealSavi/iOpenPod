@@ -134,6 +134,8 @@ class ActiveIPod:
     photos_database_fingerprint: FileFingerprint | None = None
     preferences: tuple[IPodPreferenceSection, ...] = ()
     settings: DeviceSettings = field(default_factory=DeviceSettings)
+    artwork_repairs_pending: bool = False
+    photos_repairs_pending: bool = False
 
     @property
     def display_name(self) -> str:

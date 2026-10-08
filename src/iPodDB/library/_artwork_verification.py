@@ -12,7 +12,12 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhod_payloads.container_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
-from iPodDB.library._artwork_writing import artwork_path, effective_cover_format
+from iPodDB.library._artwork_writing import (
+    artwork_path,
+    effective_cover_format,
+    retained_artwork_extents,
+    superseded_artwork,
+)
 from iPodDB.library._resolved_write import ResolvedWrite
 from iPodDB.library.file_content import read_content
 from iPodDB.library.writing import IdentityMapping, PreparedFile, WriteResources
@@ -60,6 +65,23 @@ def verify_artwork(
         raise ValueError("ArtworkDB next image identity would reuse an existing image.")
     index = build_artwork_index(artwork)
     outputs = {f.relative_path.casefold(): f.data for f in files}
+    if outputs:
+        reserved = {
+            artwork_path(path).casefold() for path in resources.reserved_artwork_paths
+        }
+        inventory = {
+            item.relative_path.casefold(): item
+            for item in resources.file_inventory or ()
+        }
+        if original is not None:
+            reserved.update(
+                path.casefold()
+                for _, path, extent in retained_artwork_extents(original)
+                if (dependency := inventory.get(path.casefold())) is None
+                or extent > dependency.size
+            )
+        if reserved & outputs.keys():
+            raise ValueError("Created artwork overwrites an unavailable reserved path.")
     assets = {a.artwork_id: a.pixels for a in resources.artwork}
     file_formats = tuple(s.chunk.header for s in artwork.find_chunks(MhifHeader))
     original_sizes = (
@@ -73,7 +95,11 @@ def verify_artwork(
     formats = {
         f.format_id: (
             effective_cover_format(
-                original, f, resources, original_sizes.get(f.format_id)
+                original,
+                f,
+                resources,
+                original_sizes.get(f.format_id),
+                superseded_artwork(original, resolved, resources),
             )
             if generated
             else f
@@ -166,7 +192,7 @@ def verify_artwork(
             raise ValueError("Changed Track references missing artwork.")
         expected = {
             "artwork_id_ref": image_id,
-            "artwork_count": len(item.locations) if item else 0,
+            "artwork_count": int(item is not None and bool(item.locations)),
             "artwork_size": item.source_image_size if item else 0,
             "has_artwork": int(item is not None),
         }

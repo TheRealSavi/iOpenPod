@@ -168,6 +168,7 @@ class _Candidate:
     track: Track | None = None
     artwork_sha256: str | None = None
     track_details_refreshed: bool = False
+    artwork_available: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -918,6 +919,8 @@ def _paired_item(
 def _artwork_changed(
     host: _Candidate, ipod: _Candidate, *, facts_changed: bool
 ) -> bool:
+    if not host.artwork_available:
+        return False
     host_artwork = host.track is not None and host.track.artwork_id != 0
     ipod_artwork_id = 0 if ipod.track is None else ipod.track.artwork_id
     sync = ipod.sync
@@ -1035,6 +1038,9 @@ def _host_candidates(library: HostMediaLibrary) -> tuple[_Candidate, ...]:
     rechecked_paths = {
         host_path_identity(path) for path in library.rechecked_track_paths
     }
+    unavailable_artwork_paths = {
+        host_path_identity(path) for path in library.unavailable_artwork_paths
+    }
     for source in library.sources:
         if source.kind is HostMediaFileKind.PLAYLIST:
             continue
@@ -1060,6 +1066,7 @@ def _host_candidates(library: HostMediaLibrary) -> tuple[_Candidate, ...]:
                     modified_ns=source.modified_ns,
                     track=track,
                     track_details_refreshed=host_path_identity(path) in rechecked_paths,
+                    artwork_available=identity not in unavailable_artwork_paths,
                     artwork_sha256=(
                         artwork_by_id.get(track.artwork_id)
                         if track is not None and track.artwork_id

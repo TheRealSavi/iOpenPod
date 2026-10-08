@@ -224,6 +224,13 @@ def select_photo_thumbnail(
         and (format_id is None or representation.format_id == format_id)
         and representation.relative_path
         and representation.size_bytes > 0
+        and representation.offset >= 0
+        and 0
+        <= representation.horizontal_padding * 2
+        < by_id[representation.format_id].width
+        and 0
+        <= representation.vertical_padding * 2
+        < by_id[representation.format_id].height
     )
     if target_px <= 0 or not candidates:
         return None
@@ -239,14 +246,8 @@ def select_photo_thumbnail(
         return (0, edge, area) if edge >= target_px else (1, -edge, -area)
 
     representation, image_format = min(candidates, key=score)
-    horizontal_padding = min(
-        representation.horizontal_padding,
-        max(0, image_format.width - 1),
-    )
-    vertical_padding = min(
-        representation.vertical_padding,
-        max(0, image_format.height - 1),
-    )
+    horizontal_padding = representation.horizontal_padding
+    vertical_padding = representation.vertical_padding
     return PhotoRead(
         photo_id=photo.photo_id,
         format_id=representation.format_id,

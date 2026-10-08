@@ -1215,13 +1215,14 @@ media file or loading it entirely into memory. Storage also launches fingerprint
 processes against validated inputs and owns temporary device-scan captures.
 
 Host scanning, music import, and Sync enrichment share `app/media/tags.py` for native
-tag interpretation and common Track projection. Cache v11 retains recognized tag
+tag interpretation and common Track projection. Cache v12 retains recognized tag
 values, including classification, TV/Podcast details, sorting, and lyrics. Videos
 without useful native tags or timing can use bounded FFprobe metadata inspection
 through a pinned, seekable Storage input without a whole-file capture. Successful
 metadata is reused when optional fingerprint analysis must be retried. Unchanged
 decoded caches remain in memory under a Storage file-revision hint, and unchanged
-catalogs are not rewritten. See ADR-0099, ADR-0123, and
+catalogs are not rewritten. Embedded artwork availability is separate from absence;
+failed observations cannot request cover removal. See ADR-0099, ADR-0123, ADR-0133, and
 [Host tag coverage](host-media-tags.md).
 
 The Host Library Source projects scanned Tracks, Photos, and Playlists into the same
@@ -1285,9 +1286,11 @@ recovery. A separate iPod Analysis Cache in Host storage retains completed analy
 for repeated pre-Review scans, including on read-only devices. It is bound to device
 and Volume identities, validates current file facts, checkpoints on cancellation,
 and contains no Sync Details. Host Photo records carry matching SHA-256 evidence in
-Host Media Scan Cache v11. Versions 9 and 10 migrate while reusing unchanged media
-and artwork. Long Acoustic Fingerprints use a lossless bounded binary encoding in
-Host cache v11 and helper v5; readers retain prior decimal support.
+Host Media Scan Cache v12. Versions 9 through 11 migrate while reusing unchanged
+covered media; older no-cover records are reinspected once to distinguish absent
+artwork from previously unrecorded decoding failures. Long Acoustic Fingerprints
+use a lossless bounded binary encoding in Host cache v12 and helper v5; readers
+retain prior decimal support.
 An iPod Media Scan upgrades a v3 Library Sync Helper in
 memory by reusing unchanged device records without recapturing media. Because v3
 does not contain a committed iPod Track tag or artwork baseline, migration does not
@@ -1995,10 +1998,15 @@ revision-checked `LibraryWorkspace` operation omits the Photos and every occurre
 from all Photo Albums, including the Master Photo Album, and records explicit
 omission intent. iPodDB removes the corresponding MHII and MHIA records while
 preserving the relative order and retained bytes of every survivor. The Application
-Layer captures unique, unshared full-resolution files only beneath
-`Photos/Full Resolution`; the reviewed Storage Transaction publishes PhotosDB before
-moving those files into recovery. Packed Photo iTHMB files are not compacted or
-removed.
+Layer captures unshared full-resolution files beneath `Photos/Full Resolution` and
+wholly unreferenced supported thumbnail files beneath `Photos/Thumbs`; the reviewed
+Storage Transaction publishes PhotosDB before moving obsolete files into recovery.
+Shards referenced by surviving Photos remain intact and are not compacted. Photo
+Sync packs frames into shared per-format shards, extending only fully captured
+prefixes whose retained allocations fit the file. Each new frame must fit within
+the configured shard limit, otherwise allocation advances to another unused name.
+Storage publishes each changed shard once and binds it to the captured fingerprint
+or an absence precondition. See ADR-0076 and ADR-0135.
 Selected Photos and complete Photo Albums share the serialized Host-export controller
 used by Tracks and Playlists. `DeviceCoordinator` resolves and pins a readable
 full-resolution file beneath `Photos/`, then Storage streams it to a create-only Host

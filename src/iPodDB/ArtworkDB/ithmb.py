@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from PIL import Image
 
+from iPodDB.ArtworkDB.ithmb_reordering import reorder_recursive_rgb555
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -100,7 +102,6 @@ _PACKED_RGB555 = frozenset(
     {
         IthmbPixelFormat.RGB555_LE,
         IthmbPixelFormat.RGB555_BE,
-        IthmbPixelFormat.REC_RGB555_LE,
     }
 )
 _Y_LIMITED_TO_FULL = tuple(
@@ -156,6 +157,13 @@ def decode_ithmb(payload: bytes, layout: IthmbLayout) -> DecodedImage:
     try:
         if layout.pixel_format in _PACKED_RGB565:
             image = _decode_packed(payload, layout, raw_mode="BGR;16")
+        elif layout.pixel_format is IthmbPixelFormat.REC_RGB555_LE:
+            width, height = _stored_raster_size(layout)
+            _validate_stored_raster(width, height)
+            reordered = reorder_recursive_rgb555(
+                payload, width, height, layout.row_bytes, encode=False
+            )
+            image = _decode_packed(reordered, layout, raw_mode="BGR;15")
         elif layout.pixel_format in _PACKED_RGB555:
             image = _decode_packed(payload, layout, raw_mode="BGR;15")
         elif layout.pixel_format in {

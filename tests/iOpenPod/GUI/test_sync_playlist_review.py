@@ -1,14 +1,18 @@
 """Playlist-only changes remain explicit and executable from Sync Review."""
 
 from collections.abc import Iterator
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QEvent
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QCheckBox, QLabel, QPlainTextEdit, QPushButton
+from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
+from iOpenPod.app.library_sync_helper import IPodMediaCacheStats, IPodMediaLibrary
 from iOpenPod.app.sync_execution import PlaylistSyncChange
 from iOpenPod.app.sync_plan import (
     SyncPlan,
@@ -70,6 +74,52 @@ def test_playlist_only_changes_require_checked_option_and_executable_review(
     workspace.set_execution_available(True)
     workspace.show_selection()
     assert not execute.isEnabled()
+
+
+@pytest.mark.parametrize("reset", ["clear", "scan"])
+@pytest.mark.parametrize(
+    ("artwork_pending", "photos_pending", "repair_label"),
+    [
+        (True, False, "Artwork repair"),
+        (False, True, "Photo Database repair"),
+    ],
+    ids=["artwork", "photos"],
+)
+def test_pending_database_repair_is_visible_and_executable_without_media_changes(
+    tmp_path: Path,
+    workspace: SyncWorkspace,
+    reset: str,
+    artwork_pending: bool,
+    photos_pending: bool,
+    repair_label: str,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        workspace.load_comparison(
+            HostMediaLibrary(LibrarySnapshot(), (), (), HostMediaCacheStats()),
+            SyncPlan(()),
+            replace(
+                device.active,
+                artwork_repairs_pending=artwork_pending,
+                photos_repairs_pending=photos_pending,
+            ),
+            IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False),
+        )
+        workspace.show_review()
+        execute = workspace.findChild(QPushButton, "executeSync")
+        summary = workspace.findChild(QLabel, "syncReviewSummary")
+        assert execute is not None and summary is not None
+        assert execute.isEnabled()
+        assert repair_label in summary.text()
+        if reset == "clear":
+            workspace.clear()
+        else:
+            workspace.show_scan("Scanning")
+        workspace.show_review()
+        assert not execute.isEnabled()
+        assert repair_label not in summary.text()
+    finally:
+        device.coordinator.close()
 
 
 @pytest.mark.parametrize(

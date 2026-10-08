@@ -600,7 +600,11 @@ def _execute_external(
             publication_started=publication_started,
             content_verified=True,
         )
-        journal = replace(journal, state=TransactionState.COMMITTED)
+        journal = replace(
+            journal,
+            state=TransactionState.COMMITTED,
+            content_durability_confirmed=True,
+        )
         fingerprint = _persist(session, path, journal, fingerprint)
         _require_complete_flush(
             session.flush(),
@@ -815,7 +819,14 @@ def execute(
                 _expected_content(session, _backup(root, index), entry.before)
         _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
-        journal = replace(journal, state=TransactionState.COMMITTED)
+        # Volume flush can be unavailable to an unelevated Host process. Keep
+        # ordinary publication usable, but do not issue unchecked cleanup
+        # authority for content whose durability was not confirmed.
+        journal = replace(
+            journal,
+            state=TransactionState.COMMITTED,
+            content_durability_confirmed=flushes[-1].complete,
+        )
         fingerprint = _persist(session, path, journal, fingerprint)
         _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
@@ -889,17 +900,12 @@ def read_state(session: FilesystemSession, path: DevicePath) -> TransactionState
 
 
 def finalize_committed(session: FilesystemSession, path: DevicePath) -> FlushResult:
-    """Discard recovery data for a verified commit without rehashing published media.
-
-    The durable COMMITTED marker is written only after content verification. The
-    writer lease and exact journal fingerprint bind this cleanup to that marker.
-    This is cleanup authority only; restoration still requires full inspection.
-    """
+    """Clean a commit, rechecking content only when durability was unconfirmed."""
     return _finalize_terminal(session, path, TransactionState.COMMITTED)
 
 
 def finalize_restored(session: FilesystemSession, path: DevicePath) -> FlushResult:
-    """Clean a verified restoration marker without another media inspection."""
+    """Clean a restoration with the same persisted durability evidence as commit."""
     return _finalize_terminal(session, path, TransactionState.RESTORED)
 
 
@@ -913,13 +919,14 @@ def _finalize_terminal(
         raise FilePreconditionError(
             f"Only a verified {state.value} transaction can be cleaned up"
         )
-    _require_complete_flush(
-        session.flush(),
-        path,
-        journal,
-        publication_started=True,
-        content_verified=True,
-    )
+    if journal.content_durability_confirmed:
+        _require_complete_flush(
+            session.flush(),
+            path,
+            journal,
+            publication_started=True,
+            content_verified=True,
+        )
     return finalize(
         session,
         TransactionRecovery(
@@ -1008,6 +1015,27 @@ def finalize(
         raise FilePreconditionError("Transaction journal is not in its inspected state")
     if journal.recovery_material_identity != recovery.recovery_material_identity:
         raise FilePreconditionError("Transaction recovery material identity changed")
+    if not journal.content_durability_confirmed:
+        # A later successful flush cannot recover writes lost during a previous
+        # disconnect. Verify the expected result, not merely the current files
+        # captured by inspect(), before discarding their retained originals.
+        _require_complete_flush(
+            session.flush(),
+            path,
+            journal,
+            publication_started=True,
+            content_verified=True,
+        )
+        for entry in journal.entries:
+            restored = journal.state is TransactionState.RESTORED
+            _expected_file(
+                session,
+                entry.path,
+                entry.before if restored else entry.after,
+                entry.before_modified_ns if restored else entry.after_modified_ns,
+            )
+        for dependency in journal.dependencies:
+            _expected_content(session, dependency.path, dependency.content)
     session._remove_transaction_namespace(  # pyright: ignore[reportPrivateUsage]
         root,
         path,
@@ -1168,7 +1196,11 @@ def _restore_external(
 
     content_verified = False
     try:
-        journal = replace(journal, state=TransactionState.RESTORING)
+        journal = replace(
+            journal,
+            state=TransactionState.RESTORING,
+            content_durability_confirmed=False,
+        )
         fingerprint = _persist(session, path, journal, fingerprint)
         _require_complete_flush(
             session.flush(),
@@ -1235,7 +1267,11 @@ def _restore_external(
             publication_started=True,
             content_verified=True,
         )
-        journal = replace(journal, state=TransactionState.RESTORED)
+        journal = replace(
+            journal,
+            state=TransactionState.RESTORED,
+            content_durability_confirmed=True,
+        )
         fingerprint = _persist(session, path, journal, fingerprint)
         _require_complete_flush(
             session.flush(),
@@ -1361,7 +1397,11 @@ def restore(
         0, observation, reserve_bytes=required, display_name="transaction restoration"
     )
     try:
-        journal = replace(journal, state=TransactionState.RESTORING)
+        journal = replace(
+            journal,
+            state=TransactionState.RESTORING,
+            content_durability_confirmed=False,
+        )
         fingerprint = _persist(session, path, journal, fingerprint)
         _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes = [session.flush()]
@@ -1435,7 +1475,11 @@ def restore(
             _expected_content(session, dependency.path, dependency.content)
         _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())
-        journal = replace(journal, state=TransactionState.RESTORED)
+        journal = replace(
+            journal,
+            state=TransactionState.RESTORED,
+            content_durability_confirmed=flushes[-1].complete,
+        )
         _persist(session, path, journal, fingerprint)
         _activity(activity, TransactionActivityPhase.FLUSHING)
         flushes.append(session.flush())

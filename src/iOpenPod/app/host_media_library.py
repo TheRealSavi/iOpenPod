@@ -76,7 +76,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 11
+_CACHE_VERSION = 12
 _MAX_CACHE_BYTES = 64 * 1024 * 1024
 _MAX_DECODED_FINGERPRINT_BYTES = 256 * 1024 * 1024
 _MAX_CACHE_ENTRIES = 250_000
@@ -163,6 +163,7 @@ _TRACK_METADATA_FIELDS = frozenset(
         "tag_values",
         "acoustic_fingerprint",
         "metadata_complete",
+        "embedded_artwork_available",
         "artwork_content_sha256",
         "artwork_kind",
         "artwork_modified_ns",
@@ -318,6 +319,9 @@ class HostMediaLibrary:
     rechecked_track_paths: frozenset[str] = field(
         default=frozenset(), repr=False, compare=False
     )
+    # Normalized Track paths whose missing cover is an observation failure,
+    # not evidence that the user removed artwork. Recomputed for every scan.
+    unavailable_artwork_paths: frozenset[str] = frozenset()
 
     @property
     def audio_count(self) -> int:
@@ -620,6 +624,7 @@ class _CachedFileRecord:
 @dataclass(frozen=True, slots=True)
 class _CachedTrackRecord(_CachedFileRecord):
     metadata_complete: bool = False
+    embedded_artwork_available: bool = True
     title: str = ""
     artist: str = ""
     album: str = ""
@@ -728,6 +733,7 @@ class PendingHostMediaScan:
     observations: tuple[_Observation, ...] = ()
     enumeration_issues: tuple[HostMediaScanIssue, ...] = ()
     files: tuple[HostPath, ...] = ()
+    unavailable_artwork_paths: frozenset[str] = frozenset()
 
 
 class _MutagenReader(Protocol):
@@ -838,11 +844,14 @@ class HostMediaScanner:
             max_workers=self._max_directory_workers,
         )
         cached, cached_artwork = self._load_cache()
+        artwork_issues: dict[str, HostMediaScanIssue] = {}
         before_artwork = _folder_artwork_catalog(
             before,
             directories=before_directories,
             cached=cached_artwork,
             checkpoint=checkpoint,
+            unavailable=artwork_issues,
+            enumeration_issues=enumeration_issues,
         )
         file_aliases = before_directories.file_aliases
         del before_directories
@@ -881,12 +890,15 @@ class HostMediaScanner:
             directories=after_directories,
             cached=before_artwork,
             checkpoint=checkpoint,
+            unavailable=artwork_issues,
+            enumeration_issues=final_issues,
         )
         del after_directories
         if _folder_artwork_states(before_artwork) != _folder_artwork_states(
             after_artwork
         ):
             records = _reconcile_folder_artwork(records, after_artwork)
+        issues.extend(artwork_issues.values())
         if tuple(item.state for item in before) != tuple(item.state for item in after):
             issues.append(
                 _scan_issue(
@@ -975,6 +987,13 @@ class HostMediaScanner:
             observations=before,
             enumeration_issues=enumeration_issues,
             files=files,
+            unavailable_artwork_paths=frozenset(
+                _path_identity(record.path.path)
+                for record in records
+                if isinstance(record, _CachedTrackRecord)
+                and record.artwork is None
+                and _path_identity(record.path.path.parent) in artwork_issues
+            ),
         )
 
     def complete(
@@ -1192,7 +1211,13 @@ class HostMediaScanner:
             tuple(issues),
             HostMediaCacheStats(reused, inspected),
         )
-        result = replace(result, approved_external_files=tuple(approved_external_files))
+        result = replace(
+            result,
+            approved_external_files=tuple(approved_external_files),
+            unavailable_artwork_paths=(
+                pending.unavailable_artwork_paths | result.unavailable_artwork_paths
+            ),
+        )
         for issue in result.issues[:50]:
             logger.info(
                 "Host Media Scan issue: path=%s detail=%s", issue.path, issue.detail
@@ -1284,6 +1309,17 @@ class HostMediaScanner:
             approved_external_files=library.approved_external_files,
             rechecked_track_paths=(
                 library.rechecked_track_paths | frozenset(refreshed_paths)
+            ),
+            unavailable_artwork_paths=(
+                updated.unavailable_artwork_paths
+                | frozenset(
+                    identity
+                    for identity in library.unavailable_artwork_paths
+                    if not isinstance(
+                        record := records.get(identity), _CachedTrackRecord
+                    )
+                    or record.artwork is None
+                )
             ),
         )
         cached_records.update(records)
@@ -2018,6 +2054,8 @@ def _folder_artwork_catalog(
     directories: _DirectoryCatalog,
     cached: dict[str, _ArtworkReference],
     checkpoint: CancellationCheck,
+    unavailable: dict[str, HostMediaScanIssue],
+    enumeration_issues: tuple[HostMediaScanIssue, ...],
 ) -> dict[str, _ArtworkReference]:
     started = perf_counter()
     catalog: dict[str, _ArtworkReference] = {}
@@ -2025,6 +2063,14 @@ def _folder_artwork_catalog(
         _path_identity(observation.path.path.parent): observation
         for observation in observations
         if observation.kind in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO)
+    }
+    unavailable_listings = {
+        _path_identity(issue.path.path.parent)
+        if _is_folder_cover(issue.path.path)
+        else _path_identity(issue.path.path): issue
+        for issue in enumeration_issues
+        if _is_folder_cover(issue.path.path)
+        or _path_identity(issue.path.path) in media_directories
     }
     reused_listings = 0
     for identity, observation in media_directories.items():
@@ -2039,10 +2085,21 @@ def _folder_artwork_catalog(
                 cached=cached.get(identity),
                 checkpoint=checkpoint,
             )
-        except (OSError, StorageError):
-            # Folder artwork is optional presentation data. Cloud placeholders,
-            # evictions, and permission churn must not invalidate media discovery.
+            if artwork is None and identity in unavailable_listings:
+                raise ValueError(str(unavailable_listings[identity].detail))
+        except (OSError, StorageError, SyntaxError, ValueError) as error:
+            # Media can still Sync, but unreadable artwork cannot authorize
+            # clearing the existing device cover for every Track in this folder.
             artwork = None
+            unavailable[identity] = HostMediaScanIssue(
+                HostPath(observation.path.path.parent),
+                source_text(
+                    "Folder artwork could not be verified; existing iPod covers will be kept: {error}",
+                    error=str(error),
+                ),
+            )
+        else:
+            unavailable.pop(identity, None)
         if artwork is not None:
             catalog[identity] = artwork
     logger.info(
@@ -2067,22 +2124,20 @@ def _folder_artwork_for(
     if observation.kind not in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO):
         return None
     directory = observation.path.path.parent
-    try:
-        if entries is None:
-            # Explicitly selected files may have no folder enumeration. Preserve
-            # their existing artwork lookup without adding sibling media.
-            entries = LocalHostDirectory.observe(HostPath(directory)).list_entries(
-                checkpoint=checkpoint,
-                include_file=lambda name: _is_folder_cover(Path(name)),
-                include_directories=False,
-            )
-        files = sorted(
-            (entry for entry in entries if entry.kind is HostEntryKind.FILE),
-            key=lambda entry: (entry.path.path.name.casefold(), entry.path.path.name),
+    if entries is None:
+        # Explicitly selected files may have no folder enumeration. Preserve
+        # their existing artwork lookup without adding sibling media.
+        entries = LocalHostDirectory.observe(HostPath(directory)).list_entries(
+            checkpoint=checkpoint,
+            include_file=lambda name: _is_folder_cover(Path(name)),
+            include_directories=False,
         )
-    except (OSError, StorageError):
-        return None
+    files = sorted(
+        (entry for entry in entries if entry.kind is HostEntryKind.FILE),
+        key=lambda entry: (entry.path.path.name.casefold(), entry.path.path.name),
+    )
     by_name = {entry.path.path.name.casefold(): entry for entry in files}
+    failure: Exception | None = None
     for stem in _FOLDER_ARTWORK_STEMS:
         for extension in _FOLDER_ARTWORK_EXTENSIONS:
             checkpoint()
@@ -2090,6 +2145,7 @@ def _folder_artwork_for(
             if entry is None or entry.file is None:
                 continue
             if not 0 < entry.size_bytes <= _MAX_ARTWORK_BYTES:
+                failure = ValueError("The folder artwork has an unsupported file size")
                 continue
             if (
                 cached is not None
@@ -2107,11 +2163,8 @@ def _folder_artwork_for(
                     source.seek(0)
                     with Image.open(source) as image:
                         image.verify()
-            except StorageError:
-                # A folder cover is a convenience, not part of the Host media
-                # catalog. Treat transient cloud-storage failures as no cover.
-                return None
-            except (OSError, SyntaxError, ValueError):
+            except (StorageError, OSError, SyntaxError, ValueError) as error:
+                failure = error
                 continue
             return _ArtworkReference(
                 HostArtworkKind.FOLDER,
@@ -2120,6 +2173,8 @@ def _folder_artwork_for(
                 entry.modified_ns,
                 digest.hexdigest(),
             )
+    if failure is not None:
+        raise ValueError(f"No readable folder artwork: {failure}") from failure
     return None
 
 
@@ -2507,7 +2562,8 @@ def _read_track(
     length = _finite_number(getattr(info, "length", 0.0))
     bitrate = _nonnegative_int(getattr(info, "bitrate", 0))
     sample_rate = _nonnegative_int(getattr(info, "sample_rate", 0))
-    artwork_payload = _parsed_embedded_artwork(parsed)
+    embedded = _embedded_artwork_observation(parsed)
+    artwork_payload = embedded.payload
     artwork = (
         _ArtworkReference(
             HostArtworkKind.EMBEDDED,
@@ -2525,6 +2581,14 @@ def _read_track(
         size_bytes=observation.size_bytes,
         modified_ns=observation.modified_ns,
         metadata_complete=parsed is not None,
+        embedded_artwork_available=embedded.available,
+        warning=(
+            ""
+            if embedded.available or artwork is not None
+            else source_text(
+                "Embedded artwork could not be verified; existing iPod covers will be kept."
+            )
+        ),
         title=tagged.title,
         artist=tagged.artist,
         album=tagged.album,
@@ -2568,12 +2632,25 @@ def embedded_artwork_from_stream(stream: BinaryIO) -> bytes | None:
 
 
 def _parsed_embedded_artwork(parsed: Any) -> bytes | None:
+    return _embedded_artwork_observation(parsed).payload
+
+
+@dataclass(frozen=True, slots=True)
+class _EmbeddedArtworkObservation:
+    payload: bytes | None
+    available: bool
+
+
+def _embedded_artwork_observation(parsed: Any) -> _EmbeddedArtworkObservation:
+    """Distinguish a complete absent-cover observation from an unreadable cover."""
     if parsed is None:
-        return None
+        return _EmbeddedArtworkObservation(None, False)
     candidates: list[tuple[bool, bytes]] = []
+    observed_picture = False
     pictures = getattr(parsed, "pictures", ())
     if isinstance(pictures, list):
         for picture in cast("list[object]", pictures):
+            observed_picture = True
             payload = getattr(picture, "data", None)
             if isinstance(payload, bytes) and 0 < len(payload) <= _MAX_ARTWORK_BYTES:
                 candidates.append((getattr(picture, "type", 0) == 3, payload))
@@ -2582,6 +2659,7 @@ def _parsed_embedded_artwork(parsed: Any) -> bytes | None:
     if tags is not None and hasattr(tags, "getall"):
         frame_reader = cast("_FrameReader", tags)
         for picture in frame_reader.getall("APIC"):
+            observed_picture = True
             payload = getattr(picture, "data", None)
             if isinstance(payload, bytes) and 0 < len(payload) <= _MAX_ARTWORK_BYTES:
                 candidates.append((getattr(picture, "type", 0) == 3, payload))
@@ -2589,6 +2667,7 @@ def _parsed_embedded_artwork(parsed: Any) -> bytes | None:
     if tags is not None and hasattr(tags, "get"):
         tag_reader = cast("_TagReader", tags)
         covers = tag_reader.get("covr")
+        observed_picture = observed_picture or covers is not None
         if isinstance(covers, list):
             candidates.extend(
                 (True, bytes(value))
@@ -2598,6 +2677,7 @@ def _parsed_embedded_artwork(parsed: Any) -> bytes | None:
             )
         for name in ("metadata_block_picture", "coverart"):
             values = tag_reader.get(name)
+            observed_picture = observed_picture or values is not None
             if isinstance(values, str):
                 artwork_values: list[object] = [values]
             elif isinstance(values, list):
@@ -2623,6 +2703,7 @@ def _parsed_embedded_artwork(parsed: Any) -> bytes | None:
                     candidates.append((True, payload))
         for name in ("Cover Art (Front)", "Cover Art (Back)"):
             value = tag_reader.get(name)
+            observed_picture = observed_picture or value is not None
             payload = getattr(value, "value", value)
             if isinstance(payload, bytes) and payload:
                 separator = payload.find(b"\0")
@@ -2641,8 +2722,8 @@ def _parsed_embedded_artwork(parsed: Any) -> bytes | None:
                 image.verify()
         except (OSError, SyntaxError, ValueError):
             continue
-        return payload
-    return None
+        return _EmbeddedArtworkObservation(payload, True)
+    return _EmbeddedArtworkObservation(None, not observed_picture)
 
 
 def _inspect_photo(
@@ -2698,6 +2779,7 @@ def _fallback_record(
             size_bytes=observation.size_bytes,
             modified_ns=observation.modified_ns,
             warning=warning,
+            embedded_artwork_available=False,
             title=observation.path.path.stem,
             artwork_kind=(None if folder_artwork is None else folder_artwork.kind),
             artwork_path=(None if folder_artwork is None else folder_artwork.path),
@@ -2863,6 +2945,13 @@ def _build_library(
         artwork_sources=tuple(artwork_sources.values()),
         incomplete_playlist_ids=tuple(sorted(incomplete_playlists)),
         cached_records=records,
+        unavailable_artwork_paths=frozenset(
+            _path_identity(record.path.path)
+            for record in records
+            if isinstance(record, _CachedTrackRecord)
+            and record.artwork is None
+            and not record.embedded_artwork_available
+        ),
     )
 
 
@@ -2924,7 +3013,7 @@ def _decode_cache_contents(
     version = _integer(document.get("version"), "version")
     if version == 9:
         expected = {"version", "entries", "catalog_sha256"}
-    elif version in (10, _CACHE_VERSION):
+    elif version in (10, 11, _CACHE_VERSION):
         expected = {
             "version",
             "entries",
@@ -3050,6 +3139,7 @@ def _record_document(record: _CachedRecord) -> dict[str, object]:
             if record.acoustic_fingerprint
             else "",
             "metadata_complete": record.metadata_complete,
+            "embedded_artwork_available": record.embedded_artwork_available,
             "artwork_kind": (
                 "" if record.artwork_kind is None else record.artwork_kind.value
             ),
@@ -3100,15 +3190,15 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
     metadata = _object(row["metadata"], "metadata")
     if kind in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO):
         # Ignore the unused digest emitted by an earlier v10 development build.
-        expected = (
-            _TRACK_METADATA_FIELDS
-            if version == _CACHE_VERSION
-            else _TRACK_METADATA_FIELDS - {"metadata_complete"}
-        )
+        expected = _TRACK_METADATA_FIELDS
+        if version < 12:
+            expected = expected - {"embedded_artwork_available"}
+        if version < 11:
+            expected = expected - {"metadata_complete"}
         if frozenset(metadata) - {"payload_sha256"} != expected:
             raise ValueError("Cached Track metadata fields are invalid")
         metadata_complete = metadata.get("metadata_complete")
-        if version == _CACHE_VERSION:
+        if version >= 11:
             if not isinstance(metadata_complete, bool):
                 raise ValueError("Cached Track metadata status is invalid")
         else:
@@ -3125,6 +3215,15 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             except ValueError as error:
                 raise ValueError("Cached Acoustic Fingerprint is invalid") from error
         artwork_kind_value = _text(metadata["artwork_kind"], "artwork_kind")
+        embedded_artwork_available = metadata.get("embedded_artwork_available")
+        if version >= 12:
+            if not isinstance(embedded_artwork_available, bool):
+                raise ValueError("Cached embedded artwork status is invalid")
+        else:
+            # Earlier scans conflated an invalid embedded image with absence.
+            # Reobserve old coverless records once rather than reuse that claim.
+            embedded_artwork_available = bool(artwork_kind_value)
+            metadata_complete = metadata_complete and embedded_artwork_available
         artwork_path_value = _text(metadata["artwork_path"], "artwork_path")
         artwork_digest_value = _text(
             metadata["artwork_content_sha256"],
@@ -3154,6 +3253,7 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             modified_ns=modified_ns,
             warning=warning,
             metadata_complete=metadata_complete,
+            embedded_artwork_available=embedded_artwork_available,
             tag_values=_cached_tag_values(metadata["tag_values"]),
             title=_text(metadata["title"], "title"),
             artist=_text(metadata["artist"], "artist"),

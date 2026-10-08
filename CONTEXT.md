@@ -14,6 +14,17 @@ then beyond it.
 
 ## Current stage
 
+Sync distinguishes unavailable Host covers from deliberate removal and preserves
+reviewed artwork intent during media replacement. Complete artwork records hidden
+by an incorrect image-list count can be recovered for display and transactionally
+repaired through a repair-only Sync. Original database bytes remain retained until
+publication. Requested fresh covers can also regenerate damaged thumbnail ranges
+into fresh shards while preserving old records and surviving bytes. See ADR-0133 and the
+[artwork investigation](docs/research/artwork-sync-loss-2026-10-08.md).
+Storage records confirmed content durability. Unconfirmed or legacy terminal
+transactions require a successful flush and fresh result verification before
+recovery cleanup; ordinary publication retains its flush-warning behavior. See ADR-0134.
+
 Settings offers Host defaults and portable iPod overrides. Each eligible iPod
 setting can follow the Host or hold an explicit value; reconnecting reloads the
 saved choices. Library presentation, transcoding, optional Sync behavior, and
@@ -238,7 +249,9 @@ read-only, and foreign or declined journals remain untouched. Only actual cleanu
 failures require a cleanup warning and retry. See ADR-0089 and ADR-0093.
 Host tag interpretation now shares native ID3, MP4, Vorbis/APE, ASF, and FFprobe
 aliases across scanning and import. Media classification, TV and Podcast fields,
-lyrics, sorting, advisory, and normalization metadata survive Scan Cache v11.
+lyrics, sorting, advisory, and normalization metadata survive Scan Cache v12.
+Embedded artwork availability is retained separately from absence; older cached
+no-cover records are reinspected once.
 Successful metadata and optional Acoustic Fingerprints are reused independently.
 Compact fingerprints, unchanged-cache reuse, and bounded directory concurrency
 reduce scan overhead; both selected-tree passes retain fresh Storage observations.
@@ -381,15 +394,20 @@ empty user Photo Album using the selected Device Profile's explicit MHBA type po
 the new album uses the same automatic or manual safe-save policy. User Photo Album
 deletion requires explicit omission intent. Selected Photos can also be omitted from
 the Photo Library and every Photo Album as one reversible draft edit. Preparation
-removes their MHII/MHIA references, while Save recoverably removes only unshared
-full-resolution files beneath `Photos/Full Resolution` after PhotosDB publication.
+removes their MHII/MHIA references, while Save recoverably removes unshared
+full-resolution and supported thumbnail files after PhotosDB publication.
 Unused ranges in shared iTHMB files are retained. Sync can now create or replace
 Photos with a captured original and every supported Device Profile thumbnail
 format, including a first Photo Database where the profile declares its creation
 policy. It preserves original image bytes, applies rotation and fitting to viewing
 copies, and removes only fully unreferenced obsolete Photo files after publication.
+Thumbnail frames share per-format iTHMB shards up to a configured capacity,
+including across Syncs when the existing prefix and retained allocations can be
+verified. Damaged shard names remain reserved while replacements use fresh files.
+PhotosDB uses the same bounded image-list count recovery as ArtworkDB, through its
+own parser, and retains the original bytes until a verified save publishes repair.
 Direct arbitrary Master Photo Album edits and deletion remain blocked. See
-ADR-0053, ADR-0058, ADR-0059, and ADR-0076.
+ADR-0053, ADR-0058, ADR-0059, ADR-0076, and ADR-0135.
 
 Library Draft preparation now compares complete desired snapshots with retained
 Database Documents, maintains supported Track/Playlist/Photo/artwork relationships,

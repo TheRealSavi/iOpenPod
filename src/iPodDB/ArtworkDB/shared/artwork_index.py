@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -22,6 +23,8 @@ if TYPE_CHECKING:
     from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
     from iPodDB.ArtworkDB.shared.chunk_defs.mhni import MhniHeader
     from iPodDB.shared.chunk import DatabaseDocument, ParsedChunk
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +129,17 @@ def _location_from_container(
 ) -> IthmbLocation | None:
     image_name = payload.child
     header = image_name.header
+    if header.format_id <= 0:
+        # Keep the image identity and lossless MHNI, while allowing independent
+        # representations and other covers to remain available. A single damaged
+        # format must not turn the entire Artwork Index into a load failure.
+        _LOGGER.warning(
+            "Retained ArtworkDB MHNI at %#x has invalid format ID %s; "
+            "omitting only this display location",
+            image_name.offset,
+            header.format_id,
+        )
+        return None
     byte_length = header.image_size or header.image_size_2
     if byte_length <= 0:
         # A location without an encoded size cannot authorize a Storage ranged

@@ -122,9 +122,8 @@ def test_song_artwork_and_databases_are_published_and_recoverable(
             if t.metadata.location == wanted.metadata.location
         )
         assert added.track_id > 0 and added.artwork_id > 0
-        assert added.ipod is not None and added.metadata.artwork_count == len(
-            device.active.profile.capabilities.artwork.cover_formats
-        )
+        # One source cover can produce several device-sized representations.
+        assert added.ipod is not None and added.metadata.artwork_count == 1
         assert len(parsed.snapshot.tracks) == len(before.tracks) + 1
         assert parsed.snapshot.tracks[:-1] == before.tracks
         assert parsed.snapshot == result.active.library

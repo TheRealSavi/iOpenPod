@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from io import BytesIO
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 from PIL import Image, UnidentifiedImageError
@@ -16,7 +17,13 @@ from iPodDB.library.writing import WriteIssue
 
 if TYPE_CHECKING:
     from iPodDB.library.photos import PhotoLibrary
-    from iPodDB.library.writing import LibraryWritePlan, PreparedPhoto, WriteResources
+    from iPodDB.library.writing import (
+        FileDependency,
+        LibraryWritePlan,
+        PreparedPhoto,
+        SourceFile,
+        WriteResources,
+    )
 
 
 def validate_photos(
@@ -39,23 +46,92 @@ def validate_photos(
         for photo in (() if original is None else original.photos)
         for representation in photo.representations
     }
-    seen_paths: set[str] = set()
+    verified: dict[str, SourceFile] = {}
+    prefixes: dict[str, FileDependency | None] = {}
+    ranges: dict[str, list[tuple[int, int, int]]] = {}
     for photo_id, asset in assets.items():
         try:
             if photos.get(photo_id) != asset.photo:
                 raise ValueError(
                     "Prepared Photo does not match the desired Library Photo."
                 )
-            _validate_asset(asset, plan)
+            asset_prefixes = {
+                item.relative_path.casefold(): item for item in asset.file_prefixes
+            }
+            if len(asset_prefixes) != len(asset.file_prefixes) or not set(
+                asset_prefixes
+            ).issubset(
+                item.dependency.relative_path.casefold() for item in asset.files
+            ):
+                raise ValueError(
+                    "Photo shard prefixes must identify unique supplied files."
+                )
             for source in asset.files:
-                normalized = source.dependency.relative_path.casefold()
-                if normalized in seen_paths or normalized in original_paths:
+                dependency = source.dependency
+                validated_path(dependency.relative_path)
+                normalized = dependency.relative_path.casefold()
+                prefix = asset_prefixes.get(normalized)
+                prior = verified.get(normalized)
+                if prior is not None and (
+                    prior.dependency != dependency or prefixes[normalized] != prefix
+                ):
                     raise ValueError(
-                        "Prepared Photos require distinct fresh file paths."
+                        "Shared Photo files have conflicting content or prefix evidence."
                     )
-                seen_paths.add(normalized)
+                if normalized in original_paths and prefix is None:
+                    raise ValueError(
+                        "An existing Photo file requires verified prefix evidence."
+                    )
+                if prior is not source:
+                    if (
+                        not len(source.data)
+                        or len(source.data) != dependency.size
+                        or content_sha256(source.data) != dependency.sha256
+                    ):
+                        raise ValueError(
+                            "Photo bytes do not match their captured size and SHA-256."
+                        )
+                    if prefix is not None and (
+                        not re.fullmatch(
+                            r"Photos/Thumbs/F[1-9][0-9]*_[1-9][0-9]*\.ithmb",
+                            prefix.relative_path,
+                            re.IGNORECASE,
+                        )
+                        or not 0 < prefix.size < len(source.data)
+                        or content_sha256(source.data, length=prefix.size)
+                        != prefix.sha256
+                    ):
+                        raise ValueError(
+                            "A Photo shard must preserve its entire captured prefix."
+                        )
+                    verified[normalized] = source
+                    prefixes[normalized] = prefix
+            _validate_asset(asset, plan)
+            for rep in asset.photo.representations:
+                normalized = rep.relative_path.casefold()
+                prefix = asset_prefixes.get(normalized)
+                if prefix is not None and (
+                    rep.kind is not PhotoRepresentationKind.THUMBNAIL
+                    or rep.offset < prefix.size
+                ):
+                    raise ValueError(
+                        "New Photo ranges must follow the retained shard prefix."
+                    )
+                extents = ranges.setdefault(normalized, [])
+                end = rep.offset + rep.size_bytes
+                extents.append((rep.offset, end, photo_id))
         except (ValueError, OverflowError) as error:
             issues.append(_issue(str(error), photo_id))
+    for extents in ranges.values():
+        for previous, following in pairwise(sorted(extents)):
+            if previous[1] > following[0]:
+                issues.append(
+                    _issue(
+                        "Prepared Photo representations overlap in a shared file.",
+                        following[2],
+                    )
+                )
+                break
     return tuple(issues)
 
 
@@ -75,17 +151,6 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
     }
     if required != set(files):
         raise ValueError("Prepared Photo files must exactly cover its representations.")
-    for source in asset.files:
-        dependency = source.dependency
-        validated_path(dependency.relative_path)
-        if (
-            not source.data
-            or len(source.data) != dependency.size
-            or content_sha256(source.data) != dependency.sha256
-        ):
-            raise ValueError(
-                "Photo bytes do not match their captured size and SHA-256."
-            )
     originals = tuple(
         rep
         for rep in photo.representations
@@ -106,9 +171,13 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
         )
     for representation in photo.representations:
         source = files[representation.relative_path]
-        if representation.offset != 0 or representation.size_bytes != len(source.data):
+        if (
+            not 0 <= representation.offset <= 0xFFFFFFFF
+            or not 0 < representation.size_bytes <= 0xFFFFFFFF
+            or representation.offset + representation.size_bytes > len(source.data)
+        ):
             raise ValueError(
-                "Fresh Photo representations must cover the complete captured file."
+                "Photo representations must fit within their captured file."
             )
         full_resolution = representation.kind is PhotoRepresentationKind.FULL_RESOLUTION
         if (
@@ -124,7 +193,9 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
             )
         if representation.kind is PhotoRepresentationKind.FULL_RESOLUTION:
             if (
-                representation.horizontal_padding
+                representation.offset != 0
+                or representation.size_bytes != len(source.data)
+                or representation.horizontal_padding
                 or representation.vertical_padding
                 or representation.horizontal_padding < 0
                 or representation.vertical_padding < 0
@@ -155,6 +226,12 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
                 raise ValueError("Photo original failed image verification.") from error
             continue
         image_format = formats[representation.format_id]
+        if (
+            not 0
+            < len(source.data)
+            <= min(plan.target.max_photo_file_bytes, 0xFFFFFFFF)
+        ):
+            raise ValueError("Photo thumbnail shard exceeds the configured byte limit.")
         horizontal_padding = representation.horizontal_padding
         vertical_padding = representation.vertical_padding
         if (
@@ -165,7 +242,7 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
         ):
             raise ValueError("Photo thumbnail padding leaves no visible raster.")
         pattern = rf"Photos/Thumbs/F{image_format.format_id}_[1-9][0-9]*\.ithmb"
-        if not re.fullmatch(pattern, representation.relative_path):
+        if not re.fullmatch(pattern, representation.relative_path, re.IGNORECASE):
             raise ValueError(
                 "Photo thumbnails must use the device's F<format>_<shard>.ithmb namespace."
             )
@@ -178,7 +255,7 @@ def _validate_asset(asset: PreparedPhoto, plan: LibraryWritePlan) -> None:
             )
         symmetric = bool(horizontal_padding or vertical_padding)
         decoded = decode_ithmb(
-            read_content(source.data, 0, len(source.data)),
+            read_content(source.data, representation.offset, representation.size_bytes),
             IthmbLayout(
                 representation.width,
                 representation.height,

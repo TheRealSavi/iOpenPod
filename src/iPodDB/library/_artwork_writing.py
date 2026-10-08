@@ -94,6 +94,30 @@ def artwork_path(name: str) -> str:
     return path
 
 
+def retained_artwork_extents(
+    artwork: DatabaseDocument[MhfdHeader],
+) -> tuple[tuple[int, str, int], ...]:
+    """Reserve even typed filenames whose unusable image is omitted by the index."""
+    return tuple(
+        (
+            selection.chunk.header.image_id,
+            artwork_path(child.payload.value),
+            container.payload.child.header.ithmb_offset
+            + max(
+                container.payload.child.header.image_size,
+                container.payload.child.header.image_size_2,
+            ),
+        )
+        for selection in artwork.find_chunks(MhiiHeader)
+        for container in selection.chunk.children
+        if isinstance(container.payload, MhodContainerPayload)
+        for child in container.payload.child.children
+        if isinstance(child.header, MhodHeader)
+        and child.header.mhod_type == ArtworkMhodType.FILE_NAME
+        and isinstance(child.payload, MhodStringPayload)
+    )
+
+
 def _is_f1061_layout(cover: CoverFormat) -> bool:
     return (
         cover.format_id == 1061
@@ -104,11 +128,66 @@ def _is_f1061_layout(cover: CoverFormat) -> bool:
     )
 
 
+def _fixed_frame_size(cover: CoverFormat) -> int:
+    rotated = cover.pixel_format is IthmbPixelFormat.RGB565_BE_90
+    if cover.pixel_format is IthmbPixelFormat.I420_LE:
+        return cover.width * cover.height * 2
+    return (cover.row_bytes or (cover.height if rotated else cover.width) * 2) * (
+        cover.width if rotated else cover.height
+    )
+
+
+def superseded_artwork(
+    artwork: DatabaseDocument[MhfdHeader] | None,
+    resolved: ResolvedWrite,
+    resources: WriteResources,
+) -> frozenset[int]:
+    """Damaged images whose last live owner receives verified replacement pixels."""
+    if artwork is None or not resources.artwork:
+        return frozenset()
+    inventory = {
+        item.relative_path.casefold(): item for item in resources.file_inventory or ()
+    }
+    unavailable = {
+        artwork_path(path).casefold() for path in resources.reserved_artwork_paths
+    }
+    damaged = {
+        image_id
+        for image_id, path, extent in retained_artwork_extents(artwork)
+        if path.casefold() in unavailable
+        or (dependency := inventory.get(path.casefold())) is None
+        or extent > dependency.size
+    }
+    assets = {asset.artwork_id for asset in resources.artwork}
+    original = {track.track_id: track for track in resolved.original.tracks}
+    live = {track.artwork_id for track in resolved.desired.tracks}
+    previous_live = {track.artwork_id for track in resolved.original.tracks}
+    damaged_orphans = {
+        selection.chunk.header.image_id
+        for selection in artwork.find_chunks(MhiiHeader)
+        if selection.chunk.header.image_id in damaged
+        and selection.chunk.header.image_id not in previous_live | live
+        and not selection.chunk.header.db_track_id_ref
+    }
+    changed_tracks = set(resolved.artwork_tracks)
+    return frozenset(damaged_orphans) | frozenset(
+        original[track.track_id].artwork_id
+        for track in resolved.desired.tracks
+        if track.track_id in changed_tracks
+        and track.track_id in original
+        and track.artwork_id in assets
+        and original[track.track_id].artwork_id
+        and original[track.track_id].artwork_id not in live
+        and original[track.track_id].artwork_id in damaged
+    )
+
+
 def _validate_retained_artwork_format(
     artwork: DatabaseDocument[MhfdHeader],
     cover: CoverFormat,
     size: int,
     resources: WriteResources,
+    excluded_images: frozenset[int] = frozenset(),
 ) -> None:
     """Validate retained rasters and allocations, allowing known F1061 variants.
 
@@ -129,6 +208,8 @@ def _validate_retained_artwork_format(
     inventory = {f.relative_path.casefold(): f for f in resources.file_inventory or ()}
     ranges: dict[str, set[tuple[int, int, int]]] = {}
     for selection in artwork.find_chunks(MhiiHeader):
+        if selection.chunk.header.image_id in excluded_images:
+            continue
         matches = 0
         for child in selection.chunk.children:
             if not isinstance(child.payload, MhodContainerPayload):
@@ -149,21 +230,19 @@ def _validate_retained_artwork_format(
                 raise ValueError(
                     "A retained image has duplicate representations of this format."
                 )
-            image_size, allocation, height = size, size, cover.height
+            image_size, height = header.image_size, cover.height
+            # libgpod leaves the optional allocation field zero; foo_dop stores
+            # its padded allocation here. Neither changes the raster length.
+            allocation = header.image_size_2 or image_size
             if _is_f1061_layout(cover):
-                image_size, allocation = header.image_size, header.image_size_2
-                if (
-                    image_size not in (6160, 6272)
-                    or allocation not in (6160, 6272)
-                    or allocation < image_size
-                ):
+                if image_size not in (6160, 6272) or allocation < image_size:
                     raise ValueError(
                         "Retained F1061 MHNI raster or allocation size is unsupported: "
                         f"image={selection.chunk.header.image_id}, "
                         f"raster={image_size}, allocation={allocation}."
                     )
                 height = image_size // cover.row_bytes
-            elif header.image_size != size or header.image_size_2 != size:
+            elif image_size != size or allocation < image_size:
                 raise ValueError(
                     "Retained MHNI image sizes disagree with the target layout."
                 )
@@ -213,7 +292,7 @@ def _validate_retained_artwork_format(
             ranges.setdefault(path, set()).add(
                 (header.ithmb_offset, header.ithmb_offset + allocation, image_size)
             )
-    if not ranges:
+    if not ranges and not excluded_images:
         raise ValueError("No retained MHNI images establish the expected size.")
     for extents in ranges.values():
         ordered = sorted(extents)
@@ -226,6 +305,7 @@ def effective_cover_format(
     cover: CoverFormat,
     resources: WriteResources,
     retained_size: int | None,
+    excluded_images: frozenset[int] = frozenset(),
 ) -> CoverFormat:
     """Use the evidenced F1061 row count when extending an existing ArtworkDB."""
     if artwork is None or not _is_f1061_layout(cover):
@@ -233,13 +313,14 @@ def effective_cover_format(
     image_sizes = Counter(
         child.payload.child.header.image_size
         for selection in artwork.find_chunks(MhiiHeader)
+        if selection.chunk.header.image_id not in excluded_images
         for child in selection.chunk.children
         if isinstance(child.payload, MhodContainerPayload)
         and child.payload.child.header.format_id == 1061
     )
     if image_sizes:
         _validate_retained_artwork_format(
-            artwork, cover, cover.height * cover.row_bytes, resources
+            artwork, cover, cover.height * cover.row_bytes, resources, excluded_images
         )
         # Keep a recognized declaration when both variants occur. A uniform
         # library still repairs stale MHIF metadata from its actual rasters.
@@ -343,6 +424,7 @@ def reconcile_artwork(
         s.chunk.header.image_id: s.chunk for s in image_dataset.find_chunks(MhiiHeader)
     }
     index = build_artwork_index(artwork)
+    superseded = superseded_artwork(artwork, resolved, resources)
     inventory = (
         {}
         if resources.file_inventory is None
@@ -356,10 +438,38 @@ def reconcile_artwork(
         raise ValueError(
             "Artwork file inventory contains case-insensitive path collisions."
         )
+    retained_extents = retained_artwork_extents(artwork) if assets else ()
+    referenced_paths = {path for _, path, _ in retained_extents}
+    unavailable_paths = {
+        artwork_path(path) for path in resources.reserved_artwork_paths
+    }
+    folded_unavailable = {path.casefold() for path in unavailable_paths}
+    # Missing files remain reserved by their retained database records. Never
+    # recreate their old names or accidentally make stale ranges appear valid.
+    all_paths.update(referenced_paths)
+    all_paths.update(unavailable_paths)
+    folded_inventory = {p.casefold(): f for p, f in inventory.items()}
+    damaged_paths = {
+        path.casefold()
+        for _, path, extent in retained_extents
+        if extent > 0
+        and (
+            (dependency := folded_inventory.get(path.casefold())) is None
+            or extent > dependency.size
+        )
+    }
+    if assets and damaged_paths:
+        for cover in target.cover_formats:
+            try:
+                _validate_retained_artwork_format(
+                    artwork, cover, _fixed_frame_size(cover), resources, superseded
+                )
+            except ValueError as error:
+                raise ValueError(f"Automatic correction is unsafe: {error}") from error
     formats = {
         f.format_id: (
             effective_cover_format(
-                artwork, f, resources, retained_sizes.get(f.format_id)
+                artwork, f, resources, retained_sizes.get(f.format_id), superseded
             )
             if assets
             else f
@@ -405,6 +515,13 @@ def reconcile_artwork(
             if collision is not None:
                 path = collision
             prefix = output_files.get(path)
+            if prefix is None and (
+                path.casefold() in damaged_paths
+                or path.casefold() in folded_unavailable
+                or (collision is not None and path not in inventory)
+            ):
+                number += 1
+                continue
             if prefix is None and path in inventory:
                 if aligned_offset(inventory[path].size, len(payload)) + len(
                     payload
@@ -509,7 +626,7 @@ def reconcile_artwork(
                     retained_size = retained_sizes[cover.format_id]
                     try:
                         _validate_retained_artwork_format(
-                            artwork, cover, len(encoded), resources
+                            artwork, cover, len(encoded), resources, superseded
                         )
                     except ValueError as error:
                         raise ValueError(
@@ -665,7 +782,8 @@ def reconcile_artwork(
             header=replace(
                 chunk.header,
                 artwork_id_ref=image_id if direct_link else 0,
-                artwork_count=item_count,
+                # MHIT counts source covers, not MHNI size representations.
+                artwork_count=int(item_count > 0),
                 has_artwork=int(item_count > 0),
                 artwork_size=rows[image_id].header.source_image_size,
             ),

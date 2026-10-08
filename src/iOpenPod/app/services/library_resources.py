@@ -18,6 +18,7 @@ from iPodDB.library import (
     MAX_SIDECAR_BYTES,
     FileContentData,
     FileDependency,
+    IssueSeverity,
     PhotoRepresentationKind,
     PlaybackSidecar,
     PreparedLyrics,
@@ -37,6 +38,7 @@ from storage import (
     FilePreconditionError,
     HostPath,
     StorageError,
+    StorageOperationError,
     StorageTransaction,
     TransactionRemoval,
     TransactionWrite,
@@ -49,7 +51,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from iOpenPod.app.library_write import LibraryPreparationRequest
-    from iPodDB.library import ArtworkPixels, LibraryWritePlan, PreparedLibrary
+    from iPodDB.library import (
+        ArtworkPixels,
+        LibraryWritePlan,
+        PhotoRepresentation,
+        PreparedLibrary,
+    )
     from storage import FilesystemSession
 
 logger = logging.getLogger(__name__)
@@ -334,34 +341,93 @@ def capture(
     if len({asset.photo.photo_id for asset in request.photos}) != len(request.photos):
         raise ValueError("Incoming Photos repeat a Photo identity.")
     required_photos = set(plan.required_photos)
-    incoming_photo_paths: set[DevicePath] = set()
+    incoming_photo_files: dict[str, SourceFile] = {}
+    incoming_photo_prefixes: dict[str, FileDependency | None] = {}
+    photo_issues: list[WriteIssue] = []
     for asset in request.photos:
         if asset.photo.photo_id not in required_photos:
             raise ValueError("Incoming Photo was not requested by the Library draft.")
+        prefixes = {
+            prefix.relative_path.casefold(): prefix for prefix in asset.file_prefixes
+        }
         for photo_file in asset.files:
             checkpoint()
             dependency = photo_file.dependency
             path = DevicePath(dependency.relative_path)
             if not path.is_relative_to(_PHOTO_FULL_RESOLUTION) and not (
                 path.is_relative_to(_PHOTO_THUMBNAILS)
-                and re.fullmatch(r"F[1-9][0-9]*_[1-9][0-9]*\.ithmb", path.name)
+                and re.fullmatch(
+                    r"F[1-9][0-9]*_[1-9][0-9]*\.ithmb", path.name, re.IGNORECASE
+                )
             ):
                 raise ValueError(
                     f"Incoming Photo is outside the supported Photo namespace: {path}"
                 )
-            if path in incoming_photo_paths or session.exists(path):
+            normalized = str(path).casefold()
+            prefix = prefixes.get(normalized)
+            prior = incoming_photo_files.get(normalized)
+            if prior is not None:
+                if (
+                    prior.dependency != dependency
+                    or incoming_photo_prefixes[normalized] != prefix
+                ):
+                    raise ValueError(f"Shared Photo file evidence conflicts: {path}")
+                if prior is not photo_file and _content(prior.data) != _content(
+                    photo_file.data
+                ):
+                    raise ValueError(f"Shared Photo file content conflicts: {path}")
+                continue
+            expected = None
+            if prefix is not None:
+                if not path.is_relative_to(_PHOTO_THUMBNAILS):
+                    raise ValueError("Only captured thumbnail shards can be extended.")
+                expected = session.fingerprint(path) if session.exists(path) else None
+                if expected is None or (expected.size, expected.sha256) != (
+                    prefix.size,
+                    prefix.sha256,
+                ):
+                    raise FilePreconditionError(f"Captured Photo shard changed: {path}")
+                if (
+                    not 0 < prefix.size < len(photo_file.data)
+                    or content_sha256(photo_file.data, length=prefix.size)
+                    != prefix.sha256
+                ):
+                    raise ValueError(
+                        f"Extended Photo shard changed its retained prefix: {path}"
+                    )
+            elif session.exists(path):
                 raise ValueError(f"Incoming Photo destination is not unused: {path}")
             content = _content(photo_file.data)
             if (content.size, content.sha256) != (dependency.size, dependency.sha256):
                 raise ValueError(
                     "Incoming Photo bytes do not match the captured content."
                 )
-            incoming_photo_paths.add(path)
-            files.append(FilePrecondition(path, None))
+            incoming_photo_files[normalized] = photo_file
+            incoming_photo_prefixes[normalized] = prefix
+            files.append(FilePrecondition(path, expected))
             media_writes.append(
-                TransactionWrite(path, _transaction_source(photo_file.data), content)
+                TransactionWrite(
+                    path, _transaction_source(photo_file.data), content, expected
+                )
             )
     cover_prefixes = tuple(f"f{f.format_id}_" for f in plan.target.cover_formats)
+    replacement_assets = {asset.artwork_id for asset in request.artwork}
+    originals = {
+        track.artwork_id for track in request.source.library.tracks if track.artwork_id
+    }
+    desired_tracks = {track.track_id: track for track in request.snapshot.tracks}
+    regenerate_all = (
+        bool(replacement_assets)
+        and not (originals & {track.artwork_id for track in request.snapshot.tracks})
+        and all(
+            track.track_id not in desired_tracks
+            or desired_tracks[track.track_id].artwork_id in replacement_assets
+            for track in request.source.library.tracks
+            if track.artwork_id
+        )
+    )
+    reserved_artwork: list[str] = []
+    artwork_issues: list[WriteIssue] = []
     if plan.requires_artwork_inventory and session.exists(_ARTWORK):
         for entry in session.list_directory(_ARTWORK):
             if entry.path.name.startswith(
@@ -388,10 +454,38 @@ def capture(
                         session, entry.path
                     )
                 except StorageError as error:
+                    if (
+                        regenerate_all
+                        and session.is_active
+                        and isinstance(error, StorageOperationError)
+                    ):
+                        reserved_artwork.append(str(entry.path))
+                        artwork_issues.append(
+                            WriteIssue(
+                                "artwork.unreadable_source_regeneration",
+                                "Unreadable thumbnail data will be kept while replacement covers are written to fresh files.",
+                                severity=IssueSeverity.WARNING,
+                                artifact=str(entry.path),
+                                detail=str(error),
+                            )
+                        )
+                        continue
                     raise StorageError(
                         f"Could not capture artwork file {entry.path}: {error}"
                     ) from error
                 except OSError as error:
+                    if regenerate_all and session.is_active:
+                        reserved_artwork.append(str(entry.path))
+                        artwork_issues.append(
+                            WriteIssue(
+                                "artwork.unreadable_source_regeneration",
+                                "Unreadable thumbnail data will be kept while replacement covers are written to fresh files.",
+                                severity=IssueSeverity.WARNING,
+                                artifact=str(entry.path),
+                                detail=str(error),
+                            )
+                        )
+                        continue
                     raise OSError(
                         f"Could not capture artwork file {entry.path}: {error}"
                     ) from error
@@ -473,6 +567,12 @@ def capture(
     if source_photos is not None and desired_photos is not None:
         desired_photo_ids = {photo.photo_id for photo in desired_photos.photos}
         replaced_photos = set(request.replace_photos)
+        regenerated_photo_paths = {
+            representation.relative_path.casefold()
+            for photo in source_photos.photos
+            if photo.photo_id in replaced_photos
+            for representation in photo.representations
+        }
         retained_photo_paths = {
             representation.relative_path.casefold()
             for photo in desired_photos.photos
@@ -496,30 +596,49 @@ def capture(
                 ):
                     continue
                 checkpoint()
-                path = DevicePath(representation.relative_path)
-                allowed_root = (
-                    _PHOTO_FULL_RESOLUTION
-                    if representation.kind is PhotoRepresentationKind.FULL_RESOLUTION
-                    else _PHOTO_THUMBNAILS
-                )
-                if len(path.parts) <= len(allowed_root.parts) or tuple(
-                    part.casefold() for part in path.parts[: len(allowed_root.parts)]
-                ) != tuple(part.casefold() for part in allowed_root.parts):
-                    raise ValueError(
-                        f"Removed Photo representation is outside its allowed namespace: {path}"
+                try:
+                    path = _removed_photo_path(representation)
+                except ValueError as error:
+                    if normalized not in regenerated_photo_paths:
+                        raise
+                    photo_issues.append(
+                        WriteIssue(
+                            "photos.unrecognized_source_regeneration",
+                            "An unrecognized old Photo file reference will be left untouched while replacement files are published.",
+                            severity=IssueSeverity.WARNING,
+                            subject="photo",
+                            record_id=photo.photo_id,
+                            artifact=representation.relative_path,
+                            detail=str(error),
+                        )
                     )
-                if (
-                    representation.kind is PhotoRepresentationKind.THUMBNAIL
-                    and not re.fullmatch(
-                        r"F[1-9][0-9]*_[1-9][0-9]*\.ithmb", path.name, re.IGNORECASE
+                    removed_photo_paths.add(normalized)
+                    continue
+                try:
+                    photo_fingerprint = (
+                        session.fingerprint(path) if session.exists(path) else None
                     )
-                ):
-                    raise ValueError(
-                        f"Removed thumbnail does not use an expected iTHMB filename: {path}"
+                except (StorageOperationError, OSError) as error:
+                    if (
+                        not session.is_active
+                        or representation.kind is not PhotoRepresentationKind.THUMBNAIL
+                        or normalized not in regenerated_photo_paths
+                    ):
+                        raise
+                    checkpoint()
+                    photo_issues.append(
+                        WriteIssue(
+                            "photos.unreadable_source_regeneration",
+                            "An unreadable old Photo thumbnail file will be kept while replacement thumbnails are published.",
+                            severity=IssueSeverity.WARNING,
+                            subject="photo",
+                            record_id=photo.photo_id,
+                            artifact=str(path),
+                            detail=str(error),
+                        )
                     )
-                photo_fingerprint = (
-                    session.fingerprint(path) if session.exists(path) else None
-                )
+                    removed_photo_paths.add(normalized)
+                    continue
                 files.append(FilePrecondition(path, photo_fingerprint))
                 if photo_fingerprint is not None:
                     removals.append(TransactionRemoval(path, photo_fingerprint))
@@ -535,6 +654,7 @@ def capture(
         file_inventory=tuple(inventory) if plan.requires_artwork_inventory else None,
         pending_playback_sidecars=False if plan.requires_sidecar_inventory else None,
         create_file_buffer=staging.new_buffer,
+        reserved_artwork_paths=tuple(reserved_artwork),
     )
     logger.debug(
         "Captured Library resources files=%d artwork_bytes=%d removals=%d",
@@ -548,9 +668,31 @@ def capture(
         tuple(removals),
         tuple(media_writes),
         presentation_writes,
-        lyric_issues,
+        (*lyric_issues, *artwork_issues, *photo_issues),
         tuple(discarded_track_media),
     )
+
+
+def _removed_photo_path(representation: PhotoRepresentation) -> DevicePath:
+    path = DevicePath(representation.relative_path)
+    allowed_root = (
+        _PHOTO_FULL_RESOLUTION
+        if representation.kind is PhotoRepresentationKind.FULL_RESOLUTION
+        else _PHOTO_THUMBNAILS
+    )
+    if len(path.parts) <= len(allowed_root.parts) or tuple(
+        part.casefold() for part in path.parts[: len(allowed_root.parts)]
+    ) != tuple(part.casefold() for part in allowed_root.parts):
+        raise ValueError(
+            f"Removed Photo representation is outside its allowed namespace: {path}"
+        )
+    if representation.kind is PhotoRepresentationKind.THUMBNAIL and not re.fullmatch(
+        r"F[1-9][0-9]*_[1-9][0-9]*\.ithmb", path.name, re.IGNORECASE
+    ):
+        raise ValueError(
+            f"Removed thumbnail does not use an expected iTHMB filename: {path}"
+        )
+    return path
 
 
 def _capture_file_tags(

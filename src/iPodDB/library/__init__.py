@@ -22,6 +22,7 @@ from iPodDB.library.editing import (
 from iPodDB.library.file_content import (
     ContentBuffer,
     FileContentData,
+    MemoryContentBuffer,
     ReadableContent,
     content_chunks,
     content_sha256,
@@ -154,6 +155,7 @@ __all__ = [
     "MediaContent",
     "MediaKind",
     "MediaType",
+    "MemoryContentBuffer",
     "MetadataValue",
     "Photo",
     "PhotoAlbum",

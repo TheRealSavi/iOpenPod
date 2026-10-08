@@ -141,7 +141,7 @@ def _project_format(chunk: ParsedChunk[MhifHeader]) -> PhotoFileFormat:
         image_size_bytes=chunk.header.image_size,
         relative_path=next(
             (
-                _photos_path(child.payload.value)
+                normalize_photo_path(child.payload.value)
                 for child in chunk.children
                 if isinstance(child.header, MhodHeader)
                 and isinstance(child.payload, MhodStringPayload)
@@ -155,7 +155,7 @@ def _project_format(chunk: ParsedChunk[MhifHeader]) -> PhotoFileFormat:
 def _location_path(location: ParsedChunk[MhniHeader]) -> str:
     return next(
         (
-            _photos_path(child.payload.value)
+            normalize_photo_path(child.payload.value)
             for child in location.children
             if isinstance(child.header, MhodHeader)
             and isinstance(child.payload, MhodStringPayload)
@@ -165,7 +165,8 @@ def _location_path(location: ParsedChunk[MhniHeader]) -> str:
     )
 
 
-def _photos_path(value: str) -> str:
+def normalize_photo_path(value: str) -> str:
+    """Normalize a retained filename without granting filesystem access."""
     raw = value.strip().replace("\\", "/").replace(":", "/")
     parts = tuple(part for part in raw.split("/") if part)
     if not parts or any(part in {".", ".."} for part in parts):
@@ -175,4 +176,4 @@ def _photos_path(value: str) -> str:
     return "/".join(("Photos", *parts))
 
 
-__all__ = ["project_photos"]
+__all__ = ["normalize_photo_path", "project_photos"]

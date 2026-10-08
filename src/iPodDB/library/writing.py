@@ -79,6 +79,7 @@ class WriteTarget:
     supports_sparse_artwork: bool = True
     photo_formats: tuple[PhotoThumbnailFormat, ...] = ()
     photos_root_value: int | None = None
+    max_photo_file_bytes: int = 256_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,10 +189,15 @@ class ArtworkAsset:
 
 @dataclass(frozen=True, slots=True)
 class PreparedPhoto:
-    """A complete Photo and verified, freshly named original/thumbnail bytes."""
+    """A complete Photo with originals and possibly shared thumbnail files.
+
+    Prefix dependencies authorize extension of captured shards. Their complete
+    bytes must remain unchanged at the start of the corresponding output.
+    """
 
     photo: Photo
     files: tuple[SourceFile, ...]
+    file_prefixes: tuple[FileDependency, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +236,9 @@ class WriteResources:
     create_file_buffer: Callable[[], ContentBuffer] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    # Observed paths unavailable for capture. These reserve names only and
+    # supply neither file-content evidence nor overwrite authority.
+    reserved_artwork_paths: tuple[str, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,7 +269,14 @@ class LibraryWritePlan:
     @property
     def changes_itunes(self) -> bool:
         return any(
-            change.subject not in {"photo", "photo_album", "photos"}
+            change.subject
+            not in {
+                "photo",
+                "photo_album",
+                "photos",
+                "artwork_database",
+                "photos_database",
+            }
             for change in self.changes
         )
 

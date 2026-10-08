@@ -67,7 +67,11 @@ from iOpenPod.app.podcasts.models import (
     PodcastIssueCode,
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastDeviceStore
-from iOpenPod.app.services import library_resources, volume_presentation
+from iOpenPod.app.services import (
+    library_resources,
+    photo_shard_resources,
+    volume_presentation,
+)
 from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
 from iPodDB.library import (
@@ -120,7 +124,15 @@ if TYPE_CHECKING:
         LibrarySaveResult,
     )
     from iOpenPod.app.playback.backend import PlaybackSource
-    from iPodDB.library import Hash72Material, LibraryWritePlan, Photo, PhotoRead, Track
+    from iPodDB.library import (
+        Hash72Material,
+        LibraryWritePlan,
+        Photo,
+        PhotoRead,
+        PreparedPhoto,
+        Track,
+    )
+    from storage.content_workspace import ContentWorkspace
 
 logger = logging.getLogger(__name__)
 
@@ -510,6 +522,58 @@ class DeviceCoordinator:
             self._check_sync_recovery(session)
             yield session
             validate()
+
+    def pack_photo_shards(
+        self,
+        expected: ActiveIPod,
+        assets: tuple[PreparedPhoto, ...],
+        workspace: ContentWorkspace,
+        checkpoint: Callable[[], None],
+        *,
+        max_file_bytes: int | None = None,
+    ) -> tuple[PreparedPhoto, ...]:
+        """Pack Photos against one source-checked, read-only device capture."""
+        from iPodDB.library import WriteTarget
+
+        if not assets:
+            return ()
+        checkpoint()
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError("The Active iPod changed. Rescan before Sync.")
+            retained = active.library_source.photo_thumbnail_files
+
+        with self.sync_session(expected) as session:
+
+            def validate_photos() -> None:
+                checkpoint()
+                fingerprint = (
+                    session.fingerprint(_PHOTOSDB_PATH)
+                    if session.exists(_PHOTOSDB_PATH)
+                    else None
+                )
+                if fingerprint != expected.photos_database_fingerprint:
+                    raise DeviceChangedError(
+                        "The source Photo Database changed. Reload the Library before preparing changes."
+                    )
+
+            validate_photos()
+            packed = photo_shard_resources.capture_and_pack(
+                session,
+                assets,
+                retained,
+                expected.library.photos,
+                workspace,
+                checkpoint,
+                max_file_bytes=(
+                    WriteTarget().max_photo_file_bytes
+                    if max_file_bytes is None
+                    else max_file_bytes
+                ),
+            )
+            validate_photos()
+            return packed
 
     def publish_sync_success(
         self,
@@ -1601,6 +1665,8 @@ class DeviceCoordinator:
                         database_fingerprint=database_fingerprint,
                         artwork_database_fingerprint=fingerprints[_ARTWORKDB_PATH],
                         photos_database_fingerprint=fingerprints[_PHOTOSDB_PATH],
+                        artwork_repairs_pending=bool(updated_source.artwork_repairs),
+                        photos_repairs_pending=bool(updated_source.photos_repairs),
                     )
                     active.library_source = updated_source
                     active.sidecar_preconditions = tuple(
@@ -2067,6 +2133,8 @@ class DeviceCoordinator:
                     photos_database_fingerprint=photos_fingerprint,
                     preferences=preferences.sections,
                     settings=load_device_settings(session),
+                    artwork_repairs_pending=bool(library.artwork_repairs),
+                    photos_repairs_pending=bool(library.photos_repairs),
                 )
                 if reconcile_metadata:
                     presentation_issues = self._reconcile_volume_presentation(

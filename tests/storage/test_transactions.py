@@ -568,7 +568,7 @@ def test_external_transaction_journal_retains_identity_without_host_paths(
     committed = session.execute_transaction(plan)
     journal = session.read(committed.recovery.journal_path)
 
-    assert b'"version":2' in journal
+    assert b'"version":3' in journal
     assert material.identity.encode() in journal
     for file in material.files:
         assert os.fsencode(file.source) not in journal
@@ -1326,9 +1326,10 @@ def test_changed_later_stage_is_detected_before_first_publication(
 @pytest.mark.parametrize(
     ("before", "after"),
     [
-        (b'"version":1', b'"version":true'),
-        (b'"version":1', b'"version":2'),
-        (b'"version":1', b'"version":1,"version":1'),
+        (b'"version":3', b'"version":true'),
+        (b'"version":3', b'"version":2'),
+        (b'"version":3', b'"version":3,"version":3'),
+        (b'"content_durability_confirmed":true', b'"content_durability_confirmed":1'),
         (b'"state":"committed"', b'"state":"unknown"'),
         (b'"path":"art.bin"', b'"path":"new/media.bin"'),
         (b'"path":"art.bin"', b'"path":"new"'),

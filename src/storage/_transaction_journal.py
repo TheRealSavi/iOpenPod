@@ -36,6 +36,7 @@ class TransactionJournal:
     entries: tuple[JournalEntry, ...]
     dependencies: tuple[JournalDependency, ...]
     recovery_material_identity: str = ""
+    content_durability_confirmed: bool = False
 
 
 def validate_paths(paths: tuple[DevicePath, ...], *, case_sensitive: bool) -> None:
@@ -79,15 +80,6 @@ def _content(value: FileContent | None) -> dict[str, object] | None:
 
 
 def encode(journal: TransactionJournal) -> bytes:
-    version = (
-        2
-        if journal.recovery_material_identity
-        or any(
-            entry.before_modified_ns is not None or entry.after_modified_ns is not None
-            for entry in journal.entries
-        )
-        else 1
-    )
     entries: list[dict[str, object]] = [
         {
             "path": str(entry.path),
@@ -97,21 +89,21 @@ def encode(journal: TransactionJournal) -> bytes:
         for entry in journal.entries
     ]
     document: dict[str, object] = {
-        "version": version,
+        "version": 3,
         "device_id": journal.device_id,
         "volume_id": journal.volume_id,
         "state": journal.state.value,
+        "content_durability_confirmed": journal.content_durability_confirmed,
         "entries": entries,
         "dependencies": [
             {"path": str(entry.path), "content": _content(entry.content)}
             for entry in journal.dependencies
         ],
     }
-    if version == 2:
-        document["recovery_material_identity"] = journal.recovery_material_identity
-        for encoded, entry in zip(entries, journal.entries, strict=True):
-            encoded["before_modified_ns"] = entry.before_modified_ns
-            encoded["after_modified_ns"] = entry.after_modified_ns
+    document["recovery_material_identity"] = journal.recovery_material_identity
+    for encoded, entry in zip(entries, journal.entries, strict=True):
+        encoded["before_modified_ns"] = entry.before_modified_ns
+        encoded["after_modified_ns"] = entry.after_modified_ns
     data = json.dumps(
         document,
         sort_keys=True,
@@ -185,7 +177,7 @@ def decode(data: bytes) -> TransactionJournal:
         raise ValueError("Invalid transaction journal fields")
     raw_fields = cast("dict[object, object]", decoded)
     version = raw_fields.get("version")
-    if type(version) is not int or version not in {1, 2}:
+    if type(version) is not int or version not in {1, 2, 3}:
         raise ValueError("Unsupported transaction journal version")
     root_keys = {
         "version",
@@ -195,22 +187,28 @@ def decode(data: bytes) -> TransactionJournal:
         "entries",
         "dependencies",
     }
-    if version == 2:
+    if version >= 2:
         root_keys.add("recovery_material_identity")
+    if version >= 3:
+        root_keys.add("content_durability_confirmed")
     fields = _object(raw_fields, root_keys)
+    # Legacy terminal markers did not prove a successful content flush.
+    durability = fields.get("content_durability_confirmed", False)
+    if type(durability) is not bool:
+        raise ValueError("Invalid content durability confirmation")
     entries: list[JournalEntry] = []
     removing = False
     for raw in _items(fields["entries"]):
         entry_keys = {"path", "before", "after"}
-        if version == 2:
+        if version >= 2:
             entry_keys.update({"before_modified_ns", "after_modified_ns"})
         item = _object(raw, entry_keys)
         entry = JournalEntry(
-            _read_path(item["path"], exact_parts=version == 2),
+            _read_path(item["path"], exact_parts=version >= 2),
             _read_content(item["before"]),
             _read_content(item["after"]),
-            _read_modified_ns(item["before_modified_ns"]) if version == 2 else None,
-            _read_modified_ns(item["after_modified_ns"]) if version == 2 else None,
+            _read_modified_ns(item["before_modified_ns"]) if version >= 2 else None,
+            _read_modified_ns(item["after_modified_ns"]) if version >= 2 else None,
         )
         if entry.before is None and entry.after is None:
             raise ValueError("An operation must have original or resulting content")
@@ -226,7 +224,7 @@ def decode(data: bytes) -> TransactionJournal:
         item = _object(raw, {"path", "content"})
         dependencies.append(
             JournalDependency(
-                _read_path(item["path"], exact_parts=version == 2),
+                _read_path(item["path"], exact_parts=version >= 2),
                 _read_content(item["content"]),
             )
         )
@@ -237,6 +235,7 @@ def decode(data: bytes) -> TransactionJournal:
         tuple(entries),
         tuple(dependencies),
         _text(fields["recovery_material_identity"])
-        if version == 2 and fields["recovery_material_identity"]
+        if version >= 2 and fields["recovery_material_identity"]
         else "",
+        durability,
     )

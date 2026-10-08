@@ -8,12 +8,11 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
+from iPodDB.ArtworkDB.parser.repair_ArtworkDB import repair_ArtworkDB
 from iPodDB.ArtworkDB.shared.artwork_index import (
     EMPTY_ARTWORK_INDEX,
     build_artwork_index,
 )
-from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
 from iPodDB.device_time import DeviceTimeContext
 from iPodDB.iTunesDB.cdb import decompress_iTunesCDB, is_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
@@ -30,25 +29,30 @@ from iPodDB.library.photos import (
     select_photo_thumbnail,
 )
 from iPodDB.library.writing import (
+    IssueSeverity,
+    LibraryChange,
     LibraryDraft,
     LibraryWritePlan,
     LibraryWriteResult,
+    WriteChecksum,
     WriteIssue,
     WritePhase,
     WriteResources,
     WriteTarget,
 )
-from iPodDB.PhotosDB.parser.parse_PhotosDB import parse_PhotosDB
-from iPodDB.PhotosDB.writer.write_PhotosDB import write_PhotosDB
+from iPodDB.PhotosDB.parser.repair_PhotosDB import repair_PhotosDB
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from iPodDB.ArtworkDB.parser.repair_ArtworkDB import ArtworkDBCountRepair
     from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
     from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
     from iPodDB.library._resolved_write import ResolvedWrite
+    from iPodDB.library.writing import RetainedArtworkFile
+    from iPodDB.PhotosDB.parser.repair_PhotosDB import PhotosDBCountRepair
     from iPodDB.PhotosDB.shared.chunk_defs.mhfd import MhfdHeader as PhotosMhfdHeader
     from iPodDB.shared.chunk import DatabaseDocument
     from iPodDB.sidecars import PlaybackSidecar
@@ -69,16 +73,20 @@ class IPodLibrary:
     __slots__ = (
         "_artwork_document",
         "_artwork_index",
+        "_artwork_repairs",
         "_cdb_framing",
         "_consumed_sidecars",
         "_database_snapshot",
         "_device_time",
         "_document",
         "_photos_document",
+        "_photos_repairs",
         "_sidecar_issues",
         "_sidecars",
         "_snapshot",
+        "_source_artwork",
         "_source_itunes",
+        "_source_photos",
         "_source_revision",
     )
 
@@ -107,7 +115,11 @@ class IPodLibrary:
         self._consumed_sidecars: tuple[PlaybackSidecar, ...] = ()
         self._sidecar_issues: tuple[WriteIssue, ...] = ()
         self._artwork_document: DatabaseDocument[MhfdHeader] | None = None
+        self._source_artwork: bytes | None = None
+        self._artwork_repairs: tuple[ArtworkDBCountRepair, ...] = ()
         self._photos_document: DatabaseDocument[PhotosMhfdHeader] | None = None
+        self._source_photos: bytes | None = None
+        self._photos_repairs: tuple[PhotosDBCountRepair, ...] = ()
         self._artwork_index = EMPTY_ARTWORK_INDEX
         logger.debug(
             "Library loaded source=%s iTunesDB_bytes=%d tracks=%d playlists=%d",
@@ -189,15 +201,18 @@ class IPodLibrary:
         return updated
 
     def with_artwork(self, data: bytes) -> IPodLibrary:
-        """Return a new adapter with ArtworkDB relationships resolved once."""
+        """Resolve artwork, recovering evidenced counts while retaining source bytes."""
 
-        database = parse_ArtworkDB(data)
+        recovered = repair_ArtworkDB(data)
+        database = recovered.document
         index = build_artwork_index(database)
         tracks = link_artwork(self._database_snapshot.tracks, index)
         updated = copy(self)
         updated._database_snapshot = replace(self._database_snapshot, tracks=tracks)
         updated._refresh_sidecars()
         updated._artwork_document = database
+        updated._source_artwork = bytes(data)
+        updated._artwork_repairs = recovered.repairs
         updated._source_revision = uuid4().hex
         updated._artwork_index = index
         logger.debug(
@@ -208,10 +223,16 @@ class IPodLibrary:
         )
         return updated
 
+    @property
+    def artwork_repairs(self) -> tuple[ArtworkDBCountRepair, ...]:
+        """Verified structural repairs awaiting ordinary Library publication."""
+        return self._artwork_repairs
+
     def with_photos(self, data: bytes) -> IPodLibrary:
         """Return a new adapter exposing the retained Photo Database semantically."""
 
-        database = parse_PhotosDB(data)
+        recovered = repair_PhotosDB(data)
+        database = recovered.document
         persistent_track_ids = {
             track.ipod.db_track_id: track.track_id
             for track in self.snapshot.tracks
@@ -222,6 +243,8 @@ class IPodLibrary:
         updated._database_snapshot = replace(self._database_snapshot, photos=photos)
         updated._refresh_sidecars()
         updated._photos_document = database
+        updated._source_photos = bytes(data)
+        updated._photos_repairs = recovered.repairs
         updated._source_revision = uuid4().hex
         logger.debug(
             "Library photos loaded source=%s PhotosDB_bytes=%d photos=%d albums=%d",
@@ -231,6 +254,22 @@ class IPodLibrary:
             len(photos.albums),
         )
         return updated
+
+    @property
+    def photos_repairs(self) -> tuple[PhotosDBCountRepair, ...]:
+        """Evidenced Photo image-list repairs awaiting verified publication."""
+        return self._photos_repairs
+
+    @property
+    def photo_thumbnail_files(self) -> tuple[RetainedArtworkFile, ...]:
+        """Raw retained thumbnail allocations, including optional allocation padding."""
+        from iPodDB.library._photo_extents import retained_photo_thumbnail_files
+
+        return (
+            ()
+            if self._photos_document is None
+            else retained_photo_thumbnail_files(self._photos_document)
+        )
 
     def begin_draft(
         self,
@@ -285,6 +324,78 @@ class IPodLibrary:
             self._device_time,
         )
         additional_issues = self.time_warnings
+        if self._photos_repairs:
+            resolved = replace(
+                resolved,
+                plan=replace(
+                    resolved.plan,
+                    changes=(
+                        *resolved.plan.changes,
+                        LibraryChange(
+                            "photos_database",
+                            None,
+                            "repair",
+                            "Photo Database image count",
+                            ("image_count",),
+                        ),
+                    ),
+                ),
+            )
+            additional_issues += tuple(
+                WriteIssue(
+                    "photos.repaired_image_count",
+                    "The Photo Database image count was recovered from complete retained records and will be corrected when saved.",
+                    severity=IssueSeverity.INFO,
+                    phase="source",
+                    subject="photos_database",
+                    field="image_count",
+                    detail=f"{repair.previous_count} -> {repair.corrected_count}",
+                    offset=repair.list_offset,
+                    artifact="PhotosDB",
+                )
+                for repair in self._photos_repairs
+            )
+        if self._artwork_repairs:
+            resolved = replace(
+                resolved,
+                plan=replace(
+                    resolved.plan,
+                    changes=(
+                        *resolved.plan.changes,
+                        LibraryChange(
+                            "artwork_database",
+                            None,
+                            "repair",
+                            "ArtworkDB image count",
+                            ("image_count",),
+                        ),
+                    ),
+                ),
+            )
+            additional_issues += tuple(
+                WriteIssue(
+                    "artwork.repaired_image_count",
+                    "The ArtworkDB image count was recovered from complete retained records and will be corrected when saved.",
+                    severity=IssueSeverity.INFO,
+                    phase="source",
+                    subject="artwork_database",
+                    field="image_count",
+                    detail=f"{repair.previous_count} -> {repair.corrected_count}",
+                    offset=repair.list_offset,
+                    artifact="ArtworkDB",
+                )
+                for repair in self._artwork_repairs
+            )
+            if target.artwork_checksum is not WriteChecksum.NONE and not any(
+                issue.code == "target.unsupported_artwork_signature"
+                for issue in resolved.plan.issues
+            ):
+                additional_issues += (
+                    WriteIssue(
+                        "target.unsupported_artwork_signature",
+                        "The ArtworkDB artifact requires an unsupported signature.",
+                    ),
+                )
         if not draft.delete_omissions:
             persisted = {p.playlist_id for p in self._database_snapshot.playlists}
             desired = {p.playlist_id for p in draft.snapshot.playlists}
@@ -408,14 +519,6 @@ class IPodLibrary:
 
         return LibraryDatabaseBytes(
             itunes=self._source_itunes,
-            artwork=(
-                write_ArtworkDB(self._artwork_document)
-                if self._artwork_document is not None
-                else None
-            ),
-            photos=(
-                write_PhotosDB(self._photos_document)
-                if self._photos_document is not None
-                else None
-            ),
+            artwork=self._source_artwork,
+            photos=self._source_photos,
         )

@@ -56,6 +56,12 @@ def test_first_database_contains_every_profile_cover_layout(
         WriteResources(artwork=(RED,), file_inventory=()),
     )
     assert result.prepared and result.prepared.artwork, result.issues
+    # libgpod and foo_dop count source covers, not their encoded renditions.
+    # Every profile may require multiple sizes for the same single cover.
+    assert all(
+        selection.chunk.header.artwork_count == 1
+        for selection in parse_iTunesDB(result.prepared.itunes).find_chunks(MhitHeader)
+    )
     document = parse_ArtworkDB(result.prepared.artwork)
     assert [s.chunk.header.dataset_type for s in document.find_chunks(MhsdHeader)] == [
         1,

@@ -1,5 +1,7 @@
 """Application-facing projections from the lossless ArtworkDB document."""
 
+from dataclasses import replace
+
 from iPodDB.ArtworkDB.builder.build_ArtworkDB import (
     new_artwork_chunk,
     new_ArtworkDB,
@@ -99,3 +101,43 @@ def test_omits_an_unbounded_ithmb_location_from_the_safe_index() -> None:
 
     assert item is not None
     assert item.locations == ()
+
+
+def test_one_invalid_format_does_not_hide_other_covers_or_destroy_its_record() -> None:
+    image_name = new_artwork_chunk(
+        MHNI_DEFINITION,
+        MhniHeader(
+            format_id=1060,
+            image_size=204_800,
+            image_size_2=204_800,
+            image_height=320,
+            image_width=320,
+        ),
+        children=(new_string_mhod(ArtworkMhodType.FILE_NAME, ":F1060_1.ithmb"),),
+    )
+    invalid = replace(image_name, header=replace(image_name.header, format_id=0))
+    first = new_artwork_chunk(
+        MHII_DEFINITION,
+        MhiiHeader(image_id=100, db_track_id_ref=1),
+        children=(new_container_mhod(ArtworkMhodType.THUMBNAIL_IMAGE, invalid),),
+    )
+    second = replace(
+        first,
+        header=replace(first.header, image_id=101, db_track_id_ref=2),
+        children=(new_container_mhod(ArtworkMhodType.THUMBNAIL_IMAGE, image_name),),
+    )
+    source = write_ArtworkDB(
+        new_ArtworkDB(next_mhii_id=102, unk_mhfd_0x10=6, image_items=(first, second))
+    )
+    document = parse_ArtworkDB(source)
+
+    index = build_artwork_index(document)
+
+    missing = index.item_for_image_id(100)
+    surviving = index.item_for_image_id(101)
+    assert missing is not None
+    assert missing.locations == ()
+    assert surviving is not None
+    assert len(surviving.locations) == 1
+    assert index.item_for_db_track_id(2) is surviving
+    assert write_ArtworkDB(document) == source

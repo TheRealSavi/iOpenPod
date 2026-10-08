@@ -11,6 +11,7 @@ from iPodDB.ArtworkDB.ithmb import (
     IthmbPaddingMode,
     IthmbPixelFormat,
 )
+from iPodDB.ArtworkDB.ithmb_reordering import reorder_recursive_rgb555
 
 
 def encode_ithmb(pixels: DecodedImage, layout: IthmbLayout) -> bytes:
@@ -167,4 +168,8 @@ def encode_ithmb(pixels: DecodedImage, layout: IthmbLayout) -> bytes:
             )
             offset = row * stride + column * 2
             output[offset : offset + 2] = value.to_bytes(2, endian)
+    if kind is IthmbPixelFormat.REC_RGB555_LE:
+        return reorder_recursive_rgb555(
+            bytes(output), width, height, stride, encode=True
+        )
     return bytes(output)

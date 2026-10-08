@@ -22,6 +22,9 @@ sessions.
 - [`ipod-preferences.md`](ipod-preferences.md) — typed, lossless firmware Preferences
   and iTunesPrefs readers/writers, supported layouts, and model limitations.
 - [`sync-workflow-audit-2026-09-26.md`](sync-workflow-audit-2026-09-26.md) — scan and Sync findings, fixes, and remaining limits.
+- [`sync-artwork-audit-2026-10-08.md`](sync-artwork-audit-2026-10-08.md) — artwork loss reproductions, automatic repairs, publication safety, and source research.
+- [Photo shard research](research/photo-sharding-2026-10-08.md) — shared per-format
+  iTHMB files, allocation bounds, Photo-specific records, and verified append policy.
 - [`packaging.md`](packaging.md) — native builds, store metadata, validation, and
   unresolved store-release requirements.
 - [`licensing.md`](licensing.md) — GPL distribution, corresponding source,

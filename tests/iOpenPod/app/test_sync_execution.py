@@ -10,6 +10,7 @@ import io
 import json
 import re
 import shutil
+import wave
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import replace
@@ -31,7 +32,7 @@ from tests.iOpenPod.app.test_music_import import FIXTURES
 from iOpenPod.app import sync_execution
 from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.export_tagging import ExportMediaTagger
-from iOpenPod.app.host_media_folders import create_host_media_folder
+from iOpenPod.app.host_media_folders import HostMediaType, create_host_media_folder
 from iOpenPod.app.host_media_library import (
     HostArtworkKind,
     HostMediaArtworkSource,
@@ -85,6 +86,8 @@ from iOpenPod.app.sync_plan import (
     prepare_sync_plan,
     select_sync_plan,
 )
+from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
+from iPodDB.ArtworkDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.library import (
     AudioEncoding,
     CoverFormat,
@@ -112,11 +115,13 @@ from storage import (
     FilesystemSession,
     FlushResult,
     HostPath,
+    StorageError,
     StorageOperationError,
     TransactionRecovery,
     TransactionState,
     capture_host_file,
 )
+from storage.host_directory import HostDirectoryEntry, LocalHostDirectory
 from storage.host_input import LocalHostFile
 from storage.media_processing import MediaToolError, MediaTools
 
@@ -1586,6 +1591,200 @@ def test_shared_album_artwork_is_captured_once_and_referenced_by_new_tracks(
         device.coordinator.close()
 
 
+@pytest.mark.parametrize("cancel", [False, True])
+def test_sync_without_media_changes_publishes_pending_artwork_repair(
+    tmp_path: Path, cancel: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        path = device.root / "iPod_Control/Artwork/ArtworkDB"
+        before = path.read_bytes()
+        chunk = parse_ArtworkDB(before).find_chunks(MhsdHeader)[0].chunk.children[0]
+        count_offset = chunk.offset + 8
+        damaged = before[:count_offset] + bytes(4) + before[count_offset + 4 :]
+        device.coordinator.close()
+        path.write_bytes(damaged)
+        device.coordinator.select_device(
+            device.coordinator.discover_devices().candidates[0].id
+        )
+        assert device.active.artwork_repairs_pending
+        request = _request(device, _host(tmp_path))
+        assert not request.plan.change_count
+        cancelled = Event()
+        if cancel:
+            cancelled.set()
+        result = SyncExecutor(device.coordinator, transcoder=_MissingTools()).execute(
+            request, lambda _: None, cancelled
+        )
+        if cancel:
+            assert result.status is SyncExecutionStatus.CANCELLED
+            assert device.active.artwork_repairs_pending
+            assert path.read_bytes() == damaged
+        else:
+            assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+            assert result.active is not None
+            assert not result.active.artwork_repairs_pending
+            assert path.read_bytes() == before
+            assert not result.completed
+            assert (
+                device.root / "iPod_Control/iTunes/iTunesDB"
+            ).read_bytes() == device.original["iPod_Control/iTunes/iTunesDB"]
+    finally:
+        device.coordinator.close()
+
+
+def test_payload_update_retains_artwork_when_review_does_not_change_it(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        original = device.active.library.tracks[0]
+        host = _host(tmp_path, "Replacement payload")
+        request = _request(device, host, update=True)
+        scanned = request.ipod.tracks[0]
+        assert scanned.sync is not None
+        source = host.sources[0]
+        ipod = replace(
+            request.ipod,
+            tracks=(
+                replace(
+                    scanned,
+                    sync=replace(
+                        scanned.sync,
+                        host_size_bytes=source.size_bytes,
+                        host_modified_ns=source.modified_ns,
+                    ),
+                ),
+                *request.ipod.tracks[1:],
+            ),
+        )
+        plan = prepare_sync_plan(host, ipod, device.active.library)
+        item = next(item for item in plan.items if item.host_path == str(source.path))
+        assert item.audio_payload_changed and not item.artwork_changed
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            replace(request, ipod=ipod, plan=SyncPlan((item,))), lambda _: None, Event()
+        )
+        assert result.active is not None, result.issues
+        updated = next(
+            t for t in result.active.library.tracks if t.track_id == original.track_id
+        )
+        assert updated.artwork_id == original.artwork_id > 0
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("problem", ["unreadable", "invalid", "observation"])
+def test_failed_host_cover_scan_cannot_remove_existing_album_art(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, problem: str
+) -> None:
+    host_dir = tmp_path / "host"
+    host_dir.mkdir()
+    path = host_dir / "track.wav"
+    with wave.open(str(path), "wb") as media:
+        media.setnchannels(1)
+        media.setsampwidth(2)
+        media.setframerate(44100)
+        media.writeframes(b"\0\0" * 44100)
+    cover_path = host_dir / "cover.png"
+    Image.new("RGB", (32, 32), "blue").save(cover_path)
+    if problem == "invalid":
+        cover_path.write_bytes(b"interrupted cover download")
+    elif problem == "observation":
+        original_listing = LocalHostDirectory.list_entries
+
+        def listing(
+            self: LocalHostDirectory,
+            *,
+            checkpoint: Callable[[], None],
+            on_issue: Callable[[HostPath, OSError | StorageError], None] | None = None,
+            include_file: Callable[[str], bool] | None = None,
+            include_directories: bool = True,
+            include_links: bool = False,
+            on_entry: Callable[[HostDirectoryEntry], None] | None = None,
+        ) -> tuple[HostDirectoryEntry, ...]:
+            entries = original_listing(
+                self,
+                checkpoint=checkpoint,
+                on_issue=on_issue,
+                include_file=include_file,
+                include_directories=include_directories,
+                include_links=include_links,
+                on_entry=on_entry,
+            )
+            if self.path.path == host_dir:
+                assert on_issue is not None
+                on_issue(
+                    HostPath(cover_path),
+                    PermissionError("Cloud cover observation failed"),
+                )
+                return tuple(
+                    entry for entry in entries if entry.path.path != cover_path
+                )
+            return entries
+
+        monkeypatch.setattr(LocalHostDirectory, "list_entries", listing)
+    else:
+        original_read = LocalHostFile.open_read
+
+        def unavailable(self: LocalHostFile, **kwargs: object) -> object:
+            if self.path.path == cover_path:
+                raise StorageError("Cloud cover is unavailable")
+            return original_read(self, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(LocalHostFile, "open_read", unavailable)
+    scanner = HostMediaScanner()
+    folder = replace(
+        create_host_media_folder(host_dir), media_types=frozenset({HostMediaType.AUDIO})
+    )
+    pending = scanner.scan((folder,), checkpoint=lambda: None)
+    host = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert len(host.snapshot.tracks) == 1
+    assert host.snapshot.tracks[0].artwork_id == 0
+    device = build_device(tmp_path)
+    try:
+        original = device.active.library.tracks[0]
+        before = {
+            p: p.read_bytes()
+            for p in (device.root / "iPod_Control/Artwork").iterdir()
+            if p.is_file()
+        }
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            _request(device, host, update=True), lambda _: None, Event()
+        )
+        assert result.active is not None, result.issues
+        updated = next(
+            t for t in result.active.library.tracks if t.track_id == original.track_id
+        )
+        assert updated.artwork_id == original.artwork_id > 0
+        assert {p: p.read_bytes() for p in before} == before
+        assert any("artwork" in issue.detail.casefold() for issue in host.issues)
+        assert result.helper is not None
+        # A later readable cover is automatically retried through the same real
+        # preparation and Storage transaction, rather than becoming stuck.
+        monkeypatch.undo()
+        Image.new("RGB", (32, 32), "green").save(cover_path)
+        pending = scanner.scan((folder,), checkpoint=lambda: None)
+        recovered = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+        assert not recovered.unavailable_artwork_paths
+        comparison = prepare_sync_plan(recovered, result.helper, result.active.library)
+        item = next(item for item in comparison.items if item.host_path == str(path))
+        assert item.artwork_changed
+        retried = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            SyncExecutionRequest(
+                SyncPlan((item,)), recovered, result.helper, result.active, 1, 1
+            ),
+            lambda _: None,
+            Event(),
+        )
+        assert retried.active is not None, retried.issues
+        repaired = next(
+            t for t in retried.active.library.tracks if t.track_id == original.track_id
+        )
+        assert repaired.artwork_id > 0 and repaired.artwork_id != original.artwork_id
+    finally:
+        device.coordinator.close()
+
+
 @pytest.mark.parametrize("problem", ["missing", "truncated", "directory"])
 @pytest.mark.parametrize("update", [False, True])
 def test_artwork_failure_defers_covers_but_commits_media(
@@ -1707,31 +1906,28 @@ def test_folder_artwork_only_update_is_committed_and_recorded(
         result = _Executor(device.coordinator, transcoder=_MissingTools()).execute(
             request, lambda _: None, Event()
         )
-        assert result.status is (
-            SyncExecutionStatus.PARTIAL
-            if missing_thumbnail
-            else SyncExecutionStatus.SUCCESS
-        ), result.issues
+        # This reviewed plan removes the other owner, so the new Host cover
+        # regenerates every remaining live association even if its old file vanished.
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None and result.helper is not None
         updated = next(
             track
             for track in result.active.library.tracks
             if track.track_id == original.track_id
         )
-        assert (updated.artwork_id == original.artwork_id) is missing_thumbnail
+        assert updated.artwork_id != original.artwork_id
         recorded = next(
             item for item in result.helper.tracks if item.track_id == original.track_id
         )
         assert recorded.sync is not None
-        assert recorded.sync.host_artwork_sha256 == (
-            "" if missing_thumbnail else cover.content_sha256
-        )
+        assert recorded.sync.host_artwork_sha256 == cover.content_sha256
         assert recorded.sync.ipod_artwork_id == updated.artwork_id
         next_plan = prepare_sync_plan(host, result.helper, result.active.library)
-        assert next(
-            item for item in next_plan.items if item.host_path == str(source.path)
-        ).action is (
-            SyncPlanAction.UPDATE if missing_thumbnail else SyncPlanAction.UNCHANGED
+        assert (
+            next(
+                item for item in next_plan.items if item.host_path == str(source.path)
+            ).action
+            is SyncPlanAction.UNCHANGED
         )
     finally:
         device.coordinator.close()

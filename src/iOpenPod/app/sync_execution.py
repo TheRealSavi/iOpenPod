@@ -124,6 +124,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.scrobbling.service import ScrobbleService
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from iOpenPod.app.sync_plan import SyncPlan
+    from storage.content_workspace import ContentWorkspace
     from storage.media_processing import MediaTools
 
 
@@ -442,7 +443,7 @@ class SyncExecutor:
                     )
                     issues.extend(cover_issues)
                     podcast_changes += len(podcast_artwork_repairs)
-                photos, photo_issues = self._prepare_photos(
+                photos, photo_issues, photo_workspace = self._prepare_photos(
                     request, progress, checkpoint, resources
                 )
                 issues.extend(photo_issues)
@@ -486,6 +487,18 @@ class SyncExecutor:
                             stable_metadata.append(result)
                 prepared = stable
                 photos = tuple(stable_photos)
+                if photos:
+                    assert photo_workspace is not None
+                    packed = self._coordinator.pack_photo_shards(
+                        request.source,
+                        tuple(photo.asset for photo in photos),
+                        photo_workspace,
+                        checkpoint,
+                    )
+                    photos = tuple(
+                        replace(photo, asset=asset)
+                        for photo, asset in zip(photos, packed, strict=True)
+                    )
                 metadata_updates = stable_metadata
                 playlist_sources_valid = _validate_playlist_sources(
                     request, issues, checkpoint
@@ -535,7 +548,12 @@ class SyncExecutor:
                             severity=IssueSeverity.WARNING,
                         )
                     )
-                if not completed and not library_changed:
+                if (
+                    not completed
+                    and not library_changed
+                    and not request.source.artwork_repairs_pending
+                    and not request.source.photos_repairs_pending
+                ):
                     requested_changes = bool(
                         request.plan.change_count
                         or requested_playlists
@@ -1628,7 +1646,9 @@ class SyncExecutor:
         progress: Callable[[WriteProgress], None],
         checkpoint: Callable[[], None],
         resources: ExitStack,
-    ) -> tuple[tuple[_PreparedPhoto, ...], tuple[WriteIssue, ...]]:
+    ) -> tuple[
+        tuple[_PreparedPhoto, ...], tuple[WriteIssue, ...], ContentWorkspace | None
+    ]:
         changes = tuple(
             item
             for item in request.plan.items
@@ -1636,7 +1656,7 @@ class SyncExecutor:
             and item.action in (SyncPlanAction.ADD, SyncPlanAction.UPDATE)
         )
         if not changes:
-            return (), ()
+            return (), (), None
         sources = {
             host_path_identity(str(source.path)): source
             for source in request.host.sources
@@ -1826,7 +1846,7 @@ class SyncExecutor:
                     unit="Photos",
                 )
             )
-        return tuple(prepared), tuple(issues)
+        return tuple(prepared), tuple(issues), staging
 
 
 def _podcast_add_failure_message(title: str, *, replacing: bool) -> str:
@@ -2096,7 +2116,11 @@ def _draft(
                 ipod=old.ipod,
                 rating=old.rating,
                 play_count=old.play_count,
-                artwork_id=(cover_id or old.artwork_id if host_track.artwork_id else 0),
+                artwork_id=(
+                    (cover_id or old.artwork_id if host_track.artwork_id else 0)
+                    if item.artwork_changed
+                    else old.artwork_id
+                ),
                 metadata=replace(
                     song.track.metadata,
                     date_added=old.metadata.date_added,
@@ -2164,7 +2188,8 @@ def _draft(
                     identity,
                     embedded_artwork,
                     preserve_artwork=(
-                        update.artwork is None and host_track.artwork_id != 0
+                        update.artwork is None
+                        and (not item.artwork_changed or host_track.artwork_id != 0)
                     ),
                 )
             )

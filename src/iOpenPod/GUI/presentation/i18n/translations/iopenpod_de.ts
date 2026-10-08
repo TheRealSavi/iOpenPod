@@ -6681,6 +6681,14 @@ Playlists: %3</translation>
         <source>Selected duplicates need choices</source>
         <translation>Für ausgewählte Duplikate sind Entscheidungen erforderlich</translation>
     </message>
+    <message>
+        <source>Artwork repair</source>
+        <translation>Cover-Reparatur</translation>
+    </message>
+    <message>
+        <source>Photo Database repair</source>
+        <translation>Reparatur der Fotodatenbank</translation>
+    </message>
     <message numerus="yes">
         <source>%n Podcast(s) will sync using their saved settings. Episodes may be added or removed.</source>
         <translation>
@@ -8414,6 +8422,10 @@ Playlists: %3</translation>
         <translation>{title} wird heruntergeladen…</translation>
     </message>
     <message>
+        <source>Embedded artwork could not be verified; existing iPod covers will be kept.</source>
+        <translation>Eingebettete Cover konnten nicht geprüft werden; vorhandene iPod-Cover bleiben erhalten.</translation>
+    </message>
+    <message>
         <source>Encoding the chaptered Album…</source>
         <translation>Album mit Kapiteln wird codiert…</translation>
     </message>
@@ -8496,6 +8508,10 @@ Playlists: %3</translation>
     <message>
         <source>Folder Tracks are derived from descendant Playlists.</source>
         <translation>Titel in Ordnern werden aus den enthaltenen Wiedergabelisten abgeleitet.</translation>
+    </message>
+    <message>
+        <source>Folder artwork could not be verified; existing iPod covers will be kept: {error}</source>
+        <translation>Cover aus dem Ordner konnten nicht geprüft werden; vorhandene iPod-Cover bleiben erhalten: {error}</translation>
     </message>
     <message>
         <source>Folder membership or direct-child rules are inconsistent.</source>
@@ -9538,6 +9554,10 @@ Playlists: %3</translation>
         <translation>Die ArtworkDB-Datei erfordert eine nicht unterstützte Signatur.</translation>
     </message>
     <message>
+        <source>The ArtworkDB image count was recovered from complete retained records and will be corrected when saved.</source>
+        <translation>Die Bildanzahl der ArtworkDB wurde aus vollständig erhaltenen Datensätzen wiederhergestellt und wird beim Speichern korrigiert.</translation>
+    </message>
+    <message>
         <source>The Backup Archive could not be verified.</source>
         <translation>Das Backup-Archiv konnte nicht geprüft werden.</translation>
     </message>
@@ -9948,6 +9968,10 @@ Playlists: %3</translation>
     <message>
         <source>Unpackaged</source>
         <translation>Ohne Paket</translation>
+    </message>
+    <message>
+        <source>Unreadable thumbnail data will be kept while replacement covers are written to fresh files.</source>
+        <translation>Unlesbare Vorschaubilddaten bleiben erhalten, während Ersatzcover in neue Dateien geschrieben werden.</translation>
     </message>
     <message>
         <source>Unsupported media file.</source>

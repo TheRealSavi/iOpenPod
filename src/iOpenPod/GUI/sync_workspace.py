@@ -349,6 +349,8 @@ class SyncWorkspace(QWidget):
         self.execution = SyncExecutionPage(self)
         self._execution_available = False
         self._podcast_count = 0
+        self._artwork_repairs_pending = False
+        self._photos_repairs_pending = False
         self._back = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
         self._back.setObjectName("backToSyncSelection")
         self._execute = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
@@ -500,6 +502,8 @@ class SyncWorkspace(QWidget):
         ipod_media: IPodMediaLibrary,
     ) -> None:
         self._reset_playlist_preview()
+        self._artwork_repairs_pending = active_ipod.artwork_repairs_pending
+        self._photos_repairs_pending = active_ipod.photos_repairs_pending
         self._scan_issues.load(library.issues)
         self._storage_projection = SyncStorageProjection(
             library, ipod_media, active_ipod.candidate, active_ipod.profile
@@ -729,6 +733,8 @@ class SyncWorkspace(QWidget):
                 self.selection.selected_plan.change_count > 0
                 or playlist_count > 0
                 or self._podcast_count > 0
+                or self._artwork_repairs_pending
+                or self._photos_repairs_pending
                 or pending_duplicates
             )
         )
@@ -745,6 +751,10 @@ class SyncWorkspace(QWidget):
             )
         if pending_duplicates:
             summary += " · " + self.tr("Selected duplicates need choices")
+        if self._artwork_repairs_pending:
+            summary += " · " + self.tr("Artwork repair")
+        if self._photos_repairs_pending:
+            summary += " · " + self.tr("Photo Database repair")
         self._review_summary.setText(summary)
         self._podcast_detail.setVisible(self._podcast_count > 0)
         self._podcast_detail.setText(
@@ -769,6 +779,8 @@ class SyncWorkspace(QWidget):
 
     def _reset_playlist_preview(self) -> None:
         self._playlist_preview = ()
+        self._artwork_repairs_pending = False
+        self._photos_repairs_pending = False
         with QSignalBlocker(self._reconcile_playlists):
             self._reconcile_playlists.setChecked(True)
         self._refresh_playlist_preview()

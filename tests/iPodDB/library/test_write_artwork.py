@@ -289,7 +289,6 @@ def test_artwork_addition_keeps_original_unknown_data_and_photo_dataset() -> Non
         (IthmbPixelFormat.RGB565_BE, "f80007e0001f"),
         (IthmbPixelFormat.RGB555_LE, "007ce0031f00"),
         (IthmbPixelFormat.RGB555_BE, "7c0003e0001f"),
-        (IthmbPixelFormat.REC_RGB555_LE, "007ce0031f00"),
     ],
 )
 def test_packed_primary_colors_match_bitfield_vectors(

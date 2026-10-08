@@ -290,6 +290,45 @@ def test_playlist_only_sync_requires_enabled_review_choice(
         controller.shutdown()
 
 
+@pytest.mark.parametrize(
+    ("artwork_pending", "photos_pending"),
+    [(True, False), (False, True)],
+    ids=["artwork", "photos"],
+)
+def test_pending_database_repair_allows_sync_without_media_changes(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+    artwork_pending: bool,
+    photos_pending: bool,
+) -> None:
+    coordinator, devices, workspace, _ = session
+    active = coordinator.active_ipod
+    assert active is not None
+    active = replace(
+        active,
+        artwork_repairs_pending=artwork_pending,
+        photos_repairs_pending=photos_pending,
+    )
+    devices.finish_library_save(active)
+    workspace.load(active.library)
+    _, host, ipod = _inputs()
+    service = SyncExecutionStub()
+    service.release.set()
+    controller = SyncController(
+        service,
+        workspace,
+        devices,
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
+    )
+    try:
+        assert controller.start(SyncPlan(()), host, ipod, active)
+        wait_for(lambda: not controller.busy)
+        assert service.request is not None
+        assert service.request.source.artwork_repairs_pending is artwork_pending
+        assert service.request.source.photos_repairs_pending is photos_pending
+    finally:
+        controller.shutdown()
+
+
 def test_podcast_sync_uses_shared_reservation_without_host_scans(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
 ) -> None:

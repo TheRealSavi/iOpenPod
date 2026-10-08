@@ -10,6 +10,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING, cast
 
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
+from iPodDB.ArtworkDB.parser.repair_ArtworkDB import repair_ArtworkDB
 from iPodDB.ArtworkDB.shared.artwork_index import (
     EMPTY_ARTWORK_INDEX,
     build_artwork_index,
@@ -17,7 +18,12 @@ from iPodDB.ArtworkDB.shared.artwork_index import (
 from iPodDB.ArtworkDB.shared.chunk_defs.mhba import MhbaHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhii import MhiiHeader as ArtworkImageHeader
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
-from iPodDB.iTunesDB.cdb import ITunesCDB, compress_iTunesCDB, decompress_iTunesCDB
+from iPodDB.iTunesDB.cdb import (
+    ITunesCDB,
+    compress_iTunesCDB,
+    decompress_iTunesCDB,
+    is_iTunesCDB,
+)
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
@@ -69,6 +75,7 @@ from iPodDB.library.writing import (
     WriteTarget,
 )
 from iPodDB.PhotosDB.parser.parse_PhotosDB import parse_PhotosDB
+from iPodDB.PhotosDB.parser.repair_PhotosDB import repair_PhotosDB
 from iPodDB.PhotosDB.shared.chunk_defs.mhii import MhiiHeader as PhotoHeader
 from iPodDB.PhotosDB.writer.write_PhotosDB import write_PhotosDB
 from iPodDB.shared.errors import iPodDBWriteError
@@ -338,11 +345,11 @@ def _prepare(
     for asset in resources.photos:
         for photo_file in asset.files:
             key = photo_file.dependency.relative_path.casefold()
-            if key in dependencies:
+            if key in dependencies and dependencies[key] != photo_file.dependency:
                 issues.append(
                     WriteIssue(
                         "resources.file_collision",
-                        "A new Photo file collides with another captured resource.",
+                        "Shared Photo files have conflicting captured content.",
                         subject="photo",
                         record_id=asset.photo.photo_id,
                     )
@@ -682,7 +689,7 @@ def _prepare(
         notify(WritePhase.VERIFICATION)
         checked_logical_bytes = (
             decompress_iTunesCDB(itunes).logical_bytes
-            if plan.target.compressed_database
+            if is_iTunesCDB(itunes)
             else itunes
         )
         checked_document = parse_iTunesDB(checked_logical_bytes)
@@ -762,10 +769,15 @@ def _prepare(
                 document, checked_document, source.snapshot, desired, mappings
             )
         )
+        expected_retained_artwork = (
+            repair_ArtworkDB(original_bytes.artwork).data
+            if source.artwork_repairs and original_bytes.artwork is not None
+            else original_bytes.artwork
+        )
         if (
             not resolved.artwork_tracks
             and not resolved.deleted_tracks
-            and (artwork_bytes != original_bytes.artwork or artwork_files)
+            and (artwork_bytes != expected_retained_artwork or artwork_files)
         ):
             issues.append(
                 WriteIssue(
@@ -775,7 +787,12 @@ def _prepare(
                     artifact="ArtworkDB",
                 )
             )
-        if not plan.changes_photos and photos_bytes != original_bytes.photos:
+        expected_retained_photos = (
+            repair_PhotosDB(original_bytes.photos).data
+            if source.photos_repairs and original_bytes.photos is not None
+            else original_bytes.photos
+        )
+        if not plan.changes_photos and photos_bytes != expected_retained_photos:
             issues.append(
                 WriteIssue(
                     "verification.unrequested_photos",
@@ -893,7 +910,9 @@ def _prepare(
                 artwork_item = checked_index.item_for_image_id(expected.artwork_id)
                 metadata = replace(
                     metadata,
-                    artwork_count=len(artwork_item.locations) if artwork_item else 0,
+                    artwork_count=int(
+                        artwork_item is not None and bool(artwork_item.locations)
+                    ),
                 )
             expected = replace(expected, metadata=metadata)
             if actual != expected:

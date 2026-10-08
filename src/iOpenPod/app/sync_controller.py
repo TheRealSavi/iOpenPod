@@ -392,6 +392,8 @@ class SyncController(QObject):
         if (
             podcasts is None
             and not plan.change_count
+            and not source.artwork_repairs_pending
+            and not source.photos_repairs_pending
             and not (
                 reconcile_playlists and preview_playlist_sync(plan, host, ipod, source)
             )

@@ -305,17 +305,15 @@ def _project_timestamp(
 
 
 def _resolved_artwork_id(track: Track, artwork_index: ArtworkIndex) -> int:
+    # Explicit sparse links take precedence over stale reverse owners, as in
+    # libgpod. Resolve from the source header, never a previous projection.
+    direct_id = track.ipod.artwork_id_ref if track.ipod is not None else 0
+    if direct_id and artwork_index.item_for_image_id(direct_id) is not None:
+        return direct_id
     item = artwork_index.item_for_db_track_id(
         track.ipod.db_track_id if track.ipod is not None else 0
     )
-    if item is not None:
-        return item.image_id
-    # A replacement ArtworkDB must use the source reference, not an image ID
-    # resolved from a previous ArtworkDB.
-    direct_id = track.ipod.artwork_id_ref if track.ipod is not None else 0
-    if artwork_index.item_for_image_id(direct_id) is not None:
-        return direct_id
-    return 0
+    return item.image_id if item is not None else 0
 
 
 MEDIA_TYPES = {

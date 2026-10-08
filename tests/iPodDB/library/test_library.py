@@ -418,7 +418,8 @@ def test_artwork_relationships_and_replacement_use_source_identifiers() -> None:
     )
     artwork = _artwork_bytes((64, 7), (91, 0)) + b"future artwork suffix"
     linked = source.with_artwork(artwork)
-    assert tuple(track.artwork_id for track in linked.snapshot.tracks) == (64, 91, 0)
+    # A retained legacy owner must not override a valid explicit sparse link.
+    assert tuple(track.artwork_id for track in linked.snapshot.tracks) == (91, 91, 0)
     assert tuple(track.artwork_id for track in source.snapshot.tracks) == (91, 91, 99)
     assert linked.serialize().artwork == artwork
     assert linked.serialize().itunes == source.serialize().itunes
@@ -427,6 +428,18 @@ def test_artwork_relationships_and_replacement_use_source_identifiers() -> None:
     # never become the next database's fallback reference.
     replaced = linked.with_artwork(_artwork_bytes((64, 100)))
     assert tuple(track.artwork_id for track in replaced.snapshot.tracks) == (0, 0, 0)
+
+
+@pytest.mark.parametrize("direct_id", [0, 99])
+def test_missing_direct_artwork_link_keeps_available_reverse_owner(
+    direct_id: int,
+) -> None:
+    source = IPodLibrary(
+        _itunes_bytes(MhitHeader(track_id=1, db_track_id=7, artwork_id_ref=direct_id))
+    )
+    linked = source.with_artwork(_artwork_bytes((64, 7)))
+    assert linked.snapshot.tracks[0].artwork_id == 64
+    assert linked.serialize().itunes == source.serialize().itunes
 
 
 def test_lazy_artwork_plan_selects_reduced_ranges_and_decodes_only_supplied_bytes() -> (

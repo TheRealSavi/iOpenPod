@@ -257,7 +257,10 @@ Playlist entries and Photo Album occurrences as part of the same desired state.
 Removing an entry from a retained Playlist or Photo Album is a membership edit, not
 deletion of its Track or Photo, and needs no omission opt-in. Hidden Master
 Playlists, firmware categories, artwork records, and unknown datasets are not
-omitted records. A no-op reproduces every retained database file exactly. The
+omitted records. A no-op without pending evidenced artwork repairs reproduces every
+retained database file exactly. Bounded MHLI count repairs appear as explicit
+ArtworkDB-only changes even when the desired snapshot is unchanged; see
+[ADR-0133](adr/0133-recover-evidenced-artwork-without-clearing-unavailable-covers.md). The
 source's snapshot and `serialize()` result remain unchanged after success or
 failure.
 
@@ -281,8 +284,33 @@ The current writable surface is intentionally narrow:
 - A retained Photo can be removed with explicit omission-deletion intent when every
   Photo Album occurrence is removed in the same desired state. The Master Photo
   Album admits only that exact membership consequence.
-- Photo addition, direct Master Photo Album editing or deletion, representation
-  edits, and file-format edits are blocked.
+- Photo additions and replacements require a `PreparedPhoto` with one captured
+  original and every thumbnail format declared by the Device Profile. The writer
+  derives the corresponding Master Photo Album membership and format records.
+- Direct arbitrary Master Photo Album editing or deletion remains blocked.
+
+Photo Sync packs thumbnail frames into shared per-format iTHMB shards, including
+across successive Syncs. The Application captures eligible retained shards through
+Storage, preserves the complete existing byte prefix, and allocates a new shard
+before another frame would exceed the configured limit (256,000,000 bytes by
+default). Missing, unreadable, truncated, or otherwise ineligible shards reserve
+their names and cause allocation into fresh files. Full-resolution originals stay
+separate. Each representation carries its own byte offset and raster size; MHIF
+continues to describe a format's frame size, never the total shard length.
+
+Prepared Photos can share a single captured output file. Validation hashes each
+shared object once, verifies individual ranges without overlap, and independently
+checks any declared retained prefix. Storage binds extension to the old whole-file
+fingerprint and publishes each shard once in the same recoverable transaction as
+PhotosDB. Deletion preserves files referenced by any surviving Photo and reclaims
+only wholly unreferenced supported files. Shards are not compacted. See
+[ADR-0135](adr/0135-pack-photos-into-bounded-shared-shards.md).
+
+The bounded image-list count recovery used for ArtworkDB also applies to PhotosDB
+through its own parser definition. Recovered Photos enter the semantic snapshot;
+`serialize()` retains the original bytes until an ordinary reviewed save publishes
+the evidenced count correction. Repair-only output is compared against that exact
+correction so unrelated writer changes cannot pass verification.
 
 The writer resolves slideshow music from the common Track identity back to the
 native persistent Track identity. It rebuilds only affected typed Photo records,
@@ -318,7 +346,7 @@ in the public model; their native Track aggregation is computed recursively.
 | Playlist name, description, parent, entries, Playlist Sort Order, supported rules | Editable; identities, positions, and dependencies are validated |
 | Smart Playlist preview results | Pure previews do not mutate entries; applying changed rules in the application updates saved matches before preparation |
 | Photo rating and dates | Editable retained metadata with bounded integer validation |
-| Photo representations, source size, and file formats | Read-only until an asset workflow exists |
+| Photo representations, source size, and file formats | Require complete `PreparedPhoto` evidence for additions or replacements |
 | Photo Album name, membership, slideshow preferences, and music Track | Editable for retained user albums; Master album, role, and native diagnostics are read-only |
 
 Dates are Unix seconds with zero meaning absent; the inverse conversion uses the
@@ -466,13 +494,24 @@ support direct references. Otherwise, each Track receives a distinct image recor
 and reverse Track link while sharing immutable thumbnail ranges. Per-Track artwork
 mappings carry `IdentityMapping.track_id`.
 
+A new single-cover assignment records MHIT artwork count one, independently of
+the number of device representations. Valid direct Track links take precedence
+over legacy reverse ownership when projecting the Library.
+
 `WriteResources.file_inventory` is a complete captured inventory for artwork file
 allocation. `SourceFile` supplies exact bytes and their fingerprint for an existing
 file being extended. A full shard can be retained without reading its bytes; a
 partially full shard requires its verified prefix. Allocation uses only the
 `F<format>_<shard>.ithmb` policy, checks case-insensitive collisions, and never
 compacts, reuses holes, or deletes files. Changed file outputs include the complete
-prefix plus zero-filled frame alignment and appended images. Missing or duplicate
+prefix plus zero-filled frame alignment and appended images. Reserved artwork paths
+carry names only, preventing writes without claiming a readable file fingerprint.
+When fresh assets replace every live owner of a damaged image, preparation can
+regenerate its covers into usable or new shards while preserving old records and
+surviving bytes. Missing, truncated and explicitly unreadable paths stay reserved;
+healthy retained images still constrain layout selection. See
+[ADR-0133](adr/0133-recover-evidenced-artwork-without-clearing-unavailable-covers.md).
+Missing or duplicate
 affected datasets and unverifiable MHIF image sizes block preparation. Consistent
 retained MHNI images can establish a corrected MHIF size. For F1061, individually
 validated 55-row and 56-row rasters may coexist, with bounds and overlap checks
@@ -487,6 +526,8 @@ New artwork still fills the selected output layout, so retained 55-by-56 and
 56-by-56 visible images do
 not prevent writing new 56-by-56 artwork. Other codecs retain their existing
 geometry rules.
+The primary MHNI size describes the raster; a zero secondary size leaves the
+allocation implicit, and a larger secondary size can preserve bounded padding.
 See [ADR-0111](adr/0111-correct-evidenced-artwork-format-sizes-during-preparation.md)
 and [ADR-0121](adr/0121-preserve-retained-f1061-raster-height.md), amended by
 [ADR-0124](adr/0124-accept-validated-mixed-f1061-layouts.md) and
@@ -501,7 +542,8 @@ requires a consistent size for newly encoded images per format; retained F1061
 variants keep their own validated extents. Variable JPEG sizes cannot share one
 MHIF entry. All catalog cover formats have fixed-size rasters.
 
-Sync handles unfulfillable cover changes with an Application Layer retry: retain
+Sync attempts evidenced repair and regeneration before handling unfulfillable
+cover changes with an Application Layer retry: retain
 existing cover associations, clear new cover assets and give incoming Tracks no
 cover, then prepare and verify the remaining draft normally. Successful fallback
 reports deferred artwork and keeps its Sync Details retryable. Direct Library
