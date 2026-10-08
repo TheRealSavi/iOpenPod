@@ -7,6 +7,8 @@ build-backend = "hatchling.build"
 exclude = [
     "/tests/fixtures/iTunesDB/captured-album-index-36.b64",
     "/tests/fixtures/iTunesDB/captured-album-index-36.json",
+    "/tests/fixtures/iTunesDB/captured-album-index-36-overrides.b64",
+    "/tests/fixtures/iTunesDB/captured-album-index-36-overrides.json",
     "/tests/fixtures/SQLiteDB/observed-postprocess-commands.plist",
 ]
 
@@ -18,7 +20,7 @@ packages = ["src/iOpenPod", "src/device_registry", "src/iPodDB", "src/storage"]
 
 [project]
 name = "iOpenPod"
-version = "2.0.8"
+version = "2.0.9"
 description = "iPod sync tool. Manage your iPod media library without iTunes."
 authors = [{ name = "John Gibbons", email = "johngibbons167@gmail.com" }]
 readme = "README.md"
