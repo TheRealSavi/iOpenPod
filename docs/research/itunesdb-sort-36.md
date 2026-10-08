@@ -20,12 +20,13 @@ last writers are not independently established.
 | Capture | SHA-256 | Tracks | Contiguous album groups in sort 36 |
 | --- | --- | ---: | ---: |
 | Historical `20mb_iTunesDB` | `c242701f0da0893b61d9d9605d6c3782d61d983fac759a6d400df23be732ef8b` | 6541 | 1059 |
-| Classic `beanoblubiTunesDB` | `1e1abac446e120cfceb70986e12109dc1c71e35304e3bdeac94cefece727d284` | 5630 | 482 |
-| Classic `beanoblub2 iTunesDB` | `b0008450fbc823a87fdcc9ed6bbb2507031405158a7e1db7e94367844dad4457` | 5641 | 483 |
-| Classic `beanoblub3 iTunesDB` | `5348897d2b77498f04169529eeafa6cf1030129d6accac7ddf4d7ad7e3c7c6da` | 5630 | 482 |
-| iPod 3 `skepiTunesDB` | `de80d81f5278016a1968156de70087889dfd2eab307c20b3d4cd855c28d40f84` | 193 | 91 |
-| Nano 1 `skep_iTunesDB` | `9b5614404f8be6fd71fac23baccc4a9eb7ae16e1d2fba432731b70009f5e1fe1` | 184 | 91 |
-| Photo `skepiTunesDB` | `06b2968824d81457311c6c9ed9545c0680c6e762490b38025e2dd86b24ed146f` | 191 | 93 |
+| Classic A | `1e1abac446e120cfceb70986e12109dc1c71e35304e3bdeac94cefece727d284` | 5630 | 482 |
+| Classic A, revision 2 | `b0008450fbc823a87fdcc9ed6bbb2507031405158a7e1db7e94367844dad4457` | 5641 | 483 |
+| Classic A, revision 3 | `5348897d2b77498f04169529eeafa6cf1030129d6accac7ddf4d7ad7e3c7c6da` | 5630 | 482 |
+| iPod third generation | `de80d81f5278016a1968156de70087889dfd2eab307c20b3d4cd855c28d40f84` | 193 | 91 |
+| Nano first generation | `9b5614404f8be6fd71fac23baccc4a9eb7ae16e1d2fba432731b70009f5e1fe1` | 184 | 91 |
+| Photo | `06b2968824d81457311c6c9ed9545c0680c6e762490b38025e2dd86b24ed146f` | 191 | 93 |
+| Reported failure supplied 2026-10-08 | `99826cf0c63e449ccc4cc2675ccb4c3a0baa0fb40f3d12f71ac2b891ba86e95a` | 687 | 160 |
 
 The historical database is from a different iPod than the connected-device capture.
 It was used alone, without that device's ArtworkDB or media. Three other captured
@@ -69,11 +70,53 @@ values keep their captured order, including when Tracks are added to an existing
 album or removed. Rebuilding group order first checks the complete source group
 sequence against the supported observed comparison profiles: punctuation retained,
 artist hyphens ignored, or punctuation ignored. The profiles fold case/diacritics,
-normalize curly apostrophes, ignore a leading `The`, and place numeric names after
-letter names. Empty artists sort last; empty albums sort first within an artist.
+normalize curly apostrophes, and place numeric names after letter names. Empty
+artists sort after named artists.
+
+The 2026-10-08 capture distinguishes additional rules that the earlier reduced
+fixture did not exercise. Its profile retains a leading `The` in explicit sort
+overrides, places empty albums after named albums within an artist, and places
+compilations without an Album Artist or Sort Album Artist after ordinary albums.
+Those compilations use the album value within their final section, rather than
+their representative Track's artist. The capture contains only one such compilation,
+so ordering between several such albums remains an extension of the album-title
+policy, not an independently captured comparison. Compilation Tracks with a named
+Album Artist stay in that artist's ordinary position. Display-name fallbacks still
+ignore a leading `The`; explicit sort values retain their article.
+
+This profile is preferred when it explains the complete retained sequence. The
+previous profiles remain available for sources requiring the historical policy
+(strip `The` even from overrides, empty albums first, no compilation section).
+Punctuation handling remains independently selected from the three captured variants.
 A source inconsistent with every profile blocks a changed group sort with a
 specific diagnostic. Selecting a matching profile establishes consistency with
 the captured comparisons, not a universal claim about iTunes locale collation.
+
+## Reported failure reproduced on 2026-10-08
+
+Both Master Playlists in the supplied 1,203,015-byte database have the same ID.
+Their sort-36 sequences contain the same 160 album groups.
+The old implementation rejected both with the reported diagnostic. Each punctuation
+profile had exactly three adjacent ordering inversions. The following labels are
+fabricated equivalents; original names and identifiers are omitted:
+
+| Retained sequence | Old interpretation | Missing rule |
+| --- | --- | --- |
+| The Zeta, then Thistle | `zeta` sorts after `thistle` | Preserve `The` in explicit Sort Album Artist |
+| Fixture Album E, then an unnamed album, both with no artist | An empty album sorts before `fixture...` | This capture places the unnamed album last within its artist section |
+| Unnamed album, then a compilation | Representative Fixture Artist A sorts before an empty artist | Compilation without an album artist occupies the final section |
+
+Each correction independently removes one inversion. Together they explain every
+album comparison in both full indexes. Changing Album Artist versus Sort Artist
+fallback precedence cannot resolve these three pairs: their selected values are
+unchanged by that swap.
+
+A public Library preparation test editing one album's Sort Album Artist reproduced
+the two errors before the fix and successfully prepared after it. The original
+687-Track capture remained unchanged, and no-op preparation reproduced its bytes
+exactly. This was an in-memory test using a test signing identity; no generated
+database was published to an iPod. The separate unavailable-dates warning remained.
+The user's exact 681-change draft was not provided and was not replayed.
 
 ## Writing and verification
 
@@ -96,11 +139,12 @@ unchanged index exactly.
 
 ## Reproducible regression evidence
 
-`tests/fixtures/iTunesDB/captured-album-index-36.b64` retains 60 Tracks across nine
-complete native albums from the historical capture. Its manifest records source
-and fixture hashes and the expected Track sequence extracted from each original
-index. The fixture is reduced, not a whole untouched device database; see the
-fixture README for the transformations.
+`tests/fixtures/iTunesDB/captured-album-index-36.b64` reconstructs 60 Tracks across
+nine native album groups from the historical capture. Its manifest records source
+and fixture hashes and the captured Track sequence using synthetic IDs. All text
+and identifiers are fabricated. The fixture preserves sorting comparisons and
+membership relationships while omitting unrelated metadata and opaque bytes; see
+the fixture README for the transformations.
 
 Run the public-API regression cases with:
 
@@ -111,6 +155,18 @@ uv run pytest tests/iPodDB/library/test_album_index.py
 They exercise no-op preservation, metadata and album-sort changes, coordinate
 remapping, retained ties, additions to existing/new albums, removal, number edits,
 review effects, and injected writer corruption. Host-only checks also prepared
-title and album-sort edits on the complete historical, Classic `beanoblubiTunesDB`,
+title and album-sort edits on the complete historical, Classic A,
 and Nano 1 captures. Candidates stayed in memory. This is captured-format and
 preparation evidence; physical firmware execution was not tested.
+
+`captured-album-index-36-overrides.b64` reconstructs seven selected representative
+Tracks and their album records from the reported failure. Fabricated sorting strings
+and identifiers preserve the relevant field presence, compilation flags, album
+ownership, representative relationships, and relative Master/sort-36 order in fresh
+unsigned test Chunks. Its manifest records synthetic Track IDs, captured sequences,
+and hashes. Unrelated metadata, account information, media paths, and opaque data are
+omitted. This fixture reproduces the three comparisons without retaining original
+names or identifiers. The privacy transformation preserves all 780 pairwise album
+comparisons across the two fixtures and six supported profiles.
+Tests also cover removing an explicit override without changing its text, changing
+compilation status, literal Album sort overrides, and independent index verification.

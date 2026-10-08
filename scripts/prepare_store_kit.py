@@ -48,8 +48,10 @@ ROOT_SOURCE_FILES = frozenset(
     }
 )
 PRIVATE_FIXTURES = {
-    "tests/fixtures/iTunesDB/captured-album-index-36.b64": "Private device-derived library metadata.",
-    "tests/fixtures/iTunesDB/captured-album-index-36.json": "Companion identifiers for private device-derived metadata.",
+    "tests/fixtures/iTunesDB/captured-album-index-36.b64": "Device-derived fixture, excluded from distribution as a precaution.",
+    "tests/fixtures/iTunesDB/captured-album-index-36.json": "Companion manifest for an excluded device-derived fixture.",
+    "tests/fixtures/iTunesDB/captured-album-index-36-overrides.b64": "Device-derived fixture, excluded from distribution as a precaution.",
+    "tests/fixtures/iTunesDB/captured-album-index-36-overrides.json": "Companion manifest for an excluded device-derived fixture.",
     "tests/fixtures/SQLiteDB/observed-postprocess-commands.plist": "External excerpt with unresolved redistribution provenance.",
 }
 BLOCKED_PARTS = frozenset(

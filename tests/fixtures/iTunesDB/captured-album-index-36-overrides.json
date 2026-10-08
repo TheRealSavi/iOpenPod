@@ -1,0 +1,36 @@
+{
+  "source_sha256": "99826cf0c63e449ccc4cc2675ccb4c3a0baa0fb40f3d12f71ac2b891ba86e95a",
+  "source_size": 1203015,
+  "fixture_sha256": "30b405c18fc4214519bfc5b4db7c1e1aa5f04b966b7a6db03af4f80f77eddae3",
+  "ordered_track_ids": {
+    "3": [
+      3,
+      4,
+      5,
+      7,
+      1,
+      6,
+      2
+    ],
+    "2": [
+      3,
+      4,
+      5,
+      7,
+      1,
+      6,
+      2
+    ]
+  },
+  "reconstruction": "Fresh unsigned Chunks with fabricated text and identifiers. Only album membership, representative selection, sort-field presence, compilation flags, disc/track numbers and captured relative ordering are preserved. All other metadata and opaque bytes are omitted.",
+  "fixture_track_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "anonymized": true
+}

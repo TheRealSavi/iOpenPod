@@ -9,6 +9,7 @@ import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from itertools import pairwise
+from typing import Literal
 
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhia import MhiaHeader
@@ -28,6 +29,30 @@ from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 SORT_TYPE = 36
 type AlbumIdentity = tuple[str, ...]
 type TextKey = tuple[int, str]
+type Punctuation = Literal[
+    "punctuation_retained", "artist_hyphens_ignored", "punctuation_ignored"
+]
+
+
+@dataclass(frozen=True)
+class CollationProfile:
+    punctuation: Punctuation
+    literal_sort_overrides: bool
+    empty_albums_last: bool
+    compilations_last: bool
+
+
+# Prefer the more discriminating capture's rules when both families fit. Keep
+# the historical profiles for sources whose retained order requires them.
+PROFILES = tuple(
+    CollationProfile(punctuation, revised, revised, revised)
+    for revised in (True, False)
+    for punctuation in (
+        "punctuation_retained",
+        "artist_hyphens_ignored",
+        "punctuation_ignored",
+    )
+)
 
 
 def is_album_index(chunk: ParsedChunk[ChunkHeader]) -> bool:
@@ -69,6 +94,19 @@ class AlbumGroup:
     artist: str
     album: str
     members: tuple[Track, ...]
+    artist_override: bool
+    album_override: bool
+    compilation_without_album_artist: bool
+
+    @property
+    def sort_values(self) -> tuple[str, str, bool, bool, bool]:
+        return (
+            self.artist,
+            self.album,
+            self.artist_override,
+            self.album_override,
+            self.compilation_without_album_artist,
+        )
 
 
 def groups(
@@ -109,15 +147,26 @@ def groups(
                 or representative.artist,
                 meta.sort_album or representative.album,
                 tuple(values),
+                bool(
+                    meta.sort_album_artist
+                    or (not representative.album_artist and meta.sort_artist)
+                ),
+                bool(meta.sort_album),
+                meta.compilation
+                and not (meta.sort_album_artist or representative.album_artist),
             )
         )
     return tuple(result)
 
 
-def _text(value: str, profile: str, *, artist: bool) -> TextKey:
+def _text(
+    value: str, profile: CollationProfile, *, artist: bool, override: bool
+) -> TextKey:
     # The observed profiles differ even for equal MHBD platform/language values;
     # select only a profile consistent with the retained index, never by Host OS.
-    if value.casefold().startswith("the "):
+    if not (
+        override and profile.literal_sort_overrides
+    ) and value.casefold().startswith("the "):
         value = value[4:]
     value = (
         "".join(
@@ -128,17 +177,26 @@ def _text(value: str, profile: str, *, artist: bool) -> TextKey:
         .replace("\u2018", "'")
         .replace("\u2019", "'")
     )
-    if profile == "punctuation_ignored":
+    if profile.punctuation == "punctuation_ignored":
         value = "".join(c for c in value if not unicodedata.category(c).startswith("P"))
-    elif profile == "artist_hyphens_ignored" and artist:
+    elif profile.punctuation == "artist_hyphens_ignored" and artist:
         value = value.replace("-", "")
-    bucket = (2 if artist else -1) if not value else int(value[0].isdigit())
+    empty_bucket = 2 if artist or profile.empty_albums_last else -1
+    bucket = empty_bucket if not value else int(value[0].isdigit())
     return bucket, value
 
 
-def _key(group: AlbumGroup, profile: str) -> tuple[TextKey, TextKey]:
-    return _text(group.artist, profile, artist=True), _text(
-        group.album, profile, artist=False
+def _key(group: AlbumGroup, profile: CollationProfile) -> tuple[bool, TextKey, TextKey]:
+    compilation = profile.compilations_last and group.compilation_without_album_artist
+    return (
+        compilation,
+        _text(
+            "" if compilation else group.artist,
+            profile,
+            artist=True,
+            override=group.artist_override,
+        ),
+        _text(group.album, profile, artist=False, override=group.album_override),
     )
 
 
@@ -167,12 +225,8 @@ def _group_order(tracks: tuple[Track, ...]) -> tuple[AlbumIdentity, ...]:
     return tuple(order)
 
 
-def _profile(groups_in_order: tuple[AlbumGroup, ...]) -> str:
-    for profile in (
-        "punctuation_retained",
-        "artist_hyphens_ignored",
-        "punctuation_ignored",
-    ):
+def _profile(groups_in_order: tuple[AlbumGroup, ...]) -> CollationProfile:
+    for profile in PROFILES:
         keys = tuple(_key(g, profile) for g in groups_in_order)
         if all(a <= b for a, b in pairwise(keys)):
             return profile
@@ -184,8 +238,8 @@ def _profile(groups_in_order: tuple[AlbumGroup, ...]) -> str:
 def _group_keys_changed(
     before: tuple[AlbumGroup, ...], after: tuple[AlbumGroup, ...]
 ) -> bool:
-    old = {g.identity: (g.artist, g.album) for g in before}
-    return any(old.get(g.identity) != (g.artist, g.album) for g in after)
+    old = {g.identity: g.sort_values for g in before}
+    return any(old.get(g.identity) != g.sort_values for g in after)
 
 
 def _dependencies(
@@ -203,6 +257,7 @@ def _dependencies(
                 t.metadata.sort_album_artist,
                 t.album,
                 t.metadata.sort_album,
+                t.metadata.compilation,
                 t.show,
                 _numbers(t),
             )

@@ -11,11 +11,13 @@ import pytest
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
     MhodLibraryIndexPayload,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
+from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library import (
     IPodLibrary,
     Track,
@@ -29,12 +31,12 @@ from iPodDB.shared.chunk import DatabaseDocument
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "iTunesDB"
 
 
-def captured_source() -> IPodLibrary:
+def captured_source(name: str = "captured-album-index-36") -> IPodLibrary:
     data = base64.b64decode(
-        b"".join((FIXTURES / "captured-album-index-36.b64").read_bytes().split()),
+        b"".join((FIXTURES / f"{name}.b64").read_bytes().split()),
         validate=True,
     )
-    manifest = json.loads((FIXTURES / "captured-album-index-36.json").read_text())
+    manifest = json.loads((FIXTURES / f"{name}.json").read_text())
     assert hashlib.sha256(data).hexdigest() == manifest["fixture_sha256"]
     return IPodLibrary(data)
 
@@ -59,16 +61,107 @@ def index_tracks(data: bytes) -> dict[int, tuple[int, ...]]:
     return result
 
 
-def test_captured_order_and_noop_are_exact() -> None:
-    source = captured_source()
+@pytest.mark.parametrize(
+    "name", ["captured-album-index-36", "captured-album-index-36-overrides"]
+)
+def test_captured_order_and_noop_are_exact(name: str) -> None:
+    source = captured_source(name)
     original = source.serialize().itunes
-    manifest = json.loads((FIXTURES / "captured-album-index-36.json").read_text())
+    manifest = json.loads((FIXTURES / f"{name}.json").read_text())
     assert index_tracks(original) == {
         int(kind): tuple(ids) for kind, ids in manifest["ordered_track_ids"].items()
     }
     result = source.prepare(source.analyze(source.begin_draft()))
     assert result.prepared is not None, result.issues
     assert result.prepared.itunes == original
+
+
+@pytest.mark.parametrize(
+    ("position", "field", "value", "expected_positions"),
+    [
+        (0, "sort_album_artist", "ZZZ", (1, 2, 3, 0, 4, 5, 6)),
+        # Removing an explicit override changes how the same text is compared.
+        (1, "sort_album_artist", "", (0, 2, 3, 1, 4, 5, 6)),
+        (2, "sort_album", "The Aardvark", (0, 1, 2, 3, 4, 5, 6)),
+        (6, "compilation", False, (6, 0, 1, 2, 3, 4, 5)),
+    ],
+)
+def test_reported_sort_overrides_empty_albums_and_compilations(
+    position: int, field: str, value: str | bool, expected_positions: tuple[int, ...]
+) -> None:
+    source = captured_source("captured-album-index-36-overrides")
+    original = source.serialize().itunes
+    before = index_tracks(original)[3]
+    changed = next(t for t in source.snapshot.tracks if t.track_id == before[position])
+    if field == "compilation":
+        assert isinstance(value, bool)
+        metadata = replace(changed.metadata, compilation=value)
+    elif field == "sort_album":
+        assert isinstance(value, str)
+        metadata = replace(changed.metadata, sort_album=value)
+    else:
+        assert isinstance(value, str)
+        metadata = replace(changed.metadata, sort_album_artist=value)
+    changed = replace(changed, metadata=metadata)
+    desired = replace(
+        source.snapshot,
+        tracks=tuple(
+            changed if t.track_id == changed.track_id else t
+            for t in source.snapshot.tracks
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    assert index_tracks(result.prepared.itunes) == {
+        kind: tuple(before[i] for i in expected_positions) for kind in (2, 3)
+    }
+    assert source.serialize().itunes == original
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_profile_selection_preserves_legacy_support_and_rejects_unknown_order(
+    legacy: bool,
+) -> None:
+    source = captured_source("captured-album-index-36-overrides")
+    original = source.serialize().itunes
+    before = index_tracks(original)[3]
+    document = parse_iTunesDB(original)
+    # A constructed legacy order exercises the pre-existing policy. The other
+    # order puts The Zeta before Fixture Artist B, which neither family supports.
+    positions = (6, 0, 3, 1, 2, 5, 4) if legacy else (1, 0, 2, 3, 4, 5, 6)
+    for selection in document.find_chunks(MhodHeader):
+        if not _album_index.is_album_index(selection.chunk):
+            continue
+        payload = selection.chunk.payload
+        assert isinstance(payload, MhodLibraryIndexPayload)
+        document = document.replace_chunk(
+            selection,
+            replace(
+                selection.chunk,
+                payload=replace(
+                    payload, indices=tuple(payload.indices[i] for i in positions)
+                ),
+            ),
+        )
+    source = IPodLibrary(write_iTunesDB(document))
+    desired = replace(
+        source.snapshot,
+        tracks=tuple(
+            replace(t, metadata=replace(t.metadata, sort_album_artist="ZZZ"))
+            if t.track_id == before[0]
+            else t
+            for t in source.snapshot.tracks
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    if legacy:
+        assert result.prepared is not None, result.issues
+        assert index_tracks(result.prepared.itunes) == {
+            kind: tuple(before[i] for i in (6, 3, 1, 2, 0, 5, 4)) for kind in (2, 3)
+        }
+    else:
+        assert result.prepared is None
+        assert any(i.code == "library.album_index" for i in result.issues)
 
 
 @pytest.mark.parametrize("field", ["title", "rating", "sort_title"])
@@ -105,7 +198,7 @@ def test_album_sort_edit_moves_the_whole_native_album() -> None:
     source = captured_source()
     original = source.serialize().itunes
     before = index_tracks(original)[3]
-    # The first captured album is a-ha; move it after all named artists.
+    # Move the first anonymized album after all named artists.
     first_id = before[0]
     first = next(t for t in source.snapshot.tracks if t.track_id == first_id)
     assert first.ipod is not None
@@ -138,7 +231,7 @@ def test_album_sort_edit_moves_the_whole_native_album() -> None:
 
 def test_track_removal_filters_the_captured_order() -> None:
     source = captured_source()
-    removed = 57365  # A nonrepresentative Track from the captured Diamonds album.
+    removed = 40  # A nonrepresentative Track from the fourth anonymized album.
     original = source.serialize().itunes
     desired = replace(
         source.snapshot,
@@ -206,7 +299,7 @@ def test_track_addition_joins_the_correct_album(existing_album: bool) -> None:
 
 def test_disc_and_track_edits_update_member_order_and_review_effect() -> None:
     source = captured_source()
-    track_id = 57365
+    track_id = 40
     desired = replace(
         source.snapshot,
         tracks=tuple(
@@ -222,13 +315,16 @@ def test_disc_and_track_edits_update_member_order_and_review_effect() -> None:
     result = source.prepare(plan)
     assert result.prepared is not None, result.issues
     order = index_tracks(result.prepared.itunes)[3]
-    assert order.index(57371) < order.index(57365) < order.index(57373)
+    assert order.index(41) < order.index(40) < order.index(42)
 
 
+@pytest.mark.parametrize(
+    "name", ["captured-album-index-36", "captured-album-index-36-overrides"]
+)
 def test_verifier_rejects_an_incorrect_album_index_writer(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, name: str
 ) -> None:
-    source = captured_source()
+    source = captured_source(name)
     original = source.serialize().itunes
     writer = _album_index.prepare_album_index
 
