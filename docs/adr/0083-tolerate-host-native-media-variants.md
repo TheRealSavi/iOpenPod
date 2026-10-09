@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-09-26
 - Extends: ADR-0031, ADR-0074 and ADR-0082
+- Amended by: [ADR-0136](0136-allow-network-filesystems-as-host-media-sources.md)
+  for ordinary network filesystem paths
 
 ## Context
 

@@ -4,6 +4,8 @@
 - Date: 2026-09-24
 - Extends: ADR-0031 and ADR-0063
 - Amended by: ADR-0132 for explicitly selected Host paths and opt-in folder links
+- Amended by: [ADR-0136](0136-allow-network-filesystems-as-host-media-sources.md)
+  for network filesystem paths and Windows UNC file URLs
 
 Host Playlist documents supply untrusted file references, not filesystem authority.
 The Application Layer parses bounded bytes into ordered references; Storage owns

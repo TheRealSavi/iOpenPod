@@ -110,7 +110,7 @@ def test_malformed_cache_falls_back_to_scanning(tmp_path: Path, payload: bytes) 
     result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(result.snapshot.tracks) == 1
     assert result.cache.reused == 0
-    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 12
+    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 13
 
 
 def test_changed_tracks_use_existing_acoustic_analysis_without_full_stream_hashing(
@@ -233,7 +233,7 @@ def test_in_memory_cache_notices_external_invalidation(
         cache.path.write_bytes(b"invalid")
     changed = scanner.scan((folder,), checkpoint=lambda: None)
     assert changed.cache == HostMediaCacheStats(inspected=1)
-    assert json.loads(cache.path.read_bytes())["version"] == 12
+    assert json.loads(cache.path.read_bytes())["version"] == 13
 
 
 def test_cache_save_failure_retains_work_in_memory_and_retries_persistence(
@@ -1463,7 +1463,7 @@ def test_folder_cover_bytes_are_not_reread_until_file_facts_change(
     assert changed.snapshot.tracks[0].artwork_id != first.snapshot.tracks[0].artwork_id
 
 
-@pytest.mark.parametrize("version", [9, 10, 11])
+@pytest.mark.parametrize("version", [9, 10, 11, 12])
 def test_prior_host_cache_reuses_unchanged_media_and_cover(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
 ) -> None:
@@ -1482,7 +1482,8 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
     document["version"] = version
-    document["entries"][0]["metadata"].pop("embedded_artwork_available")
+    if version < 12:
+        document["entries"][0]["metadata"].pop("embedded_artwork_available")
     if version < 11:
         document["entries"][0]["metadata"].pop("metadata_complete")
     if version == 10:
@@ -1535,7 +1536,7 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
         == "1,2,3"
     )
     stored = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert stored["version"] == 12
+    assert stored["version"] == 13
     assert "payload_sha256" not in stored["entries"][0]["metadata"]
 
 
@@ -1990,7 +1991,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 12
+    assert document["version"] == 13
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {

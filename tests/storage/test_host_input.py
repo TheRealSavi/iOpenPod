@@ -22,13 +22,28 @@ from storage.host_input import LocalHostFile, resolve_local_file_reference
     [
         "https://example.org/song.mp3",
         "smb://server/share/song.mp3",
-        "file://server/share/song.mp3",
-        "//server/share/song.mp3",
-        r"\\server\share\song.mp3",
+        pytest.param(
+            "file://server/share/song.mp3",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windows UNC source"),
+        ),
+        pytest.param(
+            "//server/share/song.mp3",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windows UNC source"),
+        ),
+        pytest.param(
+            r"\\server\share\song.mp3",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windows UNC source"),
+        ),
         r"\\?\C:\song.mp3",
         r"\\.\pipe\song.mp3",
-        "file:////server/share/song.mp3",
-        "file://localhost/%2fserver/share/song.mp3",
+        pytest.param(
+            "file:////server/share/song.mp3",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windows UNC source"),
+        ),
+        pytest.param(
+            "file://localhost/%2fserver/share/song.mp3",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windows UNC source"),
+        ),
         "file:///C:/song.mp3:secret",
         "file:///tmp/song%00.mp3",
         "file:///tmp/song.mp3?command=run",

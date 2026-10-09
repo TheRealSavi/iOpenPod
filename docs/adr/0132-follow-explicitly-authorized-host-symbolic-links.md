@@ -4,6 +4,8 @@
 - Date: 2026-10-08
 - Amends: ADR-0074 for explicitly selected Host media and folder enumeration
 - Extends: ADR-0063 and ADR-0082
+- Amended by: [ADR-0136](0136-allow-network-filesystems-as-host-media-sources.md)
+  for network filesystem inputs and native symbolic-link UNC targets
 
 ## Context
 

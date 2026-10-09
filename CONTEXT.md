@@ -155,6 +155,10 @@ their recursive, per-media-type scan settings. Explicit selections may use symbo
 links. A per-folder Follow symbolic links option, disabled by default, also permits
 discovered links; cycle detection and shared observations prevent duplicate work.
 Scan issues remain visible in Select Media and Review. See ADR-0132.
+Host media can also reside on ordinary Windows UNC shares or mapped network
+drives. Mounted network filesystems on POSIX remain supported. Storage retains
+source validation and per-file preparation; users need not copy their entire
+Host Media Library locally before Sync. See ADR-0136.
 Accepting the dialog persists that
 configuration in global settings, starts a cancellable background Host Media Scan,
 and opens the full-window Sync Workspace for scan progress, media selection, and
@@ -165,9 +169,11 @@ SHA-256 content fingerprints for Host Photos, discovers embedded or common
 folder-level Track artwork for lazy source-validated display, and
 explicitly reviews Playlist references outside the selected media catalog, including
 excluded media types and subfolders. M3U/M3U8, PLS, XSPF, WPL, and ASX/WAX/WVX
-documents use bounded Storage reads; only explicitly accepted local audio/video
+documents use bounded Storage reads; only explicitly accepted filesystem audio/video
 references can extend the scan, through identity-checked private Storage captures.
-Network references, nested Playlists, indirect Playlist links, and XML entity declarations cannot
+Ordinary Windows UNC and mapped-drive references are supported, including relative
+references from network-hosted Playlists and Windows UNC file URLs. Non-file URLs,
+nested Playlists, indirect Playlist links, and XML entity declarations cannot
 expand access. Host file and folder-artwork churn during scanning is retained as a
 diagnostic instead of failing the best-effort scan; Sync revalidates current source
 facts before writing. See ADR-0074 and ADR-0082. On completion,
@@ -249,9 +255,12 @@ read-only, and foreign or declined journals remain untouched. Only actual cleanu
 failures require a cleanup warning and retry. See ADR-0089 and ADR-0093.
 Host tag interpretation now shares native ID3, MP4, Vorbis/APE, ASF, and FFprobe
 aliases across scanning and import. Media classification, TV and Podcast fields,
-lyrics, sorting, advisory, and normalization metadata survive Scan Cache v12.
+lyrics, sorting, advisory, and normalization metadata survive Scan Cache v13.
 Embedded artwork availability is retained separately from absence; older cached
 no-cover records are reinspected once.
+Migrating cache versions 9 through 12 retains reusable Track and Photo records but
+reparses Playlists once so previously excluded network references become available
+without editing the files. See ADR-0136.
 Successful metadata and optional Acoustic Fingerprints are reused independently.
 Compact fingerprints, unchanged-cache reuse, and bounded directory concurrency
 reduce scan overhead; both selected-tree passes retain fresh Storage observations.
@@ -729,7 +738,8 @@ them through narrow interfaces.
 
 ## Data locations
 
-- The Host Media Library remains in the folders selected and owned by the user.
+- The Host Media Library remains in the folders selected and owned by the user,
+  including supported network filesystem locations.
 - iPod media and databases remain on the Active iPod and are accessed only through a
   Filesystem Session.
 - Global settings, logs, caches, and temporary files use the standard application

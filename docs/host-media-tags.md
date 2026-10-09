@@ -2,11 +2,13 @@
 
 The Application Layer's `media.tags` adapter interprets native Mutagen values and
 FFprobe metadata for Host Media Scan, music import, and Sync enrichment. Scanning
-is read-only. Normalized fields survive Host Media Scan Cache v12; versions 9
-through 11 migrate while reusing unchanged covered media. Older no-cover records
+is read-only. Normalized fields survive Host Media Scan Cache v13; versions 9
+through 12 migrate while reusing unchanged covered media. Pre-v12 no-cover records
 are reinspected once because they did not distinguish absent artwork from an
 unreadable embedded image. Tags describe Library classification, not codec
 compatibility. See [ADR-0133](adr/0133-recover-evidenced-artwork-without-clearing-unavailable-covers.md).
+Pre-v13 Playlist records are reparsed once to restore network filesystem
+references; see [ADR-0136](adr/0136-allow-network-filesystems-as-host-media-sources.md).
 
 ## Coverage
 

@@ -1,4 +1,4 @@
-"""Read-only access to individual local files named by untrusted documents.
+"""Read-only access to Host filesystem files, including network media sources.
 
 Resolving a reference grants no read authority. Observe before review, then read or
 capture only the exact approved observation. Reads never follow links or reparse
@@ -71,7 +71,7 @@ def resolve_host_selection(path: HostPath) -> HostPath:
 def _resolve_host_selection(path: HostPath, directories: set[Path]) -> HostPath:
     """Resolve an explicitly authorized selection, never an indirect reference.
 
-    Only symbolic links are permitted. Other reparse points, network/device path
+    Only symbolic links are permitted. Other reparse points, device path
     syntax and special files remain unavailable. The returned spelling grants no
     read authority: callers must retain a normal no-link Storage observation.
     """
@@ -80,9 +80,10 @@ def _resolve_host_selection(path: HostPath, directories: set[Path]) -> HostPath:
     def validate(value: Path) -> None:
         spelling = os.fspath(value)
         validate_host_path_spelling(
-            spelling.replace("\\", "/") if os.name == "nt" else spelling
+            spelling.replace("\\", "/") if os.name == "nt" else spelling,
+            allow_network=True,
         )
-        _check_local_drive(value)
+        _check_host_drive(value, allow_network=True)
 
     validate(source)
     current = Path(source.anchor)
@@ -103,14 +104,14 @@ def _resolve_host_selection(path: HostPath, directories: set[Path]) -> HostPath:
             if links > 40:
                 raise UnsafeFilesystemPathError("Symbolic link cycle or too many links")
             target = candidate.readlink()
-            # Native Windows links can return a local extended-length spelling.
+            # Native Windows links can return extended-length filesystem paths.
             raw_target = os.fspath(target)
             if os.name == "nt" and raw_target.startswith("\\\\?\\"):
                 raw_target = raw_target[4:]
-                if not _DRIVE.match(raw_target.replace("\\", "/")):
-                    raise InvalidHostPathError(
-                        "Network and device paths are not allowed"
-                    )
+                if raw_target[:4].casefold() == "unc\\":
+                    raw_target = "\\\\" + raw_target[4:]
+                elif not _DRIVE.match(raw_target.replace("\\", "/")):
+                    raise InvalidHostPathError("Device paths are not allowed")
                 target = Path(raw_target)
             target = target if target.is_absolute() else current / target
             validate(target)
@@ -134,7 +135,7 @@ def _resolve_host_selection(path: HostPath, directories: set[Path]) -> HostPath:
 def resolve_local_file_reference(
     value: str, relative_to: HostPath, *, uri: bool = False
 ) -> HostPath:
-    """Normalize a local path without probing it or expanding shell syntax.
+    """Normalize a filesystem path without probing it or expanding shell syntax.
 
     URI paths are percent-decoded exactly once. Ordinary paths retain literal
     percent signs. Windows separators are normalized on Windows; POSIX
@@ -154,7 +155,8 @@ def resolve_local_file_reference(
         if is_uri:
             if parsed.scheme.casefold() not in {"", "file"}:
                 raise InvalidHostPathError("Network and non-file URLs are not allowed")
-            if parsed.netloc.casefold() not in {"", "localhost"}:
+            remote_authority = parsed.netloc.casefold() not in {"", "localhost"}
+            if remote_authority and os.name != "nt":
                 raise InvalidHostPathError("Remote file URLs are not allowed")
             if parsed.query or parsed.fragment:
                 raise InvalidHostPathError(
@@ -165,9 +167,11 @@ def resolve_local_file_reference(
                 value = value.replace("\\", "/")
             if re.match(r"^/[A-Za-z]:/", value):
                 value = value[1:]
+            if remote_authority:
+                value = "//" + parsed.netloc + "/" + value.lstrip("/")
             if parsed.scheme and not (value.startswith("/") or _DRIVE.match(value)):
                 raise InvalidHostPathError("File URLs must name an absolute path")
-    validate_host_path_spelling(value)
+    validate_host_path_spelling(value, allow_network=True)
     if _DRIVE.match(value) and os.name != "nt":
         raise InvalidHostPathError("A Windows drive path is unavailable on this Host")
     path = Path(value)
@@ -177,14 +181,20 @@ def resolve_local_file_reference(
     result_spelling = os.fspath(result)
     if os.name == "nt":
         result_spelling = result_spelling.replace("\\", "/")
-    validate_host_path_spelling(result_spelling)
+    validate_host_path_spelling(result_spelling, allow_network=True)
     return result
 
 
-def validate_host_path_spelling(value: str) -> None:
-    """Reject network/device syntax and ambiguous components in a slash-separated path."""
-    if not value or value.startswith(("//", r"\\", "/??/")):
+def validate_host_path_spelling(value: str, *, allow_network: bool = False) -> None:
+    """Validate slash-separated Host paths; media may opt into ordinary UNC paths."""
+    if not value or value.startswith(("//?/", "//./", "/??/", "//??/", r"\\")):
+        raise InvalidHostPathError("Device paths are not allowed")
+    if value.startswith("//") and not (allow_network and os.name == "nt"):
         raise InvalidHostPathError("Network and device paths are not allowed")
+    if value.startswith("//"):
+        authority = value[2:].split("/")
+        if len(authority) < 2 or any(part in {"", ".", ".."} for part in authority[:2]):
+            raise InvalidHostPathError("A network path must name a server and share")
     tail = value[3:] if _DRIVE.match(value) else value
     if any(ord(char) < 32 or (os.name == "nt" and char in '<>:"|?*') for char in tail):
         raise InvalidHostPathError("File reference contains unsafe path characters")
@@ -198,7 +208,7 @@ def validate_host_path_spelling(value: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class LocalHostFile:
-    """One regular local file and the identity observed before authorization."""
+    """One regular Host file and the identity observed before authorization."""
 
     path: HostPath
     size_bytes: int
@@ -212,8 +222,8 @@ class LocalHostFile:
         source_spelling = os.fspath(source)
         if os.name == "nt":
             source_spelling = source_spelling.replace("\\", "/")
-        validate_host_path_spelling(source_spelling)
-        _check_local_drive(source)
+        validate_host_path_spelling(source_spelling, allow_network=True)
+        _check_host_drive(source, allow_network=True)
         for parent in reversed(source.parents):
             metadata = parent.lstat()
             if is_link_or_reparse(metadata) or not stat.S_ISDIR(metadata.st_mode):
@@ -406,7 +416,7 @@ def _require_regular(value: os.stat_result) -> None:
         )
 
 
-def _check_local_drive(path: Path) -> None:
+def _check_host_drive(path: Path, *, allow_network: bool = False) -> None:
     if sys.platform == "win32":
         import ctypes
         from ctypes import wintypes
@@ -414,8 +424,15 @@ def _check_local_drive(path: Path) -> None:
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel.GetDriveTypeW.argtypes = [wintypes.LPCWSTR]
         kernel.GetDriveTypeW.restype = wintypes.UINT
-        if kernel.GetDriveTypeW(path.anchor) not in {2, 3, 5, 6}:
-            raise UnsafeFilesystemPathError("Host input must be on a local drive")
+        allowed = {2, 3, 5, 6}
+        if allow_network:
+            allowed.add(4)  # DRIVE_REMOTE: a normal filesystem source for Host media.
+        if kernel.GetDriveTypeW(path.anchor) not in allowed:
+            raise UnsafeFilesystemPathError(
+                "Host input must be on an available filesystem drive"
+                if allow_network
+                else "Host input must be on a local drive"
+            )
 
 
 @contextmanager

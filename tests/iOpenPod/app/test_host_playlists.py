@@ -1,5 +1,6 @@
 """Playlist format behavior, bounded parsing, and data-only reference handling."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -126,7 +127,7 @@ def test_bad_references_are_reported_without_losing_valid_entries(
     tmp_path: Path,
 ) -> None:
     payload = (
-        b"https://example.org/remote.mp3\nfile://server/share/a.mp3\nNUL.mp3\nGood.mp3"
+        b"https://example.org/remote.mp3\nsmb://server/share/a.mp3\nNUL.mp3\nGood.mp3"
     )
     parsed = parse_host_playlist(
         payload, HostPath(tmp_path / "Mix.m3u8"), checkpoint=lambda: None
@@ -171,3 +172,48 @@ def test_wpl_accepts_native_relative_names_with_literal_uri_characters(
         payload, HostPath(tmp_path / "Mix.wpl"), checkpoint=lambda: None
     )
     assert parsed.references == (HostPath(tmp_path / "Artist" / "Song #1 100%.mp3"),)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows UNC paths")
+@pytest.mark.parametrize(
+    ("extension", "payload"),
+    [
+        ("m3u8", b"Album/Song One.mp3\n"),
+        (
+            "xspf",
+            b'<playlist xml:base="Album/"><trackList><track><location>Song%20One.mp3</location></track></trackList></playlist>',
+        ),
+        (
+            "asx",
+            b'<asx><base href="Album/"/><entry><ref href="Song%20One.mp3"/></entry></asx>',
+        ),
+    ],
+)
+def test_relative_references_from_a_network_playlist(
+    extension: str, payload: bytes
+) -> None:
+    root = Path(r"\\nas\music")
+    parsed = parse_host_playlist(
+        payload, HostPath(root / f"Mix.{extension}"), checkpoint=lambda: None
+    )
+    assert parsed.references == (HostPath(root / "Album" / "Song One.mp3"),)
+    assert not parsed.warning
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows UNC paths")
+@pytest.mark.parametrize(
+    "reference",
+    [
+        r"\\nas\music\Album\Song One.mp3",
+        "//nas/music/Album/Song One.mp3",
+        "file://nas/music/Album/Song%20One.mp3",
+    ],
+)
+def test_windows_playlist_accepts_network_filesystem_references(
+    tmp_path: Path, reference: str
+) -> None:
+    parsed = parse_host_playlist(
+        reference.encode(), HostPath(tmp_path / "Mix.m3u8"), checkpoint=lambda: None
+    )
+    assert parsed.references == (HostPath(Path(r"\\nas\music\Album\Song One.mp3")),)
+    assert not parsed.warning

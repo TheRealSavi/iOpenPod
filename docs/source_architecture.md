@@ -1163,6 +1163,15 @@ observed directory identities. Canonical target paths and regular-file identitie
 prevent duplicate media inspection. Indirect Playlist links, unsupported reparse
 points, and Device Path links retain their restrictions. Scan issues remain visible
 beside Select Media and Review. See ADR-0132.
+Ordinary Windows UNC shares and mapped network drives are supported Host media
+sources, as are network filesystems mounted at ordinary POSIX paths. Storage media
+operations opt into these filesystem paths while installation helpers retain their
+local-only defaults. Native extended UNC targets returned by authorized symbolic
+links are normalized to ordinary UNC spelling; explicit device or extended-length
+namespace inputs remain rejected. Users do not need to copy their entire Host
+Media Library locally, although existing per-file capture and preparation can
+still use temporary Host disk space. Source identity checks, pinned reads,
+cancellation, and failure handling remain in force. See ADR-0136.
 Overlapping folder selections share one listing
 per directory per pass, with the union of the media types and recursion settings
 that apply at that path. Explicit files reuse an existing observation when possible.
@@ -1175,8 +1184,8 @@ stays indeterminate until the total is known, and the messages retain translatio
 templates for live language changes.
 
 External Host file drops on the main Library browser provide another entry to the
-same workflow. A visible drop zone accepts supported local folders and files only
-while an Active iPod is available and the workspace is unlocked. Each folder opens
+same workflow. A visible drop zone accepts supported filesystem folders and files
+only while an Active iPod is available and the workspace is unlocked. Each folder opens
 the same recursion and media-type settings as Choose Media Folders; canceling
 abandons the drop. The dropped selection is temporary
 and does not change the saved folder configuration. Explicit files are observed
@@ -1215,7 +1224,7 @@ media file or loading it entirely into memory. Storage also launches fingerprint
 processes against validated inputs and owns temporary device-scan captures.
 
 Host scanning, music import, and Sync enrichment share `app/media/tags.py` for native
-tag interpretation and common Track projection. Cache v12 retains recognized tag
+tag interpretation and common Track projection. Cache v13 retains recognized tag
 values, including classification, TV/Podcast details, sorting, and lyrics. Videos
 without useful native tags or timing can use bounded FFprobe metadata inspection
 through a pinned, seekable Storage input without a whole-file capture. Successful
@@ -1233,12 +1242,16 @@ selected media catalog (including excluded media types and subfolders) pause the
 worker at a review dialog. Available entries can be accepted
 or denied individually or in bulk. Only accepted supported files are inspected and
 made available to Playlist membership. M3U/M3U8, PLS, XSPF, WPL, and ASX/WAX/WVX
-parsing consumes bounded Storage reads. Storage rejects unsafe local path syntax,
-links, reparse points, special files, and indirect Windows network drives. Approved
-external audio/video files are inspected through private Storage captures tied to
+parsing consumes bounded Storage reads. Ordinary Windows UNC and mapped-drive
+filesystem references are supported, including Windows UNC file URLs and relative
+references from network Playlists. Remote file authorities remain rejected on
+POSIX Hosts, where network media uses mounted filesystem paths. Storage rejects
+non-file URLs, device namespace syntax, indirect links, reparse points, and special
+files. Approved external audio/video files are inspected through private Storage captures tied to
 the reviewed file identity. Approval never recurses into another Playlist or carries
-over through the cache to a later scan. See ADR-0074. Track inspection prefers bounded embedded
-artwork and otherwise records a deterministic common folder-level cover for lazy,
+over through the cache to a later scan. See ADR-0074 and ADR-0136. Track inspection
+prefers bounded embedded artwork and otherwise records a deterministic common
+folder-level cover for lazy,
 source-validated Host presentation. The Sync Workspace shows scan progress and, on
 completion, presents a dedicated, read-only Host browser. It is made from the same
 page and model classes as the iPod browser but is
@@ -1286,11 +1299,13 @@ recovery. A separate iPod Analysis Cache in Host storage retains completed analy
 for repeated pre-Review scans, including on read-only devices. It is bound to device
 and Volume identities, validates current file facts, checkpoints on cancellation,
 and contains no Sync Details. Host Photo records carry matching SHA-256 evidence in
-Host Media Scan Cache v12. Versions 9 through 11 migrate while reusing unchanged
-covered media; older no-cover records are reinspected once to distinguish absent
-artwork from previously unrecorded decoding failures. Long Acoustic Fingerprints
-use a lossless bounded binary encoding in Host cache v12 and helper v5; readers
-retain prior decimal support.
+Host Media Scan Cache v13. Versions 9 through 12 migrate while retaining reusable
+Track and Photo records. Cached Playlist interpretations are discarded so even
+unchanged Playlists are reparsed once and previously excluded network references
+become available without editing the source. See ADR-0136. Older no-cover records
+are reinspected once to distinguish absent artwork from previously unrecorded
+decoding failures. Long Acoustic Fingerprints use a lossless bounded binary
+encoding in Host cache v13 and helper v5; readers retain prior decimal support.
 An iPod Media Scan upgrades a v3 Library Sync Helper in
 memory by reusing unchanged device records without recapturing media. Because v3
 does not contain a committed iPod Track tag or artwork baseline, migration does not

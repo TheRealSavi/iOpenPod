@@ -208,3 +208,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0133: Recover evidenced artwork without clearing unavailable covers](0133-recover-evidenced-artwork-without-clearing-unavailable-covers.md)
 - [ADR-0134: Verify unconfirmed durability before recovery cleanup](0134-verify-unconfirmed-durability-before-recovery-cleanup.md)
 - [ADR-0135: Pack Photos into bounded shared shards](0135-pack-photos-into-bounded-shared-shards.md)
+- [ADR-0136: Allow network filesystems as Host media sources](0136-allow-network-filesystems-as-host-media-sources.md)

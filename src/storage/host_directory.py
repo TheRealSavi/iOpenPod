@@ -1,4 +1,4 @@
-"""Identity-bound, read-only directory observations for local Host scanning."""
+"""Identity-bound, read-only directory observations for Host filesystem scanning."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from storage.errors import (
 from storage.host_input import (
     HostSelectionResolver,
     LocalHostFile,
-    _check_local_drive,  # pyright: ignore[reportPrivateUsage]
+    _check_host_drive,  # pyright: ignore[reportPrivateUsage]
     validate_host_path_spelling,
 )
 from storage.paths import HostPath
@@ -59,8 +59,10 @@ class LocalHostDirectory:
     @classmethod
     def observe(cls, path: HostPath) -> LocalHostDirectory:
         source = Path(path)
-        validate_host_path_spelling(os.fspath(source).replace("\\", "/"))
-        _check_local_drive(source)
+        validate_host_path_spelling(
+            os.fspath(source).replace("\\", "/"), allow_network=True
+        )
+        _check_host_drive(source, allow_network=True)
         for parent in reversed(source.parents):
             _require_directory(parent.lstat())
         metadata = source.lstat()
@@ -98,7 +100,7 @@ class LocalHostDirectory:
         """
         checkpoint()
         entries: list[HostDirectoryEntry] = []
-        with pin_host_directory(Path(self.path)) as pinned:
+        with pin_host_directory(Path(self.path), allow_network=True) as pinned:
             before = _directory_stat(pinned)
             _require_directory(before)
             if (before.st_dev, before.st_ino) != (self.device, self.inode) or (
@@ -225,10 +227,14 @@ def _directory_stat(pinned: Path | int) -> os.stat_result:
 
 
 @contextmanager
-def pin_host_directory(path: Path) -> Generator[Path | int]:
+def pin_host_directory(
+    path: Path, *, allow_network: bool = False
+) -> Generator[Path | int]:
     """Retain the validated directory and its ancestors for a Host operation."""
-    validate_host_path_spelling(os.fspath(path).replace("\\", "/"))
-    _check_local_drive(path)
+    validate_host_path_spelling(
+        os.fspath(path).replace("\\", "/"), allow_network=allow_network
+    )
+    _check_host_drive(path, allow_network=allow_network)
     if os.name == "nt":
         with _pin_windows_directory(path):
             yield path
