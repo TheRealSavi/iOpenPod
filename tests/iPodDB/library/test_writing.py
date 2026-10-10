@@ -161,6 +161,28 @@ def test_unchanged_and_reverted_drafts_are_byte_exact_and_source_bound(
     assert other.analyze(draft).issues[0].code == "draft.wrong_source"
 
 
+@pytest.mark.parametrize("excess_bytes", [0, 1])
+def test_database_write_limit_includes_exact_boundary(excess_bytes: int) -> None:
+    source = library()
+    desired = replace(source.snapshot, device_name="Renamed iPod")
+    draft = source.begin_draft(desired)
+    baseline = source.prepare(source.analyze(draft))
+    assert baseline.prepared is not None
+    limit = len(baseline.prepared.itunes) - excess_bytes
+
+    result = source.prepare(
+        source.analyze(draft, target=WriteTarget(max_database_bytes=limit))
+    )
+
+    assert (result.prepared is None) == bool(excess_bytes), result.issues
+    if excess_bytes:
+        assert any(
+            "Your iPod's hardware can only support up to " in issue.message
+            and "MB in its database." in issue.message
+            for issue in result.issues
+        )
+
+
 def test_selective_title_edit_retains_duplicate_metadata_unknown_dataset_and_source() -> (
     None
 ):

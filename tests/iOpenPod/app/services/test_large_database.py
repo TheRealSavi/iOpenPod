@@ -4,25 +4,31 @@ from dataclasses import replace
 from pathlib import Path
 from threading import Event
 
+import pytest
 from tests.iOpenPod.app.services.test_device_coordinator import (
     _ipod_volume,  # pyright: ignore[reportPrivateUsage]
 )
 
 from iOpenPod.app.library_write import LibraryPreparationRequest
-from iOpenPod.app.services.device_coordinator import DeviceCoordinator
-from iPodDB.library import IPodLibrary
+from iOpenPod.app.services.device_coordinator import (
+    DeviceAccessError,
+    DeviceCoordinator,
+)
 from storage import HardwareIdentifiers, Storage
 from storage.testing import VirtualStoragePlatform
 
 
-def test_classic_loads_and_saves_database_above_64_mib(tmp_path: Path) -> None:
+@pytest.mark.parametrize("model_number, limit_mb", [("MC293", 64), ("MA444", 32)])
+def test_database_above_hardware_limit_loads_but_cannot_be_saved(
+    tmp_path: Path, model_number: str, limit_mb: int
+) -> None:
     platform = VirtualStoragePlatform()
-    root = _ipod_volume(tmp_path / "classic", model_number="MC293")
+    root = _ipod_volume(tmp_path / "ipod", model_number=model_number)
     database = root / "iPod_Control" / "iTunes" / "iTunesDB"
     # A retained suffix keeps the fixture small to construct while exercising
-    # real Storage reads, parsing, preparation, and publication above the old cap.
+    # real Storage reads, parsing, and preparation above the hardware limit.
     with database.open("ab") as output:
-        output.truncate(64 * 1024 * 1024 + 1)
+        output.truncate(limit_mb * 1024 * 1024 + 1)
     original_size = database.stat().st_size
     platform.add_volume(
         root,
@@ -33,8 +39,10 @@ def test_classic_loads_and_saves_database_above_64_mib(tmp_path: Path) -> None:
         candidate = coordinator.discover_devices().candidates[0]
         active = coordinator.select_device(candidate.id)
 
-        assert active.profile.generation == "7th Gen"
-        assert active.profile.capabilities.database.max_database_bytes == 1024**3
+        assert (
+            active.profile.capabilities.database.max_database_bytes
+            == limit_mb * 1024**2
+        )
         assert active.database_fingerprint.size == original_size
         assert active.library.tracks[0].title == "Blue Train"
 
@@ -47,12 +55,29 @@ def test_classic_loads_and_saves_database_above_64_mib(tmp_path: Path) -> None:
             lambda _progress: None,
             Event(),
         )
-        assert review.result.prepared is not None, review.result.issues
+        assert review.result.prepared is None
+        assert any(
+            f"Your iPod's hardware can only support up to {limit_mb} MB in its database."
+            in issue.message
+            for issue in review.result.issues
+        )
+        assert database.stat().st_size == original_size
+        assert active.library.tracks[0].title == "Blue Train"
+    finally:
+        coordinator.close()
 
-        saved = coordinator.save_library(review, active, lambda _: None, Event())
-        assert saved.active is not None, saved.issues
-        assert saved.active.library.tracks[0].title == "Large Library"
-        assert database.stat().st_size > 64 * 1024 * 1024
-        assert IPodLibrary.parse(database.read_bytes()).snapshot == saved.active.library
+
+def test_database_above_one_gib_is_rejected_before_reading(tmp_path: Path) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MC293")
+    database = root / "iPod_Control" / "iTunes" / "iTunesDB"
+    with database.open("ab") as output:
+        output.truncate(1024**3 + 1)
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        with pytest.raises(DeviceAccessError, match="allowed read size of 1073741824"):
+            coordinator.select_device(candidate.id)
     finally:
         coordinator.close()

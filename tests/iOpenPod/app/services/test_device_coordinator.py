@@ -2152,7 +2152,7 @@ def test_oversized_optional_artworkdb_keeps_the_library_usable(
     artwork_directory = root / "iPod_Control" / "Artwork"
     artwork_directory.mkdir(parents=True)
     with (artwork_directory / "ArtworkDB").open("wb") as artwork_database:
-        artwork_database.truncate((128 * 1024 * 1024) + 1)
+        artwork_database.truncate((1024 * 1024 * 1024) + 1)
     platform.add_volume(root, label="Classic")
     coordinator = DeviceCoordinator(Storage(platform))
     candidate = coordinator.discover_devices().candidates[0]

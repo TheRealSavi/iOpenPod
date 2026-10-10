@@ -32,9 +32,8 @@ from device_registry.models import (
 
 _MIB = 1024 * 1024
 _STANDARD_DATABASE_LIMIT = 32 * _MIB
-# Large iTunes libraries can exceed the former 64 MiB bound, especially on
-# upgraded Classics. This bound is shared by database reads and prepared writes.
-_LARGE_DATABASE_LIMIT = 1024 * _MIB
+# Device hardware limits prepared writes; Host reads have a separate bound.
+_LARGE_DATABASE_LIMIT = 64 * _MIB
 
 
 def _artwork_format(

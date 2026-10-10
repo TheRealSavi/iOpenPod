@@ -669,7 +669,11 @@ def _prepare(
                 and len(photos_bytes) > plan.target.max_database_bytes
             )
         ):
-            raise ValueError("Prepared database exceeds the target's size limit.")
+            limit_mb = plan.target.max_database_bytes / (1024 * 1024)
+            raise ValueError(
+                f"Your iPod's hardware can only support up to {limit_mb:g} MB "
+                "in its database. Reduce the library size before saving again."
+            )
         phase = "verification"
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(

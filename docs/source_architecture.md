@@ -726,6 +726,11 @@ the adapter itself stays in the private device connection. `artwork_read` and
 bytes. The Application Layer supplies Device Registry capabilities and performs
 validated Storage reads. The source adapter knows neither dependency.
 
+Database reads accept up to 1 GiB per artifact so existing oversized Libraries can
+still be inspected. Device Registry's database size capability limits prepared
+writes independently: 64 MiB for larger-memory models and 32 MiB for the remaining
+models. Oversized writes report the selected iPod's hardware limit before publication.
+
 Application and GUI consumers import the public contract, never the binary-format
 packages. Preferences inspection separately consumes the public `iPodDB.preferences`
 contract and `iPodDB.device_time` evidence types (ADR-0097 and ADR-0098); their

@@ -51,3 +51,19 @@ def test_cdb_rejects_corrupt_payloads() -> None:
     corrupt[8:12] = len(corrupt).to_bytes(4, "little")
     with pytest.raises(ValueError, match="malformed"):
         decompress_iTunesCDB(corrupt)
+
+
+@pytest.mark.parametrize("excess_bytes", [0, 1])
+def test_cdb_decompression_enforces_logical_read_boundary(excess_bytes: int) -> None:
+    logical = bytearray(_database() + bytes(1024))
+    logical[8:12] = len(logical).to_bytes(4, "little")
+    physical = compress_iTunesCDB(bytes(logical))
+    limit = len(logical) - excess_bytes
+    if excess_bytes:
+        with pytest.raises(ValueError, match="exceeds the logical-byte limit"):
+            decompress_iTunesCDB(physical, max_logical_bytes=limit)
+    else:
+        assert (
+            len(decompress_iTunesCDB(physical, max_logical_bytes=limit).logical_bytes)
+            == limit
+        )

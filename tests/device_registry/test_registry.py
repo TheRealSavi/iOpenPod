@@ -151,7 +151,7 @@ def test_full_size_ipod_capabilities_preserve_generation_differences() -> None:
     assert video_30.capabilities.database.max_database_bytes == 32 * 1024 * 1024
 
     assert video_80 is not None
-    assert video_80.capabilities.database.max_database_bytes == 1024 * 1024 * 1024
+    assert video_80.capabilities.database.max_database_bytes == 64 * 1024 * 1024
 
 
 def test_sysinfo_style_model_number_produces_an_exact_profile() -> None:

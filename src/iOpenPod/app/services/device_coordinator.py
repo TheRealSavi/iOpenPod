@@ -150,8 +150,8 @@ _ARTWORK_DIRECTORY = DevicePath("iPod_Control/Artwork")
 _PHOTOSDB_PATH = DevicePath("Photos/Photo Database")
 _PHOTOS_DIRECTORY = DevicePath("Photos")
 _DEVICE_METADATA_LIMIT = 1024 * 1024
-_ARTWORK_DATABASE_LIMIT = 128 * 1024 * 1024
-_PHOTOS_DATABASE_LIMIT = 128 * 1024 * 1024
+# Reading an existing database does not authorize writing beyond hardware limits.
+_DATABASE_READ_LIMIT = 1024 * 1024 * 1024
 _ARTWORK_PAYLOAD_LIMIT = 32 * 1024 * 1024
 _PHOTO_PAYLOAD_LIMIT = 32 * 1024 * 1024
 _PHOTO_ORIGINAL_PAYLOAD_LIMIT = 64 * 1024 * 1024
@@ -1256,7 +1256,7 @@ class DeviceCoordinator:
                         active.session,
                         source.serialize().itunes,
                         guid,
-                        max_database_bytes=capabilities.database.max_database_bytes,
+                        max_database_bytes=_DATABASE_READ_LIMIT,
                     )
                 else:
                     with contextlib.suppress(ValueError, StorageError):
@@ -1264,7 +1264,7 @@ class DeviceCoordinator:
                             active.session,
                             source.serialize().itunes,
                             guid,
-                            max_database_bytes=capabilities.database.max_database_bytes,
+                            max_database_bytes=_DATABASE_READ_LIMIT,
                         )
             sqlite_postprocess_commands: tuple[str, ...] = ()
             sqlite_postprocess_preconditions: tuple[FilePrecondition, ...] = ()
@@ -1580,7 +1580,7 @@ class DeviceCoordinator:
                                     session,
                                     active.library_source.serialize().itunes,
                                     plan.target.firewire_guid,
-                                    max_database_bytes=plan.target.max_database_bytes,
+                                    max_database_bytes=_DATABASE_READ_LIMIT,
                                 )
                             except ValueError as error:
                                 raise DeviceChangedError(
@@ -2060,7 +2060,7 @@ class DeviceCoordinator:
 
                 snapshot = session.read_snapshot(
                     database_path,
-                    max_bytes=profile.capabilities.database.max_database_bytes,
+                    max_bytes=_DATABASE_READ_LIMIT,
                 )
                 try:
                     preferences = capture_ipod_preferences(
@@ -2963,7 +2963,7 @@ class DeviceCoordinator:
                     library,
                     "ArtworkDB is empty or is not a regular file.",
                 )
-            if entry.size > _ARTWORK_DATABASE_LIMIT:
+            if entry.size > _DATABASE_READ_LIMIT:
                 return _unreadable_artwork(
                     record,
                     library,
@@ -2972,7 +2972,7 @@ class DeviceCoordinator:
 
             snapshot = session.read_snapshot(
                 _ARTWORKDB_PATH,
-                max_bytes=_ARTWORK_DATABASE_LIMIT,
+                max_bytes=_DATABASE_READ_LIMIT,
             )
             artwork_library = library.with_artwork(snapshot.data)
             fingerprint = session.fingerprint(_ARTWORKDB_PATH)
@@ -3008,7 +3008,7 @@ class DeviceCoordinator:
                     library,
                     "Photo Database is empty or is not a regular file.",
                 )
-            if entry.size > _PHOTOS_DATABASE_LIMIT:
+            if entry.size > _DATABASE_READ_LIMIT:
                 return _unreadable_photos(
                     record,
                     library,
@@ -3017,7 +3017,7 @@ class DeviceCoordinator:
 
             snapshot = session.read_snapshot(
                 _PHOTOSDB_PATH,
-                max_bytes=_PHOTOS_DATABASE_LIMIT,
+                max_bytes=_DATABASE_READ_LIMIT,
             )
             photo_library = library.with_photos(snapshot.data)
             fingerprint = session.fingerprint(_PHOTOSDB_PATH)
