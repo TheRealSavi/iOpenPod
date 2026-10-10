@@ -668,6 +668,14 @@ and the Original writer's display preferences. Master membership, known browse
 indexes, album/artist/composer links, folder child rules and aggregates, and podcast
 groups are reconciled and checked independently after reparse.
 
+Retained sort-36 album indexes use a matching captured collation profile when group
+order needs rebuilding. If none matches, preparation uses the explicit default
+profile and reports a `library.album_index` warning that album browsing order may
+change. This warning permits a Prepared Library; structural index errors still
+block preparation. Unchanged group sort values retain their source order. See
+[ADR-0137](adr/0137-warn-and-default-unrecognized-album-collation.md) and the
+[sort-36 research](research/itunesdb-sort-36.md).
+
 Album browse rows maintain title, artist, sort artist, Podcast RSS URL, and show
 metadata. Shared optional values follow the Original writer: select the first
 nonempty sort album artist in Library Track order, with sort artist as fallback,

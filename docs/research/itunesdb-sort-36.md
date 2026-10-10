@@ -27,6 +27,7 @@ last writers are not independently established.
 | Nano first generation | `9b5614404f8be6fd71fac23baccc4a9eb7ae16e1d2fba432731b70009f5e1fe1` | 184 | 91 |
 | Photo | `06b2968824d81457311c6c9ed9545c0680c6e762490b38025e2dd86b24ed146f` | 191 | 93 |
 | Reported failure supplied 2026-10-08 | `99826cf0c63e449ccc4cc2675ccb4c3a0baa0fb40f3d12f71ac2b891ba86e95a` | 687 | 160 |
+| Separate user's failure supplied 2026-10-09 | `abe7d177a326cb0b569d08f998be62a521cd87468eff614d0435650986eb65f3` | 569 | 52 |
 
 The historical database is from a different iPod than the connected-device capture.
 It was used alone, without that device's ArtworkDB or media. Three other captured
@@ -88,9 +89,11 @@ This profile is preferred when it explains the complete retained sequence. The
 previous profiles remain available for sources requiring the historical policy
 (strip `The` even from overrides, empty albums first, no compilation section).
 Punctuation handling remains independently selected from the three captured variants.
-A source inconsistent with every profile blocks a changed group sort with a
-specific diagnostic. Selecting a matching profile establishes consistency with
-the captured comparisons, not a universal claim about iTunes locale collation.
+A source inconsistent with every profile now uses an explicit default when group
+sorting must be rebuilt, with a `library.album_index` warning. That default uses
+the 2026-10-08 rules with punctuation retained. Selecting a matching profile
+establishes consistency with the captured comparisons, not a universal claim about
+iTunes locale collation. See [ADR-0137](../adr/0137-warn-and-default-unrecognized-album-collation.md).
 
 ## Reported failure reproduced on 2026-10-08
 
@@ -118,6 +121,32 @@ exactly. This was an in-memory test using a test signing identity; no generated
 database was published to an iPod. The separate unavailable-dates warning remained.
 The user's exact 681-change draft was not provided and was not replayed.
 
+## Separate user's failure reproduced on 2026-10-09
+
+The new 1,026,696-byte database belongs to a different user. Both Master indexes
+cover all 569 Tracks and keep 52 native album groups contiguous. Its last successful
+writer is unknown. The supplied log reports ten additions reaching reconciliation,
+then both indexes failing the supported-collation check. A single album edit
+reproduced those same errors against the full database on current code.
+
+Each preferred profile has three adjacent inversions. A single-artist compilation
+with no Album Artist appears in its artist section; two groups whose artist begins
+with `The` remain together despite differing sort-override presence; and two
+compilations with Album Artists occur at the end. These observations conflict with
+our earlier profile's assumptions. Literal names plus a section for compilations
+whose album artist matches no member artist explains this source, but does not
+explain the previous user's source. The capture does not distinguish that hypothesis
+from all other possible rules or establish a device-specific policy. No speculative
+profile was added.
+
+The user chose a nonblocking fallback instead of requiring the original ordering
+rule to be determined. The full-source reproduction now prepares an album edit
+and, separately, ten fabricated Track additions, each with two warnings. The output
+passes independent verification; adding Tracks produces a 579-Track candidate.
+No-op output remains byte-exact, original files remain untouched, and generated
+bytes stay in memory with a test signing identity. The user's actual media and exact
+Sync draft were not replayed, and no physical iPod write was performed.
+
 ## Writing and verification
 
 Resolution recognizes MHOD 52/36 and reports its dependent edits. Native album
@@ -133,6 +162,8 @@ Masters remains with existing source diagnostics and structural validation.
 
 The independent verifier does not call the index writer. It checks permutation,
 album contiguity, group order, disc/track order, retained ties, and trailing bytes.
+For an unrecognized source collation it verifies group order under the explicit
+default, so the fallback warning does not become a verification error.
 The existing native group verifier separately checks the album references and
 representative ownership on which this index depends. Unrelated edits retain an
 unchanged index exactly.
@@ -170,3 +201,7 @@ names or identifiers. The privacy transformation preserves all 780 pairwise albu
 comparisons across the two fixtures and six supported profiles.
 Tests also cover removing an explicit override without changing its text, changing
 compilation status, literal Album sort overrides, and independent index verification.
+An intentionally reordered copy of that anonymized fixture exercises default
+ordering and warnings for metadata edits and Track additions, no-op/unrelated-edit
+preservation, malformed-index rejection, and verification of corrupted fallback
+output. The 2026-10-09 original database and log are not stored as fixtures.

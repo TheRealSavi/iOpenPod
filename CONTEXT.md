@@ -255,12 +255,14 @@ read-only, and foreign or declined journals remain untouched. Only actual cleanu
 failures require a cleanup warning and retry. See ADR-0089 and ADR-0093.
 Host tag interpretation now shares native ID3, MP4, Vorbis/APE, ASF, and FFprobe
 aliases across scanning and import. Media classification, TV and Podcast fields,
-lyrics, sorting, advisory, and normalization metadata survive Scan Cache v13.
+lyrics, sorting, advisory, and normalization metadata survive Scan Cache v14.
 Embedded artwork availability is retained separately from absence; older cached
 no-cover records are reinspected once.
-Migrating cache versions 9 through 12 retains reusable Track and Photo records but
-reparses Playlists once so previously excluded network references become available
-without editing the files. See ADR-0136.
+Migrating cache versions 9 through 13 retains reusable Track and Photo records but
+reparses Playlists once so previously excluded network references and valid POSIX
+names become available without editing the files. Host scanning accepts trailing
+periods, trailing spaces, and Windows reserved names on POSIX Hosts; Windows keeps
+its spelling restrictions. See ADR-0083 and ADR-0136.
 Successful metadata and optional Acoustic Fingerprints are reused independently.
 Compact fingerprints, unchanged-cache reuse, and bounded directory concurrency
 reduce scan overhead; both selected-tree passes retain fresh Storage observations.

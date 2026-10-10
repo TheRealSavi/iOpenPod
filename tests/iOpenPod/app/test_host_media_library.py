@@ -49,6 +49,100 @@ from storage.host_directory import HostDirectoryEntry, LocalHostDirectory
 from storage.host_input import LocalHostFile
 
 
+@pytest.mark.parametrize(
+    "album_name",
+    [
+        "DAMN",
+        pytest.param(
+            "DAMN.",
+            marks=pytest.mark.skipif(
+                os.name == "nt", reason="POSIX filename semantics"
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize("selection", ["root", "album", "file"])
+def test_scan_retains_tracks_in_dot_terminated_folders(
+    tmp_path: Path, selection: str, album_name: str
+) -> None:
+    root = tmp_path / "Music"
+    album = root / "Kendrick Lamar" / album_name
+    album.mkdir(parents=True)
+    song = album / "DNA.wav"
+    _write_wav(song)
+    (album / "Favorites.m3u8").write_text("DNA.wav\n", encoding="utf-8")
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    folders = (
+        ()
+        if selection == "file"
+        else (create_host_media_folder(root if selection == "root" else album),)
+    )
+    for _ in range(2):
+        scanner = HostMediaScanner(cache)
+        pending = scanner.scan(
+            folders,
+            files=(HostPath(song),) if selection == "file" else (),
+            checkpoint=lambda: None,
+        )
+        library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+        assert len(library.snapshot.tracks) == 1
+        assert library.sources[0].path == HostPath(song)
+        assert not library.issues
+        if selection != "file":
+            assert len(library.snapshot.playlists[0].entries) == 1
+        observed = LocalHostFile.observe(HostPath(song))
+        with observed.capture(checkpoint=lambda: None) as captured:
+            assert Path(captured).read_bytes() == song.read_bytes()
+
+
+def test_v13_cache_reparses_rejected_playlist_references_without_rereading_media(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song = tmp_path / "Song.wav"
+    _write_wav(song)
+    (tmp_path / "Favorites.m3u8").write_text("Song.wav\n", encoding="utf-8")
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    folder = create_host_media_folder(tmp_path)
+    HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
+    document = json.loads(cache.path.read_bytes())
+    document["version"] = 13
+    playlist = next(row for row in document["entries"] if row["kind"] == "playlist")
+    # Earlier spelling validation could drop a reference from an unchanged Playlist.
+    playlist["metadata"]["references"] = []
+    playlist["warning"] = "Skipped 1 unsafe or non-local Playlist references."
+    document["catalog_sha256"] = hashlib.sha256(
+        json.dumps(
+            document["entries"],
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    cache.replace_bytes(json.dumps(document).encode())
+    native_open = LocalHostFile.open_read
+
+    def reject_media_read(
+        self: LocalHostFile,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+        max_bytes: int | None = None,
+    ) -> object:
+        if self.path == HostPath(song):
+            pytest.fail("Playlist migration reread unchanged media")
+        return native_open(self, checkpoint=checkpoint, max_bytes=max_bytes)
+
+    monkeypatch.setattr(LocalHostFile, "open_read", reject_media_read)
+    scanner = HostMediaScanner(cache)
+    pending = scanner.scan((folder,), checkpoint=lambda: None)
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert len(library.snapshot.playlists[0].entries) == 1
+    assert not library.issues
+    assert pending.cache == HostMediaCacheStats(reused=1, inspected=1)
+    repeated = HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
+    assert repeated.cache == HostMediaCacheStats(reused=2)
+
+
 def test_one_unreadable_subfolder_does_not_hide_later_siblings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -110,7 +204,7 @@ def test_malformed_cache_falls_back_to_scanning(tmp_path: Path, payload: bytes) 
     result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(result.snapshot.tracks) == 1
     assert result.cache.reused == 0
-    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 13
+    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 14
 
 
 def test_changed_tracks_use_existing_acoustic_analysis_without_full_stream_hashing(
@@ -233,7 +327,7 @@ def test_in_memory_cache_notices_external_invalidation(
         cache.path.write_bytes(b"invalid")
     changed = scanner.scan((folder,), checkpoint=lambda: None)
     assert changed.cache == HostMediaCacheStats(inspected=1)
-    assert json.loads(cache.path.read_bytes())["version"] == 13
+    assert json.loads(cache.path.read_bytes())["version"] == 14
 
 
 def test_cache_save_failure_retains_work_in_memory_and_retries_persistence(
@@ -1463,7 +1557,7 @@ def test_folder_cover_bytes_are_not_reread_until_file_facts_change(
     assert changed.snapshot.tracks[0].artwork_id != first.snapshot.tracks[0].artwork_id
 
 
-@pytest.mark.parametrize("version", [9, 10, 11, 12])
+@pytest.mark.parametrize("version", [9, 10, 11, 12, 13])
 def test_prior_host_cache_reuses_unchanged_media_and_cover(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
 ) -> None:
@@ -1536,7 +1630,7 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
         == "1,2,3"
     )
     stored = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert stored["version"] == 13
+    assert stored["version"] == 14
     assert "payload_sha256" not in stored["entries"][0]["metadata"]
 
 
@@ -1991,7 +2085,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 13
+    assert document["version"] == 14
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {

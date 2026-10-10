@@ -23,7 +23,7 @@ from iPodDB.library._document_edit import rebuild
 from iPodDB.library._playlist_datasets import is_master, playlist_rows
 from iPodDB.library._projection import project_tracks
 from iPodDB.library.models import Track
-from iPodDB.library.writing import WriteIssue
+from iPodDB.library.writing import IssueSeverity, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 SORT_TYPE = 36
@@ -40,6 +40,11 @@ class CollationProfile:
     literal_sort_overrides: bool
     empty_albums_last: bool
     compilations_last: bool
+
+
+# An unrecognized source order uses this policy with a warning (ADR-0137).
+# Keep the fallback explicit even if captured-profile preference changes later.
+DEFAULT_PROFILE = CollationProfile("punctuation_retained", True, True, True)
 
 
 # Prefer the more discriminating capture's rules when both families fit. Keep
@@ -225,14 +230,12 @@ def _group_order(tracks: tuple[Track, ...]) -> tuple[AlbumIdentity, ...]:
     return tuple(order)
 
 
-def _profile(groups_in_order: tuple[AlbumGroup, ...]) -> CollationProfile:
+def _profile(groups_in_order: tuple[AlbumGroup, ...]) -> CollationProfile | None:
     for profile in PROFILES:
         keys = tuple(_key(g, profile) for g in groups_in_order)
         if all(a <= b for a, b in pairwise(keys)):
             return profile
-    raise ValueError(
-        "The retained sort-36 album collation does not match a supported captured ordering."
-    )
+    return None
 
 
 def _group_keys_changed(
@@ -270,15 +273,21 @@ def _dependencies(
     )
 
 
+@dataclass(frozen=True)
+class PreparedAlbumIndex:
+    payload: MhodLibraryIndexPayload
+    used_default_order: bool = False
+
+
 def prepare_album_index(
     source: DatabaseDocument[MhbdHeader],
     candidate: DatabaseDocument[MhbdHeader],
     previous: tuple[Track, ...],
     desired: tuple[Track, ...],
     payload: MhodLibraryIndexPayload,
-) -> MhodLibraryIndexPayload:
+) -> PreparedAlbumIndex:
     if _dependencies(source, previous) == _dependencies(candidate, desired):
-        return payload
+        return PreparedAlbumIndex(payload)
     ordered_source = _source_order(payload, previous)
     old_groups = groups(source, ordered_source)
     old_order = _group_order(ordered_source)
@@ -287,9 +296,12 @@ def prepare_album_index(
     new = {g.identity: g for g in new_groups}
     order = [new[i] for i in old_order if i in new]
     order.extend(g for g in new_groups if g.identity not in old_identities)
+    used_default_order = False
     if _group_keys_changed(old_groups, new_groups):
         profile = _profile(old_groups)
-        order.sort(key=lambda g: _key(g, profile))
+        used_default_order = profile is None
+        selected = profile or DEFAULT_PROFILE
+        order.sort(key=lambda g: _key(g, selected))
     ranks = {t.track_id: i for i, t in enumerate(ordered_source)}
     positions = {t.track_id: i for i, t in enumerate(desired)}
     indices: list[int] = []
@@ -302,7 +314,9 @@ def prepare_album_index(
             ),
         )
         indices.extend(positions[t.track_id] for t in members)
-    return replace(payload, indices=tuple(indices))
+    return PreparedAlbumIndex(
+        replace(payload, indices=tuple(indices)), used_default_order
+    )
 
 
 def reconcile_album_indexes(
@@ -355,7 +369,19 @@ def reconcile_album_indexes(
                 master_tracks(master, desired),
                 payload,
             )
-            edits[id(targets[0])] = replace(targets[0], payload=updated)
+            edits[id(targets[0])] = replace(targets[0], payload=updated.payload)
+            if updated.used_default_order:
+                issues.append(
+                    WriteIssue(
+                        "library.album_index",
+                        "The retained sort-36 album collation is unrecognized. "
+                        "A default album order was used; album browsing order may change.",
+                        severity=IssueSeverity.WARNING,
+                        phase="reconciliation",
+                        subject="playlist",
+                        record_id=master.header.playlist_id,
+                    )
+                )
         except ValueError as error:
             issues.append(
                 WriteIssue(
@@ -396,7 +422,7 @@ def verify_album_index(
         old_order, new_order = _group_order(old_tracks), _group_order(new_tracks)
         new_identities = set(new_order)
         if _group_keys_changed(old_groups, new_groups):
-            profile = _profile(old_groups)
+            profile = _profile(old_groups) or DEFAULT_PROFILE
             keys = tuple(_key(g, profile) for g in new_groups)
             if any(a > b for a, b in pairwise(keys)):
                 return "Sort 36's album groups have the wrong browse order."

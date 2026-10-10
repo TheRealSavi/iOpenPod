@@ -215,7 +215,7 @@ def test_v12_cache_reparses_network_playlist_without_rereading_tracks_or_photos(
     assert not pending.issues
     assert pending.cache == HostMediaCacheStats(reused=2, inspected=1)
     stored = json.loads(cache.path.read_bytes())
-    assert stored["version"] == 13
+    assert stored["version"] == 14
     playlist_entry = next(row for row in stored["entries"] if row["kind"] == "playlist")
     assert playlist_entry["metadata"]["references"] == [
         os.fspath(song),

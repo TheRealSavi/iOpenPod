@@ -14,7 +14,28 @@ from storage import (
     HostPath,
     UnsafeFilesystemPathError,
 )
-from storage.host_input import LocalHostFile, resolve_local_file_reference
+from storage.host_input import (
+    LocalHostFile,
+    resolve_local_file_reference,
+    validate_host_path_spelling,
+)
+
+
+@pytest.mark.parametrize("platform", ["posix", "nt"])
+@pytest.mark.parametrize(
+    "name", ["DAMN.", "M.I.A.", "album ", "NUL.mp3", "aux", "CON.txt"]
+)
+def test_host_names_follow_platform_rules(
+    monkeypatch: pytest.MonkeyPatch, platform: str, name: str
+) -> None:
+    # Scope the platform override to spelling validation, without filesystem I/O.
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "name", platform)
+        if platform == "nt":
+            with pytest.raises(ValueError, match="Reserved or ambiguous file name"):
+                validate_host_path_spelling(f"/Music/{name}/song.wav")
+        else:
+            validate_host_path_spelling(f"/Music/{name}/song.wav")
 
 
 @pytest.mark.parametrize(
@@ -53,8 +74,14 @@ from storage.host_input import LocalHostFile, resolve_local_file_reference
                 os.name != "nt", reason="drive-relative syntax is Windows-specific"
             ),
         ),
-        "NUL.mp3",
-        "aux/song.mp3",
+        pytest.param(
+            "NUL.mp3",
+            marks=pytest.mark.skipif(os.name != "nt", reason="Windows reserved name"),
+        ),
+        pytest.param(
+            "aux/song.mp3",
+            marks=pytest.mark.skipif(os.name != "nt", reason="Windows reserved name"),
+        ),
         pytest.param(
             "nested/track.mp3:stream",
             marks=pytest.mark.skipif(

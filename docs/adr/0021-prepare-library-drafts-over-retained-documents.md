@@ -4,6 +4,7 @@
 - Date: 2026-09-05
 - Extends: ADR-0019 and ADR-0020
 - Application rule-application and saving behavior extended by [ADR-0022](0022-apply-and-save-playlist-drafts.md).
+- Unrecognized sort-36 collation uses a warning and default order under [ADR-0137](0137-warn-and-default-unrecognized-album-collation.md).
 
 ## Context
 

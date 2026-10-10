@@ -209,3 +209,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0134: Verify unconfirmed durability before recovery cleanup](0134-verify-unconfirmed-durability-before-recovery-cleanup.md)
 - [ADR-0135: Pack Photos into bounded shared shards](0135-pack-photos-into-bounded-shared-shards.md)
 - [ADR-0136: Allow network filesystems as Host media sources](0136-allow-network-filesystems-as-host-media-sources.md)
+- [ADR-0137: Warn and default unrecognized album collation](0137-warn-and-default-unrecognized-album-collation.md)

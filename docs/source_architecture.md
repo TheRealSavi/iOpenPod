@@ -1210,6 +1210,10 @@ order, and preparation reports reading, inspecting, converting, and verifying.
 Artwork extraction streams the enclosing media, and FFprobe diagnostics alone do
 not reject successful structured output. See ADR-0084.
 
+Host path validation applies trailing-period, trailing-space, and reserved-name
+restrictions only on Windows. POSIX album folders such as `Kendrick Lamar/DAMN.`
+retain their exact spelling through selection, enumeration, Playlist resolution,
+and source capture. Device Path validation is separate and unchanged.
 Media preparation respects Host-native path spelling, selects a marked-default or
 first-probe-order motion-video and audio stream when a container carries multiple
 choices, and scopes FFmpeg options to the selected encoder. Removing extra streams
@@ -1224,7 +1228,7 @@ media file or loading it entirely into memory. Storage also launches fingerprint
 processes against validated inputs and owns temporary device-scan captures.
 
 Host scanning, music import, and Sync enrichment share `app/media/tags.py` for native
-tag interpretation and common Track projection. Cache v13 retains recognized tag
+tag interpretation and common Track projection. Cache v14 retains recognized tag
 values, including classification, TV/Podcast details, sorting, and lyrics. Videos
 without useful native tags or timing can use bounded FFprobe metadata inspection
 through a pinned, seekable Storage input without a whole-file capture. Successful
@@ -1299,13 +1303,14 @@ recovery. A separate iPod Analysis Cache in Host storage retains completed analy
 for repeated pre-Review scans, including on read-only devices. It is bound to device
 and Volume identities, validates current file facts, checkpoints on cancellation,
 and contains no Sync Details. Host Photo records carry matching SHA-256 evidence in
-Host Media Scan Cache v13. Versions 9 through 12 migrate while retaining reusable
+Host Media Scan Cache v14. Versions 9 through 13 migrate while retaining reusable
 Track and Photo records. Cached Playlist interpretations are discarded so even
 unchanged Playlists are reparsed once and previously excluded network references
-become available without editing the source. See ADR-0136. Older no-cover records
+and valid POSIX names become available without editing the source. See ADR-0083 and
+ADR-0136. Older no-cover records
 are reinspected once to distinguish absent artwork from previously unrecorded
 decoding failures. Long Acoustic Fingerprints use a lossless bounded binary
-encoding in Host cache v13 and helper v5; readers retain prior decimal support.
+encoding in Host cache v14 and helper v5; readers retain prior decimal support.
 An iPod Media Scan upgrades a v3 Library Sync Helper in
 memory by reusing unchanged device records without recapturing media. Because v3
 does not contain a committed iPod Track tag or artwork baseline, migration does not

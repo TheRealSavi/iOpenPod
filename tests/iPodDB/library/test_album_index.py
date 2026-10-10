@@ -25,7 +25,7 @@ from iPodDB.library import (
     WriteResources,
     _album_index,
 )
-from iPodDB.library.writing import FileDependency, PreparedMedia
+from iPodDB.library.writing import FileDependency, IssueSeverity, PreparedMedia
 from iPodDB.shared.chunk import DatabaseDocument
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "iTunesDB"
@@ -59,6 +59,26 @@ def index_tracks(data: bytes) -> dict[int, tuple[int, ...]]:
                         ids[i] for i in c.payload.indices
                     )
     return result
+
+
+def reordered_source(positions: tuple[int, ...]) -> IPodLibrary:
+    source = captured_source("captured-album-index-36-overrides")
+    document = parse_iTunesDB(source.serialize().itunes)
+    for selection in document.find_chunks(MhodHeader):
+        if not _album_index.is_album_index(selection.chunk):
+            continue
+        payload = selection.chunk.payload
+        assert isinstance(payload, MhodLibraryIndexPayload)
+        document = document.replace_chunk(
+            selection,
+            replace(
+                selection.chunk,
+                payload=replace(
+                    payload, indices=tuple(payload.indices[i] for i in positions)
+                ),
+            ),
+        )
+    return IPodLibrary(write_iTunesDB(document))
 
 
 @pytest.mark.parametrize(
@@ -119,31 +139,17 @@ def test_reported_sort_overrides_empty_albums_and_compilations(
 
 
 @pytest.mark.parametrize("legacy", [False, True])
-def test_profile_selection_preserves_legacy_support_and_rejects_unknown_order(
+def test_profile_selection_preserves_legacy_support_and_warns_for_unknown_order(
     legacy: bool,
 ) -> None:
     source = captured_source("captured-album-index-36-overrides")
     original = source.serialize().itunes
     before = index_tracks(original)[3]
-    document = parse_iTunesDB(original)
     # A constructed legacy order exercises the pre-existing policy. The other
     # order puts The Zeta before Fixture Artist B, which neither family supports.
     positions = (6, 0, 3, 1, 2, 5, 4) if legacy else (1, 0, 2, 3, 4, 5, 6)
-    for selection in document.find_chunks(MhodHeader):
-        if not _album_index.is_album_index(selection.chunk):
-            continue
-        payload = selection.chunk.payload
-        assert isinstance(payload, MhodLibraryIndexPayload)
-        document = document.replace_chunk(
-            selection,
-            replace(
-                selection.chunk,
-                payload=replace(
-                    payload, indices=tuple(payload.indices[i] for i in positions)
-                ),
-            ),
-        )
-    source = IPodLibrary(write_iTunesDB(document))
+    source = reordered_source(positions)
+    retained = source.serialize().itunes
     desired = replace(
         source.snapshot,
         tracks=tuple(
@@ -159,9 +165,48 @@ def test_profile_selection_preserves_legacy_support_and_rejects_unknown_order(
         assert index_tracks(result.prepared.itunes) == {
             kind: tuple(before[i] for i in (6, 3, 1, 2, 0, 5, 4)) for kind in (2, 3)
         }
+        assert not any(i.code == "library.album_index" for i in result.issues)
     else:
-        assert result.prepared is None
-        assert any(i.code == "library.album_index" for i in result.issues)
+        assert result.prepared is not None, result.issues
+        assert index_tracks(result.prepared.itunes) == {
+            kind: tuple(before[i] for i in (1, 2, 3, 0, 4, 5, 6)) for kind in (2, 3)
+        }
+        warnings = [i for i in result.issues if i.code == "library.album_index"]
+        assert len(warnings) == 2
+        assert all(i.severity is IssueSeverity.WARNING for i in warnings)
+        assert all(i.subject == "playlist" and i.record_id == 1 for i in warnings)
+    assert source.serialize().itunes == retained
+
+
+def test_unknown_collation_is_preserved_until_album_order_needs_rebuilding() -> None:
+    source = reordered_source((1, 0, 2, 3, 4, 5, 6))
+    original = source.serialize().itunes
+    noop = source.prepare(source.analyze(source.begin_draft()))
+    assert noop.prepared is not None, noop.issues
+    assert noop.prepared.itunes == original
+    assert not any(i.code == "library.album_index" for i in noop.issues)
+    first, *others = source.snapshot.tracks
+    desired = replace(
+        source.snapshot, tracks=(replace(first, title="Changed"), *others)
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    assert index_tracks(result.prepared.itunes) == index_tracks(original)
+    assert not any(i.code == "library.album_index" for i in result.issues)
+
+
+def test_default_collation_does_not_accept_a_malformed_source_index() -> None:
+    source = reordered_source((1, 1, 2, 3, 4, 5, 6))
+    first, *others = source.snapshot.tracks
+    desired = replace(
+        source.snapshot, tracks=(replace(first, album="Changed"), *others)
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is None
+    assert any(
+        i.code == "library.album_index" and i.severity is IssueSeverity.ERROR
+        for i in result.issues
+    )
 
 
 @pytest.mark.parametrize("field", ["title", "rating", "sort_title"])
@@ -248,9 +293,16 @@ def test_track_removal_filters_the_captured_order() -> None:
     }
 
 
-@pytest.mark.parametrize("existing_album", [False, True])
-def test_track_addition_joins_the_correct_album(existing_album: bool) -> None:
+@pytest.mark.parametrize(
+    ("existing_album", "unknown_collation"),
+    [(False, False), (True, False), (False, True)],
+)
+def test_track_addition_joins_the_correct_album(
+    existing_album: bool, unknown_collation: bool
+) -> None:
     source = captured_source()
+    if unknown_collation:
+        source = reordered_source((1, 0, 2, 3, 4, 5, 6))
     original = index_tracks(source.serialize().itunes)[3]
     first = next(t for t in source.snapshot.tracks if t.track_id == original[0])
     track = Track(
@@ -291,10 +343,19 @@ def test_track_addition_joins_the_correct_album(existing_album: bool) -> None:
         if m.subject == "track" and m.draft_id == -1
     )
     for order in index_tracks(result.prepared.itunes).values():
-        assert tuple(i for i in order if i != identity) == original
+        expected = (
+            (original[1], original[0], *original[2:]) if unknown_collation else original
+        )
+        assert tuple(i for i in order if i != identity) == expected
         assert order.count(identity) == 1
         if existing_album:
             assert order.index(identity) == order.index(first.track_id) + 1
+        elif unknown_collation:
+            # Q follows the Fixture artists, before the The/Thistle artists.
+            assert order.index(identity) == 1
+    album_issues = [i for i in result.issues if i.code == "library.album_index"]
+    assert len(album_issues) == (2 if unknown_collation else 0)
+    assert all(i.severity is IssueSeverity.WARNING for i in album_issues)
 
 
 def test_disc_and_track_edits_update_member_order_and_review_effect() -> None:
@@ -319,12 +380,17 @@ def test_disc_and_track_edits_update_member_order_and_review_effect() -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["captured-album-index-36", "captured-album-index-36-overrides"]
+    "name",
+    ["captured-album-index-36", "captured-album-index-36-overrides", "unknown-order"],
 )
 def test_verifier_rejects_an_incorrect_album_index_writer(
     monkeypatch: pytest.MonkeyPatch, name: str
 ) -> None:
-    source = captured_source(name)
+    source = (
+        reordered_source((1, 0, 2, 3, 4, 5, 6))
+        if name == "unknown-order"
+        else captured_source(name)
+    )
     original = source.serialize().itunes
     writer = _album_index.prepare_album_index
 
@@ -334,14 +400,24 @@ def test_verifier_rejects_an_incorrect_album_index_writer(
         previous: tuple[Track, ...],
         desired: tuple[Track, ...],
         original_payload: MhodLibraryIndexPayload,
-    ) -> MhodLibraryIndexPayload:
-        payload = writer(
+    ) -> _album_index.PreparedAlbumIndex:
+        prepared = writer(
             source_document, candidate, previous, desired, original_payload
         )
-        return replace(payload, indices=tuple(reversed(payload.indices)))
+        return replace(
+            prepared,
+            payload=replace(
+                prepared.payload, indices=tuple(reversed(prepared.payload.indices))
+            ),
+        )
 
     monkeypatch.setattr(_album_index, "prepare_album_index", corrupt)
     desired = replace(source.snapshot, tracks=tuple(reversed(source.snapshot.tracks)))
+    if name == "unknown-order":
+        first, *others = source.snapshot.tracks
+        desired = replace(
+            source.snapshot, tracks=(replace(first, album="Changed"), *others)
+        )
     result = source.prepare(
         source.analyze(source.begin_draft(desired)),
         WriteResources(pending_playback_sidecars=False),

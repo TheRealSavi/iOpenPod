@@ -76,7 +76,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 13
+_CACHE_VERSION = 14
 _MAX_CACHE_BYTES = 64 * 1024 * 1024
 _MAX_DECODED_FINGERPRINT_BYTES = 256 * 1024 * 1024
 _MAX_CACHE_ENTRIES = 250_000
@@ -3013,7 +3013,7 @@ def _decode_cache_contents(
     version = _integer(document.get("version"), "version")
     if version == 9:
         expected = {"version", "entries", "catalog_sha256"}
-    elif version in (10, 11, 12, _CACHE_VERSION):
+    elif version in (10, 11, 12, 13, _CACHE_VERSION):
         expected = {
             "version",
             "entries",
@@ -3038,9 +3038,9 @@ def _decode_cache_contents(
     fingerprint_bytes = 0
     for entry in entries:
         record = _record_from_document(entry, version=version)
-        if version < 13 and isinstance(record, _CachedPlaylistRecord):
-            # Earlier parsers dropped network filesystem references. Unchanged
-            # Playlists must be parsed again, without rereading cached media.
+        if version < 14 and isinstance(record, _CachedPlaylistRecord):
+            # Earlier parsers dropped network and valid POSIX name references.
+            # Reparse unchanged Playlists without rereading cached media.
             continue
         if isinstance(record, _CachedTrackRecord):
             fingerprint_bytes += len(record.acoustic_fingerprint)

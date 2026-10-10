@@ -198,7 +198,7 @@ def validate_host_path_spelling(value: str, *, allow_network: bool = False) -> N
     tail = value[3:] if _DRIVE.match(value) else value
     if any(ord(char) < 32 or (os.name == "nt" and char in '<>:"|?*') for char in tail):
         raise InvalidHostPathError("File reference contains unsafe path characters")
-    if any(
+    if os.name == "nt" and any(
         _RESERVED.match(part)
         or (part not in {"", ".", ".."} and part.endswith((".", " ")))
         for part in tail.split("/")
