@@ -3,15 +3,26 @@
 from dataclasses import replace
 
 from iPodDB.ArtworkDB.ithmb import IthmbLayout, IthmbPixelFormat, decode_ithmb
+from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
 from iPodDB.ArtworkDB.shared.artwork_index import build_artwork_index
 from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhii import MhiiHeader
+from iPodDB.ArtworkDB.shared.chunk_defs.mhni import MhniHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhod_payloads.container_mhod import (
     MhodContainerPayload,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.library._artwork_timing import (
+    artwork_formats,
+    desired_frames,
+    group_children,
+    zero_source_size,
+)
+from iPodDB.library._artwork_timing import (
+    asset_formats as requested_formats,
+)
 from iPodDB.library._artwork_writing import (
     artwork_path,
     effective_cover_format,
@@ -20,7 +31,13 @@ from iPodDB.library._artwork_writing import (
 )
 from iPodDB.library._resolved_write import ResolvedWrite
 from iPodDB.library.file_content import read_content
-from iPodDB.library.writing import IdentityMapping, PreparedFile, WriteResources
+from iPodDB.library.writing import (
+    ArtworkGroupReference,
+    IdentityMapping,
+    PreparedFile,
+    TimedArtworkAsset,
+    WriteResources,
+)
 from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import DatabaseDocument
 
@@ -34,6 +51,8 @@ def verify_artwork(
     mappings: tuple[IdentityMapping, ...],
     resources: WriteResources,
     files: tuple[PreparedFile, ...],
+    original_bytes: bytes | None,
+    artwork_bytes: bytes | None,
 ) -> None:
     if not resolved.artwork_tracks and not resolved.deleted_tracks:
         return
@@ -82,7 +101,17 @@ def verify_artwork(
             )
         if reserved & outputs.keys():
             raise ValueError("Created artwork overwrites an unavailable reserved path.")
-    assets = {a.artwork_id: a.pixels for a in resources.artwork}
+    assets = {a.artwork_id: a for a in resources.artwork}
+    source_document = parse_ArtworkDB(original_bytes) if original_bytes else None
+    source_rows = (
+        {
+            s.chunk.header.image_id: s.chunk
+            for s in source_document.find_chunks(MhiiHeader)
+        }
+        if source_document
+        else {}
+    )
+    original_tracks = {t.track_id: t for t in resolved.original.tracks}
     file_formats = tuple(s.chunk.header for s in artwork.find_chunks(MhifHeader))
     original_sizes = (
         {
@@ -104,31 +133,152 @@ def verify_artwork(
             if generated
             else f
         )
-        for f in target.cover_formats
+        for f in artwork_formats(target, timed=True)
     }
+    time_schema = next(
+        f.schema
+        for f in binary_fields(MhniHeader)
+        if f.attribute_name == "unk_mhni_0x24"
+    )
+    desired_tracks = {t.track_id: t for t in resolved.desired.tracks}
+    first_asset_track = {t.artwork_id: t for t in reversed(resolved.desired.tracks)}
     for mapping in generated:
-        pixels = assets.get(mapping.draft_id)
-        if pixels is None:
+        asset = assets.get(mapping.draft_id)
+        if asset is None:
             continue  # A per-Track clone can reuse verified retained ranges.
+        track = (
+            desired_tracks[mapping.track_id]
+            if mapping.track_id is not None
+            else first_asset_track[mapping.draft_id]
+        )
+        old_track = original_tracks.get(track.track_id)
+        asset_formats = {
+            f.format_id
+            for f in requested_formats(
+                target,
+                asset,
+                source_rows.get(old_track.artwork_id) if old_track else None,
+            )
+        }
+        frames = desired_frames(
+            asset, source_rows.get(old_track.artwork_id) if old_track else None
+        )
         row = rows.get(mapping.output_id)
-        if row is None or row.header.source_image_size != len(pixels.rgb888):
+        if row is None or row.header.source_image_size != zero_source_size(
+            frames, source_rows
+        ):
             raise ValueError(
-                "Created image size does not match its supplied artwork pixels."
+                "Created image size does not match its zero-time artwork source."
             )
         locations = tuple(
             c.payload.child.header
             for c in row.children
             if isinstance(c.payload, MhodContainerPayload)
         )
-        if len(locations) != len(formats) or {
-            location.format_id for location in locations
-        } != set(formats):
+        times = tuple(location.unk_mhni_0x24 for location in locations)
+        if times != tuple(sorted(times)) or set(times) != {
+            f.display_time_ms for f in frames
+        }:
             raise ValueError(
-                "Created artwork does not contain exactly the target cover formats."
+                "Created artwork time groups differ from the desired ascending sequence."
             )
         item = index.item_for_image_id(mapping.output_id)
         assert item is not None
-        for location, bounded in zip(locations, item.locations, strict=True):
+        generated_pairs: set[tuple[int, int]] = set()
+        for frame in frames:
+            wrappers = group_children(row, frame.display_time_ms)
+            if isinstance(frame.source, ArtworkGroupReference):
+                source_row = source_rows.get(frame.source.artwork_id)
+                retained = (
+                    group_children(source_row, frame.source.display_time_ms)
+                    if source_row
+                    else ()
+                )
+                if not retained or len(retained) > len(wrappers):
+                    raise ValueError("Created artwork omitted a retained time group.")
+                assert original_bytes is not None and artwork_bytes is not None
+                for source_child, checked_child in zip(
+                    retained, wrappers[: len(retained)], strict=True
+                ):
+                    assert isinstance(source_child.payload, MhodContainerPayload)
+                    expected_bytes = bytearray(
+                        original_bytes[
+                            source_child.offset : source_child.offset
+                            + source_child.generic_header.length_or_child_count
+                        ]
+                    )
+                    time_offset = (
+                        source_child.payload.child.offset
+                        - source_child.offset
+                        + time_schema.offset
+                    )
+                    expected_bytes[time_offset : time_offset + time_schema.size] = (
+                        frame.display_time_ms.to_bytes(4, "little")
+                    )
+                    actual = artwork_bytes[
+                        checked_child.offset : checked_child.offset
+                        + checked_child.generic_header.length_or_child_count
+                    ]
+                    if actual != bytes(expected_bytes):
+                        raise ValueError(
+                            "Created artwork changed a referenced group's retained bytes."
+                        )
+                retained_formats = {
+                    c.payload.child.header.format_id
+                    for c in retained
+                    if isinstance(c.payload, MhodContainerPayload)
+                }
+                missing: set[int] = (
+                    asset_formats - retained_formats
+                    if isinstance(asset, TimedArtworkAsset)
+                    and frame.display_time_ms != 0xFFFFFFFF
+                    else set()
+                )
+                added = tuple(
+                    c.payload.child.header
+                    for c in wrappers[len(retained) :]
+                    if isinstance(c.payload, MhodContainerPayload)
+                )
+                if (
+                    len(added) != len(missing)
+                    or {h.format_id for h in added} != missing
+                ):
+                    raise ValueError(
+                        "Created artwork did not complete exactly the missing timed representations."
+                    )
+                generated_pairs.update(
+                    (frame.display_time_ms, format_id) for format_id in missing
+                )
+                continue
+            created = tuple(
+                c.payload.child.header
+                for c in wrappers
+                if isinstance(c.payload, MhodContainerPayload)
+            )
+            if (
+                len(created) != len(asset_formats)
+                or {location.format_id for location in created} != asset_formats
+            ):
+                raise ValueError(
+                    "Created artwork does not contain exactly the target cover formats."
+                )
+            generated_pairs.update(
+                (frame.display_time_ms, format_id) for format_id in asset_formats
+            )
+        for location in locations:
+            if (location.unk_mhni_0x24, location.format_id) not in generated_pairs:
+                continue
+            bounded = next(
+                (
+                    b
+                    for b in item.locations
+                    if b.format_id == location.format_id
+                    and b.display_time_ms == location.unk_mhni_0x24
+                ),
+                None,
+            )
+            if bounded is None:
+                raise ValueError("Created artwork has an unbounded raster.")
             cover = formats[location.format_id]
             if (
                 location.image_width,
@@ -192,7 +342,7 @@ def verify_artwork(
             raise ValueError("Changed Track references missing artwork.")
         expected = {
             "artwork_id_ref": image_id,
-            "artwork_count": int(item is not None and bool(item.locations)),
+            "artwork_count": len(item.display_times) if item is not None else 0,
             "artwork_size": item.source_image_size if item else 0,
             "has_artwork": int(item is not None),
         }

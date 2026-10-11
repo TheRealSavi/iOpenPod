@@ -14,6 +14,14 @@ then beyond it.
 
 ## Current stage
 
+The Metadata Editor supports artwork images at explicit Artwork Display Times.
+Drafts retain references to untouched images; preparation writes ordered time
+groups and preserves later images during ordinary cover replacement. Explicit
+timelines also supply configured chapter representations and count each saved
+image time once. Playback behavior remains device- and firmware-dependent. See
+ADR-0138, ADR-0139, and the
+[timing investigation](docs/research/ithmb/artwork-timing-experiments.md).
+
 Sync distinguishes unavailable Host covers from deliberate removal and preserves
 reviewed artwork intent during media replacement. Complete artwork records hidden
 by an incorrect image-list count can be recovered for display and transactionally

@@ -26,7 +26,9 @@ from device_registry import (
     reconcile_device_metadata,
 )
 from iOpenPod.app.artwork_policy import (
+    application_artwork_read_formats,
     application_artwork_root_value,
+    application_chapter_formats,
     application_cover_formats,
 )
 from iOpenPod.app.core.settings.device import (
@@ -126,6 +128,7 @@ if TYPE_CHECKING:
     )
     from iOpenPod.app.playback.backend import PlaybackSource
     from iPodDB.library import (
+        ArtworkGroupReference,
         Hash72Material,
         LibraryWritePlan,
         Photo,
@@ -1304,6 +1307,7 @@ class DeviceCoordinator:
                 ),
                 supports_sparse_artwork=capabilities.artwork.supports_sparse_artwork,
                 cover_formats=application_cover_formats(expected.profile),
+                chapter_formats=application_chapter_formats(expected.profile),
             )
             if active.time_precondition is None:
                 raise DeviceChangedError(
@@ -1326,12 +1330,30 @@ class DeviceCoordinator:
                 target,
             )
             checkpoint("resources.capture", "Capturing required resources")
+
+            def source_artwork_paths(
+                reference: ArtworkGroupReference,
+            ) -> tuple[str, ...]:
+                paths: dict[str, None] = {}
+                for format_ in application_artwork_read_formats(expected.profile):
+                    read = source.artwork_read(
+                        reference.artwork_id,
+                        (format_,),
+                        max(format_.width, format_.height),
+                        display_time_ms=reference.display_time_ms,
+                    )
+                    if read is not None:
+                        paths.setdefault(read.relative_path, None)
+                return tuple(paths)
+
             captured = library_resources.capture(
                 active.session,
                 request,
                 plan,
                 lambda: checkpoint("resources.capture", "Capturing required resources"),
                 temporary_files=temporary_files,
+                source_artwork_display_times=source.artwork_display_times,
+                source_artwork_paths=source_artwork_paths,
                 additional_preconditions=(
                     *sqlite_postprocess_preconditions,
                     active.time_precondition,
@@ -2397,6 +2419,15 @@ class DeviceCoordinator:
             for detail in details
         )
 
+    def artwork_display_times(self, artwork_id: int) -> tuple[int, ...]:
+        """Expose retained time-group metadata without opening any device file."""
+
+        with self._lock:
+            active = self._active
+            if active is None:
+                return ()
+            return active.library_source.artwork_display_times(artwork_id)
+
     def load_artwork(self, request: ArtworkRequest) -> ArtworkImage | None:
         """Read and decode the best available cover for one current image ID."""
 
@@ -2407,8 +2438,9 @@ class DeviceCoordinator:
             try:
                 read = active.library_source.artwork_read(
                     request.artwork_id,
-                    application_cover_formats(active.active_ipod.profile),
+                    application_artwork_read_formats(active.active_ipod.profile),
                     request.target_px,
+                    display_time_ms=request.display_time_ms,
                 )
             except ValueError as error:
                 raise DeviceArtworkLoadError(str(error)) from error
@@ -2444,12 +2476,14 @@ class DeviceCoordinator:
         return ArtworkImage(
             cache_key=(
                 f"{generation}:{fingerprint_key}:{request.artwork_id}:{read.format_id}"
+                f":{request.display_time_ms}:{read.relative_path}:{read.offset}:{read.length}"
             ),
             artwork_id=request.artwork_id,
             format_id=read.format_id,
             width=decoded.width,
             height=decoded.height,
             rgb888=decoded.rgb888,
+            display_time_ms=request.display_time_ms,
         )
 
     def load_photo(self, request: PhotoRequest) -> PhotoImage | None:

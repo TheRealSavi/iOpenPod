@@ -1,5 +1,9 @@
 """Device artwork knowledge belongs to immutable Device Profiles."""
 
+from dataclasses import replace
+
+import pytest
+
 from device_registry import (
     DEFAULT_DEVICE_REGISTRY,
     ArtworkPixelFormat,
@@ -38,6 +42,44 @@ def test_every_catalog_profile_has_a_safe_product_image_name() -> None:
         assert profile.product_image.endswith(".png")
         assert "/" not in profile.product_image
         assert "\\" not in profile.product_image
+
+
+def test_only_classic_profiles_declare_the_source_supported_chapter_layouts() -> None:
+    classic_generations: set[str] = set()
+    for profile in DEFAULT_DEVICE_REGISTRY.profiles:
+        artwork = profile.capabilities.artwork
+        if profile.family != "iPod Classic":
+            assert artwork.chapter_formats == ()
+            continue
+        classic_generations.add(profile.generation)
+        assert artwork.supports_chapter_images
+        assert tuple(f.format_id for f in artwork.cover_formats) == (
+            1055,
+            1060,
+            1061,
+            1068,
+        )
+        assert tuple(
+            (f.format_id, f.width, f.height, f.row_bytes, f.pixel_format, f.usage)
+            for f in artwork.chapter_formats
+        ) == (
+            (1055, 128, 128, 256, ArtworkPixelFormat.RGB565_LE, ArtworkUsage.CHAPTER),
+            (1029, 200, 200, 400, ArtworkPixelFormat.RGB565_LE, ArtworkUsage.CHAPTER),
+        )
+        assert all(f.usage is ArtworkUsage.COVER for f in artwork.cover_formats)
+    assert classic_generations == {"6th Gen", "6.5th Gen", "7th Gen"}
+
+
+def test_chapter_layouts_require_support_and_the_chapter_role() -> None:
+    classic = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
+    assert classic is not None
+    artwork = classic.capabilities.artwork
+    with pytest.raises(ValueError, match="require chapter-image support"):
+        replace(artwork, supports_chapter_images=False)
+    with pytest.raises(ValueError, match="chapter artwork role"):
+        replace(artwork, chapter_formats=artwork.cover_formats)
+    with pytest.raises(ValueError, match="cover or chapter artwork roles"):
+        replace(artwork, photo_formats=artwork.chapter_formats)
 
 
 def test_screenless_profiles_do_not_claim_an_application_display_format() -> None:

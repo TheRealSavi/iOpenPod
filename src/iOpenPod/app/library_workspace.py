@@ -1,6 +1,6 @@
 """One session draft for Library metadata, Playlists, Photos, and device naming."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from itertools import pairwise
 from uuid import uuid4
 
@@ -13,6 +13,7 @@ from iOpenPod.app.track_conversion import convert_track_to_podcast, reclassify_t
 from iOpenPod.app.track_playback_policy import enforce_track_playback_policy
 from iPodDB.library import (
     ArtworkAsset,
+    ArtworkGroupReference,
     ArtworkPixels,
     IPodPhotoAlbumDetails,
     LibrarySnapshot,
@@ -27,6 +28,8 @@ from iPodDB.library import (
     PlaylistSort,
     PlaylistSortOrder,
     SmartPlaylist,
+    TimedArtworkAsset,
+    TimedArtworkFrame,
     Track,
     TrackEditError,
     TrackFieldEdit,
@@ -57,6 +60,7 @@ class TrackArtworkEdit:
 
     pixels: ArtworkPixels | None
     source_artwork_id: int | None = None
+    frames: tuple[TimedArtworkFrame, ...] | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         if self.pixels is not None and self.source_artwork_id is not None:
@@ -65,6 +69,11 @@ class TrackArtworkEdit:
             )
         if self.source_artwork_id == 0:
             raise ValueError("Use an empty artwork edit to clear artwork.")
+        if self.frames is not None:
+            if self.pixels is not None or self.source_artwork_id is not None:
+                raise ValueError("An artwork sequence cannot also assign a cover.")
+            if self.frames:
+                TimedArtworkAsset(-1, self.frames)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +104,7 @@ class LibraryWorkspace(QObject):
         self._playlists: dict[int, Playlist] = {}
         self._children: dict[int | None, tuple[Playlist, ...]] = {}
         self._tracks: dict[int, Track] = {}
-        self._artwork_assets: dict[int, ArtworkAsset] = {}
+        self._artwork_assets: dict[int, ArtworkAsset | TimedArtworkAsset] = {}
         self._media_sources: dict[int, LibraryMediaSource] = {}
         self._photos: PhotoLibrary | None = None
         self._photo_album_creation_type: int | None = None
@@ -462,7 +471,7 @@ class LibraryWorkspace(QObject):
         self.photosChanged.emit(self._photos)
 
     @property
-    def artwork_assets(self) -> tuple[ArtworkAsset, ...]:
+    def artwork_assets(self) -> tuple[ArtworkAsset | TimedArtworkAsset, ...]:
         return tuple(self._artwork_assets.values())
 
     @property
@@ -716,7 +725,7 @@ class LibraryWorkspace(QObject):
         metadata_changed = any(
             track != self._tracks[key] for key, track in replacements.items()
         )
-        new_asset: ArtworkAsset | None = None
+        new_asset: ArtworkAsset | TimedArtworkAsset | None = None
         if artwork is not None and replacements:
             identity = artwork.source_artwork_id or 0
             selected_artwork = {
@@ -724,7 +733,25 @@ class LibraryWorkspace(QObject):
             }
             if identity and identity not in selected_artwork:
                 raise ValueError("The artwork is not part of the Track selection.")
-            if artwork.pixels is not None:
+            if artwork.frames:
+                allowed_sources = {value for value in selected_artwork if value > 0}
+                for value in selected_artwork:
+                    asset = self._artwork_assets.get(value)
+                    if isinstance(asset, TimedArtworkAsset):
+                        allowed_sources.update(
+                            frame.source.artwork_id
+                            for frame in asset.frames
+                            if isinstance(frame.source, ArtworkGroupReference)
+                        )
+                if any(
+                    isinstance(frame.source, ArtworkGroupReference)
+                    and frame.source.artwork_id not in allowed_sources
+                    for frame in artwork.frames
+                ):
+                    raise ValueError(
+                        "The artwork source is not part of the Track selection."
+                    )
+            if artwork.pixels is not None or artwork.frames:
                 used = {
                     *(track.artwork_id for track in self._tracks.values()),
                     *self._artwork_assets,
@@ -732,7 +759,49 @@ class LibraryWorkspace(QObject):
                 identity = -1
                 while identity in used:
                     identity -= 1
-                new_asset = ArtworkAsset(identity, artwork.pixels)
+                if artwork.frames:
+                    new_asset = TimedArtworkAsset(
+                        identity,
+                        tuple(
+                            sorted(
+                                artwork.frames, key=lambda frame: frame.display_time_ms
+                            )
+                        ),
+                    )
+                else:
+                    assert artwork.pixels is not None
+                    selected_assets = tuple(
+                        self._artwork_assets.get(value) for value in selected_artwork
+                    )
+                    timed_assets = tuple(
+                        asset
+                        for asset in selected_assets
+                        if isinstance(asset, TimedArtworkAsset)
+                    )
+                    if timed_assets:
+                        later_frames = tuple(
+                            frame
+                            for frame in timed_assets[0].frames
+                            if frame.display_time_ms != 0
+                        )
+                        if len(timed_assets) != len(selected_assets) or any(
+                            tuple(
+                                frame
+                                for frame in asset.frames
+                                if frame.display_time_ms != 0
+                            )
+                            != later_frames
+                            for asset in timed_assets[1:]
+                        ):
+                            raise ValueError(
+                                "The selected Tracks have different artwork sequences. Edit them separately or assign one complete sequence."
+                            )
+                        new_asset = TimedArtworkAsset(
+                            identity,
+                            (TimedArtworkFrame(0, artwork.pixels), *later_frames),
+                        )
+                    else:
+                        new_asset = ArtworkAsset(identity, artwork.pixels)
             replacements = {
                 track_id: replace(track, artwork_id=identity)
                 for track_id, track in replacements.items()

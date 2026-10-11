@@ -25,6 +25,14 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhit import DEFINITION as MHIT
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhlp import DEFINITION as MHLP
 from iPodDB.iTunesDB.shared.chunk_defs.mhlt import DEFINITION as MHLT
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
+    MhodChapterDataChapter,
+    MhodChapterDataPayload,
+    MhodChapterDataPreamble,
+    MhodChapterDataSeanHeader,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
     MhodPlaylistPositionPrefix,
 )
@@ -54,6 +62,7 @@ from iPodDB.library import (
     SmartRule,
     SmartRuleGroup,
     Track,
+    TrackChapter,
     order_playlist_entries,
 )
 from iPodDB.library.writing import (
@@ -145,6 +154,106 @@ def library(*, mirrored: bool = False, conflicting: bool = False) -> IPodLibrary
             ),
         )
     return IPodLibrary(write_iTunesDB(new_iTunesDB(MhbdHeader(), datasets=datasets)))
+
+
+def test_adding_chapters_to_existing_track_writes_terminal_hedr() -> None:
+    source = library()
+    before = source.serialize().itunes
+    track = source.snapshot.tracks[0]
+    chapters = (TrackChapter("Opening", 0), TrackChapter("Later", 500))
+    desired = replace(
+        source.snapshot,
+        tracks=(
+            replace(track, metadata=replace(track.metadata, chapters=chapters)),
+            source.snapshot.tracks[1],
+        ),
+    )
+
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+
+    assert result.prepared is not None, result.issues
+    saved = parse_iTunesDB(result.prepared.itunes)
+    row = next(
+        selection.chunk
+        for selection in saved.find_chunks(MhitHeader)
+        if selection.chunk.header.track_id == track.track_id
+    )
+    chapter_data = next(
+        child.payload
+        for child in row.children
+        if isinstance(child.payload, MhodChapterDataPayload)
+    )
+    assert chapter_data.sean.child_count == len(chapters) + 1
+    assert chapter_data.hedr is not None
+    assert (
+        chapter_data.hedr.unk_0x08,
+        chapter_data.hedr.child_count,
+        chapter_data.hedr.unk_0x10,
+        chapter_data.hedr.unk_0x14,
+        chapter_data.hedr.unk_0x18,
+    ) == (1, 0, 0, 0, 1)
+    assert IPodLibrary(result.prepared.itunes).snapshot.tracks[0].metadata.chapters == (
+        chapters
+    )
+    assert source.serialize().itunes == before
+
+
+def test_editing_app_authored_hedrless_chapters_repairs_terminal_atom() -> None:
+    document = parse_iTunesDB(library().serialize().itunes)
+    selection = document.find_chunks(MhitHeader)[0]
+    chapter_data = MhodChapterDataPayload(
+        MhodChapterDataPreamble(0, 0, 0),
+        MhodChapterDataSeanHeader(atom_type=b"sean"),
+        None,
+        (
+            MhodChapterDataChapter("Opening", 0, ()),
+            MhodChapterDataChapter("Later", 500, ()),
+        ),
+        (),
+    )
+    document = document.replace_chunk(
+        selection,
+        selection.chunk.append_child(
+            new_itunes_chunk(
+                MHOD, MhodHeader(mhod_type=MhodType.CHAPTER_DATA), payload=chapter_data
+            )
+        ),
+    )
+    source = IPodLibrary(write_iTunesDB(document))
+    unchanged = source.prepare(source.analyze(source.begin_draft()))
+    assert unchanged.prepared is not None, unchanged.issues
+    assert unchanged.prepared.itunes == source.serialize().itunes
+    track = source.snapshot.tracks[0]
+    edited = replace(
+        track,
+        metadata=replace(
+            track.metadata,
+            chapters=(TrackChapter("Opening edit", 0), TrackChapter("Later", 500)),
+        ),
+    )
+
+    result = source.prepare(
+        source.analyze(
+            source.begin_draft(
+                replace(source.snapshot, tracks=(edited, source.snapshot.tracks[1]))
+            )
+        )
+    )
+
+    assert result.prepared is not None, result.issues
+    saved = parse_iTunesDB(result.prepared.itunes)
+    row = saved.find_chunks(MhitHeader)[0].chunk
+    repaired = next(
+        child.payload
+        for child in row.children
+        if isinstance(child.payload, MhodChapterDataPayload)
+    )
+    assert repaired.hedr is not None
+    assert repaired.sean.child_count == 3
+    assert tuple(chapter.name for chapter in repaired.chapters) == (
+        "Opening edit",
+        "Later",
+    )
 
 
 @pytest.mark.parametrize("delete_omissions", [False, True])

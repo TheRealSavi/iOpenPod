@@ -472,15 +472,31 @@ class IPodLibrary:
             progress=progress,
         )
 
+    def artwork_display_times(self, artwork_id: int) -> tuple[int, ...]:
+        """List retained group keys, including groups without a readable raster."""
+        item = self._artwork_index.item_for_image_id(artwork_id)
+        return item.display_times if item is not None else ()
+
     def artwork_read(
-        self, artwork_id: int, formats: tuple[CoverFormat, ...], target_px: int
+        self,
+        artwork_id: int,
+        formats: tuple[CoverFormat, ...],
+        target_px: int,
+        *,
+        display_time_ms: int | None = None,
     ) -> ArtworkRead | None:
-        """Plan one lazy byte-range read near the requested physical size."""
+        """Plan a lazy cover read, or an exact time-group read when specified."""
 
         if artwork_id <= 0 or target_px <= 0:
             return None
         item = self._artwork_index.item_for_image_id(artwork_id)
-        return None if item is None else select_artwork(item, formats, target_px)
+        return (
+            None
+            if item is None
+            else select_artwork(
+                item, formats, target_px, display_time_ms=display_time_ms
+            )
+        )
 
     def photo_read(
         self,

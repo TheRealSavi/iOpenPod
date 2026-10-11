@@ -121,7 +121,11 @@ class AppContext:
             settings,
             application,
         )
-        artwork_controller = ArtworkController(device_coordinator, application)
+        artwork_controller = ArtworkController(
+            device_coordinator,
+            application,
+            display_times=device_coordinator.artwork_display_times,
+        )
         photo_controller = PhotoController(device_coordinator, application)
         backup_controller = BackupController(
             BackupService(device_coordinator),

@@ -16,6 +16,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
     MhodChapterDataChapter,
+    MhodChapterDataHedrHeader,
     MhodChapterDataPayload,
     MhodChapterDataPreamble,
     MhodChapterDataSeanHeader,
@@ -55,6 +56,10 @@ from iPodDB.shared.chunk import ChunkHeader, ParsedChunk
 _VIDEO_MIRROR = next(
     f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "video_flag_2"
 )
+
+
+def _chapter_hedr() -> MhodChapterDataHedrHeader:
+    return MhodChapterDataHedrHeader(atom_type=b"hedr", unk_0x08=1, unk_0x18=1)
 
 
 def edit_text[H: ChunkHeader](
@@ -386,15 +391,32 @@ def edit_track(
                 else MhodChapterDataChapter(c.title, c.start_ms, ())
                 for i, c in enumerate(meta.chapters)
             )
+            # Earlier iOpenPod writes omitted hedr. Complete only that simple
+            # shape during an explicit chapter edit; retain unfamiliar atoms.
+            repair_app_chapters = (
+                payload.hedr is None
+                and bool(meta.chapters)
+                and payload.preamble == (0, 0, 0)
+                and payload.sean.unk_0x08 == 0
+                and payload.sean.unk_0x10 == 0
+                and not payload.other_atoms
+                and not payload.sean_trailing_data
+                and not payload.trailing_data
+                and not any(
+                    c.other_atoms or c.name_trailing_data or c.trailing_data
+                    for c in payload.chapters
+                )
+            )
             children = list(chunk.children)
             children[index] = replace(
                 child,
                 payload=replace(
                     payload,
                     chapters=chapters,
+                    hedr=_chapter_hedr() if repair_app_chapters else payload.hedr,
                     chapter_atom_indices=(
                         ()
-                        if chapter_membership_changed
+                        if chapter_membership_changed or repair_app_chapters
                         else payload.chapter_atom_indices
                     ),
                     hedr_atom_index=(
@@ -407,7 +429,7 @@ def edit_track(
             payload = MhodChapterDataPayload(
                 MhodChapterDataPreamble(0, 0, 0),
                 MhodChapterDataSeanHeader(atom_type=b"sean"),
-                None,
+                _chapter_hedr(),
                 tuple(
                     MhodChapterDataChapter(c.title, c.start_ms, ())
                     for c in meta.chapters

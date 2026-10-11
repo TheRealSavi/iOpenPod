@@ -16,6 +16,9 @@ from iOpenPod.app.media.lyrics import rewrite_lyrics_stream
 from iOpenPod.app.services import volume_presentation
 from iPodDB.library import (
     MAX_SIDECAR_BYTES,
+    ArtworkAsset,
+    ArtworkGroupReference,
+    ArtworkPixels,
     FileContentData,
     FileDependency,
     IssueSeverity,
@@ -52,7 +55,6 @@ if TYPE_CHECKING:
 
     from iOpenPod.app.library_write import LibraryPreparationRequest
     from iPodDB.library import (
-        ArtworkPixels,
         LibraryWritePlan,
         PhotoRepresentation,
         PreparedLibrary,
@@ -259,6 +261,8 @@ def capture(
     checkpoint: Callable[[], None],
     *,
     temporary_files: ExitStack,
+    source_artwork_display_times: Callable[[int], tuple[int, ...]],
+    source_artwork_paths: Callable[[ArtworkGroupReference], tuple[str, ...]],
     additional_preconditions: tuple[FilePrecondition, ...] = (),
     volume_presentation_enabled: bool = True,
     consumed_sidecars: tuple[PlaybackSidecar, ...] = (),
@@ -410,14 +414,42 @@ def capture(
                     path, _transaction_source(photo_file.data), content, expected
                 )
             )
-    cover_prefixes = tuple(f"f{f.format_id}_" for f in plan.target.cover_formats)
-    replacement_assets = {asset.artwork_id for asset in request.artwork}
+    cover_prefixes = tuple(
+        f"f{f.format_id}_"
+        for f in (*plan.target.cover_formats, *plan.target.chapter_formats)
+    )
+    replacement_assets = {
+        asset.artwork_id
+        for asset in request.artwork
+        if isinstance(asset, ArtworkAsset)
+        or all(isinstance(frame.source, ArtworkPixels) for frame in asset.frames)
+    }
     originals = {
         track.artwork_id for track in request.source.library.tracks if track.artwork_id
     }
     desired_tracks = {track.track_id: track for track in request.snapshot.tracks}
+    assets_by_id = {asset.artwork_id: asset for asset in request.artwork}
+    retains_timed_source = any(
+        isinstance(
+            assets_by_id.get(desired_tracks[track.track_id].artwork_id), ArtworkAsset
+        )
+        and any(time != 0 for time in source_artwork_display_times(track.artwork_id))
+        for track in request.source.library.tracks
+        if track.artwork_id and track.track_id in desired_tracks
+    )
+    # Filling a missing layout may decode a retained group from a full shard.
+    # Capture only that group's known source paths, not unrelated full shards.
+    retained_source_paths = {
+        path.casefold()
+        for asset in request.artwork
+        if not isinstance(asset, ArtworkAsset)
+        for frame in asset.frames
+        if isinstance(frame.source, ArtworkGroupReference)
+        for path in source_artwork_paths(frame.source)
+    }
     regenerate_all = (
         bool(replacement_assets)
+        and not retains_timed_source
         and not (originals & {track.artwork_id for track in request.snapshot.tracks})
         and all(
             track.track_id not in desired_tracks
@@ -442,12 +474,15 @@ def capture(
                 raise ValueError(
                     f"Artwork resource is not a regular file: {entry.path}"
                 )
-            # Encoding appends to existing prefixes. Reference-only edits need
-            # their fingerprints and sizes, without retaining all thumbnail bytes.
+            # Capture appendable prefixes and any full source shards needed to
+            # decode a retained frame for a missing representation.
             if (
                 request.artwork
                 and entry.path.name.casefold().startswith(cover_prefixes)
-                and entry.size < plan.target.max_artwork_file_bytes
+                and (
+                    entry.size < plan.target.max_artwork_file_bytes
+                    or str(entry.path).casefold() in retained_source_paths
+                )
             ):
                 try:
                     data, fingerprint = staging.capture_device_snapshot(

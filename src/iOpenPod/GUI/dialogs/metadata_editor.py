@@ -110,7 +110,7 @@ _GROUP_DESCRIPTIONS = {
     str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Artwork")): str(
         QT_TRANSLATE_NOOP(
             "MetadataEditorDialog",
-            "Choose, crop, replace, or clear the Track cover image",
+            "View artwork, crop images, and choose when each image displays",
         )
     ),
     str(QT_TRANSLATE_NOOP("EditorLabels", "Technical details")): str(
@@ -816,7 +816,9 @@ class MetadataEditorDialog(QDialog):
         for group, item in self._group_items.items():
             item.setHidden(bool(query) and group not in visible_groups)
         artwork_visible = (
-            not query or query in self.tr("artwork cover image crop").casefold()
+            not query
+            or query
+            in self.tr("artwork cover image crop display time sequence").casefold()
         )
         self._artwork_item.setHidden(not artwork_visible)
         self._technical_item.setHidden(bool(query))

@@ -6,7 +6,12 @@ from reprlib import Repr
 
 from iPodDB.library.file_content import content_sha256
 from iPodDB.library.models import LibrarySnapshot
-from iPodDB.library.writing import LibraryWritePlan, LibraryWriteResult, WriteResources
+from iPodDB.library.writing import (
+    LibraryWritePlan,
+    LibraryWriteResult,
+    TimedArtworkAsset,
+    WriteResources,
+)
 
 logger = logging.getLogger(__name__)
 _summary = Repr(maxstring=240, maxother=240, maxtuple=12)
@@ -143,6 +148,14 @@ def log_resources(revision: str, resources: WriteResources) -> None:
     for media in resources.media:
         logger.debug("Library media source=%s %s", revision, media)
     for asset in resources.artwork:
+        if isinstance(asset, TimedArtworkAsset):
+            logger.debug(
+                "Library timed artwork source=%s id=%d times=%s",
+                revision,
+                asset.artwork_id,
+                tuple(f.display_time_ms for f in asset.frames),
+            )
+            continue
         logger.debug(
             "Library artwork asset source=%s id=%d width=%d height=%d bytes=%d",
             revision,

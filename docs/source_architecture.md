@@ -1002,6 +1002,19 @@ embed changed metadata and covers in prepared media; non-cover profiles use a
 request and publish tag edits with the Library transaction. Metadata-only edits
 preserve embedded covers; clearing artwork also removes its file-tag copy.
 
+Artwork Display Times group an image's representations by playback position.
+The public read contract can list times and select one exact group without
+exposing Chunks. Explicit timed assets retain references to existing groups and
+emit authored groups in ascending time order. Device Registry supplies separate
+chapter layouts; timed preparation completes the union of cover and chapter
+representations while retaining existing bytes. MHIT artwork count reflects the
+distinct saved image times for changed relationships. Ordinary cover refresh preserves
+later groups. The Metadata Editor previews groups lazily and applies one complete
+sequence through its existing Library Draft. Playback support remains dependent
+on device and firmware evidence. See
+[ADR-0138](adr/0138-edit-artwork-by-display-time.md) and
+[ADR-0139](adr/0139-complete-timed-artwork-formats-and-counts.md).
+
 During cover preparation, iPodDB automatically reconciles conflicting MHIF image
 sizes when the fixed-size encoding, individually validated retained MHNI
 representations, and captured thumbnail ranges establish a supported layout.

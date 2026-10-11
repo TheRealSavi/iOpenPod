@@ -97,6 +97,7 @@ from iPodDB.library.smart_rules import (
 from iPodDB.library.sqlite import SQLiteDatabaseSet
 from iPodDB.library.writing import (
     ArtworkAsset,
+    ArtworkGroupReference,
     FileDependency,
     IdentityMapping,
     IssueSeverity,
@@ -113,6 +114,8 @@ from iPodDB.library.writing import (
     PreparedPhoto,
     RetainedArtworkFile,
     SourceFile,
+    TimedArtworkAsset,
+    TimedArtworkFrame,
     WriteChecksum,
     WriteEffect,
     WriteIssue,
@@ -131,6 +134,7 @@ from iPodDB.sidecars import (
 __all__ = [
     "MAX_SIDECAR_BYTES",
     "ArtworkAsset",
+    "ArtworkGroupReference",
     "ArtworkPixels",
     "ArtworkRead",
     "AudioEncoding",
@@ -197,6 +201,8 @@ __all__ = [
     "SmartRuleGroup",
     "SmartValueKind",
     "SourceFile",
+    "TimedArtworkAsset",
+    "TimedArtworkFrame",
     "Track",
     "TrackChapter",
     "TrackEditError",

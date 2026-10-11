@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import IntEnum, StrEnum
 
 
@@ -104,6 +104,7 @@ class ArtworkUsage(StrEnum):
     """Broad purpose of an artwork format on an iPod."""
 
     COVER = "cover"
+    CHAPTER = "chapter"
     PHOTO = "photo"
     # Small grid/list renditions may crop; other Photo renditions preserve the image.
     PHOTO_THUMBNAIL = "photo_thumbnail"
@@ -173,6 +174,8 @@ class ArtworkCapabilities:
     # Creation policy only; retained Photo Albums keep their own MHBA type.
     photo_album_creation_type: int | None = None
     photos_root_value: int | None = None
+    # Known chapter layouts may be unavailable even when chapter support is known.
+    chapter_formats: tuple[ArtworkFormat, ...] = field(default=(), kw_only=True)
 
     def __post_init__(self) -> None:
         if self.photos_root_value is not None and (
@@ -209,11 +212,18 @@ class ArtworkCapabilities:
             for artwork_format in self.cover_formats
         ):
             raise ValueError("Cover formats must use the cover artwork role")
+        if self.chapter_formats and not self.supports_chapter_images:
+            raise ValueError("Chapter formats require chapter-image support")
         if any(
-            artwork_format.usage is ArtworkUsage.COVER
+            artwork_format.usage is not ArtworkUsage.CHAPTER
+            for artwork_format in self.chapter_formats
+        ):
+            raise ValueError("Chapter formats must use the chapter artwork role")
+        if any(
+            artwork_format.usage in (ArtworkUsage.COVER, ArtworkUsage.CHAPTER)
             for artwork_format in self.photo_formats
         ):
-            raise ValueError("Photo formats cannot use the cover artwork role")
+            raise ValueError("Photo formats cannot use cover or chapter artwork roles")
 
     def cover_format(self, format_id: int) -> ArtworkFormat | None:
         """Return this Device Profile's definition for one cover format ID."""

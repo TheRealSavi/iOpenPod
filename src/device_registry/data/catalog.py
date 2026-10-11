@@ -142,6 +142,7 @@ def _capabilities(
     gapless: bool = False,
     alac: bool = True,
     cover_formats: tuple[ArtworkFormat, ...] = (),
+    chapter_formats: tuple[ArtworkFormat, ...] = (),
     photo_formats: tuple[ArtworkFormat, ...] = (),
     photo_album_creation_type: int = 2,
     chapter_images: bool = False,
@@ -184,6 +185,7 @@ def _capabilities(
             supports_chapter_images=chapter_images,
             supports_sparse_artwork=sparse_artwork,
             cover_formats=cover_formats,
+            chapter_formats=chapter_formats,
             photo_formats=photo_formats,
             # Original iOpenPod's album-art writer uses this seed without a
             # reference database. It is a compatibility policy, not a version.
@@ -211,6 +213,12 @@ _CLASSIC_CAPABILITIES = _capabilities(
     display=(320, 240, True),
     gapless=True,
     cover_formats=_artwork_formats(1055, 1060, 1061, 1068),
+    # libgpod's Classic chapter fallback (itdb_device.c, commit 7982c555).
+    # This is source-supported policy, not queried firmware metadata.
+    chapter_formats=tuple(
+        replace(format_, usage=ArtworkUsage.CHAPTER)
+        for format_ in _artwork_formats(1055, 1029)
+    ),
     photo_formats=_artwork_formats(1067, 1024, 1066),
     chapter_images=True,
     sparse_artwork=True,

@@ -1,9 +1,15 @@
 """Application artwork layouts remain distinct from native Device capabilities."""
 
-from device_registry import DEFAULT_DEVICE_REGISTRY
+from dataclasses import replace
+
+import pytest
+
+from device_registry import DEFAULT_DEVICE_REGISTRY, ArtworkUsage
 from iOpenPod.app.artwork_policy import (
     application_artwork_formats,
+    application_artwork_read_formats,
     application_artwork_root_value,
+    application_chapter_formats,
     application_cover_formats,
     rockbox_artwork,
 )
@@ -17,6 +23,8 @@ def test_non_cover_profiles_receive_one_iopenpod_display_layout() -> None:
     assert not mini.capabilities.artwork.supports_cover_art
     assert tuple(f.format_id for f in application_artwork_formats(mini)) == (1060,)
     assert tuple(f.format_id for f in application_cover_formats(mini)) == (1060,)
+    assert application_chapter_formats(mini) == ()
+    assert application_artwork_read_formats(mini) == application_cover_formats(mini)
     assert application_artwork_root_value(mini) == 2
 
 
@@ -31,6 +39,52 @@ def test_native_cover_profiles_keep_their_declared_layouts_and_root() -> None:
         1068,
     )
     assert application_artwork_root_value(classic) == 6
+
+
+def test_classic_chapter_layouts_are_separate_writes_and_combined_reads() -> None:
+    classic = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
+    assert classic is not None
+    assert tuple(f.format_id for f in application_cover_formats(classic)) == (
+        1055,
+        1060,
+        1061,
+        1068,
+    )
+    assert tuple(f.format_id for f in application_chapter_formats(classic)) == (
+        1055,
+        1029,
+    )
+    assert tuple(f.format_id for f in application_artwork_read_formats(classic)) == (
+        1055,
+        1060,
+        1061,
+        1068,
+        1029,
+    )
+    chapter = application_chapter_formats(classic)[1]
+    assert (chapter.width, chapter.height, chapter.row_bytes) == (200, 200, 400)
+
+
+def test_read_layouts_reject_conflicting_cover_and_chapter_definitions() -> None:
+    classic = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
+    assert classic is not None
+    original = classic.capabilities.artwork
+    profile = replace(
+        classic,
+        capabilities=replace(
+            classic.capabilities,
+            artwork=replace(
+                original,
+                chapter_formats=(
+                    replace(
+                        original.cover_formats[0], width=100, usage=ArtworkUsage.CHAPTER
+                    ),
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="layouts conflict"):
+        application_artwork_read_formats(profile)
 
 
 def test_non_cover_profiles_get_a_compact_grayscale_rockbox_cover() -> None:

@@ -81,7 +81,11 @@ def build_context(
         settings,
         APPLICATION,
     )
-    artwork_controller = ArtworkController(device_coordinator, APPLICATION)
+    artwork_controller = ArtworkController(
+        device_coordinator,
+        APPLICATION,
+        display_times=device_coordinator.artwork_display_times,
+    )
     photo_controller = PhotoController(device_coordinator, APPLICATION)
     backup_controller = BackupController(
         BackupService(device_coordinator),

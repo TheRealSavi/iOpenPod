@@ -113,6 +113,7 @@ normal lowercase conventions while retaining the same domain term.
 | **Photo** | One semantic image record in a Photo Library, including dates, rating, and its retained full-resolution or thumbnail representations. | artwork, cover |
 | **Photo Album** | One named, ordered collection of Photo identities with slideshow preferences. The Master Photo Album is firmware-significant and is not an ordinary user album. | Playlist, Artwork album |
 | **Artwork Index** | The immutable iPodDB projection that maps ArtworkDB image IDs and Track database IDs to bounded iTHMB locations. | artwork cache, image dict |
+| **Artwork Display Time** | A playback position in milliseconds at which an artwork image's representations become eligible for display. Time zero supplies the initial image; firmware support and special retained values are separate concerns. | chapter number, frame duration |
 | **iTHMB** | A device-specific image file containing packed cover or Photo pixels referenced by ArtworkDB or PhotosDB byte ranges. | thumbnail database, album-art file |
 | **Chunk** | A tagged binary record used within an iPod database format. | block, object, node |
 | **Chunk Definition** | The immutable, header-typed binary contract for one known Chunk, including its Header Marker, extent, body kind, header sizes, fields, and allowed children. | chunk metadata, header map, parser config |

@@ -158,6 +158,16 @@ and reads through Storage, then calls `read.decode(payload)` to obtain RGB888
 pixels. Neither the snapshot nor the GUI receives an Artwork Index or iTHMB layout.
 No cover pixels are read or decoded during snapshot construction.
 
+`source.artwork_display_times(artwork_id)` lists retained Artwork Display Times
+without reading pixels. Passing `display_time_ms` to `artwork_read` selects that
+exact group; a missing group returns no read instead of silently selecting another
+image. Omitting it requests the ordinary cover. Each time group can contain
+multiple device representations, which remain selected by the same resolution
+policy. Application read layouts include configured chapter formats as well as
+ordinary covers. Application request and cache identities include the time selector.
+Special retained values remain inspectable without asserting their playback
+meaning. See [ADR-0138](adr/0138-edit-artwork-by-display-time.md).
+
 Photo thumbnails use the parallel
 `source.photo_read(photo_id, formats, target_px)` contract. The Application Layer
 supplies typed Photo formats from the selected Device Profile, validates that the

@@ -210,3 +210,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0135: Pack Photos into bounded shared shards](0135-pack-photos-into-bounded-shared-shards.md)
 - [ADR-0136: Allow network filesystems as Host media sources](0136-allow-network-filesystems-as-host-media-sources.md)
 - [ADR-0137: Warn and default unrecognized album collation](0137-warn-and-default-unrecognized-album-collation.md)
+- [ADR-0138: Edit artwork by display time](0138-edit-artwork-by-display-time.md)
+- [ADR-0139: Complete timed artwork formats and counts](0139-complete-timed-artwork-formats-and-counts.md)

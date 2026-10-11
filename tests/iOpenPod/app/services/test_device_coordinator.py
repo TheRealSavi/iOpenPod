@@ -1711,6 +1711,122 @@ def test_artworkdb_links_tracks_and_ithmb_is_decoded_only_when_requested(
     coordinator.close()
 
 
+def test_timed_artwork_metadata_is_lazy_and_reads_select_exact_groups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    _install_artwork(root, timed=True)
+    platform.add_volume(root, label="Classic")
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+
+        def unexpected_read(*_args: object, **_kwargs: object) -> FileRangeSnapshot:
+            pytest.fail("Listing display times must not read iTHMB pixels")
+
+        with monkeypatch.context() as patched:
+            patched.setattr(FilesystemSession, "read_range_snapshot", unexpected_read)
+            assert coordinator.artwork_display_times(64) == (0, 10000)
+            assert coordinator.artwork_display_times(999) == ()
+
+        default = coordinator.load_artwork(ArtworkRequest(64, 44))
+        initial = coordinator.load_artwork(ArtworkRequest(64, 44, display_time_ms=0))
+        later = coordinator.load_artwork(ArtworkRequest(64, 44, display_time_ms=10000))
+        missing = coordinator.load_artwork(ArtworkRequest(64, 44, display_time_ms=5000))
+        assert default is not None and initial is not None and later is not None
+        assert default.rgb888 == initial.rgb888 == bytes((255, 0, 0)) * (56 * 56)
+        assert later.rgb888 == bytes((0, 0, 255)) * (56 * 56)
+        assert initial.cache_key != later.cache_key
+        assert later.display_time_ms == 10000
+        assert missing is None
+    finally:
+        coordinator.close()
+    assert coordinator.artwork_display_times(64) == ()
+
+
+def test_classic_chapter_only_rendition_can_be_previewed_at_its_exact_time(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    directory = root / "iPod_Control/Artwork"
+    directory.mkdir()
+    thumbnail = new_artwork_chunk(
+        MHNI_DEFINITION,
+        MhniHeader(
+            format_id=1029,
+            image_size=80000,
+            image_size_2=80000,
+            image_width=200,
+            image_height=200,
+            unk_mhni_0x24=15000,
+        ),
+        children=(
+            new_artwork_string_mhod(ArtworkMhodType.FILE_NAME, ":F1029_1.ithmb"),
+        ),
+    )
+    item = new_artwork_chunk(
+        MHII_DEFINITION,
+        MhiiHeader(image_id=64, db_track_id_ref=0x0102030405060708),
+        children=(new_container_mhod(ArtworkMhodType.THUMBNAIL_IMAGE, thumbnail),),
+    )
+    (directory / "ArtworkDB").write_bytes(
+        write_ArtworkDB(
+            new_ArtworkDB(next_mhii_id=65, unk_mhfd_0x10=6, image_items=(item,))
+        )
+    )
+    (directory / "F1029_1.ithmb").write_bytes(b"\x1f\xf8" * 40000)
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+        result = coordinator.load_artwork(
+            ArtworkRequest(64, 200, display_time_ms=15000)
+        )
+        assert result is not None
+        assert result.format_id == 1029
+        assert result.display_time_ms == 15000
+        assert (result.width, result.height) == (200, 200)
+        assert result.rgb888 == bytes((255, 0, 255)) * 40000
+        assert (
+            coordinator.load_artwork(ArtworkRequest(64, 200, display_time_ms=0)) is None
+        )
+    finally:
+        coordinator.close()
+
+
+def test_classic_save_target_keeps_cover_and_chapter_layouts_separate(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        active = coordinator.select_device(
+            coordinator.discover_devices().candidates[0].id
+        )
+        review = coordinator.prepare_library(
+            LibraryPreparationRequest(active.library, active, 1, 1),
+            lambda _: None,
+            Event(),
+        )
+        assert review.plan is not None, review.result.issues
+        assert tuple(f.format_id for f in review.plan.target.cover_formats) == (
+            1055,
+            1060,
+            1061,
+            1068,
+        )
+        assert tuple(f.format_id for f in review.plan.target.chapter_formats) == (
+            1055,
+            1029,
+        )
+    finally:
+        coordinator.close()
+
+
 def test_photosdb_is_projected_into_the_active_library(tmp_path: Path) -> None:
     platform = VirtualStoragePlatform()
     root = _ipod_volume(tmp_path / "classic", model_number="MB565")
@@ -2314,7 +2430,7 @@ def _database_with_track(*, track_header_size: int = 0x9C) -> bytes:
     return _database(_dataset(1, _list_chunk(b"mhlt", track)))
 
 
-def _install_artwork(root: Path) -> None:
+def _install_artwork(root: Path, *, timed: bool = False) -> None:
     artwork_directory = root / "iPod_Control" / "Artwork"
     artwork_directory.mkdir(parents=True)
     image_name = new_artwork_chunk(
@@ -2366,6 +2482,22 @@ def _install_artwork(root: Path) -> None:
             ),
         ),
     )
+    if timed:
+        later = replace(
+            image_name,
+            header=replace(
+                image_name.header,
+                unk_mhni_0x24=10000,
+                ithmb_offset=6 + 56 * 56 * 2,
+            ),
+        )
+        image_item = replace(
+            image_item,
+            children=(
+                *image_item.children,
+                new_container_mhod(ArtworkMhodType.THUMBNAIL_IMAGE, later),
+            ),
+        )
     (artwork_directory / "ArtworkDB").write_bytes(
         write_ArtworkDB(
             new_ArtworkDB(
@@ -2377,7 +2509,7 @@ def _install_artwork(root: Path) -> None:
     )
     red_rgb565 = b"\x00\xf8" * (56 * 56)
     (artwork_directory / "F1061_1.ithmb").write_bytes(
-        b"prefix" + red_rgb565 + b"suffix"
+        b"prefix" + red_rgb565 + (b"\x1f\x00" * (56 * 56) if timed else b"") + b"suffix"
     )
     blue_rgb565 = b"\x1f\x00" * (320 * 320)
     (artwork_directory / "F1060_1.ithmb").write_bytes(b"head" + blue_rgb565 + b"tail")

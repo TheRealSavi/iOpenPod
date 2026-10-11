@@ -46,6 +46,15 @@ See [Device Profiles](device-profiles.md) and the
 | [Issue evidence](issue-evidence.md) | The starting report, relevant closed issues, exact comment links, confounders, and limits of reported success. |
 | [Validation and open questions](validation-and-open-questions.md) | Confidence rules, F1061 competing hypotheses, reproducible sample collection, controlled experiments, and unresolved areas. |
 | [Repository implications](repository-implications.md) | Present implementation versus research, existing ADRs, documentation disagreements, and questions for a later implementation decision. |
+| [iPod emulator assessment](ipod-emulator-assessment.md) | Apple firmware execution, hardware approximations, model coverage, and a proposed controlled artwork experiment. |
+| [Local iPod emulator experiments](ipod-emulator-experiments.md) | Local installation, exact inputs and boot paths, controlled artwork fixtures, observed outcomes, and their limits. |
+| [Database field discovery](database-field-discovery.md) | Using firmware execution to investigate unknown iTunesDB and ArtworkDB fields, tracing limitations, and a controlled research workflow. |
+| [Database field experiments](database-field-experiments.md) | Controlled iTunesDB/ArtworkDB field interventions, instrument validation, observed effects, and unresolved semantic questions. |
+| [Artwork timing experiments](artwork-timing-experiments.md) | Follow-up tests of timed representation groups, playback-position selection, chapter metadata, and repeatability. |
+| [Artwork count and Classic timing](artwork-count-and-classic-timing.md) | Count-one producer and emulator evidence, separate chapter formats, and limits of Classic/ALAC support claims. |
+| [Classic timed-artwork readback](classic-timed-artwork-readback.md) | Read-only inspection after a reported 15-second switching failure, persisted groups, codec evidence, and unresolved playback requirements. |
+| [Classic chapter encoding](classic-chapter-encoding.md) | Follow-up failure after F1029/count-two publication, captured chapter records, a writer defect, and remaining physical tests. |
+| [Classic emulator feasibility](classic-emulator-feasibility.md) | Video versus Classic hardware, the scope of an emulator port, and an existing QEMU Classic implementation with playback limitations. |
 
 ## How to interpret evidence
 

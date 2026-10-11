@@ -973,10 +973,12 @@ def test_artwork_editor_keeps_text_and_actions_outside_the_preview() -> None:
             return top, top + widget.height()
 
         preview_top, preview_bottom = vertical_bounds(preview)
-        status_top, status_bottom = vertical_bounds(status)
+        _status_top, status_bottom = vertical_bounds(status)
         choose_top, _choose_bottom = vertical_bounds(choose)
         assert preview_top < preview_bottom
-        assert status_top - preview_bottom >= LAYOUT.space_xs
+        preview_right = preview.mapTo(dialog, QPoint()).x() + preview.width()
+        assert status.mapTo(dialog, QPoint()).x() - preview_right >= LAYOUT.space_xs
+        assert choose.mapTo(dialog, QPoint()).x() - preview_right >= LAYOUT.space_xs
         assert choose_top - status_bottom >= LAYOUT.space_sm
     finally:
         dialog.close()

@@ -37,6 +37,30 @@ def application_artwork_formats(
 def application_cover_formats(profile: DeviceProfile) -> tuple[CoverFormat, ...]:
     """Translate application artwork layouts into iPodDB write layouts."""
 
+    return _library_formats(application_artwork_formats(profile))
+
+
+def application_chapter_formats(profile: DeviceProfile) -> tuple[CoverFormat, ...]:
+    """Translate separately declared chapter layouts for explicit timed edits."""
+
+    return _library_formats(profile.capabilities.artwork.chapter_formats)
+
+
+def application_artwork_read_formats(profile: DeviceProfile) -> tuple[CoverFormat, ...]:
+    """Make both known cover and chapter renditions available for decoding."""
+
+    formats: dict[int, CoverFormat] = {}
+    for format_ in (
+        *application_cover_formats(profile),
+        *application_chapter_formats(profile),
+    ):
+        existing = formats.setdefault(format_.format_id, format_)
+        if existing != format_:
+            raise ValueError("Cover and chapter layouts conflict for an artwork format")
+    return tuple(formats.values())
+
+
+def _library_formats(formats: tuple[ArtworkFormat, ...]) -> tuple[CoverFormat, ...]:
     return tuple(
         CoverFormat(
             artwork_format.format_id,
@@ -45,7 +69,7 @@ def application_cover_formats(profile: DeviceProfile) -> tuple[CoverFormat, ...]
             artwork_format.row_bytes,
             CoverPixelFormat(artwork_format.pixel_format.value),
         )
-        for artwork_format in application_artwork_formats(profile)
+        for artwork_format in formats
     )
 
 
@@ -92,7 +116,9 @@ __all__ = [
     "APPLICATION_ARTWORK_ROOT_VALUE",
     "ROCKBOX_NON_NATIVE_ARTWORK_PX",
     "application_artwork_formats",
+    "application_artwork_read_formats",
     "application_artwork_root_value",
+    "application_chapter_formats",
     "application_cover_formats",
     "rockbox_artwork",
     "rockbox_tag_policy",

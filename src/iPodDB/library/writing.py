@@ -70,6 +70,7 @@ class WriteTarget:
     hash72_material: Hash72Material | None = None
     sqlite_postprocess_commands: tuple[str, ...] = ()
     cover_formats: tuple[CoverFormat, ...] = ()
+    chapter_formats: tuple[CoverFormat, ...] = field(default=(), kw_only=True)
     max_artwork_file_bytes: int = 256 * 1024 * 1024
     # The meaning of this root field is not established across all models.
     # The application supplies the identified Device Profile's creation policy.
@@ -183,8 +184,69 @@ class PreparedMedia:
 
 @dataclass(frozen=True, slots=True)
 class ArtworkAsset:
+    """Refresh the ordinary zero-time cover, preserving retained later groups."""
+
     artwork_id: int
     pixels: ArtworkPixels
+
+
+@dataclass(frozen=True, slots=True)
+class ArtworkGroupReference:
+    """An exact retained ArtworkDB group, without loading or re-encoding pixels."""
+
+    artwork_id: int
+    display_time_ms: int
+
+    def __post_init__(self) -> None:
+        if self.artwork_id <= 0:
+            raise ValueError("An artwork group reference requires a retained image ID")
+        _validate_display_time(self.display_time_ms)
+
+
+@dataclass(frozen=True, slots=True)
+class TimedArtworkFrame:
+    """One authored display time and either new pixels or a retained group."""
+
+    display_time_ms: int
+    source: ArtworkPixels | ArtworkGroupReference
+
+    def __post_init__(self) -> None:
+        _validate_display_time(self.display_time_ms)
+        special = self.display_time_ms == 0xFFFFFFFF or (
+            isinstance(self.source, ArtworkGroupReference)
+            and self.source.display_time_ms == 0xFFFFFFFF
+        )
+        if special and not (
+            isinstance(self.source, ArtworkGroupReference)
+            and self.display_time_ms == self.source.display_time_ms == 0xFFFFFFFF
+        ):
+            raise ValueError("The special artwork time can only be retained unchanged")
+
+
+@dataclass(frozen=True, slots=True)
+class TimedArtworkAsset:
+    """A complete desired sequence; preparation writes groups in ascending time."""
+
+    artwork_id: int
+    frames: tuple[TimedArtworkFrame, ...]
+
+    def __post_init__(self) -> None:
+        times = tuple(frame.display_time_ms for frame in self.frames)
+        if 0 not in times or len(times) != len(set(times)):
+            raise ValueError(
+                "Timed artwork requires unique times and a zero-time cover"
+            )
+
+
+def _validate_display_time(value: object) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 0 <= value <= 0xFFFFFFFF
+    ):
+        raise ValueError(
+            "Artwork display time must be an unsigned 32-bit millisecond value"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,7 +286,7 @@ class WriteResources:
     """
 
     media: tuple[PreparedMedia, ...] = ()
-    artwork: tuple[ArtworkAsset, ...] = ()
+    artwork: tuple[ArtworkAsset | TimedArtworkAsset, ...] = ()
     files: tuple[SourceFile, ...] = ()
     file_inventory: tuple[FileDependency, ...] | None = None
     # False means no unhandled positional sidecars remain: the caller captured

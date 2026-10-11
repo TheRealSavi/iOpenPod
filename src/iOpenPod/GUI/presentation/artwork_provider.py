@@ -117,13 +117,17 @@ class ArtworkPixmapProvider(QObject):
         artwork_id: int,
         logical_size: int,
         device_pixel_ratio: float,
+        *,
+        display_time_ms: int | None = None,
     ) -> QPixmap | None:
         """Return a display pixmap now, queuing a decode on a cache miss."""
 
         if self._closed or artwork_id <= 0 or logical_size <= 0:
             return None
         target_px = max(1, ceil(logical_size * max(1.0, device_pixel_ratio)))
-        image = self._controller.request(artwork_id, target_px)
+        image = self._controller.request(
+            artwork_id, target_px, display_time_ms=display_time_ms
+        )
         if image is None:
             return None
         return self._pixmap_for(image)
@@ -133,16 +137,25 @@ class ArtworkPixmapProvider(QObject):
         artwork_id: int,
         logical_size: int,
         device_pixel_ratio: float,
+        *,
+        display_time_ms: int | None = None,
     ) -> ArtworkPixels | None:
         """Return exact decoded pixels now, queuing a decode on a cache miss."""
 
         if self._closed or artwork_id <= 0 or logical_size <= 0:
             return None
         target_px = max(1, ceil(logical_size * max(1.0, device_pixel_ratio)))
-        image = self._controller.request(artwork_id, target_px)
+        image = self._controller.request(
+            artwork_id, target_px, display_time_ms=display_time_ms
+        )
         if image is None:
             return None
         return ArtworkPixels(image.width, image.height, image.rgb888)
+
+    def display_times(self, artwork_id: int) -> tuple[int, ...]:
+        """Return available frame times without reading image payloads."""
+
+        return () if self._closed else self._controller.display_times(artwork_id)
 
     def dominant_color(
         self,
@@ -187,7 +200,10 @@ class ArtworkPixmapProvider(QObject):
         if self._closed or not isinstance(value, ArtworkImage):
             return
         self._pixmap_for(value)
-        if value.artwork_id in self._requested_color_ids:
+        if (
+            value.display_time_ms is None
+            and value.artwork_id in self._requested_color_ids
+        ):
             self._schedule_color(value)
         self.artworkChanged.emit(value.artwork_id)
 
@@ -195,7 +211,8 @@ class ArtworkPixmapProvider(QObject):
     def _artwork_unavailable(self, artwork_id: object) -> None:
         if not isinstance(artwork_id, int):
             return
-        self._requested_color_ids.pop(artwork_id, None)
+        # The ID-only signal may describe a timed frame. Keep bounded ordinary
+        # cover color interest until its own image arrives or caches are cleared.
         self.artworkChanged.emit(artwork_id)
 
     @Slot(int)

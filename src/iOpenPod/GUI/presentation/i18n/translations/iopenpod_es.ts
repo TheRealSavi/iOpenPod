@@ -38,6 +38,14 @@
         <translation>Elegir portada…</translation>
     </message>
     <message>
+        <source>Add Image…</source>
+        <translation>Añadir imagen…</translation>
+    </message>
+    <message>
+        <source>Remove Entry</source>
+        <translation>Eliminar entrada</translation>
+    </message>
+    <message>
         <source>Clear Artwork</source>
         <translation>Quitar portada</translation>
     </message>
@@ -66,6 +74,26 @@
         <translation>Leyendo y preparando la imagen seleccionada en el equipo.</translation>
     </message>
     <message>
+        <source>Each artwork entry needs a different display time.</source>
+        <translation>Cada entrada de imagen necesita un tiempo de visualización diferente.</translation>
+    </message>
+    <message>
+        <source>Artwork entries</source>
+        <translation>Entradas de imágenes</translation>
+    </message>
+    <message>
+        <source>Preserved special entry</source>
+        <translation>Entrada especial conservada</translation>
+    </message>
+    <message>
+        <source>From %1 seconds</source>
+        <translation>Desde %1 segundos</translation>
+    </message>
+    <message>
+        <source>Choose an image or consolidate an existing sequence for all selected Tracks.</source>
+        <translation>Elija una imagen o unifique una secuencia existente para todas las pistas seleccionadas.</translation>
+    </message>
+    <message>
         <source>Artwork preview unavailable</source>
         <translation>Vista previa de la portada no disponible</translation>
     </message>
@@ -74,8 +102,24 @@
         <translation>La portada seleccionada se asignará a todas las pistas seleccionadas.</translation>
     </message>
     <message>
+        <source>Select an entry to view or edit its image and display time.</source>
+        <translation>Seleccione una entrada para ver o editar su imagen y su tiempo de visualización.</translation>
+    </message>
+    <message>
         <source>No artwork</source>
         <translation>Sin portada</translation>
+    </message>
+    <message>
+        <source>Display from (seconds)</source>
+        <translation>Mostrar desde (segundos)</translation>
+    </message>
+    <message>
+        <source>Each image displays from its start time until the next image. Keep an image at zero seconds. Playback support varies by iPod and firmware. Changes apply to every selected Track.</source>
+        <translation>Cada imagen se muestra desde su tiempo de inicio hasta la siguiente imagen. Mantenga una imagen en el segundo cero. La compatibilidad durante la reproducción depende del iPod y del firmware. Los cambios se aplican a todas las pistas seleccionadas.</translation>
+    </message>
+    <message>
+        <source>Replace Image…</source>
+        <translation>Reemplazar imagen…</translation>
     </message>
     <message>
         <source>Artwork will be cleared when applied.</source>
@@ -83,7 +127,7 @@
     </message>
     <message>
         <source>New crop — %1 x %2 px</source>
-        <translation>Nuevo recorte — %1 x %2 px</translation>
+        <translation type="vanished">Nuevo recorte — %1 x %2 px</translation>
     </message>
     <message>
         <source>Current artwork shared by all selected Tracks.</source>
@@ -95,7 +139,7 @@
     </message>
     <message>
         <source>Choose one image to assign it to every selected Track.</source>
-        <translation>Elige una imagen para asignarla a todas las pistas seleccionadas.</translation>
+        <translation type="vanished">Elige una imagen para asignarla a todas las pistas seleccionadas.</translation>
     </message>
     <message>
         <source>The selected Track has no assigned artwork.</source>
@@ -103,11 +147,11 @@
     </message>
     <message>
         <source>Artwork — %1 x %2 px</source>
-        <translation>Portada — %1 x %2 px</translation>
+        <translation type="vanished">Portada — %1 x %2 px</translation>
     </message>
     <message>
         <source>Current iPod artwork • reference %1</source>
-        <translation>Portada actual del iPod — referencia %1</translation>
+        <translation type="vanished">Portada actual del iPod — referencia %1</translation>
     </message>
 </context>
 <context>
@@ -877,6 +921,10 @@
 </context>
 <context>
     <name>ConsolidateArtworkDialog</name>
+    <message>
+        <source>Choose one artwork sequence to apply to every selected Track. Sequences with matching cover images remain separate.</source>
+        <translation>Elija una secuencia de imágenes para todas las pistas seleccionadas. Las secuencias con portadas coincidentes permanecen separadas.</translation>
+    </message>
     <message>
         <source>Choose one of the selected covers to assign to every selected Track. Exactly identical images appear only once.</source>
         <translation>Elige una de las portadas seleccionadas para asignarla a todas las pistas seleccionadas. Las imágenes idénticas aparecen una sola vez.</translation>
@@ -1673,6 +1721,10 @@
         <translation>Mover a recuperación</translation>
     </message>
     <message>
+        <source>Delete permanently</source>
+        <translation>Eliminar permanentemente</translation>
+    </message>
+    <message>
         <source>Recovery copy</source>
         <translation>Copia de recuperación</translation>
     </message>
@@ -1695,6 +1747,18 @@
     <message>
         <source>Delete</source>
         <translation>Eliminar</translation>
+    </message>
+    <message>
+        <source>Update tags</source>
+        <translation>Actualizar etiquetas</translation>
+    </message>
+    <message>
+        <source>Replace</source>
+        <translation>Reemplazar</translation>
+    </message>
+    <message>
+        <source>Repair</source>
+        <translation>Reparar</translation>
     </message>
     <message>
         <source>{action} · {subject}</source>
@@ -1731,6 +1795,14 @@
     <message>
         <source>Artwork</source>
         <translation>Portada</translation>
+    </message>
+    <message>
+        <source>ArtworkDB</source>
+        <translation>ArtworkDB</translation>
+    </message>
+    <message>
+        <source>PhotosDB</source>
+        <translation>PhotosDB</translation>
     </message>
     <message>
         <source>Podcast</source>
@@ -2384,7 +2456,11 @@
     </message>
     <message>
         <source>Choose, crop, replace, or clear the Track cover image</source>
-        <translation>Elegir, recortar, reemplazar o quitar la portada de la pista</translation>
+        <translation type="vanished">Elegir, recortar, reemplazar o quitar la portada de la pista</translation>
+    </message>
+    <message>
+        <source>View artwork, crop images, and choose when each image displays</source>
+        <translation>Ver ilustraciones, recortar imágenes y elegir cuándo se muestra cada imagen</translation>
     </message>
     <message>
         <source>Read-only values retained with the selected Track data</source>
@@ -2505,8 +2581,12 @@
         <translation>Portada modificada</translation>
     </message>
     <message>
+        <source>artwork cover image crop display time sequence</source>
+        <translation>ilustración portada imagen recorte tiempo visualización secuencia</translation>
+    </message>
+    <message>
         <source>artwork cover image crop</source>
-        <translation>recorte de la imagen de portada</translation>
+        <translation type="vanished">recorte de la imagen de portada</translation>
     </message>
     <message>
         <source>Wait for the selected artwork to finish loading.</source>
@@ -7892,7 +7972,7 @@ Playlists: %3</translation>
 {detail}</translation>
     </message>
     <message>
-        <source>Correct this Episode's metadata or exclude it from the next Sync.</source>
+        <source>Correct this Episode&apos;s metadata or exclude it from the next Sync.</source>
         <translation>Corrige los metadatos de este episodio o exclúyelo de la próxima sincronización.</translation>
     </message>
     <message>
@@ -7969,7 +8049,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A new Photo file collides with another captured resource.</source>
-        <translation>Un nuevo archivo de foto entra en conflicto con otro recurso capturado.</translation>
+        <translation type="vanished">Un nuevo archivo de foto entra en conflicto con otro recurso capturado.</translation>
     </message>
     <message>
         <source>A new Playlist has inconsistent extended identity or timestamp fields.</source>
@@ -8076,6 +8156,10 @@ Playlists: %3</translation>
         <translation>Un episodio no puede añadirse y quitarse en la misma sincronización.</translation>
     </message>
     <message>
+        <source>An artwork sequence cannot also assign a cover.</source>
+        <translation>Una secuencia de imágenes no puede asignar también una portada independiente.</translation>
+    </message>
+    <message>
         <source>An imported destination is missing or already used in the Library.</source>
         <translation>Falta un destino importado o ya se usa en la biblioteca.</translation>
     </message>
@@ -8090,6 +8174,14 @@ Playlists: %3</translation>
     <message>
         <source>An unchanged review must retain the existing Library.</source>
         <translation>Una revisión sin cambios debe conservar la biblioteca existente.</translation>
+    </message>
+    <message>
+        <source>An unreadable old Photo thumbnail file will be kept while replacement thumbnails are published.</source>
+        <translation>Se conservará un archivo antiguo de miniaturas de fotos ilegible mientras se guardan las miniaturas de reemplazo.</translation>
+    </message>
+    <message>
+        <source>An unrecognized old Photo file reference will be left untouched while replacement files are published.</source>
+        <translation>Una referencia antigua a un archivo de foto no reconocida permanecerá intacta mientras se guardan los archivos de reemplazo.</translation>
     </message>
     <message>
         <source>An unrelated firmware Playlist changed.</source>
@@ -8422,6 +8514,10 @@ Playlists: %3</translation>
     <message>
         <source>Daylight saving switch</source>
         <translation>Cambio al horario de verano</translation>
+    </message>
+    <message>
+        <source>Deleting obsolete Track files.</source>
+        <translation>Eliminando archivos de pistas obsoletos.</translation>
     </message>
     <message>
         <source>Derive firmware membership, flags, or representable values from the requested edit.</source>
@@ -8988,6 +9084,10 @@ Playlists: %3</translation>
         <translation>Archivos de biblioteca preparados: {completed} de {total}</translation>
     </message>
     <message>
+        <source>Prepared Photo representations overlap in a shared file.</source>
+        <translation>Las representaciones de fotos preparadas se superponen en un archivo compartido.</translation>
+    </message>
+    <message>
         <source>Prepared Photos do not match the desired Photo Library.</source>
         <translation>Las fotos preparadas no coinciden con la biblioteca de fotos deseada.</translation>
     </message>
@@ -9404,6 +9504,10 @@ Playlists: %3</translation>
         <translation>La configuración se verificó, pero no se confirmó la escritura completa en el dispositivo. Expulsa el iPod de forma segura antes de desconectarlo.</translation>
     </message>
     <message>
+        <source>Shared Photo files have conflicting captured content.</source>
+        <translation>Los archivos de fotos compartidos tienen contenido capturado incompatible.</translation>
+    </message>
+    <message>
         <source>Show artwork</source>
         <translation>Mostrar portadas</translation>
     </message>
@@ -9620,6 +9724,10 @@ Playlists: %3</translation>
         <translation>La biblioteca no se ha modificado, pero no se han podido guardar las coincidencias elegidas. Vuelve a analizar y revisa estas coincidencias antes de reintentar la sincronización.</translation>
     </message>
     <message>
+        <source>The Library was saved, but obsolete Track files remain because device durability or recovery cleanup could not be confirmed.</source>
+        <translation>Se guardó la mediateca, pero quedan archivos de pistas obsoletos porque no se pudo confirmar la escritura duradera en el dispositivo o la limpieza de recuperación.</translation>
+    </message>
+    <message>
         <source>The Master Playlist is not first in its dataset.</source>
         <translation>La lista principal no es la primera de su conjunto de datos.</translation>
     </message>
@@ -9642,6 +9750,10 @@ Playlists: %3</translation>
     <message>
         <source>The Photo Album position range is exhausted.</source>
         <translation>Se agotaron las posiciones disponibles para álbumes de fotos.</translation>
+    </message>
+    <message>
+        <source>The Photo Database image count was recovered from complete retained records and will be corrected when saved.</source>
+        <translation>Se recuperó el número de imágenes de la base de datos de fotos a partir de registros completos conservados y se corregirá al guardar.</translation>
     </message>
     <message>
         <source>The Photo changed after scanning. Rescan this source before retrying.</source>
@@ -9686,6 +9798,10 @@ Playlists: %3</translation>
     <message>
         <source>The artwork is not part of the Track selection.</source>
         <translation>La portada no forma parte de la selección de pistas.</translation>
+    </message>
+    <message>
+        <source>The artwork source is not part of the Track selection.</source>
+        <translation>La fuente de la imagen no forma parte de la selección de pistas.</translation>
     </message>
     <message>
         <source>The availability of one or more selected folders changed during Playlist review; unavailable files were omitted.</source>
@@ -9892,6 +10008,10 @@ Playlists: %3</translation>
         <translation>Las posiciones de reproducción conservadas superan la duración de esta pista. Las ediciones ajenas a ellas las conservan.</translation>
     </message>
     <message>
+        <source>The retained sort-36 album collation is unrecognized. A default album order was used; album browsing order may change.</source>
+        <translation>No se reconoce la ordenación de álbumes conservada de tipo 36. Se usó un orden de álbumes predeterminado; el orden al explorar álbumes puede cambiar.</translation>
+    </message>
+    <message>
         <source>The retained source could not be serialized losslessly.</source>
         <translation>No se pudo serializar el origen conservado sin perder datos.</translation>
     </message>
@@ -9952,6 +10072,10 @@ Playlists: %3</translation>
         <translation>La ubicación de medios de la pista seleccionada está fuera de iPod_Control.</translation>
     </message>
     <message>
+        <source>The selected Tracks have different artwork sequences. Edit them separately or assign one complete sequence.</source>
+        <translation>Las pistas seleccionadas tienen secuencias de imágenes diferentes. Edítelas por separado o asigne una secuencia completa.</translation>
+    </message>
+    <message>
         <source>The selected folder could not be fully scanned: {error}</source>
         <translation>No se pudo analizar por completo la carpeta seleccionada: {error}</translation>
     </message>
@@ -9990,6 +10114,10 @@ Playlists: %3</translation>
     <message>
         <source>The symbolic link could not be followed: {error}</source>
         <translation>No se pudo seguir el enlace simbólico: {error}</translation>
+    </message>
+    <message>
+        <source>Track files were deleted, but the device flush could not be confirmed. Safely eject before unplugging.</source>
+        <translation>Se eliminaron los archivos de pistas, pero no se pudo confirmar el vaciado de escritura del dispositivo. Expúlselo de forma segura antes de desconectarlo.</translation>
     </message>
     <message>
         <source>Unknown source</source>
@@ -10442,6 +10570,10 @@ Playlists: %3</translation>
     <message>
         <source>No automatic installation channel is available for this operating system.</source>
         <translation>No hay ningún canal de instalación automática disponible para este sistema operativo.</translation>
+    </message>
+    <message>
+        <source>Permanent Track deletion requires ordinary Library save cleanup.</source>
+        <translation>La eliminación permanente de pistas requiere la limpieza habitual al guardar la mediateca.</translation>
     </message>
     <message>
         <source>Photo ratings use 0-100; dates must be supported integer Unix seconds.</source>

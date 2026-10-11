@@ -39,6 +39,7 @@ class IthmbLocation:
     height: int
     horizontal_padding: int = 0
     vertical_padding: int = 0
+    display_time_ms: int = 0
 
     def __post_init__(self) -> None:
         if self.format_id <= 0:
@@ -59,6 +60,7 @@ class ArtworkItem:
     db_track_id_ref: int
     source_image_size: int
     locations: tuple[IthmbLocation, ...]
+    display_times: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +121,15 @@ def build_artwork_index(
                 db_track_id_ref=header.db_track_id_ref,
                 source_image_size=header.source_image_size,
                 locations=tuple(locations),
+                display_times=tuple(
+                    sorted(
+                        {
+                            child.payload.child.header.unk_mhni_0x24
+                            for child in selection.chunk.children
+                            if isinstance(child.payload, MhodContainerPayload)
+                        }
+                    )
+                ),
             )
         )
     return ArtworkIndex(tuple(items))
@@ -154,6 +165,7 @@ def _location_from_container(
         height=header.image_height,
         horizontal_padding=header.horizontal_padding,
         vertical_padding=header.vertical_padding,
+        display_time_ms=header.unk_mhni_0x24,
     )
 
 

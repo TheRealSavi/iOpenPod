@@ -230,6 +230,9 @@ class LibraryReviewDialog(QDialog):
             "add": self.tr("Add"),
             "edit": self.tr("Edit"),
             "delete": self.tr("Delete"),
+            "retag": self.tr("Update tags"),
+            "replace": self.tr("Replace"),
+            "repair": self.tr("Repair"),
         }
         return self.tr("{action} · {subject}").format(
             action=actions[change.action],
@@ -246,6 +249,8 @@ class LibraryReviewDialog(QDialog):
             "photo_album": self.tr("Photo Album"),
             "photos": self.tr("Photos"),
             "artwork": self.tr("Artwork"),
+            "artwork_database": self.tr("ArtworkDB"),
+            "photos_database": self.tr("PhotosDB"),
             "podcast": self.tr("Podcast"),
         }.get(subject, subject)
 

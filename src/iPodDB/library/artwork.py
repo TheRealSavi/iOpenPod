@@ -58,15 +58,22 @@ def select_artwork(
     item: ArtworkItem,
     formats: tuple[CoverFormat, ...],
     target_px: int,
+    *,
+    display_time_ms: int | None = None,
 ) -> ArtworkRead | None:
     by_id = {cover.format_id: cover for cover in formats}
     candidates = tuple(
         (location, by_id[location.format_id])
         for location in item.locations
         if location.format_id in by_id
+        and (display_time_ms is None or location.display_time_ms == display_time_ms)
     )
     if not candidates:
         return None
+    if display_time_ms is None:
+        zero = tuple(c for c in candidates if c[0].display_time_ms == 0)
+        if zero:
+            candidates = zero
 
     def score(candidate: tuple[IthmbLocation, CoverFormat]) -> tuple[int, int, int]:
         location, cover = candidate

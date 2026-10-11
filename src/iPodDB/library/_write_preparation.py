@@ -848,6 +848,8 @@ def _prepare(
             mappings,
             resources,
             artwork_files,
+            original_bytes.artwork,
+            artwork_bytes,
         )
         identity_maps = {
             kind: {
@@ -916,9 +918,9 @@ def _prepare(
                 artwork_item = checked_index.item_for_image_id(expected.artwork_id)
                 metadata = replace(
                     metadata,
-                    artwork_count=int(
-                        artwork_item is not None and bool(artwork_item.locations)
-                    ),
+                    artwork_count=len(artwork_item.display_times)
+                    if artwork_item is not None
+                    else 0,
                 )
             expected = replace(expected, metadata=metadata)
             if actual != expected:

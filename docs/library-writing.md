@@ -494,13 +494,48 @@ support direct references. Otherwise, each Track receives a distinct image recor
 and reverse Track link while sharing immutable thumbnail ranges. Per-Track artwork
 mappings carry `IdentityMapping.track_id`.
 
-A new single-cover assignment records MHIT artwork count one, independently of
-the number of device representations. Valid direct Track links take precedence
-over legacy reverse ownership when projecting the Library.
+`TimedArtworkAsset` supplies an explicit complete artwork sequence. Its
+`TimedArtworkFrame` entries pair a millisecond display time with either fresh
+`ArtworkPixels` or an `ArtworkGroupReference` to a retained image ID and source
+time. References retain original image ranges and representation bytes; the GUI
+does not need to load every image to preserve it. Authored sequences require
+unique times and an initial zero-time entry. New pixels produce the union of
+target cover and chapter formats at their time, and preparation writes groups in
+ascending time order. Identical format IDs/layouts are encoded once. Retained
+ordinary groups acquire missing target formats from the largest decodable captured
+representation while preserving every existing wrapper and image range. The
+special retained group is not augmented. `WriteTarget.chapter_formats` is supplied
+separately from `cover_formats`; an empty chapter list retains the cover-only set.
+An existing `0xFFFFFFFF` group can be retained and viewed, but its meaning is not
+invented. New pixel entries cannot use that value, and references cannot be
+retimed to or from it.
+
+Ordinary `ArtworkAsset` cover replacement updates time zero while preserving later
+retained groups. It also refreshes known chapter representations already present
+at zero; a new ordinary cover does not acquire chapter formats. A shared cover
+replacement rejects conflicting retained later
+sequences; callers must supply an explicit complete sequence for that selection.
+Explicit timeline edits control additions, removal, or retiming;
+clearing the artwork relationship clears the whole sequence. Retained references
+still require valid source inventory and cannot justify discarding missing image
+bytes as though all groups had replacement pixels. Metadata Editor changes stay
+in the Library Draft until the normal reviewed save succeeds. Playback support
+depends on the iPod and firmware; these authoring rules do not establish universal
+device compatibility. See [ADR-0138](adr/0138-edit-artwork-by-display-time.md) and
+[ADR-0139](adr/0139-complete-timed-artwork-formats-and-counts.md).
+
+Changed artwork relationships record MHIT `artwork_count` as the number of distinct
+saved display-time groups, including a retained special group. A single cover
+records one, two image times record two, and removal records zero, independently
+of the number of device representations. Overflow of the native u16 field blocks
+preparation. This is the selected authoring policy, not a verified universal
+firmware requirement. Valid direct Track links take precedence over legacy reverse
+ownership when projecting the Library.
 
 `WriteResources.file_inventory` is a complete captured inventory for artwork file
 allocation. `SourceFile` supplies exact bytes and their fingerprint for an existing
-file being extended. A full shard can be retained without reading its bytes; a
+file being extended or used to generate missing timed representations. A full
+shard can otherwise be retained without reading its bytes; a
 partially full shard requires its verified prefix. Allocation uses only the
 `F<format>_<shard>.ithmb` policy, checks case-insensitive collisions, and never
 compacts, reuses holes, or deletes files. Changed file outputs include the complete

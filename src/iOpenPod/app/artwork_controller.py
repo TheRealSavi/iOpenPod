@@ -32,6 +32,7 @@ class _RequestKey:
     generation: int
     artwork_id: int
     target_px: int
+    display_time_ms: int | None
 
 
 class _ArtworkWorkerSignals(QObject):
@@ -83,6 +84,7 @@ class ArtworkController(QObject):
         *,
         cache_byte_limit: int = 64 * 1024 * 1024,
         max_pending: int = 32,
+        display_times: Callable[[int], tuple[int, ...]] | None = None,
     ) -> None:
         super().__init__(parent)
         if cache_byte_limit <= 0:
@@ -90,6 +92,7 @@ class ArtworkController(QObject):
         if max_pending <= 0:
             raise ValueError("Artwork pending-request limit must be positive")
         self._loader = loader
+        self._display_times = display_times
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(2)
         self._cache_byte_limit = cache_byte_limit
@@ -112,12 +115,32 @@ class ArtworkController(QObject):
     def pending_count(self) -> int:
         return len(self._pending)
 
-    def request(self, artwork_id: int, target_px: int) -> ArtworkImage | None:
+    def display_times(self, artwork_id: int) -> tuple[int, ...]:
+        """List retained time groups without loading any image pixels."""
+
+        if self._closed or artwork_id <= 0:
+            return ()
+        if self._display_times is None:
+            return (0,)
+        return self._display_times(artwork_id)
+
+    def request(
+        self,
+        artwork_id: int,
+        target_px: int,
+        *,
+        display_time_ms: int | None = None,
+    ) -> ArtworkImage | None:
         """Return cached pixels now or queue one non-blocking decode."""
 
         if self._closed or artwork_id <= 0 or target_px <= 0:
             return None
-        key = _RequestKey(self._generation, artwork_id, target_px)
+        request = ArtworkRequest(
+            artwork_id=artwork_id,
+            target_px=target_px,
+            display_time_ms=display_time_ms,
+        )
+        key = _RequestKey(self._generation, artwork_id, target_px, display_time_ms)
         cache_key = self._request_cache_keys.get(key)
         if cache_key is not None:
             image = self._images.get(cache_key)
@@ -132,7 +155,6 @@ class ArtworkController(QObject):
 
         self._next_token += 1
         token = self._next_token
-        request = ArtworkRequest(artwork_id=artwork_id, target_px=target_px)
         item = _ArtworkWork(
             token,
             key,

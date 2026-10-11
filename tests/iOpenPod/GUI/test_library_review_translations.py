@@ -1,5 +1,6 @@
 """Library review translates presentation labels while retaining record identities."""
 
+import pytest
 from PySide6.QtCore import QTranslator
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QLabel, QPlainTextEdit, QTreeWidget
@@ -42,6 +43,10 @@ class _ReviewTranslator(QTranslator):
             "Add": "Hinzufügen",
             "Edit": "Bearbeiten",
             "Delete": "Löschen",
+            "Update tags": "Tags aktualisieren",
+            "Replace": "Ersetzen",
+            "Repair": "Reparieren",
+            "Media": "Medien",
             "Photo Album": "Fotoalbum",
             "Playlist": "Wiedergabeliste",
             "{action} · {subject}": "{subject}: {action}",
@@ -49,6 +54,51 @@ class _ReviewTranslator(QTranslator):
             "Requested: {change} — {name} ({fields})": "Angefordert: {name} — {change} ({fields})",
             "Chunk {path} at {offset}": "Chunk {path} bei {offset}",
         }.get(source_text)
+
+
+@pytest.mark.parametrize(
+    ("subject", "action", "label"),
+    [
+        ("media", "retag", "Medien: Tags aktualisieren"),
+        ("media", "replace", "Medien: Ersetzen"),
+        ("artwork_database", "repair", "ArtworkDB: Reparieren"),
+        ("photos_database", "repair", "PhotosDB: Reparieren"),
+    ],
+)
+def test_review_renders_supported_actions_and_preserves_identity(
+    subject: str, action: str, label: str
+) -> None:
+    context = build_context()
+    translator = _ReviewTranslator()
+    assert APPLICATION.installTranslator(translator)
+    dialog = LibraryReviewDialog(context.library_write_controller)
+    try:
+        snapshot = LibrarySnapshot()
+        context.library_write_controller.review = LibraryReview(
+            LibraryWritePlan(
+                LibraryDraft("revision", snapshot),
+                WriteTarget(),
+                (LibraryChange(subject, 42, action, "My Track"),),
+                (),
+            ),
+            LibraryWriteResult(()),
+        )
+        dialog.refresh()
+        tree = dialog.findChild(QTreeWidget, "libraryReviewItems")
+        assert tree is not None
+        changes = tree.topLevelItem(0)
+        assert changes is not None
+        item = changes.child(0)
+        assert item is not None
+        assert (item.text(0), item.text(1)) == (label, "My Track")
+        navigated = QSignalSpy(dialog.recordRequested)
+        tree.itemDoubleClicked.emit(item, 0)
+        assert navigated.count() == 1
+        assert navigated.at(0) == [subject, 42]
+    finally:
+        dialog.close()
+        APPLICATION.removeTranslator(translator)
+        context.shutdown()
 
 
 def test_review_translates_changes_effects_and_details_without_changing_navigation() -> (

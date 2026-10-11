@@ -5,9 +5,13 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from iOpenPod.app.artwork_policy import application_cover_formats, rockbox_artwork
+from iOpenPod.app.artwork_policy import (
+    application_artwork_read_formats,
+    rockbox_artwork,
+)
 from iOpenPod.app.library_write import RockboxMediaUpdate
 from iOpenPod.app.sync_track_details import track_tag_values
+from iPodDB.library import ArtworkGroupReference, TimedArtworkAsset
 
 if TYPE_CHECKING:
     from iOpenPod.app.library_write import LibraryPreparationRequest
@@ -29,7 +33,7 @@ def with_rockbox_edits(
     explicit = {update.track_id for update in request.rockbox_media}
     incoming = {item.media.track_id for item in request.media}
     excluded = explicit | incoming | set(request.replace_media)
-    assets = {asset.artwork_id: asset.pixels for asset in request.artwork}
+    assets = {asset.artwork_id: asset for asset in request.artwork}
     embedded: dict[int, ArtworkPixels] = {}
     profile = request.source.profile
     updates = list(request.rockbox_media)
@@ -42,6 +46,29 @@ def with_rockbox_edits(
         ):
             continue
         artwork_changed = track.artwork_id != original.artwork_id
+        asset = assets.get(track.artwork_id)
+        cover_source = None
+        if asset is not None:
+            if isinstance(asset, TimedArtworkAsset):
+                cover = next(
+                    (frame for frame in asset.frames if frame.display_time_ms == 0),
+                    None,
+                )
+                if cover is None:
+                    raise ValueError(
+                        "An artwork sequence requires a cover at time zero."
+                    )
+                cover_source = cover.source
+            else:
+                cover_source = asset.pixels
+        if (
+            artwork_changed
+            and isinstance(cover_source, ArtworkGroupReference)
+            and cover_source.artwork_id == original.artwork_id
+            and cover_source.display_time_ms == 0
+        ):
+            # Changing later artwork does not change the file's embedded cover.
+            artwork_changed = False
         if not artwork_changed and track_tag_values(track) == track_tag_values(
             original
         ):
@@ -49,15 +76,24 @@ def with_rockbox_edits(
         pixels = None
         read = None
         if artwork_changed and track.artwork_id:
-            if track.artwork_id in assets:
-                if track.artwork_id not in embedded:
-                    embedded[track.artwork_id] = rockbox_artwork(
-                        profile, assets[track.artwork_id]
+            if isinstance(cover_source, ArtworkGroupReference):
+                read = source.artwork_read(
+                    cover_source.artwork_id,
+                    application_artwork_read_formats(profile),
+                    4096,
+                    display_time_ms=cover_source.display_time_ms,
+                )
+                if read is None:
+                    raise ValueError(
+                        "The selected artwork cannot be embedded in this Track."
                     )
+            elif cover_source is not None:
+                if track.artwork_id not in embedded:
+                    embedded[track.artwork_id] = rockbox_artwork(profile, cover_source)
                 pixels = embedded[track.artwork_id]
             else:
                 read = source.artwork_read(
-                    track.artwork_id, application_cover_formats(profile), 4096
+                    track.artwork_id, application_artwork_read_formats(profile), 4096
                 )
                 if read is None:
                     raise ValueError(

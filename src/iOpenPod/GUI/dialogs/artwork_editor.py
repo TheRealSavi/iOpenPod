@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
     QCoreApplication,
+    QEvent,
+    QLocale,
     QPoint,
     QPointF,
     QRectF,
@@ -31,6 +33,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QDialog,
+    QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -46,11 +49,19 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.artwork_import import ArtworkImportController
 from iOpenPod.app.library_workspace import TrackArtworkEdit
 from iOpenPod.GUI.presentation.i18n.text import english_count_fallback
+from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
 )
-from iPodDB.library import ArtworkAsset, ArtworkPixels, Track
+from iPodDB.library import (
+    ArtworkAsset,
+    ArtworkGroupReference,
+    ArtworkPixels,
+    TimedArtworkAsset,
+    TimedArtworkFrame,
+    Track,
+)
 from storage import HostPath
 
 if TYPE_CHECKING:
@@ -319,7 +330,7 @@ class ConsolidateArtworkDialog(QDialog):
     def __init__(
         self,
         artwork_ids: tuple[int, ...],
-        assets: tuple[ArtworkAsset, ...],
+        assets: tuple[ArtworkAsset | TimedArtworkAsset, ...],
         provider: ArtworkPixmapProvider | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -347,6 +358,11 @@ class ConsolidateArtworkDialog(QDialog):
         layout.addWidget(title)
         explanation = QLabel(
             self.tr(
+                "Choose one artwork sequence to apply to every selected Track. "
+                "Sequences with matching cover images remain separate."
+            )
+            if any(self._has_timeline(artwork_id) for artwork_id in artwork_ids)
+            else self.tr(
                 "Choose one of the selected covers to assign to every selected "
                 "Track. Exactly identical images appear only once."
             ),
@@ -402,7 +418,11 @@ class ConsolidateArtworkDialog(QDialog):
                 key: tuple[str, object] = ("identity", artwork_id)
                 icon = None
             else:
-                key = ("pixels", fingerprint)
+                key = (
+                    ("identity", artwork_id)
+                    if self._has_timeline(artwork_id)
+                    else ("pixels", fingerprint)
+                )
                 icon = self._icons[fingerprint]
             retained = groups.get(key)
             if retained is None:
@@ -444,7 +464,18 @@ class ConsolidateArtworkDialog(QDialog):
         if retained is not None:
             return retained
         asset = self._assets.get(artwork_id)
-        pixels = asset.pixels if asset is not None else None
+        pixels = asset.pixels if isinstance(asset, ArtworkAsset) else None
+        if isinstance(asset, TimedArtworkAsset):
+            source = asset.frames[0].source
+            if isinstance(source, ArtworkPixels):
+                pixels = source
+            elif self._provider is not None:
+                pixels = self._provider.pixels(
+                    source.artwork_id,
+                    _COMPARE_EDGE,
+                    self.devicePixelRatioF(),
+                    display_time_ms=source.display_time_ms,
+                )
         if pixels is None and self._provider is not None:
             pixels = self._provider.pixels(
                 artwork_id,
@@ -469,6 +500,15 @@ class ConsolidateArtworkDialog(QDialog):
             self._icons[fingerprint] = QIcon(QPixmap.fromImage(image))
         return fingerprint
 
+    def _has_timeline(self, artwork_id: int) -> bool:
+        asset = self._assets.get(artwork_id)
+        if isinstance(asset, TimedArtworkAsset):
+            return len(asset.frames) != 1 or asset.frames[0].display_time_ms != 0
+        if self._provider is None:
+            return False
+        times = self._provider.display_times(artwork_id)
+        return bool(times) and times != (0,)
+
     @Slot(QListWidgetItem)
     def _choose_item(self, item: QListWidgetItem) -> None:
         artwork_id = item.data(Qt.ItemDataRole.UserRole)
@@ -479,8 +519,21 @@ class ConsolidateArtworkDialog(QDialog):
 
     @Slot(object)
     def _artwork_changed(self, artwork_id: object) -> None:
-        if isinstance(artwork_id, int) and artwork_id in self._artwork_ids:
+        if not isinstance(artwork_id, int):
+            return
+        if artwork_id in self._artwork_ids:
             self._refresh()
+            return
+        for selected_id in self._artwork_ids:
+            asset = self._assets.get(selected_id)
+            if isinstance(asset, TimedArtworkAsset):
+                source = asset.frames[0].source
+                if (
+                    isinstance(source, ArtworkGroupReference)
+                    and source.artwork_id == artwork_id
+                ):
+                    self._refresh()
+                    return
 
     @Slot()
     def _artwork_cleared(self) -> None:
@@ -498,14 +551,14 @@ class ConsolidateArtworkDialog(QDialog):
 
 
 class ArtworkEditor(QWidget):
-    """Edit one shared artwork value for the metadata dialog's Track selection."""
+    """Stage one shared artwork sequence without materializing retained frames."""
 
     modifiedChanged = Signal()
 
     def __init__(
         self,
         tracks: tuple[Track, ...],
-        assets: tuple[ArtworkAsset, ...],
+        assets: tuple[ArtworkAsset | TimedArtworkAsset, ...],
         provider: ArtworkPixmapProvider | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -515,23 +568,51 @@ class ArtworkEditor(QWidget):
         self._provider = provider
         self._pending: TrackArtworkEdit | None = None
         self._source_label = ""
+        self._selected_time = 0
+        self._adding = False
         self._importer = ArtworkImportController(self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
+        content = QHBoxLayout()
+        content.setSpacing(20)
+        controls = QVBoxLayout()
+        controls.setSpacing(12)
+        self._entries = AppComboBox(self)
+        self._entries.setObjectName("metadataArtworkEntries")
+        self._entries.currentIndexChanged.connect(self._entry_changed)
+        controls.addWidget(self._entries)
+
+        timing = QHBoxLayout()
+        self._time_label = QLabel(self.tr("Display from (seconds)"), self)
+        self._time = QDoubleSpinBox(self)
+        self._time.setObjectName("metadataArtworkTime")
+        self._time.setDecimals(3)
+        self._time.setRange(0, 4_294_967.294)
+        self._time.setSingleStep(1)
+        self._time.setKeyboardTracking(False)
+        self._time.valueChanged.connect(self._time_changed)
+        self._time_label.setBuddy(self._time)
+        timing.addWidget(self._time_label)
+        timing.addWidget(self._time)
+        timing.addStretch(1)
+        controls.addLayout(timing)
         self._preview = QLabel(self)
         self._preview.setObjectName("metadataArtworkImage")
         self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview.setFixedSize(_PREVIEW_EDGE, _PREVIEW_EDGE)
-        layout.addWidget(self._preview, 0, Qt.AlignmentFlag.AlignHCenter)
+        content.addWidget(self._preview, 0, Qt.AlignmentFlag.AlignTop)
 
         self._status = QLabel(self)
         self._status.setObjectName("metadataArtworkStatus")
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status.setWordWrap(True)
-        self._status.setFixedWidth(520)
-        layout.addWidget(self._status, 0, Qt.AlignmentFlag.AlignHCenter)
+        controls.addWidget(self._status)
+        self._error = QLabel(self)
+        self._error.setObjectName("metadataArtworkError")
+        self._error.setWordWrap(True)
+        controls.addWidget(self._error)
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
@@ -541,19 +622,38 @@ class ArtworkEditor(QWidget):
         self._choose_button.setObjectName("chooseTrackArtwork")
         self._choose_button.clicked.connect(self._choose)
         buttons.addWidget(self._choose_button)
+        self._add_button = ActionButton(self.tr("Add Image…"), self)
+        self._add_button.setObjectName("addTimedArtwork")
+        self._add_button.clicked.connect(self._add)
+        buttons.addWidget(self._add_button)
+        self._remove_button = ActionButton(self.tr("Remove Entry"), self)
+        self._remove_button.setObjectName("removeTimedArtwork")
+        self._remove_button.clicked.connect(self.remove_selected_entry)
+        buttons.addWidget(self._remove_button)
+        buttons.addStretch(1)
+        controls.addLayout(buttons)
+        shared_buttons = QHBoxLayout()
+        shared_buttons.addStretch(1)
         self._clear_button = ActionButton(
             self.tr("Clear Artwork"), self, kind=ActionButtonKind.DANGER
         )
         self._clear_button.setObjectName("clearTrackArtwork")
         self._clear_button.clicked.connect(self.clear_artwork)
-        buttons.addWidget(self._clear_button)
+        shared_buttons.addWidget(self._clear_button)
         self._consolidate_button = ActionButton(self.tr("Consolidate Artwork…"), self)
         self._consolidate_button.setObjectName("consolidateTrackArtwork")
         self._consolidate_button.hide()
         self._consolidate_button.clicked.connect(self._consolidate)
-        buttons.addWidget(self._consolidate_button)
-        buttons.addStretch(1)
-        layout.addLayout(buttons)
+        shared_buttons.addWidget(self._consolidate_button)
+        shared_buttons.addStretch(1)
+        controls.addLayout(shared_buttons)
+        controls.addStretch(1)
+        content.addLayout(controls, 1)
+        layout.addLayout(content)
+
+        self._help = QLabel(self)
+        self._help.setWordWrap(True)
+        layout.addWidget(self._help)
 
         layout.addStretch(1)
 
@@ -563,7 +663,7 @@ class ArtworkEditor(QWidget):
         self._importer.busyChanged.connect(self._import_busy_changed)
         self._importer.finished.connect(self._import_finished)
         self._importer.failed.connect(self._import_failed)
-        self._refresh()
+        self.retranslate_ui()
 
     @property
     def busy(self) -> bool:
@@ -581,6 +681,8 @@ class ArtworkEditor(QWidget):
             return
         self._pending = None
         self._source_label = ""
+        self._selected_time = 0
+        self._error.clear()
         self._refresh()
         self.modifiedChanged.emit()
 
@@ -589,8 +691,67 @@ class ArtworkEditor(QWidget):
     ) -> None:
         """Stage owned pixels; also supports paste/drop and deterministic tests."""
 
+        frames = self._current_frames()
+        if frames is None or (len(frames) == 0 and self._pending is not None):
+            self._selected_time = 0
+            self._set_frames((TimedArtworkFrame(0, pixels),))
+            return
+        if len(frames) > 0 and (
+            len(frames) > 1
+            or frames[0].display_time_ms != 0
+            or self._pending is not None
+        ):
+            self._set_frames(
+                tuple(
+                    TimedArtworkFrame(frame.display_time_ms, pixels)
+                    if frame.display_time_ms == self._selected_time
+                    else frame
+                    for frame in frames
+                )
+            )
+            return
         self._pending = TrackArtworkEdit(pixels)
+        self._selected_time = 0
         self._source_label = source_label
+        self._refresh()
+        self.modifiedChanged.emit()
+
+    def add_pending_artwork(self, pixels: ArtworkPixels, display_time_ms: int) -> None:
+        """Add a cropped image; untouched entries keep their source references."""
+
+        frames = self._current_frames()
+        if frames is None:
+            raise ValueError("Choose shared artwork before adding a timed image.")
+        if any(frame.display_time_ms == display_time_ms for frame in frames):
+            raise ValueError("Each artwork entry needs a different display time.")
+        if not 0 <= display_time_ms < 0xFFFFFFFF:
+            raise ValueError("Choose a valid artwork display time.")
+        self._selected_time = display_time_ms
+        self._set_frames((*frames, TimedArtworkFrame(display_time_ms, pixels)))
+
+    def remove_selected_entry(self) -> None:
+        frames = self._current_frames()
+        if not frames:
+            return
+        if len(frames) > 1 and not any(frame.display_time_ms == 0 for frame in frames):
+            return
+        if self._selected_time == 0 and len(frames) > 1:
+            return
+        remaining = tuple(
+            frame for frame in frames if frame.display_time_ms != self._selected_time
+        )
+        if not remaining:
+            self.clear_artwork()
+            return
+        self._selected_time = remaining[0].display_time_ms
+        self._set_frames(remaining)
+
+    def _set_frames(self, frames: tuple[TimedArtworkFrame, ...]) -> None:
+        ordered = tuple(sorted(frames, key=lambda frame: frame.display_time_ms))
+        if ordered and ordered[0].display_time_ms != 0:
+            raise ValueError("Artwork sequences must include an image at zero seconds.")
+        self._pending = TrackArtworkEdit(None, frames=ordered)
+        self._error.clear()
         self._refresh()
         self.modifiedChanged.emit()
 
@@ -601,6 +762,8 @@ class ArtworkEditor(QWidget):
             raise ValueError("Choose artwork from the current Track selection.")
         self._pending = TrackArtworkEdit(None, source_artwork_id=artwork_id)
         self._source_label = ""
+        self._selected_time = 0
+        self._error.clear()
         self._refresh()
         self.modifiedChanged.emit()
 
@@ -610,10 +773,20 @@ class ArtworkEditor(QWidget):
             None if set(self._artwork_ids) == {0} else TrackArtworkEdit(None)
         )
         self._source_label = ""
+        self._selected_time = 0
+        self._error.clear()
         self._refresh()
         self.modifiedChanged.emit()
 
     def _choose(self) -> None:
+        self._adding = False
+        self._choose_image()
+
+    def _add(self) -> None:
+        self._adding = True
+        self._choose_image()
+
+    def _choose_image(self) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(
             self,
             self.tr("Choose Track Artwork"),
@@ -645,7 +818,18 @@ class ArtworkEditor(QWidget):
             return
         crop = ArtworkCropDialog(_image_from_pixels(value), self)
         if crop.exec() == QDialog.DialogCode.Accepted:
-            self.set_pending_artwork(crop.pixels(), source_name)
+            if self._adding:
+                used = {frame.display_time_ms for frame in self._current_frames() or ()}
+                time_ms = 0 if 0 not in used else self._selected_time + 1000
+                while time_ms in used:
+                    time_ms += 1000
+                if time_ms >= 0xFFFFFFFF:
+                    time_ms = 1000
+                    while time_ms in used:
+                        time_ms += 1000
+                self.add_pending_artwork(crop.pixels(), time_ms)
+            else:
+                self.set_pending_artwork(crop.pixels(), source_name)
 
     def _import_failed(self, detail: str) -> None:
         self._refresh()
@@ -655,6 +839,10 @@ class ArtworkEditor(QWidget):
         self._choose_button.setEnabled(not busy)
         self._clear_button.setEnabled(not busy)
         self._consolidate_button.setEnabled(not busy)
+        self._entries.setEnabled(not busy)
+        self._time.setEnabled(not busy)
+        self._add_button.setEnabled(not busy)
+        self._remove_button.setEnabled(not busy)
         if busy:
             self._show_placeholder(self.tr("Reading artwork…"))
             self._status.setText(
@@ -666,41 +854,151 @@ class ArtworkEditor(QWidget):
     def shutdown(self) -> None:
         self._importer.shutdown()
 
-    def _refresh(self) -> None:
-        self._consolidate_button.setVisible(self._has_multiple_unique_artworks())
-        if self._pending is not None:
-            pixels = self._pending.pixels
-            if self._pending.source_artwork_id is not None:
-                artwork_id = self._pending.source_artwork_id
-                pixels = self._pixels_for_id(artwork_id, _PREVIEW_EDGE)
-                if pixels is None:
-                    self._show_placeholder(self.tr("Artwork preview unavailable"))
-                else:
-                    self._show_image(_image_from_pixels(pixels))
-                self._status.setText(
-                    self.tr(
-                        "Selected artwork will be assigned to every selected Track."
-                    )
-                )
-                return
-            if pixels is None:
-                self._show_placeholder(self.tr("No artwork"))
-                self._status.setText(self.tr("Artwork will be cleared when applied."))
-                return
-            self._show_image(_image_from_pixels(pixels))
-            detail = (
-                self.tr("New crop — %1 x %2 px")
-                .replace("%1", str(pixels.width))
-                .replace("%2", str(pixels.height))
-            )
-            if self._source_label:
-                detail = f"{self._source_label} • {detail}"
-            self._status.setText(detail)
-            return
+    def _frames_for_id(self, artwork_id: int) -> tuple[TimedArtworkFrame, ...]:
+        asset = self._assets.get(artwork_id)
+        if isinstance(asset, TimedArtworkAsset):
+            return asset.frames
+        if isinstance(asset, ArtworkAsset):
+            return (TimedArtworkFrame(0, asset.pixels),)
+        if artwork_id == 0:
+            return ()
+        times = (
+            () if self._provider is None else self._provider.display_times(artwork_id)
+        )
+        return tuple(
+            TimedArtworkFrame(time_ms, ArtworkGroupReference(artwork_id, time_ms))
+            for time_ms in times or (0,)
+        )
 
-        unique = tuple(dict.fromkeys(self._artwork_ids))
-        if len(unique) != 1:
-            common = self._common_pixels(unique)
+    def _current_frames(self) -> tuple[TimedArtworkFrame, ...] | None:
+        pending = self._pending
+        if pending is not None:
+            if pending.frames is not None:
+                return pending.frames
+            if pending.source_artwork_id is not None:
+                return self._frames_for_id(pending.source_artwork_id)
+            if pending.pixels is not None:
+                return (TimedArtworkFrame(0, pending.pixels),)
+            return ()
+        ids = tuple(dict.fromkeys(self._artwork_ids))
+        if len(ids) == 1 or self._common_pixels(ids) is not None:
+            return self._frames_for_id(ids[0])
+        return None
+
+    def _entry_changed(self, index: int) -> None:
+        value = self._entries.itemData(index)
+        if isinstance(value, int):
+            self._selected_time = value
+            self._error.clear()
+            self._refresh()
+
+    def _time_changed(self, seconds: float) -> None:
+        frames = self._current_frames()
+        if (
+            not frames
+            or self._selected_time in (0, 0xFFFFFFFF)
+            or not any(frame.display_time_ms == 0 for frame in frames)
+        ):
+            return
+        time_ms = round(seconds * 1000)
+        if time_ms == self._selected_time:
+            return
+        if any(frame.display_time_ms == time_ms for frame in frames):
+            self._error.setText(
+                self.tr("Each artwork entry needs a different display time.")
+            )
+            self._refresh()
+            return
+        changed = tuple(
+            TimedArtworkFrame(time_ms, frame.source)
+            if frame.display_time_ms == self._selected_time
+            else frame
+            for frame in frames
+        )
+        self._selected_time = time_ms
+        self._set_frames(changed)
+
+    def retranslate_ui(self) -> None:
+        self._time_label.setText(self.tr("Display from (seconds)"))
+        self._time.setAccessibleName(self._time_label.text())
+        self._entries.setAccessibleName(self.tr("Artwork entries"))
+        self._choose_button.setText(self.tr("Choose Artwork…"))
+        self._add_button.setText(self.tr("Add Image…"))
+        self._remove_button.setText(self.tr("Remove Entry"))
+        self._clear_button.setText(self.tr("Clear Artwork"))
+        self._consolidate_button.setText(self.tr("Consolidate Artwork…"))
+        self._help.setText(
+            self.tr(
+                "Each image displays from its start time until the next image. "
+                "Keep an image at zero seconds. Playback support varies by iPod and firmware. "
+                "Changes apply to every selected Track."
+            )
+        )
+        self._refresh()
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() in (QEvent.Type.LanguageChange, QEvent.Type.LocaleChange):
+            self.retranslate_ui()
+        super().changeEvent(event)
+
+    def _refresh(self) -> None:
+        self._error.setVisible(bool(self._error.text()))
+        self._consolidate_button.setVisible(self._has_multiple_unique_artworks())
+        frames = self._current_frames()
+        self._choose_button.setText(
+            self.tr("Replace Image…") if frames else self.tr("Choose Artwork…")
+        )
+        self._entries.blockSignals(True)
+        self._entries.clear()
+        number_locale = self._time.locale()
+        number_locale.setNumberOptions(
+            number_locale.numberOptions() | QLocale.NumberOption.OmitGroupSeparator
+        )
+        for frame in frames or ():
+            label = (
+                self.tr("Preserved special entry")
+                if frame.display_time_ms == 0xFFFFFFFF
+                else self.tr("From %1 seconds").replace(
+                    "%1",
+                    number_locale.toString(
+                        frame.display_time_ms / 1000, "f", self._time.decimals()
+                    ),
+                )
+            )
+            self._entries.addItem(label, frame.display_time_ms)
+        selected = self._entries.findData(self._selected_time)
+        if selected < 0 and frames:
+            selected = 0
+            self._selected_time = frames[0].display_time_ms
+        self._entries.setCurrentIndex(selected)
+        self._entries.blockSignals(False)
+        self._entries.setEnabled(bool(frames) and not self.busy)
+        has_zero = any(frame.display_time_ms == 0 for frame in frames or ())
+        self._choose_button.setEnabled(
+            (not frames or has_zero)
+            and self._selected_time != 0xFFFFFFFF
+            and not self.busy
+        )
+        self._time.blockSignals(True)
+        self._time.setValue(
+            self._selected_time / 1000 if self._selected_time != 0xFFFFFFFF else 0
+        )
+        self._time.blockSignals(False)
+        self._time.setEnabled(
+            bool(frames)
+            and has_zero
+            and self._selected_time not in (0, 0xFFFFFFFF)
+            and not self.busy
+        )
+        self._add_button.setEnabled(frames is not None and not self.busy)
+        self._remove_button.setEnabled(
+            bool(frames)
+            and (has_zero or len(frames or ()) == 1)
+            and (self._selected_time != 0 or len(frames or ()) == 1)
+            and not self.busy
+        )
+        if frames is None:
+            common = self._common_pixels(tuple(dict.fromkeys(self._artwork_ids)))
             if common is not None:
                 self._show_image(_image_from_pixels(common))
                 self._status.setText(
@@ -709,38 +1007,44 @@ class ArtworkEditor(QWidget):
                 return
             self._show_placeholder(self.tr("Multiple artwork values"))
             self._status.setText(
-                self.tr("Choose one image to assign it to every selected Track.")
+                self.tr(
+                    "Choose an image or consolidate an existing sequence for all selected Tracks."
+                )
             )
             return
-        artwork_id = next(iter(unique), 0)
-        if artwork_id == 0:
+        if not frames:
             self._show_placeholder(self.tr("No artwork"))
-            self._status.setText(self.tr("The selected Track has no assigned artwork."))
-            return
-        asset = self._assets.get(artwork_id)
-        if asset is not None:
-            self._show_image(_image_from_pixels(asset.pixels))
             self._status.setText(
-                self.tr("Artwork — %1 x %2 px")
-                .replace("%1", str(asset.pixels.width))
-                .replace("%2", str(asset.pixels.height))
+                self.tr("Artwork will be cleared when applied.")
+                if self._pending is not None
+                else self.tr("The selected Track has no assigned artwork.")
             )
             return
-        provider = self._provider
-        pixmap = (
-            None
-            if provider is None
-            else provider.pixmap(artwork_id, _PREVIEW_EDGE, self.devicePixelRatioF())
-        )
-        if pixmap is None:
+        source = frames[selected].source
+        pixels = source if isinstance(source, ArtworkPixels) else None
+        if isinstance(source, ArtworkGroupReference) and self._provider is not None:
+            pixels = self._provider.pixels(
+                source.artwork_id,
+                _PREVIEW_EDGE,
+                self.devicePixelRatioF(),
+                display_time_ms=source.display_time_ms,
+            )
+        if pixels is None:
             self._show_placeholder(self.tr("Artwork preview unavailable"))
         else:
-            self._show_pixmap(pixmap)
-        self._status.setText(
-            self.tr("Current iPod artwork • reference %1").replace(
-                "%1", str(artwork_id)
+            self._show_image(_image_from_pixels(pixels))
+        if self._pending is not None:
+            self._status.setText(
+                self.tr("Selected artwork will be assigned to every selected Track.")
             )
-        )
+        else:
+            self._status.setText(
+                self.tr("Current artwork shared by all selected Tracks.")
+                if len(set(self._artwork_ids)) > 1
+                else self.tr(
+                    "Select an entry to view or edit its image and display time."
+                )
+            )
 
     def _common_pixels(self, artwork_ids: tuple[int, ...]) -> ArtworkPixels | None:
         """Return one image only when every distinct relationship matches exactly."""
@@ -748,6 +1052,9 @@ class ArtworkEditor(QWidget):
         resolved: list[ArtworkPixels] = []
         complete = True
         for artwork_id in artwork_ids:
+            frames = self._frames_for_id(artwork_id)
+            if len(frames) != 1 or frames[0].display_time_ms != 0:
+                return None
             if artwork_id == 0:
                 complete = False
                 continue
@@ -769,6 +1076,12 @@ class ArtworkEditor(QWidget):
             return False
         if 0 in artwork_ids:
             return any(artwork_id != 0 for artwork_id in artwork_ids)
+        if any(
+            len(frames := self._frames_for_id(artwork_id)) != 1
+            or frames[0].display_time_ms != 0
+            for artwork_id in artwork_ids
+        ):
+            return True
 
         unique_pixels: list[ArtworkPixels] = []
         for artwork_id in artwork_ids:
@@ -785,8 +1098,20 @@ class ArtworkEditor(QWidget):
         self, artwork_id: int, logical_size: int
     ) -> ArtworkPixels | None:
         asset = self._assets.get(artwork_id)
-        if asset is not None:
+        if isinstance(asset, ArtworkAsset):
             return asset.pixels
+        if isinstance(asset, TimedArtworkAsset):
+            source = asset.frames[0].source
+            if isinstance(source, ArtworkPixels):
+                return source
+            if self._provider is None:
+                return None
+            return self._provider.pixels(
+                source.artwork_id,
+                logical_size,
+                self.devicePixelRatioF(),
+                display_time_ms=source.display_time_ms,
+            )
         if self._provider is None:
             return None
         return self._provider.pixels(
@@ -812,5 +1137,9 @@ class ArtworkEditor(QWidget):
         self._preview.setText(text)
 
     def _artwork_changed(self, artwork_id: int) -> None:
-        if self._pending is None and artwork_id in self._artwork_ids:
+        if artwork_id in self._artwork_ids or any(
+            isinstance(frame.source, ArtworkGroupReference)
+            and frame.source.artwork_id == artwork_id
+            for frame in self._current_frames() or ()
+        ):
             self._refresh()
