@@ -23,6 +23,8 @@ from iOpenPod.app.sync_execution import (
     SyncExecutionResult,
     SyncExecutionStatus,
 )
+from storage.models import DiscoveryIssue
+from storage.platform.base import ObservationDiscoveryResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -40,6 +42,30 @@ class _Feeds:
     def fetch(self, feed_url: str) -> PodcastSubscription:
         del feed_url
         return replace(self.show, last_refreshed=123)
+
+
+def test_podcast_sync_source_survives_incomplete_device_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = build_device(tmp_path)
+    selected = device.active
+    original_discover = device.platform.discover
+
+    def incomplete_discovery() -> ObservationDiscoveryResult:
+        return ObservationDiscoveryResult(
+            (), (DiscoveryIssue("macos.volumes", "temporary inspection failure"),)
+        )
+
+    try:
+        monkeypatch.setattr(device.platform, "discover", incomplete_discovery)
+        device.coordinator.discover_devices(refresh_known=False)
+        monkeypatch.setattr(device.platform, "discover", original_discover)
+
+        assert device.coordinator.active_ipod is selected
+        with device.coordinator.sync_session(selected) as session:
+            assert session.is_active
+    finally:
+        device.coordinator.close()
 
 
 class _InterruptedAfterRefresh:

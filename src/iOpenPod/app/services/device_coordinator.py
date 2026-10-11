@@ -87,6 +87,7 @@ from storage import (
     CopyResult,
     DeviceEntryKind,
     DevicePath,
+    DevicePathNotFoundError,
     EjectResult,
     FileFingerprint,
     FileIdentity,
@@ -466,7 +467,14 @@ class DeviceCoordinator:
                     raise DeviceChangedError(
                         "The Active iPod disconnected or changed during its media scan."
                     )
-            if session.fingerprint(database_path) != expected.database_fingerprint:
+            try:
+                fingerprint = session.fingerprint(database_path)
+            except DevicePathNotFoundError as error:
+                raise DeviceChangedError(
+                    "The iPod Library is no longer present. Reload the iPod "
+                    "from the Device Picker and try again."
+                ) from error
+            if fingerprint != expected.database_fingerprint:
                 raise DeviceChangedError(
                     "The iPod Library changed during its media scan. Reload and try again."
                 )

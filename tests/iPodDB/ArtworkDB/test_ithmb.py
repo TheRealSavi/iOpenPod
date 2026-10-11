@@ -196,7 +196,10 @@ def test_rejects_an_odd_height_for_field_separated_uyvy() -> None:
         )
 
 
-def test_decodes_symmetric_padding_for_subsampled_photo_formats() -> None:
+@pytest.mark.parametrize("i420_row_bytes", (0, 4, 6))
+def test_decodes_symmetric_padding_for_subsampled_photo_formats(
+    i420_row_bytes: int,
+) -> None:
     uyvy = decode_ithmb(
         bytes((128, 16, 128, 235, 128, 235, 128, 16)),
         IthmbLayout(
@@ -233,7 +236,7 @@ def test_decodes_symmetric_padding_for_subsampled_photo_formats() -> None:
         IthmbLayout(
             width=3,
             height=3,
-            row_bytes=6,
+            row_bytes=i420_row_bytes,
             pixel_format=IthmbPixelFormat.I420_LE,
             horizontal_padding=1,
             vertical_padding=1,
@@ -247,6 +250,32 @@ def test_decodes_symmetric_padding_for_subsampled_photo_formats() -> None:
         assert min(decoded.pixels) >= 250
 
 
+@pytest.mark.parametrize(
+    "layout",
+    (
+        IthmbLayout(2, 2, 1, IthmbPixelFormat.I420_LE),
+        IthmbLayout(2, 2, 4, IthmbPixelFormat.I420_LE),
+        IthmbLayout(2, 2, 99, IthmbPixelFormat.I420_LE),
+        IthmbLayout(
+            3,
+            3,
+            3,
+            IthmbPixelFormat.I420_LE,
+            horizontal_padding=1,
+            vertical_padding=1,
+            padding_mode=IthmbPaddingMode.SYMMETRIC,
+        ),
+    ),
+)
+def test_i420_rejects_row_sizes_outside_its_tightly_packed_planar_layout(
+    layout: IthmbLayout,
+) -> None:
+    # Enough bytes for either raster: failure must concern the row descriptor,
+    # not a short payload. The padded case has a physical width of four pixels.
+    with pytest.raises(IthmbDecodeError, match="tightly packed planar rows"):
+        decode_ithmb(bytes(24), layout)
+
+
 def test_decodes_embedded_jpeg_to_owned_rgb_bytes() -> None:
     encoded = BytesIO()
     Image.new("RGB", (3, 2), (20, 80, 160)).save(encoded, format="JPEG", quality=100)
@@ -258,6 +287,17 @@ def test_decodes_embedded_jpeg_to_owned_rgb_bytes() -> None:
 
     assert (decoded.width, decoded.height) == (3, 2)
     assert len(decoded.pixels) == 3 * 2 * 3
+
+
+def test_jpeg_layout_rejects_a_png_with_matching_dimensions() -> None:
+    encoded = BytesIO()
+    Image.new("RGB", (3, 2), (20, 80, 160)).save(encoded, format="PNG")
+
+    with pytest.raises(IthmbDecodeError):
+        decode_ithmb(
+            encoded.getvalue(),
+            IthmbLayout(3, 2, 0, IthmbPixelFormat.JPEG),
+        )
 
 
 def test_decodes_symmetric_padding_from_an_embedded_photo_jpeg() -> None:

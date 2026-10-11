@@ -316,6 +316,10 @@ def _decode_i420(payload: bytes, layout: IthmbLayout) -> Image.Image:
     _validate_stored_raster(width, height)
     if width % 2 or height % 2:
         raise IthmbDecodeError("I420 images require even dimensions")
+    # Catalog RowBytes may aggregate all three planes over the raster height;
+    # each plane still uses tightly packed rows, matching the encoder contract.
+    if layout.row_bytes not in (0, width, width * 3 // 2):
+        raise IthmbDecodeError("I420 requires tightly packed planar rows")
     y_size = width * height
     chroma_size = (width // 2) * (height // 2)
     required = y_size + (2 * chroma_size)
@@ -361,7 +365,7 @@ def _decode_jpeg(payload: bytes, layout: IthmbLayout) -> Image.Image:
         raise IthmbDecodeError("JPEG iTHMB payload is empty")
     expected_size = _stored_raster_size(layout)
     _validate_stored_raster(*expected_size)
-    with Image.open(BytesIO(payload)) as source:
+    with Image.open(BytesIO(payload), formats=("JPEG",)) as source:
         if source.size != expected_size:
             raise IthmbDecodeError(
                 "JPEG dimensions do not match the declared iTHMB layout"
