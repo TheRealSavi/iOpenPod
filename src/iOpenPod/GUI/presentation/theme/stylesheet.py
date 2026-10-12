@@ -238,6 +238,7 @@ QLabel#photoAlbumManagerError {{
 
 QDialog#playlistEditor,
 QDialog#metadataEditor,
+QDialog#artworkSearchDialog,
 QDialog#artworkCropDialog,
 QDialog#consolidateArtworkDialog,
 QDialog#photoMetadataEditor,
@@ -867,7 +868,8 @@ QFrame#metadataFieldRow[modified="true"] {{
     border-color: {tokens.accent};
 }}
 
-QLabel#metadataArtworkImage {{
+QLabel#metadataArtworkImage,
+QLabel#artworkSearchPreview {{
     color: {tokens.text_secondary};
     background-color: {tokens.surface};
     border: 1px solid {tokens.border};
@@ -879,6 +881,34 @@ QLabel#metadataArtworkNote,
 QLabel#artworkConsolidationStatus {{
     color: {tokens.text_secondary};
     font-size: {typography.small_pt:g}pt;
+}}
+
+QListWidget#artworkSearchResults {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+    outline: none;
+    padding: {LAYOUT.space_xs}px;
+}}
+
+QListWidget#artworkSearchResults::item {{
+    padding: {LAYOUT.space_sm}px;
+    border: 2px solid transparent;
+    border-radius: {LAYOUT.radius_control}px;
+}}
+
+QListWidget#artworkSearchResults::item:hover {{
+    background-color: {tokens.surface_hover};
+}}
+
+QListWidget#artworkSearchResults::item:selected {{
+    color: {tokens.text};
+    background-color: {tokens.surface_selected};
+}}
+
+QListWidget#artworkSearchResults::item:focus {{
+    border-color: {tokens.focus};
 }}
 
 QListWidget#artworkConsolidationGrid {{

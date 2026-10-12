@@ -54,6 +54,7 @@ _CONTRACT_FIELDS: dict[str, tuple[tuple[int, str], ...]] = {
 }
 
 _INPUT_VALIDATION_FILES = {
+    "artwork_search.py",
     "metadata_fields.py",
     "library_workspace.py",
     "tag_normalization_controller.py",

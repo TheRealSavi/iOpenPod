@@ -153,6 +153,137 @@
         <source>Current iPod artwork • reference %1</source>
         <translation type="vanished">Aktuelles iPod-Cover · Referenz %1</translation>
     </message>
+    <message>
+        <source>Find Album Artwork…</source>
+        <translation>Albumcover suchen…</translation>
+    </message>
+</context>
+<context>
+    <name>ArtworkSearchDialog</name>
+    <message>
+        <source>Find Album Artwork</source>
+        <translation>Albumcover suchen</translation>
+    </message>
+    <message>
+        <source>Find a cover, preview it, then apply it to this album.</source>
+        <translation>Suchen Sie ein Cover, sehen Sie es sich in der Vorschau an und übernehmen Sie es für dieses Album.</translation>
+    </message>
+    <message>
+        <source>iTunes Store</source>
+        <translation>iTunes Store</translation>
+    </message>
+    <message>
+        <source>Discogs</source>
+        <translation>Discogs</translation>
+    </message>
+    <message>
+        <source>Search in</source>
+        <translation>Suchen in</translation>
+    </message>
+    <message>
+        <source>Artist / album</source>
+        <translation>Interpret / Album</translation>
+    </message>
+    <message>
+        <source>Two-letter store region, such as US, GB, or JP.</source>
+        <translation>Store-Region mit zwei Buchstaben, z. B. US, GB oder JP.</translation>
+    </message>
+    <message>
+        <source>Store region</source>
+        <translation>Store-Region</translation>
+    </message>
+    <message>
+        <source>Discogs personal access token</source>
+        <translation>Persönliches Discogs-Zugriffstoken</translation>
+    </message>
+    <message>
+        <source>Discogs token</source>
+        <translation>Discogs-Token</translation>
+    </message>
+    <message>
+        <source>Create a token in &lt;a href=&quot;https://www.discogs.com/settings/developers&quot;&gt;Discogs developer settings&lt;/a&gt;. It is kept only while this dialog is open.</source>
+        <translation>Erstellen Sie ein Token in den &lt;a href=&quot;https://www.discogs.com/settings/developers&quot;&gt;Discogs-Entwicklereinstellungen&lt;/a&gt;. Es wird nur gespeichert, solange dieser Dialog geöffnet ist.</translation>
+    </message>
+    <message>
+        <source>Search</source>
+        <translation>Suchen</translation>
+    </message>
+    <message>
+        <source>Cancel Search</source>
+        <translation>Suche abbrechen</translation>
+    </message>
+    <message>
+        <source>Artwork search results</source>
+        <translation>Ergebnisse der Coversuche</translation>
+    </message>
+    <message>
+        <source>Select a search result to preview its cover.</source>
+        <translation>Wählen Sie ein Suchergebnis, um sein Cover anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>Open Album Page</source>
+        <translation>Albumseite öffnen</translation>
+    </message>
+    <message>
+        <source>Apply only to tracks without artwork</source>
+        <translation>Nur für Titel ohne Cover übernehmen</translation>
+    </message>
+    <message>
+        <source>Uncheck to replace the cover on every track in this album.</source>
+        <translation>Deaktivieren Sie diese Option, um das Cover aller Titel dieses Albums zu ersetzen.</translation>
+    </message>
+    <message>
+        <source>Choose Search to send the artist and album terms to the selected service.</source>
+        <translation>Wählen Sie Suchen, um die Suchbegriffe für Interpret und Album an den ausgewählten Dienst zu senden.</translation>
+    </message>
+    <message>
+        <source>Apply Artwork</source>
+        <translation>Cover übernehmen</translation>
+    </message>
+    <message>
+        <source>Searching…</source>
+        <translation>Suche läuft…</translation>
+    </message>
+    <message>
+        <source>Search cancelled.</source>
+        <translation>Suche abgebrochen.</translation>
+    </message>
+    <message>
+        <source>Loading artwork…</source>
+        <translation>Cover wird geladen…</translation>
+    </message>
+    <message>
+        <source>Select a result to preview its cover. Up to 25 results are shown.</source>
+        <translation>Wählen Sie ein Ergebnis, um sein Cover anzuzeigen. Es werden bis zu 25 Ergebnisse angezeigt.</translation>
+    </message>
+    <message>
+        <source>No covers found. Try different terms, another region, or the other service.</source>
+        <translation>Keine Cover gefunden. Versuchen Sie andere Suchbegriffe, eine andere Region oder den anderen Dienst.</translation>
+    </message>
+    <message>
+        <source>%1 x %2 pixels</source>
+        <translation>%1 x %2 Pixel</translation>
+    </message>
+    <message>
+        <source>Apply Artwork uses this cover for the chosen tracks in this album.</source>
+        <translation>Cover übernehmen verwendet dieses Cover für die ausgewählten Titel dieses Albums.</translation>
+    </message>
+    <message>
+        <source>No tracks without artwork remain. Uncheck the option to replace existing covers.</source>
+        <translation>Es gibt keine Titel ohne Cover mehr. Deaktivieren Sie die Option, um vorhandene Cover zu ersetzen.</translation>
+    </message>
+    <message>
+        <source>Find a cover, preview it, then use it in the metadata editor.</source>
+        <translation>Suchen Sie ein Cover, sehen Sie es sich in der Vorschau an und verwenden Sie es im Metadaten-Editor.</translation>
+    </message>
+    <message>
+        <source>Use Artwork</source>
+        <translation>Cover verwenden</translation>
+    </message>
+    <message>
+        <source>Use Artwork returns this image to the metadata editor. Click Apply there to save your changes.</source>
+        <translation>Cover verwenden übernimmt dieses Bild in den Metadaten-Editor. Klicken Sie dort auf Übernehmen, um Ihre Änderungen zu speichern.</translation>
+    </message>
 </context>
 <context>
     <name>ArtworkView</name>
@@ -7112,6 +7243,22 @@ Playlists: %3</translation>
         <source>No adjustment (0%)</source>
         <translation>Keine Anpassung (0 %)</translation>
     </message>
+    <message>
+        <source>Find Album Artwork…</source>
+        <translation>Albumcover suchen…</translation>
+    </message>
+    <message>
+        <source>iTunes Store…</source>
+        <translation>iTunes Store…</translation>
+    </message>
+    <message>
+        <source>Discogs…</source>
+        <translation>Discogs…</translation>
+    </message>
+    <message>
+        <source>Select one complete Music Album to find artwork.</source>
+        <translation>Wählen Sie ein vollständiges Musikalbum, um ein Cover zu suchen.</translation>
+    </message>
 </context>
 <context>
     <name>TrackListHeader</name>
@@ -10602,6 +10749,86 @@ Playlists: %3</translation>
     <message>
         <source>Finding media… Folders visited: {folders}; media files found: {files}.</source>
         <translation>Medien werden gesucht… Durchsuchte Ordner: {folders}; gefundene Mediendateien: {files}.</translation>
+    </message>
+    <message>
+        <source>Artwork must be at most 8192 pixels per side and 32 megapixels.</source>
+        <translation>Cover dürfen höchstens 8192 Pixel pro Seite und 32 Megapixel haben.</translation>
+    </message>
+    <message>
+        <source>Could not reach the artwork service. Check your connection and try again.</source>
+        <translation>Der Coverdienst ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.</translation>
+    </message>
+    <message>
+        <source>Discogs rejected the token. Check your personal access token.</source>
+        <translation>Discogs hat das Token abgelehnt. Prüfen Sie Ihr persönliches Zugriffstoken.</translation>
+    </message>
+    <message>
+        <source>Enter a two-letter iTunes Store region, such as US or JP.</source>
+        <translation>Geben Sie eine iTunes-Store-Region mit zwei Buchstaben ein, z. B. US oder JP.</translation>
+    </message>
+    <message>
+        <source>Enter a valid Discogs personal access token.</source>
+        <translation>Geben Sie ein gültiges persönliches Discogs-Zugriffstoken ein.</translation>
+    </message>
+    <message>
+        <source>Enter an artist and album name (up to 300 characters).</source>
+        <translation>Geben Sie Interpret und Albumname ein (höchstens 300 Zeichen).</translation>
+    </message>
+    <message>
+        <source>Enter your Discogs personal access token to search.</source>
+        <translation>Geben Sie Ihr persönliches Discogs-Zugriffstoken ein, um zu suchen.</translation>
+    </message>
+    <message>
+        <source>Select tracks from the current Library.</source>
+        <translation>Wählen Sie Titel aus der aktuellen Mediathek.</translation>
+    </message>
+    <message>
+        <source>The artwork exceeds the download limit.</source>
+        <translation>Das Cover überschreitet das Downloadlimit.</translation>
+    </message>
+    <message>
+        <source>The artwork request timed out. Try again.</source>
+        <translation>Die Coveranfrage hat das Zeitlimit überschritten. Versuchen Sie es erneut.</translation>
+    </message>
+    <message>
+        <source>The artwork response exceeds the download limit.</source>
+        <translation>Die Coverantwort überschreitet das Downloadlimit.</translation>
+    </message>
+    <message>
+        <source>The artwork response is empty or exceeds the download limit.</source>
+        <translation>Die Coverantwort ist leer oder überschreitet das Downloadlimit.</translation>
+    </message>
+    <message>
+        <source>The artwork service redirected outside its provider.</source>
+        <translation>Der Coverdienst hat auf eine Adresse außerhalb seines Anbieters umgeleitet.</translation>
+    </message>
+    <message>
+        <source>The artwork service returned HTTP {status}.</source>
+        <translation>Der Coverdienst hat HTTP {status} zurückgegeben.</translation>
+    </message>
+    <message>
+        <source>The artwork service returned an unsupported URL.</source>
+        <translation>Der Coverdienst hat eine nicht unterstützte URL zurückgegeben.</translation>
+    </message>
+    <message>
+        <source>The artwork service returned invalid search data.</source>
+        <translation>Der Coverdienst hat ungültige Suchdaten zurückgegeben.</translation>
+    </message>
+    <message>
+        <source>The artwork service returned invalid search results.</source>
+        <translation>Der Coverdienst hat ungültige Suchergebnisse zurückgegeben.</translation>
+    </message>
+    <message>
+        <source>The authenticated request redirected to another host.</source>
+        <translation>Die authentifizierte Anfrage wurde auf einen anderen Host umgeleitet.</translation>
+    </message>
+    <message>
+        <source>The downloaded artwork could not be decoded.</source>
+        <translation>Das heruntergeladene Cover konnte nicht dekodiert werden.</translation>
+    </message>
+    <message>
+        <source>The service is rate limited. Wait before searching again.</source>
+        <translation>Das Anfragelimit des Dienstes wurde erreicht. Warten Sie, bevor Sie erneut suchen.</translation>
     </message>
 </context>
 <context>
