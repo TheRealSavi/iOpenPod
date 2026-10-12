@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app.artwork_search import ArtworkSource
 from iOpenPod.app.library_workspace import LibraryWorkspace, TrackUpdate
 from iOpenPod.app.lyrics_work import LyricsReadWork
 from iOpenPod.app.metadata_fields import (
@@ -43,6 +44,7 @@ from iOpenPod.app.metadata_fields import (
 from iOpenPod.app.track_conversion import media_type_choices
 from iOpenPod.app.track_playback_policy import requires_track_playback_policy
 from iOpenPod.GUI.dialogs.artwork_editor import ArtworkEditor
+from iOpenPod.GUI.dialogs.artwork_search import ArtworkSearchDialog
 from iOpenPod.GUI.presentation.i18n.text import (
     changed_field_count_text,
     english_count_fallback,
@@ -752,6 +754,7 @@ class MetadataEditorDialog(QDialog):
             panel,
         )
         self._artwork_editor.modifiedChanged.connect(self._update_change_summary)
+        self._artwork_editor.searchRequested.connect(self._find_artwork)
         panel_layout.addWidget(self._artwork_editor)
         body_layout.addWidget(panel)
         body_layout.addStretch(1)
@@ -766,6 +769,24 @@ class MetadataEditorDialog(QDialog):
         self._artwork_item = QListWidgetItem(self.tr("Artwork"))
         self._artwork_item.setData(Qt.ItemDataRole.UserRole, "Artwork")
         self._nav.addItem(self._artwork_item)
+
+    def _find_artwork(self) -> None:
+        if self._artwork_editor.busy:
+            return
+        try:
+            dialog = ArtworkSearchDialog(
+                self._workspace,
+                tuple(t.track_id for t in self._tracks),
+                self._revision,
+                ArtworkSource.ITUNES,
+                self,
+                on_selected=self._artwork_editor.set_pending_artwork,
+            )
+        except ValueError as error:
+            self._error.setText(workflow_text(str(error)))
+            return
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.open()
 
     def _selection_summary(self) -> str:
         if len(self._tracks) != 1:
@@ -875,6 +896,8 @@ class MetadataEditorDialog(QDialog):
         super().accept()
 
     def done(self, result: int) -> None:
+        for dialog in self.findChildren(ArtworkSearchDialog):
+            dialog.reject()
         if self._lyrics_work is not None:
             self._lyrics_work.cancelled.set()
         self._artwork_editor.shutdown()

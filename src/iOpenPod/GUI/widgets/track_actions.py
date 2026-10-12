@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from iOpenPod.app.artwork_search import ArtworkSource
 from iOpenPod.app.chaptered_conversion import can_convert_album
 from iOpenPod.app.core.settings.definitions import (
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
@@ -53,6 +54,7 @@ from iOpenPod.app.models.track_order import album_track_sort_key
 from iOpenPod.app.models.track_table_model import TrackRole
 from iOpenPod.app.track_conversion import podcast_conversion_needed
 from iOpenPod.app.track_playback_policy import requires_track_playback_policy
+from iOpenPod.GUI.dialogs.artwork_search import ArtworkSearchDialog
 from iOpenPod.GUI.dialogs.metadata_editor import MetadataEditorDialog
 from iOpenPod.GUI.dialogs.playlist_editor import PlaylistEditorDialog
 from iOpenPod.GUI.presentation.i18n.text import remove_tracks_text
@@ -448,6 +450,19 @@ class TrackActions(QObject):
             enabled=editable,
             shortcut=_EDIT_SHORTCUT,
         )
+        if self._is_complete_album(selection):
+            artwork = menu.addMenu(self.tr("Find Album Artwork…"))
+            artwork.setEnabled(editable)
+            add(
+                artwork,
+                self.tr("iTunes Store…"),
+                lambda: self.find_artwork(selection, ArtworkSource.ITUNES),
+            )
+            add(
+                artwork,
+                self.tr("Discogs…"),
+                lambda: self.find_artwork(selection, ArtworkSource.DISCOGS),
+            )
         add(
             menu,
             self.tr("Convert to Podcast"),
@@ -636,6 +651,32 @@ class TrackActions(QObject):
             self.window,
             artwork_provider=self._artwork_provider,
             lyrics_provider=self._lyrics_provider,
+        )
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.open()
+
+    def _is_complete_album(self, selection: TrackSelection) -> bool:
+        if not selection.tracks or any(
+            t.media_kind is not MediaKind.MUSIC for t in selection.tracks
+        ):
+            return False
+        key = selection.tracks[0].album_key
+        return all(t.album_key == key for t in selection.tracks) and set(
+            selection.track_ids
+        ) == {
+            t.track_id
+            for t in self.workspace.tracks
+            if t.media_kind is MediaKind.MUSIC and t.album_key == key
+        }
+
+    def find_artwork(self, selection: TrackSelection, source: ArtworkSource) -> None:
+        self._require(selection)
+        if not self._is_complete_album(selection):
+            raise ValueError(
+                self.tr("Select one complete Music Album to find artwork.")
+            )
+        dialog = ArtworkSearchDialog(
+            self.workspace, selection.track_ids, selection.revision, source, self.window
         )
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         dialog.open()

@@ -554,6 +554,7 @@ class ArtworkEditor(QWidget):
     """Stage one shared artwork sequence without materializing retained frames."""
 
     modifiedChanged = Signal()
+    searchRequested = Signal()
 
     def __init__(
         self,
@@ -634,6 +635,10 @@ class ArtworkEditor(QWidget):
         controls.addLayout(buttons)
         shared_buttons = QHBoxLayout()
         shared_buttons.addStretch(1)
+        self._search_button = ActionButton(self.tr("Find Album Artwork…"), self)
+        self._search_button.setObjectName("findTrackArtwork")
+        self._search_button.clicked.connect(lambda: self.searchRequested.emit())
+        shared_buttons.addWidget(self._search_button)
         self._clear_button = ActionButton(
             self.tr("Clear Artwork"), self, kind=ActionButtonKind.DANGER
         )
@@ -837,6 +842,7 @@ class ArtworkEditor(QWidget):
 
     def _import_busy_changed(self, busy: bool) -> None:
         self._choose_button.setEnabled(not busy)
+        self._search_button.setEnabled(not busy)
         self._clear_button.setEnabled(not busy)
         self._consolidate_button.setEnabled(not busy)
         self._entries.setEnabled(not busy)
@@ -923,6 +929,7 @@ class ArtworkEditor(QWidget):
         self._time.setAccessibleName(self._time_label.text())
         self._entries.setAccessibleName(self.tr("Artwork entries"))
         self._choose_button.setText(self.tr("Choose Artwork…"))
+        self._search_button.setText(self.tr("Find Album Artwork…"))
         self._add_button.setText(self.tr("Add Image…"))
         self._remove_button.setText(self.tr("Remove Entry"))
         self._clear_button.setText(self.tr("Clear Artwork"))
@@ -979,6 +986,7 @@ class ArtworkEditor(QWidget):
             and self._selected_time != 0xFFFFFFFF
             and not self.busy
         )
+        self._search_button.setEnabled(self._choose_button.isEnabled())
         self._time.blockSignals(True)
         self._time.setValue(
             self._selected_time / 1000 if self._selected_time != 0xFFFFFFFF else 0

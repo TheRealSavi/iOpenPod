@@ -1534,6 +1534,15 @@ from original playback evidence. See [Scrobbling](scrobbling.md), ADR-0101, and 
 
 Contains the non-visual application layer.
 
+`app/artwork_search` owns typed iTunes Store and Discogs Album cover candidates,
+provider-restricted HTTPS requests, and bounded image decoding.
+`app/artwork_search_controller` performs cancellable search and preview work outside
+the GUI thread. `GUI/dialogs/artwork_search` captures a Track selection and its
+Library edit revision. Album actions submit explicitly chosen pixels through the
+existing Library Workspace artwork contract; Metadata Editor actions stage them
+in its current artwork entry until the combined Apply action. Save policy and device publication remain in
+their existing workflows. See ADR-0140 and [Finding album artwork](artwork-search.md).
+
 ```text
 app/
 ├── core/

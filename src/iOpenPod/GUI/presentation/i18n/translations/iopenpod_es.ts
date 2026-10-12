@@ -153,6 +153,137 @@
         <source>Current iPod artwork • reference %1</source>
         <translation type="vanished">Portada actual del iPod — referencia %1</translation>
     </message>
+    <message>
+        <source>Find Album Artwork…</source>
+        <translation>Buscar portada del álbum…</translation>
+    </message>
+</context>
+<context>
+    <name>ArtworkSearchDialog</name>
+    <message>
+        <source>Find Album Artwork</source>
+        <translation>Buscar portada del álbum</translation>
+    </message>
+    <message>
+        <source>Find a cover, preview it, then apply it to this album.</source>
+        <translation>Busque una portada, vea la vista previa y aplíquela a este álbum.</translation>
+    </message>
+    <message>
+        <source>iTunes Store</source>
+        <translation>iTunes Store</translation>
+    </message>
+    <message>
+        <source>Discogs</source>
+        <translation>Discogs</translation>
+    </message>
+    <message>
+        <source>Search in</source>
+        <translation>Buscar en</translation>
+    </message>
+    <message>
+        <source>Artist / album</source>
+        <translation>Artista / álbum</translation>
+    </message>
+    <message>
+        <source>Two-letter store region, such as US, GB, or JP.</source>
+        <translation>Región de la tienda de dos letras, como US, GB o JP.</translation>
+    </message>
+    <message>
+        <source>Store region</source>
+        <translation>Región de la tienda</translation>
+    </message>
+    <message>
+        <source>Discogs personal access token</source>
+        <translation>Token de acceso personal de Discogs</translation>
+    </message>
+    <message>
+        <source>Discogs token</source>
+        <translation>Token de Discogs</translation>
+    </message>
+    <message>
+        <source>Create a token in &lt;a href=&quot;https://www.discogs.com/settings/developers&quot;&gt;Discogs developer settings&lt;/a&gt;. It is kept only while this dialog is open.</source>
+        <translation>Cree un token en los &lt;a href=&quot;https://www.discogs.com/settings/developers&quot;&gt;ajustes de desarrollador de Discogs&lt;/a&gt;. Solo se conserva mientras este diálogo esté abierto.</translation>
+    </message>
+    <message>
+        <source>Search</source>
+        <translation>Buscar</translation>
+    </message>
+    <message>
+        <source>Cancel Search</source>
+        <translation>Cancelar búsqueda</translation>
+    </message>
+    <message>
+        <source>Artwork search results</source>
+        <translation>Resultados de búsqueda de portadas</translation>
+    </message>
+    <message>
+        <source>Select a search result to preview its cover.</source>
+        <translation>Seleccione un resultado para ver la vista previa de su portada.</translation>
+    </message>
+    <message>
+        <source>Open Album Page</source>
+        <translation>Abrir página del álbum</translation>
+    </message>
+    <message>
+        <source>Apply only to tracks without artwork</source>
+        <translation>Aplicar solo a pistas sin portada</translation>
+    </message>
+    <message>
+        <source>Uncheck to replace the cover on every track in this album.</source>
+        <translation>Desmarque esta opción para reemplazar la portada de todas las pistas de este álbum.</translation>
+    </message>
+    <message>
+        <source>Choose Search to send the artist and album terms to the selected service.</source>
+        <translation>Pulse Buscar para enviar los términos del artista y del álbum al servicio seleccionado.</translation>
+    </message>
+    <message>
+        <source>Apply Artwork</source>
+        <translation>Aplicar portada</translation>
+    </message>
+    <message>
+        <source>Searching…</source>
+        <translation>Buscando…</translation>
+    </message>
+    <message>
+        <source>Search cancelled.</source>
+        <translation>Búsqueda cancelada.</translation>
+    </message>
+    <message>
+        <source>Loading artwork…</source>
+        <translation>Cargando portada…</translation>
+    </message>
+    <message>
+        <source>Select a result to preview its cover. Up to 25 results are shown.</source>
+        <translation>Seleccione un resultado para ver su portada. Se muestran hasta 25 resultados.</translation>
+    </message>
+    <message>
+        <source>No covers found. Try different terms, another region, or the other service.</source>
+        <translation>No se encontraron portadas. Pruebe otros términos, otra región o el otro servicio.</translation>
+    </message>
+    <message>
+        <source>%1 x %2 pixels</source>
+        <translation>%1 x %2 píxeles</translation>
+    </message>
+    <message>
+        <source>Apply Artwork uses this cover for the chosen tracks in this album.</source>
+        <translation>Aplicar portada usa esta imagen para las pistas elegidas de este álbum.</translation>
+    </message>
+    <message>
+        <source>No tracks without artwork remain. Uncheck the option to replace existing covers.</source>
+        <translation>No quedan pistas sin portada. Desmarque la opción para reemplazar las portadas existentes.</translation>
+    </message>
+    <message>
+        <source>Find a cover, preview it, then use it in the metadata editor.</source>
+        <translation>Busque una portada, vea la vista previa y úsela en el editor de metadatos.</translation>
+    </message>
+    <message>
+        <source>Use Artwork</source>
+        <translation>Usar portada</translation>
+    </message>
+    <message>
+        <source>Use Artwork returns this image to the metadata editor. Click Apply there to save your changes.</source>
+        <translation>Usar portada devuelve esta imagen al editor de metadatos. Pulse Aplicar allí para guardar los cambios.</translation>
+    </message>
 </context>
 <context>
     <name>ArtworkView</name>
@@ -7112,6 +7243,22 @@ Playlists: %3</translation>
         <source>No adjustment (0%)</source>
         <translation>Sin ajuste (0%)</translation>
     </message>
+    <message>
+        <source>Find Album Artwork…</source>
+        <translation>Buscar portada del álbum…</translation>
+    </message>
+    <message>
+        <source>iTunes Store…</source>
+        <translation>iTunes Store…</translation>
+    </message>
+    <message>
+        <source>Discogs…</source>
+        <translation>Discogs…</translation>
+    </message>
+    <message>
+        <source>Select one complete Music Album to find artwork.</source>
+        <translation>Seleccione un álbum de música completo para buscar una portada.</translation>
+    </message>
 </context>
 <context>
     <name>TrackListHeader</name>
@@ -10602,6 +10749,86 @@ Playlists: %3</translation>
     <message>
         <source>Finding media… Folders visited: {folders}; media files found: {files}.</source>
         <translation>Buscando contenido multimedia… Carpetas visitadas: {folders}; archivos multimedia encontrados: {files}.</translation>
+    </message>
+    <message>
+        <source>Artwork must be at most 8192 pixels per side and 32 megapixels.</source>
+        <translation>La portada debe tener como máximo 8192 píxeles por lado y 32 megapíxeles.</translation>
+    </message>
+    <message>
+        <source>Could not reach the artwork service. Check your connection and try again.</source>
+        <translation>No se pudo conectar con el servicio de portadas. Compruebe la conexión e inténtelo de nuevo.</translation>
+    </message>
+    <message>
+        <source>Discogs rejected the token. Check your personal access token.</source>
+        <translation>Discogs rechazó el token. Compruebe su token de acceso personal.</translation>
+    </message>
+    <message>
+        <source>Enter a two-letter iTunes Store region, such as US or JP.</source>
+        <translation>Introduzca una región de iTunes Store de dos letras, como US o JP.</translation>
+    </message>
+    <message>
+        <source>Enter a valid Discogs personal access token.</source>
+        <translation>Introduzca un token de acceso personal de Discogs válido.</translation>
+    </message>
+    <message>
+        <source>Enter an artist and album name (up to 300 characters).</source>
+        <translation>Introduzca el artista y el nombre del álbum (hasta 300 caracteres).</translation>
+    </message>
+    <message>
+        <source>Enter your Discogs personal access token to search.</source>
+        <translation>Introduzca su token de acceso personal de Discogs para buscar.</translation>
+    </message>
+    <message>
+        <source>Select tracks from the current Library.</source>
+        <translation>Seleccione pistas de la biblioteca actual.</translation>
+    </message>
+    <message>
+        <source>The artwork exceeds the download limit.</source>
+        <translation>La portada supera el límite de descarga.</translation>
+    </message>
+    <message>
+        <source>The artwork request timed out. Try again.</source>
+        <translation>La solicitud de portada agotó el tiempo de espera. Inténtelo de nuevo.</translation>
+    </message>
+    <message>
+        <source>The artwork response exceeds the download limit.</source>
+        <translation>La respuesta de portada supera el límite de descarga.</translation>
+    </message>
+    <message>
+        <source>The artwork response is empty or exceeds the download limit.</source>
+        <translation>La respuesta de portada está vacía o supera el límite de descarga.</translation>
+    </message>
+    <message>
+        <source>The artwork service redirected outside its provider.</source>
+        <translation>El servicio de portadas redirigió a una dirección ajena a su proveedor.</translation>
+    </message>
+    <message>
+        <source>The artwork service returned HTTP {status}.</source>
+        <translation>El servicio de portadas devolvió HTTP {status}.</translation>
+    </message>
+    <message>
+        <source>The artwork service returned an unsupported URL.</source>
+        <translation>El servicio de portadas devolvió una URL no compatible.</translation>
+    </message>
+    <message>
+        <source>The artwork service returned invalid search data.</source>
+        <translation>El servicio de portadas devolvió datos de búsqueda no válidos.</translation>
+    </message>
+    <message>
+        <source>The artwork service returned invalid search results.</source>
+        <translation>El servicio de portadas devolvió resultados de búsqueda no válidos.</translation>
+    </message>
+    <message>
+        <source>The authenticated request redirected to another host.</source>
+        <translation>La solicitud autenticada se redirigió a otro servidor.</translation>
+    </message>
+    <message>
+        <source>The downloaded artwork could not be decoded.</source>
+        <translation>No se pudo decodificar la portada descargada.</translation>
+    </message>
+    <message>
+        <source>The service is rate limited. Wait before searching again.</source>
+        <translation>Se alcanzó el límite de solicitudes del servicio. Espere antes de buscar de nuevo.</translation>
     </message>
 </context>
 <context>

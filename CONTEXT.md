@@ -14,6 +14,13 @@ then beyond it.
 
 ## Current stage
 
+The Music Album context menu can find artwork through user-directed iTunes Store
+or Discogs searches. Users preview a cover and apply it to missing-artwork Tracks
+or explicitly replace the Album's covers through the existing Library Workspace
+and save policy. The Metadata Editor's Artwork tab can also search and stage an
+image until its combined Apply action. Requests run in cancellable workers; Discogs tokens remain in the
+dialog session. See ADR-0140 and [Finding album artwork](docs/artwork-search.md).
+
 The Metadata Editor supports artwork images at explicit Artwork Display Times.
 Drafts retain references to untouched images; preparation writes ordered time
 groups and preserves later images during ordinary cover replacement. Explicit
