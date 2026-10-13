@@ -226,7 +226,7 @@ def test_progress_exposes_stage_counts_and_the_last_completed_item() -> None:
         APPLICATION.processEvents()
 
 
-def test_routine_conversion_notices_are_grouped_in_the_result() -> None:
+def test_other_conversion_notices_are_grouped_in_the_result() -> None:
     page = SyncExecutionPage()
     try:
         page.begin()
@@ -236,7 +236,7 @@ def test_routine_conversion_notices_are_grouped_in_the_result() -> None:
                 issues=tuple(
                     WriteIssue(
                         "sync.media_warning",
-                        "Re-encoding a lossy source can reduce audio quality.",
+                        "This iPod does not support ALAC. Preserved lossless audio as 16-bit WAV.",
                         severity=IssueSeverity.INFO,
                         artifact=f"book-{i}.m4b",
                     )
@@ -246,11 +246,97 @@ def test_routine_conversion_notices_are_grouped_in_the_result() -> None:
         )
         details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
         assert details is not None
-        assert details.toPlainText().count("Re-encoding a lossy") == 1
+        assert details.toPlainText().count("Preserved lossless audio") == 1
         assert "5 items" in details.toPlainText()
         assert "INFO" in details.toPlainText()
         assert "book-2.m4b" in details.toPlainText()
         assert "book-3.m4b" not in details.toPlainText()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("code", "message"),
+    (
+        ("sync.media_warning", "Re-encoding a lossy source can reduce audio quality."),
+        (
+            "sync.podcast_media_warning",
+            "Re-encoding a lossy source can reduce audio quality.",
+        ),
+        (
+            "playlist.podcast_membership",
+            "The special Podcasts playlist was updated to contain the resulting podcast Tracks.",
+        ),
+        (
+            "playlist.podcast_group_order",
+            "Podcast episodes were grouped by show; the prepared Playlist contains the resulting order.",
+        ),
+    ),
+)
+def test_expected_sync_notices_do_not_show_an_issue_panel(
+    code: str, message: str
+) -> None:
+    page = SyncExecutionPage()
+    try:
+        page.show_result(
+            SyncExecutionResult(
+                SyncExecutionStatus.SUCCESS,
+                issues=(
+                    WriteIssue(
+                        code,
+                        message,
+                        severity=IssueSeverity.INFO,
+                        artifact="https://publisher.example/episode.mp3",
+                    ),
+                ),
+            )
+        )
+        details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
+        assert details is not None
+        assert details.isHidden() and not details.toPlainText()
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert details.isHidden() and not details.toPlainText()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_expected_notices_do_not_hide_other_podcast_diagnostics_or_recovery() -> None:
+    page = SyncExecutionPage()
+    try:
+        page.show_result(
+            SyncExecutionResult(
+                SyncExecutionStatus.PARTIAL,
+                issues=(
+                    WriteIssue(
+                        "playlist.podcast_membership",
+                        "Membership updated",
+                        IssueSeverity.INFO,
+                    ),
+                    WriteIssue(
+                        "sync.podcast_media_warning",
+                        "Output sample rate was adjusted.",
+                        IssueSeverity.INFO,
+                    ),
+                    WriteIssue("sync.podcast_failed", "Episode download failed."),
+                    WriteIssue(
+                        "playlist.podcast_group_order",
+                        "Cannot safely group episodes.",
+                        IssueSeverity.WARNING,
+                    ),
+                ),
+                recovery_path="iPod_Control/iOpenPod/recovery/journal.json",
+            )
+        )
+        details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
+        assert details is not None and not details.isHidden()
+        text = details.toPlainText()
+        assert "Membership updated" not in text
+        assert "Output sample rate was adjusted." in text
+        assert "Episode download failed." in text
+        assert "Cannot safely group episodes." in text
+        assert "Recovery journal:" in text
     finally:
         page.deleteLater()
         APPLICATION.processEvents()

@@ -8,7 +8,12 @@ from threading import Lock
 from typing import TYPE_CHECKING
 
 from storage import HostPath, StorageError
-from storage.media_processing import MediaToolError, find_media_tool, run_media_tool
+from storage.media_processing import (
+    MediaToolError,
+    MediaToolFinder,
+    find_media_tool,
+    run_media_tool,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -69,12 +74,14 @@ class FpcalcFingerprinter:
         timeout_seconds: float = 300,
         max_output_bytes: int = 2 * 1024 * 1024,
         input_suffix: str | None = None,
+        find_tool: MediaToolFinder | None = None,
     ) -> None:
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError("fpcalc timeout must be positive and finite")
         if max_output_bytes <= 0:
             raise ValueError("fpcalc output limit must be positive")
         self._executable = executable
+        self._find_tool = find_tool or find_media_tool
         self._timeout = timeout_seconds
         self._output_limit = max_output_bytes
         self._input_suffix = input_suffix
@@ -137,9 +144,8 @@ class FpcalcFingerprinter:
                     raise
             return self._resolved_executable
 
-    @staticmethod
-    def _discover_executable() -> HostPath:
-        discovered = find_media_tool("fpcalc")
+    def _discover_executable(self) -> HostPath:
+        discovered = self._find_tool("fpcalc")
         if discovered is None:
             raise FpcalcUnavailableError(
                 "Install Chromaprint's fpcalc using Settings > Media Tools > Set Up "

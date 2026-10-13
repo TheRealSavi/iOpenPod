@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from storage.media_processing import find_media_tool
+from storage.media_processing import MediaToolFinder, find_media_tool
 
 from .models import AnalysisProgress, AnalysisStage
 
@@ -74,12 +74,14 @@ class FFmpegDecoder:
         *,
         sample_rate_hz: int = 32_000,
         maximum_duration_seconds: float = 15 * 60,
+        find_tool: MediaToolFinder | None = None,
     ) -> None:
         if not 16_000 <= sample_rate_hz <= 192_000:
             raise ValueError("Analysis sample rate is outside the supported range")
         if maximum_duration_seconds <= 0.0:
             raise ValueError("Maximum analysis duration must be positive")
         self._executable = executable
+        self._find_tool = find_tool or find_media_tool
         self._sample_rate_hz = sample_rate_hz
         self._maximum_duration_seconds = maximum_duration_seconds
 
@@ -197,7 +199,7 @@ class FFmpegDecoder:
     def _resolve_executable(self) -> str:
         if self._executable is not None:
             return self._executable
-        executable = find_media_tool("ffmpeg")
+        executable = self._find_tool("ffmpeg")
         if executable is None:
             raise AudioDecodeError("Install FFmpeg to analyze music")
         return str(executable)

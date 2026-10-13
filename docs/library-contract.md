@@ -98,7 +98,12 @@ Artwork replacement retains both the name and the Playlists.
 The Library Workspace applies changed Smart Playlist rules and matching entries
 together. Pure previews and unchanged rules leave saved membership intact. An
 explicit Evaluate now action can refresh one supported Smart Playlist's saved
-membership against the current draft. Draft edits do not alter the source adapter
+membership against the current draft. Before a Library save or Sync is prepared,
+the Application Layer refreshes supported Smart Playlists with Live updating enabled
+from the completed draft. Playlists with Live updating disabled and unsupported
+definitions remain preserved. See
+[ADR-0142](adr/0142-refresh-smart-playlists-before-library-publication.md).
+Draft edits do not alter the source adapter
 or its serialized bytes. Review Changes can prepare and then save metadata,
 device-name, and Playlist output with unchanged media and artwork; verified saving
 adopts a new source.

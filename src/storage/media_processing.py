@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,10 +36,13 @@ from storage.paths import HostPath
 _TRANSFORM_LOCK = threading.BoundedSemaphore(1)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import Generator
     from typing import BinaryIO
 
     from storage.models import FileFingerprint
+
+
+type MediaToolFinder = Callable[[str], HostPath | None]
 
 
 class MediaToolError(StorageOperationError):
@@ -310,13 +314,16 @@ def _run_media_tool(
     return ToolOutput(bytes(stdout.data), bytes(stderr.data), process.returncode)
 
 
-def discover_media_tools(*, checkpoint: Callable[[], None]) -> MediaTools:
+def discover_media_tools(
+    *, checkpoint: Callable[[], None], find_tool: MediaToolFinder | None = None
+) -> MediaTools:
     """Resolve all required executables before beginning a Sync preparation batch."""
     found: dict[str, HostPath] = {}
     missing: list[str] = []
+    find_tool = find_tool or find_media_tool
     for name in ("ffmpeg", "ffprobe"):
         checkpoint()
-        path = find_media_tool(name)
+        path = find_tool(name)
         if path is None:
             missing.append(name)
         else:
@@ -332,7 +339,7 @@ def discover_media_tools(*, checkpoint: Callable[[], None]) -> MediaTools:
     return MediaTools(
         found["ffmpeg"],
         found["ffprobe"],
-        find_media_tool("fpcalc"),
+        find_tool("fpcalc"),
         read_media_encoders(found["ffmpeg"], checkpoint=checkpoint),
     )
 

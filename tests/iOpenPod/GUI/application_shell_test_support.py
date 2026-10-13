@@ -7,6 +7,7 @@ from iOpenPod.app.artwork_controller import ArtworkController
 from iOpenPod.app.backup_controller import BackupController
 from iOpenPod.app.backups import BackupService
 from iOpenPod.app.context import AppContext
+from iOpenPod.app.core.settings.media_tools import ConfiguredMediaTools
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import (
     DeviceSettingsStore,
@@ -61,6 +62,7 @@ def build_context(
     """Compose an isolated GUI context without physical-device discovery."""
 
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    media_tools = ConfiguredMediaTools(settings)
     track_model = TrackTableModel()
     album_model = AlbumListModel(track_model)
     artist_model = CollectionListModel(track_model, CollectionKind.ARTIST)
@@ -121,7 +123,9 @@ def build_context(
         artwork_controller=artwork_controller,
         photo_controller=photo_controller,
         backup_controller=backup_controller,
-        host_media_controller=HostMediaScanController(HostMediaScanner()),
+        host_media_controller=HostMediaScanController(
+            HostMediaScanner(find_tool=media_tools.find)
+        ),
         ipod_media_controller=IPodMediaScanController(
             device_coordinator,
             device_controller,
@@ -153,6 +157,7 @@ def build_context(
         tv_show_model=tv_show_model,
         music_video_model=music_video_model,
         settings=settings,
+        find_media_tool=media_tools.find,
         theme_manager=theme_manager,
         i18n_manager=i18n_manager,
     )

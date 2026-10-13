@@ -14,7 +14,11 @@ from iOpenPod.app.media.models import StreamKind
 from iOpenPod.app.media.music_paths import MusicPathAllocator
 from iPodDB.library import MediaKind, Track, TrackChapter
 from storage import HostPath
-from storage.media_processing import discover_media_tools, run_media_tool
+from storage.media_processing import (
+    MediaToolFinder,
+    discover_media_tools,
+    run_media_tool,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -121,13 +125,14 @@ def prepare_chaptered_album(
     *,
     checkpoint: Callable[[], None],
     report: Callable[[str], None] = lambda _message: None,
+    find_tool: MediaToolFinder | None = None,
 ) -> ChapteredPreparation:
     """Copy through Storage, encode, inspect, and retain the Host output."""
     if not can_convert_album(tracks, active.library.tracks):
         raise ValueError(
             "Select a complete saved Music Album with at least two Tracks."
         )
-    tools = discover_media_tools(checkpoint=checkpoint)
+    tools = discover_media_tools(checkpoint=checkpoint, find_tool=find_tool)
     if "aac" in tools.encoders:
         extension, codec = "m4a", "aac"
     elif "libmp3lame" in tools.encoders:

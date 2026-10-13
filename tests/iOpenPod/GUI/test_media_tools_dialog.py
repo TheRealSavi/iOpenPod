@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QLabel, QPlainTextEdit, QPushButton
+from PySide6.QtWidgets import QLabel, QLineEdit, QPlainTextEdit, QPushButton
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app import media_tools_controller
+from iOpenPod.app.core.settings.definitions import FPCALC_PATH
 from iOpenPod.app.media_tools_controller import MediaToolsController
 from iOpenPod.app.services.media_tools import (
     TOOL_NAMES,
@@ -21,6 +22,7 @@ from iOpenPod.app.services.media_tools import (
 )
 from iOpenPod.GUI.dialogs.media_tools_setup import MediaToolsSetupDialog
 from iOpenPod.GUI.main_window import MainWindow
+from storage.media_processing import MediaToolFinder
 
 
 def _setup(*commands: InstallCommand, ready: bool = False) -> MediaToolSetup:
@@ -44,10 +46,48 @@ def _command(label: str, code: str) -> InstallCommand:
 
 
 def _mock_inspection(monkeypatch: pytest.MonkeyPatch, setup: MediaToolSetup) -> None:
-    def inspect(*, checkpoint: Callable[[], None]) -> MediaToolSetup:
+    def inspect(
+        *, checkpoint: Callable[[], None], find_tool: MediaToolFinder | None = None
+    ) -> MediaToolSetup:
         return setup
 
     monkeypatch.setattr(media_tools_controller, "inspect_media_tools", inspect)
+
+
+def test_path_edit_rechecks_the_shared_lookup_in_the_application(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths: list[str] = []
+
+    def inspect(
+        *, checkpoint: Callable[[], None], find_tool: MediaToolFinder | None = None
+    ) -> MediaToolSetup:
+        assert find_tool is not None
+        executable = find_tool("fpcalc")
+        assert executable is not None
+        paths.append(str(executable))
+        return MediaToolSetup(
+            (MediaToolStatus("fpcalc", str(executable)),),
+            MediaToolInstallPlan("Test", ""),
+        )
+
+    monkeypatch.setattr(media_tools_controller, "inspect_media_tools", inspect)
+    context = build_context()
+    window = MainWindow(context)
+    try:
+        edit = window.findChild(QLineEdit, "mediaToolPath_fpcalc")
+        assert edit is not None
+        selected = str(tmp_path / "custom tools" / "fpcalc")
+        edit.setText(selected)
+        edit.editingFinished.emit()
+        assert context.settings.get_global(FPCALC_PATH) == selected
+        _wait(lambda: bool(paths) and edit.isEnabled())
+        assert paths == [selected]
+        status = window.findChild(QLabel, "mediaToolStatus_fpcalc")
+        assert status is not None and status.text() == "Installed"
+    finally:
+        window.close()
+        context.shutdown()
 
 
 def test_check_and_skip_do_not_install(

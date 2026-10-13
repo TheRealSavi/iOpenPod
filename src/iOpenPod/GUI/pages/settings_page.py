@@ -336,7 +336,7 @@ class SettingsPage(QWidget):
         self._transcoding_settings = TranscodingSettings(
             settings, self, editor=self._editor
         )
-        self._media_tools = MediaToolsSettings(self)
+        self._media_tools = MediaToolsSettings(self, settings=settings)
         self._media_tools.setupRequested.connect(self.mediaToolsRequested.emit)
         self._media_tools.checkRequested.connect(self.mediaToolsCheckRequested.emit)
         self._sync_settings = SyncSettings(settings, self, editor=self._editor)
@@ -739,8 +739,6 @@ class SettingsPage(QWidget):
                 )
             else:
                 text = self.tr("Changes are saved automatically to this iPod.")
-        elif self._tabs.currentIndex() == self._media_tools_tab:
-            text = self.tr("Media tool status is read-only.")
         elif self._tabs.currentIndex() == self._ipod_preferences_tab:
             text = self.tr("iPod preferences are read-only.")
         else:

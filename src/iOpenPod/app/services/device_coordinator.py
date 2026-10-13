@@ -47,6 +47,7 @@ from iOpenPod.app.library_sync_helper import (
     publish_sync_helper,
 )
 from iOpenPod.app.library_write import WriteProgress
+from iOpenPod.app.media.photo_image import photo_viewing_image
 from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -76,13 +77,13 @@ from iOpenPod.app.services import (
 )
 from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
+from iOpenPod.app.smart_playlist_preview import refresh_smart_playlists
 from iPodDB.library import (
     IPodLibrary,
     PhotoPixelFormat,
     PhotoRepresentationKind,
     PhotoThumbnailFormat,
 )
-from iPodDB.shared.photo_image import photo_viewing_image
 from storage import (
     AccessMode,
     ConnectionGeneration,
@@ -1139,7 +1140,7 @@ class DeviceCoordinator:
         """Prepare a review with private Host staging and read-only device access.
 
         Sync may explicitly retain an unchanged review to verify a new association
-        before committing its helper. Ordinary Library saves require file changes.
+        or refresh Smart Playlists. Ordinary Library saves require file changes.
         """
         from iOpenPod.app.library_tag_updates import with_rockbox_edits
         from iOpenPod.app.library_write import (
@@ -1315,6 +1316,13 @@ class DeviceCoordinator:
                 )
             library_resources.recheck(active.session, (active.time_precondition,))
             library_resources.recheck(active.session, active.sidecar_preconditions)
+            snapshot = refresh_smart_playlists(
+                snapshot,
+                checkpoint=lambda: checkpoint(
+                    "draft.smart_playlists", source_text("Evaluating Smart Playlists")
+                ),
+            )
+            request = replace(request, snapshot=snapshot)
             checkpoint("draft.analysis", "Analyzing changes")
             request = with_rockbox_edits(request, source)
             plan = source.analyze(

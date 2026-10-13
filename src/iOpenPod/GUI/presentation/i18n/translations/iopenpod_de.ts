@@ -2273,6 +2273,18 @@
 <context>
     <name>MediaToolsSettings</name>
     <message>
+        <source>Enter an absolute executable path, or clear it to use automatic discovery.</source>
+        <translation>Geben Sie einen absoluten Pfad zur ausführbaren Datei ein oder leeren Sie das Feld für die automatische Erkennung.</translation>
+    </message>
+    <message>
+        <source>Choose %1 executable</source>
+        <translation>Ausführbare Datei für %1 auswählen</translation>
+    </message>
+    <message>
+        <source>All Files (*)</source>
+        <translation>Alle Dateien (*)</translation>
+    </message>
+    <message>
         <source>Media Tools</source>
         <translation>Medienwerkzeuge</translation>
     </message>
@@ -2287,6 +2299,30 @@
     <message>
         <source>Checking media tools…</source>
         <translation>Medienwerkzeuge werden geprüft…</translation>
+    </message>
+    <message>
+        <source>Automatic discovery</source>
+        <translation>Automatische Erkennung</translation>
+    </message>
+    <message>
+        <source>%1 path override</source>
+        <translation>Benutzerdefinierter Pfad für %1</translation>
+    </message>
+    <message>
+        <source>Browse…</source>
+        <translation>Durchsuchen…</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>Leeren</translation>
+    </message>
+    <message>
+        <source>Path Override</source>
+        <translation>Benutzerdefinierter Pfad</translation>
+    </message>
+    <message>
+        <source>Choose an executable on this computer. Leave empty for automatic discovery.</source>
+        <translation>Wählen Sie eine ausführbare Datei auf diesem Computer. Lassen Sie das Feld für die automatische Erkennung leer.</translation>
     </message>
     <message>
         <source>Not checked</source>
@@ -5419,7 +5455,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Media tool status is read-only.</source>
-        <translation>Der Status der Medienwerkzeuge ist schreibgeschützt.</translation>
+        <translation type="vanished">Der Status der Medienwerkzeuge ist schreibgeschützt.</translation>
     </message>
 </context>
 <context>
@@ -8124,6 +8160,10 @@ Playlists: %3</translation>
         <translation>Eine angegebene Wiedergabelistenposition muss der resultierenden Reihenfolge entsprechen oder die Quellposition dieses Eintrags beibehalten.</translation>
     </message>
     <message>
+        <source>A tool could not run. Repair its installation, or update its path override in Settings &gt; Media Tools, then check again.</source>
+        <translation>Ein Werkzeug konnte nicht ausgeführt werden. Reparieren Sie die Installation oder ändern Sie den benutzerdefinierten Pfad unter Einstellungen &gt; Medienwerkzeuge und prüfen Sie erneut.</translation>
+    </message>
+    <message>
         <source>Acoustic matching is unavailable; existing Sync Details and independent items remain usable. {error}</source>
         <translation>Akustischer Abgleich nicht verfügbar. Vorhandene Synchronisierungsdetails und unabhängige Elemente bleiben nutzbar. {error}</translation>
     </message>
@@ -8578,6 +8618,10 @@ Playlists: %3</translation>
     <message>
         <source>Entire library</source>
         <translation>Gesamte Mediathek</translation>
+    </message>
+    <message>
+        <source>Evaluating Smart Playlists</source>
+        <translation>Intelligente Wiedergabelisten werden ausgewertet</translation>
     </message>
     <message>
         <source>Every Playlist Entry needs a unique nonempty identity.</source>
@@ -10537,7 +10581,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A tool was found but could not run. Repair that installation or its PATH, then check again.</source>
-        <translation>Ein Werkzeug wurde gefunden, konnte aber nicht ausgeführt werden. Reparieren Sie die Installation oder ihren PATH und prüfen Sie erneut.</translation>
+        <translation type="vanished">Ein Werkzeug wurde gefunden, konnte aber nicht ausgeführt werden. Reparieren Sie die Installation oder ihren PATH und prüfen Sie erneut.</translation>
     </message>
     <message>
         <source>All tools are available.</source>

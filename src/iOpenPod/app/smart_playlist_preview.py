@@ -1,12 +1,15 @@
 """Pure, deterministic previews of editable Smart Playlist rules."""
 
 from collections.abc import Callable
+from dataclasses import replace
 from random import Random
 from time import time
 
 from iPodDB.library import (
+    LibrarySnapshot,
     MediaType,
     Playlist,
+    PlaylistKind,
     SmartField,
     SmartLimitSort,
     SmartLimitUnit,
@@ -21,6 +24,8 @@ from iPodDB.library import (
     SmartRuleGroup,
     SmartValueKind,
     Track,
+    order_playlist_entries,
+    playlist_entries,
     smart_playlist_references,
     smart_value_kind,
     validate_smart_playlist,
@@ -76,6 +81,60 @@ _SORT_KEYS: dict[SmartLimitSort, Callable[[Track], str | int]] = {
 }
 
 
+def can_refresh_smart_playlist(playlist: Playlist) -> bool:
+    """Whether automatic matching is enabled and safe for this saved membership."""
+    return (
+        playlist.kind is PlaylistKind.SMART
+        and not playlist.system_managed
+        and playlist.smart is not None
+        and playlist.smart.editable
+        and playlist.smart.live_update
+    )
+
+
+def refresh_smart_playlists(
+    snapshot: LibrarySnapshot,
+    *,
+    now: int | None = None,
+    checkpoint: Callable[[], None] = lambda: None,
+) -> LibrarySnapshot:
+    """Finalize supported memberships against one completed Library draft.
+
+    References use the draft's saved memberships, including folder descendants,
+    so evaluation never depends on Playlist order or cascades through cycles.
+    Only Playlists with live updating enabled are refreshed automatically.
+    """
+    instant = int(time()) if now is None else now
+    playlists: list[Playlist] = []
+    for playlist in snapshot.playlists:
+        checkpoint()
+        if can_refresh_smart_playlist(playlist):
+            assert playlist.smart is not None
+            try:
+                matches = preview_smart_playlist(
+                    snapshot.tracks,
+                    playlist.smart,
+                    playlists=snapshot.playlists,
+                    now=instant,
+                )
+            except ValueError as error:
+                raise ValueError(
+                    f'Smart Playlist "{playlist.name}" could not be evaluated: {error}'
+                ) from error
+            playlist = replace(
+                playlist,
+                entries=order_playlist_entries(
+                    playlist_entries(
+                        (track.track_id for track in matches), playlist.entries
+                    ),
+                    snapshot.tracks,
+                    playlist.sort_order,
+                ),
+            )
+        playlists.append(playlist)
+    return replace(snapshot, playlists=tuple(playlists))
+
+
 def preview_smart_playlist(
     tracks: tuple[Track, ...],
     smart: SmartPlaylist,
@@ -83,10 +142,9 @@ def preview_smart_playlist(
     playlists: tuple[Playlist, ...] = (),
     now: int | None = None,
 ) -> tuple[Track, ...]:
-    """Evaluate an explicitly created or edited definition, without any source writes.
+    """Evaluate a supported definition without any source writes.
 
-    Imported playlists use their stored membership until the user edits their
-    rules. Random selection uses a fixed seed so reopening a preview is stable.
+    Random selection uses a fixed seed so reopening a preview is stable.
     """
 
     validate_smart_playlist(smart)

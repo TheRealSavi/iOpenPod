@@ -111,6 +111,35 @@ def _absolute_path(value: str) -> bool:
     return bool(value.strip()) and len(value) <= 4096 and Path(value).is_absolute()
 
 
+def _optional_tool_path(value: str) -> bool:
+    return not value or ("\x00" not in value and _absolute_path(value))
+
+
+FFMPEG_PATH = SettingDefinition[str](
+    key="media-tools/ffmpeg-path",
+    value_type=str,
+    default="",
+    validator=_optional_tool_path,
+)
+FFPROBE_PATH = SettingDefinition[str](
+    key="media-tools/ffprobe-path",
+    value_type=str,
+    default="",
+    validator=_optional_tool_path,
+)
+FPCALC_PATH = SettingDefinition[str](
+    key="media-tools/fpcalc-path",
+    value_type=str,
+    default="",
+    validator=_optional_tool_path,
+)
+MEDIA_TOOL_PATHS = (
+    ("ffmpeg", FFMPEG_PATH),
+    ("ffprobe", FFPROBE_PATH),
+    ("fpcalc", FPCALC_PATH),
+)
+
+
 LOGGING_PATH = SettingDefinition[str](
     key="logging/path",
     value_type=str,

@@ -1,4 +1,4 @@
-"""Path-free Photo decoding with Pillow's limits and bounded working rasters."""
+"""Application Photo decoding with Pillow's limits and bounded working rasters."""
 
 from __future__ import annotations
 

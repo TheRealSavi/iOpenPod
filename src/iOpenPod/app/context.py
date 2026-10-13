@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication
 from iOpenPod.app.artwork_controller import ArtworkController
 from iOpenPod.app.backup_controller import BackupController
 from iOpenPod.app.backups import BackupService
+from iOpenPod.app.core.settings.media_tools import ConfiguredMediaTools
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import (
     DeviceSettingsStore,
@@ -15,6 +16,7 @@ from iOpenPod.app.core.settings.stores import (
 from iOpenPod.app.core.status import ApplicationStatus
 from iOpenPod.app.device_controller import DeviceController
 from iOpenPod.app.host_media_controller import HostMediaScanController
+from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaScanner
 from iOpenPod.app.ipod_media_controller import IPodMediaScanController
 from iOpenPod.app.library_sync_helper import IPodMediaScanner
@@ -35,9 +37,11 @@ from iOpenPod.app.podcasts.controller import PodcastController
 from iOpenPod.app.podcasts.feed_client import HttpPodcastArtworkLoader
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iOpenPod.app.synesthesia import SynesthesiaController, WholeTrackMusicAnalyzer
+from iOpenPod.app.synesthesia.audio import FFmpegDecoder
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from storage import Storage
+from storage.media_processing import MediaToolFinder
 
 
 @dataclass(frozen=True, slots=True, weakref_slot=True)
@@ -68,6 +72,7 @@ class AppContext:
     settings: SettingsService
     theme_manager: ThemeManager
     i18n_manager: I18nManager
+    find_media_tool: MediaToolFinder
 
     def __post_init__(self) -> None:
         self.library_workspace.tracksChanged.connect(self._workspace_tracks_changed)
@@ -83,6 +88,7 @@ class AppContext:
             DeviceSettingsStore(),
             application,
         )
+        media_tools = ConfiguredMediaTools(settings)
         theme_manager = ThemeManager(application, settings, application)
         i18n_manager = I18nManager(application, settings, parent=application)
         track_model = TrackTableModel(application)
@@ -110,6 +116,7 @@ class AppContext:
         device_coordinator = DeviceCoordinator(
             storage,
             ipod_media_scanner=IPodMediaScanner(
+                fingerprinter=FpcalcFingerprinter(find_tool=media_tools.find),
                 analysis_cache_file=lambda identity: storage.host_cache_file(
                     "iOpenPod", f"ipod-analysis-v1-{identity}.json"
                 ),
@@ -138,7 +145,7 @@ class AppContext:
             "host-media-library-v7.json",
         )
         host_media_controller = HostMediaScanController(
-            HostMediaScanner(cache_file),
+            HostMediaScanner(cache_file, find_tool=media_tools.find),
             application,
         )
         ipod_media_controller = IPodMediaScanController(
@@ -158,7 +165,7 @@ class AppContext:
             playback_controller, device_coordinator, library_workspace, application
         )
         synesthesia_controller = SynesthesiaController(
-            WholeTrackMusicAnalyzer(),
+            WholeTrackMusicAnalyzer(decoder=FFmpegDecoder(find_tool=media_tools.find)),
             device_coordinator,
             application,
         )
@@ -224,6 +231,7 @@ class AppContext:
             tv_show_model=tv_show_model,
             music_video_model=music_video_model,
             settings=settings,
+            find_media_tool=media_tools.find,
             theme_manager=theme_manager,
             i18n_manager=i18n_manager,
         )

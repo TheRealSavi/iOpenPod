@@ -97,3 +97,38 @@ Sort Album overrides, article/case handling, numeric/empty names, and subsequent
 device postprocessing. These are serialized-database checks, not physical firmware
 validation. Existing SQLite artifacts are replaced on the next CDB-changing save
 under ADR-0061; a no-op Sync does not regenerate them.
+
+## Original SQLite parity audit (2026-10-13)
+
+Comparison with Original iOpenPod `v1.68.1` (`de300074`) found additional omissions
+in the 2.x generator: dataset-5 category containers, six Library indexes, seven
+per-Track order fields, artist/composer ranks, genre counts, and artist artwork
+links. The public Snapshot excludes native categories by design, so the repair
+supplies typed native facts from the independently checked CDB under ADR-0141.
+Native chapter bodies also reach Extras without dropping their preamble or Unknown
+Data. Native smart preferences retain disabled limit settings and raw rule bytes.
+
+An offline replay of the retained Nano 6 CDB (522 Tracks plus two synthetic
+additions) now yields all nine Original indexes, both category kinds 4 and 5, and
+524 non-NULL values in every item order column. The seven restored order fields
+match Original for all 522 retained Tracks. Genre artist/album/compilation totals
+match at 109/128/83. All five databases pass integrity checks, their cross-file
+relationships validate, and CDB/Locations signatures verify with a synthetic GUID.
+The original capture remains unchanged and its no-op serialization is byte exact.
+Private source metadata and generated files are not committed as fixtures.
+
+Expected differences remain: stable native or derived group IDs replace Original's
+sequential IDs; canonical dataset-3 user Playlists are included; existing album
+collation follows the newer capture-backed policy; native sample counts take
+precedence over estimated counts; purchased-AAC evidence, date conversion, and
+known copyright fields retain the 2.x behavior. No data is invented for Genius or
+other unavailable fields. SQLite is still a generated artifact set, not a source
+for merging device-side edits.
+
+Synthetic regression coverage includes all five schemas, all indexes, Music and
+Audiobooks categories, ID collisions between datasets, folder parent links,
+repeated occurrences, deletion, native smart data, chapter Unknown Data, media
+flags and counts, audio duration fallback, and postprocessing that breaks companion
+relationships. This establishes the repaired serialization behavior. It does not
+prove the physical recovery-mode report is resolved; the replay has neither the
+reporter's full capture nor physical firmware execution.

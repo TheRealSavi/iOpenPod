@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from iOpenPod.app.media.photo_image import photo_source_size, photo_viewing_image
 from iPodDB.library import (
     FileDependency,
     IPodPhotoAlbumDetails,
@@ -26,7 +27,6 @@ from iPodDB.library import (
     SourceFile,
     encode_photo_thumbnail,
 )
-from iPodDB.shared.photo_image import photo_source_size, photo_viewing_image
 from storage import DevicePath
 
 if TYPE_CHECKING:

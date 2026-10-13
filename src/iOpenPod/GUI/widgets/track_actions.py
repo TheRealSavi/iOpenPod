@@ -492,17 +492,28 @@ class TrackActions(QObject):
         playlists = menu.addMenu(self.tr("Add to Playlist"))
         playlists.setEnabled(editable)
         add(playlists, self.tr("New Playlist…"), lambda: self.new_playlist(selection))
-        regular = tuple(
-            p for p in self.workspace.playlists if p.kind is PlaylistKind.PLAYLIST
-        )
-        if regular:
-            playlists.addSeparator()
-        for playlist in regular:
-            add(
-                playlists,
-                playlist.name,
-                partial(self.add_to_playlist, selection, playlist.playlist_id),
+        pending: list[tuple[QMenu, int | None]] = [(playlists, None)]
+        while pending:
+            parent, parent_id = pending.pop()
+            children = tuple(
+                playlist
+                for playlist in self.workspace.children_of(parent_id)
+                if not playlist.system_managed
+                and playlist.kind in (PlaylistKind.PLAYLIST, PlaylistKind.FOLDER)
             )
+            if parent is playlists and children:
+                playlists.addSeparator()
+            for playlist in children:
+                if playlist.kind is PlaylistKind.FOLDER:
+                    pending.append(
+                        (parent.addMenu(playlist.name), playlist.playlist_id)
+                    )
+                else:
+                    add(
+                        parent,
+                        playlist.name,
+                        partial(self.add_to_playlist, selection, playlist.playlist_id),
+                    )
         if selection.entry_ids:
             add(
                 menu,

@@ -17,9 +17,11 @@ full-resolution previews rejecting those same Photos.
 Use Pillow's unchanged decompression-bomb thresholds for Photo sources. Do not
 disable or raise its global pixel limit or add another decoder dependency.
 Host scanning, Photo preparation, and Host/device previews share path-free source
-inspection and viewing-image preparation. Reduce the image before EXIF orientation
-and RGB conversion so those operations copy the small working raster. JPEG decoding
-can use Pillow's draft reduction; other formats can still allocate a source raster.
+inspection and viewing-image preparation in the Application Layer's media module.
+These ordinary image operations require no private iPodDB imports. Reduce the image
+before EXIF orientation and RGB conversion so those operations copy the small working
+raster. JPEG decoding can use Pillow's draft reduction; other formats can still
+allocate a source raster.
 
 Retain original encoded bytes and dimensions when the source is within the existing
 64 MiB encoded-size bound and its dimensions fit PhotosDB's unsigned 16-bit fields.

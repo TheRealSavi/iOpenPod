@@ -23,6 +23,7 @@ from iOpenPod.app.services.media_tools import MediaToolSetup, inspect_media_tool
 
 if TYPE_CHECKING:
     from iOpenPod.app.services.media_tools import InstallCommand
+    from storage.media_processing import MediaToolFinder
 
 
 class _CheckCancelledError(Exception):
@@ -34,8 +35,9 @@ class _CheckSignals(QObject):
 
 
 class _Check(QRunnable):
-    def __init__(self) -> None:
+    def __init__(self, find_tool: MediaToolFinder | None = None) -> None:
         super().__init__()
+        self._find_tool = find_tool
         self.signals = _CheckSignals()
         self.cancelled = Event()
 
@@ -45,7 +47,9 @@ class _Check(QRunnable):
                 raise _CheckCancelledError
 
         try:
-            result = inspect_media_tools(checkpoint=checkpoint)
+            result = inspect_media_tools(
+                checkpoint=checkpoint, find_tool=self._find_tool
+            )
         except _CheckCancelledError:
             self.signals.finished.emit(None, "")
         except Exception as error:
@@ -59,8 +63,11 @@ class MediaToolsController(QObject):
     checked = Signal(object)
     output = Signal(str)
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(
+        self, parent: QObject | None = None, *, find_tool: MediaToolFinder | None = None
+    ) -> None:
         super().__init__(parent)
+        self._find_tool = find_tool
         self.setup: MediaToolSetup | None = None
         self.message = ""
         self.checking = False
@@ -92,7 +99,7 @@ class MediaToolsController(QObject):
 
     def _check(self) -> None:
         self.checking = True
-        job = _Check()
+        job = _Check(self._find_tool)
         self._job = job
         job.signals.finished.connect(self._checked, Qt.ConnectionType.QueuedConnection)
         self.changed.emit()

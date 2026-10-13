@@ -65,6 +65,13 @@ The following rules apply:
   media, or GUI knowledge. Ordinary application settings, logs, caches, Backup
   Snapshots, and temporary files remain iOpenPod responsibilities.
 
+Incomplete native enumeration reports Discovery Issues. Storage reinspects omitted
+retained Volumes before reconciling Connection Generations, preserving a connection
+only when fresh native evidence confirms it. A failed reinspection expires the
+omitted generation and invalidates its sessions; a replacement or remount receives
+a new generation. Successful observations remain available alongside the reported
+issues. A complete enumeration still treats absence as disconnection.
+
 The first implementation provides snapshot discovery and safe single-file
 operations. Multi-file Storage Transactions, durable Operation Journals,
 event-driven native connection monitoring, and safe native eject remain required

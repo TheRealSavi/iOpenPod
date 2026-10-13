@@ -792,7 +792,12 @@ iTunesCDB is framing around that single iTunesDB path, not a second Chunk parser
 the root header remains physical, the child extent is one bounded zlib stream, and
 the framing is restored before physical signing. `iPodDB.SQLiteDB` owns generation
 and validation of the five late-iPod SQLite projections and the Locations checksum
-book from a checked Library Snapshot. Its Interface accepts semantic data and returns
+book from a checked Library Snapshot and typed native metadata from the same checked
+CDB. The latter carries firmware categories, native container preferences and rule
+bodies, dates, and chapter bodies without exposing them as editable user Playlists.
+Generation supplies Original-compatible schemas, indexes, browse ranks, and group
+aggregates before optional device postprocessing. Integrity and relationship checks
+cover the complete artifact set before signing; see ADR-0141. Its Interface returns
 artifact names with bytes; it knows neither device paths nor persistence. Device
 Registry chooses required artifacts and per-artifact checksums. iOpenPod maps those
 artifacts to device-relative paths and publishes them through Storage, but never
@@ -1218,8 +1223,8 @@ an empty fingerprint only alongside committed Sync Details and continues reading
 v1 through v4. Converted Photos retain separate Host and iPod content digests; oversized
 image containers are streamed into bounded PNG stills (ADR-0086). Photo originals
 use Pillow's own pixel limits, while generated thumbnails retain their device-format
-bounds. Path-free decoding reduces working images before orientation and RGB copies;
-full-resolution preview shares publication's 64 MiB encoded-size bound. Sources
+bounds. Shared Application Layer decoding reduces working images before orientation
+and RGB copies; full-resolution preview shares publication's 64 MiB encoded-size bound. Sources
 whose dimensions cannot fit PhotosDB use the same bounded PNG conversion (ADR-0130).
 FFmpeg/FFprobe preflight applies only to incoming Tracks; fpcalc is a matching
 aid. Storage's explicit best-effort Host enumeration retains independent readable
@@ -1524,6 +1529,15 @@ the opt-in setup and bounded logs. Storage owns shared executable discovery,
 including standard package locations outside a GUI process's PATH. No device
 session participates in setup. See [Media-tool setup](media-tools.md) and ADR-0103.
 
+Host-only settings retain separate executable path overrides for FFmpeg, FFprobe,
+and fpcalc. Application composition supplies one configured lookup to tool checks,
+Host and iPod media inspection/fingerprinting, Sync, Album conversion, and
+Synesthesia. Workers read immutable path choices rather than the settings store.
+An explicit choice precedes automatic Storage discovery and remains selected when
+execution fails; clearing it restores discovery. Existing per-operation tool
+captures remain valid for that operation, while subsequent lookups see saved edits.
+See ADR-0140 for override precedence and failure behavior.
+
 `app/scrobbling` owns typed service clients, native credential-vault access, durable
 account-scoped capture/delivery state, and the background controller shared by
 Maintenance and Sync. It consumes committed Library Snapshots through a
@@ -1693,6 +1707,12 @@ Review Changes and Save to iPod. The sidebar hides Review Changes while off.
 Both modes use `DeviceCoordinator` for background preparation and a verified,
 recoverable file transaction through Storage. Failed attempts retain the draft,
 open diagnostics, and wait for correction or an explicit retry. See ADR-0073.
+The shared preparation path refreshes supported Smart Playlists with Live updating
+enabled against the completed desired Library before database preparation. Full
+Sync and quick or manual Library saves publish those entries in the same transaction.
+Playlists with Live updating disabled retain saved membership. Each pass uses one
+time and the input draft's saved Playlist memberships; unsupported rules and firmware-managed Playlists remain
+preserved. No-change Sync also reaches this step. See ADR-0142.
 Successful saves automatically clean their committed transaction's recovery files.
 A cleanup failure reports the retained journal and underlying reason while keeping
 the Library saved. Automatic saves open warning diagnostics, and reloading the iPod
@@ -1963,7 +1983,10 @@ after completion and defers while device operations hold a reservation. Closing 
 picker stops scheduling, allowing an in-flight read to finish. Automatic passes reuse
 ready candidates only while their complete mounted observations are unchanged and
 retry unready candidates. They preserve the current Active iPod object and publish
-changed discovery results only. Manual Refresh repeats metadata inspection. Search
+changed discovery results only. When native enumeration reports issues, Storage
+reinspects omitted retained Volumes before expiring their Connection Generations.
+Only newly verified observations survive; failed reinspection still invalidates
+the affected sessions. Manual Refresh repeats metadata inspection. Search
 feedback and retry details remain inside the picker. This polling loop does not
 replace native lifecycle subscriptions or authorize additional device writes. See
 ADR-0069.

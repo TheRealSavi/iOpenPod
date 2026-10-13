@@ -2273,6 +2273,18 @@
 <context>
     <name>MediaToolsSettings</name>
     <message>
+        <source>Enter an absolute executable path, or clear it to use automatic discovery.</source>
+        <translation>Introduce la ruta absoluta del ejecutable o borra el campo para usar la detección automática.</translation>
+    </message>
+    <message>
+        <source>Choose %1 executable</source>
+        <translation>Seleccionar ejecutable de %1</translation>
+    </message>
+    <message>
+        <source>All Files (*)</source>
+        <translation>Todos los archivos (*)</translation>
+    </message>
+    <message>
         <source>Media Tools</source>
         <translation>Herramientas multimedia</translation>
     </message>
@@ -2287,6 +2299,30 @@
     <message>
         <source>Checking media tools…</source>
         <translation>Comprobando herramientas multimedia…</translation>
+    </message>
+    <message>
+        <source>Automatic discovery</source>
+        <translation>Detección automática</translation>
+    </message>
+    <message>
+        <source>%1 path override</source>
+        <translation>Ruta personalizada de %1</translation>
+    </message>
+    <message>
+        <source>Browse…</source>
+        <translation>Examinar…</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>Borrar</translation>
+    </message>
+    <message>
+        <source>Path Override</source>
+        <translation>Ruta personalizada</translation>
+    </message>
+    <message>
+        <source>Choose an executable on this computer. Leave empty for automatic discovery.</source>
+        <translation>Selecciona un ejecutable en este equipo. Deja el campo vacío para usar la detección automática.</translation>
     </message>
     <message>
         <source>Not checked</source>
@@ -5419,7 +5455,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Media tool status is read-only.</source>
-        <translation>El estado de las herramientas multimedia es de solo lectura.</translation>
+        <translation type="vanished">El estado de las herramientas multimedia es de solo lectura.</translation>
     </message>
 </context>
 <context>
@@ -8124,6 +8160,10 @@ Playlists: %3</translation>
         <translation>La posición indicada de una lista debe coincidir con su orden resultante o conservar la posición de origen de esa entrada.</translation>
     </message>
     <message>
+        <source>A tool could not run. Repair its installation, or update its path override in Settings &gt; Media Tools, then check again.</source>
+        <translation>Una herramienta no pudo ejecutarse. Repara su instalación o cambia su ruta personalizada en Ajustes &gt; Herramientas multimedia y vuelve a comprobar.</translation>
+    </message>
+    <message>
         <source>Acoustic matching is unavailable; existing Sync Details and independent items remain usable. {error}</source>
         <translation>La comparación acústica no está disponible; los detalles de sincronización existentes y los elementos independientes siguen siendo utilizables. {error}</translation>
     </message>
@@ -8578,6 +8618,10 @@ Playlists: %3</translation>
     <message>
         <source>Entire library</source>
         <translation>Toda la biblioteca</translation>
+    </message>
+    <message>
+        <source>Evaluating Smart Playlists</source>
+        <translation>Evaluando listas de reproducción inteligentes</translation>
     </message>
     <message>
         <source>Every Playlist Entry needs a unique nonempty identity.</source>
@@ -10537,7 +10581,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A tool was found but could not run. Repair that installation or its PATH, then check again.</source>
-        <translation>Se encontró una herramienta, pero no pudo ejecutarse. Repare su instalación o su PATH y vuelva a comprobar.</translation>
+        <translation type="vanished">Se encontró una herramienta, pero no pudo ejecutarse. Repare su instalación o su PATH y vuelva a comprobar.</translation>
     </message>
     <message>
         <source>All tools are available.</source>

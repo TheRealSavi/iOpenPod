@@ -8,6 +8,22 @@ status also lists availability of `aac`, `aac_at`, `libfdk_aac`, and LAME
 these results. **Set Up Media Tools** appears in this tab only when at least one
 executable is missing; unavailable encoders do not trigger the setup button.
 
+Each tool has a **Path Override** field in **Settings > Media Tools**. Enter the
+absolute path to its executable or choose **Browse…**. Paths containing spaces
+need no quotes. The choice is saved on this Host and takes effect on subsequent
+tool lookups without restarting iOpenPod; already running processes continue with
+their selected executable. **Clear** restores automatic discovery for that tool.
+FFmpeg and FFprobe have independent overrides, so set both when using a custom
+FFmpeg installation whose executables are outside the search locations.
+
+Saving an override refreshes tool and encoder status. An inaccessible, missing,
+or unusable override reports **Needs attention** with its path and diagnostic;
+iOpenPod does not silently substitute a different executable or install a package
+to replace that choice. Repair or clear the override, then retry the affected
+scan or Sync. In Flatpak and other sandboxes, select an executable that the
+application can access and run inside the sandbox. An override does not grant
+access to Host files or libraries outside it.
+
 **Install Missing Tools** runs the selected native package manager, shows its
 output, and verifies that the executables can run afterward. A successful check
 does not prove that every optional FFmpeg encoder is present; Sync retains its
@@ -52,7 +68,7 @@ window open while installation is running. For a stalled system package manager,
 follow that manager's recovery instructions; the helper deliberately does not kill
 it midway through writes.
 
-Executable discovery prefers the current PATH and then searches WinGet aliases,
+Without an override, executable discovery prefers the current PATH and then searches WinGet aliases,
 the standard Homebrew prefixes, or native Linux executable directories. Installation
 does not change iOpenPod's process PATH or write tools into the application bundle.
 

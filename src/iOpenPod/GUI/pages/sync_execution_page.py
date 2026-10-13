@@ -23,6 +23,7 @@ from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.eta_label import EtaLabel
 from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
+from iPodDB.library import IssueSeverity
 
 if TYPE_CHECKING:
     from iOpenPod.app.library_write import WriteProgress
@@ -490,6 +491,16 @@ class SyncExecutionPage(QWidget):
         self._detail.setText(detail)
         grouped: dict[tuple[str, str, str, str], list[WriteIssue]] = {}
         for issue in dict.fromkeys(result.issues):
+            if issue.severity is IssueSeverity.INFO and (
+                issue.code
+                in ("playlist.podcast_membership", "playlist.podcast_group_order")
+                or (
+                    issue.code in ("sync.media_warning", "sync.podcast_media_warning")
+                    and issue.message
+                    == "Re-encoding a lossy source can reduce audio quality."
+                )
+            ):
+                continue
             key = (issue.severity.value, issue.code, issue.message, issue.detail)
             grouped.setdefault(key, []).append(issue)
         lines: list[str] = []

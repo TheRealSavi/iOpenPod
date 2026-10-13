@@ -26,13 +26,7 @@ from iPodDB.iTunesDB.cdb import (
 )
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
-from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
-from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
-    MhodSmartRulesPayload,
-)
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
-from iPodDB.iTunesDB.shared.constants import MhodPayloadKind
-from iPodDB.iTunesDB.writer.mhod_encoder import encode_mhod_body
 from iPodDB.iTunesDB.writer.signature import (
     extract_hash72_material,
     has_hash72_signature,
@@ -55,6 +49,7 @@ from iPodDB.library._playlist_projection import project_playlists
 from iPodDB.library._playlist_verification import verify_playlists
 from iPodDB.library._projection import link_artwork, project_tracks
 from iPodDB.library._reconcile import reconcile
+from iPodDB.library._sqlite_projection import project_sqlite_metadata
 from iPodDB.library._track_verification import verify_native_tracks
 from iPodDB.library._write_logging import log_resources, log_result
 from iPodDB.library._write_verification import retained_artwork, verify_relationships
@@ -152,29 +147,6 @@ def _finalize_itunes(
     if not valid:
         raise ValueError("Prepared database signature failed verification.")
     return data
-
-
-def _sqlite_smart_criteria(
-    document: DatabaseDocument[MhbdHeader],
-) -> dict[int, bytes]:
-    result: dict[int, bytes] = {}
-    for selection in document.find_chunks(MhypHeader):
-        rules = next(
-            (
-                child
-                for child in selection.chunk.children
-                if isinstance(child.header, MhodHeader)
-                and isinstance(child.payload, MhodSmartRulesPayload)
-            ),
-            None,
-        )
-        if rules is not None:
-            body, _header = encode_mhod_body(
-                cast("ParsedChunk[MhodHeader]", rules),
-                MhodPayloadKind.SMART_RULES,
-            )
-            result[selection.chunk.header.playlist_id] = body
-    return result
 
 
 def _record_context(
@@ -1058,7 +1030,9 @@ def _prepare(
                     hash72_material.random_part if hash72_material is not None else b""
                 ),
                 postprocess_commands=plan.target.sqlite_postprocess_commands,
-                smart_criteria=_sqlite_smart_criteria(checked_document),
+                native=project_sqlite_metadata(
+                    checked_document, checked, source.device_time
+                ),
             )
         return LibraryWriteResult(
             tuple(issues),

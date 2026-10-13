@@ -724,7 +724,9 @@ Podcast grouping belongs only to dataset 3's special Podcasts playlist, includin
 its first episode. Episodes are grouped by album, with the resulting order reported
 when it differs from the draft. Relevant podcast Track changes update special saved
 membership and can create that Playlist when dataset 3 establishes target support.
-Unrelated Smart Playlists and firmware category rules are not reevaluated. Dataset 5
+The semantic writer does not evaluate Smart Playlists or firmware category rules.
+The Application Layer refreshes supported Smart Playlists with Live updating enabled
+before submission. Dataset 5
 retains its native category fields and metadata, including categories that carry a
 Master flag. Ambiguous affected relationships block preparation; unrelated source
 anomalies remain with warnings. See [ADR-0024](adr/0024-reconcile-and-verify-playlists-by-dataset.md).
@@ -834,8 +836,14 @@ matching entries in one workspace edit, retaining surviving occurrence identitie
 Name-only edits, moves, previews, and identical rule submissions preserve saved
 membership. Evaluate now explicitly refreshes the selected supported Smart Playlist
 from the current Library draft and applies changed saved membership as a reversible
-edit. Unrelated Smart Playlists are never reevaluated. Live updating stores the iPod
-preference. The semantic writer never evaluates rules on its own.
+edit. Before any Library save or full Sync, the Application Layer refreshes supported
+Smart Playlists with Live updating enabled against the completed desired Tracks and
+saved Playlist memberships, using one captured time. This also runs for a no-change
+Sync. Live updating stores the iPod preference and gates this automatic refresh.
+Playlists with Live updating disabled keep their saved membership. Unsupported
+definitions and firmware-managed Playlists remain preserved. The semantic writer
+never evaluates rules on its own. See
+[ADR-0142](adr/0142-refresh-smart-playlists-before-library-publication.md).
 
 Fixed nested/date/checkbox rule bytes from Original iOpenPod are retained in
 `tests/fixtures/writing/original_smart_rules.json` with their generator's digest.

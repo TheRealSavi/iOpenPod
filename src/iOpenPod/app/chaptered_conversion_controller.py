@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from iPodDB.library import Track
+    from storage.media_processing import MediaToolFinder
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class _Conversion(QRunnable):
         active: ActiveIPod,
         coordinator: DeviceCoordinator,
         occupied_paths: tuple[str, ...],
+        find_tool: MediaToolFinder | None = None,
     ) -> None:
         super().__init__()
         self.token = token
@@ -49,6 +51,7 @@ class _Conversion(QRunnable):
         self.active = active
         self.coordinator = coordinator
         self.occupied_paths = occupied_paths
+        self.find_tool = find_tool
         self.cancelled = Event()
         self.signals = _Signals()
 
@@ -65,6 +68,7 @@ class _Conversion(QRunnable):
                 self.coordinator,
                 self.occupied_paths,
                 checkpoint=checkpoint,
+                find_tool=self.find_tool,
                 report=lambda message: self.signals.progress.emit(self.token, message),
             )
             try:
@@ -93,11 +97,14 @@ class ChapteredConversionController(QObject):
         devices: DeviceController,
         coordinator: DeviceCoordinator,
         parent: QObject | None = None,
+        *,
+        find_tool: MediaToolFinder | None = None,
     ) -> None:
         super().__init__(parent)
         self._workspace = workspace
         self._devices = devices
         self._coordinator = coordinator
+        self._find_tool = find_tool
         self._pool = QThreadPool(self)
         self._pool.setMaxThreadCount(1)
         self._token = 0
@@ -147,6 +154,7 @@ class ChapteredConversionController(QObject):
                 t.metadata.location
                 for t in (*active.library.tracks, *self._workspace.tracks)
             ),
+            self._find_tool,
         )
         self._jobs[self._token] = job
         job.signals.completed.connect(

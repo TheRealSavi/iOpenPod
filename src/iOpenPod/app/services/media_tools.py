@@ -10,6 +10,7 @@ from iOpenPod.app.display_text import source_text
 from storage.host_tools import HostToolEnvironment, inspect_tool_environment
 from storage.media_processing import (
     MediaToolError,
+    MediaToolFinder,
     find_media_tool,
     read_media_encoders,
     run_media_tool,
@@ -61,11 +62,14 @@ class MediaToolSetup:
         return all(tool.usable for tool in self.tools)
 
 
-def inspect_media_tools(*, checkpoint: Callable[[], None]) -> MediaToolSetup:
+def inspect_media_tools(
+    *, checkpoint: Callable[[], None], find_tool: MediaToolFinder | None = None
+) -> MediaToolSetup:
     tools: list[MediaToolStatus] = []
+    find_tool = find_tool or find_media_tool
     for name in TOOL_NAMES:
         checkpoint()
-        executable = find_media_tool(name)
+        executable = find_tool(name)
         if executable is None:
             tools.append(MediaToolStatus(name))
             continue
@@ -124,7 +128,7 @@ def plan_media_tool_install(
             "Installed tools",
             "All tools are available."
             if all(t.usable for t in tools)
-            else "A tool was found but could not run. Repair that installation or its PATH, then check again.",
+            else "A tool could not run. Repair its installation, or update its path override in Settings > Media Tools, then check again.",
         )
     if host.confined:
         return MediaToolInstallPlan(

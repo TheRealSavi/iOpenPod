@@ -191,6 +191,7 @@ class MainWindow(QMainWindow):
             context.device_controller,
             context.device_coordinator,
             self,
+            find_tool=context.find_media_tool,
         )
         self._chaptered_controller.progressChanged.connect(
             self._chaptered_progress_changed
@@ -216,7 +217,11 @@ class MainWindow(QMainWindow):
         self._scrobbling.message.connect(self._scrobble_message)
         self._scrobbling.finished.connect(self._scrobble_finished)
         self._sync_controller = SyncController(
-            SyncExecutor(context.device_coordinator, scrobbler=scrobbler),
+            SyncExecutor(
+                context.device_coordinator,
+                scrobbler=scrobbler,
+                find_tool=context.find_media_tool,
+            ),
             context.library_workspace,
             context.device_controller,
             context.settings,
@@ -408,7 +413,9 @@ class MainWindow(QMainWindow):
             self._pages,
             scrobbling=self._scrobbling,
         )
-        self._media_tools = MediaToolsController(self)
+        self._media_tools = MediaToolsController(
+            self, find_tool=context.find_media_tool
+        )
         self._media_tools_dialog = MediaToolsSetupDialog(self._media_tools, self)
         self._media_tools_prompt_pending = False
         self._media_tools.checked.connect(self._media_tools_checked)

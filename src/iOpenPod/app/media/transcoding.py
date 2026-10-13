@@ -21,6 +21,7 @@ from iPodDB.library import AudioEncoding, MediaKind
 from storage.host_input import LocalHostFile
 from storage.media_processing import (
     MediaToolError,
+    MediaToolFinder,
     available_compute_threads,
     discover_media_tools,
     inspect_mp3_variable_bitrate,
@@ -714,10 +715,13 @@ def _resolve_video(
 class MediaTranscoder:
     """Prepare verified Host files; keep them alive through the caller's commit."""
 
-    def __init__(self, *, threads_per_job: int = 1) -> None:
+    def __init__(
+        self, *, threads_per_job: int = 1, find_tool: MediaToolFinder | None = None
+    ) -> None:
         if threads_per_job < 1:
             raise ValueError("Encoder thread count must be positive")
         self.threads_per_job = min(threads_per_job, available_compute_threads())
+        self._find_tool = find_tool
 
     def embed_artwork(
         self,
@@ -731,11 +735,13 @@ class MediaTranscoder:
 
         checkpoint()
         ExportMediaTagger().prepare(prepared.source, track, artwork)
-        inspection = MediaInspector().inspect(prepared.source, checkpoint=checkpoint)
+        inspection = MediaInspector(find_tool=self._find_tool).inspect(
+            prepared.source, checkpoint=checkpoint
+        )
         return replace(prepared, inspection=inspection)
 
     def preflight(self, *, checkpoint: Callable[[], None]) -> MediaTools:
-        return discover_media_tools(checkpoint=checkpoint)
+        return discover_media_tools(checkpoint=checkpoint, find_tool=self._find_tool)
 
     @contextmanager
     def prepare(

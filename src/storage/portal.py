@@ -15,6 +15,7 @@ from storage.errors import (
     MountInspectionError,
     NotVolumeRootError,
     ReadOnlyFilesystemError,
+    StorageError,
     VolumeDisconnectedError,
     VolumeIdentityChangedError,
 )
@@ -26,6 +27,7 @@ from storage.host_files import (
 from storage.models import (
     AccessMode,
     ConnectionGeneration,
+    DiscoveryIssue,
     DiscoveryResult,
     EjectResult,
     HardwareProbeResult,
@@ -56,6 +58,7 @@ class Storage:
         self._writer_lock_directory = writer_lock_directory
         self._state_lock = threading.Lock()
         self._generations: dict[str, ConnectionGeneration] = {}
+        self._observations: dict[str, VolumeObservation] = {}
         self._sessions: list[weakref.ReferenceType[FilesystemSession]] = []
 
     @property
@@ -104,13 +107,42 @@ class Storage:
         """Return all currently mounted removable Volumes known to the Host."""
 
         result = self._platform.discover()
-        current_keys = {item.connection_key for item in result.observations}
+        observations = list(result.observations)
+        issues = list(result.issues)
+        if issues:
+            # An incomplete enumeration cannot establish that an omitted Volume
+            # disconnected. Require fresh native evidence before retaining it.
+            with self._state_lock:
+                retained = tuple(self._observations.values())
+            observed_keys = {item.connection_key for item in observations}
+            observed_mounts = {
+                _canonical_path(item.mount_point.path) for item in observations
+            }
+            for previous in retained:
+                if (
+                    previous.connection_key in observed_keys
+                    or _canonical_path(previous.mount_point.path) in observed_mounts
+                ):
+                    continue
+                try:
+                    current = self._platform.reinspect(previous)
+                except (StorageError, OSError) as error:
+                    issues.append(
+                        DiscoveryIssue(os.fspath(previous.mount_point.path), str(error))
+                    )
+                    continue
+                if current.physical_device.removable:
+                    observations.append(current)
+                    observed_keys.add(current.connection_key)
+                    observed_mounts.add(_canonical_path(current.mount_point.path))
+        current_keys = {item.connection_key for item in observations}
         with self._state_lock:
             missing_keys = set(self._generations) - current_keys
             for key in missing_keys:
                 del self._generations[key]
+                self._observations.pop(key, None)
             mounted = tuple(
-                self._mounted_volume(observation) for observation in result.observations
+                self._mounted_volume(observation) for observation in observations
             )
             session_references = tuple(self._sessions)
 
@@ -125,7 +157,7 @@ class Storage:
         with self._state_lock:
             self._sessions = remaining_references
 
-        return DiscoveryResult(volumes=mounted, issues=result.issues)
+        return DiscoveryResult(volumes=mounted, issues=tuple(issues))
 
     def inspect(self, mount_point: Path) -> MountedVolume:
         """Inspect a user-selected Mount Point without assigning domain meaning."""
@@ -328,6 +360,7 @@ class Storage:
         if generation is None:
             generation = ConnectionGeneration(uuid.uuid4().hex)
             self._generations[observation.connection_key] = generation
+        self._observations[observation.connection_key] = observation
         return MountedVolume(
             observation=observation,
             connection_generation=generation,
@@ -348,6 +381,7 @@ class Storage:
             retained = self._generations.get(connection_key)
             if retained == generation:
                 self._generations.pop(connection_key, None)
+                self._observations.pop(connection_key, None)
             references = tuple(self._sessions)
             self._sessions = [
                 reference for reference in references if reference() is not None

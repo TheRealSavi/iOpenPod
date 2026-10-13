@@ -22,7 +22,7 @@ from iOpenPod.app.media.models import (
 from storage import HostPath, capture_host_file
 from storage.media_probe import MediaInspectionError as MediaInspectionError
 from storage.media_probe import probe, probe_host_metadata
-from storage.media_processing import find_media_tool
+from storage.media_processing import MediaToolFinder, find_media_tool
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -46,12 +46,14 @@ class MediaInspector:
         *,
         timeout_seconds: float = 60,
         max_output_bytes: int = 4 * 1024 * 1024,
+        find_tool: MediaToolFinder | None = None,
     ) -> None:
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError("Inspection timeout must be positive and finite")
         if max_output_bytes <= 0:
             raise ValueError("Inspection output limit must be positive")
         self._executable = executable
+        self._find_tool = find_tool or find_media_tool
         self._timeout = timeout_seconds
         self._output_limit = max_output_bytes
 
@@ -86,7 +88,7 @@ class MediaInspector:
     def _resolve_executable(self) -> HostPath:
         if self._executable is not None:
             return self._executable
-        discovered = find_media_tool("ffprobe")
+        discovered = self._find_tool("ffprobe")
         if discovered is None:
             raise MediaInspectionError(
                 "media.probe_unavailable",

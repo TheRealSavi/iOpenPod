@@ -1,12 +1,23 @@
 """Media Tools settings show observed tools and encoders, and only offer missing-tool setup."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea, QTabWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QTabWidget,
+)
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
+from iOpenPod.app.core.settings.definitions import FPCALC_PATH, MEDIA_TOOL_PATHS
+from iOpenPod.app.core.settings.service import SettingsService
+from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
 from iOpenPod.app.services.media_tools import (
     MediaToolInstallPlan,
     MediaToolSetup,
@@ -14,6 +25,107 @@ from iOpenPod.app.services.media_tools import (
 )
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.widgets.media_tools_settings import MediaToolsSettings
+
+
+def test_path_edits_save_check_and_clear_each_tool(tmp_path: Path) -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    view = MediaToolsSettings(settings=settings)
+    refreshes = QSignalSpy(view.checkRequested)
+    for index, (name, definition) in enumerate(MEDIA_TOOL_PATHS):
+        edit = view.findChild(QLineEdit, f"mediaToolPath_{name}")
+        clear = view.findChild(QPushButton, f"clearMediaTool_{name}")
+        assert edit is not None and clear is not None
+        path = str(tmp_path / "my tools" / name)
+        edit.setText(path)
+        edit.editingFinished.emit()
+        assert settings.get_global(definition) == path
+        assert refreshes.count() == index * 2 + 1
+        edit.editingFinished.emit()
+        assert refreshes.count() == index * 2 + 1
+        clear.click()
+        assert not settings.get_global(definition)
+        assert not edit.text()
+        assert refreshes.count() == index * 2 + 2
+
+
+def test_browse_saves_selection_and_cancel_preserves_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    view = MediaToolsSettings(settings=settings)
+    button = view.findChild(QPushButton, "browseMediaTool_fpcalc")
+    assert button is not None
+    path = str(tmp_path / "my tools" / "custom-fpcalc")
+
+    def select_file(*_args: object) -> tuple[str, str]:
+        return path, ""
+
+    def cancel_selection(*_args: object) -> tuple[str, str]:
+        return "", ""
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", select_file)
+    button.click()
+    assert settings.get_global(FPCALC_PATH) == path
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", cancel_selection)
+    button.click()
+    assert settings.get_global(FPCALC_PATH) == path
+
+
+def test_invalid_relative_path_keeps_saved_choice_and_shows_error(
+    tmp_path: Path,
+) -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    saved = str(tmp_path / "fpcalc")
+    settings.set_global(FPCALC_PATH, saved)
+    view = MediaToolsSettings(settings=settings)
+    edit = view.findChild(QLineEdit, "mediaToolPath_fpcalc")
+    error = view.findChild(QLabel, "mediaToolPathError_fpcalc")
+    assert edit is not None and error is not None
+    assert edit.text() == saved
+    edit.setText("local/fpcalc")
+    edit.editingFinished.emit()
+    assert settings.get_global(FPCALC_PATH) == saved
+    assert not error.isHidden()
+    assert "absolute" in error.text()
+
+
+def test_checks_and_installation_disable_path_controls() -> None:
+    view = MediaToolsSettings(
+        settings=SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    )
+    view.set_status(_setup(), checking=False, busy=True, message="Installing")
+    for name, _ in MEDIA_TOOL_PATHS:
+        edit = view.findChild(QLineEdit, f"mediaToolPath_{name}")
+        browse = view.findChild(QPushButton, f"browseMediaTool_{name}")
+        clear = view.findChild(QPushButton, f"clearMediaTool_{name}")
+        assert edit is not None and not edit.isEnabled()
+        assert browse is not None and not browse.isEnabled()
+        assert clear is not None and not clear.isEnabled()
+
+
+def test_failed_save_can_retry_the_same_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = GlobalSettingsStore()
+    settings = SettingsService(store, DeviceSettingsStore())
+    view = MediaToolsSettings(settings=settings)
+    edit = view.findChild(QLineEdit, "mediaToolPath_fpcalc")
+    error = view.findChild(QLabel, "mediaToolPathError_fpcalc")
+    assert edit is not None and error is not None
+    refreshes = QSignalSpy(view.checkRequested)
+
+    def fail() -> None:
+        raise OSError("Cannot save settings")
+
+    monkeypatch.setattr(store, "sync", fail)
+    edit.setText(str(tmp_path / "fpcalc"))
+    edit.editingFinished.emit()
+    assert error.text() == "Cannot save settings" and not error.isHidden()
+    assert refreshes.count() == 0
+    monkeypatch.setattr(store, "sync", lambda: None)
+    edit.editingFinished.emit()
+    assert error.isHidden()
+    assert refreshes.count() == 1
 
 
 def _setup(
@@ -140,9 +252,7 @@ def test_encoder_failure_details_and_paths_are_plain_text() -> None:
 def test_installed_tool_versions_are_shown() -> None:
     view = MediaToolsSettings()
     view.set_status(
-        _setup(
-            versions={"ffmpeg": "7.1.1", "ffprobe": "7.1.1", "fpcalc": "1.6.0"}
-        ),
+        _setup(versions={"ffmpeg": "7.1.1", "ffprobe": "7.1.1", "fpcalc": "1.6.0"}),
         checking=False,
         busy=False,
         message="",

@@ -7,6 +7,7 @@ import pytest
 from storage import (
     AccessMode,
     DevicePath,
+    DiscoveryIssue,
     EjectError,
     HostPath,
     HostPathOnPhysicalDeviceError,
@@ -19,6 +20,7 @@ from storage import (
     VolumeDisconnectedError,
     VolumeIdentityChangedError,
 )
+from storage.platform.base import ObservationDiscoveryResult
 from storage.testing import VirtualStoragePlatform
 
 
@@ -87,6 +89,110 @@ def test_inspection_accepts_only_the_actual_volume_root(tmp_path: Path) -> None:
     assert storage.inspect(root).mount_point.path == root
     with pytest.raises(NotVolumeRootError):
         storage.inspect(child)
+
+
+@pytest.mark.parametrize("partial", (False, True))
+def test_incomplete_discovery_reinspects_omitted_connections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, partial: bool
+) -> None:
+    root, platform, storage = _portal(tmp_path)
+    mounted = storage.discover().volumes[0]
+    issue = DiscoveryIssue("volumes", "temporary enumeration failure")
+    if partial:
+        other = tmp_path / "other-volume"
+        other.mkdir()
+        platform.add_volume(other, device_id="other-device", volume_id="other-volume")
+    observed = platform.discover().observations[1:]
+
+    def incomplete() -> ObservationDiscoveryResult:
+        return ObservationDiscoveryResult(observed, (issue,))
+
+    with (
+        storage.open_session(mounted) as first,
+        storage.open_session(mounted) as second,
+    ):
+        monkeypatch.setattr(platform, "discover", incomplete)
+        result = storage.discover()
+        assert result.issues == (issue,)
+        assert len(result.volumes) == 1 + int(partial)
+        retained = next(v for v in result.volumes if v.volume.id == mounted.volume.id)
+        assert retained.connection_generation == mounted.connection_generation
+        assert first.is_active and second.is_active
+        assert not first.exists(DevicePath("absent"))
+        # A later complete observation still uses the same live connection.
+        monkeypatch.undo()
+        assert storage.discover().volumes[0].connection_generation == (
+            mounted.connection_generation
+        )
+        assert (
+            storage.inspect(root).connection_generation == mounted.connection_generation
+        )
+
+
+@pytest.mark.parametrize(
+    "change", ("disconnect", "remount", "replacement", "uninspectable")
+)
+def test_incomplete_discovery_never_preserves_an_unverified_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    root, platform, storage = _portal(tmp_path)
+    mounted = storage.discover().volumes[0]
+
+    def incomplete() -> ObservationDiscoveryResult:
+        return ObservationDiscoveryResult(
+            (), (DiscoveryIssue("volumes", "temporary enumeration failure"),)
+        )
+
+    def fail_reinspection(_retained: object) -> None:
+        raise MountInspectionError("Cannot verify retained connection")
+
+    with (
+        storage.open_session(mounted) as first,
+        storage.open_session(mounted) as second,
+    ):
+        if change == "disconnect":
+            platform.disconnect(root)
+        elif change == "remount":
+            platform.reconnect(root)
+        elif change == "replacement":
+            platform.replace_identity(root, device_id="replacement", volume_id="new")
+        else:
+            monkeypatch.setattr(platform, "reinspect", fail_reinspection)
+        monkeypatch.setattr(platform, "discover", incomplete)
+        result = storage.discover()
+        assert not first.is_active and not second.is_active
+        with pytest.raises(VolumeIdentityChangedError):
+            storage.open_session(mounted)
+        if change in ("disconnect", "uninspectable"):
+            assert result.volumes == ()
+            assert len(result.issues) == 2
+        else:
+            assert len(result.volumes) == 1
+            assert (
+                result.volumes[0].connection_generation != mounted.connection_generation
+            )
+
+
+def test_partial_discovery_does_not_duplicate_a_replacement_at_the_same_mount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, platform, storage = _portal(tmp_path)
+    mounted = storage.discover().volumes[0]
+    with storage.open_session(mounted) as session:
+        platform.replace_identity(root, device_id="replacement", volume_id="new")
+        observed = platform.discover().observations
+
+        def partial() -> ObservationDiscoveryResult:
+            return ObservationDiscoveryResult(
+                observed, (DiscoveryIssue("other-volume", "unavailable"),)
+            )
+
+        monkeypatch.setattr(platform, "discover", partial)
+        result = storage.discover()
+        assert len(result.volumes) == 1
+        assert result.volumes[0].volume.id.value == "new"
+        assert result.volumes[0].connection_generation != mounted.connection_generation
+        assert not session.is_active
 
 
 def test_host_path_on_sibling_volume_of_same_physical_device_is_rejected(

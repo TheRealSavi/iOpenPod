@@ -38,6 +38,7 @@ from iOpenPod.app.media.importing import (
     relocate_song,
 )
 from iOpenPod.app.media.music_paths import MusicPathAllocator
+from iOpenPod.app.media.photo_image import photo_source_size
 from iOpenPod.app.media.photo_sync import (
     MAX_PHOTO_SOURCE_BYTES,
     photo_library_with_asset,
@@ -59,6 +60,7 @@ from iOpenPod.app.services.device_coordinator import (
     SyncRecoveryRequiredError,
     SyncRestoredCleanupPendingError,
 )
+from iOpenPod.app.smart_playlist_preview import can_refresh_smart_playlist
 from iOpenPod.app.sync_artwork_fallback import (
     pending_cover_provenance,
     without_cover_changes,
@@ -101,11 +103,10 @@ from iPodDB.library import (
     prepared_audio,
     prepared_video,
 )
-from iPodDB.shared.photo_image import photo_source_size
 from storage import DeviceEntry, DeviceEntryKind, DevicePath, StorageError
 from storage.content_workspace import content_workspace
 from storage.host_input import LocalHostFile
-from storage.media_processing import available_compute_threads
+from storage.media_processing import MediaToolFinder, available_compute_threads
 
 _PHOTO_MEMORY_BUDGET = 2 * 1024 * 1024 * 1024
 
@@ -232,10 +233,12 @@ class SyncExecutor:
         transcoder: MediaTranscoder | None = None,
         workers: int | None = None,
         scrobbler: ScrobbleService | None = None,
+        find_tool: MediaToolFinder | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._scrobbler = scrobbler
-        self._transcoder = transcoder or MediaTranscoder()
+        self._find_tool = find_tool
+        self._transcoder = transcoder or MediaTranscoder(find_tool=find_tool)
         self._default_transcoder = transcoder is None
         self._workers = (
             max(1, min(16, available_compute_threads())) if workers is None else workers
@@ -372,11 +375,12 @@ class SyncExecutor:
             ) + (len(podcast_plan.additions) if podcast_plan is not None else 0)
             if self._default_transcoder:
                 self._transcoder = MediaTranscoder(
+                    find_tool=self._find_tool,
                     threads_per_job=max(
                         1,
                         available_compute_threads()
                         // min(self._workers, track_jobs or 1),
-                    )
+                    ),
                 )
             with ExitStack() as resources:
                 prepared: list[_PreparedTrack] = []
@@ -550,12 +554,13 @@ class SyncExecutor:
                             severity=IssueSeverity.WARNING,
                         )
                     )
-                if (
+                unchanged_draft = (
                     not completed
                     and not library_changed
                     and not request.source.artwork_repairs_pending
                     and not request.source.photos_repairs_pending
-                ):
+                )
+                if unchanged_draft:
                     requested_changes = bool(
                         request.plan.change_count
                         or requested_playlists
@@ -564,13 +569,17 @@ class SyncExecutor:
                             issue.severity is IssueSeverity.ERROR for issue in issues
                         )
                     )
-                    return SyncExecutionResult(
-                        SyncExecutionStatus.FAILED
-                        if requested_changes
-                        else SyncExecutionStatus.SUCCESS,
-                        active=request.source if not requested_changes else None,
-                        issues=tuple(issues),
-                    )
+                    if requested_changes or not any(
+                        can_refresh_smart_playlist(playlist)
+                        for playlist in draft.snapshot.playlists
+                    ):
+                        return SyncExecutionResult(
+                            SyncExecutionStatus.FAILED
+                            if requested_changes
+                            else SyncExecutionStatus.SUCCESS,
+                            active=request.source if not requested_changes else None,
+                            issues=tuple(issues),
+                        )
                 # A source edited during Host computation must never be published
                 # against the older Review, even if its temporary result is valid.
                 self._validate_sources(request, checkpoint)
@@ -584,7 +593,7 @@ class SyncExecutor:
                 has_user_match = any(
                     item.basis is SyncPlanBasis.USER_MATCH for item in completed
                 )
-                if has_user_match:
+                if has_user_match or unchanged_draft:
                     review = self._coordinator.prepare_library(
                         draft,
                         progress,
@@ -611,7 +620,7 @@ class SyncExecutor:
                                 "Retrying Library preparation while keeping existing covers…",
                             )
                         )
-                        if has_user_match:
+                        if has_user_match or unchanged_draft:
                             review = self._coordinator.prepare_library(
                                 fallback,
                                 progress,
@@ -1537,7 +1546,7 @@ class SyncExecutor:
                             # Pass-through captures have no extension. Use the
                             # verified output format, not the publisher's filename.
                             acoustic_fingerprint = FpcalcFingerprinter(
-                                input_suffix=f".{extension}"
+                                input_suffix=f".{extension}", find_tool=self._find_tool
                             ).fingerprint(output.source, checkpoint=checkpoint)
                         except (
                             FpcalcError,

@@ -212,3 +212,6 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0137: Warn and default unrecognized album collation](0137-warn-and-default-unrecognized-album-collation.md)
 - [ADR-0138: Edit artwork by display time](0138-edit-artwork-by-display-time.md)
 - [ADR-0139: Complete timed artwork formats and counts](0139-complete-timed-artwork-formats-and-counts.md)
+- [ADR-0140: Restore Host media-tool path overrides](0140-restore-host-media-tool-path-overrides.md)
+- [ADR-0141: Project native CDB metadata into SQLite](0141-project-native-cdb-metadata-into-sqlite.md)
+- [ADR-0142: Refresh Smart Playlists before Library publication](0142-refresh-smart-playlists-before-library-publication.md)

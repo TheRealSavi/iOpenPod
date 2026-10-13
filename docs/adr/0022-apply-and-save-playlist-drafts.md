@@ -1,5 +1,9 @@
 # ADR-0022: Apply and save Playlist drafts
 
+> ADR-0142 supersedes the prohibition on automatic reevaluation during saves:
+> supported Smart Playlists with Live updating enabled now refresh before every
+> Library publication.
+
 - Status: Accepted
 - Date: 2026-09-05
 - Extends: ADR-0020 and ADR-0021

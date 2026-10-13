@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-import struct
+from contextlib import ExitStack, closing
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -39,11 +39,25 @@ from iPodDB.library.models import (
     ContentAdvisory,
     LibrarySnapshot,
     Track,
-    TrackChapter,
 )
 from iPodDB.library.playlists import PlaylistKind, SmartPlaylist
 from iPodDB.SQLiteDB.artifacts import SQLiteDatabaseSet
+from iPodDB.SQLiteDB.browse import complete_browse_metadata, name_ranks, sort_name
+from iPodDB.SQLiteDB.chapters import chapter_blob
 from iPodDB.SQLiteDB.checksum import build_locations_cbk, verify_locations_cbk
+from iPodDB.SQLiteDB.inputs import (
+    SQLiteContainer,
+    SQLiteNativeMetadata,
+    SQLiteSmartPreferences,
+)
+from iPodDB.SQLiteDB.schema import (
+    DYNAMIC_SCHEMA,
+    EXTRAS_SCHEMA,
+    GENIUS_SCHEMA,
+    LIBRARY_SCHEMA,
+    LOCATIONS_SCHEMA,
+)
+from iPodDB.SQLiteDB.validation import SQLiteRelationships, validate_databases
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -77,10 +91,14 @@ def _open(data: bytes) -> sqlite3.Connection:
 
 def _new(schema: str) -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
-    connection.execute("PRAGMA journal_mode=OFF")
-    connection.execute("PRAGMA synchronous=OFF")
-    connection.execute("PRAGMA encoding='UTF-8'")
-    connection.executescript(schema)
+    try:
+        connection.execute("PRAGMA journal_mode=OFF")
+        connection.execute("PRAGMA synchronous=OFF")
+        connection.execute("PRAGMA encoding='UTF-8'")
+        connection.executescript(schema)
+    except Exception:
+        connection.close()
+        raise
     return connection
 
 
@@ -116,6 +134,8 @@ def _stable_pid(kind: str, *parts: str) -> int:
 def _allocate_pids(
     kind: str,
     candidates: tuple[tuple[tuple[str, ...], int], ...],
+    *,
+    reserved: frozenset[int] = frozenset(),
 ) -> tuple[int, ...]:
     """Retain unique native IDs and deterministically replace collisions."""
 
@@ -123,16 +143,13 @@ def _allocate_pids(
     for _parts, native in candidates:
         if native:
             native_counts[native] = native_counts.get(native, 0) + 1
-    used: set[int] = set()
+    used = set(reserved)
+    retained = {native for native, count in native_counts.items() if count == 1} - used
     result: list[int] = []
     for parts, native in candidates:
-        candidate = (
-            native
-            if native and native_counts[native] == 1
-            else _stable_pid(kind, *parts)
-        )
+        candidate = native if native in retained else _stable_pid(kind, *parts)
         salt = 0
-        while candidate in used:
+        while candidate in used or (candidate in retained and candidate != native):
             salt += 1
             candidate = _stable_pid(kind, *parts, str(salt))
         used.add(candidate)
@@ -234,159 +251,6 @@ def _file_location(location: str) -> str:
     return "/".join(parts[-2:]) if len(parts) >= 2 else "/".join(parts)
 
 
-_LIBRARY_SCHEMA = """
-CREATE TABLE version_info (id INTEGER PRIMARY KEY, major INTEGER, minor INTEGER,
- compatibility INTEGER DEFAULT 0, update_level INTEGER DEFAULT 0,
- device_update_level INTEGER DEFAULT 0, platform INTEGER DEFAULT 0);
-CREATE TABLE db_info (pid INTEGER PRIMARY KEY, primary_container_pid INTEGER,
- media_folder_url TEXT, audio_language INTEGER, subtitle_language INTEGER,
- genius_cuid TEXT, bib BLOB, rib BLOB);
-CREATE TABLE genre_map (id INTEGER PRIMARY KEY, genre TEXT UNIQUE, genre_order INTEGER,
- is_unknown INTEGER DEFAULT 0, has_music INTEGER DEFAULT 0,
- artist_count_calc INTEGER DEFAULT 0, album_count_calc INTEGER DEFAULT 0,
- compilation_count_calc INTEGER DEFAULT 0);
-CREATE TABLE location_kind_map (id INTEGER PRIMARY KEY, kind TEXT UNIQUE);
-CREATE TABLE category_map (id INTEGER PRIMARY KEY, category TEXT UNIQUE);
-CREATE TABLE item (pid INTEGER PRIMARY KEY, revision_level INTEGER,
- media_kind INTEGER DEFAULT 0, is_song INTEGER DEFAULT 0,
- is_audio_book INTEGER DEFAULT 0, is_music_video INTEGER DEFAULT 0,
- is_movie INTEGER DEFAULT 0, is_tv_show INTEGER DEFAULT 0,
- is_home_video INTEGER DEFAULT 0, is_ringtone INTEGER DEFAULT 0,
- is_tone INTEGER DEFAULT 0, is_voice_memo INTEGER DEFAULT 0,
- is_book INTEGER DEFAULT 0, is_rental INTEGER DEFAULT 0,
- is_itunes_u INTEGER DEFAULT 0, is_digital_booklet INTEGER DEFAULT 0,
- is_podcast INTEGER DEFAULT 0, date_modified INTEGER DEFAULT 0,
- year INTEGER DEFAULT 0, content_rating INTEGER DEFAULT 0,
- content_rating_level INTEGER DEFAULT 0, is_compilation INTEGER,
- is_user_disabled INTEGER DEFAULT 0, remember_bookmark INTEGER DEFAULT 0,
- exclude_from_shuffle INTEGER DEFAULT 0, part_of_gapless_album INTEGER DEFAULT 0,
- chosen_by_auto_fill INTEGER DEFAULT 0, artwork_status INTEGER,
- artwork_cache_id INTEGER DEFAULT 0, start_time_ms REAL DEFAULT 0,
- stop_time_ms REAL DEFAULT 0, total_time_ms REAL DEFAULT 0,
- total_burn_time_ms REAL, track_number INTEGER DEFAULT 0,
- track_count INTEGER DEFAULT 0, disc_number INTEGER DEFAULT 0,
- disc_count INTEGER DEFAULT 0, bpm INTEGER DEFAULT 0, relative_volume INTEGER,
- eq_preset TEXT, radio_stream_status TEXT, genius_id INTEGER DEFAULT 0,
- genre_id INTEGER DEFAULT 0, category_id INTEGER DEFAULT 0,
- album_pid INTEGER DEFAULT 0, artist_pid INTEGER DEFAULT 0,
- composer_pid INTEGER DEFAULT 0, title TEXT, artist TEXT, album TEXT,
- album_artist TEXT, composer TEXT, sort_title TEXT, sort_artist TEXT,
- sort_album TEXT, sort_album_artist TEXT, sort_composer TEXT,
- title_order INTEGER, artist_order INTEGER, album_order INTEGER,
- genre_order INTEGER, composer_order INTEGER, album_artist_order INTEGER,
- album_by_artist_order INTEGER, series_name_order INTEGER, comment TEXT,
- grouping TEXT, description TEXT, description_long TEXT,
- collection_description TEXT, copyright TEXT, track_artist_pid INTEGER DEFAULT 0,
- physical_order INTEGER, has_lyrics INTEGER DEFAULT 0,
- date_released INTEGER DEFAULT 0);
-CREATE TABLE album (pid INTEGER PRIMARY KEY, kind INTEGER, artwork_status INTEGER,
- artwork_item_pid INTEGER, artist_pid INTEGER, user_rating INTEGER, name TEXT,
- name_order INTEGER, all_compilations INTEGER, feed_url TEXT, season_number INTEGER,
- is_unknown INTEGER DEFAULT 0, has_songs INTEGER DEFAULT 0,
- has_music_videos INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0,
- artist_order INTEGER DEFAULT 0, has_any_compilations INTEGER DEFAULT 0,
- sort_name TEXT, artist_count_calc INTEGER DEFAULT 0, has_movies INTEGER DEFAULT 0,
- item_count INTEGER DEFAULT 0);
-CREATE TABLE artist (pid INTEGER PRIMARY KEY, kind INTEGER, artwork_status INTEGER,
- artwork_album_pid INTEGER, name TEXT, name_order INTEGER, sort_name TEXT,
- is_unknown INTEGER DEFAULT 0, has_songs INTEGER DEFAULT 0,
- has_music_videos INTEGER DEFAULT 0);
-CREATE TABLE track_artist (pid INTEGER PRIMARY KEY, name TEXT, name_order INTEGER,
- sort_name TEXT, has_songs INTEGER DEFAULT 0, has_music_videos INTEGER DEFAULT 0,
- has_non_compilation_tracks INTEGER DEFAULT 0, is_unknown INTEGER DEFAULT 0,
- album_count INTEGER DEFAULT 0);
-CREATE TABLE composer (pid INTEGER PRIMARY KEY, name TEXT, name_order INTEGER,
- sort_name TEXT, is_unknown INTEGER DEFAULT 0, has_music INTEGER DEFAULT 0);
-CREATE TABLE avformat_info (item_pid INTEGER NOT NULL, sub_id INTEGER NOT NULL DEFAULT 0,
- audio_format INTEGER, bit_rate INTEGER DEFAULT 0, channels INTEGER DEFAULT 0,
- sample_rate REAL DEFAULT 0, duration INTEGER, gapless_heuristic_info INTEGER,
- gapless_encoding_delay INTEGER, gapless_encoding_drain INTEGER,
- gapless_last_frame_resynch INTEGER, analysis_inhibit_flags INTEGER,
- audio_fingerprint INTEGER, volume_normalization_energy INTEGER,
- PRIMARY KEY (item_pid, sub_id));
-CREATE TABLE container (pid INTEGER PRIMARY KEY, distinguished_kind INTEGER,
- date_created INTEGER, date_modified INTEGER, name TEXT, name_order INTEGER,
- parent_pid INTEGER, media_kinds INTEGER, workout_template_id INTEGER,
- is_hidden INTEGER, smart_is_folder INTEGER, smart_is_dynamic INTEGER,
- smart_is_filtered INTEGER, smart_is_genius INTEGER, smart_enabled_only INTEGER,
- smart_is_limited INTEGER, smart_limit_kind INTEGER, smart_limit_order INTEGER,
- smart_evaluation_order INTEGER, smart_limit_value INTEGER,
- smart_reverse_limit_order INTEGER, smart_criteria BLOB, description TEXT);
-CREATE TABLE item_to_container (item_pid INTEGER, container_pid INTEGER,
- physical_order INTEGER, shuffle_order INTEGER);
-CREATE TABLE container_seed (container_pid INTEGER NOT NULL, item_pid INTEGER NOT NULL,
- seed_order INTEGER DEFAULT 0, UNIQUE (container_pid, item_pid));
-CREATE TABLE video_info (item_pid INTEGER PRIMARY KEY, has_alternate_audio INTEGER,
- has_subtitles INTEGER, characteristics_valid INTEGER, has_closed_captions INTEGER,
- is_self_contained INTEGER, is_compressed INTEGER, is_anamorphic INTEGER,
- is_hd INTEGER, season_number INTEGER, audio_language INTEGER,
- audio_track_index INTEGER, audio_track_id INTEGER, subtitle_language INTEGER,
- subtitle_track_index INTEGER, subtitle_track_id INTEGER, series_name TEXT,
- sort_series_name TEXT, episode_id TEXT, episode_sort_id INTEGER,
- network_name TEXT, extended_content_rating TEXT, movie_info TEXT);
-CREATE TABLE video_characteristics (item_pid INTEGER, sub_id INTEGER DEFAULT 0,
- track_id INTEGER, height INTEGER, width INTEGER, depth INTEGER, codec INTEGER,
- frame_rate REAL, percentage_encrypted REAL, bit_rate INTEGER,
- peak_bit_rate INTEGER, buffer_size INTEGER, profile INTEGER, level INTEGER,
- complexity_level INTEGER, UNIQUE (item_pid, sub_id, track_id));
-CREATE TABLE podcast_info (item_pid INTEGER PRIMARY KEY, date_released INTEGER DEFAULT 0,
- external_guid TEXT, feed_url TEXT, feed_keywords TEXT);
-CREATE TABLE store_info (item_pid INTEGER PRIMARY KEY, store_kind INTEGER,
- date_purchased INTEGER DEFAULT 0, date_released INTEGER DEFAULT 0,
- account_id INTEGER, key_versions INTEGER, key_platform_id INTEGER, key_id INTEGER,
- key_id2 INTEGER, store_item_id INTEGER, artist_id INTEGER, composer_id INTEGER,
- genre_id INTEGER, playlist_id INTEGER, storefront_id INTEGER,
- store_link_id INTEGER, relevance REAL, popularity REAL, xid TEXT, flavor TEXT);
-CREATE TABLE store_link (id INTEGER PRIMARY KEY, url TEXT);
-CREATE TABLE track_size_calc (pid INTEGER PRIMARY KEY, kind TEXT UNIQUE, size INTEGER);
-CREATE INDEX idx_item_album_pid ON item (album_pid);
-CREATE INDEX idx_item_track_artist_pid ON item (track_artist_pid);
-CREATE INDEX item_to_container_container_pid_idx
- ON item_to_container (container_pid, physical_order, item_pid);
-"""
-
-_LOCATIONS_SCHEMA = """
-CREATE TABLE base_location (id INTEGER PRIMARY KEY, path TEXT);
-CREATE TABLE location (item_pid INTEGER NOT NULL, sub_id INTEGER NOT NULL DEFAULT 0,
- base_location_id INTEGER DEFAULT 0, location_type INTEGER, location TEXT,
- extension INTEGER, kind_id INTEGER DEFAULT 0, date_created INTEGER DEFAULT 0,
- file_size INTEGER DEFAULT 0, file_creator INTEGER, file_type INTEGER,
- num_dir_levels_file INTEGER, num_dir_levels_lib INTEGER,
- PRIMARY KEY (item_pid, sub_id));
-"""
-
-_DYNAMIC_SCHEMA = """
-CREATE TABLE item_stats (item_pid INTEGER PRIMARY KEY, has_been_played INTEGER DEFAULT 0,
- date_played INTEGER DEFAULT 0, play_count_user INTEGER DEFAULT 0,
- play_count_recent INTEGER DEFAULT 0, date_skipped INTEGER DEFAULT 0,
- skip_count_user INTEGER DEFAULT 0, skip_count_recent INTEGER DEFAULT 0,
- bookmark_time_ms REAL, bookmark_time_ms_common REAL, user_rating INTEGER DEFAULT 0,
- user_rating_common INTEGER DEFAULT 0, rental_expired INTEGER DEFAULT 0,
- play_count_user_original INTEGER DEFAULT 0, skip_count_user_original INTEGER DEFAULT 0,
- genius_id INTEGER DEFAULT 0);
-CREATE TABLE container_ui (container_pid INTEGER PRIMARY KEY, play_order INTEGER DEFAULT 0,
- is_reversed INTEGER DEFAULT 0, album_field_order INTEGER DEFAULT 0,
- repeat_mode INTEGER DEFAULT 0, shuffle_items INTEGER DEFAULT 0,
- has_been_shuffled INTEGER DEFAULT 0);
-CREATE TABLE rental_info (item_pid INTEGER PRIMARY KEY,
- rental_date_started INTEGER DEFAULT 0, rental_duration INTEGER DEFAULT 0,
- rental_playback_date_started INTEGER DEFAULT 0,
- rental_playback_duration INTEGER DEFAULT 0, is_demo INTEGER DEFAULT 0);
-"""
-
-_EXTRAS_SCHEMA = """
-CREATE TABLE chapter (item_pid INTEGER PRIMARY KEY, data BLOB);
-CREATE TABLE lyrics (item_pid INTEGER PRIMARY KEY, checksum INTEGER, lyrics TEXT);
-"""
-
-_GENIUS_SCHEMA = """
-CREATE TABLE genius_config (id INTEGER PRIMARY KEY, version INTEGER UNIQUE,
- default_num_results INTEGER DEFAULT 0, min_num_results INTEGER DEFAULT 0, data BLOB);
-CREATE TABLE genius_metadata (genius_id INTEGER PRIMARY KEY, version INTEGER, data BLOB);
-CREATE TABLE genius_similarities (genius_id INTEGER PRIMARY KEY, version INTEGER, data BLOB);
-"""
-
-
 def build_sqlite_databases(
     snapshot: LibrarySnapshot,
     *,
@@ -397,16 +261,58 @@ def build_sqlite_databases(
     hash72_random: bytes = b"",
     postprocess_commands: tuple[str, ...] = (),
     smart_criteria: Mapping[int, bytes] | None = None,
+    native: SQLiteNativeMetadata | None = None,
 ) -> SQLiteDatabaseSet:
     """Project a verified Library Snapshot into all firmware SQLite artifacts."""
 
-    library = _new(_LIBRARY_SCHEMA)
-    locations = _new(_LOCATIONS_SCHEMA)
-    dynamic = _new(_DYNAMIC_SCHEMA)
-    extras = _new(_EXTRAS_SCHEMA)
-    genius = _new(_GENIUS_SCHEMA)
+    with ExitStack() as connections:
+        try:
+            return _build_sqlite_databases(
+                snapshot,
+                database_id=database_id,
+                checksum=checksum,
+                firewire_guid=firewire_guid,
+                hash72_iv=hash72_iv,
+                hash72_random=hash72_random,
+                postprocess_commands=postprocess_commands,
+                smart_criteria=smart_criteria,
+                native=native or SQLiteNativeMetadata(),
+                connections=connections,
+            )
+        except sqlite3.DatabaseError as error:
+            raise ValueError("SQLite Library generation failed") from error
+
+
+def _build_sqlite_databases(
+    snapshot: LibrarySnapshot,
+    *,
+    database_id: int,
+    checksum: WriteChecksum,
+    firewire_guid: bytes,
+    hash72_iv: bytes,
+    hash72_random: bytes,
+    postprocess_commands: tuple[str, ...],
+    smart_criteria: Mapping[int, bytes] | None,
+    native: SQLiteNativeMetadata,
+    connections: ExitStack,
+) -> SQLiteDatabaseSet:
+    library = connections.enter_context(closing(_new(LIBRARY_SCHEMA)))
+    locations = connections.enter_context(closing(_new(LOCATIONS_SCHEMA)))
+    dynamic = connections.enter_context(closing(_new(DYNAMIC_SCHEMA)))
+    extras = connections.enter_context(closing(_new(EXTRAS_SCHEMA)))
+    genius = connections.enter_context(closing(_new(GENIUS_SCHEMA)))
     library.execute("INSERT INTO version_info VALUES (1,1,111,0,0,1104,2)")
-    master_pid = database_id or 1
+    containers = (
+        native.containers
+        if native.containers is not None
+        else tuple(SQLiteContainer(p) for p in snapshot.playlists)
+    )
+    user_ids = frozenset(c.playlist.playlist_id for c in containers if c.dataset != 5)
+    # Native Smart rules can refer to user Playlist IDs. Keep those identities
+    # even when a category or the database's master seed uses the same value.
+    master_pid = _allocate_pids(
+        "master", (((str(database_id),), database_id or 1),), reserved=user_ids
+    )[0]
     library.execute(
         "INSERT INTO db_info VALUES (?,?,NULL,-1,-1,NULL,NULL,NULL)",
         (_s64(database_id), _s64(master_pid)),
@@ -448,6 +354,31 @@ def build_sqlite_databases(
         for key, members in album_groups.items()
         for track in members
     }
+    title_names = {
+        t.track_id: t.metadata.sort_title or sort_name(t.title) for t in snapshot.tracks
+    }
+    artist_names = {
+        t.track_id: t.metadata.sort_artist or sort_name(t.artist)
+        for t in snapshot.tracks
+    }
+    composer_names = {
+        t.track_id: t.metadata.sort_composer or sort_name(t.metadata.composer)
+        for t in snapshot.tracks
+    }
+    album_artist_names = {
+        t.track_id: t.metadata.sort_album_artist
+        or (sort_name(t.album_artist) if t.album_artist else artist_names[t.track_id])
+        for t in snapshot.tracks
+    }
+    series_names = {
+        t.track_id: t.metadata.sort_show or sort_name(t.show) for t in snapshot.tracks
+    }
+    title_ranks = name_ranks(title_names.values())
+    artist_ranks = name_ranks(artist_names.values())
+    composer_ranks = name_ranks(composer_names.values())
+    genre_ranks = name_ranks(t.genre for t in snapshot.tracks)
+    album_artist_ranks = name_ranks(album_artist_names.values())
+    series_ranks = name_ranks(series_names.values())
     album_candidates: dict[_AlbumKey, int] = {
         key: members[0].ipod.album_id
         if members[0].ipod is not None and members[0].ipod.album_id
@@ -569,6 +500,7 @@ def build_sqlite_databases(
 
     pids: dict[int, int] = {}
     media_kinds: dict[int, int] = {}
+    native_chapters = {chapter.track_id: chapter.data for chapter in native.chapters}
     for order, track in enumerate(snapshot.tracks):
         pid = _track_pid(track)
         pids[track.track_id] = pid
@@ -586,7 +518,7 @@ def build_sqlite_databases(
             _s64(pid),
             media_kind,
             *flags,
-            _core_data(metadata.last_modified),
+            _core_data(metadata.last_modified or metadata.date_added),
             track.year,
             _content_rating(metadata.content_advisory),
             int(metadata.compilation),
@@ -616,12 +548,19 @@ def build_sqlite_databases(
             track.album,
             track.album_artist,
             metadata.composer,
-            metadata.sort_title or None,
-            metadata.sort_artist or None,
+            title_names[track.track_id] or None,
+            artist_names[track.track_id] or None,
             track_album_sort_names[track.track_id] or None,
-            metadata.sort_album_artist or None,
-            metadata.sort_composer or None,
+            album_artist_names[track.track_id] or None,
+            composer_names[track.track_id] or None,
+            title_ranks[title_names[track.track_id]],
+            artist_ranks[artist_names[track.track_id]],
             album_sort_ranks[track_album_sort_names[track.track_id]],
+            genre_ranks[track.genre],
+            composer_ranks[composer_names[track.track_id]],
+            artist_ranks[artist_names[track.track_id]],
+            album_artist_ranks[album_artist_names[track.track_id]],
+            series_ranks[series_names[track.track_id]],
             metadata.comment or None,
             metadata.grouping or None,
             metadata.description or None,
@@ -642,7 +581,8 @@ def build_sqlite_databases(
               stop_time_ms,total_time_ms,track_number,track_count,disc_number,disc_count,
               bpm,relative_volume,eq_preset,genre_id,category_id,album_pid,artist_pid,
               composer_pid,title,artist,album,album_artist,composer,sort_title,sort_artist,
-              sort_album,sort_album_artist,sort_composer,album_order,comment,grouping,description,
+              sort_album,sort_album_artist,sort_composer,title_order,artist_order,album_order,
+              genre_order,composer_order,album_artist_order,album_by_artist_order,series_name_order,comment,grouping,description,
               copyright,track_artist_pid,physical_order,has_lyrics,date_released)
               VALUES ("""
             + ",".join("?" for _value in item_values)
@@ -659,7 +599,8 @@ def build_sqlite_databases(
                 track.bitrate_kbps,
                 0,
                 float(metadata.sample_rate_hz),
-                metadata.sample_count,
+                metadata.sample_count
+                or track.length_ms * metadata.sample_rate_hz // 1000,
                 int(metadata.gapless),
                 metadata.pregap,
                 metadata.postgap,
@@ -671,11 +612,12 @@ def build_sqlite_databases(
         )
         if media_kind & MEDIA_TYPE_VIDEO_MASK:
             library.execute(
-                "INSERT INTO video_info (item_pid,season_number,series_name,episode_id,episode_sort_id,network_name) VALUES (?,?,?,?,?,?)",
+                "INSERT INTO video_info (item_pid,season_number,series_name,sort_series_name,episode_id,episode_sort_id,network_name) VALUES (?,?,?,?,?,?,?)",
                 (
                     _s64(pid),
                     track.season_number,
                     track.show,
+                    series_names[track.track_id] or None,
                     track.episode,
                     track.episode_number,
                     metadata.tv_network,
@@ -737,12 +679,18 @@ def build_sqlite_databases(
                 "INSERT INTO lyrics VALUES (?,?,?)",
                 (_s64(pid), sum(lyrics.encode("utf-8")) & 0xFFFFFFFF, lyrics),
             )
-        if metadata.chapters:
+        if metadata.chapters or track.track_id in native_chapters:
             extras.execute(
                 "INSERT INTO chapter VALUES (?,?)",
-                (_s64(pid), _chapter_blob(metadata.chapters)),
+                (
+                    _s64(pid),
+                    native_chapters[track.track_id]
+                    if track.track_id in native_chapters
+                    else chapter_blob(metadata.chapters),
+                ),
             )
 
+    complete_browse_metadata(library)
     library.executemany(
         "INSERT INTO track_size_calc VALUES (?,?,?)",
         (
@@ -785,28 +733,63 @@ def build_sqlite_databases(
         now,
         hidden=True,
     )
+    membership: list[tuple[int, int, int]] = []
     for position, track in enumerate(snapshot.tracks):
+        membership.append((_s64(pids[track.track_id]), _s64(master_pid), position))
         library.execute(
             "INSERT INTO item_to_container VALUES (?,?,?,NULL)",
             (_s64(pids[track.track_id]), _s64(master_pid), position),
         )
     container_pids = [master_pid]
-    for playlist in snapshot.playlists:
-        playlist_pid = playlist.playlist_id
+    allocated = _allocate_pids(
+        "container",
+        tuple(
+            (
+                (str(c.dataset), str(c.playlist.playlist_id)),
+                0
+                if c.dataset == 5 and c.playlist.playlist_id in user_ids
+                else c.playlist.playlist_id,
+            )
+            for c in containers
+        ),
+        reserved=frozenset((master_pid,)),
+    )
+    user_container_ids = {
+        c.playlist.playlist_id: pid
+        for c, pid in zip(containers, allocated, strict=True)
+        if c.dataset != 5
+    }
+    for container, playlist_pid in zip(containers, allocated, strict=True):
+        playlist = container.playlist
         container_pids.append(playlist_pid)
         _insert_container(
             library,
             playlist_pid,
             playlist.name,
-            playlist.parent_id,
+            user_container_ids.get(playlist.parent_id)
+            if playlist.parent_id is not None
+            else None,
             playlist.kind,
-            now,
+            _core_data(container.date_created) if container.date_created else now,
+            modified=_core_data(container.date_modified)
+            if container.date_modified
+            else now,
+            name_order=len(container_pids) * 100,
+            distinguished_kind=container.category
+            if container.category in (4, 5)
+            else 0,
+            media_kinds=0 if container.category == 5 else 1,
+            hidden=container.hidden,
             description=playlist.description,
             smart=playlist.smart,
-            criteria=(smart_criteria or {}).get(playlist.playlist_id),
+            criteria=container.criteria
+            if container.criteria is not None
+            else (smart_criteria or {}).get(playlist.playlist_id),
+            preferences=container.preferences,
         )
         for position, track_id in enumerate(playlist.track_ids):
             if track_id in pids:
+                membership.append((_s64(pids[track_id]), _s64(playlist_pid), position))
                 library.execute(
                     "INSERT INTO item_to_container VALUES (?,?,?,NULL)",
                     (_s64(pids[track_id]), _s64(playlist_pid), position),
@@ -824,7 +807,28 @@ def build_sqlite_databases(
             extras,
             genius,
             postprocess_commands,
+            connections,
         )
+    validate_databases(
+        library,
+        locations,
+        dynamic,
+        extras,
+        genius,
+        SQLiteRelationships(
+            frozenset(_s64(pid) for pid in pids.values()),
+            frozenset(_s64(pid) for pid in container_pids),
+            tuple(membership),
+            frozenset(
+                _s64(pids[t.track_id])
+                for t in snapshot.tracks
+                if t.metadata.chapters or t.track_id in native_chapters
+            ),
+            frozenset(
+                _s64(pids[t.track_id]) for t in snapshot.tracks if t.metadata.lyrics
+            ),
+        ),
+    )
     library_bytes = _serialize(library)
     locations_bytes = _serialize(locations)
     dynamic_bytes = _serialize(dynamic)
@@ -850,6 +854,7 @@ def _postprocess(
     extras: sqlite3.Connection,
     genius: sqlite3.Connection,
     commands: tuple[str, ...],
+    connections: ExitStack,
 ) -> tuple[
     sqlite3.Connection,
     sqlite3.Connection,
@@ -911,10 +916,18 @@ def _postprocess(
         raise ValueError("Device SQLite postprocessing failed") from error
     finally:
         library.set_authorizer(None)
-    locations = _open(library.serialize(name="Locations.itdb"))
-    dynamic = _open(library.serialize(name="Dynamic.itdb"))
-    extras = _open(library.serialize(name="Extras.itdb"))
-    genius = _open(library.serialize(name="Genius.itdb"))
+    locations = connections.enter_context(
+        closing(_open(library.serialize(name="Locations.itdb")))
+    )
+    dynamic = connections.enter_context(
+        closing(_open(library.serialize(name="Dynamic.itdb")))
+    )
+    extras = connections.enter_context(
+        closing(_open(library.serialize(name="Extras.itdb")))
+    )
+    genius = connections.enter_context(
+        closing(_open(library.serialize(name="Genius.itdb")))
+    )
     for name in companions:
         library.execute(f'DETACH DATABASE "{name}"')
     return library, locations, dynamic, extras, genius
@@ -979,6 +992,11 @@ def _insert_container(
     description: str = "",
     smart: SmartPlaylist | None = None,
     criteria: bytes | None = None,
+    preferences: SQLiteSmartPreferences | None = None,
+    distinguished_kind: int = 0,
+    media_kinds: int = 1,
+    name_order: int = 100,
+    modified: int | None = None,
 ) -> None:
     limit = None if smart is None else smart.limit
     limit_kinds = {
@@ -1008,14 +1026,16 @@ def _insert_container(
         smart_enabled_only,smart_is_limited,smart_limit_kind,smart_limit_order,
         smart_evaluation_order,smart_limit_value,smart_reverse_limit_order,
         smart_criteria,description)
-        VALUES (?,?,?,?,?,100,?,1,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             _s64(pid),
-            0,
+            distinguished_kind,
             timestamp,
-            timestamp,
+            timestamp if modified is None else modified,
             name,
+            name_order,
             _s64(parent or 0),
+            media_kinds,
             int(hidden),
             int(kind is PlaylistKind.FOLDER),
             None if smart is None else int(smart.live_update),
@@ -1034,6 +1054,21 @@ def _insert_container(
             description or None,
         ),
     )
+    if preferences is not None:
+        connection.execute(
+            "UPDATE container SET smart_is_dynamic=?,smart_is_filtered=?,smart_enabled_only=?,smart_is_limited=?,smart_limit_kind=?,smart_limit_order=?,smart_evaluation_order=1,smart_limit_value=?,smart_reverse_limit_order=? WHERE pid=?",
+            (
+                preferences.live_update,
+                preferences.check_rules,
+                preferences.checked_only,
+                preferences.check_limits,
+                preferences.limit_type,
+                preferences.limit_sort,
+                preferences.limit_value,
+                preferences.reverse_sort,
+                _s64(pid),
+            ),
+        )
 
 
 def _location_extension(location: str) -> str:
@@ -1099,28 +1134,3 @@ def _native_file_facts(track: Track) -> _NativeFileFacts:
     else:
         kind_id = 1
     return _NativeFileFacts(extension, audio_format, kind_id)
-
-
-def _chapter_blob(chapters: tuple[TrackChapter, ...]) -> bytes:
-    atoms = bytearray()
-    for chapter in chapters:
-        title = str(chapter.title)
-        encoded_title = title.encode("utf-16-be")
-        if len(encoded_title) // 2 > 0xFFFF:
-            raise ValueError("A chapter title is too long for Extras.itdb")
-        name_size = 22 + len(encoded_title)
-        name = (
-            struct.pack(
-                ">I4sIIIH", name_size, b"name", 1, 0, 0, len(encoded_title) // 2
-            )
-            + encoded_title
-        )
-        start = int(chapter.start_ms)
-        if not 0 <= start <= 0xFFFFFFFF:
-            raise ValueError("A chapter position must fit an unsigned 32-bit field")
-        atoms.extend(
-            struct.pack(">I4sIII", 20 + name_size, b"chap", start, 1, 0) + name
-        )
-    atoms.extend(struct.pack(">I4sIIIII", 28, b"hedr", 1, 0, 0, 0, 1))
-    sean = struct.pack(">I4sIII", 20 + len(atoms), b"sean", 1, len(chapters) + 1, 0)
-    return bytes(12) + sean + atoms

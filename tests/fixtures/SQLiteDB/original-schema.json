@@ -1,0 +1,454 @@
+{
+  "Library.itdb": {
+    "tables": {
+      "album": [
+        [0, "pid", "INTEGER", 1, null, 1],
+        [1, "kind", "INTEGER", 0, null, 0],
+        [2, "artwork_status", "INTEGER", 0, null, 0],
+        [3, "artwork_item_pid", "INTEGER", 0, null, 0],
+        [4, "artist_pid", "INTEGER", 0, null, 0],
+        [5, "user_rating", "INTEGER", 0, null, 0],
+        [6, "name", "TEXT", 0, null, 0],
+        [7, "name_order", "INTEGER", 0, null, 0],
+        [8, "all_compilations", "INTEGER", 0, null, 0],
+        [9, "feed_url", "TEXT", 0, null, 0],
+        [10, "season_number", "INTEGER", 0, null, 0],
+        [11, "is_unknown", "INTEGER", 0, "0", 0],
+        [12, "has_songs", "INTEGER", 0, "0", 0],
+        [13, "has_music_videos", "INTEGER", 0, "0", 0],
+        [14, "sort_order", "INTEGER", 0, "0", 0],
+        [15, "artist_order", "INTEGER", 0, "0", 0],
+        [16, "has_any_compilations", "INTEGER", 0, "0", 0],
+        [17, "sort_name", "TEXT", 0, null, 0],
+        [18, "artist_count_calc", "INTEGER", 1, "0", 0],
+        [19, "has_movies", "INTEGER", 0, "0", 0],
+        [20, "item_count", "INTEGER", 0, "0", 0]
+      ],
+      "artist": [
+        [0, "pid", "INTEGER", 1, null, 1],
+        [1, "kind", "INTEGER", 0, null, 0],
+        [2, "artwork_status", "INTEGER", 0, null, 0],
+        [3, "artwork_album_pid", "INTEGER", 0, null, 0],
+        [4, "name", "TEXT", 0, null, 0],
+        [5, "name_order", "INTEGER", 0, null, 0],
+        [6, "sort_name", "TEXT", 0, null, 0],
+        [7, "is_unknown", "INTEGER", 0, "0", 0],
+        [8, "has_songs", "INTEGER", 0, "0", 0],
+        [9, "has_music_videos", "INTEGER", 0, "0", 0]
+      ],
+      "avformat_info": [
+        [0, "item_pid", "INTEGER", 1, null, 1],
+        [1, "sub_id", "INTEGER", 1, "0", 2],
+        [2, "audio_format", "INTEGER", 0, null, 0],
+        [3, "bit_rate", "INTEGER", 0, "0", 0],
+        [4, "channels", "INTEGER", 0, "0", 0],
+        [5, "sample_rate", "REAL", 0, "0", 0],
+        [6, "duration", "INTEGER", 0, null, 0],
+        [7, "gapless_heuristic_info", "INTEGER", 0, null, 0],
+        [8, "gapless_encoding_delay", "INTEGER", 0, null, 0],
+        [9, "gapless_encoding_drain", "INTEGER", 0, null, 0],
+        [10, "gapless_last_frame_resynch", "INTEGER", 0, null, 0],
+        [11, "analysis_inhibit_flags", "INTEGER", 0, null, 0],
+        [12, "audio_fingerprint", "INTEGER", 0, null, 0],
+        [13, "volume_normalization_energy", "INTEGER", 0, null, 0]
+      ],
+      "category_map": [
+        [0, "id", "INTEGER", 1, null, 1],
+        [1, "category", "TEXT", 1, null, 0]
+      ],
+      "composer": [
+        [0, "pid", "INTEGER", 1, null, 1],
+        [1, "name", "TEXT", 0, null, 0],
+        [2, "name_order", "INTEGER", 0, null, 0],
+        [3, "sort_name", "TEXT", 0, null, 0],
+        [4, "is_unknown", "INTEGER", 0, "0", 0],
+        [5, "has_music", "INTEGER", 0, "0", 0]
+      ],
+      "container": [
+        [0, "pid", "INTEGER", 1, null, 1],
+        [1, "distinguished_kind", "INTEGER", 0, null, 0],
+        [2, "date_created", "INTEGER", 0, null, 0],
+        [3, "date_modified", "INTEGER", 0, null, 0],
+        [4, "name", "TEXT", 0, null, 0],
+        [5, "name_order", "INTEGER", 0, null, 0],
+        [6, "parent_pid", "INTEGER", 0, null, 0],
+        [7, "media_kinds", "INTEGER", 0, null, 0],
+        [8, "workout_template_id", "INTEGER", 0, null, 0],
+        [9, "is_hidden", "INTEGER", 0, null, 0],
+        [10, "smart_is_folder", "INTEGER", 0, null, 0],
+        [11, "smart_is_dynamic", "INTEGER", 0, null, 0],
+        [12, "smart_is_filtered", "INTEGER", 0, null, 0],
+        [13, "smart_is_genius", "INTEGER", 0, null, 0],
+        [14, "smart_enabled_only", "INTEGER", 0, null, 0],
+        [15, "smart_is_limited", "INTEGER", 0, null, 0],
+        [16, "smart_limit_kind", "INTEGER", 0, null, 0],
+        [17, "smart_limit_order", "INTEGER", 0, null, 0],
+        [18, "smart_evaluation_order", "INTEGER", 0, null, 0],
+        [19, "smart_limit_value", "INTEGER", 0, null, 0],
+        [20, "smart_reverse_limit_order", "INTEGER", 0, null, 0],
+        [21, "smart_criteria", "BLOB", 0, null, 0],
+        [22, "description", "TEXT", 0, null, 0]
+      ],
+      "container_seed": [
+        [0, "container_pid", "INTEGER", 1, null, 0],
+        [1, "item_pid", "INTEGER", 1, null, 0],
+        [2, "seed_order", "INTEGER", 0, "0", 0]
+      ],
+      "db_info": [
+        [0, "pid", "INTEGER", 1, null, 1],
+        [1, "primary_container_pid", "INTEGER", 0, null, 0],
+        [2, "media_folder_url", "TEXT", 0, null, 0],
+        [3, "audio_language", "INTEGER", 0, null, 0],
+        [4, "subtitle_language", "INTEGER", 0, null, 0],
+        [5, "genius_cuid", "TEXT", 0, null, 0],
+        [6, "bib", "BLOB", 0, null, 0],
+        [7, "rib", "BLOB", 0, null, 0]
+      ],
+      "genre_map": [
+        [0, "id", "INTEGER", 1, null, 1],
+        [1, "genre", "TEXT", 1, null, 0],
+        [2, "genre_order", "INTEGER", 0, "0", 0],
+        [3, "is_unknown", "INTEGER", 0, "0", 0],
+        [4, "has_music", "INTEGER", 0, "0", 0],
+        [5, "artist_count_calc", "INTEGER", 1, "0", 0],
+        [6, "album_count_calc", "INTEGER", 1, "0", 0],
+        [7, "compilation_count_calc", "INTEGER", 1, "0", 0]
+      ],
+      "item": [
+        [0, "pid", "INTEGER", 1, null, 1],
+        [1, "revision_level", "INTEGER", 0, null, 0],
+        [2, "media_kind", "INTEGER", 0, "0", 0],
+        [3, "is_song", "INTEGER", 0, "0", 0],
+        [4, "is_audio_book", "INTEGER", 0, "0", 0],
+        [5, "is_music_video", "INTEGER", 0, "0", 0],
+        [6, "is_movie", "INTEGER", 0, "0", 0],
+        [7, "is_tv_show", "INTEGER", 0, "0", 0],
+        [8, "is_home_video", "INTEGER", 0, "0", 0],
+        [9, "is_ringtone", "INTEGER", 0, "0", 0],
+        [10, "is_tone", "INTEGER", 0, "0", 0],
+        [11, "is_voice_memo", "INTEGER", 0, "0", 0],
+        [12, "is_book", "INTEGER", 0, "0", 0],
+        [13, "is_rental", "INTEGER", 0, "0", 0],
+        [14, "is_itunes_u", "INTEGER", 0, "0", 0],
+        [15, "is_digital_booklet", "INTEGER", 0, "0", 0],
+        [16, "is_podcast", "INTEGER", 0, "0", 0],
+        [17, "date_modified", "INTEGER", 0, "0", 0],
+        [18, "year", "INTEGER", 0, "0", 0],
+        [19, "content_rating", "INTEGER", 0, "0", 0],
+        [20, "content_rating_level", "INTEGER", 0, "0", 0],
+        [21, "is_compilation", "INTEGER", 0, null, 0],
+        [22, "is_user_disabled", "INTEGER", 0, "0", 0],
+        [23, "remember_bookmark", "INTEGER", 0, "0", 0],
+        [24, "exclude_from_shuffle", "INTEGER", 0, "0", 0],
+        [25, "part_of_gapless_album", "INTEGER", 0, "0", 0],
+        [26, "chosen_by_auto_fill", "INTEGER", 0, "0", 0],
+        [27, "artwork_status", "INTEGER", 0, null, 0],
+        [28, "artwork_cache_id", "INTEGER", 0, "0", 0],
+        [29, "start_time_ms", "REAL", 0, "0", 0],
+        [30, "stop_time_ms", "REAL", 0, "0", 0],
+        [31, "total_time_ms", "REAL", 0, "0", 0],
+        [32, "total_burn_time_ms", "REAL", 0, null, 0],
+        [33, "track_number", "INTEGER", 0, "0", 0],
+        [34, "track_count", "INTEGER", 0, "0", 0],
+        [35, "disc_number", "INTEGER", 0, "0", 0],
+        [36, "disc_count", "INTEGER", 0, "0", 0],
+        [37, "bpm", "INTEGER", 0, "0", 0],
+        [38, "relative_volume", "INTEGER", 0, null, 0],
+        [39, "eq_preset", "TEXT", 0, null, 0],
+        [40, "radio_stream_status", "TEXT", 0, null, 0],
+        [41, "genius_id", "INTEGER", 0, "0", 0],
+        [42, "genre_id", "INTEGER", 0, "0", 0],
+        [43, "category_id", "INTEGER", 0, "0", 0],
+        [44, "album_pid", "INTEGER", 0, "0", 0],
+        [45, "artist_pid", "INTEGER", 0, "0", 0],
+        [46, "composer_pid", "INTEGER", 0, "0", 0],
+        [47, "title", "TEXT", 0, null, 0],
+        [48, "artist", "TEXT", 0, null, 0],
+        [49, "album", "TEXT", 0, null, 0],
+        [50, "album_artist", "TEXT", 0, null, 0],
+        [51, "composer", "TEXT", 0, null, 0],
+        [52, "sort_title", "TEXT", 0, null, 0],
+        [53, "sort_artist", "TEXT", 0, null, 0],
+        [54, "sort_album", "TEXT", 0, null, 0],
+        [55, "sort_album_artist", "TEXT", 0, null, 0],
+        [56, "sort_composer", "TEXT", 0, null, 0],
+        [57, "title_order", "INTEGER", 0, null, 0],
+        [58, "artist_order", "INTEGER", 0, null, 0],
+        [59, "album_order", "INTEGER", 0, null, 0],
+        [60, "genre_order", "INTEGER", 0, null, 0],
+        [61, "composer_order", "INTEGER", 0, null, 0],
+        [62, "album_artist_order", "INTEGER", 0, null, 0],
+        [63, "album_by_artist_order", "INTEGER", 0, null, 0],
+        [64, "series_name_order", "INTEGER", 0, null, 0],
+        [65, "comment", "TEXT", 0, null, 0],
+        [66, "grouping", "TEXT", 0, null, 0],
+        [67, "description", "TEXT", 0, null, 0],
+        [68, "description_long", "TEXT", 0, null, 0],
+        [69, "collection_description", "TEXT", 0, null, 0],
+        [70, "copyright", "TEXT", 0, null, 0],
+        [71, "track_artist_pid", "INTEGER", 0, "0", 0],
+        [72, "physical_order", "INTEGER", 0, null, 0],
+        [73, "has_lyrics", "INTEGER", 0, "0", 0],
+        [74, "date_released", "INTEGER", 0, "0", 0]
+      ],
+      "item_to_container": [
+        [0, "item_pid", "INTEGER", 0, null, 0],
+        [1, "container_pid", "INTEGER", 0, null, 0],
+        [2, "physical_order", "INTEGER", 0, null, 0],
+        [3, "shuffle_order", "INTEGER", 0, null, 0]
+      ],
+      "location_kind_map": [
+        [0, "id", "INTEGER", 1, null, 1],
+        [1, "kind", "TEXT", 1, null, 0]
+      ],
+      "podcast_info": [
+        [0, "item_pid", "INTEGER", 1, null, 1],
+        [1, "date_released", "INTEGER", 0, "0", 0],
+        [2, "external_guid", "TEXT", 0, null, 0],
+        [3, "feed_url", "TEXT", 0, null, 0],
+        [4, "feed_keywords", "TEXT", 0, null, 0]
+      ],
+      "store_info": [
+        [0, "item_pid", "INTEGER", 1, null, 1],
+        [1, "store_kind", "INTEGER", 0, null, 0],
+        [2, "date_purchased", "INTEGER", 0, "0", 0],
+        [3, "date_released", "INTEGER", 0, "0", 0],
+        [4, "account_id", "INTEGER", 0, null, 0],
+        [5, "key_versions", "INTEGER", 0, null, 0],
+        [6, "key_platform_id", "INTEGER", 0, null, 0],
+        [7, "key_id", "INTEGER", 0, null, 0],
+        [8, "key_id2", "INTEGER", 0, null, 0],
+        [9, "store_item_id", "INTEGER", 0, null, 0],
+        [10, "artist_id", "INTEGER", 0, null, 0],
+        [11, "composer_id", "INTEGER", 0, null, 0],
+        [12, "genre_id", "INTEGER", 0, null, 0],
+        [13, "playlist_id", "INTEGER", 0, null, 0],
+        [14, "storefront_id", "INTEGER", 0, null, 0],
+        [15, "store_link_id", "INTEGER", 0, null, 0],
+        [16, "relevance", "REAL", 0, null, 0],
+        [17, "popularity", "REAL", 0, null, 0],
+        [18, "xid", "TEXT", 0, null, 0],
+        [19, "flavor", "TEXT", 0, null, 0]
+      ],
+      "store_link": [
+        [0, "id", "INTEGER", 1, null, 1],
+        [1, "url", "TEXT", 0, null, 0]
+      ],
+      "track_artist": [
+        [0, "pid", "INTEGER", 1, null, 1],
+        [1, "name", "TEXT", 0, null, 0],
+        [2, "name_order", "INTEGER", 0, null, 0],
+        [3, "sort_name", "TEXT", 0, null, 0],
+        [4, "has_songs", "INTEGER", 0, "0", 0],
+        [5, "has_music_videos", "INTEGER", 0, "0", 0],
+        [6, "has_non_compilation_tracks", "INTEGER", 0, "0", 0],
+        [7, "is_unknown", "INTEGER", 0, "0", 0],
+        [8, "album_count", "INTEGER", 0, "0", 0]
+      ],
+      "track_size_calc": [
+        [0, "pid", "INTEGER", 1, null, 1],
+        [1, "kind", "TEXT", 1, null, 0],
+        [2, "size", "INTEGER", 1, null, 0]
+      ],
+      "version_info": [
+        [0, "id", "INTEGER", 0, null, 1],
+        [1, "major", "INTEGER", 0, null, 0],
+        [2, "minor", "INTEGER", 0, null, 0],
+        [3, "compatibility", "INTEGER", 0, "0", 0],
+        [4, "update_level", "INTEGER", 0, "0", 0],
+        [5, "device_update_level", "INTEGER", 0, "0", 0],
+        [6, "platform", "INTEGER", 0, "0", 0]
+      ],
+      "video_characteristics": [
+        [0, "item_pid", "INTEGER", 0, null, 0],
+        [1, "sub_id", "INTEGER", 0, "0", 0],
+        [2, "track_id", "INTEGER", 0, null, 0],
+        [3, "height", "INTEGER", 0, null, 0],
+        [4, "width", "INTEGER", 0, null, 0],
+        [5, "depth", "INTEGER", 0, null, 0],
+        [6, "codec", "INTEGER", 0, null, 0],
+        [7, "frame_rate", "REAL", 0, null, 0],
+        [8, "percentage_encrypted", "REAL", 0, null, 0],
+        [9, "bit_rate", "INTEGER", 0, null, 0],
+        [10, "peak_bit_rate", "INTEGER", 0, null, 0],
+        [11, "buffer_size", "INTEGER", 0, null, 0],
+        [12, "profile", "INTEGER", 0, null, 0],
+        [13, "level", "INTEGER", 0, null, 0],
+        [14, "complexity_level", "INTEGER", 0, null, 0]
+      ],
+      "video_info": [
+        [0, "item_pid", "INTEGER", 1, null, 1],
+        [1, "has_alternate_audio", "INTEGER", 0, null, 0],
+        [2, "has_subtitles", "INTEGER", 0, null, 0],
+        [3, "characteristics_valid", "INTEGER", 0, null, 0],
+        [4, "has_closed_captions", "INTEGER", 0, null, 0],
+        [5, "is_self_contained", "INTEGER", 0, null, 0],
+        [6, "is_compressed", "INTEGER", 0, null, 0],
+        [7, "is_anamorphic", "INTEGER", 0, null, 0],
+        [8, "is_hd", "INTEGER", 0, null, 0],
+        [9, "season_number", "INTEGER", 0, null, 0],
+        [10, "audio_language", "INTEGER", 0, null, 0],
+        [11, "audio_track_index", "INTEGER", 0, null, 0],
+        [12, "audio_track_id", "INTEGER", 0, null, 0],
+        [13, "subtitle_language", "INTEGER", 0, null, 0],
+        [14, "subtitle_track_index", "INTEGER", 0, null, 0],
+        [15, "subtitle_track_id", "INTEGER", 0, null, 0],
+        [16, "series_name", "TEXT", 0, null, 0],
+        [17, "sort_series_name", "TEXT", 0, null, 0],
+        [18, "episode_id", "TEXT", 0, null, 0],
+        [19, "episode_sort_id", "INTEGER", 0, null, 0],
+        [20, "network_name", "TEXT", 0, null, 0],
+        [21, "extended_content_rating", "TEXT", 0, null, 0],
+        [22, "movie_info", "TEXT", 0, null, 0]
+      ]
+    },
+    "indexes": {
+      "idx_item_album_pid": [
+        [0, 44, "album_pid"]
+      ],
+      "idx_item_track_artist_pid": [
+        [0, 71, "track_artist_pid"]
+      ],
+      "item_album_order_idx": [
+        [0, 59, "album_order"],
+        [1, 35, "disc_number"],
+        [2, 33, "track_number"],
+        [3, 58, "artist_order"],
+        [4, 52, "sort_title"],
+        [5, 72, "physical_order"]
+      ],
+      "item_artist_sort_order_idx": [
+        [0, 58, "artist_order"],
+        [1, 59, "album_order"],
+        [2, 35, "disc_number"],
+        [3, 33, "track_number"],
+        [4, 52, "sort_title"],
+        [5, 72, "physical_order"]
+      ],
+      "item_composer_order_idx": [
+        [0, 46, "composer_pid"],
+        [1, 61, "composer_order"],
+        [2, 2, "media_kind"]
+      ],
+      "item_genre_id_idx": [
+        [0, 42, "genre_id"]
+      ],
+      "item_title_order_idx": [
+        [0, 57, "title_order"],
+        [1, 2, "media_kind"]
+      ],
+      "item_to_container_container_pid_idx": [
+        [0, 1, "container_pid"],
+        [1, 2, "physical_order"],
+        [2, 0, "item_pid"]
+      ],
+      "item_to_container_physical_order_idx": [
+        [0, 2, "physical_order"]
+      ]
+    }
+  },
+  "Locations.itdb": {
+    "tables": {
+      "base_location": [
+        [0, "id", "INTEGER", 1, null, 1],
+        [1, "path", "TEXT", 0, null, 0]
+      ],
+      "location": [
+        [0, "item_pid", "INTEGER", 1, null, 1],
+        [1, "sub_id", "INTEGER", 1, "0", 2],
+        [2, "base_location_id", "INTEGER", 0, "0", 0],
+        [3, "location_type", "INTEGER", 0, null, 0],
+        [4, "location", "TEXT", 0, null, 0],
+        [5, "extension", "INTEGER", 0, null, 0],
+        [6, "kind_id", "INTEGER", 0, "0", 0],
+        [7, "date_created", "INTEGER", 0, "0", 0],
+        [8, "file_size", "INTEGER", 0, "0", 0],
+        [9, "file_creator", "INTEGER", 0, null, 0],
+        [10, "file_type", "INTEGER", 0, null, 0],
+        [11, "num_dir_levels_file", "INTEGER", 0, null, 0],
+        [12, "num_dir_levels_lib", "INTEGER", 0, null, 0]
+      ]
+    },
+    "indexes": {
+    }
+  },
+  "Dynamic.itdb": {
+    "tables": {
+      "container_ui": [
+        [0, "container_pid", "INTEGER", 1, null, 1],
+        [1, "play_order", "INTEGER", 0, "0", 0],
+        [2, "is_reversed", "INTEGER", 0, "0", 0],
+        [3, "album_field_order", "INTEGER", 0, "0", 0],
+        [4, "repeat_mode", "INTEGER", 0, "0", 0],
+        [5, "shuffle_items", "INTEGER", 0, "0", 0],
+        [6, "has_been_shuffled", "INTEGER", 0, "0", 0]
+      ],
+      "item_stats": [
+        [0, "item_pid", "INTEGER", 1, null, 1],
+        [1, "has_been_played", "INTEGER", 0, "0", 0],
+        [2, "date_played", "INTEGER", 0, "0", 0],
+        [3, "play_count_user", "INTEGER", 0, "0", 0],
+        [4, "play_count_recent", "INTEGER", 0, "0", 0],
+        [5, "date_skipped", "INTEGER", 0, "0", 0],
+        [6, "skip_count_user", "INTEGER", 0, "0", 0],
+        [7, "skip_count_recent", "INTEGER", 0, "0", 0],
+        [8, "bookmark_time_ms", "REAL", 0, null, 0],
+        [9, "bookmark_time_ms_common", "REAL", 0, null, 0],
+        [10, "user_rating", "INTEGER", 0, "0", 0],
+        [11, "user_rating_common", "INTEGER", 0, "0", 0],
+        [12, "rental_expired", "INTEGER", 0, "0", 0],
+        [13, "play_count_user_original", "INTEGER", 0, "0", 0],
+        [14, "skip_count_user_original", "INTEGER", 0, "0", 0],
+        [15, "genius_id", "INTEGER", 0, "0", 0]
+      ],
+      "rental_info": [
+        [0, "item_pid", "INTEGER", 1, null, 1],
+        [1, "rental_date_started", "INTEGER", 0, "0", 0],
+        [2, "rental_duration", "INTEGER", 0, "0", 0],
+        [3, "rental_playback_date_started", "INTEGER", 0, "0", 0],
+        [4, "rental_playback_duration", "INTEGER", 0, "0", 0],
+        [5, "is_demo", "INTEGER", 0, "0", 0]
+      ]
+    },
+    "indexes": {
+    }
+  },
+  "Extras.itdb": {
+    "tables": {
+      "chapter": [
+        [0, "item_pid", "INTEGER", 1, null, 1],
+        [1, "data", "BLOB", 0, null, 0]
+      ],
+      "lyrics": [
+        [0, "item_pid", "INTEGER", 1, null, 1],
+        [1, "checksum", "INTEGER", 0, null, 0],
+        [2, "lyrics", "TEXT", 0, null, 0]
+      ]
+    },
+    "indexes": {
+    }
+  },
+  "Genius.itdb": {
+    "tables": {
+      "genius_config": [
+        [0, "id", "INTEGER", 1, null, 1],
+        [1, "version", "INTEGER", 0, null, 0],
+        [2, "default_num_results", "INTEGER", 0, "0", 0],
+        [3, "min_num_results", "INTEGER", 0, "0", 0],
+        [4, "data", "BLOB", 0, null, 0]
+      ],
+      "genius_metadata": [
+        [0, "genius_id", "INTEGER", 1, null, 1],
+        [1, "version", "INTEGER", 0, null, 0],
+        [2, "data", "BLOB", 0, null, 0]
+      ],
+      "genius_similarities": [
+        [0, "genius_id", "INTEGER", 1, null, 1],
+        [1, "version", "INTEGER", 0, null, 0],
+        [2, "data", "BLOB", 0, null, 0]
+      ]
+    },
+    "indexes": {
+    }
+  }
+}

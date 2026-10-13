@@ -1,5 +1,7 @@
 # Offer native media-tool installation
 
+> ADR-0140 adds Host path overrides ahead of PATH and package-location discovery.
+
 - Status: Accepted
 - Date: 2026-10-01
 - Amends: ADR-0081's prohibition on initiating installation

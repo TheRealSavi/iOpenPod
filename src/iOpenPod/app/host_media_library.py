@@ -39,6 +39,7 @@ from iOpenPod.app.media.content_type import classify_content_type
 from iOpenPod.app.media.fingerprint_codec import decode_fingerprint, encode_fingerprint
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.models import MediaTag
+from iOpenPod.app.media.photo_image import photo_source_size, photo_viewing_image
 from iOpenPod.app.media.tags import (
     TAG_NAMES,
     apply_tag_values,
@@ -61,7 +62,6 @@ from iPodDB.library import (
     Track,
     TrackMetadata,
 )
-from iPodDB.shared.photo_image import photo_source_size, photo_viewing_image
 from storage import AtomicHostFile, HostPath, StorageError
 from storage.host_directory import (
     HostDirectoryEntry,
@@ -73,6 +73,8 @@ from storage.host_input import HostSelectionResolver, LocalHostFile
 if TYPE_CHECKING:
     from pathlib import PurePath
     from typing import BinaryIO
+
+    from storage.media_processing import MediaToolFinder
 
 logger = logging.getLogger(__name__)
 
@@ -787,6 +789,7 @@ class HostMediaScanner:
         *,
         max_workers: int | None = None,
         max_directory_workers: int = _MAX_DIRECTORY_WORKERS,
+        find_tool: MediaToolFinder | None = None,
     ) -> None:
         resolved_workers = (
             min(_MAX_INSPECTION_WORKERS, max(1, os.cpu_count() or 1))
@@ -803,7 +806,8 @@ class HostMediaScanner:
                 f"Host directory workers must be between 1 and {_MAX_DIRECTORY_WORKERS}"
             )
         self._cache_file = cache_file
-        self._fingerprinter = fingerprinter or FpcalcFingerprinter()
+        self._fingerprinter = fingerprinter or FpcalcFingerprinter(find_tool=find_tool)
+        self._inspector = MediaInspector(find_tool=find_tool)
         self._max_workers = resolved_workers
         self._max_directory_workers = max_directory_workers
         self._cached_records: dict[str, _CachedRecord] = {}
@@ -861,6 +865,7 @@ class HostMediaScanner:
             cached,
             fingerprinter,
             folder_artwork=before_artwork,
+            inspector=self._inspector,
             max_workers=self._max_workers,
             checkpoint=checkpoint,
             progress=progress,
@@ -1102,6 +1107,7 @@ class HostMediaScanner:
                                 captured,
                                 fingerprinter,
                                 folder_artwork=None,
+                                inspector=self._inspector,
                                 checkpoint=checkpoint,
                                 cached_fingerprint=(
                                     previous.acoustic_fingerprint
@@ -2230,6 +2236,7 @@ def _inspect_selected_files(
     max_workers: int,
     checkpoint: CancellationCheck,
     progress: ProgressCallback | None,
+    inspector: MediaInspector | None = None,
 ) -> tuple[
     list[_CachedRecord],
     list[HostMediaScanIssue],
@@ -2343,6 +2350,7 @@ def _inspect_selected_files(
                         observation,
                         fingerprinter,
                         folder_artwork=fallback,
+                        inspector=inspector,
                         checkpoint=inspection_checkpoint,
                         cached_fingerprint=(
                             previous.acoustic_fingerprint
@@ -2389,13 +2397,16 @@ def _inspect_file(
     folder_artwork: _ArtworkReference | None = None,
     checkpoint: CancellationCheck,
     cached_fingerprint: str = "",
+    inspector: MediaInspector | None = None,
 ) -> _CachedRecord:
     if observation.kind in (
         HostMediaFileKind.AUDIO,
         HostMediaFileKind.VIDEO,
     ):
         try:
-            record = _inspect_track(observation, folder_artwork, checkpoint=checkpoint)
+            record = _inspect_track(
+                observation, folder_artwork, checkpoint=checkpoint, inspector=inspector
+            )
         except (
             HostMediaTreeChangedError,
             OSError,
@@ -2461,6 +2472,7 @@ def _inspect_track(
     folder_artwork: _ArtworkReference | None,
     *,
     checkpoint: CancellationCheck,
+    inspector: MediaInspector | None = None,
 ) -> _CachedTrackRecord:
     try:
         with _observed_file(observation).open_read(checkpoint=checkpoint) as stream:
@@ -2480,7 +2492,7 @@ def _inspect_track(
     # Containers without native tag support, including Matroska and AVI, use
     # the existing bounded, single-file FFprobe adapter instead.
     try:
-        observed = MediaInspector().scan_metadata(
+        observed = (inspector or MediaInspector()).scan_metadata(
             observation.path, checkpoint=checkpoint
         )
     except MediaInspectionError as error:

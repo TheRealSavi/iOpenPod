@@ -304,12 +304,13 @@ See ADR-0084 through ADR-0087 and `docs/sync-workflow-audit-2026-09-26.md`.
 Compressed iTunesCDB and SQLite-backed iPod Library variants are selected from the
 identified Device Profile. iPodDB unwraps and reproduces CDB framing and treats the
 CDB as the sole readable Library authority. It generates all five SQLite databases
-and the Locations checksum book from the checked CDB snapshot and supports HASH58,
+and the Locations checksum book from the checked CDB snapshot and its native
+firmware categories, smart preferences, and chapter data, and supports HASH58,
 HASH72, and HASHAB finalization. Selection neither requires nor reads SQLite
 companions. When a CDB change is prepared, the Application Layer captures the
 current companion paths as write preconditions and publishes the CDB, the complete
 replacement SQLite set, and compatibility iTunesDB truncation in one recoverable
-Storage Transaction. See ADR-0061.
+Storage Transaction. See ADR-0061 and ADR-0141.
 Nano 5 now follows Original iOpenPod's HASH72 signing for both iTunesCDB and the
 Locations Checksum Book. Preparation can recover missing HashInfo material from a
 verified retained database or checksum book, while selection still uses only CDB
@@ -399,7 +400,11 @@ See ADR-0073. The internal workspace contracts from ADR-0020 and ADR-0026 remain
 Typed Playlist Sort Orders and per-occurrence Playlist
 Positions are parsed, shown, edited, recalculated, and written through the same
 lossless path. Applying changed Smart Playlist rules also updates saved matching
-Tracks. Regular Playlists accept Track drags; folders retain nested
+Tracks. Every Sync and Library save refreshes supported Smart Playlists with Live
+updating enabled from the completed draft. Playlists with Live updating disabled
+keep their saved membership. A Sync with no other changes can refresh date-based
+rules or stale membership. Unsupported rules
+remain preserved. See ADR-0142. Regular Playlists accept Track drags; folders retain nested
 organization. The firmware-maintained Podcasts Playlist remains in the Library
 Snapshot and Library Workspace for reconciliation but is omitted from the sidebar
 tree. Unsaved drafts clear when the Active iPod changes or the application closes.

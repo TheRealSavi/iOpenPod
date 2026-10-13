@@ -58,10 +58,15 @@ def test_podcast_sync_source_survives_incomplete_device_discovery(
 
     try:
         monkeypatch.setattr(device.platform, "discover", incomplete_discovery)
-        device.coordinator.discover_devices(refresh_known=False)
+        discovery = device.coordinator.discover_devices(refresh_known=False)
         monkeypatch.setattr(device.platform, "discover", original_discover)
 
         assert device.coordinator.active_ipod is selected
+        assert discovery.active_candidate_id == selected.candidate.id
+        assert any(
+            candidate.id == selected.candidate.id for candidate in discovery.candidates
+        )
+        assert discovery.issues[0].source == "macos.volumes"
         with device.coordinator.sync_session(selected) as session:
             assert session.is_active
     finally:

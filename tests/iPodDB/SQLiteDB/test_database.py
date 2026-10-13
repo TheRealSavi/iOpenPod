@@ -642,6 +642,7 @@ def test_device_postprocess_commands_can_update_all_attached_databases() -> None
         checksum=WriteChecksum.NONE,
         postprocess_commands=(
             "UPDATE item SET sort_title = hex(iPhoneSortKey(title))",
+            "INSERT INTO location_kind_map VALUES (9, 'Device format')",
             'UPDATE "Locations.itdb".location SET kind_id = 9',
         ),
     )
