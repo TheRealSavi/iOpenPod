@@ -6054,8 +6054,58 @@ Playlists: %3</translation>
         <translation>Aktuelle Inhalte behalten</translation>
     </message>
     <message>
+        <source>Sync completed successfully</source>
+        <translation>Synchronisierung erfolgreich abgeschlossen</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n change(s) saved to your iPod.</source>
+        <translation>
+            <numerusform>%n Änderung auf Ihrem iPod gespeichert.</numerusform>
+            <numerusform>%n Änderungen auf Ihrem iPod gespeichert.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n Playlist(s) updated.</source>
+        <translation>
+            <numerusform>%n Wiedergabeliste aktualisiert.</numerusform>
+            <numerusform>%n Wiedergabelisten aktualisiert.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Your changes have been saved to your iPod.</source>
+        <translation>Ihre Änderungen wurden auf Ihrem iPod gespeichert.</translation>
+    </message>
+    <message>
+        <source>Some changes were saved, but other items could not be synced. Review the messages below, then scan again.</source>
+        <translation>Einige Änderungen wurden gespeichert, andere Elemente konnten jedoch nicht synchronisiert werden. Prüfen Sie die folgenden Meldungen und starten Sie die Suche erneut.</translation>
+    </message>
+    <message>
+        <source>Sync stopped before it finished. Scan again when you are ready to retry.</source>
+        <translation>Die Synchronisierung wurde vor dem Abschluss angehalten. Starten Sie die Suche erneut, wenn Sie es noch einmal versuchen möchten.</translation>
+    </message>
+    <message>
+        <source>Review the errors below, then scan again to retry.</source>
+        <translation>Prüfen Sie die folgenden Fehler und starten Sie die Suche erneut, um es noch einmal zu versuchen.</translation>
+    </message>
+    <message>
+        <source>Some changes may be incomplete. Choose how to recover your iPod below.</source>
+        <translation>Einige Änderungen sind möglicherweise unvollständig. Wählen Sie unten, wie Sie Ihren iPod wiederherstellen möchten.</translation>
+    </message>
+    <message>
+        <source>Your changes were saved to your iPod. There are warnings to review below; they did not stop the Sync.</source>
+        <translation>Ihre Änderungen wurden auf Ihrem iPod gespeichert. Unten finden Sie Warnungen zur Prüfung; sie haben die Synchronisierung nicht verhindert.</translation>
+    </message>
+    <message>
+        <source>The previous Library was restored and verified. Retry recovery to finish removing its temporary recovery files.</source>
+        <translation>Die vorherige Mediathek wurde wiederhergestellt und geprüft. Wiederholen Sie die Wiederherstellung, um die temporären Wiederherstellungsdateien vollständig zu entfernen.</translation>
+    </message>
+    <message>
+        <source>Some temporary recovery files remain. Choose Retry Cleanup to remove them; your saved changes will be kept.</source>
+        <translation>Einige temporäre Wiederherstellungsdateien sind noch vorhanden. Wählen Sie Bereinigung erneut versuchen, um sie zu entfernen; Ihre gespeicherten Änderungen bleiben erhalten.</translation>
+    </message>
+    <message>
         <source>Sync warnings, errors, and recovery steps</source>
-        <translation>Warnungen, Fehler und Wiederherstellungsschritte der Synchronisierung</translation>
+        <translation type="vanished">Warnungen, Fehler und Wiederherstellungsschritte der Synchronisierung</translation>
     </message>
     <message>
         <source>Syncing the selected changes</source>
@@ -6079,7 +6129,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Sync completed</source>
-        <translation>Synchronisierung abgeschlossen</translation>
+        <translation type="vanished">Synchronisierung abgeschlossen</translation>
     </message>
     <message>
         <source>Sync partially completed</source>
@@ -6111,33 +6161,33 @@ Playlists: %3</translation>
     </message>
     <message numerus="yes">
         <source>%n selected change(s) committed.</source>
-        <translation>
+        <translation type="vanished">
             <numerusform>%n ausgewählte Änderung gespeichert.</numerusform>
             <numerusform>%n ausgewählte Änderungen gespeichert.</numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source>%n Playlist(s) reconciled.</source>
-        <translation>
+        <translation type="vanished">
             <numerusform>%n Wiedergabeliste abgeglichen.</numerusform>
             <numerusform>%n Wiedergabelisten abgeglichen.</numerusform>
         </translation>
     </message>
     <message>
         <source>The remaining items were skipped. Resolve the issues below and scan again.</source>
-        <translation>Die übrigen Elemente wurden übersprungen. Beheben Sie die unten aufgeführten Probleme und starten Sie die Suche erneut.</translation>
+        <translation type="vanished">Die übrigen Elemente wurden übersprungen. Beheben Sie die unten aufgeführten Probleme und starten Sie die Suche erneut.</translation>
     </message>
     <message>
         <source>Scan again when you are ready to retry.</source>
-        <translation>Starten Sie die Suche erneut, wenn Sie es noch einmal versuchen möchten.</translation>
+        <translation type="vanished">Starten Sie die Suche erneut, wenn Sie es noch einmal versuchen möchten.</translation>
     </message>
     <message>
         <source>Resolve the errors below, then scan again.</source>
-        <translation>Beheben Sie die unten aufgeführten Fehler und starten Sie die Suche erneut.</translation>
+        <translation type="vanished">Beheben Sie die unten aufgeführten Fehler und starten Sie die Suche erneut.</translation>
     </message>
     <message>
         <source>The previous Library was restored and verified. Keep the journal and retry recovery to finish removing its temporary files.</source>
-        <translation>Die vorherige Mediathek wurde wiederhergestellt und geprüft. Bewahren Sie das Protokoll auf und starten Sie die Wiederherstellung erneut, um die temporären Dateien vollständig zu entfernen.</translation>
+        <translation type="vanished">Die vorherige Mediathek wurde wiederhergestellt und geprüft. Bewahren Sie das Protokoll auf und starten Sie die Wiederherstellung erneut, um die temporären Dateien vollständig zu entfernen.</translation>
     </message>
     <message>
         <source>Sync was interrupted. Restore Previous Library puts back the files from before the interrupted changes. Keep Current Contents leaves the iPod as it is and stops asking to restore. Some changes may be incomplete. Recovery copies are retained.</source>
@@ -6146,6 +6196,10 @@ Playlists: %3</translation>
     <message>
         <source>The iPod was left as it is. The interrupted Sync may be incomplete. Review the Library and scan again before making further changes.</source>
         <translation>Der iPod wurde unverändert gelassen. Die unterbrochene Synchronisierung kann unvollständig sein. Prüfen Sie die Mediathek und starten Sie die Suche erneut, bevor Sie weitere Änderungen vornehmen.</translation>
+    </message>
+    <message>
+        <source>The previous Library was restored. The interrupted Sync was not applied. Scan again when you are ready.</source>
+        <translation>Die vorherige Mediathek wurde wiederhergestellt. Die unterbrochene Synchronisierung wurde nicht angewendet. Starten Sie die Suche erneut, wenn Sie bereit sind.</translation>
     </message>
     <message>
         <source> (%1)</source>
@@ -6163,6 +6217,10 @@ Playlists: %3</translation>
         <source>ERROR</source>
         <translation>FEHLER</translation>
     </message>
+    <message>
+        <source>Some listening history was not shared with your connected music services.</source>
+        <translation>Ein Teil des Hörverlaufs wurde nicht mit Ihren verbundenen Musikdiensten geteilt.</translation>
+    </message>
     <message numerus="yes">
         <source>…and %n more file(s)</source>
         <translation>
@@ -6171,8 +6229,32 @@ Playlists: %3</translation>
         </translation>
     </message>
     <message>
+        <source>More affected items are listed in Technical details.</source>
+        <translation>Weitere betroffene Elemente finden Sie unter Technische Details.</translation>
+    </message>
+    <message>
         <source>Recovery journal: %1</source>
         <translation>Wiederherstellungsprotokoll: %1</translation>
+    </message>
+    <message>
+        <source>Errors (%1)</source>
+        <translation>Fehler (%1)</translation>
+    </message>
+    <message>
+        <source>Warnings (%1)</source>
+        <translation>Warnungen (%1)</translation>
+    </message>
+    <message>
+        <source>Information (%1)</source>
+        <translation>Informationen (%1)</translation>
+    </message>
+    <message>
+        <source>No warnings or errors were reported.</source>
+        <translation>Es wurden keine Warnungen oder Fehler gemeldet.</translation>
+    </message>
+    <message>
+        <source>Technical details</source>
+        <translation>Technische Details</translation>
     </message>
     <message>
         <source>Completed: %1</source>
@@ -6782,6 +6864,10 @@ Playlists: %3</translation>
             <numerusform>%n Element vom Computer für den iPod ausgewählt</numerusform>
             <numerusform>%n Elemente vom Computer für den iPod ausgewählt</numerusform>
         </translation>
+    </message>
+    <message>
+        <source>Result</source>
+        <translation>Ergebnis</translation>
     </message>
     <message numerus="yes">
         <source>%n Host items selected for the iPod</source>

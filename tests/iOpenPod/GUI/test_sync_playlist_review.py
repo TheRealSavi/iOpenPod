@@ -13,7 +13,11 @@ from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build
 
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
 from iOpenPod.app.library_sync_helper import IPodMediaCacheStats, IPodMediaLibrary
-from iOpenPod.app.sync_execution import PlaylistSyncChange
+from iOpenPod.app.sync_execution import (
+    PlaylistSyncChange,
+    SyncExecutionResult,
+    SyncExecutionStatus,
+)
 from iOpenPod.app.sync_plan import (
     SyncPlan,
     SyncPlanAction,
@@ -44,6 +48,21 @@ def workspace() -> Iterator[SyncWorkspace]:
         page.deleteLater()
         APPLICATION.sendPostedEvents(page, QEvent.Type.DeferredDelete)
         context.shutdown()
+
+
+def test_workspace_labels_finished_execution_as_result(
+    workspace: SyncWorkspace,
+) -> None:
+    workspace.show_execution()
+    workspace.execution.show_result(SyncExecutionResult(SyncExecutionStatus.SUCCESS))
+    labels = workspace.findChildren(QLabel, "syncStageIndicator")
+    assert labels[-1].text() == "4  Result"
+    workspace.execution.begin_recovery(cleanup=True)
+    assert labels[-1].text() == "4  Sync"
+    workspace.execution.show_result(SyncExecutionResult(SyncExecutionStatus.SUCCESS))
+    assert labels[-1].text() == "4  Result"
+    workspace.show_scan("Scanning again")
+    assert labels[-1].text() == "4  Sync"
 
 
 def test_playlist_only_changes_require_checked_option_and_executable_review(

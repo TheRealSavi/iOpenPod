@@ -1439,8 +1439,12 @@ The Library Sync Helper is updated only after verified publication. Device write
 remain sequential; the USB bus is not used for parallel transcoding. See ADR-0066,
 ADR-0067, ADR-0070, ADR-0076, and ADR-0119.
 
-The result page exposes item diagnostics, safe cancellation, Restore Previous
-Library, Retry Cleanup, and Keep Current Contents. Pending recovery survives
+During execution, the progress page exposes safe cancellation. Completion replaces
+the progress steps with a dedicated result screen showing the actual Sync outcome,
+saved change counts, and messages grouped as errors, warnings, and information.
+Warnings alone do not change a successful outcome. Technical details retain diagnostic
+codes and every affected item reference. Restore Previous Library, Retry Cleanup,
+and Keep Current Contents remain available when the result requires them. Pending recovery survives
 restarts in device journals, with no Host setting. Discovery lists affected iPods
 without preventing selection of other devices. Selecting an affected iPod requires
 a restore-or-keep choice before metadata repair or Library loading. Recovery can

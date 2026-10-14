@@ -3,7 +3,14 @@
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QFrame, QLabel, QPlainTextEdit, QProgressBar, QPushButton
+from PySide6.QtWidgets import (
+    QFrame,
+    QLabel,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+)
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
 from iOpenPod.app.display_text import source_text
@@ -20,6 +27,200 @@ from iOpenPod.app.sync_plan import (
 from iOpenPod.GUI.pages.sync_execution_page import SyncExecutionPage
 from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
 from iPodDB.library import IssueSeverity, Track, WriteIssue
+
+
+def test_success_replaces_cleanup_progress_with_a_finished_result() -> None:
+    page = SyncExecutionPage()
+    page.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    try:
+        page.begin()
+        page.show()
+        page.update_progress(
+            WriteProgress("sync.cleanup", "Cleaning up recovery files")
+        )
+        page.show_result(
+            SyncExecutionResult(
+                SyncExecutionStatus.SUCCESS,
+                issues=(
+                    WriteIssue(
+                        "sync.scrobble_pending",
+                        "2 Tracks skipped.",
+                        IssueSeverity.WARNING,
+                    ),
+                ),
+            )
+        )
+        APPLICATION.processEvents()
+        panel = page.findChild(QFrame, "syncExecutionPanel")
+        stages = page.findChild(QFrame, "syncExecutionStages")
+        assert panel is not None and not panel.isVisible()
+        assert stages is not None and not stages.isVisible()
+        title = page.findChild(QLabel, "syncResultTitle")
+        heading = page.findChild(QFrame, "syncResultHeading")
+        assert title is not None and title.isVisible()
+        assert title.text() == "Sync completed successfully"
+        assert heading is not None and heading.property("tone") == "success"
+        assert all(
+            label.property("state") == "complete"
+            for label in stages.findChildren(QLabel)
+        )
+        page.update_progress(WriteProgress("sync.cleanup", "Late cleanup update"))
+        assert page.showing_result and title.text() == "Sync completed successfully"
+    finally:
+        page.close()
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("status", "title_text", "tone"),
+    (
+        (SyncExecutionStatus.SUCCESS, "Sync completed successfully", "success"),
+        (SyncExecutionStatus.PARTIAL, "Sync partially completed", "warning"),
+        (SyncExecutionStatus.CANCELLED, "Sync cancelled", "neutral"),
+        (SyncExecutionStatus.FAILED, "Sync could not complete", "error"),
+        (SyncExecutionStatus.RECOVERY_REQUIRED, "Sync was interrupted", "error"),
+    ),
+)
+def test_terminal_outcomes_replace_progress_and_allow_return_to_library(
+    status: SyncExecutionStatus, title_text: str, tone: str
+) -> None:
+    page = SyncExecutionPage()
+    page.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    try:
+        page.begin()
+        page.show()
+        page.show_result(SyncExecutionResult(status))
+        title = page.findChild(QLabel, "syncResultTitle")
+        heading = page.findChild(QFrame, "syncResultHeading")
+        cancel = page.findChild(QPushButton, "cancelSyncExecution")
+        done = page.findChild(QPushButton, "finishSyncExecution")
+        assert title is not None and title.text() == title_text and title.isVisible()
+        assert heading is not None and heading.property("tone") == tone
+        assert cancel is not None and not cancel.isVisible()
+        assert done is not None and done.isVisible()
+        requested = QSignalSpy(page.exitRequested)
+        done.click()
+        assert requested.count() == 1
+        page.begin()
+        assert not page.showing_result and cancel.isVisible() and not title.isVisible()
+    finally:
+        page.close()
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_messages_are_grouped_by_severity_with_complete_expandable_details() -> None:
+    page = SyncExecutionPage()
+    try:
+        warning = WriteIssue(
+            "sync.warning", "Check this warning.", IssueSeverity.WARNING
+        )
+        page.show_result(
+            SyncExecutionResult(
+                SyncExecutionStatus.PARTIAL,
+                issues=(
+                    WriteIssue("sync.info", "A useful note.", IssueSeverity.INFO),
+                    warning,
+                    WriteIssue(
+                        "sync.failed",
+                        "A Track could not be synced.",
+                        artifact="Track <one>",
+                    ),
+                    warning,
+                ),
+            )
+        )
+        headings = page.findChildren(QLabel, "syncResultMessageHeading")
+        assert [label.text() for label in headings] == [
+            "Errors (1)",
+            "Warnings (1)",
+            "Information (1)",
+        ]
+        messages = "\n".join(
+            label.text() for label in page.findChildren(QLabel, "syncResultMessage")
+        )
+        assert "A useful note." in messages and "Check this warning." in messages
+        assert "Track <one>" in messages and "sync.failed" not in messages
+        details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
+        toggle = page.findChild(QPushButton, "syncResultTechnicalToggle")
+        assert details is not None and details.isHidden() and toggle is not None
+        assert "sync.failed" in details.toPlainText()
+        toggle.click()
+        assert not details.isHidden()
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert not details.isHidden()
+        page.begin()
+        page.show_result(SyncExecutionResult(SyncExecutionStatus.SUCCESS))
+        assert details.isHidden() and toggle.isHidden()
+        no_issues = page.findChild(QLabel, "syncResultNoIssues")
+        assert no_issues is not None and "No warnings or errors" in no_issues.text()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize("cleanup", [False, True])
+def test_recovery_switches_back_to_running_view_until_its_result(cleanup: bool) -> None:
+    page = SyncExecutionPage()
+    page.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    try:
+        page.show()
+        page.show_result(
+            SyncExecutionResult(
+                SyncExecutionStatus.SUCCESS
+                if cleanup
+                else SyncExecutionStatus.RECOVERY_REQUIRED,
+                recovery_path=".iopenpod-recovery/test/transaction.json",
+            )
+        )
+        page.begin_recovery(cleanup=cleanup)
+        assert not page.showing_result
+        panel = page.findChild(QFrame, "syncExecutionPanel")
+        assert panel is not None and panel.isVisible()
+        page.update_progress(
+            WriteProgress("save.recovery.inspecting", "Checking recovery files")
+        )
+        detail = page.findChild(QLabel, "syncExecutionDetail")
+        assert detail is not None and "Checking recovery files" in detail.text()
+        page.show_result(SyncExecutionResult(SyncExecutionStatus.SUCCESS))
+        assert page.showing_result and not panel.isVisible()
+    finally:
+        page.close()
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_long_results_scroll_without_hiding_the_return_action() -> None:
+    page = SyncExecutionPage()
+    page.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    page.resize(820, 540)
+    try:
+        page.show_result(
+            SyncExecutionResult(
+                SyncExecutionStatus.PARTIAL,
+                issues=tuple(
+                    WriteIssue(
+                        "sync.failed",
+                        f"Could not sync Track {index}.",
+                        detail="Try this Track again.",
+                    )
+                    for index in range(40)
+                ),
+            )
+        )
+        page.show()
+        APPLICATION.processEvents()
+        result = page.findChild(QScrollArea, "syncResultView")
+        done = page.findChild(QPushButton, "finishSyncExecution")
+        assert result is not None and result.verticalScrollBar().maximum() > 0
+        assert result.horizontalScrollBar().maximum() == 0
+        assert done is not None and done.isVisible()
+        assert page.rect().contains(done.geometry())
+    finally:
+        page.close()
+        page.deleteLater()
+        APPLICATION.processEvents()
 
 
 def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_titles() -> (
@@ -250,7 +451,10 @@ def test_other_conversion_notices_are_grouped_in_the_result() -> None:
         assert "5 items" in details.toPlainText()
         assert "INFO" in details.toPlainText()
         assert "book-2.m4b" in details.toPlainText()
-        assert "book-3.m4b" not in details.toPlainText()
+        assert "book-4.m4b" in details.toPlainText()
+        message = page.findChild(QLabel, "syncResultMessage")
+        assert message is not None and "book-3.m4b" not in message.text()
+        assert "Technical details" in message.text()
     finally:
         page.deleteLater()
         APPLICATION.processEvents()
@@ -274,7 +478,7 @@ def test_other_conversion_notices_are_grouped_in_the_result() -> None:
         ),
     ),
 )
-def test_expected_sync_notices_do_not_show_an_issue_panel(
+def test_routine_sync_notices_are_available_as_information(
     code: str, message: str
 ) -> None:
     page = SyncExecutionPage()
@@ -294,9 +498,11 @@ def test_expected_sync_notices_do_not_show_an_issue_panel(
         )
         details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
         assert details is not None
-        assert details.isHidden() and not details.toPlainText()
+        assert details.isHidden() and message in details.toPlainText()
+        heading = page.findChild(QLabel, "syncResultMessageHeading")
+        assert heading is not None and heading.text() == "Information (1)"
         APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
-        assert details.isHidden() and not details.toPlainText()
+        assert details.isHidden() and message in details.toPlainText()
     finally:
         page.deleteLater()
         APPLICATION.processEvents()
@@ -330,9 +536,9 @@ def test_expected_notices_do_not_hide_other_podcast_diagnostics_or_recovery() ->
             )
         )
         details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
-        assert details is not None and not details.isHidden()
+        assert details is not None and details.isHidden()
         text = details.toPlainText()
-        assert "Membership updated" not in text
+        assert "Membership updated" in text
         assert "Output sample rate was adjusted." in text
         assert "Episode download failed." in text
         assert "Cannot safely group episodes." in text
@@ -551,9 +757,10 @@ def test_recovery_progress_continues_after_cancellation_and_shows_elapsed_time(
                 recovery_path=".iopenpod-recovery/test/transaction.json",
             )
         )
-        title = page.findChild(QLabel, "syncExecutionTitle")
+        title = page.findChild(QLabel, "syncResultTitle")
         assert title is not None and "cleanup remains" in title.text()
-        assert "restored and verified" in detail.text()
+        description = page.findChild(QLabel, "syncResultDescription")
+        assert description is not None and "restored and verified" in description.text()
         assert not elapsed.text()
     finally:
         page.deleteLater()
@@ -602,12 +809,14 @@ def test_committed_cleanup_retry_is_distinct_from_restoring_previous_library() -
             )
         )
         recover = page.findChild(QPushButton, "recoverSyncExecution")
-        title = page.findChild(QLabel, "syncExecutionTitle")
+        title = page.findChild(QLabel, "syncResultTitle")
         assert recover is not None and title is not None
         assert not recover.isHidden() and recover.text() == "Retry Cleanup"
-        assert title.text() == "Sync completed"
+        assert title.text() == "Sync completed successfully"
         page.begin_recovery(cleanup=True)
-        assert title.text() == "Cleaning up completed Sync"
+        progress_title = page.findChild(QLabel, "syncExecutionTitle")
+        assert progress_title is not None
+        assert progress_title.text() == "Cleaning up completed Sync"
     finally:
         page.deleteLater()
         APPLICATION.processEvents()
@@ -666,11 +875,11 @@ def test_completion_reports_the_applied_media_and_playlist_counts(count: int) ->
                 playlist_change_count=count,
             )
         )
-        detail = page.findChild(QLabel, "syncExecutionDetail")
+        detail = page.findChild(QLabel, "syncResultSummary")
         assert detail is not None
         suffix = "" if count == 1 else "s"
-        assert f"{count} selected change{suffix} committed." in detail.text()
-        assert f"{count} Playlist{suffix} reconciled." in detail.text()
+        assert f"{count} change{suffix} saved to your iPod." in detail.text()
+        assert f"{count} Playlist{suffix} updated." in detail.text()
     finally:
         page.deleteLater()
         APPLICATION.processEvents()

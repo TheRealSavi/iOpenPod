@@ -730,7 +730,8 @@ QLabel#syncExecutionStage2,
 QLabel#syncExecutionStage3,
 QLabel#syncExecutionStage4,
 QLabel#syncExecutionStage5,
-QLabel#syncExecutionStage6 {{
+QLabel#syncExecutionStage6,
+QLabel#syncExecutionStage7 {{
     color: {tokens.text_secondary};
     font-size: {typography.small_pt:g}pt;
     padding: {LAYOUT.space_2xs}px;
@@ -741,7 +742,8 @@ QLabel#syncExecutionStage2[state="current"],
 QLabel#syncExecutionStage3[state="current"],
 QLabel#syncExecutionStage4[state="current"],
 QLabel#syncExecutionStage5[state="current"],
-QLabel#syncExecutionStage6[state="current"] {{
+QLabel#syncExecutionStage6[state="current"],
+QLabel#syncExecutionStage7[state="current"] {{
     color: {tokens.accent};
     font-weight: 700;
 }}
@@ -751,7 +753,8 @@ QLabel#syncExecutionStage2[state="complete"],
 QLabel#syncExecutionStage3[state="complete"],
 QLabel#syncExecutionStage4[state="complete"],
 QLabel#syncExecutionStage5[state="complete"],
-QLabel#syncExecutionStage6[state="complete"] {{
+QLabel#syncExecutionStage6[state="complete"],
+QLabel#syncExecutionStage7[state="complete"] {{
     color: {tokens.success};
 }}
 
@@ -790,6 +793,59 @@ QPlainTextEdit#syncExecutionActivity {{
     border: 1px solid {tokens.border};
     border-radius: {LAYOUT.radius_control}px;
     padding: {LAYOUT.space_xs}px;
+}}
+
+QScrollArea#syncResultView,
+QWidget#syncResultContainer,
+QWidget#syncResultContent {{
+    background-color: {tokens.window};
+    border: none;
+}}
+
+QFrame#syncResultHeading,
+QFrame#syncResultMessageSection {{
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QFrame#syncResultHeading[tone="success"] {{ border-color: {tokens.success}; }}
+QFrame#syncResultHeading[tone="warning"] {{ border-color: {tokens.warning}; }}
+QFrame#syncResultHeading[tone="error"] {{ border-color: {tokens.danger}; }}
+
+QLabel#syncResultTitle {{
+    font-family: "{typography.display}";
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#syncResultSymbol {{
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+    background-color: {tokens.surface_alt};
+    border-radius: {LAYOUT.space_xl}px;
+}}
+
+QLabel#syncResultSymbol[tone="success"] {{ color: {tokens.success}; }}
+QLabel#syncResultSymbol[tone="warning"],
+QLabel#syncResultMessageHeading[severity="warning"] {{ color: {tokens.warning}; }}
+QLabel#syncResultSymbol[tone="error"],
+QLabel#syncResultMessageHeading[severity="error"] {{ color: {tokens.danger}; }}
+
+QLabel#syncResultSummary {{
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 600;
+}}
+
+QLabel#syncResultMessageHeading {{ font-weight: 700; }}
+QLabel#syncResultDescription,
+QLabel#syncResultNoIssues {{ color: {tokens.text_secondary}; }}
+
+QPlainTextEdit#syncExecutionIssues {{
+    background-color: {tokens.surface_alt};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_control}px;
+    padding: {LAYOUT.space_sm}px;
 }}
 
 QMessageBox QLabel {{

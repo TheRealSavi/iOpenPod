@@ -70,6 +70,8 @@ class LayoutTokens:
     sync_scan_panel_maximum_width: int = 720
     sync_storage_bar_height: int = 10
     sync_review_visible_rows: int = 8
+    sync_result_maximum_width: int = 960
+    sync_result_details_height: int = 220
     page_header_height: int = 56
     album_card_padding: int = 6
     album_caption_gap: int = 6

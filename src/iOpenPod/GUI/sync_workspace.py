@@ -440,6 +440,7 @@ class SyncWorkspace(QWidget):
         self._reconcile_playlists.toggled.connect(self._playlist_reconciliation_toggled)
         self.execution.cancelRequested.connect(self.executionCancelRequested.emit)
         self.execution.exitRequested.connect(self.exitRequested.emit)
+        self.execution.resultVisibilityChanged.connect(self._refresh_stage_labels)
         self._library_navigation.pageRequested.connect(self._show_library_page)
         self._library_navigation.playlist_tree.selected.connect(self._playlist_selected)
         self.selection.changed.connect(self._refresh_selection_summary)
@@ -575,19 +576,7 @@ class SyncWorkspace(QWidget):
             if self._podcast_execution
             else self.tr("Sync with Host")
         )
-        stage_labels = {
-            SyncStage.SOURCES: self.tr("Sources"),
-            SyncStage.SELECT: self.tr("Select Media"),
-            SyncStage.REVIEW: self.tr("Review"),
-            SyncStage.SYNC: self.tr("Sync"),
-        }
-        for stage, number in _STAGES:
-            self._stage_labels[stage].setVisible(not self._podcast_execution)
-            self._stage_labels[stage].setText(
-                self.tr("%1  %2")
-                .replace("%1", number)
-                .replace("%2", stage_labels[stage])
-            )
+        self._refresh_stage_labels()
         self._library_navigation.retranslate_ui()
         self._scan.retranslate_ui()
         self._review.retranslate_ui()
@@ -619,6 +608,23 @@ class SyncWorkspace(QWidget):
         self._refresh_playlist_preview()
         self._refresh_review_summary()
 
+    def _refresh_stage_labels(self) -> None:
+        stage_labels = {
+            SyncStage.SOURCES: self.tr("Sources"),
+            SyncStage.SELECT: self.tr("Select Media"),
+            SyncStage.REVIEW: self.tr("Review"),
+            SyncStage.SYNC: self.tr("Result")
+            if self._stage is SyncStage.SYNC and self.execution.showing_result
+            else self.tr("Sync"),
+        }
+        for stage, number in _STAGES:
+            self._stage_labels[stage].setVisible(not self._podcast_execution)
+            self._stage_labels[stage].setText(
+                self.tr("%1  %2")
+                .replace("%1", number)
+                .replace("%2", stage_labels[stage])
+            )
+
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
             self.retranslate_ui()
@@ -628,6 +634,7 @@ class SyncWorkspace(QWidget):
         if stage is not SyncStage.SCANNING:
             self.stop_scan()
         self._stage = stage
+        self._refresh_stage_labels()
         self._refresh_review_summary()
         self._storage_bar.setVisible(stage in {SyncStage.SELECT, SyncStage.REVIEW})
         self._scan_issues.setVisible(

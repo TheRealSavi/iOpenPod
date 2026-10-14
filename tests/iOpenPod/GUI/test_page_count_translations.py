@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QMessageBox, QPlainTextEdit
+from PySide6.QtWidgets import QLabel, QMessageBox
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 from tests.iOpenPod.GUI.test_backup_page import build_backup_page
 
@@ -55,9 +55,9 @@ def test_sync_selection_and_extra_diagnostic_paths_use_count_forms(count: int) -
                 ),
             )
         )
-        issues = execution.findChild(QPlainTextEdit, "syncExecutionIssues")
+        issues = execution.findChild(QLabel, "syncResultMessage")
         assert issues is not None
-        assert f"…and {count} more file{suffix}" in issues.toPlainText()
+        assert f"…and {count} more file{suffix}" in issues.text()
     finally:
         review.deleteLater()
         execution.deleteLater()

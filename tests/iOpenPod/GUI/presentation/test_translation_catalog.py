@@ -87,8 +87,8 @@ def test_extraction_includes_dynamic_sources_in_runtime_contexts(catalog: Path) 
             "TagNormalizerDialog",
             "Showing %1 of %Ln change(s). Applying includes all %Ln change(s).",
         ),
-        ("SyncExecutionPage", "%n selected change(s) committed."),
-        ("SyncExecutionPage", "%n Playlist(s) reconciled."),
+        ("SyncExecutionPage", "%n change(s) saved to your iPod."),
+        ("SyncExecutionPage", "%n Playlist(s) updated."),
         ("SyncExecutionPage", "…and %n more file(s)"),
         ("SyncWorkspace", " · %Ln Playlist change(s)"),
         (

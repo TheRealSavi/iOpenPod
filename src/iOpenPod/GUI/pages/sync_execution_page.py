@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QProgressBar,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -22,6 +23,11 @@ from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.eta_label import EtaLabel
 from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
+from iOpenPod.GUI.widgets.sync_result import (
+    SyncResultMessage,
+    SyncResultTone,
+    SyncResultView,
+)
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iPodDB.library import IssueSeverity
 
@@ -45,6 +51,7 @@ class SyncExecutionPage(QWidget):
     recoveryRequested = Signal()
     keepContentsRequested = Signal()
     exitRequested = Signal()
+    resultVisibilityChanged = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -112,11 +119,12 @@ class SyncExecutionPage(QWidget):
         self._activity.setReadOnly(True)
         self._activity.setMaximumBlockCount(100)
         self._activity.setMinimumHeight(96)
-        self._issues = QPlainTextEdit(self)
-        self._issues.setObjectName("syncExecutionIssues")
-        self._issues.setReadOnly(True)
-        self._issues.setMaximumBlockCount(10_000)
-        self._issues.hide()
+        self._result_view = SyncResultView(self)
+        self._running_view = QWidget(self)
+        self._views = QStackedWidget(self)
+        self._views.addWidget(self._running_view)
+        self._views.addWidget(self._result_view)
+        self._views.currentChanged.connect(self._view_changed)
         self._cancel = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
         self._cancel.setObjectName("cancelSyncExecution")
         self._cancel.clicked.connect(self._request_cancel)
@@ -176,21 +184,31 @@ class SyncExecutionPage(QWidget):
         panel_layout.addWidget(self._preparation, 1)
         panel_layout.addWidget(self._elapsed)
 
+        running_layout = QVBoxLayout(self._running_view)
+        running_layout.setContentsMargins(0, 0, 0, 0)
+        running_layout.setSpacing(LAYOUT.space_md)
+        running_layout.addWidget(self._title)
+        running_layout.addWidget(self._overall)
+        running_layout.addWidget(stages)
+        running_layout.addWidget(progress_panel)
+        running_layout.addWidget(self._activity)
+        running_layout.addStretch()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
             LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg
         )
         layout.setSpacing(LAYOUT.space_md)
-        layout.addWidget(self._title)
-        layout.addWidget(self._overall)
-        layout.addWidget(stages)
-        layout.addWidget(progress_panel)
-        layout.addWidget(self._activity)
-        layout.addWidget(self._issues, 1)
-        layout.addStretch()
+        layout.addWidget(self._views, 1)
         layout.addLayout(actions)
         self._active_stage: int | None = None
         self.retranslate_ui()
+
+    @property
+    def showing_result(self) -> bool:
+        return self._views.currentWidget() is self._result_view
+
+    def _view_changed(self, _index: int) -> None:
+        self.resultVisibilityChanged.emit()
 
     def begin(self) -> None:
         self._phase_started = self._last_progress = monotonic()
@@ -203,8 +221,8 @@ class SyncExecutionPage(QWidget):
         self._last_write_progress = None
         self._completed_stages.clear()
         self._recovery_mode = None
-        self._issues.clear()
-        self._issues.hide()
+        self._views.setCurrentWidget(self._running_view)
+        self._result_view.reset()
         self._activity.clear()
         self._activity.show()
         self._set_stage(None)
@@ -225,6 +243,8 @@ class SyncExecutionPage(QWidget):
         self.retranslate_ui()
 
     def update_progress(self, progress: WriteProgress) -> None:
+        if self._result is not None and self._recovery_mode is None:
+            return
         self._last_write_progress = progress
         self._cancel_notice = False
         now = monotonic()
@@ -335,6 +355,8 @@ class SyncExecutionPage(QWidget):
         self._clock.stop()
         self._elapsed.clear()
         self._result = result
+        self._result_view.reset()
+        self._views.setCurrentWidget(self._result_view)
         self._progress.hide()
         self._eta.reset()
         self._preparation.set_items(())
@@ -357,6 +379,7 @@ class SyncExecutionPage(QWidget):
         self.retranslate_ui()
 
     def begin_recovery(self, *, cleanup: bool = False) -> None:
+        self._views.setCurrentWidget(self._running_view)
         self._recovery_mode = "cleanup" if cleanup else "restore"
         self._last_write_progress = None
         self._render_recovery()
@@ -405,9 +428,6 @@ class SyncExecutionPage(QWidget):
         self._done.setText(self.tr("Return to Library"))
         self._recover.setText(self.tr("Restore Previous Library"))
         self._keep.setText(self.tr("Keep Current Contents"))
-        self._issues.setAccessibleName(
-            self.tr("Sync warnings, errors, and recovery steps")
-        )
         self._set_stage(self._active_stage)
         if self._recovery_mode is not None:
             self._render_recovery()
@@ -438,72 +458,114 @@ class SyncExecutionPage(QWidget):
         if result.status in (SyncExecutionStatus.SUCCESS, SyncExecutionStatus.PARTIAL):
             self._recover.setText(self.tr("Retry Cleanup"))
         titles = {
-            SyncExecutionStatus.SUCCESS: self.tr("Sync completed"),
+            SyncExecutionStatus.SUCCESS: self.tr("Sync completed successfully"),
             SyncExecutionStatus.PARTIAL: self.tr("Sync partially completed"),
             SyncExecutionStatus.CANCELLED: self.tr("Sync cancelled"),
             SyncExecutionStatus.FAILED: self.tr("Sync could not complete"),
             SyncExecutionStatus.RECOVERY_REQUIRED: self.tr("Sync was interrupted"),
         }
-        self._title.setText(titles[result.status])
+        title = titles[result.status]
         if any(issue.code == "sync.recovered" for issue in result.issues):
-            self._title.setText(self.tr("Previous Library restored"))
+            title = self.tr("Previous Library restored")
         if any(issue.code == "sync.kept_current" for issue in result.issues):
-            self._title.setText(self.tr("Current contents kept"))
+            title = self.tr("Current contents kept")
         restored_cleanup = any(
             issue.code == "sync.restored_cleanup_pending" for issue in result.issues
         )
         if restored_cleanup:
-            self._title.setText(self.tr("Previous Library restored — cleanup remains"))
+            title = self.tr("Previous Library restored — cleanup remains")
         detail = english_count_fallback(
-            "%n selected change(s) committed.",
-            self.tr("%n selected change(s) committed.", "", len(result.completed)),
+            "%n change(s) saved to your iPod.",
+            self.tr("%n change(s) saved to your iPod.", "", len(result.completed)),
             len(result.completed),
         )
         if result.playlist_change_count:
             detail += " " + english_count_fallback(
-                "%n Playlist(s) reconciled.",
-                self.tr("%n Playlist(s) reconciled.", "", result.playlist_change_count),
+                "%n Playlist(s) updated.",
+                self.tr("%n Playlist(s) updated.", "", result.playlist_change_count),
                 result.playlist_change_count,
             )
-        if result.status is SyncExecutionStatus.PARTIAL:
-            detail += " " + self.tr(
-                "The remaining items were skipped. Resolve the issues below and scan again."
+        descriptions = {
+            SyncExecutionStatus.SUCCESS: self.tr(
+                "Your changes have been saved to your iPod."
+            ),
+            SyncExecutionStatus.PARTIAL: self.tr(
+                "Some changes were saved, but other items could not be synced. Review the messages below, then scan again."
+            ),
+            SyncExecutionStatus.CANCELLED: self.tr(
+                "Sync stopped before it finished. Scan again when you are ready to retry."
+            ),
+            SyncExecutionStatus.FAILED: self.tr(
+                "Review the errors below, then scan again to retry."
+            ),
+            SyncExecutionStatus.RECOVERY_REQUIRED: self.tr(
+                "Some changes may be incomplete. Choose how to recover your iPod below."
+            ),
+        }
+        description = descriptions[result.status]
+        tones: dict[SyncExecutionStatus, SyncResultTone] = {
+            SyncExecutionStatus.SUCCESS: "success",
+            SyncExecutionStatus.PARTIAL: "warning",
+            SyncExecutionStatus.CANCELLED: "neutral",
+            SyncExecutionStatus.FAILED: "error",
+            SyncExecutionStatus.RECOVERY_REQUIRED: "error",
+        }
+        tone = tones[result.status]
+        if result.status is SyncExecutionStatus.SUCCESS and any(
+            issue.severity is IssueSeverity.WARNING for issue in result.issues
+        ):
+            description = self.tr(
+                "Your changes were saved to your iPod. There are warnings to review below; they did not stop the Sync."
             )
-        elif result.status is SyncExecutionStatus.CANCELLED:
-            detail += " " + self.tr("Scan again when you are ready to retry.")
-        elif result.status is SyncExecutionStatus.FAILED:
-            detail += " " + self.tr("Resolve the errors below, then scan again.")
         if restored_cleanup:
-            detail = self.tr(
-                "The previous Library was restored and verified. Keep the journal and retry recovery to finish removing its temporary files."
+            description = self.tr(
+                "The previous Library was restored and verified. Retry recovery to finish removing its temporary recovery files."
             )
+            tone = "warning"
         elif result.status is SyncExecutionStatus.RECOVERY_REQUIRED:
-            detail = self.tr(
+            description = self.tr(
                 "Sync was interrupted. Restore Previous Library puts back the files from before "
                 "the interrupted changes. Keep Current Contents leaves the iPod as it is and "
                 "stops asking to restore. Some changes may be incomplete. Recovery copies are retained."
             )
         if any(issue.code == "sync.kept_current" for issue in result.issues):
-            detail = self.tr(
+            description = self.tr(
                 "The iPod was left as it is. The interrupted Sync may be incomplete. "
                 "Review the Library and scan again before making further changes."
             )
-        self._detail.setText(detail)
+            tone = "warning"
+        if any(issue.code == "sync.recovered" for issue in result.issues):
+            description = self.tr(
+                "The previous Library was restored. The interrupted Sync was not applied. Scan again when you are ready."
+            )
+            tone = "neutral"
+        if result.recovery_path and result.status in (
+            SyncExecutionStatus.SUCCESS,
+            SyncExecutionStatus.PARTIAL,
+        ):
+            description += " " + self.tr(
+                "Some temporary recovery files remain. Choose Retry Cleanup to remove them; your saved changes will be kept."
+            )
+        if (
+            not result.completed
+            and not result.playlist_change_count
+            and (
+                result.status is not SyncExecutionStatus.SUCCESS
+                or any(
+                    issue.code in ("sync.recovered", "sync.kept_current")
+                    for issue in result.issues
+                )
+            )
+        ):
+            detail = ""
+        self._result_view.set_outcome(title, description, detail, tone)
         grouped: dict[tuple[str, str, str, str], list[WriteIssue]] = {}
         for issue in dict.fromkeys(result.issues):
-            if issue.severity is IssueSeverity.INFO and (
-                issue.code
-                in ("playlist.podcast_membership", "playlist.podcast_group_order")
-                or (
-                    issue.code in ("sync.media_warning", "sync.podcast_media_warning")
-                    and issue.message
-                    == "Re-encoding a lossy source can reduce audio quality."
-                )
-            ):
-                continue
             key = (issue.severity.value, issue.code, issue.message, issue.detail)
             grouped.setdefault(key, []).append(issue)
         lines: list[str] = []
+        messages: list[SyncResultMessage] = []
+        counts = dict.fromkeys(IssueSeverity, 0)
         for (severity, code, message, diagnostic), issues in grouped.items():
             item_count = len(
                 {(issue.subject, issue.record_id, issue.artifact) for issue in issues}
@@ -518,9 +580,19 @@ class SyncExecutionPage(QWidget):
                 "warning": self.tr("WARNING"),
                 "error": self.tr("ERROR"),
             }.get(severity, severity)
-            line = f"{severity_label} [{code}] {workflow_text(message)}{count}"
+            user_message = f"{workflow_text(message)}{count}"
+            line = f"{severity_label} [{code}] {user_message}"
+            if code == "sync.scrobble_pending":
+                user_message = (
+                    self.tr(
+                        "Some listening history was not shared with your connected music services."
+                    )
+                    + "\n"
+                    + user_message
+                )
             if diagnostic:
                 line += "\n" + workflow_text(diagnostic)
+                user_message += "\n" + workflow_text(diagnostic)
             references = list(
                 dict.fromkeys(
                     reference
@@ -529,22 +601,43 @@ class SyncExecutionPage(QWidget):
                 )
             )
             if references:
-                shown = references if severity == "error" else references[:3]
-                line += "\n" + "\n".join(shown)
+                shown = references[:3]
+                line += "\n" + "\n".join(references)
+                user_message += "\n" + "\n".join(shown)
                 if len(references) > len(shown):
                     remaining = len(references) - len(shown)
-                    line += "\n" + english_count_fallback(
+                    user_message += "\n" + english_count_fallback(
                         "…and %n more file(s)",
                         self.tr("…and %n more file(s)", "", remaining),
                         remaining,
                     )
+                    user_message += "\n" + self.tr(
+                        "More affected items are listed in Technical details."
+                    )
             lines.append(line)
+            messages.append(SyncResultMessage(IssueSeverity(severity), user_message))
+            counts[IssueSeverity(severity)] += len(issues)
         if result.recovery_path:
             lines.append(
                 self.tr("Recovery journal: %1").replace("%1", result.recovery_path)
             )
-        self._issues.setPlainText("\n\n".join(lines))
-        self._issues.setVisible(bool(lines))
+        self._result_view.set_messages(
+            tuple(messages),
+            {
+                IssueSeverity.ERROR: self.tr("Errors (%1)").replace(
+                    "%1", str(counts[IssueSeverity.ERROR])
+                ),
+                IssueSeverity.WARNING: self.tr("Warnings (%1)").replace(
+                    "%1", str(counts[IssueSeverity.WARNING])
+                ),
+                IssueSeverity.INFO: self.tr("Information (%1)").replace(
+                    "%1", str(counts[IssueSeverity.INFO])
+                ),
+            },
+            self.tr("No warnings or errors were reported."),
+            "\n\n".join(lines),
+            self.tr("Technical details"),
+        )
 
     def _issue_reference(self, issue: WriteIssue) -> str:
         if issue.artifact:
