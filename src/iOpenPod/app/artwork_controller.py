@@ -53,10 +53,9 @@ class _ArtworkWork(QRunnable):
         self.key = key
         self.work = work
         self.signals = _ArtworkWorkerSignals()
-        # Python owns the runnable until its queued ``finished`` signal is handled.
-        # Qt auto-deletion can otherwise leave a dead Shiboken wrapper in the
-        # controller's retention map during device invalidation or shutdown.
-        self.setAutoDelete(False)
+        # Qt owns submitted jobs; dropping the Python wrapper alone does not
+        # release a runnable whose auto-deletion is disabled.
+        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -267,10 +266,10 @@ class ArtworkController(QObject):
             }
 
     def _cancel_queued_work(self) -> None:
-        for token, item in tuple(self._work_items.items()):
-            if self._thread_pool.tryTake(item):
-                self._work_items.pop(token, None)
-                self._pending.discard(item.key)
+        # Never dereference retained wrappers here: completed native jobs may
+        # already be deleted while their queued completion signal is pending.
+        self._thread_pool.clear()
+        self._work_items.clear()
 
 
 __all__ = ["ArtworkController", "ArtworkLoadFailure", "ArtworkLoader"]

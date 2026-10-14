@@ -1,5 +1,6 @@
 """Asynchronous, generation-scoped artwork cache behavior."""
 
+import weakref
 from collections.abc import Callable
 from threading import Event
 from time import monotonic
@@ -81,6 +82,32 @@ def test_results_from_an_invalidated_device_generation_are_discarded() -> None:
 
         assert ready == []
         assert controller.cached_byte_count == 0
+    finally:
+        gate.set()
+        controller.shutdown()
+
+
+def test_invalidation_releases_queued_jobs_and_accepts_new_generation_results() -> None:
+    gate = Event()
+    loader = _ArtworkLoader(gate=gate)
+    controller = ArtworkController(loader)
+    ready: list[ArtworkImage] = []
+    controller.artworkReady.connect(ready.append)
+    try:
+        for identity in range(1, 9):
+            controller.request(identity, 64)
+        assert loader.started.wait(timeout=1)
+        references = [
+            weakref.ref(job)
+            for job in controller._work_items.values()  # pyright: ignore[reportPrivateUsage]
+        ]
+        controller.invalidate()
+        assert controller.pending_count == 0
+        gate.set()
+        controller.request(99, 64)
+        _wait_until(lambda: controller.pending_count == 0)
+        assert [image.artwork_id for image in ready] == [99]
+        _wait_until(lambda: all(reference() is None for reference in references))
     finally:
         gate.set()
         controller.shutdown()

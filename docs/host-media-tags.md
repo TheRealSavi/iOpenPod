@@ -43,6 +43,14 @@ hyphens. The common Library has scalar fields: the first nonempty text value is
 used. MP4 freeform text uses its declared encoding; binary objects are never
 converted to their Python representation.
 
+FFprobe metadata can repeat a tag name, for example when an MP3 has both a
+standard ID3 recording date and a custom `date` tag. Inspection preserves every
+value in output order for container, stream, and chapter tags. Track projection
+uses the first nonempty value of each repeated name, including `date`, `artist`,
+`title`, and `comment`; native primary tags retain their existing precedence over
+FFprobe fallbacks. Repeated structural fields such as file size, stream
+index, or the `tags` object itself remain invalid.
+
 Descriptionless nonempty USLT/COMM frames take precedence, followed by description
 and language order. Lyrics retain whitespace and line breaks. Native USLT/©lyr
 precede named lyrics; `LYRICS` precedes `UNSYNCEDLYRICS`. Multiple POPM ratings use

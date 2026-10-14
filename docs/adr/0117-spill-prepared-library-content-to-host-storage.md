@@ -39,3 +39,29 @@ The artwork/media capture workspace and the separate Photo Sync workspace each
 retain up to 2 GiB before spilling to private Host files. This is a retained-data
 budget, not a guarantee about total process memory. Routine disk staging does not
 produce a user-visible issue; actual staging failures remain errors.
+
+## Staging volume and crash cleanup (2026-10-14)
+
+Complete prepared media, chaptered Album drafts, and content overflow use private
+directories under the Host application cache by default. On Linux this is
+`$XDG_CACHE_HOME/iopenpod/staging`, or `~/.cache/iopenpod/staging` when unset. The
+system's default `/tmp` can be tmpfs: retaining a whole Sync there consumes RAM
+and swap even though the Python objects and in-memory content budgets are bounded.
+Media and content overflow must share the corrected directory policy.
+
+Explicit `TMPDIR`, `TEMP`, and `TMP` overrides remain supported, in that order,
+inside a private application subdirectory. An unavailable override fails instead
+of silently falling back to another volume. The chosen cache or override must be
+on a disk-backed volume to avoid tmpfs consumption. Complete preparations still
+require Host disk space proportional to the batch. Sync continues to prepare the
+complete desired Library before device publication, preserving complete-plan
+validation and the recoverable Storage Transaction.
+
+Each workspace holds an OS lock on an ownership marker for its entire lifetime.
+Normal completion, cancellation, and failure remove it. Startup can reclaim
+marked workspaces after a process crash only when their locks are available.
+Creation and removal share a short root lock with cleanup so a second process
+cannot interfere while an owner is creating or closing its workspace.
+Cleanup does not recurse, follow links, remove unmarked legacy temporary
+directories, or touch another running process's preparations. A matching filename
+prefix alone does not establish ownership.

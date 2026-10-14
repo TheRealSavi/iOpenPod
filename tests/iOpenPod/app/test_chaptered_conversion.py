@@ -2,6 +2,7 @@
 
 import base64
 import shutil
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 from threading import Event
@@ -203,10 +204,22 @@ def test_draft_change_cancels_a_pending_conversion(
 
 
 def test_encoded_album_is_verified_then_staged_with_playlist_membership(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         pytest.skip("FFmpeg and FFprobe are required for real Album conversion")
+    system_temp = tmp_path / "system-temp"
+    system_temp.mkdir()
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+    def isolated_home(cls: type[Path]) -> Path:
+        return tmp_path / "home"
+
+    monkeypatch.setattr(Path, "home", classmethod(isolated_home))
+    monkeypatch.setattr(tempfile, "tempdir", str(system_temp))
     source = tmp_path / "source.m4a"
     source.write_bytes(base64.decodebytes(FIXTURE.read_bytes()))
     observed = MediaInspector().inspect(HostPath(source), checkpoint=lambda: None)
@@ -228,6 +241,7 @@ def test_encoded_album_is_verified_then_staged_with_playlist_membership(
         )
         try:
             assert Path(result.song.source.source).is_file()
+            assert not Path(result.song.source.source).is_relative_to(system_temp)
             assert result.song.track.title == "Album"
             assert result.song.track.metadata.chapters[0].start_ms == 0
             assert len(result.song.track.metadata.chapters) == 2

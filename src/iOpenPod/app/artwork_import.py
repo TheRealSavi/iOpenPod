@@ -96,7 +96,7 @@ class _ImportWork(QRunnable):
         self.source = source
         self.cancelled = Event()
         self.signals = _Signals()
-        self.setAutoDelete(False)
+        self.setAutoDelete(True)
 
     def run(self) -> None:
         def checkpoint() -> None:

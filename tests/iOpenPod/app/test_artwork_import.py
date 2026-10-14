@@ -1,5 +1,6 @@
 """Selected artwork is captured by Storage before bounded image decoding."""
 
+import weakref
 from pathlib import Path
 
 import pytest
@@ -48,5 +49,23 @@ def test_controller_decodes_without_blocking_the_calling_thread(tmp_path: Path) 
         wait_for(lambda: not controller.busy)
         assert finished.count() == 1
         assert failed.count() == 0
+    finally:
+        controller.shutdown()
+
+
+def test_repeated_artwork_imports_release_completed_jobs(tmp_path: Path) -> None:
+    path = tmp_path / "cover.png"
+    Image.new("RGB", (20, 10), (12, 34, 56)).save(path)
+    controller = ArtworkImportController()
+    references: list[weakref.ReferenceType[object]] = []
+    try:
+        for _ in range(12):
+            controller.start(HostPath(path))
+            references.extend(
+                weakref.ref(job)
+                for job in controller._jobs.values()  # pyright: ignore[reportPrivateUsage]
+            )
+            wait_for(lambda: not controller.busy)
+        wait_for(lambda: all(reference() is None for reference in references))
     finally:
         controller.shutdown()

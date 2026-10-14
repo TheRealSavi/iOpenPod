@@ -47,7 +47,7 @@ class _ArtworkWork(QRunnable):
         self.key = key
         self.work = work
         self.signals = _ArtworkSignals()
-        self.setAutoDelete(False)
+        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -146,10 +146,7 @@ class PodcastArtworkController(QObject):
         if self._closed:
             return
         self._closed = True
-        for token, item in tuple(self._work_items.items()):
-            if self._pool.tryTake(item):
-                self._work_items.pop(token, None)
-                self._pending.discard(item.key)
+        self._pool.clear()
         self._pool.waitForDone()
         self._work_items.clear()
         self._pending.clear()

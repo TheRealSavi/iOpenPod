@@ -1110,22 +1110,36 @@ class SyncExecutor:
 
         # Independent preparation runs concurrently; publication uses the single
         # ordered Storage transaction, avoiding competing USB writers.
+        max_workers = min(self._workers, len(changes) or 1)
+        in_flight_limit = max_workers * 2
         with ThreadPoolExecutor(
-            max_workers=min(self._workers, len(changes) or 1),
+            max_workers=max_workers,
             thread_name_prefix="sync-media",
         ) as pool:
-            futures = {pool.submit(prepare, item): item for item in changes}
+            futures: dict[Future[_PreparedTrack], SyncPlanItem] = {}
+            remaining = iter(changes)
             was_cancelled = False
 
             def finished() -> Generator[Future[_PreparedTrack]]:
-                nonlocal activity_changed
-                pending = set(futures)
-                while pending:
+                nonlocal activity_changed, was_cancelled
+                while True:
+                    if not was_cancelled:
+                        try:
+                            checkpoint()
+                        except PreparationCancelledError:
+                            was_cancelled = True
+                    # Bound queued work and consume completed Futures promptly.
+                    # Failed Futures retain tracebacks and decoder working data.
+                    while not was_cancelled and len(futures) < in_flight_limit:
+                        item = next(remaining, None)
+                        if item is None:
+                            break
+                        futures[pool.submit(prepare, item)] = item
+                    if not futures:
+                        return
                     activity_updated.wait(timeout=0.1)
                     activity_updated.clear()
-                    done, pending = wait(
-                        pending, timeout=0, return_when=FIRST_COMPLETED
-                    )
+                    done = wait(futures, timeout=0, return_when=FIRST_COMPLETED).done
                     with activity_lock:
                         changed = activity_changed
                         activity_changed = False
@@ -1142,10 +1156,11 @@ class SyncExecutor:
                                 active_items=items,
                             )
                         )
-                    yield from done
+                    while done:
+                        yield done.pop()
 
             for future in finished():
-                item = futures[future]
+                item = futures.pop(future)
                 try:
                     result = future.result()
                 except PreparationCancelledError:
@@ -1191,6 +1206,9 @@ class SyncExecutor:
                         )
                         for warning in result.warnings
                     )
+                # Break the last failed Future's traceback cycle through this
+                # frame; otherwise it can retain the whole batch until cyclic GC.
+                del future
                 completed += 1
                 progress(
                     WriteProgress(

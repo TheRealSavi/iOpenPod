@@ -1,5 +1,7 @@
 """GUI-thread conversion of lazy RGB artwork into display pixmaps."""
 
+import gc
+import weakref
 from collections.abc import Callable
 from threading import Event
 from time import monotonic
@@ -111,6 +113,49 @@ def test_provider_derives_colors_asynchronously_in_a_bounded_lru() -> None:
     finally:
         provider.shutdown()
         controller.shutdown()
+
+
+def test_finished_color_jobs_release_images_after_cache_eviction() -> None:
+    class TrackedImage(ArtworkImage):
+        __slots__ = ("__weakref__",)
+
+    references: list[weakref.ReferenceType[ArtworkImage]] = []
+
+    class Loader:
+        def load_artwork(self, request: ArtworkRequest) -> ArtworkImage:
+            image = TrackedImage(
+                cache_key=f"retention:{request.artwork_id}",
+                artwork_id=request.artwork_id,
+                format_id=1061,
+                width=2,
+                height=2,
+                rgb888=bytes((255, 0, 0)) * 4,
+            )
+            references.append(weakref.ref(image))
+            return image
+
+    controller = ArtworkController(Loader(), cache_byte_limit=12)
+    provider = ArtworkPixmapProvider(controller, color_cache_limit=1)
+    try:
+        for identity in range(1, 25):
+            assert provider.dominant_color(identity, 44, 1.0) is None
+
+            def ready(artwork_id: int = identity) -> bool:
+                return (
+                    provider.dominant_color(artwork_id, 44, 1.0) == (216, 0, 0)
+                    and controller.pending_count == 0
+                )
+
+            _wait_until(ready)
+        # Color availability precedes the final queued completion event.
+        _wait_until(
+            lambda: sum(reference() is not None for reference in references) <= 1
+        )
+    finally:
+        provider.shutdown()
+        controller.shutdown()
+    gc.collect()
+    assert all(reference() is None for reference in references)
 
 
 class _TimedLoader:

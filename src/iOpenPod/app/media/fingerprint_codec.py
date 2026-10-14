@@ -40,7 +40,7 @@ def decode_fingerprint(value: str) -> str:
 
     Both compressed input and decompressed output are bounded. Truncated streams,
     trailing bytes, concatenated streams and partial uint32 values are rejected.
-    Catalog readers additionally bound the combined decoded size of all records.
+    Each fingerprint is bounded independently of the surrounding catalog's size.
     """
 
     if not value:

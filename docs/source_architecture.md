@@ -1151,7 +1151,10 @@ The implemented pre-Sync entry point begins with Host Media Scan. Sync with Host
 first opens a modal media-folder dialog. Accepting it persists the staged choices,
 starts one background scan of the selected folders, and opens the full-window Sync
 Workspace for progress, selection, and Review. The scanner covers the enabled audio,
-video, Photo, and Playlist types and enumerates a
+video, Photo, and Playlist types. macOS AppleDouble `._` metadata companions are
+excluded before inspection or cache reuse, including explicit file selections;
+Playlist references cannot add them. Other dot-prefixed media files and folders
+remain eligible. The scanner enumerates a
 canonical file catalog before reading metadata, reuses a checksummed application
 cache entry only when path, media kind, size, and modification time still match, and
 then repeats the metadata-only enumeration. New or changed audio and video files also
@@ -1334,6 +1337,11 @@ ADR-0136. Older no-cover records
 are reinspected once to distinguish absent artwork from previously unrecorded
 decoding failures. Long Acoustic Fingerprints use a lossless bounded binary
 encoding in Host cache v14 and helper v5; readers retain prior decimal support.
+The Host Media Scan Cache, iPod Analysis Cache, and Library Sync Helper have no
+aggregate encoded-byte or decoded-fingerprint-byte ceiling. Their checksums,
+record-count limits, and individual fingerprint validation remain enforced. These
+application catalogs are separate from the model-specific limits on prepared
+firmware database writes, even when the helper is stored on the iPod. See ADR-0143.
 An iPod Media Scan upgrades a v3 Library Sync Helper in
 memory by reusing unchanged device records without recapturing media. Because v3
 does not contain a committed iPod Track tag or artwork baseline, migration does not

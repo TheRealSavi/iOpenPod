@@ -41,6 +41,9 @@ def test_private_paths_are_canonical_under_aliased_temp_root(
     alias = tmp_path / "temporary-alias"
     _directory_alias(alias, real_root)
     monkeypatch.setattr(tempfile, "tempdir", str(alias))
+    # Large media workspaces use a deliberate volume override, independently
+    # from Python's default system-temp selection for short-lived captures.
+    monkeypatch.setenv("TMPDIR", str(alias))
     source = tmp_path / "source.bin"
     source.write_bytes(b"captured source")
     with ExitStack() as lifetime:
@@ -81,4 +84,6 @@ def test_private_paths_are_canonical_under_aliased_temp_root(
         with LocalHostFile.observe(path).open_read() as stream:
             assert stream.read() == b"captured source"
         assert Path(path).is_relative_to(real_root.resolve())
-    assert not tuple(real_root.iterdir())
+    assert not Path(path).parent.exists()
+    if kind != "workspace":
+        assert not tuple(real_root.iterdir())

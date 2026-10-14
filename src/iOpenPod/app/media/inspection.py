@@ -7,6 +7,7 @@ import logging
 import math
 import re
 import time
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 from typing import TYPE_CHECKING, cast
@@ -182,13 +183,33 @@ def _text(value: object, label: str) -> str:
     return value
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    values: dict[str, object] = {}
-    for key, value in pairs:
-        if key in values:
-            raise _invalid(f"Duplicate FFprobe field: {key}")
-        values[key] = value
-    return values
+@dataclass(frozen=True, slots=True)
+class _ProbeObject:
+    pairs: tuple[tuple[str, object], ...]
+
+
+def _pairs(pairs: list[tuple[str, object]]) -> _ProbeObject:
+    return _ProbeObject(tuple(pairs))
+
+
+def _structured(value: object) -> object:
+    """Reject repeated structural fields while preserving metadata tag pairs."""
+    if isinstance(value, _ProbeObject):
+        fields: dict[str, object] = {}
+        for key, item in value.pairs:
+            if key in fields:
+                raise _invalid(f"Duplicate FFprobe field: {key}")
+            # FFprobe can emit both ID3's standard date and a custom date tag.
+            # Keep their order and values; metadata is already modeled as pairs.
+            fields[key] = (
+                item
+                if key == "tags" and isinstance(item, _ProbeObject)
+                else _structured(item)
+            )
+        return fields
+    if isinstance(value, list):
+        return [_structured(item) for item in cast("list[object]", value)]
+    return value
 
 
 def _constant(value: str) -> object:
@@ -257,9 +278,12 @@ def _rational(
 
 
 def _tags(value: object) -> tuple[MediaTag, ...]:
-    return tuple(
-        MediaTag(k, _text(v, f"tag {k}")) for k, v in _object(value, "tags").items()
+    pairs = (
+        value.pairs
+        if isinstance(value, _ProbeObject)
+        else _object(value, "tags").items()
     )
+    return tuple(MediaTag(k, _text(v, f"tag {k}")) for k, v in pairs)
 
 
 def _flag(value: object, label: str) -> bool | None:
@@ -366,11 +390,13 @@ def _parse(data: bytes, captured: CapturedHostFile) -> MediaInspection:
 
 def _parse_metadata(data: bytes, expected_size: int) -> MediaScanMetadata:
     try:
-        raw: object = json.loads(
-            data.decode("utf-8"),
-            object_pairs_hook=_pairs,
-            parse_float=Decimal,
-            parse_constant=_constant,
+        raw = _structured(
+            json.loads(
+                data.decode("utf-8"),
+                object_pairs_hook=_pairs,
+                parse_float=Decimal,
+                parse_constant=_constant,
+            )
         )
     except (ValueError, RecursionError) as error:
         raise _invalid("FFprobe did not return valid UTF-8 JSON") from error

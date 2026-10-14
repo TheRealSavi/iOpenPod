@@ -5,6 +5,10 @@
 - Amends: ADR-0063's incomplete Track cache policy and ADR-0099's scan probe capture
 - Extends: ADR-0065, ADR-0074, ADR-0076, ADR-0082, ADR-0084, and ADR-0120
 
+> ADR-0143 supersedes the aggregate encoded and decoded catalog byte limits below.
+> Individual fingerprint bounds, record-count limits, and the other reuse policies
+> remain in effect.
+
 ## Context
 
 Repeated scans spent work on unchanged cache serialization, repeated device checks,

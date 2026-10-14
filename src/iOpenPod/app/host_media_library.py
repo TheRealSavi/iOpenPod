@@ -79,8 +79,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _CACHE_VERSION = 14
-_MAX_CACHE_BYTES = 64 * 1024 * 1024
-_MAX_DECODED_FINGERPRINT_BYTES = 256 * 1024 * 1024
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
 _MAX_INSPECTION_WORKERS = 8
@@ -1351,8 +1349,8 @@ class HostMediaScanner:
             self._cached_artwork = {}
             self._cache_revision = revision
             self._cache_dirty = True
-            payload = self._cache_file.read_bytes(max_bytes=_MAX_CACHE_BYTES)
-            if payload is None or len(payload) > _MAX_CACHE_BYTES:
+            payload = self._cache_file.read_bytes()
+            if payload is None:
                 return {}, {}
             records, artwork, version = _decode_cache(payload)
             self._cached_records = {
@@ -1510,8 +1508,12 @@ def _resolve_scan_selection(
     )
     selected_files: dict[HostPath, None] = {}
     for original in files:
+        if _is_appledouble_companion(original.path):
+            continue
         resolved_file = resolve(original)
-        if resolved_file is not None:
+        if resolved_file is not None and not _is_appledouble_companion(
+            resolved_file.path
+        ):
             selected_files[resolved_file] = None
     return selected_folders, tuple(selected_files), tuple(issues)
 
@@ -2009,10 +2011,17 @@ def _is_folder_cover(path: PurePath) -> bool:
     )
 
 
+def _is_appledouble_companion(path: PurePath) -> bool:
+    """macOS metadata companions inherit media suffixes but contain no media."""
+    return path.name.startswith("._")
+
+
 def _classify(
     path: PurePath,
     allowed: frozenset[HostMediaType] | None = None,
 ) -> HostMediaFileKind | None:
+    if _is_appledouble_companion(path):
+        return None
     extension = path.suffix.casefold()
     choices = (
         (HostMediaType.AUDIO, HostMediaFileKind.AUDIO, _AUDIO_EXTENSIONS),
@@ -2027,7 +2036,7 @@ def _classify(
 
 
 def classify_host_media_file(path: Path) -> HostMediaFileKind | None:
-    """Classify a selected filename using the scanner's supported extensions."""
+    """Classify a media filename, excluding macOS metadata companions."""
 
     return _classify(path)
 
@@ -2035,7 +2044,10 @@ def classify_host_media_file(path: Path) -> HostMediaFileKind | None:
 def _review_reference(
     path: HostPath, playlists: tuple[HostPath, ...]
 ) -> PlaylistExternalReference:
-    if path.path.suffix.casefold() not in _AUDIO_EXTENSIONS | _VIDEO_EXTENSIONS:
+    if _classify(path.path) not in (
+        HostMediaFileKind.AUDIO,
+        HostMediaFileKind.VIDEO,
+    ):
         return PlaylistExternalReference(
             path,
             playlists,
@@ -2971,15 +2983,6 @@ def _encode_cache(
     records: tuple[_CachedRecord, ...],
     folder_artwork: tuple[_ArtworkReference, ...],
 ) -> bytes:
-    if (
-        sum(
-            len(record.acoustic_fingerprint)
-            for record in records
-            if isinstance(record, _CachedTrackRecord)
-        )
-        > _MAX_DECODED_FINGERPRINT_BYTES
-    ):
-        raise HostMediaScanError("Host media cache fingerprint data exceeds 256 MiB")
     entries = [_record_document(record) for record in records]
     catalog = _canonical_json(entries)
     artwork_entries = [
@@ -3000,10 +3003,7 @@ def _encode_cache(
             _canonical_json(artwork_entries)
         ).hexdigest(),
     }
-    encoded = _canonical_json(document)
-    if len(encoded) > _MAX_CACHE_BYTES:
-        raise HostMediaScanError("The Host Media Library cache exceeds 64 MiB")
-    return encoded
+    return _canonical_json(document)
 
 
 def _decode_cache(
@@ -3047,17 +3047,12 @@ def _decode_cache_contents(
     ):
         raise ValueError("Host media cache checksum does not match")
     decoded_records: list[_CachedRecord] = []
-    fingerprint_bytes = 0
     for entry in entries:
         record = _record_from_document(entry, version=version)
         if version < 14 and isinstance(record, _CachedPlaylistRecord):
             # Earlier parsers dropped network and valid POSIX name references.
             # Reparse unchanged Playlists without rereading cached media.
             continue
-        if isinstance(record, _CachedTrackRecord):
-            fingerprint_bytes += len(record.acoustic_fingerprint)
-            if fingerprint_bytes > _MAX_DECODED_FINGERPRINT_BYTES:
-                raise ValueError("Host media cache fingerprint data exceeds 256 MiB")
         decoded_records.append(record)
     records = tuple(decoded_records)
     if version == 9:

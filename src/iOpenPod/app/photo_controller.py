@@ -68,10 +68,9 @@ class _PhotoWork(QRunnable):
         self.key = key
         self.work = work
         self.signals = _PhotoWorkerSignals()
-        # Python retains each runnable until its queued ``finished`` signal is
-        # handled. Qt auto-deletion could otherwise leave a dead Shiboken wrapper
-        # in the retention map during device invalidation or shutdown.
-        self.setAutoDelete(False)
+        # Qt releases the native job after run returns. Invalidation clears the
+        # pool's queue without dereferencing possibly deleted Python wrappers.
+        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -330,10 +329,8 @@ class PhotoController(QObject):
             }
 
     def _cancel_queued_work(self) -> None:
-        for token, item in tuple(self._work_items.items()):
-            if self._thread_pool.tryTake(item):
-                self._work_items.pop(token, None)
-                self._pending.discard(item.key)
+        self._thread_pool.clear()
+        self._work_items.clear()
 
 
 def _matches_request(key: _RequestKey, image: PhotoImage) -> bool:

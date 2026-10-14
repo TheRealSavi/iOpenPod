@@ -6,7 +6,7 @@ import pytest
 
 from iOpenPod.app import ipod_analysis_cache as cache_module
 from iOpenPod.app.ipod_analysis_cache import IPodAnalysisCache, IPodAnalysisRecord
-from storage import AtomicHostFile, DevicePath, StorageOperationError
+from storage import AtomicHostFile, DevicePath
 
 
 def _record(identity: int, fingerprint: str = "1,2,3") -> IPodAnalysisRecord:
@@ -20,11 +20,11 @@ def _record(identity: int, fingerprint: str = "1,2,3") -> IPodAnalysisRecord:
     )
 
 
-def test_analysis_cache_bounds_decoded_memory_by_evicting_old_evidence(
+def test_analysis_cache_bounds_record_count_by_evicting_old_evidence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(cache_module, "_MAX_DECODED_ACOUSTIC_BYTES", 10)
+    monkeypatch.setattr(cache_module, "_MAX_RECORDS", 2)
     file = AtomicHostFile(tmp_path / "cache.json")
     cache = IPodAnalysisCache(file, "a" * 64)
     for number in range(1, 4):
@@ -35,23 +35,6 @@ def test_analysis_cache_bounds_decoded_memory_by_evicting_old_evidence(
     assert loaded.get("database", 1, _record(1).path) is None
     assert loaded.get("database", 2, _record(2).path) == _record(2)
     assert loaded.get("database", 3, _record(3).path) == _record(3)
-
-
-def test_analysis_cache_bounds_encoded_size_without_losing_newest_record(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(cache_module, "_MAX_BYTES", 1024)
-    file = AtomicHostFile(tmp_path / "cache.json")
-    cache = IPodAnalysisCache(file, "b" * 64)
-    for number in range(1, 20):
-        cache.remember(_record(number))
-    cache.save(force=True)
-    assert file.path.stat().st_size <= 1024
-    loaded = IPodAnalysisCache(file, "b" * 64)
-    loaded.load()
-    assert loaded.get("database", 1, _record(1).path) is None
-    assert loaded.get("database", 19, _record(19).path) == _record(19)
 
 
 def test_analysis_cache_checkpoints_and_does_not_rewrite_unchanged_data(
@@ -82,7 +65,7 @@ def test_analysis_cache_checkpoints_and_does_not_rewrite_unchanged_data(
 
 @pytest.mark.parametrize(
     "mutation",
-    ["identity", "checksum", "duplicate", "empty", "decoded_budget", "oversized"],
+    ["identity", "checksum", "duplicate", "empty", "invalid_fingerprint", "records"],
 )
 def test_analysis_cache_rejects_invalid_or_unbounded_evidence(
     tmp_path: Path,
@@ -104,11 +87,11 @@ def test_analysis_cache_rejects_invalid_or_unbounded_evidence(
         document["records"] *= 2
     elif mutation == "empty":
         document["records"][0][-1] = ""
-    elif mutation == "decoded_budget":
-        monkeypatch.setattr(cache_module, "_MAX_DECODED_ACOUSTIC_BYTES", 4)
+    elif mutation == "invalid_fingerprint":
+        document["records"][0][-1] = "u32z:invalid"
     else:
-        monkeypatch.setattr(cache_module, "_MAX_BYTES", 5)
-    if mutation in {"duplicate", "empty"}:
+        monkeypatch.setattr(cache_module, "_MAX_RECORDS", 0)
+    if mutation in {"duplicate", "empty", "invalid_fingerprint"}:
         document["sha256"] = hashlib.sha256(
             json.dumps(
                 document["records"],
@@ -119,7 +102,7 @@ def test_analysis_cache_rejects_invalid_or_unbounded_evidence(
             ).encode()
         ).hexdigest()
     file.replace_bytes(json.dumps(document).encode())
-    with pytest.raises((ValueError, StorageOperationError)):
+    with pytest.raises(ValueError):
         IPodAnalysisCache(file, "d" * 64).load()
 
 

@@ -154,7 +154,8 @@ The 6,500-record capacity probe previously exceeded 64 MiB for both caches; it n
 fits in 15.6 MB for Host metadata and 12.8 MB for the helper. Compression depends on
 the values: this sequential stub compresses particularly well. A separate test
 with mixed unsigned 32-bit values verifies exact round trips below 60% of decimal
-text size. Catalog limits remain enforced on both encoded and decoded data.
+text size. These measurements predate ADR-0143, which removes aggregate encoded and
+decoded catalog byte limits while retaining individual fingerprint validation.
 
 These decoder-free fixtures do not establish a first-scan speedup: the measured
 Host first scan changed from 1.60 to 1.76 seconds and the virtual iPod first scan

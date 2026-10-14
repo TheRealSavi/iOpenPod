@@ -1261,7 +1261,7 @@ def test_changed_during_decode_is_not_remembered_in_host_cache(tmp_path: Path) -
     assert len(fingerprinter.calls) == 1
 
 
-def test_helper_writer_enforces_decoded_budget_before_replacing_previous_helper(
+def test_helper_writer_enforces_record_count_before_replacing_previous_helper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1279,8 +1279,8 @@ def test_helper_writer_enforces_decoded_budget_before_replacing_previous_helper(
         helper_path = root / str(LIBRARY_SYNC_HELPER_PATH)
         before = helper_path.read_bytes()
         library = _two_tracks(root)
-        monkeypatch.setattr(helper_module, "_MAX_DECODED_ACOUSTIC_BYTES", 6)
-        with pytest.raises(LibrarySyncHelperError, match="decoded acoustic"):
+        monkeypatch.setattr(helper_module, "_MAX_RECORDS", 1)
+        with pytest.raises(LibrarySyncHelperError, match="too many records"):
             publish_sync_helper(
                 session,
                 library,

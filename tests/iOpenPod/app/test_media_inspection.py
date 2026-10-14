@@ -13,8 +13,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from mutagen.id3 import ID3, TDRC, TXXX
 
-from iOpenPod.app.media import MediaInspectionError, MediaInspector, StreamKind
+from iOpenPod.app.media import (
+    MediaInspectionError,
+    MediaInspector,
+    MediaTag,
+    StreamKind,
+)
+from iOpenPod.app.media.tags import apply_tag_values, inspection_tag_values
+from iPodDB.library import Track
 from storage import HostPath
 
 if TYPE_CHECKING:
@@ -238,10 +246,97 @@ def test_missing_facts_are_not_fabricated_and_tick_duration_is_exact(
     assert result.video_streams == ()
 
 
+def test_real_mp3_with_standard_and_custom_date_tags_remains_inspectable(
+    tmp_path: Path, inspector: MediaInspector
+) -> None:
+    source = _fixture(tmp_path, "tone.mp3")
+    tags = ID3(source.path)  # type: ignore[no-untyped-call]
+    tags.add(TDRC(encoding=3, text=["2001"]))  # type: ignore[no-untyped-call]
+    tags.add(TXXX(encoding=3, desc="date", text=["2002"]))  # type: ignore[no-untyped-call]
+    tags.save(source.path)  # pyright: ignore[reportUnknownMemberType]
+    for result in (
+        inspector.inspect(source, checkpoint=lambda: None),
+        inspector.scan_metadata(source, checkpoint=lambda: None),
+    ):
+        assert tuple(tag for tag in result.tags if tag.name == "date") == (
+            MediaTag("date", "2001"),
+            MediaTag("date", "2002"),
+        )
+        assert result.audio_streams[0].codec == "mp3"
+
+
+@pytest.mark.parametrize("section", ["container", "stream"])
+def test_repeated_probe_tags_use_first_nonempty_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, section: str
+) -> None:
+    tags = (
+        b'{"date":" ","date":"2019-04-17","date":"2009",'
+        b'"artist":"Primary artist","artist":"Other artist","artist":" ",'
+        b'"title":"Primary title","title":"Other title",'
+        b'"comment":"Primary comment","comment":"Other comment",'
+        b'"lyrics":"  First line\\nSecond line\\n","lyrics":"Other lyrics"}'
+    )
+    container_tags = tags if section == "container" else b"{}"
+    stream_tags = tags if section == "stream" else b'{"artist":"Stream artist"}'
+    _use_report(
+        monkeypatch,
+        b'{"format":{"format_name":"mp3","size":"3","tags":'
+        + container_tags
+        + b'},"streams":[{"index":0,"codec_type":"audio","tags":'
+        + stream_tags
+        + b"}]}",
+    )
+    path = tmp_path / "input"
+    path.write_bytes(b"abc")
+    observed = MediaInspector(HostPath(sys.executable)).inspect(
+        HostPath(path), checkpoint=lambda: None
+    )
+    track = apply_tag_values(
+        Track(1, "Fallback", "", "", 1000),
+        inspection_tag_values(observed),
+        suffix=".mp3",
+        video=False,
+    )
+    assert track.year == 2019
+    assert track.artist == "Primary artist"
+    assert track.title == "Primary title"
+    assert track.metadata.comment == "Primary comment"
+    assert track.metadata.lyrics == "  First line\nSecond line\n"
+
+
+def test_repeated_metadata_is_preserved_in_all_probe_tag_sections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _use_report(
+        monkeypatch,
+        b'{"format":{"format_name":"mp3","size":"3",'
+        b'"tags":{"date":"2001","date":"2002"}},'
+        b'"streams":[{"index":0,"tags":{"title":"A","title":"B"}}],'
+        b'"chapters":[{"id":0,"start_time":"0","end_time":"1",'
+        b'"tags":{"title":"C","title":"D"}}]}',
+    )
+    path = tmp_path / "input"
+    path.write_bytes(b"abc")
+    result = MediaInspector(HostPath(sys.executable)).inspect(
+        HostPath(path), checkpoint=lambda: None
+    )
+    assert result.tags == (MediaTag("date", "2001"), MediaTag("date", "2002"))
+    assert result.streams[0].tags == (MediaTag("title", "A"), MediaTag("title", "B"))
+    assert result.chapters[0].tags == (MediaTag("title", "C"), MediaTag("title", "D"))
+
+
 @pytest.mark.parametrize(
     "data",
     [
         b'{"format":{},"format":{}}',
+        b'{"format":{"format_name":"mp3","size":"3","size":"3"},'
+        b'"streams":[{"index":0}]}',
+        b'{"format":{"format_name":"mp3","size":"3"},'
+        b'"streams":[{"index":0,"index":0}]}',
+        b'{"format":{"format_name":"mp3","size":"3","tags":{},"tags":{}},'
+        b'"streams":[{"index":0}]}',
+        b'{"format":{"format_name":"mp3","size":"3",'
+        b'"tags":{"date":"2001","date":23}},"streams":[{"index":0}]}',
         b'{"format":NaN}',
         b"[]",
         b"\xff",

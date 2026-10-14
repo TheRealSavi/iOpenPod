@@ -95,6 +95,72 @@ def test_scan_retains_tracks_in_dot_terminated_folders(
             assert Path(captured).read_bytes() == song.read_bytes()
 
 
+@pytest.mark.parametrize("selection", ["folder", "linked-folder", "files"])
+@pytest.mark.parametrize("directory_workers", [1, 4])
+def test_scan_ignores_appledouble_companions(
+    tmp_path: Path, selection: str, directory_workers: int
+) -> None:
+    song = tmp_path / "Song.wav"
+    _write_wav(song)
+    hidden = tmp_path / ".album" / ".Hidden.wav"
+    hidden.parent.mkdir()
+    _write_wav(hidden)
+    companion_bytes = b"\x00\x05\x16\x07\x00\x02\x00\x00" + b"\x00" * 18
+    companions = tuple(
+        directory / f"._Song{suffix}"
+        for directory in (tmp_path, hidden.parent)
+        for suffix in (".wav", ".MP3", ".aif", ".mp4", ".jpg", ".m3u8")
+    )
+    for companion in companions:
+        companion.write_bytes(companion_bytes)
+    folder = HostMediaFolder(
+        create_host_media_folder(tmp_path).path,
+        follow_symlinks=selection == "linked-folder",
+    )
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    for index in range(2):
+        scanner = HostMediaScanner(cache, max_directory_workers=directory_workers)
+        pending = scanner.scan(
+            (folder,) if selection != "files" else (),
+            files=tuple(HostPath(path) for path in (song, hidden, *companions))
+            if selection == "files"
+            else (),
+            checkpoint=lambda: None,
+        )
+        library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+        assert {source.path for source in library.sources} == {
+            HostPath(song),
+            HostPath(hidden),
+        }
+        assert len(library.snapshot.tracks) == 2
+        assert not library.issues
+        assert library.cache.reused == index * 2
+    assert all(path.read_bytes() == companion_bytes for path in companions)
+
+
+def test_playlist_cannot_add_appledouble_companions(tmp_path: Path) -> None:
+    song = tmp_path / "Song.wav"
+    _write_wav(song)
+    companion = tmp_path / "._Song.wav"
+    companion.write_bytes(b"\x00\x05\x16\x07\x00\x02\x00\x00" + b"\x00" * 18)
+    (tmp_path / "Favorites.m3u8").write_text("Song.wav\n._Song.wav\n", encoding="utf-8")
+    scanner = HostMediaScanner()
+    pending = scanner.scan(
+        (create_host_media_folder(tmp_path),), checkpoint=lambda: None
+    )
+    (reference,) = pending.external_references
+    assert reference.target == HostPath(companion)
+    assert not reference.available
+    assert reference.observation is None
+    with pytest.raises(ValueError, match="Unavailable Playlist targets"):
+        scanner.complete(
+            pending, frozenset({HostPath(companion)}), checkpoint=lambda: None
+        )
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    assert len(library.snapshot.tracks) == 1
+    assert len(library.snapshot.playlists[0].entries) == 1
+
+
 def test_v13_cache_reparses_rejected_playlist_references_without_rereading_media(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -445,30 +511,6 @@ def test_failed_metadata_retries_without_repeating_successful_acoustic_analysis(
     assert fingerprint_calls == 1
     stored = json.loads(cache.path.read_bytes())
     assert stored["entries"][0]["metadata"]["metadata_complete"] is True
-
-
-def test_cache_limits_combined_decoded_fingerprints_on_both_read_and_write(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    for name in ("first.wav", "second.wav"):
-        _write_wav(tmp_path / name)
-    cache = AtomicHostFile(tmp_path / "cache.json")
-    folder = create_host_media_folder(tmp_path)
-    scanner = HostMediaScanner(cache)
-    with monkeypatch.context() as bounded:
-        bounded.setattr(
-            "iOpenPod.app.host_media_library._MAX_DECODED_FINGERPRINT_BYTES", 8
-        )
-        scanner.scan((folder,), checkpoint=lambda: None)
-        assert not cache.path.exists()
-    # Failed persistence retains inspected records and retries after recovery.
-    assert scanner.scan((folder,), checkpoint=lambda: None).cache.reused == 2
-    with monkeypatch.context() as bounded:
-        bounded.setattr(
-            "iOpenPod.app.host_media_library._MAX_DECODED_FINGERPRINT_BYTES", 8
-        )
-        rejected = HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
-        assert rejected.cache == HostMediaCacheStats(inspected=2)
 
 
 def test_long_acoustic_fingerprints_are_packed_losslessly_in_the_scan_cache(

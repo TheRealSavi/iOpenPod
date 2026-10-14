@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import tempfile
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from storage.errors import FilePreconditionError
 from storage.host_input import LocalHostFile
+from storage.host_staging import staging_directory
 from storage.paths import DevicePath, HostPath
 from storage.transactions import FileContent
 
@@ -233,10 +233,8 @@ def content_workspace(
     *, memory_budget: int, checkpoint: Callable[[], None]
 ) -> Generator[ContentWorkspace]:
     checkpoint()
-    with tempfile.TemporaryDirectory(prefix="iopenpod-content-") as directory:
-        workspace = ContentWorkspace(
-            Path(directory).resolve(strict=True), memory_budget, checkpoint
-        )
+    with staging_directory("iopenpod-content-") as directory:
+        workspace = ContentWorkspace(directory, memory_budget, checkpoint)
         try:
             yield workspace
         finally:

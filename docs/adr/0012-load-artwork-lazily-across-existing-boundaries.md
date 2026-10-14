@@ -77,3 +77,16 @@ generation-tagged result cannot enter any live cache.
 This decision covers read-only cover presentation. Artwork writes, iTHMB
 allocation, image conversion policy, photo workflows, and transactional ArtworkDB
 updates require separate decisions before they are enabled.
+
+## Completed jobs and pixmap bookkeeping (2026-10-14)
+
+Qt owns submitted image jobs and automatically deletes their native runnables
+after completion. Disabling auto-deletion leaves completed jobs allocated for the
+life of the pool even after Python retention maps are cleared; color-analysis jobs
+then retain decoded RGB pixels outside the image-cache budget. Invalidation clears
+queued work through the pool without dereferencing possibly deleted wrappers.
+Generation checks continue to discard obsolete results from already running jobs.
+
+Artwork, Photo, and Podcast pixmap providers also bound their retained key
+registries to 512 entries and remove their own pixmaps on shutdown. Qt's byte limit
+does not bound a separate Python registry of keys for images Qt already evicted.

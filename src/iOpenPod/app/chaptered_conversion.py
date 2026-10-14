@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
 from iOpenPod.app.display_text import source_text
@@ -14,6 +13,7 @@ from iOpenPod.app.media.models import StreamKind
 from iOpenPod.app.media.music_paths import MusicPathAllocator
 from iPodDB.library import MediaKind, Track, TrackChapter
 from storage import HostPath
+from storage.host_staging import RetainedStagingDirectory
 from storage.media_processing import (
     MediaToolFinder,
     discover_media_tools,
@@ -51,7 +51,7 @@ def can_convert_album(selected: tuple[Track, ...], library: tuple[Track, ...]) -
 @dataclass(frozen=True, slots=True)
 class ChapteredPreparation:
     song: ImportedSong
-    directory: TemporaryDirectory[str]
+    directory: RetainedStagingDirectory
 
 
 def _escape(value: str) -> str:
@@ -139,7 +139,7 @@ def prepare_chaptered_album(
         extension, codec = "mp3", "libmp3lame"
     else:
         raise ValueError("FFmpeg needs an AAC or MP3 encoder for this iPod.")
-    directory = TemporaryDirectory(prefix="iopenpod-chaptered-")
+    directory = RetainedStagingDirectory("iopenpod-chaptered-")
     try:
         root = Path(directory.name)
         inspector = MediaInspector(tools.ffprobe)

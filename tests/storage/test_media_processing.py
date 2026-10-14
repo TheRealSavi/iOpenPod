@@ -7,6 +7,8 @@ import io
 import os
 import subprocess
 import sys
+import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 from threading import get_ident
 from typing import BinaryIO
@@ -14,12 +16,49 @@ from typing import BinaryIO
 import pytest
 
 from storage import ConcurrentModificationError, HostPath, UnsafeFilesystemPathError
+from storage.content_workspace import StagedContent, content_workspace
 from storage.media_processing import (
     MediaToolError,
     MediaToolProgress,
     media_workspace,
     run_media_tool,
 )
+
+
+def test_large_prepared_batches_do_not_use_the_default_system_temp_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    system_temp = tmp_path / "system-temp"
+    system_temp.mkdir()
+    cache = tmp_path / "cache"
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(cache))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+
+    def isolated_home(cls: type[Path]) -> Path:
+        return tmp_path / "home"
+
+    monkeypatch.setattr(Path, "home", classmethod(isolated_home))
+    monkeypatch.setattr(tempfile, "tempdir", str(system_temp))
+    # Exercise the same retained context lifetime used by Sync preparation.
+    outputs: list[Path] = []
+    with ExitStack() as resources:
+        for _ in range(16):
+            workspace = resources.enter_context(
+                media_workspace(checkpoint=lambda: None)
+            )
+            output = Path(workspace.output_path(".mp3"))
+            output.write_bytes(bytes(256 * 1024))
+            outputs.append(output)
+        overflow = resources.enter_context(
+            content_workspace(memory_budget=0, checkpoint=lambda: None)
+        ).store(b"complete artwork and Photo overflow")
+        assert isinstance(overflow, StagedContent)
+        outputs.append(Path(overflow.path))
+        assert all(path.exists() for path in outputs)
+        assert not list(system_temp.iterdir())
+    assert all(not path.exists() for path in outputs)
 
 
 @pytest.mark.parametrize(

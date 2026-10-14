@@ -18,13 +18,12 @@ from iOpenPod.app.library_write import PreparationCancelledError
 from iOpenPod.app.models.track_order import album_track_sort_key
 
 if TYPE_CHECKING:
-    from tempfile import TemporaryDirectory
-
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.app.library_workspace import EditRevision, LibraryWorkspace
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from iPodDB.library import Track
+    from storage.host_staging import RetainedStagingDirectory
     from storage.media_processing import MediaToolFinder
 
 logger = logging.getLogger(__name__)
@@ -109,7 +108,7 @@ class ChapteredConversionController(QObject):
         self._pool.setMaxThreadCount(1)
         self._token = 0
         self._jobs: dict[int, _Conversion] = {}
-        self._directories: list[TemporaryDirectory[str]] = []
+        self._directories: list[RetainedStagingDirectory] = []
         self._revision: EditRevision = workspace.edit_revision
         self._source: ActiveIPod | None = None
         self._source_tracks: tuple[Track, ...] = ()
@@ -181,7 +180,7 @@ class ChapteredConversionController(QObject):
         ):
             self.cancel()
         used = {Path(source.source).parent for source in self._workspace.media_sources}
-        retained: list[TemporaryDirectory[str]] = []
+        retained: list[RetainedStagingDirectory] = []
         for directory in self._directories:
             if Path(directory.name) in used:
                 retained.append(directory)

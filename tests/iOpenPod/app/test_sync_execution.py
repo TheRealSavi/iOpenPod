@@ -5,12 +5,14 @@ without exposing implementation helpers as application API.
 """
 
 import base64
+import gc
 import hashlib
 import io
 import json
 import re
 import shutil
 import wave
+import weakref
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import replace
@@ -1094,6 +1096,122 @@ def test_bad_track_yields_safe_partial_success_without_partial_playlist(
             len([track for track in result.helper.tracks if track.sync is not None])
             == 1
         )
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("workers", [1, 3])
+def test_preparation_releases_failed_track_working_data(
+    tmp_path: Path, workers: int
+) -> None:
+    class DecoderWorkingData:
+        def __init__(self) -> None:
+            self.buffer = bytearray(256 * 1024)
+
+    retained: list[weakref.ReferenceType[DecoderWorkingData]] = []
+    live_after_completion: list[int] = []
+
+    class FailingExecutor(_Executor):
+        def _prepare_one(
+            self,
+            request: SyncExecutionRequest,
+            item: SyncPlanItem,
+            source: HostMediaSource,
+            track: Track,
+            tools: MediaTools,
+            checkpoint: Callable[[], None],
+            activity: Callable[[MediaPreparationProgress], None],
+        ) -> _PreparedTrack:
+            working = DecoderWorkingData()
+            retained.append(weakref.ref(working))
+            raise ValueError("Invalid media encountered after allocating working data")
+
+    def progress(event: WriteProgress) -> None:
+        if event.phase == "sync.prepare" and event.completed:
+            live_after_completion.append(sum(ref() is not None for ref in retained))
+
+    device = build_device(tmp_path)
+    gc_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        host = _host(tmp_path, *(f"Failure {index}" for index in range(24)))
+        result = FailingExecutor(
+            device.coordinator, transcoder=_AvailableTools(), workers=workers
+        ).execute(_request(device, host), progress, Event())
+        assert (
+            len([issue for issue in result.issues if issue.code == "sync.item_failed"])
+            == 24
+        )
+        assert live_after_completion
+        # Completed failures must release decoder buffers while the remaining
+        # batch is still preparing, rather than retaining every traceback.
+        assert max(live_after_completion) <= workers * 4, live_after_completion
+        assert not any(ref() is not None for ref in retained)
+        device.assert_original()
+    finally:
+        if gc_enabled:
+            gc.enable()
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("stop", ["complete", "cancel", "progress_failure"])
+def test_bounded_preparation_keeps_successful_files_until_commit_and_cleans_up(
+    tmp_path: Path, stop: str
+) -> None:
+    staged: list[HostPath] = []
+    started: list[str] = []
+    cancellation = Event()
+
+    class TrackingExecutor(_Executor):
+        def _prepare_one(
+            self,
+            request: SyncExecutionRequest,
+            item: SyncPlanItem,
+            source: HostMediaSource,
+            track: Track,
+            tools: MediaTools,
+            checkpoint: Callable[[], None],
+            activity: Callable[[MediaPreparationProgress], None],
+        ) -> _PreparedTrack:
+            started.append(track.title)
+            result = super()._prepare_one(
+                request, item, source, track, tools, checkpoint, activity
+            )
+            staged.append(result.song.source.source)
+            return result
+
+    def progress(event: WriteProgress) -> None:
+        if event.phase != "sync.prepare" or not event.completed:
+            return
+        assert all(Path(path).is_file() for path in staged)
+        if stop == "cancel":
+            cancellation.set()
+        elif stop == "progress_failure":
+            raise ValueError("Progress consumer failed")
+
+    device = build_device(tmp_path)
+    try:
+        names = tuple(f"A song {index}" for index in range(9))
+        host = _host(tmp_path, *names, "Failure")
+        result = TrackingExecutor(
+            device.coordinator, transcoder=_AvailableTools(), workers=1
+        ).execute(_request(device, host), progress, cancellation)
+        assert staged
+        assert all(not Path(path).exists() for path in staged)
+        if stop == "complete":
+            assert result.status is SyncExecutionStatus.PARTIAL, result.issues
+            assert len(result.completed) == len(names)
+            assert result.active is not None
+            assert set(names) <= {track.title for track in result.active.library.tracks}
+            assert len(started) == len(names) + 1
+        else:
+            assert result.status is (
+                SyncExecutionStatus.CANCELLED
+                if stop == "cancel"
+                else SyncExecutionStatus.FAILED
+            ), result.issues
+            assert len(started) <= 2
+            device.assert_original()
     finally:
         device.coordinator.close()
 

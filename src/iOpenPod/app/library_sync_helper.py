@@ -52,8 +52,6 @@ LIBRARY_SYNC_HELPER_PATH = DevicePath("iPod_Control/iOpenPod/library-sync-helper
 _IPOD_CONTROL_PATH = DevicePath("iPod_Control")
 _PHOTOS_PATH = DevicePath("Photos")
 _FORMAT_VERSION = 5
-_MAX_HELPER_BYTES = 64 * 1024 * 1024
-_MAX_DECODED_ACOUSTIC_BYTES = 256 * 1024 * 1024
 _MAX_RECORDS = 250_000
 
 
@@ -996,18 +994,15 @@ def _load_helper(
     if not session.exists(LIBRARY_SYNC_HELPER_PATH):
         return _LoadedHelper(), None
     entry = session.stat(LIBRARY_SYNC_HELPER_PATH)
-    if entry.kind is not DeviceEntryKind.FILE or entry.size > _MAX_HELPER_BYTES:
+    if entry.kind is not DeviceEntryKind.FILE:
         return (
             _LoadedHelper(writable=False),
             IPodMediaScanIssue(
                 "Sync helper",
-                "The existing helper is not a bounded regular file.",
+                "The existing helper is not a regular file.",
             ),
         )
-    source = session.read_snapshot(
-        LIBRARY_SYNC_HELPER_PATH,
-        max_bytes=_MAX_HELPER_BYTES,
-    )
+    source = session.read_snapshot(LIBRARY_SYNC_HELPER_PATH)
     try:
         loaded = _decode_helper(source.data)
     except (
@@ -1176,13 +1171,6 @@ def _encode_helper(
 ) -> bytes:
     if len(tracks) + len(images) > _MAX_RECORDS:
         raise LibrarySyncHelperError("The Sync helper contains too many records")
-    if (
-        sum(len(track.acoustic_fingerprint) for track in tracks)
-        > _MAX_DECODED_ACOUSTIC_BYTES
-    ):
-        raise LibrarySyncHelperError(
-            "The Sync helper decoded acoustic data exceeds 256 MiB"
-        )
     records = {
         "tracks": [_track_document(item) for item in tracks],
         "images": [_image_document(item) for item in images],
@@ -1194,10 +1182,7 @@ def _encode_helper(
         **records,
         "catalog_sha256": hashlib.sha256(_canonical_json(records)).hexdigest(),
     }
-    payload = _canonical_json(document)
-    if len(payload) > _MAX_HELPER_BYTES:
-        raise LibrarySyncHelperError("The Sync helper exceeds 64 MiB")
-    return payload
+    return _canonical_json(document)
 
 
 def _decode_helper(payload: bytes) -> _LoadedHelper:
@@ -1234,15 +1219,7 @@ def _decode_helper(payload: bytes) -> _LoadedHelper:
         raise ValueError("Sync helper checksum does not match")
     library_sha256 = _text(document["library_sha256"], "library_sha256")
     _require_sha256(library_sha256, "Library fingerprint")
-    tracks_list: list[IPodTrackFingerprint] = []
-    decoded_bytes = 0
-    for item in tracks_raw:
-        track = _track_from_document(item)
-        decoded_bytes += len(track.acoustic_fingerprint)
-        if decoded_bytes > _MAX_DECODED_ACOUSTIC_BYTES:
-            raise ValueError("The Sync helper decoded acoustic data exceeds 256 MiB")
-        tracks_list.append(track)
-    tracks = tuple(tracks_list)
+    tracks = tuple(_track_from_document(item) for item in tracks_raw)
     images = tuple(_image_from_document(item) for item in images_raw)
     if len({_track_key(item) for item in tracks}) != len(tracks):
         raise ValueError("Sync helper contains duplicate Track identities")

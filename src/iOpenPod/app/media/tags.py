@@ -254,6 +254,16 @@ def read_tag_values(tags: object) -> tuple[MediaTag, ...]:
     return tuple(MediaTag(name, value) for name, value in sorted(result.items()))
 
 
+def _read_probe_tags(tags: tuple[MediaTag, ...]) -> tuple[MediaTag, ...]:
+    # Repeated FFprobe keys are ordered values, just like native multi-value tags.
+    # Let the shared reader select the first nonempty value without losing lyrics
+    # whitespace or changing native-key/alias precedence.
+    values: dict[str, list[str]] = {}
+    for tag in tags:
+        values.setdefault(tag.name, []).append(tag.value)
+    return read_tag_values(values)
+
+
 def inspection_tag_values(
     observed: MediaInspection | MediaScanMetadata,
 ) -> tuple[MediaTag, ...]:
@@ -262,12 +272,8 @@ def inspection_tag_values(
     preferred = next(
         (stream for stream in streams if stream.default), next(iter(streams), None)
     )
-    container = read_tag_values({tag.name: tag.value for tag in observed.tags})
-    stream = (
-        read_tag_values({tag.name: tag.value for tag in preferred.tags})
-        if preferred is not None
-        else ()
-    )
+    container = _read_probe_tags(observed.tags)
+    stream = _read_probe_tags(preferred.tags) if preferred is not None else ()
     values = {tag.name: tag.value for tag in (*stream, *container)}
     return tuple(MediaTag(name, value) for name, value in sorted(values.items()))
 

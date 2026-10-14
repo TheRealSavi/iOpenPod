@@ -7,10 +7,11 @@ from math import ceil
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Signal, Slot
-from PySide6.QtGui import QImage, QPixmap, QPixmapCache
+from PySide6.QtGui import QImage, QPixmap
 
 from iOpenPod.app.models.photos import PhotoImage
 from iOpenPod.app.photo_controller import PhotoLoadFailure, PhotoUnavailable
+from iOpenPod.GUI.presentation.pixmap_cache import PixmapCache
 
 if TYPE_CHECKING:
     from iOpenPod.app.photo_controller import PhotoController
@@ -42,7 +43,7 @@ class PhotoPixmapProvider(QObject):
     ) -> None:
         super().__init__(parent)
         self._controller = controller
-        self._qt_cache_keys: set[str] = set()
+        self._pixmaps = PixmapCache(_CACHE_PREFIX)
         self._states: dict[tuple[int, int | None], PhotoPixmapState] = {}
         self._closed = False
         controller.photoReady.connect(self._photo_ready)
@@ -153,14 +154,11 @@ class PhotoPixmapProvider(QObject):
             self.capacityAvailable.emit()
 
     def _clear_pixmaps(self) -> None:
-        for cache_key in self._qt_cache_keys:
-            QPixmapCache.remove(cache_key)
-        self._qt_cache_keys.clear()
+        self._pixmaps.clear()
 
     def _pixmap_for(self, image: PhotoImage) -> QPixmap:
-        cache_key = f"{_CACHE_PREFIX}{image.cache_key}"
-        cached = QPixmap()
-        if QPixmapCache.find(cache_key, cached) and not cached.isNull():
+        cached = self._pixmaps.get(image.cache_key)
+        if cached is not None:
             return cached
 
         wrapped = QImage(
@@ -174,8 +172,7 @@ class PhotoPixmapProvider(QObject):
         # buffer before crossing into Qt's independently retained pixmap cache.
         owned = wrapped.copy()
         pixmap = QPixmap.fromImage(owned)
-        QPixmapCache.insert(cache_key, pixmap)
-        self._qt_cache_keys.add(cache_key)
+        self._pixmaps.insert(image.cache_key, pixmap)
         return pixmap
 
 

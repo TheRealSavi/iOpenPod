@@ -11,7 +11,6 @@ import math
 import os
 import re
 import subprocess
-import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -30,6 +29,7 @@ from storage.host_capture import (
     _capture,  # pyright: ignore[reportPrivateUsage]
 )
 from storage.host_input import LocalHostFile
+from storage.host_staging import staging_directory
 from storage.host_tools import find_host_executable, host_tool_environment
 from storage.paths import HostPath
 
@@ -541,8 +541,8 @@ class MediaWorkspace:
 @contextmanager
 def media_workspace(*, checkpoint: Callable[[], None]) -> Generator[MediaWorkspace]:
     checkpoint()
-    with tempfile.TemporaryDirectory(prefix="iopenpod-media-") as directory:
-        yield MediaWorkspace(Path(directory).resolve(strict=True), checkpoint)
+    with staging_directory("iopenpod-media-") as directory:
+        yield MediaWorkspace(directory, checkpoint)
 
 
 def available_compute_threads() -> int:

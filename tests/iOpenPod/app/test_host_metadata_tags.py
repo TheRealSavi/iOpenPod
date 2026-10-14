@@ -25,6 +25,7 @@ from tests.iOpenPod.app.test_sync_execution import (
 
 from iOpenPod.app.host_media_folders import create_host_media_folder
 from iOpenPod.app.host_media_library import HostMediaScanner
+from iOpenPod.app.media.importing import MusicImporter
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.lyrics import embedded_lyrics
 from iOpenPod.app.media.tags import apply_tag_values, read_tag_values
@@ -566,6 +567,58 @@ def test_unavailable_probe_retains_basic_file_facts(
     assert len(library.snapshot.tracks) == 1
     assert library.snapshot.tracks[0].title == "source"
     assert any("FFprobe missing" in issue.detail for issue in library.issues)
+
+
+@pytest.mark.parametrize("fixture", ["tone.mp3", "tone.wav", "tone.aiff"])
+def test_duplicate_tags_keep_primary_values_through_add_and_sync(
+    tmp_path: Path, fixture: str
+) -> None:
+    if any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")):
+        pytest.skip("Real Sync preparation requires FFmpeg and FFprobe")
+    path, parsed = media_file(tmp_path / "media", fixture)
+    parsed.tags.add(FRAMES.TDRC(encoding=3, text=["2019-04-17"]))
+    parsed.tags.add(FRAMES.TPE1(encoding=3, text=["Primary artist"]))
+    parsed.tags.add(FRAMES.TIT2(encoding=3, text=["Primary title"]))
+    parsed.tags.add(
+        FRAMES.COMM(encoding=3, lang="eng", desc="", text=["Primary comment"])
+    )
+    for name, value in (
+        ("date", "2009"),
+        ("artist", "Other artist"),
+        ("title", "Other title"),
+        ("comment", "Other comment"),
+    ):
+        parsed.tags.add(FRAMES.TXXX(encoding=3, desc=name, text=[value]))
+    parsed.save()
+    original = path.read_bytes()
+    scanner = HostMediaScanner(fingerprinter=Fingerprinter())
+    pending = scanner.scan(
+        (create_host_media_folder(path.parent),), checkpoint=lambda: None
+    )
+    host = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+    device = build_device(tmp_path)
+    try:
+        song = MusicImporter().inspect(
+            HostPath(path), device.active.profile, checkpoint=lambda: None
+        )
+        result = SyncExecutor(device.coordinator).execute(
+            _request(device, host), lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        added = next(
+            track
+            for track in result.active.library.tracks
+            if track.title == "Primary title"
+        )
+        for track in (host.snapshot.tracks[0], song.track, added):
+            assert track.title == "Primary title"
+            assert track.artist == "Primary artist"
+            assert track.year == 2019
+            assert track.metadata.comment == "Primary comment"
+        assert path.read_bytes() == original
+    finally:
+        device.coordinator.close()
 
 
 @pytest.mark.parametrize("fixture", ["tone.mp3", "surround.flac"])

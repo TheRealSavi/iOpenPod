@@ -10,10 +10,11 @@ from typing import TYPE_CHECKING
 
 from PIL import Image
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
-from PySide6.QtGui import QImage, QPixmap, QPixmapCache
+from PySide6.QtGui import QImage, QPixmap
 
 from iOpenPod.app.models.artwork import ArtworkImage
 from iOpenPod.GUI.presentation.image_color import RGBColor, dominant_image_color
+from iOpenPod.GUI.presentation.pixmap_cache import PixmapCache
 from iPodDB.library import ArtworkPixels
 
 if TYPE_CHECKING:
@@ -50,7 +51,7 @@ class _ArtworkColorWork(QRunnable):
         self.generation = generation
         self.image = image
         self.signals = _ArtworkColorSignals()
-        self.setAutoDelete(False)
+        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -96,7 +97,7 @@ class ArtworkPixmapProvider(QObject):
         if max_color_pending <= 0:
             raise ValueError("Artwork pending-color limit must be positive")
         self._controller = controller
-        self._qt_cache_keys: set[str] = set()
+        self._pixmaps = PixmapCache(_CACHE_PREFIX)
         self._color_cache_limit = color_cache_limit
         self._max_color_pending = max_color_pending
         self._dominant_colors: OrderedDict[int, RGBColor] = OrderedDict()
@@ -194,6 +195,7 @@ class ArtworkPixmapProvider(QObject):
         self._color_pending.clear()
         self._requested_color_ids.clear()
         self._dominant_colors.clear()
+        self._pixmaps.clear()
 
     @Slot(object)
     def _artwork_ready(self, value: object) -> None:
@@ -219,9 +221,7 @@ class ArtworkPixmapProvider(QObject):
     def _generation_changed(self, _generation: int) -> None:
         self._generation += 1
         self._cancel_queued_color_work()
-        for cache_key in self._qt_cache_keys:
-            QPixmapCache.remove(cache_key)
-        self._qt_cache_keys.clear()
+        self._pixmaps.clear()
         self._dominant_colors.clear()
         self._requested_color_ids.clear()
         self._color_pending.clear()
@@ -305,16 +305,12 @@ class ArtworkPixmapProvider(QObject):
             self._color_pending.pop(artwork_id, None)
 
     def _cancel_queued_color_work(self) -> None:
-        for token, item in tuple(self._color_work_items.items()):
-            if self._color_pool.tryTake(item):
-                self._color_work_items.pop(token, None)
-                if self._color_pending.get(item.image.artwork_id) == token:
-                    self._color_pending.pop(item.image.artwork_id, None)
+        self._color_pool.clear()
+        self._color_work_items.clear()
 
     def _pixmap_for(self, image: ArtworkImage) -> QPixmap:
-        cache_key = f"{_CACHE_PREFIX}{image.cache_key}"
-        cached = QPixmap()
-        if QPixmapCache.find(cache_key, cached) and not cached.isNull():
+        cached = self._pixmaps.get(image.cache_key)
+        if cached is not None:
             return cached
 
         wrapped = QImage(
@@ -326,8 +322,7 @@ class ArtworkPixmapProvider(QObject):
         )
         owned = wrapped.copy()
         pixmap = QPixmap.fromImage(owned)
-        QPixmapCache.insert(cache_key, pixmap)
-        self._qt_cache_keys.add(cache_key)
+        self._pixmaps.insert(image.cache_key, pixmap)
         return pixmap
 
 

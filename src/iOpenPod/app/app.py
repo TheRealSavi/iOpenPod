@@ -25,6 +25,7 @@ from iOpenPod.GUI.presentation.display import configure_display
 from iOpenPod.GUI.presentation.middle_mouse_scrolling import (
     install_middle_mouse_scrolling,
 )
+from storage.host_staging import cleanup_stale_staging
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ def start_ui() -> int:
     """Start iOpenPod and discover connected Device Candidates."""
 
     initialize_update_runtime()
+    cleanup_stale_staging()
     _set_windows_app_user_model_id()
     configure_display()
     application = QApplication(sys.argv)

@@ -9920,8 +9920,8 @@ Playlists: %3</translation>
         <translation>El índice auxiliar existente no es válido: {error}</translation>
     </message>
     <message>
-        <source>The existing helper is not a bounded regular file.</source>
-        <translation>El índice auxiliar existente no es un archivo normal de tamaño limitado.</translation>
+        <source>The existing helper is not a regular file.</source>
+        <translation>El índice auxiliar existente no es un archivo normal.</translation>
     </message>
     <message>
         <source>The export could not be completed.</source>

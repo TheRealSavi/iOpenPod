@@ -9920,8 +9920,8 @@ Playlists: %3</translation>
         <translation>Die vorhandene Datei mit Synchronisierungsinformationen ist ungültig: {error}</translation>
     </message>
     <message>
-        <source>The existing helper is not a bounded regular file.</source>
-        <translation>Die vorhandene Datei mit Synchronisierungsinformationen ist keine reguläre Datei innerhalb der zulässigen Größenbegrenzung.</translation>
+        <source>The existing helper is not a regular file.</source>
+        <translation>Die vorhandene Datei mit Synchronisierungsinformationen ist keine reguläre Datei.</translation>
     </message>
     <message>
         <source>The export could not be completed.</source>

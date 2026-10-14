@@ -15,9 +15,7 @@ if TYPE_CHECKING:
     from storage import AtomicHostFile, FilesystemSession
 
 
-_MAX_BYTES = 64 * 1024 * 1024
 _MAX_RECORDS = 250_000
-_MAX_DECODED_ACOUSTIC_BYTES = 256 * 1024 * 1024
 _CHECKPOINT_SECONDS = 30.0
 
 
@@ -45,13 +43,12 @@ def ipod_analysis_cache_identity(session: FilesystemSession) -> str:
 
 
 class IPodAnalysisCache:
-    """One bounded, checksummed, atomically published per-device Host cache."""
+    """One checksummed, atomically published per-device Host cache."""
 
     def __init__(self, file: AtomicHostFile, identity: str) -> None:
         self._file = file
         self._identity = identity
         self._records: dict[tuple[str, int, DevicePath], IPodAnalysisRecord] = {}
-        self._decoded_acoustic_bytes = 0
         self._dirty = False
         self._last_save = time.monotonic()
         self._loaded = False
@@ -67,15 +64,13 @@ class IPodAnalysisCache:
             return
         # An external replacement/deletion retires every previous in-memory entry.
         self._clear()
-        payload = self._file.read_bytes(max_bytes=_MAX_BYTES)
+        payload = self._file.read_bytes()
         if self._file.revision() != revision:
             raise ValueError("The iPod analysis cache changed while it was read")
         if payload is None:
             self._loaded = True
             self._revision = revision
             return
-        if len(payload) > _MAX_BYTES:
-            raise ValueError("The iPod analysis cache exceeds 64 MiB")
         try:
             raw_document: object = json.loads(payload, object_pairs_hook=_pairs)
         except RecursionError as error:
@@ -98,28 +93,16 @@ class IPodAnalysisCache:
             raise ValueError("The iPod analysis cache records are invalid")
         if hashlib.sha256(_json(rows)).hexdigest() != document["sha256"]:
             raise ValueError("The iPod analysis cache checksum does not match")
-        records: list[IPodAnalysisRecord] = []
-        decoded_bytes = 0
-        for row in rows:
-            record = _decode(row)
-            if record.kind != "image":
-                decoded_bytes += len(record.fingerprint)
-                if decoded_bytes > _MAX_DECODED_ACOUSTIC_BYTES:
-                    raise ValueError(
-                        "The iPod analysis decoded acoustic data exceeds 256 MiB"
-                    )
-            records.append(record)
+        records = [_decode(row) for row in rows]
         indexed = {record.key: record for record in records}
         if len(indexed) != len(records):
             raise ValueError("The iPod analysis cache contains duplicate identities")
         self._records = indexed
-        self._decoded_acoustic_bytes = decoded_bytes
         self._loaded = True
         self._revision = revision
 
     def _clear(self) -> None:
         self._records.clear()
-        self._decoded_acoustic_bytes = 0
         self._dirty = False
         self._loaded = False
 
@@ -131,39 +114,18 @@ class IPodAnalysisCache:
     def remember(self, record: IPodAnalysisRecord) -> None:
         if self._records.get(record.key) == record:
             return
-        size = _acoustic_size(record)
-        if size > _MAX_DECODED_ACOUSTIC_BYTES:
-            return
-        previous = self._records.pop(record.key, None)
-        if previous is not None:
-            self._decoded_acoustic_bytes -= _acoustic_size(previous)
-        while self._records and (
-            len(self._records) >= _MAX_RECORDS
-            or self._decoded_acoustic_bytes + size > _MAX_DECODED_ACOUSTIC_BYTES
-        ):
-            self._discard_oldest()
+        self._records.pop(record.key, None)
+        while len(self._records) >= _MAX_RECORDS:
+            self._records.pop(next(iter(self._records)))
         self._records[record.key] = record
-        self._decoded_acoustic_bytes += size
         self._dirty = True
-
-    def _discard_oldest(self) -> None:
-        record = self._records.pop(next(iter(self._records)))
-        self._decoded_acoustic_bytes -= _acoustic_size(record)
 
     def save(self, *, force: bool = False) -> None:
         if not self._dirty or (
             not force and time.monotonic() - self._last_save < _CHECKPOINT_SECONDS
         ):
             return
-        rows = [_encode(record) for record in self._records.values()]
-        row_sizes = [len(_json(row)) + 1 for row in rows]
-        size = sum(row_sizes)
-        first = 0
-        while size > _MAX_BYTES - 512 and first < len(rows):
-            size -= row_sizes[first]
-            first += 1
-            self._discard_oldest()
-        records = rows[first:]
+        records = [_encode(record) for record in self._records.values()]
         payload = _json(
             {
                 "version": 1,
@@ -172,8 +134,6 @@ class IPodAnalysisCache:
                 "sha256": hashlib.sha256(_json(records)).hexdigest(),
             }
         )
-        if len(payload) > _MAX_BYTES:
-            raise ValueError("The iPod analysis cache exceeds 64 MiB")
         self._file.replace_bytes(payload)
         self._revision = self._file.revision()
         self._loaded = True
@@ -192,10 +152,6 @@ def _encode(record: IPodAnalysisRecord) -> list[object]:
         if record.kind != "image"
         else record.fingerprint,
     ]
-
-
-def _acoustic_size(record: IPodAnalysisRecord) -> int:
-    return 0 if record.kind == "image" else len(record.fingerprint)
 
 
 def _decode(value: object) -> IPodAnalysisRecord:
