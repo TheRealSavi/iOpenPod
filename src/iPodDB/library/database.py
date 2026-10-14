@@ -16,6 +16,7 @@ from iPodDB.ArtworkDB.shared.artwork_index import (
 from iPodDB.device_time import DeviceTimeContext
 from iPodDB.iTunesDB.cdb import decompress_iTunesCDB, is_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.library._photo_projection import project_photos
 from iPodDB.library._playlist_projection import project_playlists
 from iPodDB.library._projection import link_artwork, project_tracks
@@ -154,7 +155,13 @@ class IPodLibrary:
 
     def _refresh_sidecars(self) -> None:
         projection = project_sidecars(
-            self._database_snapshot, self._sidecars, self._device_time
+            self._database_snapshot,
+            self._sidecars,
+            self._device_time,
+            {
+                s.chunk.header.track_id: s.chunk.generic_header.header_length
+                for s in self._document.find_chunks(MhitHeader)
+            },
         )
         self._snapshot = projection.snapshot
         self._consumed_sidecars = projection.consumed

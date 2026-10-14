@@ -20,6 +20,9 @@ from iPodDB.shared.chunk_field import ChunkFieldValue
 _VIDEO_MIRROR = next(
     f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "video_flag_2"
 )
+_NOT_PLAYED = next(
+    f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "not_played_flag"
+)
 
 # Identity, resource and browse-group verifiers establish these independently.
 _VERIFIED_SEPARATELY = frozenset(
@@ -106,7 +109,10 @@ def track_field_expectations(
         expected["sample_rate_1"] = meta.sample_rate_hz << 16
     if changed("checked"):
         expected["checked_flag"] = int(not meta.checked)
-    if changed("played"):
+    header_length = (
+        source.generic_header.header_length if source else MHIT.default_header_size
+    )
+    if changed("played") and (_NOT_PLAYED.offset + _NOT_PLAYED.size <= header_length):
         expected["not_played_flag"] = 1 if meta.played else 2
     if changed("content_advisory"):
         expected["explicit_flag"] = {
@@ -139,9 +145,6 @@ def track_field_expectations(
                     MediaType.VIDEO_PODCAST,
                 }
             )
-        )
-        header_length = (
-            source.generic_header.header_length if source else MHIT.default_header_size
         )
         if _VIDEO_MIRROR.offset + _VIDEO_MIRROR.size <= header_length:
             expected["video_flag_2"] = expected["video_flag"]

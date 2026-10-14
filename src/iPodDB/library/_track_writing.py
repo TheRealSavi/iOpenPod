@@ -56,6 +56,9 @@ from iPodDB.shared.chunk import ChunkHeader, ParsedChunk
 _VIDEO_MIRROR = next(
     f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "video_flag_2"
 )
+_NOT_PLAYED = next(
+    f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "not_played_flag"
+)
 
 
 def _chapter_hedr() -> MhodChapterDataHedrHeader:
@@ -308,7 +311,20 @@ def edit_track(
     if meta.checked != prior.checked or old is None:
         values["checked_flag"] = int(not meta.checked)
     if meta.played != prior.played:
-        values["not_played_flag"] = 1 if meta.played else 2
+        if _NOT_PLAYED.offset + _NOT_PLAYED.size <= chunk.generic_header.header_length:
+            values["not_played_flag"] = 1 if meta.played else 2
+        elif meta.played != (new.play_count > 0):
+            # Original-format headers derive played state from the play count.
+            issues.append(
+                WriteIssue(
+                    "track.unstorable",
+                    "This iPod's database format stores played state only "
+                    "through the play count.",
+                    subject="track",
+                    record_id=new.track_id,
+                    field="metadata.played",
+                )
+            )
     if meta.content_advisory != prior.content_advisory:
         values["explicit_flag"] = {
             ContentAdvisory.UNSPECIFIED: 0,

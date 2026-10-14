@@ -10258,6 +10258,10 @@ Playlists: %3</translation>
         <translation>Dem symbolischen Link konnte nicht gefolgt werden: {error}</translation>
     </message>
     <message>
+        <source>This iPod&apos;s database format stores played state only through the play count.</source>
+        <translation>Das Datenbankformat dieses iPods speichert den Wiedergabestatus nur über die Wiedergabeanzahl.</translation>
+    </message>
+    <message>
         <source>Track files were deleted, but the device flush could not be confirmed. Safely eject before unplugging.</source>
         <translation>Titeldateien wurden gelöscht, aber das vollständige Schreiben auf das Gerät konnte nicht bestätigt werden. Werfen Sie das Gerät vor dem Trennen sicher aus.</translation>
     </message>
