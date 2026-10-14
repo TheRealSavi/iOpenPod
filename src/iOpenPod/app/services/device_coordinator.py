@@ -1135,6 +1135,7 @@ class DeviceCoordinator:
         cancelled: threading.Event,
         *,
         podcast_state: LoadedPodcastState | None = None,
+        podcast_subscriptions: bool = False,
         allow_unchanged: bool = False,
     ) -> LibraryReview:
         """Prepare a review with private Host staging and read-only device access.
@@ -1408,7 +1409,9 @@ class DeviceCoordinator:
                     # transaction. Association-only Sync has no transaction.
                     library_resources.recheck(active.session, captured.files)
                 if podcast_state is not None:
-                    history = self._podcast_store.history_transaction(podcast_state)
+                    history = self._podcast_store.state_transaction(
+                        podcast_state, include_subscriptions=podcast_subscriptions
+                    )
                     write = (
                         replace(
                             history,

@@ -4443,8 +4443,16 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Marcar como no escuchado</translation>
     </message>
     <message>
+        <source>Unsubscribe from Podcast?</source>
+        <translation>¿Cancelar la suscripción al pódcast?</translation>
+    </message>
+    <message>
+        <source>Unsubscribing will remove this Podcast&apos;s episodes from the iPod. Continue?</source>
+        <translation>Al cancelar la suscripción, se eliminarán del iPod los episodios de este pódcast. ¿Continuar?</translation>
+    </message>
+    <message>
         <source>Remove this Podcast&apos;s episodes from the iPod before unsubscribing.</source>
-        <translation>Quita del iPod los episodios de este pódcast antes de cancelar la suscripción.</translation>
+        <translation type="vanished">Quita del iPod los episodios de este pódcast antes de cancelar la suscripción.</translation>
     </message>
     <message>
         <source>Updating Podcasts…</source>
@@ -9064,6 +9072,10 @@ Playlists: %3</translation>
         <translation>No se pudo calcular la huella del episodio de pódcast. El episodio aún puede añadirse, pero no está disponible la información para compararlo acústicamente.</translation>
     </message>
     <message>
+        <source>Podcast Episodes cannot be removed from this iPod right now.</source>
+        <translation>Ahora mismo no se pueden eliminar los episodios de pódcast de este iPod.</translation>
+    </message>
+    <message>
         <source>Podcast changes are unavailable while another iPod operation is in progress.</source>
         <translation>No se pueden cambiar los pódcast mientras haya otra operación del iPod en curso.</translation>
     </message>
@@ -9361,7 +9373,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Remove this Podcast&apos;s episodes from the iPod before unsubscribing.</source>
-        <translation>Quita del iPod los episodios de este pódcast antes de cancelar la suscripción.</translation>
+        <translation type="vanished">Quita del iPod los episodios de este pódcast antes de cancelar la suscripción.</translation>
     </message>
     <message>
         <source>Reparsing and verifying candidate output</source>

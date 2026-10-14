@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import (
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListView,
     QMenu,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QSplitter,
@@ -76,6 +78,8 @@ from iOpenPod.GUI.widgets.search_field import SearchField
 from iPodDB.library import Track
 
 if TYPE_CHECKING:
+    import pytest
+
     from iOpenPod.app.podcasts.controller import PodcastController
     from iOpenPod.GUI.widgets.track_actions import TrackActions
 
@@ -103,13 +107,14 @@ class _Controller(QObject):
         self.sync_calls: list[str | None] = []
         self.add_episode_calls: list[tuple[tuple[str, str], ...]] = []
         self.remove_episode_calls: list[tuple[tuple[str, str], ...]] = []
+        self.unsubscribe_calls: list[str] = []
         self.settings_calls: list[tuple[str, PodcastSyncSettings]] = []
 
     def refresh(self, subscription_id: str | None = None) -> None:
         self.refresh_calls.append(subscription_id)
 
-    def unsubscribe(self, _subscription_id: str) -> None:
-        pass
+    def unsubscribe(self, subscription_id: str) -> None:
+        self.unsubscribe_calls.append(subscription_id)
 
     def sync(self, subscription_id: str | None = None) -> None:
         self.sync_calls.append(subscription_id)
@@ -706,6 +711,81 @@ def test_episode_delegate_paints_resting_rows_on_surface() -> None:
     try:
         assert image.pixelColor(12, size.height() // 2) == QColor(theme.tokens.surface)
     finally:
+        theme.close()
+
+
+def test_unsubscribe_confirms_episode_removal_only_when_needed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subscription = PodcastSubscription(
+        "feed-1",
+        "",
+        "Saved Show",
+        SubscriptionSource.USER,
+        episodes=(PodcastEpisode("saved", on_device=True, track_id=42),),
+    )
+    controller = _Controller(PodcastSnapshot((subscription,), writable=True))
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    theme = ThemeManager(APPLICATION, settings)
+    artwork_controller = PodcastArtworkController(_NoArtwork())
+    provider = PodcastArtworkPixmapProvider(artwork_controller)
+    page = PodcastPage(
+        cast("PodcastController", controller),
+        ApplicationStatus(APPLICATION),
+        theme,
+        provider,
+    )
+    answers = iter(
+        (
+            QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Yes,
+        )
+    )
+    questions: list[str] = []
+
+    def answer(_parent: object, _title: str, message: str, *_args: object) -> object:
+        questions.append(message)
+        if len(questions) == 3:
+            controller.snapshot = PodcastSnapshot(
+                (replace(subscription, title="Changed Show"),), writable=True
+            )
+            controller.changed.emit()
+        return next(answers)
+
+    monkeypatch.setattr(QMessageBox, "question", answer)
+    try:
+        page.show()
+        APPLICATION.processEvents()
+        shows = page.findChild(QListView, "podcastShowShelf")
+        button = page.findChild(QPushButton, "podcastUnsubscribe")
+        assert shows is not None and button is not None
+        shows.setCurrentIndex(shows.model().index(1, 0))
+        APPLICATION.processEvents()
+        assert button.isEnabled()
+        button.click()
+        assert controller.unsubscribe_calls == []
+        button.click()
+        assert controller.unsubscribe_calls == ["feed-1"]
+        assert len(questions) == 2
+        assert "remove this Podcast's episodes from the iPod" in questions[0]
+        button.click()
+        assert controller.unsubscribe_calls == ["feed-1"]
+
+        controller.snapshot = PodcastSnapshot(
+            (replace(subscription, episodes=()),), writable=True
+        )
+        controller.changed.emit()
+        APPLICATION.processEvents()
+        button.click()
+        assert controller.unsubscribe_calls == ["feed-1", "feed-1"]
+        assert len(questions) == 3
+    finally:
+        page.close()
+        page.deleteLater()
+        APPLICATION.processEvents()
+        provider.shutdown()
+        artwork_controller.shutdown()
         theme.close()
 
 

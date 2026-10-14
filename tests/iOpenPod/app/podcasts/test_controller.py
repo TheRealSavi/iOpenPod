@@ -10,11 +10,7 @@ from PySide6.QtTest import QTest
 from tests.iOpenPod.app.podcasts.podcast_test_support import active_ipod as _active_ipod
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
-from iOpenPod.app.podcasts.controller import (
-    PodcastController,
-    PodcastOperation,
-    PodcastOperationFailure,
-)
+from iOpenPod.app.podcasts.controller import PodcastController
 from iOpenPod.app.podcasts.models import (
     PodcastEpisode,
     PodcastSearchResult,
@@ -315,7 +311,7 @@ def test_controller_publishes_typed_directory_results() -> None:
         controller.shutdown()
 
 
-def test_controller_does_not_unsubscribe_a_device_backed_show() -> None:
+def test_controller_unsubscribes_a_device_backed_show_through_sync() -> None:
     feed = PodcastSubscription(
         "feed-1",
         "https://example.test/feed",
@@ -337,8 +333,8 @@ def test_controller_does_not_unsubscribe_a_device_backed_show() -> None:
     )
     devices = _Devices()
     controller = _controller(coordinator, devices, feed)
-    failures: list[PodcastOperationFailure] = []
-    controller.operationFailed.connect(failures.append)
+    requests: list[PodcastSyncRequest] = []
+    controller.syncRequested.connect(requests.append)
 
     try:
         devices.activeIPodChanged.emit(_active_ipod())
@@ -346,7 +342,10 @@ def test_controller_does_not_unsubscribe_a_device_backed_show() -> None:
         controller.unsubscribe(feed.subscription_id)
 
         assert coordinator.saved == []
-        assert failures[-1].operation is PodcastOperation.UNSUBSCRIBE
+        assert len(requests) == 1
+        assert requests[0].automatic is False
+        assert requests[0].removals == ((feed.subscription_id, "episode-1"),)
+        assert requests[0].unsubscribe_subscription_id == feed.subscription_id
     finally:
         controller.shutdown()
 

@@ -31,6 +31,7 @@ class PodcastSyncRequest:
     additions: tuple[tuple[str, str], ...] = ()
     removals: tuple[tuple[str, str], ...] = ()
     automatic: bool = True
+    unsubscribe_subscription_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

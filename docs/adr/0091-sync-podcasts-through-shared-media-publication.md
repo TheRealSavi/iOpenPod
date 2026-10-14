@@ -80,3 +80,15 @@ failures report warnings without preventing media publication or inventing a
 fingerprint. Invalid helpers remain untouched. Device media and database
 publication, cancellation, restoration, and cleanup retain the common Sync
 guarantees. No new dependency or background schedule is introduced.
+
+## Amendment: Unsubscribe with Episodes on the iPod (2026-10-14)
+
+Unsubscribe stays available for a selected writable Podcast Subscription. When
+the show has Episodes on the iPod, the GUI first confirms that unsubscribing will
+remove them. Confirmation submits their explicit removals through the shared Sync
+workflow. The final Library Draft must contain none of that show's original
+Podcast Tracks, and each must be in the validated removal plan, before the
+Subscription document joins the Library and Listening History in the same
+recoverable Storage Transaction. An incomplete removal keeps the Subscription;
+Listening History remains independent. A show with no Episodes on the iPod uses
+the existing direct Subscription save.

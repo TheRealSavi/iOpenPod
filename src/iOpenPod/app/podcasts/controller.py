@@ -394,9 +394,24 @@ class PodcastController(QObject):
             None,
         )
         if subscription is not None and subscription.on_device_count:
-            self._fail(
-                PodcastOperation.UNSUBSCRIBE,
-                "Remove this Podcast's episodes from the iPod before unsubscribing.",
+            if not self.can_sync:
+                self._fail(
+                    PodcastOperation.UNSUBSCRIBE,
+                    "Podcast Episodes cannot be removed from this iPod right now.",
+                )
+                return
+            self.syncRequested.emit(
+                PodcastSyncRequest(
+                    self.snapshot,
+                    subscription_ids=(subscription_id,),
+                    removals=tuple(
+                        (subscription_id, episode.episode_id)
+                        for episode in subscription.episodes
+                        if episode.on_device
+                    ),
+                    automatic=False,
+                    unsubscribe_subscription_id=subscription_id,
+                )
             )
             return
 

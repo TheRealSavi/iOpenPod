@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListView,
     QMenu,
+    QMessageBox,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -630,6 +631,27 @@ class PodcastPage(QWidget):
     @Slot()
     def _unsubscribe_selected(self) -> None:
         if subscription_id := self._selected_subscription_id():
+            subscription = self._snapshot.subscription(subscription_id)
+            if subscription is None or not self._controller.can_edit:
+                return
+            if subscription.on_device_count:
+                answer = QMessageBox.question(
+                    self,
+                    self.tr("Unsubscribe from Podcast?"),
+                    self.tr(
+                        "Unsubscribing will remove this Podcast's episodes from the iPod. Continue?"
+                    ),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Cancel,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                if (
+                    not self._controller.can_edit
+                    or self._selected_subscription_id() != subscription_id
+                    or self._snapshot.subscription(subscription_id) is not subscription
+                ):
+                    return
             self._controller.unsubscribe(subscription_id)
 
     @Slot(QModelIndex, QModelIndex)
@@ -739,17 +761,7 @@ class PodcastPage(QWidget):
             )
         ):
             self._settings_dialog.reject()
-        device_backed = subscription is not None and subscription.on_device_count > 0
-        self._unsubscribe.setEnabled(
-            editable and subscription is not None and not device_backed
-        )
-        self._unsubscribe.setToolTip(
-            self.tr(
-                "Remove this Podcast's episodes from the iPod before unsubscribing."
-            )
-            if device_backed
-            else ""
-        )
+        self._unsubscribe.setEnabled(editable and subscription is not None)
         self._refresh_show.setEnabled(
             editable
             and (

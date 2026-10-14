@@ -17,8 +17,8 @@ from iOpenPod.app.podcasts.models import (
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastStateRevision
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 from iOpenPod.app.podcasts.sync_preparation import (
-    history_after_podcast_sync,
     prepare_podcast_sync,
+    state_after_podcast_sync,
 )
 from iPodDB.library import LibrarySnapshot
 
@@ -137,6 +137,53 @@ def test_manual_remove_preserves_history_without_refreshing_feed() -> None:
     assert coordinator.saved[0].snapshot.history[0].observed_play_count == 1
 
 
+def test_unsubscribe_is_staged_only_after_all_episodes_leave_the_draft() -> None:
+    source, snapshot = _state()
+    subscription = snapshot.subscriptions[0]
+    prepared = prepare_podcast_sync(
+        PodcastSyncRequest(
+            snapshot,
+            subscription_ids=(subscription.subscription_id,),
+            removals=(
+                (subscription.subscription_id, subscription.episodes[0].episode_id),
+            ),
+            automatic=False,
+            unsubscribe_subscription_id=subscription.subscription_id,
+        ),
+        source,
+        cast("DeviceCoordinator", _Coordinator(snapshot)),
+        lambda: None,
+        feeds=_Feeds(),
+    )
+    assert (
+        state_after_podcast_sync(
+            prepared,
+            prepared.plan,
+            source.library,
+            unsubscribe_subscription_id=subscription.subscription_id,
+        )
+        is None
+    )
+    staged = state_after_podcast_sync(
+        prepared,
+        prepared.plan,
+        LibrarySnapshot(),
+        unsubscribe_subscription_id=subscription.subscription_id,
+    )
+    assert staged is not None
+    assert staged.snapshot.subscription(subscription.subscription_id) is None
+    assert staged.snapshot.history == prepared.state.snapshot.history
+    assert (
+        state_after_podcast_sync(
+            prepared,
+            replace(prepared.plan, removals=()),
+            LibrarySnapshot(),
+            unsubscribe_subscription_id=subscription.subscription_id,
+        )
+        is None
+    )
+
+
 def test_history_failure_stops_retention_planning() -> None:
     source, snapshot = _state()
     coordinator = _Coordinator(snapshot, fail_save=True)
@@ -187,14 +234,14 @@ def test_automatic_clear_history_only_stages_for_actual_podcast_removals() -> No
     assert not prepared.state.snapshot.history[0].automatically_cleared
     # A failed replacement retains its Track, and Host-only removals are not
     # automatic Podcast clears even when they remove the same Track.
-    assert history_after_podcast_sync(prepared, prepared.plan, source.library) is None
+    assert state_after_podcast_sync(prepared, prepared.plan, source.library) is None
     assert (
-        history_after_podcast_sync(
+        state_after_podcast_sync(
             prepared, replace(prepared.plan, removals=()), LibrarySnapshot()
         )
         is None
     )
-    staged = history_after_podcast_sync(prepared, prepared.plan, LibrarySnapshot())
+    staged = state_after_podcast_sync(prepared, prepared.plan, LibrarySnapshot())
     assert staged is not None
     assert staged.snapshot.history[0].automatically_cleared
     assert staged.revision == prepared.state.revision

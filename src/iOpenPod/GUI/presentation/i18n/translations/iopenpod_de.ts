@@ -4443,8 +4443,16 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Als nicht gehört markieren</translation>
     </message>
     <message>
+        <source>Unsubscribe from Podcast?</source>
+        <translation>Podcast-Abonnement beenden?</translation>
+    </message>
+    <message>
+        <source>Unsubscribing will remove this Podcast&apos;s episodes from the iPod. Continue?</source>
+        <translation>Wenn Sie das Abonnement beenden, werden die Folgen dieses Podcasts vom iPod entfernt. Fortfahren?</translation>
+    </message>
+    <message>
         <source>Remove this Podcast&apos;s episodes from the iPod before unsubscribing.</source>
-        <translation>Entfernen Sie die Folgen dieses Podcasts vom iPod, bevor Sie das Abonnement beenden.</translation>
+        <translation type="vanished">Entfernen Sie die Folgen dieses Podcasts vom iPod, bevor Sie das Abonnement beenden.</translation>
     </message>
     <message>
         <source>Updating Podcasts…</source>
@@ -9064,6 +9072,10 @@ Playlists: %3</translation>
         <translation>Der Fingerabdruck der Podcast-Folge konnte nicht berechnet werden. Die Folge kann trotzdem hinzugefügt werden, aber Angaben zum akustischen Abgleich sind nicht verfügbar.</translation>
     </message>
     <message>
+        <source>Podcast Episodes cannot be removed from this iPod right now.</source>
+        <translation>Podcast-Folgen können derzeit nicht von diesem iPod entfernt werden.</translation>
+    </message>
+    <message>
         <source>Podcast changes are unavailable while another iPod operation is in progress.</source>
         <translation>Podcast-Änderungen sind nicht verfügbar, solange ein anderer iPod-Vorgang läuft.</translation>
     </message>
@@ -9361,7 +9373,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Remove this Podcast&apos;s episodes from the iPod before unsubscribing.</source>
-        <translation>Entfernen Sie die Folgen dieses Podcasts vom iPod, bevor Sie das Abonnement beenden.</translation>
+        <translation type="vanished">Entfernen Sie die Folgen dieses Podcasts vom iPod, bevor Sie das Abonnement beenden.</translation>
     </message>
     <message>
         <source>Reparsing and verifying candidate output</source>

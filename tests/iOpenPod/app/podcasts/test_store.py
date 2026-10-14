@@ -100,8 +100,26 @@ def test_oversized_history_cannot_be_saved_or_join_media_removal(
             ),
         )
         with pytest.raises(ValueError, match="Listening History exceeds"):
-            store.history_transaction(oversized)
+            store.state_transaction(oversized)
         with pytest.raises(ValueError, match="Listening History exceeds"):
             store.save(session, oversized)
     assert not (root / str(HISTORY_PATH)).exists()
     assert not (root / str(SUBSCRIPTIONS_PATH)).exists()
+
+
+def test_unsubscribe_transaction_writes_both_podcast_documents(tmp_path: Path) -> None:
+    _root, session = _session(tmp_path)
+    with session:
+        loaded = PodcastDeviceStore().load(session, (_track(),), writable=True)
+    unsubscribed = replace(
+        loaded,
+        snapshot=replace(loaded.snapshot, subscriptions=()),
+    )
+    transaction = PodcastDeviceStore.state_transaction(
+        unsubscribed, include_subscriptions=True
+    )
+    assert {write.path for write in transaction.writes} == {
+        HISTORY_PATH,
+        SUBSCRIPTIONS_PATH,
+    }
+    assert transaction.dependencies == ()

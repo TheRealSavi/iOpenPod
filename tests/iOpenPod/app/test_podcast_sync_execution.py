@@ -34,7 +34,7 @@ from iOpenPod.app.media.transcoding import MediaTranscoder
 from iOpenPod.app.models.artwork import ArtworkRequest
 from iOpenPod.app.podcasts import feed_client, media
 from iOpenPod.app.podcasts.catalog import mark_episode_selection_listened
-from iOpenPod.app.podcasts.documents import decode_history
+from iOpenPod.app.podcasts.documents import decode_history, decode_subscriptions
 from iOpenPod.app.podcasts.feed_client import FeedparserPodcastClient
 from iOpenPod.app.podcasts.identity import episode_identity, subscription_identity
 from iOpenPod.app.podcasts.models import (
@@ -43,7 +43,7 @@ from iOpenPod.app.podcasts.models import (
     PodcastSubscription,
     PodcastSyncSettings,
 )
-from iOpenPod.app.podcasts.store import HISTORY_PATH
+from iOpenPod.app.podcasts.store import HISTORY_PATH, SUBSCRIPTIONS_PATH
 from iOpenPod.app.podcasts.sync import (
     PodcastSyncPlan,
     PodcastSyncRequest,
@@ -214,6 +214,69 @@ def test_podcast_add_replace_and_remove_publish_verified_media_without_overwriti
             helper.read_bytes()
             == b"existing host provenance is outside this Podcast Sync"
         )
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.skipif(
+    any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")),
+    reason="FFmpeg and FFprobe required for actual Podcast preparation",
+)
+def test_unsubscribe_removes_episodes_and_subscription_in_one_sync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = build_device(tmp_path)
+    data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
+    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                "iOpenPod.app.sync_execution.prepare_podcast_sync",
+                FixedPodcastPlan(PodcastSyncPlan(additions=(podcast_addition(),))),
+            )
+            added = SyncExecutor(device.coordinator).execute(
+                podcast_request(device.active), lambda _: None, Event()
+            )
+        assert added.status is SyncExecutionStatus.SUCCESS, added.issues
+        loaded = device.coordinator.load_podcast_state(device.active)
+        subscription = loaded.snapshot.subscriptions[0]
+        episode = next(item for item in subscription.episodes if item.on_device)
+        loaded = device.coordinator.save_podcast_state(
+            device.active,
+            replace(
+                loaded,
+                snapshot=mark_episode_selection_listened(
+                    loaded.snapshot,
+                    ((subscription.subscription_id, episode.episode_id),),
+                    True,
+                    changed_at=1_700_000_001,
+                ),
+            ),
+        )
+        request = replace(
+            podcast_request(device.active),
+            podcasts=PodcastSyncRequest(
+                loaded.snapshot,
+                subscription_ids=(subscription.subscription_id,),
+                removals=((subscription.subscription_id, episode.episode_id),),
+                automatic=False,
+                unsubscribe_subscription_id=subscription.subscription_id,
+            ),
+        )
+        removed = SyncExecutor(device.coordinator).execute(
+            request, lambda _: None, Event()
+        )
+        assert removed.status is SyncExecutionStatus.SUCCESS, removed.issues
+        assert removed.active is not None
+        assert not any(
+            track.media_kind is MediaKind.PODCAST
+            for track in removed.active.library.tracks
+        )
+        assert not decode_subscriptions(
+            (device.root / str(SUBSCRIPTIONS_PATH)).read_bytes()
+        )
+        assert decode_history((device.root / str(HISTORY_PATH)).read_bytes())
     finally:
         device.coordinator.close()
 

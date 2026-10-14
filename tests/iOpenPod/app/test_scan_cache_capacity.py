@@ -13,7 +13,7 @@ from iOpenPod.app.host_media_library import (
     HostMediaFileKind,
     HostMediaScanner,
     PendingHostMediaScan,
-    _CachedTrackRecord,
+    _CachedTrackRecord,  # pyright: ignore[reportPrivateUsage]
 )
 from iOpenPod.app.ipod_analysis_cache import IPodAnalysisCache, IPodAnalysisRecord
 from iOpenPod.app.library_sync_helper import (
@@ -118,7 +118,7 @@ def test_sync_helper_persists_and_reloads_large_catalog(
         )
         for index in range(1, count + 1)
     )
-    payload = library_sync_helper._encode_helper(
+    payload = library_sync_helper._encode_helper(  # pyright: ignore[reportPrivateUsage]
         records, (), "a" * 64, updated_at="2026-10-14T15:00:00Z"
     )
     path = tmp_path / str(LIBRARY_SYNC_HELPER_PATH)
@@ -128,7 +128,7 @@ def test_sync_helper_persists_and_reloads_large_catalog(
     platform.add_volume(tmp_path, label="Test iPod")
     storage = Storage(platform)
     with storage.open_session(storage.discover().volumes[0]) as session:
-        loaded, issue = library_sync_helper._load_helper(session)
+        loaded, issue = library_sync_helper._load_helper(session)  # pyright: ignore[reportPrivateUsage]
     assert issue is None
     assert loaded.writable
     assert len(loaded.tracks) == count

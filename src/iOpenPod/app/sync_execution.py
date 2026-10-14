@@ -51,8 +51,8 @@ from iOpenPod.app.media.transcoding import MediaTranscoder, TranscodeSettings
 from iOpenPod.app.podcasts.media import download_episode, episode_track
 from iOpenPod.app.podcasts.sync_artwork import prepare_podcast_covers
 from iOpenPod.app.podcasts.sync_preparation import (
-    history_after_podcast_sync,
     prepare_podcast_sync,
+    state_after_podcast_sync,
 )
 from iOpenPod.app.scrobbling.models import Account, ScrobbleError
 from iOpenPod.app.services.device_coordinator import (
@@ -583,12 +583,28 @@ class SyncExecutor:
                 # A source edited during Host computation must never be published
                 # against the older Review, even if its temporary result is valid.
                 self._validate_sources(request, checkpoint)
-                podcast_history = (
-                    history_after_podcast_sync(
-                        podcast_sync, podcast_plan, draft.snapshot
+                podcast_state = (
+                    state_after_podcast_sync(
+                        podcast_sync,
+                        podcast_plan,
+                        draft.snapshot,
+                        unsubscribe_subscription_id=(
+                            request.podcasts.unsubscribe_subscription_id
+                            if request.podcasts is not None
+                            else None
+                        ),
                     )
                     if podcast_sync is not None and podcast_plan is not None
                     else None
+                )
+                podcast_subscriptions = (
+                    podcast_state is not None
+                    and request.podcasts is not None
+                    and request.podcasts.unsubscribe_subscription_id is not None
+                    and podcast_state.snapshot.subscription(
+                        request.podcasts.unsubscribe_subscription_id
+                    )
+                    is None
                 )
                 has_user_match = any(
                     item.basis is SyncPlanBasis.USER_MATCH for item in completed
@@ -598,12 +614,17 @@ class SyncExecutor:
                         draft,
                         progress,
                         cancelled,
-                        podcast_state=podcast_history,
+                        podcast_state=podcast_state,
+                        podcast_subscriptions=podcast_subscriptions,
                         allow_unchanged=True,
                     )
-                elif podcast_history is not None:
+                elif podcast_state is not None:
                     review = self._coordinator.prepare_library(
-                        draft, progress, cancelled, podcast_state=podcast_history
+                        draft,
+                        progress,
+                        cancelled,
+                        podcast_state=podcast_state,
+                        podcast_subscriptions=podcast_subscriptions,
                     )
                 else:
                     review = self._coordinator.prepare_library(
@@ -625,15 +646,17 @@ class SyncExecutor:
                                 fallback,
                                 progress,
                                 cancelled,
-                                podcast_state=podcast_history,
+                                podcast_state=podcast_state,
+                                podcast_subscriptions=podcast_subscriptions,
                                 allow_unchanged=True,
                             )
-                        elif podcast_history is not None:
+                        elif podcast_state is not None:
                             review = self._coordinator.prepare_library(
                                 fallback,
                                 progress,
                                 cancelled,
-                                podcast_state=podcast_history,
+                                podcast_state=podcast_state,
+                                podcast_subscriptions=podcast_subscriptions,
                             )
                         else:
                             review = self._coordinator.prepare_library(

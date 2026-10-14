@@ -59,24 +59,40 @@ class PodcastDeviceStore:
     """Hide document paths, validation, reconciliation, and safe replacement."""
 
     @staticmethod
-    def history_transaction(state: LoadedPodcastState) -> StorageTransaction:
-        """Prepare history for the same recoverable commit as Episode removal."""
+    def state_transaction(
+        state: LoadedPodcastState, *, include_subscriptions: bool = False
+    ) -> StorageTransaction:
+        """Prepare Podcast documents for the Library's recoverable commit."""
         if not state.snapshot.writable:
             raise ValueError("Podcast state is not safely writable")
         payload = encode_history(state.snapshot.history)
         _validate_document_size(payload, "Listening History")
-        return StorageTransaction(
-            writes=(
+        writes = [
+            TransactionWrite(
+                HISTORY_PATH,
+                payload,
+                FileContent(len(payload), hashlib.sha256(payload).hexdigest()),
+                state.revision.history,
+            )
+        ]
+        if include_subscriptions:
+            subscriptions = encode_subscriptions(state.snapshot.subscriptions)
+            _validate_document_size(subscriptions, "Podcast Subscriptions")
+            writes.append(
                 TransactionWrite(
-                    HISTORY_PATH,
-                    payload,
-                    FileContent(len(payload), hashlib.sha256(payload).hexdigest()),
-                    state.revision.history,
-                ),
-            ),
-            dependencies=(
-                FilePrecondition(SUBSCRIPTIONS_PATH, state.revision.subscriptions),
-            ),
+                    SUBSCRIPTIONS_PATH,
+                    subscriptions,
+                    FileContent(
+                        len(subscriptions), hashlib.sha256(subscriptions).hexdigest()
+                    ),
+                    state.revision.subscriptions,
+                )
+            )
+        return StorageTransaction(
+            writes=tuple(writes),
+            dependencies=()
+            if include_subscriptions
+            else (FilePrecondition(SUBSCRIPTIONS_PATH, state.revision.subscriptions),),
         )
 
     def load(

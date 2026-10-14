@@ -10,6 +10,7 @@ from iOpenPod.app.podcasts.catalog import (
     mark_episodes_automatically_cleared,
     merge_fetched_subscription,
     reconcile_device_podcasts,
+    remove_subscription,
 )
 from iOpenPod.app.podcasts.feed_client import (
     FeedparserPodcastClient,
@@ -130,14 +131,16 @@ def prepare_podcast_sync(
     )
 
 
-def history_after_podcast_sync(
+def state_after_podcast_sync(
     prepared: PreparedPodcastSync,
     plan: PodcastSyncPlan,
     library: LibrarySnapshot,
+    *,
+    unsubscribe_subscription_id: str | None = None,
 ) -> LoadedPodcastState | None:
-    """Stage exclusions only for automatic clears present in the final Draft.
+    """Stage history and a fully completed unsubscribe in the final Draft.
 
-    The returned history must publish in the Library's Storage Transaction. A
+    The returned state must publish in the Library's Storage Transaction. A
     failed replacement, Host-only removal, or cancelled publication must not skip
     an Episode for future automatic Syncs.
     """
@@ -162,11 +165,31 @@ def history_after_podcast_sync(
             and episode.track_id not in retained_tracks
         ):
             selections.append((subscription_id, episode_id))
-    if not selections:
+    subscription = (
+        prepared.state.snapshot.subscription(unsubscribe_subscription_id)
+        if unsubscribe_subscription_id is not None
+        else None
+    )
+    episode_tracks: set[int] = set()
+    if subscription is not None:
+        episode_tracks = {
+            episode.track_id
+            for episode in subscription.episodes
+            if episode.track_id is not None
+        }
+    unsubscribe_ready = (
+        bool(episode_tracks)
+        and episode_tracks <= set(plan.removals)
+        and not (episode_tracks & retained_tracks)
+    )
+    if not selections and not unsubscribe_ready:
         return None
+    snapshot = prepared.state.snapshot
+    if selections:
+        snapshot = mark_episodes_automatically_cleared(snapshot, tuple(selections))
+    if unsubscribe_ready and unsubscribe_subscription_id is not None:
+        snapshot = remove_subscription(snapshot, unsubscribe_subscription_id)
     return replace(
         prepared.state,
-        snapshot=mark_episodes_automatically_cleared(
-            prepared.state.snapshot, tuple(selections)
-        ),
+        snapshot=snapshot,
     )
