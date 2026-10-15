@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 from iPodDB.library import PlaylistKind
 
 from .client import SubsonicClient, SubsonicConnectionError
+from .credentials import SubsonicCredentialStore, SystemSubsonicCredentialStore
 from .models import (
     SubsonicPlaylistMapping,
     SubsonicSyncMode,
@@ -134,10 +135,14 @@ class SubsonicController(QObject):
     def __init__(
         self,
         settings: SettingsService,
+        credentials: SubsonicCredentialStore | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._settings = settings
+        self._credentials: SubsonicCredentialStore = (
+            credentials if credentials is not None else SystemSubsonicCredentialStore()
+        )
         self._pool = QThreadPool.globalInstance()
         self._active_workspace: LibraryWorkspace | None = None
         self._test_job: _TestConnectionWork | None = None
@@ -152,6 +157,10 @@ class SubsonicController(QObject):
     @property
     def settings(self) -> SettingsService:
         return self._settings
+
+    @property
+    def credentials(self) -> SubsonicCredentialStore:
+        return self._credentials
 
     def test_connection(self, url: str, username: str, password: str) -> None:
         """Test server reachability and credentials in a background thread."""

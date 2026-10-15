@@ -2,6 +2,7 @@
 
 from .client import SubsonicClient, SubsonicConnectionError
 from .controller import SubsonicController
+from .credentials import SubsonicCredentialStore, SystemSubsonicCredentialStore
 from .models import (
     SubsonicPlaylist,
     SubsonicPlaylistMapping,
@@ -33,11 +34,13 @@ __all__ = [
     "SubsonicClient",
     "SubsonicConnectionError",
     "SubsonicController",
+    "SubsonicCredentialStore",
     "SubsonicPlaylist",
     "SubsonicPlaylistMapping",
     "SubsonicSong",
     "SubsonicSyncMode",
     "SubsonicSyncResult",
+    "SystemSubsonicCredentialStore",
     "delete_subsonic_password",
     "get_subsonic_password",
     "index_library_tracks",

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -19,8 +20,6 @@ from iOpenPod.app.subsonic.settings import (
     SUBSONIC_PLAYLIST_IDS,
     SUBSONIC_URL,
     SUBSONIC_USERNAME,
-    get_subsonic_password,
-    set_subsonic_password,
 )
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
@@ -125,28 +124,32 @@ class SubsonicSettings(QWidget):
 
         pl_group = SettingGroup(self)
 
-        actions_panel = QWidget(self)
-        actions_layout = QHBoxLayout(actions_panel)
+        self._actions_panel = QWidget(self)
+        actions_layout = QHBoxLayout(self._actions_panel)
         actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(LAYOUT.space_sm)
+        actions_layout.setSpacing(LAYOUT.space_xs)
 
-        self._refresh_button = ActionButton(parent=actions_panel, kind=ActionButtonKind.QUIET)
+        self._refresh_button = ActionButton(parent=self._actions_panel, kind=ActionButtonKind.QUIET)
         self._refresh_button.setText(self.tr("Refresh Playlists"))
-        self._select_all_button = ActionButton(parent=actions_panel, kind=ActionButtonKind.QUIET)
+        self._select_all_button = ActionButton(parent=self._actions_panel, kind=ActionButtonKind.QUIET)
         self._select_all_button.setText(self.tr("Select All"))
-        self._deselect_all_button = ActionButton(parent=actions_panel, kind=ActionButtonKind.QUIET)
+        self._deselect_all_button = ActionButton(parent=self._actions_panel, kind=ActionButtonKind.QUIET)
         self._deselect_all_button.setText(self.tr("Deselect All"))
 
         actions_layout.addWidget(self._refresh_button)
         actions_layout.addWidget(self._select_all_button)
         actions_layout.addWidget(self._deselect_all_button)
-        actions_layout.addStretch(1)
 
         self._pl_actions_row = SettingRow(
             self.tr("Playlist Actions"),
             self.tr("Refresh playlist catalog from the server."),
-            actions_panel,
+            self._actions_panel,
             self,
+        )
+        self._actions_panel.setMinimumWidth(self._actions_panel.sizeHint().width())
+        self._actions_panel.setMaximumWidth(16777215)
+        self._actions_panel.setSizePolicy(
+            QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Fixed
         )
         pl_group.add_row(self._pl_actions_row)
 
@@ -177,7 +180,7 @@ class SubsonicSettings(QWidget):
     def _load_saved_values(self) -> None:
         url = self._settings.get(SUBSONIC_URL)
         username = self._settings.get(SUBSONIC_USERNAME)
-        password = get_subsonic_password(username)
+        password = self._controller.credentials.load_password(username)
         self._url_edit.setText(url)
         self._username_edit.setText(username)
         self._password_edit.setText(password)
@@ -208,7 +211,7 @@ class SubsonicSettings(QWidget):
         password = self._password_edit.text()
         self._settings.set_global(SUBSONIC_URL, url)
         self._settings.set_global(SUBSONIC_USERNAME, username)
-        set_subsonic_password(username, password)
+        self._controller.credentials.save_password(username, password)
 
     @Slot()
     def _on_test_clicked(self) -> None:
@@ -317,9 +320,14 @@ class SubsonicSettings(QWidget):
         )
         self._test_button.setText(self.tr("Test Connection"))
         self._playlists_title.setText(self.tr("Subsonic Playlists"))
+        self._pl_actions_row.set_copy(
+            self.tr("Playlist Actions"),
+            self.tr("Refresh playlist catalog from the server."),
+        )
         self._refresh_button.setText(self.tr("Refresh Playlists"))
         self._select_all_button.setText(self.tr("Select All"))
         self._deselect_all_button.setText(self.tr("Deselect All"))
+        self._actions_panel.setMinimumWidth(self._actions_panel.sizeHint().width())
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:

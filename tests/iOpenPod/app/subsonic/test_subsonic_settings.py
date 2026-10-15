@@ -1,12 +1,11 @@
 """Tests for Subsonic settings definitions and keyring password store."""
 
-
 import pytest
 
+from iOpenPod.app.subsonic.credentials import SystemSubsonicCredentialStore
 from iOpenPod.app.subsonic.settings import (
     SUBSONIC_PLAYLIST_IDS,
     SUBSONIC_PLAYLIST_MAPPINGS,
-    SUBSONIC_SERVICE_KEY,
     SUBSONIC_URL,
     SUBSONIC_USERNAME,
     delete_subsonic_password,
@@ -25,18 +24,19 @@ def test_settings_definitions_defaults() -> None:
 def test_keyring_password_storage(monkeypatch: pytest.MonkeyPatch) -> None:
     passwords: dict[tuple[str, str], str] = {}
 
-    def mock_get(service: str, username: str) -> str | None:
-        return passwords.get((service, username))
+    class MockBackend:
+        __module__ = "keyring.backends.SecretService"
 
-    def mock_set(service: str, username: str, password: str) -> None:
-        passwords[(service, username)] = password
+        def get_password(self, service: str, username: str) -> str | None:
+            return passwords.get((service, username))
 
-    def mock_delete(service: str, username: str) -> None:
-        passwords.pop((service, username), None)
+        def set_password(self, service: str, username: str, password: str) -> None:
+            passwords[(service, username)] = password
 
-    monkeypatch.setattr("keyring.get_password", mock_get)
-    monkeypatch.setattr("keyring.set_password", mock_set)
-    monkeypatch.setattr("keyring.delete_password", mock_delete)
+        def delete_password(self, service: str, username: str) -> None:
+            passwords.pop((service, username), None)
+
+    monkeypatch.setattr("keyring.get_keyring", lambda: MockBackend())
 
     # Empty user returns empty
     assert get_subsonic_password("") == ""
@@ -44,7 +44,7 @@ def test_keyring_password_storage(monkeypatch: pytest.MonkeyPatch) -> None:
     # Set password
     set_subsonic_password("alice", "mypassword123")
     assert get_subsonic_password("alice") == "mypassword123"
-    assert passwords[(SUBSONIC_SERVICE_KEY, "alice")] == "mypassword123"
+    assert passwords[("iOpenPod 2 Subsonic", "alice")] == "mypassword123"
 
     # Setting empty password deletes it
     set_subsonic_password("alice", "")
@@ -54,3 +54,14 @@ def test_keyring_password_storage(monkeypatch: pytest.MonkeyPatch) -> None:
     set_subsonic_password("bob", "secret")
     delete_subsonic_password("bob")
     assert get_subsonic_password("bob") == ""
+
+
+def test_system_subsonic_credential_store() -> None:
+    store = SystemSubsonicCredentialStore()
+    assert store.load_password("") == ""
+
+    store.save_password("carol", "secure_pass")
+    assert store.load_password("carol") == "secure_pass"
+
+    store.remove_password("carol")
+    assert store.load_password("carol") == ""

@@ -90,7 +90,6 @@ from iOpenPod.app.subsonic.settings import (
     SUBSONIC_PLAYLIST_MAPPINGS,
     SUBSONIC_URL,
     SUBSONIC_USERNAME,
-    get_subsonic_password,
 )
 from iOpenPod.app.sync_controller import SyncController
 from iOpenPod.app.sync_execution import (
@@ -240,7 +239,7 @@ class MainWindow(QMainWindow):
         )
         self._scrobbling.message.connect(self._scrobble_message)
         self._scrobbling.finished.connect(self._scrobble_finished)
-        self._subsonic = SubsonicController(context.settings, self)
+        self._subsonic = SubsonicController(context.settings, parent=self)
         self._subsonic.syncStarted.connect(
             self._subsonic_sync_started, Qt.ConnectionType.QueuedConnection
         )
@@ -1487,7 +1486,7 @@ class MainWindow(QMainWindow):
 
         url = self._context.settings.get(SUBSONIC_URL).strip()
         username = self._context.settings.get(SUBSONIC_USERNAME).strip()
-        password = get_subsonic_password(username)
+        password = self._subsonic.credentials.load_password(username)
         if not (url and username):
             self._show_page(PageId.SETTINGS.value)
             self._settings_page.show_sync_settings()

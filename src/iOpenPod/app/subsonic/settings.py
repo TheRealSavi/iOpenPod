@@ -1,19 +1,14 @@
-"""Settings and credential storage for Subsonic integration."""
+"""Only non-secret Subsonic preferences belong in global settings."""
 
 from __future__ import annotations
 
-import contextlib
-import logging
 from typing import Any
-
-import keyring
 
 from iOpenPod.app.core.settings.definitions import SettingDefinition
 
-logger = logging.getLogger(__name__)
+from .credentials import SystemSubsonicCredentialStore
 
-SUBSONIC_SERVICE_KEY = "iOpenPod:Subsonic"
-_MEMORY_PASSWORD_STORE: dict[str, str] = {}
+_DEFAULT_VAULT = SystemSubsonicCredentialStore()
 
 SUBSONIC_URL = SettingDefinition[str](
     key="subsonic/url",
@@ -27,6 +22,7 @@ SUBSONIC_USERNAME = SettingDefinition[str](
     default="",
 )
 
+# Tuple of Subsonic playlist IDs selected by the user to sync.
 SUBSONIC_PLAYLIST_IDS = SettingDefinition[tuple[str, ...]](
     key="subsonic/playlist-ids",
     value_type=tuple,
@@ -42,42 +38,15 @@ SUBSONIC_PLAYLIST_MAPPINGS = SettingDefinition[dict[str, Any]](
 
 
 def get_subsonic_password(username: str) -> str:
-    """Retrieve the stored Subsonic password from the OS keyring."""
-    if not username:
-        return ""
-    try:
-        pw = keyring.get_password(SUBSONIC_SERVICE_KEY, username)
-        if pw:
-            return pw
-    except Exception as exc:
-        logger.debug("Failed to read Subsonic password from keyring: %s", exc)
-    return _MEMORY_PASSWORD_STORE.get(username, "")
+    """Retrieve the stored Subsonic password from the native OS vault."""
+    return _DEFAULT_VAULT.load_password(username)
 
 
 def set_subsonic_password(username: str, password: str) -> None:
-    """Save the Subsonic password in the OS keyring."""
-    if not username:
-        return
-    if password:
-        _MEMORY_PASSWORD_STORE[username] = password
-    else:
-        _MEMORY_PASSWORD_STORE.pop(username, None)
-    try:
-        if password:
-            keyring.set_password(SUBSONIC_SERVICE_KEY, username, password)
-        else:
-            with contextlib.suppress(Exception):
-                keyring.delete_password(SUBSONIC_SERVICE_KEY, username)
-    except Exception as exc:
-        logger.warning("Failed to save Subsonic password to keyring: %s", exc)
+    """Save the Subsonic password in the native OS vault."""
+    _DEFAULT_VAULT.save_password(username, password)
 
 
 def delete_subsonic_password(username: str) -> None:
-    """Remove the Subsonic password from the OS keyring."""
-    if not username:
-        return
-    _MEMORY_PASSWORD_STORE.pop(username, None)
-    try:
-        keyring.delete_password(SUBSONIC_SERVICE_KEY, username)
-    except Exception as exc:
-        logger.debug("Failed to delete Subsonic password from keyring: %s", exc)
+    """Remove the Subsonic password from the native OS vault."""
+    _DEFAULT_VAULT.remove_password(username)
