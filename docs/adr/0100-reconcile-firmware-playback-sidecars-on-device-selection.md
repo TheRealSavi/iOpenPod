@@ -4,6 +4,7 @@
 - Date: 2026-09-30
 - Extends: ADR-0019, ADR-0029, ADR-0030, ADR-0098
 - Supersedes: ADR-0085's preservation-only treatment of understood, loaded sidecars
+- Extended by: [ADR-0144](0144-expand-track-headers-with-device-capabilities.md)
 
 Playback history and On-The-Go Playlists must already be committed when device
 selection finishes. The Application Layer captures sidecars, asks iPodDB to project

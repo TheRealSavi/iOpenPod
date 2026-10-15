@@ -220,6 +220,16 @@ def analyze(
                     "HASH72 output requires the selected device's retained IV and random bytes.",
                 )
             )
+    if (
+        target.database_version is not None
+        and not 0 < target.database_version <= 0xFFFFFFFF
+    ):
+        issues.append(
+            WriteIssue(
+                "target.invalid_version",
+                "Database version must be a positive unsigned 32-bit value.",
+            )
+        )
     if target.max_database_bytes <= 0 or target.max_artwork_file_bytes <= 0:
         issues.append(
             WriteIssue("target.invalid_limit", "Output size limits must be positive.")

@@ -8646,6 +8646,10 @@ Playlists: %3</translation>
         <translation>Se conservó el contenido actual y se rechazó la recuperación. No se pudo cargar la biblioteca actual; la sincronización interrumpida puede estar incompleta. Las copias de recuperación permanecen junto a declined-transaction.json. Actualiza el selector de iPod después de reparar la biblioteca. {detail}</translation>
     </message>
     <message>
+        <source>Database version must be a positive unsigned 32-bit value.</source>
+        <translation>La versión de la base de datos debe ser un valor sin signo de 32 bits mayor que cero.</translation>
+    </message>
+    <message>
         <source>Daylight saving switch</source>
         <translation>Cambio al horario de verano</translation>
     </message>
@@ -9256,6 +9260,10 @@ Playlists: %3</translation>
     <message>
         <source>Prepared a still PNG from the first image frame for the iPod Photo viewer. The Host original is unchanged.</source>
         <translation>Se preparó un PNG fijo a partir del primer fotograma para el visor de fotos del iPod. El original del equipo no cambió.</translation>
+    </message>
+    <message>
+        <source>Prepared database has an unexpected format version.</source>
+        <translation>La base de datos preparada tiene una versión de formato inesperada.</translation>
     </message>
     <message>
         <source>Prepared native browse relationships do not match the source and desired Library.</source>
@@ -10256,6 +10264,10 @@ Playlists: %3</translation>
     <message>
         <source>The symbolic link could not be followed: {error}</source>
         <translation>No se pudo seguir el enlace simbólico: {error}</translation>
+    </message>
+    <message>
+        <source>This iPod&apos;s database format stores played state only through the play count.</source>
+        <translation>El formato de base de datos de este iPod solo guarda el estado de reproducción mediante el número de reproducciones.</translation>
     </message>
     <message>
         <source>Track files were deleted, but the device flush could not be confirmed. Safely eject before unplugging.</source>

@@ -129,6 +129,7 @@ def reconcile(
                     media.get(track.track_id),
                     issues,
                     lyrics=lyrics.get(track.track_id),
+                    database_version=resolved.plan.target.database_version,
                 )
             )
         except (ValueError, OverflowError) as error:
@@ -142,6 +143,22 @@ def reconcile(
             )
             if track_chunk is not None:
                 track_output.append(track_chunk)
+    if resolved.plan.target.database_version is not None and any(
+        isinstance(chunk.header, MhitHeader)
+        and chunk.header.track_id in source_tracks
+        and chunk.generic_header.header_length
+        > source_tracks[chunk.header.track_id].generic_header.header_length
+        for chunk in track_output
+    ):
+        document = replace(
+            document,
+            header=replace(
+                document.header,
+                version=max(
+                    document.header.version, resolved.plan.target.database_version
+                ),
+            ),
+        )
     if track_dataset is not None:
         container = track_dataset.chunk.children[0]
         pending_tracks = iter(track_output)

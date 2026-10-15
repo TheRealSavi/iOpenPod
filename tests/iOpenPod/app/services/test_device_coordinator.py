@@ -12,7 +12,7 @@ from threading import Event, Thread
 import pytest
 from PIL import Image
 from tests.iOpenPod.app.media.test_photo_sync import large_photo_png
-from tests.iPodDB.sidecars.test_sidecar_readers import otg
+from tests.iPodDB.sidecars.test_sidecar_readers import counts, otg
 
 from iOpenPod.app.backups import BackupIdentityClaimKind
 from iOpenPod.app.display_text import SourceText
@@ -26,6 +26,7 @@ from iOpenPod.app.services.device_coordinator import (
     DeviceAccessError,
     DeviceChangedError,
     DeviceCoordinator,
+    DeviceLibraryLoadError,
     DevicePhotoExportError,
 )
 from iPodDB.ArtworkDB.builder.build_ArtworkDB import (
@@ -42,7 +43,9 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhni import DEFINITION as MHNI_DEFINITIO
 from iPodDB.ArtworkDB.shared.chunk_defs.mhni import MhniHeader
 from iPodDB.ArtworkDB.shared.constants import ArtworkMhodType
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
-from iPodDB.iTunesDB.cdb import compress_iTunesCDB
+from iPodDB.iTunesDB.cdb import compress_iTunesCDB, decompress_iTunesCDB
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.writer.signature import (
     sign_hash72,
     verify_hash72,
@@ -1555,6 +1558,120 @@ def test_nano_save_rejects_sqlite_path_changed_after_review(tmp_path: Path) -> N
     }
     assert cdb.read_bytes() == original_cdb
     assert changed.read_bytes() == b"external change"
+
+
+@pytest.mark.parametrize(
+    "model", ["MC027", "MC525", "MD480"], ids=["nano5", "nano6", "nano7"]
+)
+@pytest.mark.parametrize("sidecar_name", ["Play Counts", "PlayCounts.plist"])
+def test_modern_nano_selection_expands_short_tracks_and_preserves_skip_history(
+    tmp_path: Path,
+    model: str,
+    sidecar_name: str,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / model, model_number=model, database_name="iTunesCDB")
+    directory = root / "iPod_Control" / "iTunes"
+    cdb = directory / "iTunesCDB"
+    cdb.write_bytes(compress_iTunesCDB(_database_with_track(track_header_size=156)))
+    guid = bytes.fromhex("000A270012345678")
+    if model == "MC027":
+        _install_nano5_hash72_metadata(root, guid)
+    else:
+        (root / "iPod_Control" / "Device" / "SysInfo").write_text(
+            f"ModelNumStr: {model}\nFirewireGuid: {guid.hex().upper()}\n",
+            encoding="utf-8",
+        )
+    history = plistlib.dumps(
+        {
+            "tracks": [
+                {
+                    "persistentID": 0x0102030405060708,
+                    "playCount": 3,
+                    "skipCount": 2,
+                    "skipMacOSDate": 3_800_000_100,
+                }
+            ]
+        }
+    )
+    if sidecar_name == "Play Counts":
+        history = counts()
+    sidecar = directory / sidecar_name
+    sidecar.write_bytes(history)
+    platform.add_volume(root, label=model)
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        active = coordinator.select_device(
+            coordinator.discover_devices().candidates[0].id
+        )
+        track = active.library.tracks[0]
+        assert track.play_count == 3
+        assert track.metadata.skip_count == 2
+        assert track.metadata.last_skipped > 0
+        persisted = IPodLibrary.parse(cdb.read_bytes()).snapshot.tracks[0]
+        assert persisted.metadata == track.metadata
+        doc = parse_iTunesDB(decompress_iTunesCDB(cdb.read_bytes()).logical_bytes)
+        header = doc.find_chunks(MhitHeader)[0].chunk
+        assert header.generic_header.header_length == 624
+        assert header.header.db_track_id_2 == header.header.db_track_id
+        assert header.header.not_played_flag == 1
+        assert not sidecar.exists()
+        assert sidecar.with_name(sidecar.name + ".bak").read_bytes() == history
+        if model == "MC027":
+            assert verify_hash72(
+                cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32))
+            )
+        else:
+            assert verify_hashab(cdb.read_bytes(), guid)
+        sqlite_directory = directory / "iTunes Library.itlp"
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.deserialize((sqlite_directory / "Dynamic.itdb").read_bytes())
+            assert connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
+            assert connection.execute(
+                "SELECT play_count_user, skip_count_user, date_skipped FROM item_stats"
+            ).fetchone() == (3, 2, track.metadata.last_skipped - 978_307_200)
+        finally:
+            connection.close()
+        reloaded = coordinator.select_device(active.candidate.id)
+        assert reloaded.library.tracks[0].metadata == track.metadata
+        assert reloaded.library.tracks[0].play_count == 3
+    finally:
+        coordinator.close()
+
+
+def test_nano6_unsafe_expansion_preserves_database_and_pending_history(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(
+        tmp_path / "nano6", model_number="MC525", database_name="iTunesCDB"
+    )
+    directory = root / "iPod_Control" / "iTunes"
+    cdb = directory / "iTunesCDB"
+    original = compress_iTunesCDB(_database_with_track(track_header_size=158))
+    cdb.write_bytes(original)
+    (root / "iPod_Control" / "Device" / "SysInfo").write_text(
+        "ModelNumStr: MC525\nFirewireGuid: 000A270012345678\n",
+        encoding="utf-8",
+    )
+    sidecar = directory / "Play Counts"
+    history = counts()
+    sidecar.write_bytes(history)
+    archive = directory / "Play Counts.bak"
+    archive.write_bytes(b"previous archive")
+    platform.add_volume(root, label="nano6")
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        with pytest.raises(DeviceLibraryLoadError):
+            coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+        assert coordinator.active_ipod is None
+        assert cdb.read_bytes() == original
+        assert sidecar.read_bytes() == history
+        assert archive.read_bytes() == b"previous archive"
+        assert not (directory / "iTunes Library.itlp").exists()
+    finally:
+        coordinator.close()
 
 
 def test_nano6_save_uses_hashab_for_cdb_and_sqlite_generation(

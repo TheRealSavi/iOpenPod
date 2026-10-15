@@ -36,6 +36,12 @@ totals; plays also add to the existing unscrobbled count and mark the Track play
 Nonzero dates use the newer observed value. Local Mac dates require the captured
 Device Time Context, never the Host timezone. Ambiguous dates block consumption.
 
+Projection retains skip history even when the source MHIT ends before its fields.
+Saving can expand an affected Track using the selected Device Profile's database
+capability, while preserving the retained prefix and Unknown Data. Missing or
+insufficient capabilities block consumption instead of dropping evidence. See
+[ADR-0144](adr/0144-expand-track-headers-with-device-capabilities.md).
+
 OTG Playlists receive distinct temporary Library IDs and deterministic occurrence
 IDs. Selection's Library preparation allocates their persistent IDs. The importer
 does not merge Playlists merely because their names or contents match. Empty OTG

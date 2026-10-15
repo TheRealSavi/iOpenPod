@@ -9,6 +9,9 @@ from tests.iPodDB.library.test_writing import library
 from tests.iPodDB.sidecars.test_sidecar_readers import counts, otg, stats
 
 from iPodDB.device_time import DeviceTimeContext, DeviceTimeSource, mac_to_unix
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library import IPodLibrary, WriteResources
 from iPodDB.sidecars import PlaybackSidecar
 
@@ -190,3 +193,69 @@ def test_existing_totals_are_added_once_and_later_user_edits_win() -> None:
     )
     assert saved.prepared is not None, saved.issues
     assert saved.prepared.snapshot.tracks[0].rating == 60
+
+
+def short_header_library(header_length: int = 0x9C) -> IPodLibrary:
+    """Original-format MHIT headers end before the skip fields."""
+    document = parse_iTunesDB(library().serialize().itunes)
+    for selection in document.find_chunks(MhitHeader):
+        chunk = selection.chunk
+        document = document.replace_chunk(
+            selection,
+            replace(
+                chunk,
+                generic_header=replace(
+                    chunk.generic_header, header_length=header_length
+                ),
+                raw_header=chunk.raw_header[:header_length],
+            ),
+        )
+    return IPodLibrary(write_iTunesDB(document))
+
+
+def test_skip_evidence_beyond_a_short_track_header_is_never_discarded() -> None:
+    source = short_header_library()
+    loaded = source.with_sidecars((PlaybackSidecar("Play Counts", counts()),))
+    assert not loaded.sidecar_issues
+    track = loaded.snapshot.tracks[0]
+    assert track.play_count == 3 and track.rating == 80
+    assert track.metadata.skip_count == 2
+    assert track.metadata.last_skipped == mac_to_unix(3_800_000_100, loaded.device_time)
+    assert track.metadata.played
+    result = loaded.prepare(
+        loaded.analyze(loaded.begin_draft()),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    # Without selected-device capabilities, keep the evidence pending.
+    assert result.prepared is None
+    assert loaded.serialize() == source.serialize()
+    assert loaded.consumed_sidecars
+
+
+@pytest.mark.parametrize("play_count,played", [(4, True), (0, False)])
+def test_played_state_follows_play_count_in_a_short_track_header(
+    play_count: int, played: bool
+) -> None:
+    source = short_header_library()
+    track = source.snapshot.tracks[0]
+    edited = replace(
+        track,
+        play_count=play_count,
+        metadata=replace(track.metadata, played=played),
+    )
+    desired = replace(source.snapshot, tracks=(edited, *source.snapshot.tracks[1:]))
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    reloaded = IPodLibrary(result.prepared.itunes).snapshot.tracks[0]
+    assert reloaded.play_count == play_count
+    assert reloaded.metadata.played is (play_count > 0)
+
+
+def test_played_without_plays_is_rejected_in_a_short_track_header() -> None:
+    source = short_header_library()
+    track = source.snapshot.tracks[0]
+    edited = replace(track, metadata=replace(track.metadata, played=True))
+    desired = replace(source.snapshot, tracks=(edited, *source.snapshot.tracks[1:]))
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is None
+    assert any(i.code == "track.unstorable" for i in result.issues)

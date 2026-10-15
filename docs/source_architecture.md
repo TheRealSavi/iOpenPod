@@ -755,6 +755,13 @@ and Playlists; the Library interface re-exports the captured-input type and
 capture/preservation helpers needed by application workflows. Raw document types
 and format readers belong to the sidecar package. See ADR-0100.
 
+The Application supplies the selected Device Profile's binary database version to
+`WriteTarget`. Library reconciliation may expand a short Track header only to
+represent requested fields within that capability. The shared MHIT definition owns
+the size policy; the low-level writer continues to preserve retained extents.
+Unknown bytes and unchanged records remain intact, and missing capabilities block
+unrepresentable edits instead of dropping playback evidence. See ADR-0144.
+
 ### Lossless round-trip requirement
 
 Unknown Data is expected in real iPod databases. If a database is parsed and then

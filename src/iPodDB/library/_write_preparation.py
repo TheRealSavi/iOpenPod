@@ -740,6 +740,7 @@ def _prepare(
                 mappings,
                 resources,
                 source.device_time,
+                database_version=plan.target.database_version,
             )
         )
         issues.extend(

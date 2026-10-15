@@ -183,6 +183,14 @@ does not. A callback exception propagates to the caller without becoming a binar
 encoding issue. The coordinator uses this seam for cooperative cancellation between
 stages; an individual large stage is still synchronous.
 
+`WriteTarget.database_version` supplies the selected device's binary format
+capability. An edited Track whose native fields need more space may expand to that
+profile's header size; absent capabilities leave unrepresentable edits blocked.
+No-op and unrelated edits preserve the original extent and bytes, including
+nonstandard layouts. The binary serializer does not expand headers itself. See
+[ADR-0144](adr/0144-expand-track-headers-with-device-capabilities.md) for field
+initialization, partial-field preservation, and independent verification.
+
 `result.measurements` records elapsed worker time between stage entries, including
 the terminal stage. Validation time includes semantic resolution. These measurements
 are observational and excluded from result equality; they do not claim that a stage
