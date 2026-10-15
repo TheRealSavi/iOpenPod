@@ -30,6 +30,7 @@ from iPodDB.library._browse_index import BrowseIndex, resolve_indexes
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library._identities import IdentityAllocator
 from iPodDB.library._playlist_datasets import is_master, playlist_rows
+from iPodDB.library._track_header_expansion import field_fits
 from iPodDB.library._track_writing import edit_text
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.library.writing import WriteIssue
@@ -431,6 +432,10 @@ def _composers(
             and old[track.track_id].metadata.composer == track.metadata.composer
         ):
             continue
+        chunk = native[track_ids[track.track_id]]
+        if not field_fits("composer_id", chunk.generic_header.header_length):
+            # MHOD 12 carries composer text even when this layout has no ID.
+            continue
         key = track.metadata.composer.casefold()
         options = candidates.get(key, set())
         if len(options) > 1:
@@ -448,7 +453,6 @@ def _composers(
         if key and not value:
             value = allocator.take()
             candidates[key] = {value}
-        chunk = native[track_ids[track.track_id]]
         logger.debug(
             "Library composer track=%d old_id=%d new_id=%d",
             chunk.header.track_id,

@@ -2,11 +2,41 @@
 
 from collections.abc import Mapping
 
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import DEFINITION as MHIT
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader, header_size_for_version
 from iPodDB.library.models import Track
 from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import ParsedChunk
 from iPodDB.shared.chunk_field import ChunkFieldValue
+
+
+def creation_header_length(database_version: int | None) -> int:
+    """Use the device's authoring layout, or the generic builder's default."""
+    return (
+        header_size_for_version(database_version)
+        if database_version is not None
+        else MHIT.default_header_size
+    )
+
+
+def field_fits(name: str, length: int) -> bool:
+    schema = next(
+        f.schema for f in binary_fields(MhitHeader) if f.attribute_name == name
+    )
+    return schema.offset + schema.size <= length
+
+
+def optional_field_available(
+    source: ParsedChunk[MhitHeader] | None, name: str, database_version: int | None
+) -> bool:
+    """An optional native reference may use retained bytes or authorized growth."""
+    if source is None:
+        length = creation_header_length(database_version)
+    else:
+        length = source.generic_header.header_length
+        if database_version is not None:
+            length = max(length, header_size_for_version(database_version))
+    return field_fits(name, length)
 
 
 def required_header_length(

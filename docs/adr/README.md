@@ -217,3 +217,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0142: Refresh Smart Playlists before Library publication](0142-refresh-smart-playlists-before-library-publication.md)
 - [ADR-0143: Separate scan cache size from firmware database limits](0143-separate-scan-cache-size-from-firmware-database-limits.md)
 - [ADR-0144: Expand Track headers with device capabilities](0144-expand-track-headers-with-device-capabilities.md)
+- [ADR-0145: Select Track layouts for all Library writes](0145-select-track-layouts-for-all-library-writes.md)

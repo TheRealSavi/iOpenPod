@@ -135,7 +135,8 @@ def header_size_for_version(version: int) -> int:
     """Creation/expansion policy for an explicitly supplied device DB version.
 
     Retained records may use other sizes. This is not parser validation and
-    must never normalize an unchanged record (ADR-0144).
+    must never normalize an unchanged record (ADR-0144, ADR-0145). The table
+    selects authoring layouts; it does not establish firmware maximums.
     """
     for maximum, size in zip(
         (0x12, 0x19, 0x2D), DEFINITION.header_sizes[:-1], strict=True

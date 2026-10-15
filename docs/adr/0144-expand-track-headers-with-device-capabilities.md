@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-10-14
 - Extends: [ADR-0100](0100-reconcile-firmware-playback-sidecars-on-device-selection.md)
+- Extended by: [ADR-0145](0145-select-track-layouts-for-all-library-writes.md),
+  including device-aware new Track creation and later derived fields.
 
 ## Context
 

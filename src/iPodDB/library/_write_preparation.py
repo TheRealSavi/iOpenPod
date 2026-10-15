@@ -741,11 +741,17 @@ def _prepare(
                 resources,
                 source.device_time,
                 database_version=plan.target.database_version,
+                artwork_tracks=resolved.artwork_tracks,
             )
         )
         issues.extend(
             verify_browse_groups(
-                document, checked_document, source.snapshot, desired, mappings
+                document,
+                checked_document,
+                source.snapshot,
+                desired,
+                mappings,
+                database_version=plan.target.database_version,
             )
         )
         expected_retained_artwork = (

@@ -8,9 +8,12 @@ from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.library._track_header_expansion import (
+    creation_header_length,
     extension_values,
+    field_fits,
     required_header_length,
 )
+from iPodDB.library._track_header_requirements import derived_header_requirements
 from iPodDB.library._track_header_verification import (
     track_field_expectations,
     unmodeled_header_ranges,
@@ -36,6 +39,7 @@ def verify_native_tracks(
     device_time: TimeConversion = 0,
     *,
     database_version: int | None = None,
+    artwork_tracks: tuple[int, ...] = (),
 ) -> tuple[WriteIssue, ...]:
     """Compare reparsed fields with source identities and captured caller facts.
 
@@ -59,6 +63,9 @@ def verify_native_tracks(
     }
     allocated: set[int] = set()
     issues: list[WriteIssue] = []
+    header_requirements = derived_header_requirements(
+        original, before, desired, database_version, artwork_tracks
+    )
     expanded = False
     for track in desired.tracks:
         tagged = lyrics.get(track.track_id)
@@ -138,7 +145,9 @@ def verify_native_tracks(
                 if expected_fields.get(binary_field.attribute_name) == retained:
                     extent_fields.pop(binary_field.attribute_name, None)
             length = required_header_length(
-                original_chunk, extent_fields, database_version
+                original_chunk,
+                {**extent_fields, **header_requirements.get(track.track_id, {})},
+                database_version,
             )
             check("header_length", length, output_chunk.generic_header.header_length)
             expanded |= length > original_chunk.generic_header.header_length
@@ -175,6 +184,9 @@ def verify_native_tracks(
                 actual.db_track_id_2,
             )
         else:
+            length = creation_header_length(database_version)
+            check("header_length", length, output_chunk.generic_header.header_length)
+            expanded = True
             if (
                 not actual.db_track_id
                 or actual.db_track_id in reserved
@@ -186,7 +198,11 @@ def verify_native_tracks(
                     actual.db_track_id,
                 )
             allocated.add(actual.db_track_id)
-            check("db_track_id_2", actual.db_track_id, actual.db_track_id_2)
+            check(
+                "db_track_id_2",
+                actual.db_track_id if field_fits("db_track_id_2", length) else 0,
+                actual.db_track_id_2,
+            )
 
         if prepared is not None:
             check("filetype", prepared.filetype, actual.filetype)
@@ -202,7 +218,13 @@ def verify_native_tracks(
             # The secondary size is optional in retained source formats.
             check(
                 "size_2",
-                track.size_bytes if prior is None or prior.size_2 else 0,
+                track.size_bytes
+                if (
+                    prior is None
+                    and field_fits("size_2", creation_header_length(database_version))
+                )
+                or (prior is not None and prior.size_2)
+                else 0,
                 actual.size_2,
             )
         elif prior is not None:

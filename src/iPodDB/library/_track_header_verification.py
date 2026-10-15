@@ -3,7 +3,6 @@
 from functools import lru_cache
 
 from iPodDB.device_time import TimeConversion, unix_to_mac
-from iPodDB.iTunesDB.shared.chunk_defs.mhit import DEFINITION as MHIT
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader, header_size_for_version
 from iPodDB.library._field_policy import DATE_FIELDS, METADATA_FIELDS, TRACK_FIELDS
 from iPodDB.library._native_values import (
@@ -12,6 +11,7 @@ from iPodDB.library._native_values import (
     volume_adjustment_to_native,
 )
 from iPodDB.library._projection import unknown_media_bits
+from iPodDB.library._track_header_expansion import creation_header_length
 from iPodDB.library.models import ContentAdvisory, MediaType, Track
 from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import GenericHeader, ParsedChunk
@@ -126,7 +126,9 @@ def track_field_expectations(
     if changed("checked"):
         expected["checked_flag"] = int(not meta.checked)
     header_length = (
-        source.generic_header.header_length if source else MHIT.default_header_size
+        source.generic_header.header_length
+        if source
+        else creation_header_length(database_version)
     )
     needs_new_played_field = (
         _NOT_PLAYED.offset + _NOT_PLAYED.size > header_length

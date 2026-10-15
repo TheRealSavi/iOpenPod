@@ -1,6 +1,7 @@
 """Selective inverse Track projection; retained fields are never normalized."""
 
 import math
+from collections.abc import Mapping
 from dataclasses import fields, replace
 from typing import Any
 
@@ -44,7 +45,9 @@ from iPodDB.library._native_values import (
 )
 from iPodDB.library._projection import unknown_media_bits
 from iPodDB.library._track_header_expansion import (
+    creation_header_length,
     extension_values,
+    field_fits,
     required_header_length,
 )
 from iPodDB.library.models import ContentAdvisory, MediaType, Track, TrackMetadata
@@ -56,6 +59,7 @@ from iPodDB.library.writing import (
 )
 from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import ChunkHeader, ParsedChunk
+from iPodDB.shared.chunk_field import ChunkFieldValue
 
 _VIDEO_MIRROR = next(
     f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "video_flag_2"
@@ -255,15 +259,26 @@ def edit_track(
     *,
     lyrics: PreparedLyrics | None = None,
     database_version: int | None = None,
+    required_fields: Mapping[str, ChunkFieldValue] | None = None,
 ) -> ParsedChunk[MhitHeader]:
     if chunk is None:
+        length = creation_header_length(database_version)
         chunk = new_itunes_chunk(
             MHIT,
             MhitHeader(
                 track_id=native_id,
                 db_track_id=persistent_id,
-                db_track_id_2=persistent_id,
+                db_track_id_2=persistent_id
+                if field_fits("db_track_id_2", length)
+                else 0,
             ),
+        )
+        chunk = replace(
+            chunk,
+            generic_header=replace(chunk.generic_header, header_length=length),
+            # Supply the selected extent explicitly; generic construction uses
+            # the shared definition's default when no header buffer is present.
+            raw_header=bytes(length),
         )
     header = chunk.header
     values: dict[str, Any] = {}
@@ -499,13 +514,19 @@ def edit_track(
             mpeg_audio_type=media.mpeg_audio_type,
             gapless_audio_payload_size=media.gapless_audio_payload_size,
         )
-        if old is None or header.size_2:
+        if (
+            old is None and field_fits("size_2", chunk.generic_header.header_length)
+        ) or header.size_2:
             values["size_2"] = new.size_bytes
     if lyrics is not None:
         values["size"] = lyrics.file.size
-        if old is None or header.size_2:
+        if (
+            old is None and field_fits("size_2", chunk.generic_header.header_length)
+        ) or header.size_2:
             values["size_2"] = lyrics.file.size
-    length = required_header_length(chunk, values, database_version)
+    length = required_header_length(
+        chunk, {**values, **(required_fields or {})}, database_version
+    )
     if (
         _SORT_INDICATORS.offset
         < length

@@ -758,9 +758,15 @@ and format readers belong to the sidecar package. See ADR-0100.
 The Application supplies the selected Device Profile's binary database version to
 `WriteTarget`. Library reconciliation may expand a short Track header only to
 represent requested fields within that capability. The shared MHIT definition owns
-the size policy; the low-level writer continues to preserve retained extents.
+the size policy for creation and expansion; the low-level writer continues to
+preserve retained extents. New Library Tracks use the supplied profile's layout,
+with the generic creation default reserved for callers without a profile. Later
+artwork and browse fields participate in the expansion decision before Track
+editing. Optional native IDs have explicit older-layout policies; required semantic
+values and existing dataset relationships cannot be silently omitted.
 Unknown bytes and unchanged records remain intact, and missing capabilities block
-unrepresentable edits instead of dropping playback evidence. See ADR-0144.
+unrepresentable edits instead of dropping playback evidence. See ADR-0144 and
+ADR-0145. These sizes are authoring policy, not universal firmware limits.
 
 ### Lossless round-trip requirement
 

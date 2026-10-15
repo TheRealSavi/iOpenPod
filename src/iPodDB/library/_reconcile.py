@@ -40,6 +40,7 @@ from iPodDB.library._playlist_writing import (
 )
 from iPodDB.library._podcast_writing import reconcile_podcasts
 from iPodDB.library._resolved_write import ResolvedWrite
+from iPodDB.library._track_header_requirements import derived_header_requirements
 from iPodDB.library._track_writing import edit_text, edit_track
 from iPodDB.library.writing import (
     IdentityMapping,
@@ -93,6 +94,13 @@ def reconcile(
     media = {m.track_id: m for m in resources.media}
     lyrics = {item.track_id: item for item in resources.lyrics}
     required_media = frozenset(resolved.plan.required_media)
+    header_requirements = derived_header_requirements(
+        source_document,
+        original,
+        desired,
+        resolved.plan.target.database_version,
+        resolved.artwork_tracks,
+    )
     datasets = document.find_chunks(MhsdHeader)
     track_dataset = next(
         (s for s in datasets if s.chunk.header.dataset_type == 1), None
@@ -114,6 +122,7 @@ def reconcile(
             and track_chunk is not None
             and track.track_id not in required_media
             and track.track_id not in lyrics
+            and track.track_id not in header_requirements
         ):
             track_output.append(track_chunk)
             continue
@@ -130,6 +139,7 @@ def reconcile(
                     issues,
                     lyrics=lyrics.get(track.track_id),
                     database_version=resolved.plan.target.database_version,
+                    required_fields=header_requirements.get(track.track_id),
                 )
             )
         except (ValueError, OverflowError) as error:
@@ -145,9 +155,11 @@ def reconcile(
                 track_output.append(track_chunk)
     if resolved.plan.target.database_version is not None and any(
         isinstance(chunk.header, MhitHeader)
-        and chunk.header.track_id in source_tracks
-        and chunk.generic_header.header_length
-        > source_tracks[chunk.header.track_id].generic_header.header_length
+        and (
+            chunk.header.track_id not in source_tracks
+            or chunk.generic_header.header_length
+            > source_tracks[chunk.header.track_id].generic_header.header_length
+        )
         for chunk in track_output
     ):
         document = replace(

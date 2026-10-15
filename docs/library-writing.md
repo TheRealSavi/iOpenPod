@@ -184,12 +184,19 @@ encoding issue. The coordinator uses this seam for cooperative cancellation betw
 stages; an individual large stage is still synchronous.
 
 `WriteTarget.database_version` supplies the selected device's binary format
-capability. An edited Track whose native fields need more space may expand to that
-profile's header size; absent capabilities leave unrepresentable edits blocked.
+capability. New Tracks use that profile's MHIT layout; callers without a profile
+retain the generic 624-byte creation default. An edited Track whose native fields
+need more space may expand to the profile's header size; absent capabilities leave
+unrepresentable edits blocked. Requirements include later artwork and browse
+updates, including affected Tracks whose own metadata did not change. Composer
+text remains available without its optional native ID on older layouts. Required
+references in existing album/artist datasets must fit or preparation fails.
 No-op and unrelated edits preserve the original extent and bytes, including
 nonstandard layouts. The binary serializer does not expand headers itself. See
 [ADR-0144](adr/0144-expand-track-headers-with-device-capabilities.md) for field
-initialization, partial-field preservation, and independent verification.
+initialization, partial-field preservation, and independent verification, and
+[ADR-0145](adr/0145-select-track-layouts-for-all-library-writes.md) for creation
+and derived-field policy. Selected sizes are authoring policy, not firmware maximums.
 
 `result.measurements` records elapsed worker time between stage entries, including
 the terminal stage. Validation time includes semantic resolution. These measurements
