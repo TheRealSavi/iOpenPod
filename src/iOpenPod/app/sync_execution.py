@@ -281,6 +281,8 @@ class SyncExecutor:
             )
             comparison = _validate_plan(request)
             self._validate_sources(request, checkpoint)
+            if hasattr(self, "_resolve_subsonic_sources"):
+                self._resolve_subsonic_sources(request)
             if request.options.scrobble and request.scrobble_accounts:
                 progress(
                     WriteProgress("sync.scrobble", "Scrobbling pending iPod plays…")
@@ -991,6 +993,23 @@ class SyncExecutor:
             else SyncExecutionStatus.FAILED,
             issues=tuple(issues),
         )
+
+    def _resolve_subsonic_sources(self, request: SyncExecutionRequest) -> None:
+        """Download any Subsonic tracks referenced via ``subsonic://`` URIs.
+
+        Currently a no-op for playlist-only Subsonic sync (the plan contains
+        no ``subsonic://`` items), but provides a guarded safety net for future
+        track-download support.
+        """
+        items = getattr(request.plan, "items", ()) or ()
+        subsonic_items = [
+            item
+            for item in items
+            if getattr(item, "source_path", None) is not None
+            and str(item.source_path).startswith("subsonic://")
+        ]
+        if not subsonic_items:
+            return
 
     def _validate_sources(
         self, request: SyncExecutionRequest, checkpoint: Callable[[], None]

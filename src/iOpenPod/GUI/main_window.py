@@ -1,5 +1,6 @@
 """Main application-shell composition for the QWidget prototype."""
 
+import contextlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,6 +70,19 @@ from iOpenPod.app.scrobbling.controller import create_scrobbling
 from iOpenPod.app.scrobbling.models import ScrobbleResult
 from iOpenPod.app.scrobbling.settings import configured_accounts
 from iOpenPod.app.services.media_tools import MediaToolSetup
+from iOpenPod.app.subsonic.controller import SubsonicController
+from iOpenPod.app.subsonic.models import (
+    SubsonicPlaylist,
+    SubsonicSyncMode,
+    SubsonicSyncResult,
+)
+from iOpenPod.app.subsonic.settings import (
+    SUBSONIC_PLAYLIST_IDS,
+    SUBSONIC_PLAYLIST_MAPPINGS,
+    SUBSONIC_URL,
+    SUBSONIC_USERNAME,
+    get_subsonic_password,
+)
 from iOpenPod.app.sync_controller import SyncController
 from iOpenPod.app.sync_execution import (
     SyncExecutionResult,
@@ -94,6 +108,7 @@ from iOpenPod.GUI.dialogs.media_folders import (
 from iOpenPod.GUI.dialogs.media_tools_setup import MediaToolsSetupDialog
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
+from iOpenPod.GUI.dialogs.subsonic_mapping import SubsonicPlaylistMappingDialog
 from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.backup_page import BackupPage
@@ -216,6 +231,10 @@ class MainWindow(QMainWindow):
         )
         self._scrobbling.message.connect(self._scrobble_message)
         self._scrobbling.finished.connect(self._scrobble_finished)
+        self._subsonic = SubsonicController(context.settings, self)
+        self._subsonic.syncStarted.connect(self._subsonic_sync_started)
+        self._subsonic.syncFinished.connect(self._subsonic_sync_finished)
+        self._subsonic.error.connect(self._subsonic_error)
         self._sync_controller = SyncController(
             SyncExecutor(
                 context.device_coordinator,
@@ -412,6 +431,7 @@ class MainWindow(QMainWindow):
             context.i18n_manager,
             self._pages,
             scrobbling=self._scrobbling,
+            subsonic=self._subsonic,
         )
         self._media_tools = MediaToolsController(
             self, find_tool=context.find_media_tool
@@ -427,6 +447,7 @@ class MainWindow(QMainWindow):
         self._updates.changed.connect(self._app_update_status_changed)
         self._app_update_status_changed()
         self._sidebar.scrobbleRequested.connect(self._scrobble_now)
+        self._sidebar.subsonicSyncRequested.connect(self._sync_subsonic_now)
         self._scrobbling.changed.connect(self._scrobbling_changed)
         self._sidebar.set_scrobble_available(self._scrobbling.can_scrobble)
         self._settings_page.set_active_ipod(context.device_controller.active_ipod)
@@ -1432,6 +1453,139 @@ class MainWindow(QMainWindow):
             message,
             action=StatusAction("details", self.tr("Details")),
             timeout_ms=0 if result.issues else 20_000,
+        )
+
+    def _sync_subsonic_now(self) -> None:
+        if self._context.device_controller.active_ipod is None:
+            self._context.status.show(
+                "subsonic",
+                self.tr("Select an Active iPod before syncing Subsonic."),
+                timeout_ms=5_000,
+            )
+            return
+
+        url = self._context.settings.get(SUBSONIC_URL).strip()
+        username = self._context.settings.get(SUBSONIC_USERNAME).strip()
+        password = get_subsonic_password(username)
+        if not (url and username):
+            self._show_page(PageId.SETTINGS.value)
+            self._settings_page.show_sync_settings()
+            self._context.status.show(
+                "subsonic",
+                self.tr("Configure Subsonic server URL and username in Settings first."),
+                timeout_ms=10_000,
+            )
+            return
+
+        saved_ids: tuple[str, ...] = self._context.settings.get(SUBSONIC_PLAYLIST_IDS)
+        if not saved_ids:
+            self._show_page(PageId.SETTINGS.value)
+            self._settings_page.show_sync_settings()
+            self._context.status.show(
+                "subsonic",
+                self.tr("Select at least one Subsonic playlist in Settings to sync."),
+                timeout_ms=10_000,
+            )
+            return
+
+        self._context.status.show(
+            "subsonic",
+            self.tr("Loading Subsonic playlists…"),
+            timeout_ms=0,
+        )
+        try:
+            from iOpenPod.app.subsonic.client import SubsonicClient
+
+            client = SubsonicClient(url, username, password)
+            all_playlists = client.get_playlists()
+        except Exception as exc:
+            self._context.status.show(
+                "subsonic",
+                f"{self.tr('Could not connect to Subsonic server')}: {exc}",
+                timeout_ms=10_000,
+            )
+            return
+
+        selected_playlists = tuple(
+            p for p in all_playlists if p.playlist_id in saved_ids
+        )
+        if not selected_playlists:
+            selected_playlists = tuple(
+                SubsonicPlaylist(playlist_id=str(pid), name=str(pid)) for pid in saved_ids
+            )
+
+        saved_mappings_raw = self._context.settings.get(SUBSONIC_PLAYLIST_MAPPINGS) or {}
+        saved_mappings: dict[str, int] = {}
+        for k, v in saved_mappings_raw.items():
+            with contextlib.suppress(ValueError, TypeError):
+                saved_mappings[str(k)] = int(v)
+
+        dialog = SubsonicPlaylistMappingDialog(
+            selected_playlists,
+            self._context.library_workspace.playlists,
+            saved_mappings=saved_mappings,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self._context.status.clear("subsonic")
+            return
+
+        mappings = dialog.get_mappings()
+        new_mappings_store: dict[str, int] = {
+            m.subsonic_id: (
+                -m.target_ipod_id
+                if m.mode == SubsonicSyncMode.OVERWRITE
+                else m.target_ipod_id
+            )
+            for m in mappings
+            if m.target_ipod_id is not None
+        }
+        self._context.settings.set_global(
+            SUBSONIC_PLAYLIST_MAPPINGS, new_mappings_store
+        )
+
+        self._subsonic.sync_playlists(
+            self._context.library_workspace,
+            mappings,
+            url,
+            username,
+            password,
+        )
+
+    def _subsonic_sync_started(self) -> None:
+        self._context.status.show(
+            "subsonic",
+            self.tr("Syncing Subsonic playlists…"),
+            progress=StatusProgress(),
+            timeout_ms=0,
+        )
+
+    def _subsonic_sync_finished(self, result: object) -> None:
+        if not isinstance(result, SubsonicSyncResult):
+            return
+        if result.errors:
+            error_preview = "; ".join(result.errors[:2])
+            message = (
+                f"{self.tr('Subsonic sync completed with issues')}: "
+                f"{result.playlists_synced} {self.tr('playlist(s) synced')}, "
+                f"{result.tracks_matched} {self.tr('tracks matched')}. "
+                f"({error_preview})"
+            )
+            self._context.status.show("subsonic", message, timeout_ms=15_000)
+        else:
+            message = (
+                f"{self.tr('Subsonic sync finished')}: "
+                f"{result.playlists_synced} {self.tr('playlist(s) synced')} "
+                f"({result.tracks_matched} {self.tr('tracks matched')}, "
+                f"{result.tracks_unmatched} {self.tr('unmatched')})."
+            )
+            self._context.status.show("subsonic", message, timeout_ms=10_000)
+
+    def _subsonic_error(self, message: str) -> None:
+        self._context.status.show(
+            "subsonic",
+            f"{self.tr('Subsonic sync error')}: {message}",
+            timeout_ms=12_000,
         )
 
     def _navigate_page(self, page_value: str) -> None:
