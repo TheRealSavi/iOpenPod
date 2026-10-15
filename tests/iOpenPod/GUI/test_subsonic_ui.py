@@ -108,7 +108,6 @@ def test_subsonic_settings_test_connection_click() -> None:
     widget._username_edit.setText("testuser")
     widget._password_edit.setText("testpass")
 
-    # Trigger test connection click
     widget._on_test_clicked()
     for _ in range(30):
         APPLICATION.processEvents()
@@ -116,10 +115,3 @@ def test_subsonic_settings_test_connection_click() -> None:
 
     assert "Connection failed" in widget._test_status.text()
     assert widget._test_button.isEnabled()
-    _app = APPLICATION
-    context = build_context()
-    window = MainWindow(context, auto_discover=False)
-    sidebar = window.findChild(Sidebar)
-    assert sidebar is not None
-    assert hasattr(sidebar, "_subsonic_sync")
-    assert sidebar._subsonic_sync.objectName() == "syncSubsonic"

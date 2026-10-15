@@ -281,7 +281,7 @@ class SubsonicController(QObject):
                     elif mapping.mode == SubsonicSyncMode.OVERWRITE:
                         workspace.set_tracks(mapping.target_ipod_id, matched_ids)
                         playlists_synced += 1
-                    else:  # MERGE
+                    else:
                         existing_ids = tuple(
                             entry.track_id for entry in existing.entries
                         )

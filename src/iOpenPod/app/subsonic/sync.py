@@ -121,7 +121,6 @@ def sync_subsonic_playlists(
 
         try:
             if mapping.target_ipod_id is None:
-                # Create a new playlist
                 workspace.create(
                     kind=PlaylistKind.PLAYLIST,
                     name=mapping.subsonic_name,
@@ -131,7 +130,6 @@ def sync_subsonic_playlists(
             else:
                 existing = workspace.playlist(mapping.target_ipod_id)
                 if existing is None:
-                    # Fallback to create if target no longer exists
                     workspace.create(
                         kind=PlaylistKind.PLAYLIST,
                         name=mapping.subsonic_name,
@@ -141,7 +139,7 @@ def sync_subsonic_playlists(
                 elif mapping.mode == SubsonicSyncMode.OVERWRITE:
                     workspace.set_tracks(mapping.target_ipod_id, matched_ids)
                     playlists_synced += 1
-                else:  # MERGE mode
+                else:
                     existing_track_ids = tuple(
                         entry.track_id for entry in existing.entries
                     )

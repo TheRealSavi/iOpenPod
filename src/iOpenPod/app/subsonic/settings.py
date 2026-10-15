@@ -22,14 +22,12 @@ SUBSONIC_USERNAME = SettingDefinition[str](
     default="",
 )
 
-# Tuple of Subsonic playlist IDs selected by the user to sync.
 SUBSONIC_PLAYLIST_IDS = SettingDefinition[tuple[str, ...]](
     key="subsonic/playlist-ids",
     value_type=tuple,
     default=(),
 )
 
-# Mapping of subsonic_id -> target_ipod_id or mode
 SUBSONIC_PLAYLIST_MAPPINGS = SettingDefinition[dict[str, Any]](
     key="subsonic/playlist-mappings",
     value_type=dict,

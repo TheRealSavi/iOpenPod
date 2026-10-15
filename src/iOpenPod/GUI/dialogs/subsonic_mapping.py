@@ -76,7 +76,6 @@ class SubsonicPlaylistMappingDialog(QDialog):
 
         tabs = QTabWidget(self)
 
-        # Tab 1: Mapping
         mapping_scroll = QScrollArea(tabs)
         mapping_scroll.setWidgetResizable(True)
         mapping_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -87,7 +86,6 @@ class SubsonicPlaylistMappingDialog(QDialog):
         )
         mapping_layout.setSpacing(LAYOUT.space_sm)
 
-        # Tab 2: Sync Mode
         mode_scroll = QScrollArea(tabs)
         mode_scroll.setWidgetResizable(True)
         mode_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -99,7 +97,6 @@ class SubsonicPlaylistMappingDialog(QDialog):
         mode_layout.setSpacing(LAYOUT.space_sm)
 
         for pl in self._subsonic_playlists:
-            # Mapping combo
             m_combo = AppComboBox(mapping_content)
             m_combo.addItem(self.tr("New playlist (same name)"), None)
             saved_target = self._saved_mappings.get(pl.playlist_id)
@@ -117,7 +114,6 @@ class SubsonicPlaylistMappingDialog(QDialog):
             self._mapping_combos[pl.playlist_id] = m_combo
             mapping_layout.addRow(QLabel(f"{pl.name} (Subsonic):"), m_combo)
 
-            # Mode combo
             mode_combo = AppComboBox(mode_content)
             mode_combo.addItem(
                 self.tr("Add / Merge into iPod playlist"), SubsonicSyncMode.MERGE
@@ -139,7 +135,6 @@ class SubsonicPlaylistMappingDialog(QDialog):
         tabs.addTab(mode_scroll, self.tr("Sync Mode"))
         layout.addWidget(tabs, 1)
 
-        # Buttons
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             Qt.Orientation.Horizontal,

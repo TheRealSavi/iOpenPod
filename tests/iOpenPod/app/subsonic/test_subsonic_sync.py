@@ -120,7 +120,6 @@ def test_sync_subsonic_playlists_overwrite() -> None:
     t2 = _make_track(200, "Song B", "Artist")
     t3 = _make_track(300, "Song C", "Artist")
 
-    # Existing playlist with track 100
     existing = Playlist(
         playlist_id=5,
         name="My List",
@@ -131,7 +130,6 @@ def test_sync_subsonic_playlists_overwrite() -> None:
     workspace.load(LibrarySnapshot(tracks=(t1, t2, t3), playlists=(existing,)))
 
     client = MagicMock()
-    # Subsonic has songs 200 and 300
     client.get_playlist.return_value = (
         SubsonicSong("s2", "Song B", "Artist"),
         SubsonicSong("s3", "Song C", "Artist"),
@@ -159,7 +157,6 @@ def test_sync_subsonic_playlists_merge_deduplicates() -> None:
     t2 = _make_track(200, "Song B", "Artist")
     t3 = _make_track(300, "Song C", "Artist")
 
-    # Existing playlist with track 100 and 200
     existing = Playlist(
         playlist_id=7,
         name="Party",
@@ -170,7 +167,6 @@ def test_sync_subsonic_playlists_merge_deduplicates() -> None:
     workspace.load(LibrarySnapshot(tracks=(t1, t2, t3), playlists=(existing,)))
 
     client = MagicMock()
-    # Subsonic has songs 200 (duplicate) and 300 (new)
     client.get_playlist.return_value = (
         SubsonicSong("s2", "Song B", "Artist"),
         SubsonicSong("s3", "Song C", "Artist"),

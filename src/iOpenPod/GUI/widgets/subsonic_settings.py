@@ -62,7 +62,6 @@ class SubsonicSettings(QWidget):
 
         group = SettingGroup(self)
 
-        # Server URL
         self._url_edit = QLineEdit(self)
         self._url_edit.setPlaceholderText("https://music.example.com")
         self._url_row = SettingRow(
@@ -73,7 +72,6 @@ class SubsonicSettings(QWidget):
         )
         group.add_row(self._url_row)
 
-        # Username
         self._username_edit = QLineEdit(self)
         self._username_row = SettingRow(
             self.tr("Username"),
@@ -83,7 +81,6 @@ class SubsonicSettings(QWidget):
         )
         group.add_row(self._username_row)
 
-        # Password
         self._password_edit = QLineEdit(self)
         self._password_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._password_row = SettingRow(
@@ -94,7 +91,6 @@ class SubsonicSettings(QWidget):
         )
         group.add_row(self._password_row)
 
-        # Test Connection button & status
         test_panel = QWidget(self)
         test_layout = QHBoxLayout(test_panel)
         test_layout.setContentsMargins(0, 0, 0, 0)
@@ -118,7 +114,6 @@ class SubsonicSettings(QWidget):
         layout.addWidget(group)
         layout.addWidget(self._test_status)
 
-        # Playlists Selection Card
         self._playlists_title = QLabel(self.tr("Subsonic Playlists"), self)
         self._playlists_title.setObjectName("sectionTitle")
         layout.addWidget(self._playlists_title)
@@ -165,7 +160,6 @@ class SubsonicSettings(QWidget):
         scroll_frame_layout = QVBoxLayout(self._scroll_frame)
         scroll_frame_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Scroll area for playlist checkboxes
         self._pl_scroll = QScrollArea(self._scroll_frame)
         self._pl_scroll.setWidgetResizable(True)
         self._pl_scroll.setMaximumHeight(200)
@@ -254,7 +248,6 @@ class SubsonicSettings(QWidget):
         if success:
             self._test_status.setText(self.tr("Connected successfully!"))
             self._test_status.setStyleSheet("color: green;")
-            # Automatically load playlists on successful connection
             self._on_refresh_clicked()
         else:
             self._test_status.setText(f"{self.tr('Connection failed')}: {message}")
@@ -278,7 +271,6 @@ class SubsonicSettings(QWidget):
             return
         self._remote_playlists = playlists_obj
 
-        # Clear existing checkboxes
         for cb in self._checkboxes.values():
             cb.setParent(None)
             cb.deleteLater()
