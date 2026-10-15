@@ -85,7 +85,7 @@ class SubsonicSettings(QWidget):
         self._password_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._password_row = SettingRow(
             self.tr("Password"),
-            self.tr("Account password (authenticated via salt+token)."),
+            "",
             self._password_edit,
             self,
         )
@@ -325,7 +325,7 @@ class SubsonicSettings(QWidget):
         )
         self._password_row.set_copy(
             self.tr("Password"),
-            self.tr("Account password (authenticated via salt+token)."),
+            "",
         )
         self._test_button.setText(self.tr("Test Connection"))
         self._playlists_title.setText(self.tr("Subsonic Playlists"))
