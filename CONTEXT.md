@@ -292,6 +292,9 @@ with respect to playback evidence. Invalid evidence or a failed commit stops
 selection; no pending projected Library is published. Unsupported
 positional data retains the conservative preservation/remapping policy. See
 [the sidecar contract](docs/playback-sidecars.md) and ADR-0100.
+Short Track headers expand only when an edit requires it and the selected Device
+Profile supports the larger format. Skip evidence is never discarded to fit a
+retained header; no-op byte preservation remains mandatory. See ADR-0144.
 Oversized Photo containers become bounded PNG stills, with separate Host and iPod
 content digests. Photo sources now use Pillow's existing pixel limits; ordinary
 6K and 16K widescreen originals retain their encoded bytes. Preparation and previews

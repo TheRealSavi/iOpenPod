@@ -129,3 +129,17 @@ DEFINITION: ChunkDefinition[MhitHeader] = ChunkDefinition(
     body_kind="children",
     child_marker_groups=(frozenset({MHOD_DEFINITION.marker}),),
 )
+
+
+def header_size_for_version(version: int) -> int:
+    """Creation/expansion policy for an explicitly supplied device DB version.
+
+    Retained records may use other sizes. This is not parser validation and
+    must never normalize an unchanged record (ADR-0144).
+    """
+    for maximum, size in zip(
+        (0x12, 0x19, 0x2D), DEFINITION.header_sizes[:-1], strict=True
+    ):
+        if version <= maximum:
+            return size
+    return DEFINITION.header_sizes[-1]

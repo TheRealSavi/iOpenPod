@@ -4,7 +4,7 @@ from functools import lru_cache
 
 from iPodDB.device_time import TimeConversion, unix_to_mac
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import DEFINITION as MHIT
-from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader, header_size_for_version
 from iPodDB.library._field_policy import DATE_FIELDS, METADATA_FIELDS, TRACK_FIELDS
 from iPodDB.library._native_values import (
     encode_media_types,
@@ -22,6 +22,11 @@ _VIDEO_MIRROR = next(
 )
 _NOT_PLAYED = next(
     f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "not_played_flag"
+)
+_SORT_INDICATORS = next(
+    f.schema
+    for f in binary_fields(MhitHeader)
+    if f.attribute_name == "sort_mhod_indicators"
 )
 
 # Identity, resource and browse-group verifiers establish these independently.
@@ -70,6 +75,7 @@ def track_field_expectations(
     before: Track | None,
     desired: Track,
     timezone_offset: TimeConversion,
+    database_version: int | None = None,
 ) -> dict[str, ChunkFieldValue]:
     """Retain every defined field unless its semantic dependency changed.
 
@@ -85,6 +91,16 @@ def track_field_expectations(
         for f in binary_fields(MhitHeader)
         if f.attribute_name not in _VERIFIED_SEPARATELY
     }
+    if source is not None:
+        for field in binary_fields(MhitHeader):
+            schema = field.schema
+            if (
+                schema.encoding == "raw"
+                and schema.offset < len(source.raw_header) < schema.offset + schema.size
+            ):
+                assert isinstance(schema.default, bytes)
+                prefix = source.raw_header[schema.offset :]
+                expected[field.attribute_name] = prefix + schema.default[len(prefix) :]
     for owner, old, mapping in (
         (desired, before, TRACK_FIELDS),
         (desired.metadata, before.metadata if before else None, METADATA_FIELDS),
@@ -112,7 +128,21 @@ def track_field_expectations(
     header_length = (
         source.generic_header.header_length if source else MHIT.default_header_size
     )
-    if changed("played") and (_NOT_PLAYED.offset + _NOT_PLAYED.size <= header_length):
+    needs_new_played_field = (
+        _NOT_PLAYED.offset + _NOT_PLAYED.size > header_length
+        and meta.played != (desired.play_count > 0)
+        and before is not None
+        and desired.play_count != before.play_count
+    )
+    if (changed("played") or needs_new_played_field) and (
+        _NOT_PLAYED.offset + _NOT_PLAYED.size <= header_length
+        or (
+            meta.played != (desired.play_count > 0)
+            and database_version is not None
+            and header_size_for_version(database_version)
+            >= _NOT_PLAYED.offset + _NOT_PLAYED.size
+        )
+    ):
         expected["not_played_flag"] = 1 if meta.played else 2
     if changed("content_advisory"):
         expected["explicit_flag"] = {
@@ -150,6 +180,15 @@ def track_field_expectations(
             expected["video_flag_2"] = expected["video_flag"]
 
     indicators = bytearray((prior or MhitHeader()).sort_mhod_indicators)
+    partial_sort = (
+        source is not None
+        and _SORT_INDICATORS.offset
+        < header_length
+        < _SORT_INDICATORS.offset + _SORT_INDICATORS.size
+    )
+    if partial_sort and source is not None:
+        prefix = source.raw_header[_SORT_INDICATORS.offset :]
+        indicators[: len(prefix)] = prefix
     for index, name in enumerate(
         (
             "sort_title",

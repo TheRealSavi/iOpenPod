@@ -62,6 +62,8 @@ class WriteTarget:
     """Capabilities for these artifacts; supplied by the application, never inferred."""
 
     checksum: WriteChecksum = WriteChecksum.NONE
+    # Selected Device Profile capability, not the retained MHBD version.
+    database_version: int | None = field(default=None, kw_only=True)
     firewire_guid: bytes = b""
     max_database_bytes: int = 256 * 1024 * 1024
     compressed_database: bool = False

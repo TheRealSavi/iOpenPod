@@ -8646,6 +8646,10 @@ Playlists: %3</translation>
         <translation>Die aktuellen Inhalte wurden behalten und die Wiederherstellung abgelehnt. Die aktuelle Mediathek konnte nicht geladen werden. Die unterbrochene Synchronisierung kann unvollständig sein. Wiederherstellungskopien bleiben neben declined-transaction.json erhalten. Aktualisieren Sie die iPod-Auswahl nach der Reparatur der Mediathek. {detail}</translation>
     </message>
     <message>
+        <source>Database version must be a positive unsigned 32-bit value.</source>
+        <translation>Die Datenbankversion muss ein positiver vorzeichenloser 32-Bit-Wert sein.</translation>
+    </message>
+    <message>
         <source>Daylight saving switch</source>
         <translation>Sommerzeitumschaltung</translation>
     </message>
@@ -9256,6 +9260,10 @@ Playlists: %3</translation>
     <message>
         <source>Prepared a still PNG from the first image frame for the iPod Photo viewer. The Host original is unchanged.</source>
         <translation>Für die iPod-Fotoansicht wurde ein PNG-Standbild aus dem ersten Bild erstellt. Das Original auf dem Computer bleibt unverändert.</translation>
+    </message>
+    <message>
+        <source>Prepared database has an unexpected format version.</source>
+        <translation>Die vorbereitete Datenbank hat eine unerwartete Formatversion.</translation>
     </message>
     <message>
         <source>Prepared native browse relationships do not match the source and desired Library.</source>

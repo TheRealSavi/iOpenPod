@@ -11,7 +11,7 @@ from iPodDB.iTunesDB.builder.build_iTunesDB import (
     new_url_mhod,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import DEFINITION as MHIT
-from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader, header_size_for_version
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
@@ -43,6 +43,10 @@ from iPodDB.library._native_values import (
     volume_adjustment_to_native,
 )
 from iPodDB.library._projection import unknown_media_bits
+from iPodDB.library._track_header_expansion import (
+    extension_values,
+    required_header_length,
+)
 from iPodDB.library.models import ContentAdvisory, MediaType, Track, TrackMetadata
 from iPodDB.library.writing import (
     IssueSeverity,
@@ -58,6 +62,11 @@ _VIDEO_MIRROR = next(
 )
 _NOT_PLAYED = next(
     f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "not_played_flag"
+)
+_SORT_INDICATORS = next(
+    f.schema
+    for f in binary_fields(MhitHeader)
+    if f.attribute_name == "sort_mhod_indicators"
 )
 
 
@@ -245,6 +254,7 @@ def edit_track(
     issues: list[WriteIssue],
     *,
     lyrics: PreparedLyrics | None = None,
+    database_version: int | None = None,
 ) -> ParsedChunk[MhitHeader]:
     if chunk is None:
         chunk = new_itunes_chunk(
@@ -310,8 +320,24 @@ def edit_track(
         values["sample_rate_2"] = float(meta.sample_rate_hz)
     if meta.checked != prior.checked or old is None:
         values["checked_flag"] = int(not meta.checked)
-    if meta.played != prior.played:
-        if _NOT_PLAYED.offset + _NOT_PLAYED.size <= chunk.generic_header.header_length:
+    needs_new_played_field = (
+        _NOT_PLAYED.offset + _NOT_PLAYED.size > chunk.generic_header.header_length
+        and meta.played != (new.play_count > 0)
+        and old is not None
+        and new.play_count != old.play_count
+    )
+    if meta.played != prior.played or needs_new_played_field:
+        if (
+            _NOT_PLAYED.offset + _NOT_PLAYED.size <= chunk.generic_header.header_length
+            or (
+                meta.played != (new.play_count > 0)
+                and database_version is not None
+                and (
+                    header_size_for_version(database_version)
+                    >= _NOT_PLAYED.offset + _NOT_PLAYED.size
+                )
+            )
+        ):
             values["not_played_flag"] = 1 if meta.played else 2
         elif meta.played != (new.play_count > 0):
             # Original-format headers derive played state from the play count.
@@ -362,6 +388,14 @@ def edit_track(
     if meta.lyrics != prior.lyrics:
         values["lyrics_flag"] = int(bool(meta.lyrics))
     indicators = bytearray(header.sort_mhod_indicators)
+    if (
+        _SORT_INDICATORS.offset
+        < chunk.generic_header.header_length
+        < _SORT_INDICATORS.offset + _SORT_INDICATORS.size
+    ):
+        prefix = chunk.raw_header[_SORT_INDICATORS.offset :]
+        indicators[: len(prefix)] = prefix
+    original_indicators = bytes(indicators)
     for index, name in enumerate(
         (
             "sort_title",
@@ -378,7 +412,7 @@ def edit_track(
             indicators[index] = (indicators[index] & ~1) | int(
                 bool(getattr(meta, name))
             )
-    if bytes(indicators) != header.sort_mhod_indicators:
+    if bytes(indicators) != original_indicators:
         values["sort_mhod_indicators"] = bytes(indicators)
     if meta.chapters != prior.chapters:
         matches = [
@@ -471,6 +505,27 @@ def edit_track(
         values["size"] = lyrics.file.size
         if old is None or header.size_2:
             values["size_2"] = lyrics.file.size
+    length = required_header_length(chunk, values, database_version)
+    if (
+        _SORT_INDICATORS.offset
+        < length
+        < _SORT_INDICATORS.offset + _SORT_INDICATORS.size
+        and bytes(indicators) != original_indicators
+    ):
+        # A default-valued clear would otherwise be silently skipped by the
+        # bounded binary writer, leaving the original partial flags in place.
+        raise ValueError("Cannot store edited sort flags in this Track header.")
+    if length > chunk.generic_header.header_length:
+        seeds = extension_values(chunk, new, length)
+        # An explicitly edited primary video flag also supplies its new mirror.
+        if "video_flag_2" in seeds and "video_flag" in values:
+            seeds["video_flag_2"] = values["video_flag"]
+        values = {**seeds, **values}
+        chunk = replace(
+            chunk,
+            generic_header=replace(chunk.generic_header, header_length=length),
+            raw_header=chunk.raw_header.ljust(length, b"\0"),
+        )
     result = replace(chunk, header=replace(header, **values))
     # Aggregate representability errors for every changed fixed field.
     for field in binary_fields(result.header):

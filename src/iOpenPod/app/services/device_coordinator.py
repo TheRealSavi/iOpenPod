@@ -1288,6 +1288,7 @@ class DeviceCoordinator:
                 ) = _read_sqlite_postprocess_commands(active.session)
             target = WriteTarget(
                 checksum=checksum,
+                database_version=capabilities.database.binary_version,
                 firewire_guid=guid,
                 max_database_bytes=capabilities.database.max_database_bytes,
                 compressed_database=capabilities.database.supports_compressed_database,

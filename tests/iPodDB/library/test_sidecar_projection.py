@@ -213,25 +213,23 @@ def short_header_library(header_length: int = 0x9C) -> IPodLibrary:
     return IPodLibrary(write_iTunesDB(document))
 
 
-def test_skip_evidence_beyond_a_short_track_header_does_not_block_loading() -> None:
+def test_skip_evidence_beyond_a_short_track_header_is_never_discarded() -> None:
     source = short_header_library()
     loaded = source.with_sidecars((PlaybackSidecar("Play Counts", counts()),))
     assert not loaded.sidecar_issues
     track = loaded.snapshot.tracks[0]
     assert track.play_count == 3 and track.rating == 80
-    assert track.metadata.skip_count == track.metadata.last_skipped == 0
+    assert track.metadata.skip_count == 2
+    assert track.metadata.last_skipped == mac_to_unix(3_800_000_100, loaded.device_time)
     assert track.metadata.played
     result = loaded.prepare(
         loaded.analyze(loaded.begin_draft()),
         WriteResources(pending_playback_sidecars=False),
     )
-    assert result.prepared is not None, result.issues
-    reloaded = IPodLibrary(result.prepared.itunes)
-    assert reloaded.snapshot.tracks[0] == track
-    assert all(
-        s.chunk.generic_header.header_length == 0x9C
-        for s in parse_iTunesDB(result.prepared.itunes).find_chunks(MhitHeader)
-    )
+    # Without selected-device capabilities, keep the evidence pending.
+    assert result.prepared is None
+    assert loaded.serialize() == source.serialize()
+    assert loaded.consumed_sidecars
 
 
 @pytest.mark.parametrize("play_count,played", [(4, True), (0, False)])

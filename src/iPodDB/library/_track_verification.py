@@ -7,6 +7,10 @@ from dataclasses import replace
 from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.library._track_header_expansion import (
+    extension_values,
+    required_header_length,
+)
 from iPodDB.library._track_header_verification import (
     track_field_expectations,
     unmodeled_header_ranges,
@@ -30,6 +34,8 @@ def verify_native_tracks(
     mappings: tuple[IdentityMapping, ...],
     resources: WriteResources,
     device_time: TimeConversion = 0,
+    *,
+    database_version: int | None = None,
 ) -> tuple[WriteIssue, ...]:
     """Compare reparsed fields with source identities and captured caller facts.
 
@@ -53,6 +59,7 @@ def verify_native_tracks(
     }
     allocated: set[int] = set()
     issues: list[WriteIssue] = []
+    expanded = False
     for track in desired.tracks:
         tagged = lyrics.get(track.track_id)
         if tagged is not None:
@@ -64,6 +71,16 @@ def verify_native_tracks(
         actual = output_chunk.header
         prior = source.get(track.track_id)
         prior_track = previous.get(track.track_id)
+        original_chunk = source_chunks.get(track.track_id)
+        expected_fields = track_field_expectations(
+            original_chunk, prior_track, track, device_time, database_version
+        )
+        prepared = media.get(track.track_id)
+        if prepared is not None:
+            expected_fields.update(
+                mpeg_audio_type=prepared.mpeg_audio_type,
+                gapless_audio_payload_size=prepared.gapless_audio_payload_size,
+            )
 
         def error(
             field: str,
@@ -102,9 +119,61 @@ def verify_native_tracks(
             if value != expected and not unchanged_nan:
                 error(field, expected, value)
 
+        extension: dict[str, ChunkFieldValue] = {}
+        if original_chunk is not None:
+            extent_fields = dict(expected_fields)
+            for binary_field in binary_fields(MhitHeader):
+                schema = binary_field.schema
+                if schema.encoding != "raw" or not (
+                    schema.offset
+                    < original_chunk.generic_header.header_length
+                    < schema.offset + schema.size
+                ):
+                    continue
+                # Native byte changes, rather than text changes or parser
+                # defaults, decide whether this partial field needs growth.
+                assert isinstance(schema.default, bytes)
+                prefix = original_chunk.raw_header[schema.offset :]
+                retained = prefix + schema.default[len(prefix) :]
+                if expected_fields.get(binary_field.attribute_name) == retained:
+                    extent_fields.pop(binary_field.attribute_name, None)
+            length = required_header_length(
+                original_chunk, extent_fields, database_version
+            )
+            check("header_length", length, output_chunk.generic_header.header_length)
+            expanded |= length > original_chunk.generic_header.header_length
+            try:
+                extension = extension_values(original_chunk, track, length)
+            except ValueError as failure:
+                error(
+                    "header_length",
+                    str(failure),
+                    output_chunk.generic_header.header_length,
+                )
+            if "video_flag_2" in extension:
+                extension["video_flag_2"] = expected_fields["video_flag"]
+            if (
+                "sort_mhod_indicators" in extension
+                and "sort_mhod_indicators" in extent_fields
+            ):
+                extension["sort_mhod_indicators"] = expected_fields[
+                    "sort_mhod_indicators"
+                ]
+            expected_fields.update(
+                {
+                    name: value
+                    for name, value in extension.items()
+                    # Artwork reconciliation owns fields excluded above.
+                    if name in expected_fields
+                }
+            )
         if prior is not None:
             check("db_track_id", prior.db_track_id, actual.db_track_id)
-            check("db_track_id_2", prior.db_track_id_2, actual.db_track_id_2)
+            check(
+                "db_track_id_2",
+                extension.get("db_track_id_2", prior.db_track_id_2),
+                actual.db_track_id_2,
+            )
         else:
             if (
                 not actual.db_track_id
@@ -119,7 +188,6 @@ def verify_native_tracks(
             allocated.add(actual.db_track_id)
             check("db_track_id_2", actual.db_track_id, actual.db_track_id_2)
 
-        prepared = media.get(track.track_id)
         if prepared is not None:
             check("filetype", prepared.filetype, actual.filetype)
             check("mp3_flag", prepared.mp3_flag, actual.mp3_flag)
@@ -166,11 +234,20 @@ def verify_native_tracks(
             )
         elif prior is not None:
             check("sample_rate_2", prior.sample_rate_2, actual.sample_rate_2)
-        original_chunk = source_chunks.get(track.track_id)
-        for field, expected in track_field_expectations(
-            original_chunk, prior_track, track, device_time
-        ).items():
-            check(field, expected, getattr(actual, field))
+        schemas = {f.attribute_name: f.schema for f in binary_fields(MhitHeader)}
+        for field, expected in expected_fields.items():
+            schema = schemas[field]
+            if (
+                schema.encoding == "raw"
+                and schema.offset
+                < len(output_chunk.raw_header)
+                < schema.offset + schema.size
+            ):
+                assert isinstance(schema.default, bytes)
+                prefix = output_chunk.raw_header[schema.offset :]
+                check(field, expected, prefix + schema.default[len(prefix) :])
+            else:
+                check(field, expected, getattr(actual, field))
         original_header = original_chunk.raw_header if original_chunk else b""
         output_header = output_chunk.raw_header
         float_start = _SAMPLE_RATE_2.offset
@@ -203,4 +280,19 @@ def verify_native_tracks(
                     hashlib.sha256(actual_bytes).hexdigest(),
                     offset=selection.chunk.offset + start,
                 )
+    expected_version = (
+        max(original.header.version, database_version)
+        if expanded and database_version is not None
+        else original.header.version
+    )
+    if checked.header.version != expected_version:
+        issues.append(
+            WriteIssue(
+                "verification.database_version",
+                "Prepared database has an unexpected format version.",
+                phase="verification",
+                field="version",
+                artifact="iTunesDB",
+            )
+        )
     return tuple(issues)
