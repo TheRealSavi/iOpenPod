@@ -9178,10 +9178,6 @@ Playlists: %3</translation>
         <translation>Los metadatos de posición del episodio de pódcast deben hacer referencia a su identificador de fila nativo.</translation>
     </message>
     <message>
-        <source>Podcast episodes were grouped by show; the prepared Playlist contains the resulting order.</source>
-        <translation>Los episodios de pódcast se agruparon por programa; la lista preparada contiene el orden resultante.</translation>
-    </message>
-    <message>
         <source>Podcast files were verified, but the operating system did not confirm a complete device flush. Safe-eject before unplugging.</source>
         <translation>Los archivos de pódcast se verificaron, pero el sistema operativo no confirmó el guardado de todos los datos pendientes. Expulsa de forma segura antes de desconectar.</translation>
     </message>
@@ -10312,10 +10308,6 @@ Playlists: %3</translation>
     <message>
         <source>The source timezone is invalid; unchanged date bytes will be retained.</source>
         <translation type="vanished">La zona horaria de origen no es válida; se conservarán los bytes de fecha sin cambios.</translation>
-    </message>
-    <message>
-        <source>The special Podcasts playlist was updated to contain the resulting podcast Tracks.</source>
-        <translation>La lista especial de pódcast se actualizó para contener las pistas de pódcast resultantes.</translation>
     </message>
     <message>
         <source>The transaction is unfinished and requires recovery before further changes.</source>

@@ -736,9 +736,11 @@ preserved. See the [writing audit](library-writing-audit-2026-09-11.md) for rema
 grouping-policy differences from the Original writer.
 
 Podcast grouping belongs only to dataset 3's special Podcasts playlist, including
-its first episode. Episodes are grouped by album, with the resulting order reported
-when it differs from the draft. Relevant podcast Track changes update special saved
+its first episode. Episodes are grouped by album, with the resulting order retained
+in the Prepared Library. Relevant podcast Track changes update special saved
 membership and can create that Playlist when dataset 3 establishes target support.
+These routine membership and ordering changes do not produce informational
+diagnostics. See [ADR-0146](adr/0146-remove-routine-podcast-and-reencoding-notices.md).
 The semantic writer does not evaluate Smart Playlists or firmware category rules.
 The Application Layer refreshes supported Smart Playlists with Live updating enabled
 before submission. Dataset 5

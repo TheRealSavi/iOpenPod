@@ -457,8 +457,6 @@ def resolve_transcode(
             "This iPod does not support ALAC. Preserved lossless audio as 16-bit WAV; enable Transcode Lossless into Lossy to reduce device space and USB transfer time."
         )
     else:
-        if not lossless:
-            warnings.append("Re-encoding a lossy source can reduce audio quality.")
         encoding, arguments = _lossy_arguments(settings, available_encoders, spoken)
     args = (
         "-map",

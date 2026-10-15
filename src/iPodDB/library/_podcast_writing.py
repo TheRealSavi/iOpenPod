@@ -22,7 +22,7 @@ from iPodDB.library._playlist_writing import position_item
 from iPodDB.library._track_writing import edit_text
 from iPodDB.library.models import LibrarySnapshot, MediaKind
 from iPodDB.library.playlists import Playlist, PlaylistEntry, PlaylistKind
-from iPodDB.library.writing import IssueSeverity, WriteIssue
+from iPodDB.library.writing import WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ def normalize_podcast_order(
     desired: LibrarySnapshot,
     issues: list[WriteIssue],
 ) -> tuple[LibrarySnapshot, frozenset[int]]:
-    """Firmware requires contiguous shows; report the resulting saved order."""
+    """Maintain podcast membership and the contiguous shows required by firmware."""
     special = {
         s.chunk.header.playlist_id
         for kind, s in playlist_rows(document)
@@ -102,18 +102,6 @@ def normalize_podcast_order(
                     retained_entry = PlaylistEntry(entry_id, track_id)
                 synced_entries.append(retained_entry)
             synced.append(replace(playlist, entries=tuple(synced_entries)))
-            if tuple(synced_entries) != playlist.entries:
-                issues.append(
-                    WriteIssue(
-                        "playlist.podcast_membership",
-                        "The special Podcasts playlist was updated to contain the resulting podcast Tracks.",
-                        IssueSeverity.INFO,
-                        "reconciliation",
-                        "playlist",
-                        playlist.playlist_id,
-                        "entries",
-                    )
-                )
         desired = replace(desired, playlists=tuple(synced))
     prior = {p.playlist_id: p for p in original.playlists}
     old_albums = {t.track_id: t.album for t in original.tracks}
@@ -141,17 +129,6 @@ def normalize_podcast_order(
                 playlist.playlist_id,
                 len(entries),
                 len(groups),
-            )
-            issues.append(
-                WriteIssue(
-                    "playlist.podcast_group_order",
-                    "Podcast episodes were grouped by show; the prepared Playlist contains the resulting order.",
-                    IssueSeverity.INFO,
-                    "reconciliation",
-                    "playlist",
-                    playlist.playlist_id,
-                    "entries",
-                )
             )
         output.append(replace(playlist, entries=entries))
     return replace(desired, playlists=tuple(output)), generated

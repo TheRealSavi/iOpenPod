@@ -206,11 +206,9 @@ def test_empty_podcasts_gains_groups_only_in_dataset3(
     assert result.prepared is not None, result.issues
     expected = (1,) if len(track_ids) == 1 else (1, 1, 2)
     assert result.prepared.snapshot.playlists[0].track_ids == expected
-    group_order = [
-        issue for issue in result.issues if issue.code == "playlist.podcast_group_order"
-    ]
-    assert bool(group_order) == (len(track_ids) > 1)
-    assert all(issue.severity is IssueSeverity.INFO for issue in group_order)
+    assert not any(
+        issue.code == "playlist.podcast_group_order" for issue in result.issues
+    )
     checked = parse_iTunesDB(result.prepared.itunes)
     standard = rows(checked, 2)[1].find_chunks(MhipHeader)
     grouped = rows(checked, 3)[1].find_chunks(MhipHeader)
@@ -353,11 +351,9 @@ def test_podcast_track_changes_create_and_update_special_membership() -> None:
     )
     result = source.prepare(source.analyze(source.begin_draft(desired)))
     assert result.prepared is not None, result.issues
-    membership = [
-        issue for issue in result.issues if issue.code == "playlist.podcast_membership"
-    ]
-    assert len(membership) == 1
-    assert membership[0].severity is IssueSeverity.INFO
+    assert not any(
+        issue.code == "playlist.podcast_membership" for issue in result.issues
+    )
     podcasts = next(
         p for p in result.prepared.snapshot.playlists if p.name == "Podcasts"
     )
@@ -384,11 +380,9 @@ def test_podcast_track_changes_create_and_update_special_membership() -> None:
     )
     updated = reloaded.prepare(reloaded.analyze(reloaded.begin_draft(cleared)))
     assert updated.prepared is not None, updated.issues
-    membership = [
-        issue for issue in updated.issues if issue.code == "playlist.podcast_membership"
-    ]
-    assert len(membership) == 1
-    assert membership[0].severity is IssueSeverity.INFO
+    assert not any(
+        issue.code == "playlist.podcast_membership" for issue in updated.issues
+    )
     assert (
         next(
             p

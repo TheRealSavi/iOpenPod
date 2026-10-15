@@ -463,22 +463,17 @@ def test_other_conversion_notices_are_grouped_in_the_result() -> None:
 @pytest.mark.parametrize(
     ("code", "message"),
     (
-        ("sync.media_warning", "Re-encoding a lossy source can reduce audio quality."),
+        (
+            "sync.media_warning",
+            "This iPod does not support ALAC. Preserved lossless audio as 16-bit WAV.",
+        ),
         (
             "sync.podcast_media_warning",
-            "Re-encoding a lossy source can reduce audio quality.",
-        ),
-        (
-            "playlist.podcast_membership",
-            "The special Podcasts playlist was updated to contain the resulting podcast Tracks.",
-        ),
-        (
-            "playlist.podcast_group_order",
-            "Podcast episodes were grouped by show; the prepared Playlist contains the resulting order.",
+            "Resampled 96000 Hz audio to 44100 Hz for the selected device and settings.",
         ),
     ),
 )
-def test_routine_sync_notices_are_available_as_information(
+def test_media_adjustment_notices_are_available_as_information(
     code: str, message: str
 ) -> None:
     page = SyncExecutionPage()
@@ -508,7 +503,7 @@ def test_routine_sync_notices_are_available_as_information(
         APPLICATION.processEvents()
 
 
-def test_expected_notices_do_not_hide_other_podcast_diagnostics_or_recovery() -> None:
+def test_podcast_diagnostics_and_recovery_remain_available() -> None:
     page = SyncExecutionPage()
     try:
         page.show_result(
@@ -516,19 +511,14 @@ def test_expected_notices_do_not_hide_other_podcast_diagnostics_or_recovery() ->
                 SyncExecutionStatus.PARTIAL,
                 issues=(
                     WriteIssue(
-                        "playlist.podcast_membership",
-                        "Membership updated",
-                        IssueSeverity.INFO,
-                    ),
-                    WriteIssue(
                         "sync.podcast_media_warning",
                         "Output sample rate was adjusted.",
                         IssueSeverity.INFO,
                     ),
                     WriteIssue("sync.podcast_failed", "Episode download failed."),
                     WriteIssue(
-                        "playlist.podcast_group_order",
-                        "Cannot safely group episodes.",
+                        "sync.podcast_fingerprint_unavailable",
+                        "Podcast Episode could not be fingerprinted.",
                         IssueSeverity.WARNING,
                     ),
                 ),
@@ -538,10 +528,9 @@ def test_expected_notices_do_not_hide_other_podcast_diagnostics_or_recovery() ->
         details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
         assert details is not None and details.isHidden()
         text = details.toPlainText()
-        assert "Membership updated" in text
         assert "Output sample rate was adjusted." in text
         assert "Episode download failed." in text
-        assert "Cannot safely group episodes." in text
+        assert "Podcast Episode could not be fingerprinted." in text
         assert "Recovery journal:" in text
     finally:
         page.deleteLater()

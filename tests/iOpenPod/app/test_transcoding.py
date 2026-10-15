@@ -207,6 +207,24 @@ def test_spoken_word_overrides_lossless_and_encodes_mono_at_selected_bitrate(
         assert result.inspection.audio_streams[0].bitrate_bps == 48000
 
 
+@pytest.mark.parametrize("spoken_word", [False, True])
+def test_lossy_reencoding_does_not_generate_a_routine_warning(
+    tmp_path: Path, profile: DeviceProfile, spoken_word: bool
+) -> None:
+    inspection = MediaInspector().inspect(
+        source(tmp_path, "tone.mp3"), checkpoint=lambda: None
+    )
+    plan = resolve_transcode(
+        inspection,
+        profile,
+        TranscodeSettings(retranscode_lossy=not spoken_word),
+        frozenset(("aac",)),
+        spoken_word=spoken_word,
+    )
+    assert plan.requires_transcode
+    assert plan.warnings == ()
+
+
 def test_encoder_options_and_auto_policy_use_only_available_encoders(
     tmp_path: Path, profile: DeviceProfile, transcoder: MediaTranscoder
 ) -> None:

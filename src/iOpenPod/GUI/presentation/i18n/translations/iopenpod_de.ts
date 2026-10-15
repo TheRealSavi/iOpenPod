@@ -9178,10 +9178,6 @@ Playlists: %3</translation>
         <translation>Positionsmetadaten einer Podcast-Folge müssen auf ihre Originalzeilenkennung verweisen.</translation>
     </message>
     <message>
-        <source>Podcast episodes were grouped by show; the prepared Playlist contains the resulting order.</source>
-        <translation>Podcast-Folgen wurden nach Sendung gruppiert. Die vorbereitete Wiedergabeliste enthält die daraus entstandene Reihenfolge.</translation>
-    </message>
-    <message>
         <source>Podcast files were verified, but the operating system did not confirm a complete device flush. Safe-eject before unplugging.</source>
         <translation>Podcast-Dateien wurden geprüft. Das Betriebssystem hat jedoch den Abschluss aller Schreibvorgänge auf dem Gerät nicht bestätigt. Werfen Sie den iPod vor dem Trennen sicher aus.</translation>
     </message>
@@ -10312,10 +10308,6 @@ Playlists: %3</translation>
     <message>
         <source>The source timezone is invalid; unchanged date bytes will be retained.</source>
         <translation type="vanished">Die Zeitzone der Quelle ist ungültig. Unveränderte Datumsbytes bleiben erhalten.</translation>
-    </message>
-    <message>
-        <source>The special Podcasts playlist was updated to contain the resulting podcast Tracks.</source>
-        <translation>Die besondere Podcasts-Wiedergabeliste wurde aktualisiert und enthält nun die resultierenden Podcast-Titel.</translation>
     </message>
     <message>
         <source>The transaction is unfinished and requires recovery before further changes.</source>
