@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
@@ -18,9 +19,10 @@ from .models import (
 from .sync import index_library_tracks, match_subsonic_entries
 
 if TYPE_CHECKING:
-
     from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.library_workspace import LibraryWorkspace
+
+    from .models import SubsonicPlaylist
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +88,7 @@ class _SyncPlaylistsWork(QRunnable):
         self.client = client
         self.mappings = mappings
         self.track_index = track_index
+        self.cancelled = threading.Event()
         self.signals = _SyncSignals()
 
     def run(self) -> None:
@@ -93,6 +96,8 @@ class _SyncPlaylistsWork(QRunnable):
             matched_items: list[tuple[SubsonicPlaylistMapping, tuple[int, ...], int]] = []
             errors: list[str] = []
             for mapping in self.mappings:
+                if self.cancelled.is_set():
+                    return
                 try:
                     entries = self.client.get_playlist(mapping.subsonic_id)
                 except Exception as exc:
@@ -101,14 +106,20 @@ class _SyncPlaylistsWork(QRunnable):
                     errors.append(err_msg)
                     continue
 
+                if self.cancelled.is_set():
+                    return
+
                 matched_ids, unmatched = match_subsonic_entries(
                     entries, self.track_index
                 )
                 matched_items.append((mapping, matched_ids, unmatched))
 
+            if self.cancelled.is_set():
+                return
             self.signals.matched.emit(tuple(matched_items), tuple(errors))
         except Exception as exc:
-            self.signals.error.emit(f"Subsonic sync failed: {exc}")
+            if not self.cancelled.is_set():
+                self.signals.error.emit(f"Subsonic sync failed: {exc}")
 
 
 class SubsonicController(QObject):
@@ -132,6 +143,11 @@ class SubsonicController(QObject):
         self._test_job: _TestConnectionWork | None = None
         self._load_job: _LoadPlaylistsWork | None = None
         self._sync_job: _SyncPlaylistsWork | None = None
+        self._cached_playlists: tuple[SubsonicPlaylist, ...] = ()
+
+    @property
+    def cached_playlists(self) -> tuple[SubsonicPlaylist, ...]:
+        return self._cached_playlists
 
     @property
     def settings(self) -> SettingsService:
@@ -166,6 +182,8 @@ class SubsonicController(QObject):
     @Slot(object)
     def _handle_playlists_loaded(self, playlists: object) -> None:
         self._load_job = None
+        if isinstance(playlists, tuple):
+            self._cached_playlists = playlists
         self.playlistsLoaded.emit(playlists)
 
     @Slot(str)
@@ -277,3 +295,15 @@ class SubsonicController(QObject):
     def _handle_sync_error(self, message: str) -> None:
         self._sync_job = None
         self.error.emit(message)
+
+    def cancel(self) -> None:
+        """Cancel any active playlist sync work."""
+        if self._sync_job is not None:
+            self._sync_job.cancelled.set()
+            self._sync_job = None
+
+    def shutdown(self) -> None:
+        """Cancel pending tasks and release references before exit."""
+        self.cancel()
+        self._test_job = None
+        self._load_job = None

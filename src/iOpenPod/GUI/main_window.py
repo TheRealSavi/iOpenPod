@@ -250,6 +250,10 @@ class MainWindow(QMainWindow):
         self._subsonic.error.connect(
             self._subsonic_error, Qt.ConnectionType.QueuedConnection
         )
+        context.device_controller.ejectStarted.connect(self._subsonic.cancel)
+        context.device_controller.activeIPodChanged.connect(
+            lambda _: self._subsonic.cancel()
+        )
         self._sync_controller = SyncController(
             SyncExecutor(
                 context.device_coordinator,
@@ -1156,6 +1160,7 @@ class MainWindow(QMainWindow):
         self._host_drop.shutdown()
         self._media_tools.shutdown()
         self._scrobbling.shutdown()
+        self._subsonic.shutdown()
         self._exit_synesthesia_fullscreen()
         self._sync_controller.shutdown()
         self._normalization.shutdown()
@@ -1504,23 +1509,15 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self._context.status.show(
-            "subsonic",
-            self.tr("Loading Subsonic playlists…"),
-            timeout_ms=0,
-        )
-        try:
-            from iOpenPod.app.subsonic.client import SubsonicClient
+        all_playlists = self._subsonic.cached_playlists
+        if not all_playlists:
+            try:
+                from iOpenPod.app.subsonic.client import SubsonicClient
 
-            client = SubsonicClient(url, username, password)
-            all_playlists = client.get_playlists()
-        except Exception as exc:
-            self._context.status.show(
-                "subsonic",
-                f"{self.tr('Could not connect to Subsonic server')}: {exc}",
-                timeout_ms=10_000,
-            )
-            return
+                client = SubsonicClient(url, username, password, timeout=5)
+                all_playlists = client.get_playlists()
+            except Exception as exc:
+                logger.debug("Could not pre-fetch Subsonic playlists: %s", exc)
 
         selected_playlists = tuple(
             p for p in all_playlists if p.playlist_id in saved_ids
@@ -1592,12 +1589,13 @@ class MainWindow(QMainWindow):
             self._context.status.show("subsonic", message, timeout_ms=15_000)
         else:
             message = (
-                f"{self.tr('Subsonic sync finished')}: "
-                f"{result.playlists_synced} {self.tr('playlist(s) synced')} "
+                f"{self.tr('Subsonic sync staged')}: "
+                f"{result.playlists_synced} {self.tr('playlist(s) updated')} "
                 f"({result.tracks_matched} {self.tr('tracks matched')}, "
-                f"{result.tracks_unmatched} {self.tr('unmatched')})."
+                f"{result.tracks_unmatched} {self.tr('unmatched')}). "
+                f"{self.tr('Click Review Changes to write to your iPod.')}"
             )
-            self._context.status.show("subsonic", message, timeout_ms=10_000)
+            self._context.status.show("subsonic", message, timeout_ms=12_000)
 
     @Slot(str)
     def _subsonic_error(self, message: str) -> None:
