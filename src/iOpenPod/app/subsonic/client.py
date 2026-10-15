@@ -288,9 +288,10 @@ class SubsonicClient:
             },
         )
         try:
-            with self._opener.open(request, timeout=self.timeout) as response, open(
-                dest_path, "wb"
-            ) as f:
+            with (
+                self._opener.open(request, timeout=self.timeout) as response,
+                open(dest_path, "wb") as f,
+            ):
                 while chunk := response.read(64 * 1024):
                     f.write(chunk)
         except (HTTPError, URLError, TimeoutError, OSError) as exc:

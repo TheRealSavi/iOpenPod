@@ -94,7 +94,9 @@ class _SyncPlaylistsWork(QRunnable):
 
     def run(self) -> None:
         try:
-            matched_items: list[tuple[SubsonicPlaylistMapping, tuple[int, ...], int]] = []
+            matched_items: list[
+                tuple[SubsonicPlaylistMapping, tuple[int, ...], int]
+            ] = []
             errors: list[str] = []
             for mapping in self.mappings:
                 if self.cancelled.is_set():
@@ -211,7 +213,9 @@ class SubsonicController(QObject):
         """Execute playlist sync in a background thread, applying changes to workspace on main thread."""
         if not mappings:
             self.syncFinished.emit(
-                SubsonicSyncResult(playlists_synced=0, tracks_matched=0, tracks_unmatched=0)
+                SubsonicSyncResult(
+                    playlists_synced=0, tracks_matched=0, tracks_unmatched=0
+                )
             )
             return
 

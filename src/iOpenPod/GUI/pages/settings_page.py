@@ -364,9 +364,7 @@ class SettingsPage(QWidget):
             else None
         )
         self._subsonic_settings = (
-            SubsonicSettings(settings, subsonic, self)
-            if subsonic is not None
-            else None
+            SubsonicSettings(settings, subsonic, self) if subsonic is not None else None
         )
         self._sync_tab = self._add_tab(
             "syncSettingsScroll",

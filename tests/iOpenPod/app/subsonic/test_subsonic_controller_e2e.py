@@ -61,6 +61,7 @@ def test_subsonic_controller_sync_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
     # 2. Mock SubsonicClient
     mock_client = MagicMock()
     mock_client.get_playlists.return_value = ()
+
     # Subsonic playlist "sub-new" has Billie Jean and Thriller
     # Subsonic playlist "sub-merge" has Beat It
     def mock_get_playlist(pl_id: str) -> tuple[SubsonicSong, ...]:
@@ -70,9 +71,7 @@ def test_subsonic_controller_sync_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
                 SubsonicSong("s3", "Thriller", "Michael Jackson"),
             )
         if pl_id == "sub-merge":
-            return (
-                SubsonicSong("s2", "Beat It", "Michael Jackson"),
-            )
+            return (SubsonicSong("s2", "Beat It", "Michael Jackson"),)
         return ()
 
     mock_client.get_playlist.side_effect = mock_get_playlist

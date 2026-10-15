@@ -18,7 +18,10 @@ from iOpenPod.app.subsonic.models import SubsonicPlaylist, SubsonicSong
 
 def test_url_normalization() -> None:
     assert _normalize_server_url("http://example.com/") == "http://example.com"
-    assert _normalize_server_url("https://music.local:4533///") == "https://music.local:4533"
+    assert (
+        _normalize_server_url("https://music.local:4533///")
+        == "https://music.local:4533"
+    )
     assert _normalize_server_url("example.com") == "https://example.com"
     assert _normalize_server_url("") == ""
 

@@ -87,7 +87,9 @@ def sync_subsonic_playlists(
 ) -> SubsonicSyncResult:
     """Execute playlist synchronization for the given mappings against the workspace."""
     if not mappings:
-        return SubsonicSyncResult(playlists_synced=0, tracks_matched=0, tracks_unmatched=0)
+        return SubsonicSyncResult(
+            playlists_synced=0, tracks_matched=0, tracks_unmatched=0
+        )
 
     track_index = index_library_tracks(workspace.tracks)
     playlists_synced = 0
@@ -99,7 +101,9 @@ def sync_subsonic_playlists(
         try:
             entries = client.get_playlist(mapping.subsonic_id)
         except Exception as exc:
-            err_msg = f"Failed to fetch Subsonic playlist '{mapping.subsonic_name}': {exc}"
+            err_msg = (
+                f"Failed to fetch Subsonic playlist '{mapping.subsonic_name}': {exc}"
+            )
             logger.warning(err_msg)
             errors.append(err_msg)
             continue

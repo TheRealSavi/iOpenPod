@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QEvent, Qt, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -129,11 +130,17 @@ class SubsonicSettings(QWidget):
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(LAYOUT.space_xs)
 
-        self._refresh_button = ActionButton(parent=self._actions_panel, kind=ActionButtonKind.QUIET)
+        self._refresh_button = ActionButton(
+            parent=self._actions_panel, kind=ActionButtonKind.QUIET
+        )
         self._refresh_button.setText(self.tr("Refresh Playlists"))
-        self._select_all_button = ActionButton(parent=self._actions_panel, kind=ActionButtonKind.QUIET)
+        self._select_all_button = ActionButton(
+            parent=self._actions_panel, kind=ActionButtonKind.QUIET
+        )
         self._select_all_button.setText(self.tr("Select All"))
-        self._deselect_all_button = ActionButton(parent=self._actions_panel, kind=ActionButtonKind.QUIET)
+        self._deselect_all_button = ActionButton(
+            parent=self._actions_panel, kind=ActionButtonKind.QUIET
+        )
         self._deselect_all_button.setText(self.tr("Deselect All"))
 
         actions_layout.addWidget(self._refresh_button)
@@ -153,29 +160,39 @@ class SubsonicSettings(QWidget):
         )
         pl_group.add_row(self._pl_actions_row)
 
+        self._scroll_frame = QFrame(pl_group)
+        self._scroll_frame.setObjectName("settingRow")
+        scroll_frame_layout = QVBoxLayout(self._scroll_frame)
+        scroll_frame_layout.setContentsMargins(0, 0, 0, 0)
+
         # Scroll area for playlist checkboxes
-        self._pl_scroll = QScrollArea(self)
+        self._pl_scroll = QScrollArea(self._scroll_frame)
         self._pl_scroll.setWidgetResizable(True)
         self._pl_scroll.setMaximumHeight(200)
         self._pl_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
 
         self._pl_container = QWidget(self._pl_scroll)
+        self._pl_container.setStyleSheet("background: transparent;")
         self._pl_list_layout = QVBoxLayout(self._pl_container)
         self._pl_list_layout.setContentsMargins(
-            LAYOUT.space_sm, LAYOUT.space_sm, LAYOUT.space_sm, LAYOUT.space_sm
+            LAYOUT.space_md, LAYOUT.space_sm, LAYOUT.space_md, LAYOUT.space_sm
         )
         self._pl_list_layout.setSpacing(LAYOUT.space_xs)
         self._pl_scroll.setWidget(self._pl_container)
 
         self._no_playlists_label = QLabel(
-            self.tr("No playlists loaded. Click 'Test Connection' or 'Refresh Playlists' to load."),
+            self.tr(
+                "No playlists loaded. Click 'Test Connection' or 'Refresh Playlists' to load."
+            ),
             self._pl_container,
         )
         self._no_playlists_label.setStyleSheet("color: gray;")
         self._pl_list_layout.addWidget(self._no_playlists_label)
 
+        scroll_frame_layout.addWidget(self._pl_scroll)
+        pl_group._layout.addWidget(self._scroll_frame)
+
         layout.addWidget(pl_group)
-        layout.addWidget(self._pl_scroll)
 
     def _load_saved_values(self) -> None:
         url = self._settings.get(SUBSONIC_URL)
@@ -220,7 +237,9 @@ class SubsonicSettings(QWidget):
         username = self._username_edit.text().strip()
         password = self._password_edit.text()
         if not url or not username:
-            self._test_status.setText(self.tr("Please enter both server URL and username."))
+            self._test_status.setText(
+                self.tr("Please enter both server URL and username.")
+            )
             self._test_status.setStyleSheet("color: red;")
             return
 
@@ -289,9 +308,7 @@ class SubsonicSettings(QWidget):
         self._test_status.setStyleSheet("color: red;")
 
     def _save_selected_playlists(self) -> None:
-        selected = tuple(
-            pid for pid, cb in self._checkboxes.items() if cb.isChecked()
-        )
+        selected = tuple(pid for pid, cb in self._checkboxes.items() if cb.isChecked())
         self._settings.set_global(SUBSONIC_PLAYLIST_IDS, selected)
 
     def _select_all(self) -> None:

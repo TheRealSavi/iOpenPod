@@ -50,7 +50,9 @@ class SubsonicPlaylistMappingDialog(QDialog):
 
         self._subsonic_playlists = subsonic_playlists
         self._ipod_playlists = tuple(
-            p for p in ipod_playlists if getattr(p, "kind", None) == PlaylistKind.PLAYLIST
+            p
+            for p in ipod_playlists
+            if getattr(p, "kind", None) == PlaylistKind.PLAYLIST
         )
         self._saved_mappings = saved_mappings or {}
 
@@ -105,7 +107,10 @@ class SubsonicPlaylistMappingDialog(QDialog):
             idx = 1
             for ipod_pl in self._ipod_playlists:
                 m_combo.addItem(f"{ipod_pl.name} (iPod)", ipod_pl.playlist_id)
-                if saved_target is not None and abs(saved_target) == ipod_pl.playlist_id:
+                if (
+                    saved_target is not None
+                    and abs(saved_target) == ipod_pl.playlist_id
+                ):
                     current_index = idx
                 idx += 1
             m_combo.setCurrentIndex(current_index)
@@ -114,8 +119,12 @@ class SubsonicPlaylistMappingDialog(QDialog):
 
             # Mode combo
             mode_combo = AppComboBox(mode_content)
-            mode_combo.addItem(self.tr("Add / Merge into iPod playlist"), SubsonicSyncMode.MERGE)
-            mode_combo.addItem(self.tr("Overwrite iPod playlist entirely"), SubsonicSyncMode.OVERWRITE)
+            mode_combo.addItem(
+                self.tr("Add / Merge into iPod playlist"), SubsonicSyncMode.MERGE
+            )
+            mode_combo.addItem(
+                self.tr("Overwrite iPod playlist entirely"), SubsonicSyncMode.OVERWRITE
+            )
             if saved_target is not None and saved_target < 0:
                 mode_combo.setCurrentIndex(1)
             else:
@@ -132,8 +141,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
 
         # Buttons
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel,
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             Qt.Orientation.Horizontal,
             self,
         )

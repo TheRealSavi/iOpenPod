@@ -27,9 +27,18 @@ def test_subsonic_playlist_mapping_dialog() -> None:
         SubsonicPlaylist(playlist_id="sub-2", name="Workout", song_count=30),
     )
     ipod_playlists = (
-        Playlist(1, "Existing Playlist", PlaylistKind.PLAYLIST, sort_order=PlaylistSortOrder.MANUAL),
-        Playlist(2, "Smart One", PlaylistKind.SMART, sort_order=PlaylistSortOrder.MANUAL),
-        Playlist(3, "Folder One", PlaylistKind.FOLDER, sort_order=PlaylistSortOrder.DEFAULT),
+        Playlist(
+            1,
+            "Existing Playlist",
+            PlaylistKind.PLAYLIST,
+            sort_order=PlaylistSortOrder.MANUAL,
+        ),
+        Playlist(
+            2, "Smart One", PlaylistKind.SMART, sort_order=PlaylistSortOrder.MANUAL
+        ),
+        Playlist(
+            3, "Folder One", PlaylistKind.FOLDER, sort_order=PlaylistSortOrder.DEFAULT
+        ),
     )
 
     dlg = SubsonicPlaylistMappingDialog(

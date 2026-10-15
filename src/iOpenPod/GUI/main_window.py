@@ -1492,7 +1492,9 @@ class MainWindow(QMainWindow):
             self._settings_page.show_sync_settings()
             self._context.status.show(
                 "subsonic",
-                self.tr("Configure Subsonic server URL and username in Settings first."),
+                self.tr(
+                    "Configure Subsonic server URL and username in Settings first."
+                ),
                 timeout_ms=10_000,
             )
             return
@@ -1523,10 +1525,13 @@ class MainWindow(QMainWindow):
         )
         if not selected_playlists:
             selected_playlists = tuple(
-                SubsonicPlaylist(playlist_id=str(pid), name=str(pid)) for pid in saved_ids
+                SubsonicPlaylist(playlist_id=str(pid), name=str(pid))
+                for pid in saved_ids
             )
 
-        saved_mappings_raw = self._context.settings.get(SUBSONIC_PLAYLIST_MAPPINGS) or {}
+        saved_mappings_raw = (
+            self._context.settings.get(SUBSONIC_PLAYLIST_MAPPINGS) or {}
+        )
         saved_mappings: dict[str, int] = {}
         for k, v in saved_mappings_raw.items():
             with contextlib.suppress(ValueError, TypeError):
