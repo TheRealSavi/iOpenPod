@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -192,9 +192,15 @@ class SubsonicSettings(QWidget):
         self._select_all_button.clicked.connect(self._select_all)
         self._deselect_all_button.clicked.connect(self._deselect_all)
 
-        self._controller.connectionTested.connect(self._on_connection_tested)
-        self._controller.playlistsLoaded.connect(self._on_playlists_loaded)
-        self._controller.error.connect(self._on_controller_error)
+        self._controller.connectionTested.connect(
+            self._on_connection_tested, Qt.ConnectionType.QueuedConnection
+        )
+        self._controller.playlistsLoaded.connect(
+            self._on_playlists_loaded, Qt.ConnectionType.QueuedConnection
+        )
+        self._controller.error.connect(
+            self._on_controller_error, Qt.ConnectionType.QueuedConnection
+        )
 
     def _save_credentials(self) -> None:
         url = self._url_edit.text().strip()
@@ -204,6 +210,7 @@ class SubsonicSettings(QWidget):
         self._settings.set_global(SUBSONIC_USERNAME, username)
         set_subsonic_password(username, password)
 
+    @Slot()
     def _on_test_clicked(self) -> None:
         self._save_credentials()
         url = self._url_edit.text().strip()
@@ -219,6 +226,7 @@ class SubsonicSettings(QWidget):
         self._test_status.setStyleSheet("")
         self._controller.test_connection(url, username, password)
 
+    @Slot(bool, str)
     def _on_connection_tested(self, success: bool, message: str) -> None:
         self._test_button.setEnabled(True)
         if success:
@@ -230,6 +238,7 @@ class SubsonicSettings(QWidget):
             self._test_status.setText(f"{self.tr('Connection failed')}: {message}")
             self._test_status.setStyleSheet("color: red;")
 
+    @Slot()
     def _on_refresh_clicked(self) -> None:
         self._save_credentials()
         url = self._url_edit.text().strip()
@@ -240,6 +249,7 @@ class SubsonicSettings(QWidget):
         self._refresh_button.setEnabled(False)
         self._controller.load_playlists(url, username, password)
 
+    @Slot(object)
     def _on_playlists_loaded(self, playlists_obj: object) -> None:
         self._refresh_button.setEnabled(True)
         if not isinstance(playlists_obj, tuple):
@@ -268,6 +278,7 @@ class SubsonicSettings(QWidget):
             self._pl_list_layout.addWidget(cb)
             self._checkboxes[pl.playlist_id] = cb
 
+    @Slot(str)
     def _on_controller_error(self, error_msg: str) -> None:
         self._refresh_button.setEnabled(True)
         self._test_button.setEnabled(True)

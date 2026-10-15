@@ -1,7 +1,9 @@
 """End-to-end test verifying SubsonicController sync workflow against LibraryWorkspace."""
 
+import time
 from unittest.mock import MagicMock
 
+import pytest
 from PySide6.QtCore import QCoreApplication
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
@@ -32,7 +34,7 @@ def _make_track(track_id: int, title: str, artist: str) -> Track:
     )
 
 
-def test_subsonic_controller_sync_e2e(monkeypatch) -> None:
+def test_subsonic_controller_sync_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
     _app = APPLICATION
     context = build_context()
     workspace = context.library_workspace
@@ -61,7 +63,7 @@ def test_subsonic_controller_sync_e2e(monkeypatch) -> None:
     mock_client.get_playlists.return_value = ()
     # Subsonic playlist "sub-new" has Billie Jean and Thriller
     # Subsonic playlist "sub-merge" has Beat It
-    def mock_get_playlist(pl_id: str):
+    def mock_get_playlist(pl_id: str) -> tuple[SubsonicSong, ...]:
         if pl_id == "sub-new":
             return (
                 SubsonicSong("s1", "Billie Jean", "Michael Jackson"),
@@ -111,7 +113,7 @@ def test_subsonic_controller_sync_e2e(monkeypatch) -> None:
         QCoreApplication.processEvents()
         if finished_results:
             break
-        QCoreApplication.instance().thread().msleep(20)
+        time.sleep(0.02)
 
     # 4. Verify results
     assert len(finished_results) == 1

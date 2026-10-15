@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 
 from iPodDB.library import PlaylistKind
 
@@ -129,6 +129,9 @@ class SubsonicController(QObject):
         self._settings = settings
         self._pool = QThreadPool.globalInstance()
         self._active_workspace: LibraryWorkspace | None = None
+        self._test_job: _TestConnectionWork | None = None
+        self._load_job: _LoadPlaylistsWork | None = None
+        self._sync_job: _SyncPlaylistsWork | None = None
 
     @property
     def settings(self) -> SettingsService:
@@ -137,15 +140,38 @@ class SubsonicController(QObject):
     def test_connection(self, url: str, username: str, password: str) -> None:
         """Test server reachability and credentials in a background thread."""
         work = _TestConnectionWork(url, username, password)
-        work.signals.result.connect(self.connectionTested.emit)
+        self._test_job = work
+        work.signals.result.connect(
+            self._handle_connection_tested, Qt.ConnectionType.QueuedConnection
+        )
         self._pool.start(work)
+
+    @Slot(bool, str)
+    def _handle_connection_tested(self, success: bool, message: str) -> None:
+        self._test_job = None
+        self.connectionTested.emit(success, message)
 
     def load_playlists(self, url: str, username: str, password: str) -> None:
         """Fetch remote playlists in a background thread."""
         work = _LoadPlaylistsWork(url, username, password)
-        work.signals.loaded.connect(self.playlistsLoaded.emit)
-        work.signals.error.connect(self.error.emit)
+        self._load_job = work
+        work.signals.loaded.connect(
+            self._handle_playlists_loaded, Qt.ConnectionType.QueuedConnection
+        )
+        work.signals.error.connect(
+            self._handle_load_error, Qt.ConnectionType.QueuedConnection
+        )
         self._pool.start(work)
+
+    @Slot(object)
+    def _handle_playlists_loaded(self, playlists: object) -> None:
+        self._load_job = None
+        self.playlistsLoaded.emit(playlists)
+
+    @Slot(str)
+    def _handle_load_error(self, message: str) -> None:
+        self._load_job = None
+        self.error.emit(message)
 
     def sync_playlists(
         self,
@@ -167,15 +193,22 @@ class SubsonicController(QObject):
         track_index = index_library_tracks(workspace.tracks)
         client = SubsonicClient(url, username, password)
         work = _SyncPlaylistsWork(client, mappings, track_index)
-        work.signals.matched.connect(self._apply_sync_results)
-        work.signals.error.connect(self.error.emit)
+        self._sync_job = work
+        work.signals.matched.connect(
+            self._apply_sync_results, Qt.ConnectionType.QueuedConnection
+        )
+        work.signals.error.connect(
+            self._handle_sync_error, Qt.ConnectionType.QueuedConnection
+        )
         self._pool.start(work)
 
+    @Slot(object, object)
     def _apply_sync_results(
         self,
         matched_items: tuple[tuple[SubsonicPlaylistMapping, tuple[int, ...], int], ...],
         errors: tuple[str, ...],
     ) -> None:
+        self._sync_job = None
         workspace = self._active_workspace
         if workspace is None:
             self.error.emit("Library workspace was disconnected during sync.")
@@ -239,3 +272,8 @@ class SubsonicController(QObject):
             errors=tuple(all_errors),
         )
         self.syncFinished.emit(result)
+
+    @Slot(str)
+    def _handle_sync_error(self, message: str) -> None:
+        self._sync_job = None
+        self.error.emit(message)

@@ -6,7 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import (
+    QByteArray,
+    QCoreApplication,
+    QEvent,
+    QSize,
+    Qt,
+    QTimer,
+    QUrl,
+    Slot,
+)
 from PySide6.QtGui import QCloseEvent, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -232,9 +241,15 @@ class MainWindow(QMainWindow):
         self._scrobbling.message.connect(self._scrobble_message)
         self._scrobbling.finished.connect(self._scrobble_finished)
         self._subsonic = SubsonicController(context.settings, self)
-        self._subsonic.syncStarted.connect(self._subsonic_sync_started)
-        self._subsonic.syncFinished.connect(self._subsonic_sync_finished)
-        self._subsonic.error.connect(self._subsonic_error)
+        self._subsonic.syncStarted.connect(
+            self._subsonic_sync_started, Qt.ConnectionType.QueuedConnection
+        )
+        self._subsonic.syncFinished.connect(
+            self._subsonic_sync_finished, Qt.ConnectionType.QueuedConnection
+        )
+        self._subsonic.error.connect(
+            self._subsonic_error, Qt.ConnectionType.QueuedConnection
+        )
         self._sync_controller = SyncController(
             SyncExecutor(
                 context.device_coordinator,
@@ -1455,6 +1470,7 @@ class MainWindow(QMainWindow):
             timeout_ms=0 if result.issues else 20_000,
         )
 
+    @Slot()
     def _sync_subsonic_now(self) -> None:
         if self._context.device_controller.active_ipod is None:
             self._context.status.show(
@@ -1552,6 +1568,7 @@ class MainWindow(QMainWindow):
             password,
         )
 
+    @Slot()
     def _subsonic_sync_started(self) -> None:
         self._context.status.show(
             "subsonic",
@@ -1560,6 +1577,7 @@ class MainWindow(QMainWindow):
             timeout_ms=0,
         )
 
+    @Slot(object)
     def _subsonic_sync_finished(self, result: object) -> None:
         if not isinstance(result, SubsonicSyncResult):
             return
@@ -1581,6 +1599,7 @@ class MainWindow(QMainWindow):
             )
             self._context.status.show("subsonic", message, timeout_ms=10_000)
 
+    @Slot(str)
     def _subsonic_error(self, message: str) -> None:
         self._context.status.show(
             "subsonic",

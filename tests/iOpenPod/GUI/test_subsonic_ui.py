@@ -1,5 +1,7 @@
 """Tests for Subsonic GUI mapping dialog, settings widget, and sidebar integration."""
 
+import time
+
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.subsonic.controller import SubsonicController
@@ -79,6 +81,32 @@ def test_subsonic_settings_widget() -> None:
 
 
 def test_main_window_has_subsonic_sync_button() -> None:
+    _app = APPLICATION
+    context = build_context()
+    window = MainWindow(context, auto_discover=False)
+    sidebar = window.findChild(Sidebar)
+    assert sidebar is not None
+    assert hasattr(sidebar, "_subsonic_sync")
+    assert sidebar._subsonic_sync.objectName() == "syncSubsonic"
+
+
+def test_subsonic_settings_test_connection_click() -> None:
+    _app = APPLICATION
+    context = build_context()
+    controller = SubsonicController(context.settings)
+    widget = SubsonicSettings(context.settings, controller)
+    widget._url_edit.setText("http://localhost:19999")
+    widget._username_edit.setText("testuser")
+    widget._password_edit.setText("testpass")
+
+    # Trigger test connection click
+    widget._on_test_clicked()
+    for _ in range(30):
+        APPLICATION.processEvents()
+        time.sleep(0.01)
+
+    assert "Connection failed" in widget._test_status.text()
+    assert widget._test_button.isEnabled()
     _app = APPLICATION
     context = build_context()
     window = MainWindow(context, auto_discover=False)

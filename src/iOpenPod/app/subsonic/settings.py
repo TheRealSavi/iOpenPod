@@ -13,6 +13,7 @@ from iOpenPod.app.core.settings.definitions import SettingDefinition
 logger = logging.getLogger(__name__)
 
 SUBSONIC_SERVICE_KEY = "iOpenPod:Subsonic"
+_MEMORY_PASSWORD_STORE: dict[str, str] = {}
 
 SUBSONIC_URL = SettingDefinition[str](
     key="subsonic/url",
@@ -46,16 +47,21 @@ def get_subsonic_password(username: str) -> str:
         return ""
     try:
         pw = keyring.get_password(SUBSONIC_SERVICE_KEY, username)
-        return pw or ""
+        if pw:
+            return pw
     except Exception as exc:
         logger.debug("Failed to read Subsonic password from keyring: %s", exc)
-        return ""
+    return _MEMORY_PASSWORD_STORE.get(username, "")
 
 
 def set_subsonic_password(username: str, password: str) -> None:
     """Save the Subsonic password in the OS keyring."""
     if not username:
         return
+    if password:
+        _MEMORY_PASSWORD_STORE[username] = password
+    else:
+        _MEMORY_PASSWORD_STORE.pop(username, None)
     try:
         if password:
             keyring.set_password(SUBSONIC_SERVICE_KEY, username, password)
@@ -70,6 +76,7 @@ def delete_subsonic_password(username: str) -> None:
     """Remove the Subsonic password from the OS keyring."""
     if not username:
         return
+    _MEMORY_PASSWORD_STORE.pop(username, None)
     try:
         keyring.delete_password(SUBSONIC_SERVICE_KEY, username)
     except Exception as exc:
