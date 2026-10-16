@@ -815,6 +815,11 @@ artifact names with bytes; it knows neither device paths nor persistence. Device
 Registry chooses required artifacts and per-artifact checksums. iOpenPod maps those
 artifacts to device-relative paths and publishes them through Storage, but never
 loads them as Library input.
+Browse-group IDs follow Original's positive sequential allocation while Track and
+user Playlist persistent identities retain their native meaning. A Sync may request
+SQLite regeneration without a CDB edit; this explicit Library Draft intent still
+captures all companion-file preconditions and publishes one complete verified set
+through Storage. Unchanged CDB bytes remain retained. See ADR-0147.
 During preparation, iOpenPod may inspect a retained Locations Checksum Book and
 its Locations file as device-bound signing evidence when `HashInfo` is absent.
 Those reads do not project SQLite Library state. See ADR-0122.
@@ -1012,8 +1017,13 @@ while retained documents keep their original variants and Unknown Data. Profiles
 without native cover support use iOpenPod's fixed `F1060` representation only for
 application browsing; Device Registry capability claims remain unchanged. Older
 Track layouts use reverse ArtworkDB links. Persistence still uses the reviewed
-Storage Transaction. See [ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md)
-and [ADR-0118](adr/0118-write-application-artwork-for-non-cover-devices.md). When
+Storage Transaction. Nano 6 creation uses the verified Original root value 2 and
+omits newly generated auxiliary image records; existing root values and auxiliary
+records remain retained. Device Registry supplies that explicit creation policy
+for both cover and Photo records. See
+[ADR-0033](adr/0033-create-artworkdb-from-catalog-capabilities.md),
+[ADR-0118](adr/0118-write-application-artwork-for-non-cover-devices.md), and
+[ADR-0147](adr/0147-restore-late-ipod-firmware-write-compatibility.md). When
 Rockbox Metadata Support is enabled, Sync and ordinary Library saves separately
 embed changed metadata and covers in prepared media; non-cover profiles use a
 120x120 grayscale JPEG. Ordinary saves capture the preference in their immutable

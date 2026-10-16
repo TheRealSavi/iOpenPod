@@ -279,6 +279,7 @@ class IPodLibrary:
         replace_media: tuple[int, ...] = (),
         replace_photos: tuple[int, ...] = (),
         retag_tracks: tuple[int, ...] = (),
+        regenerate_sqlite: bool = False,
     ) -> LibraryDraft:
         """Bind desired state to this source, rejecting omissions unless opted in.
 
@@ -289,6 +290,8 @@ class IPodLibrary:
         requires matching Prepared Media; it does not publish any files.
         ``retag_tracks`` requests verified file-tag rewrites at retained locations;
         PreparedLyrics evidence derives the final size without new codec facts.
+        ``regenerate_sqlite`` requests a fresh firmware projection even when the
+        desired Library is unchanged. It does not authorize file publication.
         """
         return LibraryDraft(
             self._source_revision,
@@ -297,6 +300,7 @@ class IPodLibrary:
             replace_media=tuple(replace_media),
             replace_photos=tuple(replace_photos),
             retag_tracks=tuple(retag_tracks),
+            regenerate_sqlite=regenerate_sqlite,
         )
 
     def analyze(
@@ -410,14 +414,9 @@ class IPodLibrary:
                 if playlist.playlist_id not in persisted
                 and playlist.playlist_id not in desired
             )
-        if (
-            resolved.plan.changes_itunes
-            and target.sqlite_database
-            and any(
-                issue.code == "source.unavailable_dates"
-                and issue.artifact == "iTunesDB"
-                for issue in additional_issues
-            )
+        if resolved.plan.changes_sqlite and any(
+            issue.code == "source.unavailable_dates" and issue.artifact == "iTunesDB"
+            for issue in additional_issues
         ):
             additional_issues = (
                 *additional_issues,

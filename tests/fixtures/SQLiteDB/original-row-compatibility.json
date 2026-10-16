@@ -1,0 +1,177 @@
+{
+  "source_commit": "a20242428b93b672d14b37230772dbad75139c69",
+  "source": "Original iOpenPod write_library_itdb and write_locations_itdb; synthetic metadata only",
+  "queries": {
+    "item": "SELECT pid,album_pid,artist_pid,track_artist_pid,composer_pid FROM item ORDER BY physical_order",
+    "album": "SELECT pid,name,artist_pid FROM album ORDER BY pid",
+    "artist": "SELECT pid,name FROM artist ORDER BY pid",
+    "track_artist": "SELECT pid,name FROM track_artist ORDER BY pid",
+    "composer": "SELECT pid,name FROM composer ORDER BY pid",
+    "store_info": "SELECT * FROM store_info",
+    "container": "SELECT name,smart_enabled_only FROM container ORDER BY name"
+  },
+  "rows": {
+    "item": [
+      [
+        1001,
+        101,
+        102,
+        103,
+        104
+      ],
+      [
+        1002,
+        101,
+        102,
+        105,
+        104
+      ],
+      [
+        1003,
+        106,
+        0,
+        0,
+        0
+      ],
+      [
+        1004,
+        107,
+        108,
+        103,
+        109
+      ],
+      [
+        1005,
+        110,
+        102,
+        111,
+        112
+      ],
+      [
+        1006,
+        101,
+        102,
+        113,
+        104
+      ],
+      [
+        1007,
+        106,
+        0,
+        114,
+        0
+      ]
+    ],
+    "album": [
+      [
+        101,
+        "Album",
+        102
+      ],
+      [
+        106,
+        null,
+        0
+      ],
+      [
+        107,
+        "Another",
+        108
+      ],
+      [
+        110,
+        "album",
+        102
+      ]
+    ],
+    "artist": [
+      [
+        102,
+        "Album Artist"
+      ],
+      [
+        108,
+        "Artist"
+      ]
+    ],
+    "track_artist": [
+      [
+        103,
+        "Artist"
+      ],
+      [
+        105,
+        "Another Singer"
+      ],
+      [
+        111,
+        "artist"
+      ],
+      [
+        113,
+        " Artist "
+      ],
+      [
+        114,
+        " "
+      ]
+    ],
+    "composer": [
+      [
+        104,
+        "Composer"
+      ],
+      [
+        109,
+        "Other Composer"
+      ],
+      [
+        112,
+        "composer"
+      ]
+    ],
+    "store_info": [],
+    "container": [
+      [
+        "Playlist",
+        0
+      ],
+      [
+        "iPod",
+        0
+      ]
+    ],
+    "location": [
+      [
+        2001,
+        1295270176,
+        3
+      ],
+      [
+        2002,
+        1295270176,
+        3
+      ],
+      [
+        2003,
+        1295270176,
+        3
+      ],
+      [
+        2004,
+        1295274016,
+        2
+      ],
+      [
+        2005,
+        1295270432,
+        3
+      ],
+      [
+        2006,
+        1297101600,
+        1
+      ]
+    ]
+  }
+}

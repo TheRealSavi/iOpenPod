@@ -145,6 +145,8 @@ def _capabilities(
     chapter_formats: tuple[ArtworkFormat, ...] = (),
     photo_formats: tuple[ArtworkFormat, ...] = (),
     photo_album_creation_type: int = 2,
+    artwork_root_value: int = 6,
+    include_auxiliary_image_records: bool = True,
     chapter_images: bool = False,
     sparse_artwork: bool = False,
     video: tuple[int, int, int, str] | None = None,
@@ -187,9 +189,9 @@ def _capabilities(
             cover_formats=cover_formats,
             chapter_formats=chapter_formats,
             photo_formats=photo_formats,
-            # Original iOpenPod's album-art writer uses this seed without a
-            # reference database. It is a compatibility policy, not a version.
-            artwork_root_value=6 if cover_formats else None,
+            # Model-specific creation policy; retained roots remain authoritative.
+            artwork_root_value=artwork_root_value if cover_formats else None,
+            include_auxiliary_image_records=include_auxiliary_image_records,
             photo_album_creation_type=(
                 photo_album_creation_type if photo_formats else None
             ),
@@ -344,6 +346,8 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         cover_formats=_artwork_formats(1073, 1085, 1089, 1074),
         photo_formats=_artwork_formats(1092, 1093),
         photo_album_creation_type=6,
+        artwork_root_value=2,
+        include_auxiliary_image_records=False,
         sparse_artwork=True,
         checksum=DatabaseChecksum.HASHAB,
         database_version=0x30,

@@ -423,7 +423,7 @@ def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation() -> Non
     }
 
 
-def test_purchased_aac_kind_uses_native_flag_not_filetype_label() -> None:
+def test_aac_purchase_flag_does_not_override_native_filetype_kind() -> None:
     track = _snapshot().tracks[0]
     details = track.ipod
     assert details is not None
@@ -452,7 +452,7 @@ def test_purchased_aac_kind_uses_native_flag_not_filetype_label() -> None:
     assert (library_row[1], *location_row[1:]) == (
         502,
         FILE_EXTENSION_INT["m4a"],
-        2,
+        3,
     )
 
 

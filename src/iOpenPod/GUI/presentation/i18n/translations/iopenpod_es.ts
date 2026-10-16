@@ -6839,6 +6839,14 @@ Playlists: %3</translation>
         <translation>Sincronizar selección</translation>
     </message>
     <message>
+        <source>Refresh Library</source>
+        <translation>Actualizar biblioteca</translation>
+    </message>
+    <message>
+        <source>Rebuild the iPod Library files while keeping the current media.</source>
+        <translation>Reconstruir los archivos de la biblioteca del iPod conservando los medios actuales.</translation>
+    </message>
+    <message>
         <source>Reconcile Playlists</source>
         <translation>Ajustar listas de reproducción</translation>
     </message>
@@ -9558,6 +9566,10 @@ Playlists: %3</translation>
         <translation>La portada de Rockbox de {name} no se incrustó. El archivo multimedia y la portada de iOpenPod pueden sincronizarse; corrige el archivo y vuelve a intentarlo.</translation>
     </message>
     <message>
+        <source>SQLite regeneration requires a SQLite-capable target.</source>
+        <translation>La regeneración de SQLite requiere un dispositivo de destino compatible con SQLite.</translation>
+    </message>
+    <message>
         <source>SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.</source>
         <translation>La regeneración de SQLite requiere fechas de pistas resueltas. Vuelve a cargar con una zona horaria conocida antes de guardar esta biblioteca.</translation>
     </message>
@@ -10446,8 +10458,8 @@ Playlists: %3</translation>
         <translation>Zona horaria</translation>
     </message>
     <message>
-        <source>Track membership changes require a captured inventory with no pending positional playback sidecars. Preserve or reconcile them before preparing output.</source>
-        <translation>Los cambios de contenido de pistas requieren un inventario capturado sin archivos auxiliares de posiciones de reproducción pendientes. Consérvalos o ajústalos antes de preparar el resultado.</translation>
+        <source>This Library write requires a captured inventory with no pending positional playback sidecars. Preserve or reconcile them before preparing output.</source>
+        <translation>Esta escritura de la biblioteca requiere un inventario capturado sin archivos auxiliares de posiciones de reproducción pendientes. Consérvalos o ajústalos antes de preparar el resultado.</translation>
     </message>
     <message>
         <source>Tracks</source>

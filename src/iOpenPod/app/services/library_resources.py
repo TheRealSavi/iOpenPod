@@ -275,7 +275,7 @@ def capture(
         FilePrecondition(PHOTOSDB, request.source.photos_database_fingerprint),
         *additional_preconditions,
     ]
-    if plan.target.sqlite_database and plan.changes_itunes:
+    if plan.changes_sqlite:
         files.extend(
             FilePrecondition(
                 path,

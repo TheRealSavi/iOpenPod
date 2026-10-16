@@ -18,6 +18,7 @@ from tests.iOpenPod.app.test_library_write_controller import (
 )
 from tests.iOpenPod.GUI.application_shell_test_support import build_context
 
+from device_registry import DEFAULT_DEVICE_REGISTRY
 from iOpenPod.app.core.settings.definitions import (
     COMPUTE_SOUND_CHECK,
 )
@@ -325,6 +326,41 @@ def test_pending_database_repair_allows_sync_without_media_changes(
         assert service.request is not None
         assert service.request.source.artwork_repairs_pending is artwork_pending
         assert service.request.source.photos_repairs_pending is photos_pending
+    finally:
+        controller.shutdown()
+
+
+@pytest.mark.parametrize("sqlite", (False, True))
+def test_only_sqlite_targets_allow_refresh_without_selected_changes(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+    sqlite: bool,
+) -> None:
+    coordinator, devices, workspace, _ = session
+    active = coordinator.active_ipod
+    assert active is not None
+    if sqlite:
+        profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC688")
+        assert profile is not None
+        active = replace(active, profile=profile)
+        devices.finish_library_save(active)
+    workspace.load(active.library)
+    _, host, ipod = _inputs()
+    service = SyncExecutionStub()
+    service.release.set()
+    controller = SyncController(
+        service,
+        workspace,
+        devices,
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
+    )
+    try:
+        assert controller.start(SyncPlan(()), host, ipod, active) is sqlite
+        if sqlite:
+            wait_for(lambda: not controller.busy)
+            assert service.request is not None
+            assert service.request.plan.change_count == 0
+        else:
+            assert service.request is None
     finally:
         controller.shutdown()
 

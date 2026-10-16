@@ -662,10 +662,15 @@ changed output when no valid retained signing source can supply the material.
 Classic HASH58 output refreshes a valid retained HASH72 signature first. See
 [ADR-0122](adr/0122-match-original-signing-behavior.md). iTunesCDB is the sole
 readable Library authority: device selection
-does not require or parse the SQLite files. A true no-op returns the exact retained
-CDB and does not touch SQLite. Every CDB-changing save generates and publishes all
-six SQLite artifacts from the independently reparsed candidate snapshot, replacing
-missing, stale, or damaged companions as one transaction generation.
+does not require or parse the SQLite files. Ordinary no-op serialization returns
+the exact retained CDB and does not touch SQLite. Every CDB-changing save generates
+and publishes all six SQLite artifacts from the independently reparsed candidate
+snapshot, replacing missing, stale, or damaged companions as one transaction
+generation. A user-directed Sync explicitly requests SQLite regeneration even
+without Library edits. That intent preserves unchanged CDB bytes, captures all six
+companion preconditions and signing evidence, and publishes the regenerated set
+through the same recoverable Storage Transaction. See
+[ADR-0147](adr/0147-restore-late-ipod-firmware-write-compatibility.md).
 
 SysInfo and SysInfoExtended are optional metadata sources (ADR-0115). Signing uses
 connection-bound hardware evidence first, then either metadata file when hardware

@@ -313,7 +313,12 @@ HASH72, and HASHAB finalization. Selection neither requires nor reads SQLite
 companions. When a CDB change is prepared, the Application Layer captures the
 current companion paths as write preconditions and publishes the CDB, the complete
 replacement SQLite set, and compatibility iTunesDB truncation in one recoverable
-Storage Transaction. See ADR-0061 and ADR-0141.
+Storage Transaction. User-directed Sync also regenerates the complete SQLite set
+without a CDB edit, so corrected firmware projections replace earlier output.
+Signing and source preconditions still protect that replacement. SQLite browse
+identities and selected record defaults now follow the verified 1.x baseline;
+Nano 6 also uses that baseline for newly created artwork records. Existing native
+Unknown Data remains retained. See ADR-0061, ADR-0141, and ADR-0147.
 Nano 5 now follows Original iOpenPod's HASH72 signing for both iTunesCDB and the
 Locations Checksum Book. Preparation can recover missing HashInfo material from a
 verified retained database or checksum book, while selection still uses only CDB

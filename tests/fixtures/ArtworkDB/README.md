@@ -16,3 +16,14 @@ root-level suffix outside the MHFD's declared extent. Its decoded SHA-256 is
 
 The encoded text form keeps the fixture reviewable and platform-neutral. Tests
 decode it strictly before asserting complete byte equality.
+
+`nano6-original-1x.b64` is the 2,000-byte output of the unmodified
+`write_artworkdb` entry point at Original iOpenPod `origin/1.x` commit
+`a20242428b93b672d14b37230772dbad75139c69`, captured on 2026-10-16. The selected
+MC688 Nano 6 profile has one Track with persistent ID 101 and a red 80x80 PNG
+cover, supplied through normal folder-art extraction into a scratch Volume.
+Its MHFD root field at 0x10 is 2, and its image has four thumbnail children with
+no auxiliary type-6 MHOD. It is a writer fixture, not a physical-device capture.
+
+Decoded SHA-256:
+`d51a61aa1b33136716a9f563b06c9ac0217b047de5453e7dd196f3fdb4a9ffd4`.

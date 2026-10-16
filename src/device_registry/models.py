@@ -176,6 +176,8 @@ class ArtworkCapabilities:
     photos_root_value: int | None = None
     # Known chapter layouts may be unavailable even when chapter support is known.
     chapter_formats: tuple[ArtworkFormat, ...] = field(default=(), kw_only=True)
+    # New ArtworkDB and PhotosDB images only; retained auxiliary data is preserved.
+    include_auxiliary_image_records: bool = field(default=True, kw_only=True)
 
     def __post_init__(self) -> None:
         if self.photos_root_value is not None and (

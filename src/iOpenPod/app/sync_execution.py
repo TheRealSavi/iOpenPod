@@ -569,9 +569,12 @@ class SyncExecutor:
                             issue.severity is IssueSeverity.ERROR for issue in issues
                         )
                     )
-                    if requested_changes or not any(
-                        can_refresh_smart_playlist(playlist)
-                        for playlist in draft.snapshot.playlists
+                    if requested_changes or (
+                        not draft.regenerate_sqlite
+                        and not any(
+                            can_refresh_smart_playlist(playlist)
+                            for playlist in draft.snapshot.playlists
+                        )
                     ):
                         return SyncExecutionResult(
                             SyncExecutionStatus.FAILED
@@ -2396,6 +2399,7 @@ def _draft(
             for item in prepared_photos
             if item.item.action is SyncPlanAction.UPDATE
         ),
+        regenerate_sqlite=request.source.profile.capabilities.database.uses_sqlite_database,
     )
     return draft, tuple(completed), reconciled or normalized != desired
 

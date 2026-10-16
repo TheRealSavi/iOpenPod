@@ -78,6 +78,8 @@ class WriteTarget:
     # The application supplies the identified Device Profile's creation policy.
     # Retained ArtworkDB root values are never replaced with this seed.
     artwork_root_value: int | None = None
+    # Creation policy shared by ArtworkDB/PhotosDB; never removes retained data.
+    include_auxiliary_image_records: bool = field(default=True, kw_only=True)
     artwork_checksum: WriteChecksum = WriteChecksum.NONE
     supports_sparse_artwork: bool = True
     photo_formats: tuple[PhotoThumbnailFormat, ...] = ()
@@ -99,6 +101,9 @@ class LibraryDraft:
     # Retained files whose tags will be rewritten. Require verified lyrics/file
     # evidence even when the text itself is unchanged, to derive the final size.
     retag_tracks: tuple[int, ...] = field(default=(), kw_only=True)
+    # Explicit firmware-projection refresh; retained binary artifacts stay
+    # byte-exact when the desired Library itself is unchanged.
+    regenerate_sqlite: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,6 +347,12 @@ class LibraryWritePlan:
                 "photos_database",
             }
             for change in self.changes
+        )
+
+    @property
+    def changes_sqlite(self) -> bool:
+        return self.target.sqlite_database and (
+            self.changes_itunes or self.draft.regenerate_sqlite
         )
 
 

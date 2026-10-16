@@ -6839,6 +6839,14 @@ Playlists: %3</translation>
         <translation>Auswahl synchronisieren</translation>
     </message>
     <message>
+        <source>Refresh Library</source>
+        <translation>Mediathek aktualisieren</translation>
+    </message>
+    <message>
+        <source>Rebuild the iPod Library files while keeping the current media.</source>
+        <translation>Die Mediatheksdateien des iPod neu erstellen und die vorhandenen Medien beibehalten.</translation>
+    </message>
+    <message>
         <source>Reconcile Playlists</source>
         <translation>Wiedergabelisten abgleichen</translation>
     </message>
@@ -9558,6 +9566,10 @@ Playlists: %3</translation>
         <translation>Das Rockbox-Cover für {name} wurde nicht eingebettet. Die Mediendatei und das iOpenPod-Cover können weiterhin synchronisiert werden; korrigieren Sie die Datei und versuchen Sie es erneut.</translation>
     </message>
     <message>
+        <source>SQLite regeneration requires a SQLite-capable target.</source>
+        <translation>Die Neuerstellung von SQLite erfordert ein Zielgerät mit SQLite-Unterstützung.</translation>
+    </message>
+    <message>
         <source>SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.</source>
         <translation>Die Neuerstellung von SQLite erfordert eindeutig bestimmte Titeldaten. Laden Sie die Mediathek mit einer bekannten Zeitzone neu, bevor Sie sie speichern.</translation>
     </message>
@@ -10446,8 +10458,8 @@ Playlists: %3</translation>
         <translation>Zeitzone</translation>
     </message>
     <message>
-        <source>Track membership changes require a captured inventory with no pending positional playback sidecars. Preserve or reconcile them before preparing output.</source>
-        <translation>Änderungen am Titelbestand erfordern einen erfassten Dateibestand ohne ausstehende positionsbezogene Wiedergabe-Begleitdateien. Behalten Sie diese bei oder gleichen Sie sie ab, bevor Sie die Ausgabe vorbereiten.</translation>
+        <source>This Library write requires a captured inventory with no pending positional playback sidecars. Preserve or reconcile them before preparing output.</source>
+        <translation>Dieser Schreibvorgang für die Mediathek erfordert einen erfassten Dateibestand ohne ausstehende positionsbezogene Wiedergabe-Begleitdateien. Behalten Sie diese bei oder gleichen Sie sie ab, bevor Sie die Ausgabe vorbereiten.</translation>
     </message>
     <message>
         <source>Tracks</source>

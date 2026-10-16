@@ -388,7 +388,7 @@ def _prepare(
         issues.append(
             WriteIssue(
                 "resources.playback_sidecars",
-                "Track membership changes require a captured inventory with no pending positional playback sidecars. Preserve or reconcile them before preparing output.",
+                "This Library write requires a captured inventory with no pending positional playback sidecars. Preserve or reconcile them before preparing output.",
             )
         )
     for track_id in plan.required_media:
@@ -499,7 +499,7 @@ def _prepare(
             )
     # An unchanged draft still validates supplied evidence. Returning retained
     # bytes needs no reconciliation or signing, even for unsupported signatures.
-    if not plan.changes:
+    if not plan.changes and not plan.changes_sqlite:
         if _blocked(issues):
             return LibraryWriteResult(tuple(issues))
         try:
@@ -1025,7 +1025,7 @@ def _prepare(
         if _blocked(issues):
             return LibraryWriteResult(tuple(issues))
         sqlite = None
-        if plan.target.sqlite_database and plan.changes_itunes:
+        if plan.changes_sqlite:
             hash72_material = plan.target.hash72_material
             sqlite = build_sqlite_databases(
                 checked,

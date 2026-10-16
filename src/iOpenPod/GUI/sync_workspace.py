@@ -351,6 +351,7 @@ class SyncWorkspace(QWidget):
         self._podcast_count = 0
         self._artwork_repairs_pending = False
         self._photos_repairs_pending = False
+        self._library_refresh_available = False
         self._back = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
         self._back.setObjectName("backToSyncSelection")
         self._execute = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
@@ -505,6 +506,9 @@ class SyncWorkspace(QWidget):
         self._reset_playlist_preview()
         self._artwork_repairs_pending = active_ipod.artwork_repairs_pending
         self._photos_repairs_pending = active_ipod.photos_repairs_pending
+        self._library_refresh_available = (
+            active_ipod.profile.capabilities.database.uses_sqlite_database
+        )
         self._scan_issues.load(library.issues)
         self._storage_projection = SyncStorageProjection(
             library, ipod_media, active_ipod.candidate, active_ipod.profile
@@ -720,14 +724,29 @@ class SyncWorkspace(QWidget):
     def _refresh_review_summary(self) -> None:
         playlist_count = len(self._playlist_preview) if self.reconcile_playlists else 0
         pending_duplicates = bool(self.selection.pending_duplicate_groups)
+        selected_work = bool(
+            self.selection.selected_plan.change_count
+            or playlist_count
+            or self._podcast_count
+            or self._artwork_repairs_pending
+            or self._photos_repairs_pending
+            or pending_duplicates
+        )
+        refresh_only = self._library_refresh_available and not selected_work
         self._execute.setText(
             self.tr("Resolve selected duplicates…")
             if pending_duplicates
+            else self.tr("Refresh Library")
+            if refresh_only
             else self.tr("Sync Selected")
         )
         self._execute.setToolTip(
             self.tr("Choose which selected copies to link, add separately, or skip.")
             if pending_duplicates
+            else self.tr(
+                "Rebuild the iPod Library files while keeping the current media."
+            )
+            if refresh_only
             else self.tr(
                 "Validate and apply the selected changes using your transcoding and Sync settings. "
                 "Independent items that fail preparation are skipped and reported."
@@ -736,14 +755,7 @@ class SyncWorkspace(QWidget):
         self._execute.setEnabled(
             self._execution_available
             and self._stage is SyncStage.REVIEW
-            and (
-                self.selection.selected_plan.change_count > 0
-                or playlist_count > 0
-                or self._podcast_count > 0
-                or self._artwork_repairs_pending
-                or self._photos_repairs_pending
-                or pending_duplicates
-            )
+            and (selected_work or self._library_refresh_available)
         )
         summary = (
             self.tr("%1 of %2 selected")
@@ -762,6 +774,8 @@ class SyncWorkspace(QWidget):
             summary += " · " + self.tr("Artwork repair")
         if self._photos_repairs_pending:
             summary += " · " + self.tr("Photo Database repair")
+        if refresh_only:
+            summary = self.tr("Refresh Library")
         self._review_summary.setText(summary)
         self._podcast_detail.setVisible(self._podcast_count > 0)
         self._podcast_detail.setText(
@@ -788,6 +802,7 @@ class SyncWorkspace(QWidget):
         self._playlist_preview = ()
         self._artwork_repairs_pending = False
         self._photos_repairs_pending = False
+        self._library_refresh_available = False
         with QSignalBlocker(self._reconcile_playlists):
             self._reconcile_playlists.setChecked(True)
         self._refresh_playlist_preview()

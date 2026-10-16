@@ -8,6 +8,17 @@ device identifiers. The compatibility test checks every generated database again
 this independent baseline, including empty Libraries. Original code is not a runtime
 or test dependency.
 
+`original-row-compatibility.json` records rows produced by Original iOpenPod
+`origin/1.x`, commit `a20242428b93b672d14b37230772dbad75139c69`, using synthetic
+Tracks only. Its seven Tracks include reused albums, case-sensitive name variants,
+leading/trailing whitespace, and absent artists and composers. Six separate codec
+examples include AAC with and without the native purchase flag, ALAC, protected
+AAC, M4B, and MP3. The
+fixture retains the exact queries, group IDs and references, empty Store records,
+ordinary container flags, and Locations classifications from the Original
+writers. It contains no captured Library content or device identifiers. Tests
+reconstruct those synthetic inputs without importing Original source.
+
 `observed-postprocess-commands.plist` is a minimal, identity-free excerpt of the
 `com.apple.mobile.iTunes.SQLMusicLibraryPostProcessCommands` structure documented
 from observed device metadata in

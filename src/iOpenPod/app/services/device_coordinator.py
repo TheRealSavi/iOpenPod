@@ -1141,7 +1141,8 @@ class DeviceCoordinator:
         """Prepare a review with private Host staging and read-only device access.
 
         Sync may explicitly retain an unchanged review to verify a new association
-        or refresh Smart Playlists. Ordinary Library saves require file changes.
+        or refresh Smart Playlists. Explicit requests can regenerate the SQLite
+        firmware projection. Ordinary Library saves require file changes.
         """
         from iOpenPod.app.library_tag_updates import with_rockbox_edits
         from iOpenPod.app.library_write import (
@@ -1297,6 +1298,9 @@ class DeviceCoordinator:
                 hash72_material=hash72_material,
                 sqlite_postprocess_commands=sqlite_postprocess_commands,
                 artwork_root_value=application_artwork_root_value(expected.profile),
+                include_auxiliary_image_records=(
+                    capabilities.artwork.include_auxiliary_image_records
+                ),
                 photos_root_value=capabilities.artwork.photos_root_value,
                 photo_formats=tuple(
                     PhotoThumbnailFormat(
@@ -1336,6 +1340,8 @@ class DeviceCoordinator:
                     retag_tracks=tuple(
                         update.track_id for update in request.rockbox_media
                     ),
+                    regenerate_sqlite=request.regenerate_sqlite
+                    and capabilities.database.uses_sqlite_database,
                 ),
                 target,
             )

@@ -877,7 +877,7 @@ def reconcile_artwork(
                 for c in row.children
                 if not isinstance(c.payload, MhodContainerPayload)
             )
-            if source_row is None:
+            if source_row is None and target.include_auxiliary_image_records:
                 children.append(new_auxiliary_mhod())
             rows[image_id] = replace(
                 row,

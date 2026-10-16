@@ -90,7 +90,11 @@ def _open(data: bytes) -> sqlite3.Connection:
 
 
 def _new(schema: str) -> sqlite3.Connection:
-    connection = sqlite3.connect(":memory:")
+    # The memdb VFS updates the on-disk header bookkeeping while keeping every
+    # byte in memory. A plain :memory: database serializes zero writer-version
+    # and change-counter fields, unlike Original iOpenPod's file-backed output.
+    # No leading slash: memdb names beginning with '/' share their contents.
+    connection = sqlite3.connect("file:iopenpod-sqlite?vfs=memdb", uri=True)
     try:
         connection.execute("PRAGMA journal_mode=OFF")
         connection.execute("PRAGMA synchronous=OFF")
@@ -158,7 +162,49 @@ def _allocate_pids(
 
 
 def _album_key(track: Track) -> _AlbumKey:
-    return (track.album, track.album_artist or track.artist, track.show)
+    return (
+        track.album.strip(),
+        track.album_artist.strip() or track.artist.strip(),
+        track.show.strip(),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _BrowseIds:
+    albums: dict[_AlbumKey, int]
+    artists: dict[str, int]
+    track_artists: dict[str, int]
+    composers: dict[str, int]
+
+
+def _browse_ids(
+    tracks: tuple[Track, ...], album_keys: Mapping[int, _AlbumKey]
+) -> _BrowseIds:
+    """Allocate the Original SQLite group namespace in first-Track order.
+
+    These are projection-local IDs, independent of the CDB's browse IDs. Missing
+    artists and composers use zero references rather than invented group rows.
+    """
+
+    ids = _BrowseIds({}, {}, {}, {})
+    next_pid = 101
+    for track in tracks:
+        album = album_keys[track.track_id]
+        if album not in ids.albums:
+            ids.albums[album] = next_pid
+            next_pid += 1
+        artist = album[1]
+        if artist and artist not in ids.artists:
+            ids.artists[artist] = next_pid
+            next_pid += 1
+        if track.artist and track.artist not in ids.track_artists:
+            ids.track_artists[track.artist] = next_pid
+            next_pid += 1
+        composer = track.metadata.composer
+        if composer and composer not in ids.composers:
+            ids.composers[composer] = next_pid
+            next_pid += 1
+    return ids
 
 
 def _group_tracks_by_album(
@@ -379,72 +425,11 @@ def _build_sqlite_databases(
     genre_ranks = name_ranks(t.genre for t in snapshot.tracks)
     album_artist_ranks = name_ranks(album_artist_names.values())
     series_ranks = name_ranks(series_names.values())
-    album_candidates: dict[_AlbumKey, int] = {
-        key: members[0].ipod.album_id
-        if members[0].ipod is not None and members[0].ipod.album_id
-        else 0
-        for key, members in album_groups.items()
-    }
-    artist_candidates: dict[str, int] = {}
-    track_artist_candidates: dict[str, int] = {}
-    composer_candidates: dict[str, int] = {}
-    for track in snapshot.tracks:
-        details = track.ipod
-        album_key = album_keys_by_track_id[track.track_id]
-        album_artist = album_key[1]
-        artist_candidates.setdefault(
-            album_artist,
-            details.artist_id_ref
-            if details is not None and details.artist_id_ref
-            else 0,
-        )
-        track_artist_candidates.setdefault(track.artist, 0)
-        composer_candidates.setdefault(
-            track.metadata.composer,
-            details.composer_id if details is not None and details.composer_id else 0,
-        )
-    album_ids = dict(
-        zip(
-            album_candidates,
-            _allocate_pids(
-                "album",
-                tuple((key, native) for key, native in album_candidates.items()),
-            ),
-            strict=True,
-        )
-    )
-    artist_ids = dict(
-        zip(
-            artist_candidates,
-            _allocate_pids(
-                "artist",
-                tuple(((key,), native) for key, native in artist_candidates.items()),
-            ),
-            strict=True,
-        )
-    )
-    track_artist_ids = dict(
-        zip(
-            track_artist_candidates,
-            _allocate_pids(
-                "track_artist",
-                tuple(
-                    ((key,), native) for key, native in track_artist_candidates.items()
-                ),
-            ),
-            strict=True,
-        )
-    )
-    composer_ids = dict(
-        zip(
-            composer_candidates,
-            _allocate_pids(
-                "composer",
-                tuple(((key,), native) for key, native in composer_candidates.items()),
-            ),
-            strict=True,
-        )
-    )
+    browse_ids = _browse_ids(snapshot.tracks, album_keys_by_track_id)
+    album_ids = browse_ids.albums
+    artist_ids = browse_ids.artists
+    track_artist_ids = browse_ids.track_artists
+    composer_ids = browse_ids.composers
 
     for album_key, album_pid in album_ids.items():
         members = album_groups[album_key]
@@ -461,7 +446,7 @@ def _build_sqlite_databases(
                 _s64(album_pid),
                 int(artwork_track is not None),
                 _s64(_track_pid(artwork_track)) if artwork_track is not None else 0,
-                _s64(artist_ids[album_key[1]]),
+                artist_ids.get(album_key[1], 0),
                 0,
                 album_key[0] or None,
                 album_name_ranks[album_names[album_key]],
@@ -511,9 +496,9 @@ def _build_sqlite_databases(
         details = track.ipod
         album_key = album_keys_by_track_id[track.track_id]
         album_pid = album_ids[album_key]
-        artist_pid = artist_ids[album_key[1]]
-        track_artist_pid = track_artist_ids[track.artist]
-        composer_pid = composer_ids[metadata.composer]
+        artist_pid = artist_ids.get(album_key[1], 0)
+        track_artist_pid = track_artist_ids.get(track.artist, 0)
+        composer_pid = composer_ids.get(metadata.composer, 0)
         item_values = (
             _s64(pid),
             media_kind,
@@ -634,12 +619,8 @@ def _build_sqlite_databases(
                     metadata.track_keywords,
                 ),
             )
-        purchased = details.date_added_to_itunes if details is not None else 0
-        if purchased or metadata.release_date:
-            library.execute(
-                "INSERT INTO store_info (item_pid,date_purchased,date_released) VALUES (?,?,?)",
-                (_s64(pid), _core_data(purchased), _core_data(metadata.release_date)),
-            )
+        # Original leaves store_info empty. Dates alone do not describe a complete
+        # Store record; release dates already belong to item and podcast_info.
         locations.execute(
             "INSERT INTO location VALUES (?,0,1,?,?,?,?,?,?,NULL,NULL,NULL,NULL)",
             (
@@ -1041,7 +1022,7 @@ def _insert_container(
             None if smart is None else int(smart.live_update),
             None if smart is None else int(smart.match_rules),
             0,
-            None if smart is None else int(smart.checked_only),
+            0 if smart is None else int(smart.checked_only),
             None if smart is None else int(limit is not None),
             None if limit is None else limit_kinds[limit.unit.value],
             None if limit is None else limit_orders[limit_sort],
@@ -1125,9 +1106,7 @@ def _native_file_facts(track: Track) -> _NativeFileFacts:
         audio_format = 502
     else:
         audio_format = 0
-    if (
-        details is not None and details.purchased_aac_flag and extension in mpeg4
-    ) or extension == m4p:
+    if extension == m4p:
         kind_id = 2
     elif extension in mpeg4:
         kind_id = 3

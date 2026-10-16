@@ -37,6 +37,13 @@ def analyze(
     tracks = {t.track_id: t for t in draft.snapshot.tracks}
     replacements: set[int] = set()
     retagged: set[int] = set()
+    if draft.regenerate_sqlite and not target.sqlite_database:
+        issues.append(
+            WriteIssue(
+                "target.sqlite_unavailable",
+                "SQLite regeneration requires a SQLite-capable target.",
+            )
+        )
     for track_id in draft.retag_tracks:
         if (
             track_id in retagged
@@ -193,33 +200,26 @@ def analyze(
                     "The ArtworkDB artifact requires an unsupported signature.",
                 )
             )
-        if (
-            target.checksum in (WriteChecksum.HASH58, WriteChecksum.HASHAB)
-            or (
-                target.sqlite_database
-                and target.sqlite_checksum
-                in (WriteChecksum.HASH58, WriteChecksum.HASHAB)
+    checksums: set[WriteChecksum] = {target.checksum} if changes else set()
+    if target.sqlite_database and (changes or draft.regenerate_sqlite):
+        checksums.add(target.sqlite_checksum)
+    if (
+        checksums & {WriteChecksum.HASH58, WriteChecksum.HASHAB}
+        and len(target.firewire_guid) != 8
+    ):
+        issues.append(
+            WriteIssue(
+                "target.missing_guid",
+                "Signed output requires the device's eight-byte FireWire GUID.",
             )
-        ) and len(target.firewire_guid) != 8:
-            issues.append(
-                WriteIssue(
-                    "target.missing_guid",
-                    "Signed output requires the device's eight-byte FireWire GUID.",
-                )
+        )
+    if WriteChecksum.HASH72 in checksums and target.hash72_material is None:
+        issues.append(
+            WriteIssue(
+                "target.missing_hash72_material",
+                "HASH72 output requires the selected device's retained IV and random bytes.",
             )
-        if (
-            target.checksum is WriteChecksum.HASH72
-            or (
-                target.sqlite_database
-                and target.sqlite_checksum is WriteChecksum.HASH72
-            )
-        ) and target.hash72_material is None:
-            issues.append(
-                WriteIssue(
-                    "target.missing_hash72_material",
-                    "HASH72 output requires the selected device's retained IV and random bytes.",
-                )
-            )
+        )
     if (
         target.database_version is not None
         and not 0 < target.database_version <= 0xFFFFFFFF
@@ -429,7 +429,7 @@ def analyze(
         tuple(media),
         tuple(dict.fromkeys(artwork)),
         bool(artwork) or artwork_changed,
-        structural_tracks,
+        structural_tracks or draft.regenerate_sqlite,
         required_photos=tuple(
             photo.photo_id
             for photo in (

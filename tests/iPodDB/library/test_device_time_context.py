@@ -197,10 +197,9 @@ def test_sqlite_uses_utc_2001_epoch_without_header_or_city_shift() -> None:
     result = build_sqlite_databases(
         _source().snapshot, database_id=99, checksum=WriteChecksum.NONE
     )
-    assert _rows(
-        result.library,
-        "SELECT date_purchased,date_released FROM store_info ORDER BY item_pid",
-    ) == tuple((t - 978307200, t - 978307200) for t in (WINTER, SUMMER))
+    # Dates alone do not establish Store metadata. Release dates still use the
+    # UTC 2001 epoch in item, while ordinary Tracks leave store_info empty.
+    assert _rows(result.library, "SELECT * FROM store_info") == ()
     assert _rows(
         result.library, "SELECT date_modified,date_released FROM item ORDER BY pid"
     ) == tuple((t - 978307200, t - 978307200) for t in (WINTER, SUMMER))

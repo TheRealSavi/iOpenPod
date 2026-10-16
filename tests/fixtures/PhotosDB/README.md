@@ -11,3 +11,15 @@ Decoded SHA-256:
 
 The encoded text form keeps the fixture reviewable and platform-neutral. Tests
 decode it strictly before asserting complete byte equality.
+
+`nano6-original-1x.b64` is a 2,140-byte fixture emitted by Original iOpenPod
+`origin/1.x` commit `a20242428b93b672d14b37230772dbad75139c69` on 2026-10-16.
+An 80x80 patterned image was encoded to the Nano 6 F1092 and F1093 layouts, then
+the metadata was passed through `write_photo_db_metadata_only` in a scratch
+Volume. It has a JPEG original reference, master and type-6 user Photo Albums,
+and zero date inputs. Its root field at 0x10 is 6; the image has full-resolution
+and two thumbnail children with no auxiliary type-6 MHOD. It is a writer fixture,
+not a physical-device capture.
+
+Decoded SHA-256:
+`c515f50891c9a2fa37d10663275c91393a4a825bdff90eca39f82f318deadb87`.

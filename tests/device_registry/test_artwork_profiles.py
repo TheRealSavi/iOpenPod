@@ -95,7 +95,11 @@ def test_screenless_profiles_do_not_claim_an_application_display_format() -> Non
 def test_catalog_has_a_creation_policy_for_every_cover_capable_profile() -> None:
     for profile in DEFAULT_DEVICE_REGISTRY.profiles:
         artwork = profile.capabilities.artwork
-        assert artwork.artwork_root_value == (6 if artwork.supports_cover_art else None)
+        nano_6 = profile.family == "iPod Nano" and profile.generation == "6th Gen"
+        assert artwork.artwork_root_value == (
+            (2 if nano_6 else 6) if artwork.supports_cover_art else None
+        )
+        assert artwork.include_auxiliary_image_records is not nano_6
         assert (
             artwork.photo_album_creation_type is not None
         ) is artwork.supports_photos

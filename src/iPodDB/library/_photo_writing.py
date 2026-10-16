@@ -124,7 +124,14 @@ def reconcile_photos(
                         exif_taken_date=unix_to_mac(photo.taken_date, device_time),
                         source_image_size=photo.source_size_bytes,
                     ),
-                    children=(*_photo_representations(photo), new_auxiliary_mhod()),
+                    children=(
+                        *_photo_representations(photo),
+                        *(
+                            (new_auxiliary_mhod(),)
+                            if target.include_auxiliary_image_records
+                            else ()
+                        ),
+                    ),
                 )
             )
         replacements[id(image_dataset.chunk)] = replace(

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QCheckBox, QLabel, QPlainTextEdit, QPushButton
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
+from device_registry import DEFAULT_DEVICE_REGISTRY
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
 from iOpenPod.app.library_sync_helper import IPodMediaCacheStats, IPodMediaLibrary
 from iOpenPod.app.sync_execution import (
@@ -137,6 +138,42 @@ def test_pending_database_repair_is_visible_and_executable_without_media_changes
         workspace.show_review()
         assert not execute.isEnabled()
         assert repair_label not in summary.text()
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("reset", ["clear", "scan"])
+def test_sqlite_library_refresh_is_available_without_media_changes(
+    tmp_path: Path, workspace: SyncWorkspace, reset: str
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC688")
+        assert profile is not None
+        workspace.load_comparison(
+            HostMediaLibrary(LibrarySnapshot(), (), (), HostMediaCacheStats()),
+            SyncPlan(()),
+            replace(device.active, profile=profile),
+            IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False),
+        )
+        workspace.show_review()
+        execute = workspace.findChild(QPushButton, "executeSync")
+        assert execute is not None
+        assert execute.isEnabled()
+        assert execute.text() == "Refresh Library"
+        requested = QSignalSpy(workspace.executeRequested)
+        execute.click()
+        assert requested.count() == 1
+        workspace.set_execution_available(False)
+        assert not execute.isEnabled()
+        workspace.set_execution_available(True)
+        if reset == "clear":
+            workspace.clear()
+        else:
+            workspace.show_scan("Scanning")
+        workspace.show_review()
+        assert not execute.isEnabled()
+        assert execute.text() == "Sync Selected"
     finally:
         device.coordinator.close()
 
