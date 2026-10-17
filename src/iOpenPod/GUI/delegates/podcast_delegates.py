@@ -600,14 +600,17 @@ def episode_status_text(episode: PodcastEpisode) -> str:
             if episode.enclosure_url
             else QCoreApplication.translate("PodcastPresentation", "Unavailable")
         )
-    states = [QCoreApplication.translate("PodcastPresentation", "ON IPOD")]
-    if episode.listened:
-        states.append(QCoreApplication.translate("PodcastPresentation", "LISTENED"))
-    return " · ".join(states)
+    return QCoreApplication.translate("PodcastPresentation", "ON IPOD")
 
 
 def _episode_meta(episode: PodcastEpisode, subscription_title: str = "") -> str:
-    parts = [subscription_title] if subscription_title else []
+    parts = (
+        [QCoreApplication.translate("PodcastPresentation", "LISTENED")]
+        if episode.listened
+        else []
+    )
+    if subscription_title:
+        parts.append(subscription_title)
     if episode.published_at:
         with suppress(OSError, OverflowError, ValueError):
             published = datetime.fromtimestamp(episode.published_at, UTC)

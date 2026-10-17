@@ -24,6 +24,7 @@ from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
+from iPodDB.iTunesDB.cdb import compress_iTunesCDB
 from iPodDB.library import (
     CoverFormat,
     CoverPixelFormat,
@@ -107,6 +108,7 @@ def build_device(
     media_payload: bytes | None = None,
     artwork_size_multiplier: int = 1,
     model: str = "MB565",
+    compressed_database: bool = False,
 ) -> Device:
     root = tmp_path / "ipod"
     source, thumbnail = with_shared_artwork(
@@ -157,8 +159,13 @@ def build_device(
             ),
         )
     assert isinstance(thumbnail.data, bytes)
+    database_name = "iTunesCDB" if compressed_database else "iTunesDB"
     files = {
-        "iPod_Control/iTunes/iTunesDB": result.prepared.itunes,
+        f"iPod_Control/iTunes/{database_name}": compress_iTunesCDB(
+            result.prepared.itunes
+        )
+        if compressed_database
+        else result.prepared.itunes,
         "iPod_Control/Artwork/ArtworkDB": write_ArtworkDB(artwork),
         thumbnail.relative_path: thumbnail.data,
         **{track.metadata.location: payload for track in tracks},

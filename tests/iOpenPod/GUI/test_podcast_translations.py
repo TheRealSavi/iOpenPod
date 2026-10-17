@@ -78,8 +78,9 @@ def test_podcast_state_metadata_and_counts_translate_at_display_time() -> None:
             episode_status_text(
                 PodcastEpisode("heard", on_device=True, track_id=1, listened=True)
             )
-            == "AUF DEM IPOD · ANGEHÖRT"
+            == "AUF DEM IPOD"
         )
+        assert _episode_meta(PodcastEpisode("heard", listened=True)) == "ANGEHÖRT"
         episode = PodcastEpisode(
             "meta", published_at=1, duration_seconds=3660, episode_number=7
         )

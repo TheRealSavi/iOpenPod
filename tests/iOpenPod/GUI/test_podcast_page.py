@@ -56,6 +56,7 @@ from iOpenPod.app.podcasts.models import (
 )
 from iOpenPod.GUI.delegates.podcast_delegates import (
     PodcastEpisodeDelegate,
+    _episode_meta,
     episode_status_text,
 )
 from iOpenPod.GUI.dialogs.podcast_search import PodcastSearchDialog
@@ -283,6 +284,21 @@ def test_all_podcasts_artwork_paints_four_cover_collection() -> None:
     assert image.pixelColor(76, 76) == colors["https://example.test/four.png"]
 
 
+def test_listened_episodes_show_state_with_or_without_device_membership() -> None:
+    on_device = PodcastEpisode("saved", on_device=True, track_id=42, listened=True)
+    removed = PodcastEpisode(
+        "removed",
+        enclosure_url="https://example.test/removed.mp3",
+        listened=True,
+    )
+    unavailable = PodcastEpisode("unavailable", listened=True)
+
+    for episode in (on_device, removed, unavailable):
+        assert _episode_meta(episode).startswith("LISTENED")
+    assert episode_status_text(removed) == "Add to iPod"
+    assert episode_status_text(unavailable) == "Unavailable"
+
+
 def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
     show_description_text = (
         "Conversations about the small decisions that shape great products, "
@@ -507,7 +523,8 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         assert show_shelf.model().rowCount() == 2
         assert episode_list.model().rowCount() == 2
         assert episode_status_text(subscription.episodes[0]) == "Add to iPod"
-        assert episode_status_text(subscription.episodes[1]) == "ON IPOD · LISTENED"
+        assert episode_status_text(subscription.episodes[1]) == "ON IPOD"
+        assert _episode_meta(subscription.episodes[1]).startswith("LISTENED")
 
         filter_listened.setChecked(False)
         APPLICATION.processEvents()

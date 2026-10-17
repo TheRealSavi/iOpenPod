@@ -604,11 +604,13 @@ def test_podcast_sync_repairs_retained_cover_without_replacing_media(
     any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")),
     reason="FFmpeg and FFprobe required for actual Podcast preparation",
 )
+@pytest.mark.parametrize("model", ("MB565", "MD480"), ids=("classic", "nano7"))
 def test_saved_policy_sync_is_idempotent_and_retains_history_after_removal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    model: str,
 ) -> None:
-    device = build_device(tmp_path)
+    device = build_device(tmp_path, model=model, compressed_database=model == "MD480")
     seed = podcast_addition()
     episode = replace(
         seed.episode,
@@ -657,6 +659,11 @@ def test_saved_policy_sync_is_idempotent_and_retains_history_after_removal(
         first = sync()
         assert first.status is SyncExecutionStatus.SUCCESS, first.issues
         assert len(first.completed) == 1
+        device.coordinator.select_device(device.active.candidate.id)
+        loaded = device.coordinator.load_podcast_state(device.active)
+        saved_episode = loaded.snapshot.subscriptions[0].episodes[0]
+        assert saved_episode.on_device and not saved_episode.listened
+        assert saved_episode.play_count == saved_episode.last_played == 0
         second = sync()
         assert second.status is SyncExecutionStatus.SUCCESS, second.issues
         assert second.completed == ()
