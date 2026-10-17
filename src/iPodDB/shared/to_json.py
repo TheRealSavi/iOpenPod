@@ -1,6 +1,6 @@
 import json
 from collections.abc import Mapping
-from dataclasses import fields
+from dataclasses import fields, is_dataclass
 from enum import Enum
 from typing import Any, cast
 
@@ -18,6 +18,13 @@ def json_value(value: object) -> object:
 
     if isinstance(value, BinaryStruct):
         return struct_to_dict(value)
+
+    if is_dataclass(value) and not isinstance(value, type):
+        # Typed payload data such as smart playlist rules.
+        return {
+            field.name: json_value(cast("object", getattr(value, field.name)))
+            for field in fields(value)
+        }
 
     if isinstance(value, bytes):
         try:
