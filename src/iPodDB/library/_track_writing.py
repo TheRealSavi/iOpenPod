@@ -457,7 +457,8 @@ def edit_track(
                 for i, c in enumerate(meta.chapters)
             )
             # Earlier iOpenPod writes omitted hedr. Complete only that simple
-            # shape during an explicit chapter edit; retain unfamiliar atoms.
+            # shape with Original-compatible headers during an explicit chapter
+            # edit; retain unfamiliar atoms.
             repair_app_chapters = (
                 payload.hedr is None
                 and bool(meta.chapters)
@@ -478,6 +479,14 @@ def edit_track(
                 payload=replace(
                     payload,
                     chapters=chapters,
+                    sean=(
+                        replace(
+                            payload.sean,
+                            unk_0x08=MhodChapterDataSeanHeader().unk_0x08,
+                        )
+                        if repair_app_chapters
+                        else payload.sean
+                    ),
                     hedr=_chapter_hedr() if repair_app_chapters else payload.hedr,
                     chapter_atom_indices=(
                         ()

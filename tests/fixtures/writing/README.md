@@ -7,6 +7,16 @@ executed its key derivation and explicit HMAC implementation with its literal AE
 tables, independently of iOpenPod 2.0's computed tables and standard-library HMAC.
 Tests use only the captured JSON; Original iOpenPod is never imported at runtime.
 
+`chapters-original.json` captures MHOD type 17 bodies from Original iOpenPod
+`v1.68.1` using synthetic one-chapter, Unicode-title, and 24-chapter inputs. The
+source commit and SHA-256 of both writer and header-definition files are recorded.
+The capture executed the unmodified chapter writer and its helpers, extracted by
+AST with their constants, then removed the 24-byte MHOD header. Tests compare the
+complete bodies after public Library preparation for new and existing audio/video
+Tracks, including `sean` fields, child counts, UTF-16BE names, and terminal `hedr`.
+These are generated reference bytes, not the reporter's private database snapshots.
+See [the issue investigation](../../../docs/research/chapter-data-issue-257.md).
+
 `playlists-original.json` captures `write_mhyp` output for regular, folder, grouped
 podcast, and Rentals rows, plus `write_mhod_playlist_prefs`, from Original iOpenPod
 on 2026-09-05. The source SHA-256 is recorded. Inputs use name `Example`, Track IDs

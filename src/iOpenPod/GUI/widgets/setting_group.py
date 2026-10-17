@@ -1,5 +1,6 @@
 """Reusable Settings page grouping primitives."""
 
+from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -74,11 +75,28 @@ class SettingRow(QWidget):
         layout.addLayout(copy_layout, 1)
         layout.addWidget(control)
 
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._update_minimum_height()
+
+    def _update_minimum_height(self) -> None:
+        # Scroll areas use minimum heights when sizing their contents. A wrapped
+        # description needs the row's height for its current width instead.
+        layout = self.layout()
+        if layout is not None:
+            layout.invalidate()
+            layout.activate()
+        required_height = self.heightForWidth(self.width())
+        if required_height > 0 and self.minimumHeight() != required_height:
+            self.setMinimumHeight(required_height)
+
     def set_copy(self, title: str, description: str) -> None:
         self._title.setText(title)
         self._description.setText(description)
         self._description.setVisible(bool(description))
+        self._update_minimum_height()
 
     def set_scope_hint(self, text: str) -> None:
         self._scope_hint.setText(text)
         self._scope_hint.setVisible(bool(text))
+        self._update_minimum_height()

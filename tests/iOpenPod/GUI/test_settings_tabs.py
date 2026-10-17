@@ -29,6 +29,7 @@ from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.presentation.theme.tokens import tokens_for
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
+from iOpenPod.GUI.widgets.setting_group import SettingRow
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
 
 
@@ -37,6 +38,62 @@ def context() -> Iterator[AppContext]:
     context = build_context()
     yield context
     context.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("tab_name", "control_name"),
+    (
+        ("transcodingSettingsScroll", "lossyEncoder"),
+        ("syncSettingsScroll", "fitThumbnails"),
+    ),
+)
+@pytest.mark.parametrize("page_width", (850, 1100))
+def test_multiline_setting_descriptions_fit_their_rows(
+    context: AppContext, tab_name: str, control_name: str, page_width: int
+) -> None:
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    page.resize(page_width, 720)
+    page.show()
+    tabs = page.findChild(QTabWidget)
+    scroll = page.findChild(QScrollArea, tab_name)
+    assert tabs is not None and scroll is not None
+    tabs.setCurrentWidget(scroll)
+    APPLICATION.processEvents()
+
+    control = scroll.findChild(AppComboBox, control_name)
+    assert control is not None
+    row = control.parentWidget()
+    assert isinstance(row, SettingRow)
+    description = row.findChild(QLabel, "settingDescription")
+    assert description is not None and description.isVisible()
+    required_height = description.heightForWidth(description.width())
+    assert required_height > 0
+    assert description.height() >= required_height, (
+        f"{control_name}: description {description.height()}px, "
+        f"needs {required_height}px at {description.width()}px wide; "
+        f"row is {row.height()}px"
+    )
+
+    original_copy = description.text()
+    row.set_copy("Expanded explanation", f"{original_copy} {original_copy}")
+    APPLICATION.processEvents()
+    assert description.height() >= description.heightForWidth(description.width()), (
+        f"row width={row.width()} height={row.height()} minimum={row.minimumHeight()} "
+        f"heightForWidth={row.heightForWidth(row.width())}; "
+        f"label width={description.width()} height={description.height()} "
+        f"heightForWidth={description.heightForWidth(description.width())}"
+    )
+    row.set_copy("Restored explanation", original_copy)
+    APPLICATION.processEvents()
+    assert description.height() >= description.heightForWidth(description.width())
+
+    row.set_scope_hint(f"{original_copy} {original_copy}")
+    APPLICATION.processEvents()
+    hint = row.findChildren(QLabel, "settingDescription")[1]
+    assert hint.height() >= hint.heightForWidth(hint.width())
+    row.set_scope_hint("")
+    APPLICATION.processEvents()
+    assert row.minimumHeight() == row.heightForWidth(row.width())
 
 
 def test_about_opens_active_log_folder(

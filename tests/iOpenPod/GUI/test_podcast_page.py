@@ -56,7 +56,7 @@ from iOpenPod.app.podcasts.models import (
 )
 from iOpenPod.GUI.delegates.podcast_delegates import (
     PodcastEpisodeDelegate,
-    _episode_meta,
+    episode_meta_text,
     episode_status_text,
 )
 from iOpenPod.GUI.dialogs.podcast_search import PodcastSearchDialog
@@ -294,7 +294,7 @@ def test_listened_episodes_show_state_with_or_without_device_membership() -> Non
     unavailable = PodcastEpisode("unavailable", listened=True)
 
     for episode in (on_device, removed, unavailable):
-        assert _episode_meta(episode).startswith("LISTENED")
+        assert episode_meta_text(episode).startswith("LISTENED")
     assert episode_status_text(removed) == "Add to iPod"
     assert episode_status_text(unavailable) == "Unavailable"
 
@@ -524,7 +524,7 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         assert episode_list.model().rowCount() == 2
         assert episode_status_text(subscription.episodes[0]) == "Add to iPod"
         assert episode_status_text(subscription.episodes[1]) == "ON IPOD"
-        assert _episode_meta(subscription.episodes[1]).startswith("LISTENED")
+        assert episode_meta_text(subscription.episodes[1]).startswith("LISTENED")
 
         filter_listened.setChecked(False)
         APPLICATION.processEvents()

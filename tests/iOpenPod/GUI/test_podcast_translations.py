@@ -15,7 +15,7 @@ from iOpenPod.app.podcasts.models import PodcastEpisode, PodcastSearchResult
 from iOpenPod.GUI.delegates.podcast_delegates import (
     PodcastEpisodeDelegate,
     PodcastSearchResultDelegate,
-    _episode_meta,  # pyright: ignore[reportPrivateUsage]
+    episode_meta_text,
     episode_status_text,
 )
 from iOpenPod.GUI.presentation.i18n.text import episode_count_text
@@ -80,7 +80,7 @@ def test_podcast_state_metadata_and_counts_translate_at_display_time() -> None:
             )
             == "AUF DEM IPOD"
         )
-        assert _episode_meta(PodcastEpisode("heard", listened=True)) == "ANGEHÖRT"
+        assert episode_meta_text(PodcastEpisode("heard", listened=True)) == "ANGEHÖRT"
         episode = PodcastEpisode(
             "meta", published_at=1, duration_seconds=3660, episode_number=7
         )
@@ -88,10 +88,10 @@ def test_podcast_state_metadata_and_counts_translate_at_display_time() -> None:
             QDate(1970, 1, 1), QLocale.FormatType.ShortFormat
         )
         assert (
-            _episode_meta(episode, "User show title")
+            episode_meta_text(episode, "User show title")
             == f"User show title · {expected_date} · 1 Std. 1 Min. · Folge 7"
         )
-        assert _episode_meta(PodcastEpisode("empty")) == "Folge"
+        assert episode_meta_text(PodcastEpisode("empty")) == "Folge"
         assert episode_count_text(1) == "1 Folge"
         assert episode_count_text(2) == "2 Folgen"
     finally:

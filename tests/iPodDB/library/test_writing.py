@@ -31,6 +31,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
     MhodChapterDataChapter,
     MhodChapterDataPayload,
     MhodChapterDataPreamble,
+    MhodChapterDataRawAtom,
     MhodChapterDataSeanHeader,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
@@ -198,18 +199,23 @@ def test_adding_chapters_to_existing_track_writes_terminal_hedr() -> None:
     assert source.serialize().itunes == before
 
 
-def test_editing_app_authored_hedrless_chapters_repairs_terminal_atom() -> None:
+@pytest.mark.parametrize("opaque_atom", [False, True])
+def test_editing_app_authored_hedrless_chapters_repairs_terminal_atom(
+    opaque_atom: bool,
+) -> None:
     document = parse_iTunesDB(library().serialize().itunes)
     selection = document.find_chunks(MhitHeader)[0]
     chapter_data = MhodChapterDataPayload(
         MhodChapterDataPreamble(0, 0, 0),
-        MhodChapterDataSeanHeader(atom_type=b"sean"),
+        MhodChapterDataSeanHeader(atom_type=b"sean", unk_0x08=0),
         None,
         (
             MhodChapterDataChapter("Opening", 0, ()),
             MhodChapterDataChapter("Later", 500, ()),
         ),
-        (),
+        (MhodChapterDataRawAtom(b"test", b"\x00\x00\x00\x08test"),)
+        if opaque_atom
+        else (),
     )
     document = document.replace_chunk(
         selection,
@@ -224,6 +230,34 @@ def test_editing_app_authored_hedrless_chapters_repairs_terminal_atom() -> None:
     assert unchanged.prepared is not None, unchanged.issues
     assert unchanged.prepared.itunes == source.serialize().itunes
     track = source.snapshot.tracks[0]
+    renamed = source.prepare(
+        source.analyze(
+            source.begin_draft(
+                replace(
+                    source.snapshot,
+                    tracks=(replace(track, title="Renamed"), source.snapshot.tracks[1]),
+                )
+            )
+        )
+    )
+    assert renamed.prepared is not None, renamed.issues
+    renamed_row = (
+        parse_iTunesDB(renamed.prepared.itunes).find_chunks(MhitHeader)[0].chunk
+    )
+    renamed_chapters = next(
+        child
+        for child in renamed_row.children
+        if isinstance(child.payload, MhodChapterDataPayload)
+    )
+    original_row = (
+        parse_iTunesDB(source.serialize().itunes).find_chunks(MhitHeader)[0].chunk
+    )
+    original_chapters = next(
+        child
+        for child in original_row.children
+        if isinstance(child.payload, MhodChapterDataPayload)
+    )
+    assert renamed_chapters.raw_body == original_chapters.raw_body
     edited = replace(
         track,
         metadata=replace(
@@ -248,8 +282,10 @@ def test_editing_app_authored_hedrless_chapters_repairs_terminal_atom() -> None:
         for child in row.children
         if isinstance(child.payload, MhodChapterDataPayload)
     )
-    assert repaired.hedr is not None
+    assert (repaired.hedr is None) == opaque_atom
+    assert repaired.sean.unk_0x08 == (0 if opaque_atom else 1)
     assert repaired.sean.child_count == 3
+    assert repaired.other_atoms == chapter_data.other_atoms
     assert tuple(chapter.name for chapter in repaired.chapters) == (
         "Opening edit",
         "Later",

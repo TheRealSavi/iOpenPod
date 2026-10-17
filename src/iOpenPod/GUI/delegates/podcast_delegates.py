@@ -347,7 +347,7 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
         body_metrics = QFontMetrics(body_font)
 
         subscription_title = str(index.data(PodcastListRole.SUBSCRIPTION_TITLE) or "")
-        meta = _episode_meta(episode, subscription_title)
+        meta = episode_meta_text(episode, subscription_title)
         painter.setFont(meta_font)
         painter.setPen(
             QColor(tokens.accent if episode.on_device else tokens.text_secondary)
@@ -603,7 +603,8 @@ def episode_status_text(episode: PodcastEpisode) -> str:
     return QCoreApplication.translate("PodcastPresentation", "ON IPOD")
 
 
-def _episode_meta(episode: PodcastEpisode, subscription_title: str = "") -> str:
+def episode_meta_text(episode: PodcastEpisode, subscription_title: str = "") -> str:
+    """Return the metadata line shown above an Episode's title."""
     parts = (
         [QCoreApplication.translate("PodcastPresentation", "LISTENED")]
         if episode.listened
@@ -725,5 +726,6 @@ __all__ = [
     "PodcastEpisodeDelegate",
     "PodcastSearchResultDelegate",
     "PodcastShowDelegate",
+    "episode_meta_text",
     "episode_status_text",
 ]

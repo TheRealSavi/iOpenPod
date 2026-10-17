@@ -142,6 +142,15 @@ Native Chapter, Smart Rule, and diagnostic payload details retain their existing
 specialized validation. No-op resolution has no generated effects and preserves
 every retained database file exactly.
 
+New chapter bodies use Original iOpenPod's MHOD type 17 layout: `sean` contains
+the `chap` entries followed by a 28-byte `hedr`, and its field at `0x08` is `1`.
+An explicit chapter edit also completes the recognized earlier iOpenPod shape
+with zero-valued `sean` fields and no `hedr` or opaque atoms. No-op saves and
+unrelated Track edits retain the existing chapter bytes. Merely upgrading or
+repeating an unchanged Sync does not repair old chapter data. See the
+[chapter compatibility investigation](research/chapter-data-issue-257.md) for
+reference fixtures and the limits of the available device evidence.
+
 ## Inspect the draft and the write
 
 Open **Review Changes → Inspect write…** to view a captured JSON report. Refresh

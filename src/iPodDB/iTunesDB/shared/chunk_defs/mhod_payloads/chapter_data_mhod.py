@@ -28,7 +28,8 @@ class MhodChapterDataSeanHeader(BinaryStruct):
 
     total_size: int = cf(0x00, "be_u32")
     atom_type: bytes = cf(0x04, "raw", size=4)
-    unk_0x08: int = cf(0x08, "be_u32")
+    # Original iOpenPod and libgpod author 1 here; parsed values stay retained.
+    unk_0x08: int = cf(0x08, "be_u32", default=1)
     child_count: int = cf(0x0C, "be_u32")
     unk_0x10: int = cf(0x10, "be_u32")
 
