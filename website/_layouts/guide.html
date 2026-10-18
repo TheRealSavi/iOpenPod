@@ -15,8 +15,8 @@ layout: default
     </header>
     <div class="guide-body">{{ content }}</div>
     <aside class="guide-next" aria-label="Get started">
-      <h2>Put your iPod back to work.</h2>
-      <p>iOpenPod is free and open source. Choose a download for your computer, then follow the setup guide.</p>
+      <h2>{{ page.cta_heading | default: 'Put your iPod back to work.' | escape }}</h2>
+      <p>{{ page.cta_description | default: 'iOpenPod is free and open source. Choose a download for your computer, then follow the setup guide.' | escape }}</p>
       <div class="guide-actions">
         <a class="download-nav" href="{{ '/#install' | relative_url }}">Get iOpenPod <span aria-hidden="true">↗</span></a>
         <a href="{{ '/install-help/' | relative_url }}">Installation help</a>
@@ -26,10 +26,12 @@ layout: default
   <section class="guide-related" aria-labelledby="related-heading">
     <h2 id="related-heading">Keep reading</h2>
     <ul class="guide-links">
-      {% for guide in site.data.guides %}{% unless guide.url == page.url %}
+      {% for related_url in page.related_guides %}
+      {% assign guide = site.data.guides | where: 'url', related_url | first %}
       <li><a href="{{ guide.url | relative_url }}">{{ guide.title | escape }}</a><p>{{ guide.description | escape }}</p></li>
-      {% endunless %}{% endfor %}
+      {% endfor %}
     </ul>
+    <a class="text-link" href="{{ '/guides/' | relative_url }}">Browse all iPod guides</a>
   </section>
 </main>
 {% include product-footer.html %}

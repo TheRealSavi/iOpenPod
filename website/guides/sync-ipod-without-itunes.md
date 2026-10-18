@@ -7,6 +7,10 @@ lead: iOpenPod lets you browse an existing iPod library and add music from folde
 breadcrumb_title: Sync without iTunes
 body_class: iop2-page guide-page
 permalink: /guides/sync-ipod-without-itunes/
+related_guides:
+  - /guides/ipod-compatibility/
+  - /guides/ipod-podcasts-not-syncing/
+  - /guides/ipod-music-not-syncing/
 ---
 
 ## What you need

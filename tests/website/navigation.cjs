@@ -7,13 +7,6 @@ const { chromium } = require("playwright");
 const preview = process.argv[2] || "http://127.0.0.1:8876/iOpenPod/";
 // An optional third argument saves screenshots and a machine-readable QA report.
 const evidenceDirectory = process.argv[3] && path.resolve(process.argv[3]);
-const guideRoutes = [
-  "guides/sync-ipod-without-itunes/",
-  "guides/ipod-compatibility/",
-  "guides/flac-to-ipod/",
-  "guides/ipod-manager-windows-mac-linux/",
-  "guides/ipod-not-detected/",
-];
 const results = [];
 const screenshots = [];
 
@@ -36,6 +29,13 @@ async function saveReport(error) {
 }
 
 (async () => {
+  const guides = JSON.parse(await fs.readFile(path.join(__dirname, "../../website/_data/guides.json"), "utf8"));
+  assert(Array.isArray(guides) && guides.length > 0, "The guide catalog must contain articles");
+  const guideRoutes = guides.map((guide) => {
+    assert(typeof guide.url === "string" && guide.url.startsWith("/guides/") && guide.url !== "/guides/" && guide.url.endsWith("/"), "Each catalog entry must link to a guide article");
+    return guide.url.slice(1);
+  });
+  assert.equal(new Set(guideRoutes).size, guideRoutes.length, "Guide catalog URLs must be unique");
   if (evidenceDirectory) await fs.mkdir(evidenceDirectory, { recursive: true });
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
@@ -63,6 +63,16 @@ async function saveReport(error) {
           }), "Header controls must have usable targets without overlapping or overflowing");
           assert(await page.locator("img").evaluateAll((images) => images.every((image) => parseFloat(getComputedStyle(image).borderTopLeftRadius) > 0)), "All images should have rounded corners");
           if (route.startsWith("guides/")) {
+            assert(await page.locator(".guide-header").evaluate((header) => {
+              const style = getComputedStyle(header);
+              return parseFloat(style.paddingTop) > 0 && parseFloat(style.paddingBottom) > 0;
+            }), `${testCase}: guide heading spacing must load with the guide stylesheet`);
+            const guideLists = page.locator(".guide-links");
+            assert(await guideLists.count() > 0, `${testCase}: guide navigation must be present`);
+            assert(await guideLists.evaluateAll((lists) => lists.every((list) => {
+              const style = getComputedStyle(list);
+              return style.display === "grid" && style.listStyleType === "none";
+            })), `${testCase}: guide navigation must use the styled grid without default bullets`);
             const breadcrumbs = page.getByRole("navigation", { name: "Breadcrumb", exact: true });
             const isDirectory = route === "guides/";
             assert.deepEqual(await breadcrumbs.getByRole("link").evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
@@ -75,8 +85,13 @@ async function saveReport(error) {
               [relativeTarget("#install"), relativeTarget("install-help/")],
               `${testCase}: guide calls to action must reach downloads and setup`);
             if (isDirectory) {
-              assert.deepEqual(await page.locator(".guide-directory a").evaluateAll((links) => links.map((link) => link.getAttribute("href"))), guideRoutes.map(relativeTarget));
+              const directoryLinks = await page.locator(".guide-directory a").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+              assert.deepEqual(directoryLinks.sort(), guideRoutes.map(relativeTarget).sort(), `${testCase}: directory groups must include every catalog article exactly once`);
             } else {
+              const relatedLinks = await page.locator(".guide-related .guide-links a").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+              const articleTargets = guideRoutes.map(relativeTarget);
+              assert(relatedLinks.length > 0 && relatedLinks.every((target) => articleTargets.includes(target) && target !== relativeTarget(route)), `${testCase}: related links must lead to other catalog articles`);
+              assert.equal(new Set(relatedLinks).size, relatedLinks.length, `${testCase}: related links must not repeat an article`);
               assert(await nextSteps.getByRole("link", { name: "Get iOpenPod", exact: true }).isVisible());
               assert(await nextSteps.getByRole("link", { name: "Installation help", exact: true }).isVisible());
             }
@@ -86,7 +101,7 @@ async function saveReport(error) {
               image.loading = "eager";
               return image.decode().catch(() => {});
             })));
-            const filename = `${route ? "sync-guide" : "home"}-${colorScheme}-${width}.png`;
+            const filename = `${route ? route.split("/").filter(Boolean).at(-1) : "home"}-${colorScheme}-${width}.png`;
             await page.screenshot({ path: path.join(evidenceDirectory, filename), fullPage: true, animations: "disabled" });
             screenshots.push(filename);
           }

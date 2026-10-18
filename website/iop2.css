@@ -1027,8 +1027,11 @@ html.screenshot-viewer-open,
   margin-top: var(--space-xs);
   line-height: 1.6;
 }
-.guide-directory h2 {
+.guide-directory h3 {
   font-size: var(--text-lg);
+}
+.guide-main > section + section {
+  margin-top: var(--space-2xl);
 }
 @media (min-width: 40rem) {
   .guide-links {

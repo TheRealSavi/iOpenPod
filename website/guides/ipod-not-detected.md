@@ -7,6 +7,10 @@ lead: First check whether the computer can see the iPod's files. Then check whet
 breadcrumb_title: iPod not detected
 body_class: iop2-page guide-page
 permalink: /guides/ipod-not-detected/
+related_guides:
+  - /guides/apple-devices-itunes-ipod-windows/
+  - /guides/ipod-music-not-syncing/
+  - /guides/ipod-podcasts-not-syncing/
 ---
 
 ## 1. Check the iPod model

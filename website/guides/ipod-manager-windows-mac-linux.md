@@ -7,6 +7,10 @@ lead: iOpenPod is a free, open-source iPod manager for Windows, macOS, and Linux
 breadcrumb_title: Windows, Mac & Linux
 body_class: iop2-page guide-page
 permalink: /guides/ipod-manager-windows-mac-linux/
+related_guides:
+  - /guides/apple-devices-itunes-ipod-windows/
+  - /guides/sync-ipod-without-itunes/
+  - /guides/ipod-compatibility/
 ---
 
 ## Choose your installation route
