@@ -7,6 +7,10 @@ lead: iOpenPod can convert FLAC and other supported source files during Sync. It
 breadcrumb_title: FLAC to iPod
 body_class: iop2-page guide-page
 permalink: /guides/flac-to-ipod/
+related_guides:
+  - /guides/ipod-music-not-syncing/
+  - /guides/ipod-compatibility/
+  - /guides/sync-ipod-without-itunes/
 ---
 
 ## Conversion depends on your iPod

@@ -1,6 +1,6 @@
 ---
 title: iPod guides — Sync, compatibility & troubleshooting | iOpenPod
-description: Learn to sync an iPod without iTunes, convert FLAC, choose a Windows, Mac, or Linux download, and troubleshoot detection with iOpenPod.
+description: Help for iPod sync problems with Finder, Apple Podcasts, Apple Devices, and iTunes. Check missing songs and artwork, or get started with iOpenPod.
 body_class: iop2-page guide-page
 breadcrumb_title: Guides
 permalink: /guides/
@@ -10,13 +10,26 @@ permalink: /guides/
   <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{{ '/' | relative_url }}">Home</a><span aria-hidden="true">/</span><span aria-current="page">Guides</span></nav>
   <header class="guide-header">
     <h1>Keep your iPod playing.</h1>
-    <p class="guide-lead">Practical guides for managing an iPod with iOpenPod, a free, open-source iPod manager for Windows, macOS, and Linux.</p>
+    <p class="guide-lead">Work through Apple sync problems, then explore a different way to manage your music and podcasts with iOpenPod.</p>
   </header>
+  <section aria-labelledby="troubleshooting-heading">
+  <h2 id="troubleshooting-heading">Trouble with your current iPod setup?</h2>
   <ul class="guide-links guide-directory">
-    {% for guide in site.data.guides %}
-    <li><h2><a href="{{ guide.url | relative_url }}">{{ guide.title | escape }}</a></h2><p>{{ guide.description | escape }}</p></li>
+    {% assign troubleshooting_guides = site.data.guides | where: 'group', 'troubleshooting' %}
+    {% for guide in troubleshooting_guides %}
+    <li><h3><a href="{{ guide.url | relative_url }}">{{ guide.title | escape }}</a></h3><p>{{ guide.description | escape }}</p></li>
     {% endfor %}
   </ul>
+  </section>
+  <section aria-labelledby="getting-started-heading">
+  <h2 id="getting-started-heading">Get started with iOpenPod</h2>
+  <ul class="guide-links guide-directory">
+    {% assign setup_guides = site.data.guides | where: 'group', 'start' %}
+    {% for guide in setup_guides %}
+    <li><h3><a href="{{ guide.url | relative_url }}">{{ guide.title | escape }}</a></h3><p>{{ guide.description | escape }}</p></li>
+    {% endfor %}
+  </ul>
+  </section>
   <div class="guide-next">
     <h2>Already know your way around?</h2>
     <p><a href="{{ '/#install' | relative_url }}">Download iOpenPod</a> or go straight to the <a href="{{ '/install-help/' | relative_url }}">installation guide</a>.</p>

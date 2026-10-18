@@ -2,26 +2,64 @@
   {
     "url": "/guides/sync-ipod-without-itunes/",
     "title": "Sync an iPod without iTunes",
+    "group": "start",
+    "featured": true,
     "description": "Choose music, review your first Sync, and keep control of what stays on your iPod."
   },
   {
     "url": "/guides/ipod-compatibility/",
     "title": "Check your iPod model",
+    "group": "start",
+    "featured": true,
     "description": "Understand the classic, mini, and nano targets, filesystem requirements, and validation limits."
   },
   {
     "url": "/guides/flac-to-ipod/",
     "title": "Put a FLAC collection on your iPod",
+    "group": "start",
+    "featured": false,
     "description": "Prepare compatible audio during Sync and choose between lossless audio and smaller files."
   },
   {
     "url": "/guides/ipod-manager-windows-mac-linux/",
     "title": "Choose a Windows, Mac, or Linux download",
+    "group": "start",
+    "featured": false,
     "description": "Find the right installation route for your computer and understand the platform requirements."
   },
   {
     "url": "/guides/ipod-not-detected/",
     "title": "Troubleshoot an iPod that does not appear",
+    "group": "troubleshooting",
+    "featured": false,
     "description": "Separate connection, filesystem, and identification problems before trying to sync."
+  },
+  {
+    "url": "/guides/ipod-podcasts-not-syncing/",
+    "title": "Podcasts not syncing through Finder?",
+    "group": "troubleshooting",
+    "featured": true,
+    "description": "Check missing episodes and the Podcasts tab, then try an independent RSS-to-iPod workflow."
+  },
+  {
+    "url": "/guides/ipod-music-not-syncing/",
+    "title": "Music not syncing with Finder or iTunes?",
+    "group": "troubleshooting",
+    "featured": true,
+    "description": "Find why songs will not transfer and learn how to sync your own music folders with iOpenPod."
+  },
+  {
+    "url": "/guides/ipod-album-artwork-missing/",
+    "title": "Album art in Music but missing on the iPod?",
+    "group": "troubleshooting",
+    "featured": true,
+    "description": "Check source covers and transfer behavior, then make a focused artwork correction with iOpenPod."
+  },
+  {
+    "url": "/guides/apple-devices-itunes-ipod-windows/",
+    "title": "Apple Devices or iTunes getting in the way?",
+    "group": "troubleshooting",
+    "featured": true,
+    "description": "Untangle Windows app changes, missing Music menus, and an iPod absent from Apple's sidebar."
   }
 ]

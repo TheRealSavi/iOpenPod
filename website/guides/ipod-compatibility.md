@@ -7,6 +7,10 @@ lead: iOpenPod manages filesystem-accessible iPods. The model, firmware, filesys
 breadcrumb_title: iPod compatibility
 body_class: iop2-page guide-page
 permalink: /guides/ipod-compatibility/
+related_guides:
+  - /guides/sync-ipod-without-itunes/
+  - /guides/ipod-not-detected/
+  - /guides/ipod-album-artwork-missing/
 ---
 
 ## Which iPods does iOpenPod target?

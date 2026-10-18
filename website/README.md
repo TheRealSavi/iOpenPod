@@ -28,9 +28,13 @@ the setup guide. `_includes/` owns the shared navigation, footer, screenshot
 figures, and download rows. `_layouts/default.html` owns metadata and asset loading.
 `install-help-redirect.html` preserves the older `/install-help.html` URL.
 
-`guides/` contains the guide directory and five task-focused articles: first Sync,
-device compatibility, FLAC conversion, platform selection, and detection help.
-`_data/guides.json` supplies homepage, directory, and related-article links;
+`guides/` contains setup articles and guides for people encountering problems in
+Apple Podcasts, Finder, Apple Music, Apple Devices, and iTunes. Answer the Apple
+workflow question first, then explain the relevant iOpenPod alternative using
+verified released behavior. Cite official instructions and distinguish reported
+symptoms from established fixes.
+`_data/guides.json` supplies link text and descriptions, a `group` of `start` or
+`troubleshooting`, and a `featured` flag for homepage links;
 `_layouts/guide.html` supplies the reading layout and download/help actions.
 Keep substantive guidance specific to the task instead of duplicating pages for
 keyword variants. Screenshots reuse the existing product assets and viewer.
@@ -39,7 +43,10 @@ Guide front matter sets a unique `title`, `description`, `heading`, `lead`,
 `breadcrumb_title`, and `permalink`, with `layout: guide` and
 `body_class: iop2-page guide-page`. Visible breadcrumbs and `BreadcrumbList`
 structured data must describe the same path. Use `relative_url` for internal
-links, including links with fragments. All eight content pages are discoverable
+links, including links with fragments. Set `related_guides` to two or three
+relevant catalog URLs. Optional `cta_heading` and `cta_description` explain the
+next step for the reader's task; the download and setup links stay shared.
+All content pages are discoverable
 from ordinary HTML links without JavaScript.
 
 The shared layout escapes HTML metadata and JSON-encodes structured data. Its

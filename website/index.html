@@ -190,11 +190,12 @@ permalink: /
 
   <section class="guides-section container" aria-labelledby="guides-heading">
     <div class="section-intro">
-      <h2 id="guides-heading">Start with a little know-how.</h2>
-      <p>Choose the right download, check your iPod, and plan your first Sync.</p>
+      <h2 id="guides-heading">Make your next sync easier.</h2>
+      <p>Work through Finder, Podcasts, and iTunes problems, or plan your first Sync with iOpenPod.</p>
     </div>
     <ul class="guide-links">
-      {% for guide in site.data.guides %}
+      {% assign featured_guides = site.data.guides | where: 'featured', true %}
+      {% for guide in featured_guides %}
       <li><a href="{{ guide.url | relative_url }}">{{ guide.title | escape }}</a><p>{{ guide.description | escape }}</p></li>
       {% endfor %}
     </ul>
