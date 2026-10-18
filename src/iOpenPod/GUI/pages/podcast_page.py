@@ -184,13 +184,6 @@ class PodcastPage(QWidget):
     def _build_empty_page(self) -> QWidget:
         page = QWidget(self)
         page.setObjectName("podcastEmptyPage")
-        artwork = PodcastArtworkView(
-            self._theme_manager,
-            self._artwork_provider,
-            144,
-            page,
-        )
-        artwork.set_artwork("", stable_artwork_seed("iOpenPod Podcasts"))
         self._empty_title = QLabel(page)
         self._empty_title.setObjectName("podcastEmptyTitle")
         self._empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -209,8 +202,6 @@ class PodcastPage(QWidget):
         )
         empty_layout.setSpacing(LAYOUT.space_sm)
         empty_layout.addStretch(1)
-        empty_layout.addWidget(artwork, 0, Qt.AlignmentFlag.AlignHCenter)
-        empty_layout.addSpacing(LAYOUT.space_sm)
         empty_layout.addWidget(self._empty_title)
         empty_layout.addWidget(self._empty_detail, 0, Qt.AlignmentFlag.AlignHCenter)
         empty_layout.addSpacing(LAYOUT.space_xs)
