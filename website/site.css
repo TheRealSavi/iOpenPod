@@ -7,8 +7,6 @@
  * honest: pass (46) · chrome: pass (47) · tokens: pass (48) · icons: pass (30)
  * mobile: static safeguards pass (34, 49–57) · rendered viewport sweep pending
  */
-@import url("tokens.css");
-
 *,
 *::before,
 *::after {

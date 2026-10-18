@@ -67,6 +67,12 @@ contains the scoped IOP2 layout and consumes the existing `site.css` foundation.
 The layout loads the readable CSS, `theme.js`, and `screenshot-viewer.js` directly;
 older `.min.*` assets are retained but are no longer runtime inputs.
 
+The shared layout loads `tokens.css` before `site.css`, then `theme.css` and
+`iop2.css`. Every local stylesheet and script URL includes the same Jekyll build
+timestamp (`?v=...`) so a newly deployed page requests fresh assets even when a
+browser still caches files from an earlier deployment. Keep these URLs versioned
+and load shared styles through the layout rather than unversioned CSS imports.
+
 The Sync showcase alternates four compact screenshot-and-text rows on desktop:
 media folders, media selection, Sync Review, and conversion settings. On smaller screens each
 image appears above its description. The other product-tour sections are separate.
