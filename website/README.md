@@ -28,15 +28,39 @@ the setup guide. `_includes/` owns the shared navigation, footer, screenshot
 figures, and download rows. `_layouts/default.html` owns metadata and asset loading.
 `install-help-redirect.html` preserves the older `/install-help.html` URL.
 
+`guides/` contains the guide directory and five task-focused articles: first Sync,
+device compatibility, FLAC conversion, platform selection, and detection help.
+`_data/guides.json` supplies homepage, directory, and related-article links;
+`_layouts/guide.html` supplies the reading layout and download/help actions.
+Keep substantive guidance specific to the task instead of duplicating pages for
+keyword variants. Screenshots reuse the existing product assets and viewer.
+
+Guide front matter sets a unique `title`, `description`, `heading`, `lead`,
+`breadcrumb_title`, and `permalink`, with `layout: guide` and
+`body_class: iop2-page guide-page`. Visible breadcrumbs and `BreadcrumbList`
+structured data must describe the same path. Use `relative_url` for internal
+links, including links with fragments. All eight content pages are discoverable
+from ordinary HTML links without JavaScript.
+
+The shared layout escapes HTML metadata and JSON-encodes structured data. Its
+SoftwareApplication describes the free price, project source, installation help,
+and current release link. It does not invent reviews or ratings, and valid markup
+alone does not establish eligibility for Google's software rich results.
+The optional Search Console meta setting requires a genuine meta-tag token;
+the existing HTML verification filename is not that token. Keep the verification
+file available but excluded from the sitemap. `404.html` is also excluded and
+marked `noindex`; it offers routes back to useful content.
+
 The homepage hero includes a subtle background panel with an outlined heart, a
 short development-support message, and a pill-shaped Ko-fi link beside the
 introduction. This invitation, the compact Donate link in
 the navigation, and the footer support link share `donation_url` in `_config.yml`.
 
-The header’s Shields.io badges show GitHub stars and total release-asset downloads for
-the whole iOpenPod project, including earlier releases. Downloads are not unique
-or active users. Keep the labels accurate; badge counts
-come from Shields.io and depend on that external service and its cache.
+The header links to the GitHub project and shows total release-asset downloads
+through Shields.io, including earlier releases. Downloads are not unique or active
+users. Keep the label accurate; the count depends on Shields.io and its cache.
+The star-count badge was replaced with a stable project link after it displayed
+an invalid response during the October 2026 review.
 
 `tokens.css` and `theme.css` own the shared colors and typography. `iop2.css`
 contains the scoped IOP2 layout and consumes the existing `site.css` foundation.
@@ -83,7 +107,7 @@ node tests/website/navigation.cjs http://127.0.0.1:4000/iOpenPod/
 
 This checks every screenshot in both themes, mobile and desktop sizes, keyboard
 focus, zoom, all dismissal methods, unwanted downloads, and logo pixel density.
-Navigation checks cover both pages, responsive header links, rounded images,
+Navigation checks cover all content pages, responsive header links, rounded images,
 the direct hero-to-Sync transition, and synchronized header/footer theme controls
 with keyboard activation and saved preferences.
 
@@ -97,15 +121,29 @@ device, backup, and media-tool claims consistent with the setup guide.
 `FAQPage` JSON-LD in `_layouts/default.html`. The homepage opts in with
 `include_faq_schema: true`; pages without the visible FAQs must not opt in.
 Keep answers available in the rendered HTML and structured data identical.
-Structured data describes the content; it does not guarantee search placement or
-FAQ rich results. Google limits those results to qualifying government and health
-sites ([Google Search guidance](https://developers.google.com/search/blog/2023/08/howto-faq-changes)).
+Structured data describes the content; it does not guarantee search placement.
+Google retired FAQ rich results in May 2026
+([Search documentation updates](https://developers.google.com/search/updates)).
+The visible FAQs remain useful to readers; their matching schema is not an
+acquisition promise.
 
 After building, validate the FAQ content and structured data together:
 
 ```shell
 uv run python tests/website/check_seo.py .scratch/website-preview/iOpenPod
 ```
+
+This also validates unique metadata, canonical URLs, social-image references,
+software and breadcrumb markup, sitemap coverage, robots, local images, and
+internal links and fragments. CI builds and checks both the custom-domain site
+and an isolated `/iOpenPod` hosting variant, then uploads only the production
+build. Run the browser navigation checks after changing links, headings, or layout.
+
+See the [discoverability research](../docs/research/iopenpod-discoverability.md)
+for source-backed intent selection and measurement guidance. Keep account exports,
+traffic baselines, outreach drafts, and rollout work items in ignored `.scratch/`.
+Updating this site or the repository README does not republish the PyPI description;
+that follows the normal application release process.
 
 ## Maintain download and update instructions
 

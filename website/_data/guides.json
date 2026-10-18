@@ -1,0 +1,27 @@
+[
+  {
+    "url": "/guides/sync-ipod-without-itunes/",
+    "title": "Sync an iPod without iTunes",
+    "description": "Choose music, review your first Sync, and keep control of what stays on your iPod."
+  },
+  {
+    "url": "/guides/ipod-compatibility/",
+    "title": "Check your iPod model",
+    "description": "Understand the classic, mini, and nano targets, filesystem requirements, and validation limits."
+  },
+  {
+    "url": "/guides/flac-to-ipod/",
+    "title": "Put a FLAC collection on your iPod",
+    "description": "Prepare compatible audio during Sync and choose between lossless audio and smaller files."
+  },
+  {
+    "url": "/guides/ipod-manager-windows-mac-linux/",
+    "title": "Choose a Windows, Mac, or Linux download",
+    "description": "Find the right installation route for your computer and understand the platform requirements."
+  },
+  {
+    "url": "/guides/ipod-not-detected/",
+    "title": "Troubleshoot an iPod that does not appear",
+    "description": "Separate connection, filesystem, and identification problems before trying to sync."
+  }
+]

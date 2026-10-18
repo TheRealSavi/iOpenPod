@@ -79,8 +79,8 @@
 }
 
 .product-nav-actions {
-  display: grid;
-  grid-template-columns: repeat(3, auto);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-xs) var(--space-sm);
@@ -878,5 +878,163 @@ html.screenshot-viewer-open,
   }
   .iop2-page button:active {
     transform: none;
+  }
+}
+
+/* Reading layouts share the product site's existing tokens and screenshot viewer. */
+.project-source-link {
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+.intro-download {
+  display: flex;
+  width: fit-content;
+  margin-top: var(--space-md);
+}
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs) var(--space-sm);
+  padding-block: var(--space-lg);
+  color: var(--color-ink-2);
+  font-size: var(--text-sm);
+}
+.breadcrumbs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-hit);
+  white-space: nowrap;
+}
+.guide-main {
+  padding-bottom: var(--space-3xl);
+}
+.guide-article,
+.guide-main > .guide-header,
+.guide-main > .breadcrumbs,
+.guide-main > .guide-next {
+  max-width: var(--layout-reading);
+  margin-inline: auto;
+}
+.guide-header {
+  padding-block: var(--space-lg) var(--space-xl);
+}
+.guide-header h1 {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  line-height: 1.1;
+  letter-spacing: var(--tracking-hero);
+  overflow-wrap: anywhere;
+}
+.guide-lead {
+  font-size: var(--text-md);
+  line-height: 1.6;
+  margin-top: var(--space-lg);
+  color: var(--color-ink-2);
+}
+.guide-body {
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.guide-body h2 {
+  margin-block: var(--space-2xl) var(--space-lg);
+  font-size: var(--text-xl);
+}
+.guide-body p,
+.guide-body ul,
+.guide-body ol,
+.guide-body .product-shot {
+  margin-block: var(--space-lg);
+}
+.guide-body li + li {
+  margin-top: var(--space-sm);
+}
+.guide-body p,
+.guide-body li {
+  color: var(--color-ink-2);
+}
+.guide-body strong {
+  color: var(--color-ink);
+}
+.guide-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.guide-body th,
+.guide-body td {
+  padding: var(--space-sm);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+.guide-body th {
+  background: var(--color-paper-2);
+}
+.guide-body code {
+  font-size: var(--text-sm);
+}
+.guide-next {
+  margin-top: var(--space-2xl);
+  padding-block: var(--space-xl);
+  border-block: var(--rule-hair) solid var(--color-rule);
+}
+.guide-next h2,
+.guide-related h2 {
+  font-size: var(--text-xl);
+}
+.guide-next p {
+  margin-block: var(--space-md);
+}
+.guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+}
+.guide-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-hit);
+  white-space: nowrap;
+}
+.guides-section,
+.guide-related {
+  padding-block: var(--space-2xl);
+}
+.guide-links {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: var(--space-xl);
+  list-style: none;
+  padding: 0;
+  margin-block: var(--space-lg);
+}
+.guide-links li {
+  padding-block: var(--space-lg);
+  border-top: var(--rule-hair) solid var(--color-rule);
+  min-width: 0;
+}
+.guide-links a {
+  display: inline-block;
+  padding-block: var(--space-xs);
+  font-weight: 700;
+  line-height: 1.5;
+}
+.guide-links p {
+  color: var(--color-ink-2);
+  margin-top: var(--space-xs);
+  line-height: 1.6;
+}
+.guide-directory h2 {
+  font-size: var(--text-lg);
+}
+@media (min-width: 40rem) {
+  .guide-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .product-nav-actions {
+    flex-wrap: wrap;
   }
 }

@@ -1,4 +1,8 @@
+---
+layout: null
+sitemap: false
+---
 User-agent: *
 Allow: /
 
-Sitemap: https://iopenpod.com/sitemap.xml
+Sitemap: {{ '/sitemap.xml' | absolute_url }}

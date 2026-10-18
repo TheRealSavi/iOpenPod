@@ -3,10 +3,13 @@ baseurl: ""
 url: https://iopenpod.com
 author: John Gibbons
 source_url: https://github.com/TheRealSavi/iOpenPod/tree/main
+repository_url: https://github.com/TheRealSavi/iOpenPod
 donation_url: https://ko-fi.com/johngibbons
 description: iOpenPod is a free, open-source desktop iPod manager. Download for Windows, macOS, and Linux, or install from PyPI with uv or Microsoft Store.
-default_og_image: https://iopenpod.com/screenshots/iop2/album-library.webp
-google_site_verification: google9044a61ef03e1fae
+default_og_image: /screenshots/iop2/album-library.webp
+default_og_image_alt: iOpenPod showing an iPod album library on Windows
+# Set google_site_verification only to a Search Console HTML-tag token. The
+# existing google9044a61ef03e1fae.html file separately supports file verification.
 
 plugins:
   - jekyll-sitemap
@@ -19,6 +22,10 @@ defaults:
       type: pages
     values:
       layout: default
+  - scope:
+      path: google9044a61ef03e1fae.html
+    values:
+      sitemap: false
 
 exclude:
   - README.md
