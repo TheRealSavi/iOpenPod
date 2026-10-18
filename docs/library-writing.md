@@ -732,6 +732,42 @@ and the Original writer's display preferences. Master membership, known browse
 indexes, album/artist/composer links, folder child rules and aggregates, and podcast
 groups are reconciled and checked independently after reparse.
 
+Sort-4 Albums indexes keep each semantic Album contiguous before sorting its
+Tracks. Normalized titles that compare equally (for example, `Nexus` and
+`The Nexus`) are separated by effective Album Artist and exact Album identity.
+Each group's first member in disc/Track-number order supplies its sort values;
+Master occurrence order resolves ties. Index positions address that particular
+Master's occurrences, and alphabetical jump ranges are rebuilt with the order.
+Independent verification checks permutation completeness, Album contiguity, and
+jump ranges. See [ADR-0148](adr/0148-keep-album-browse-groups-contiguous.md).
+
+To repair existing bad Albums indexes in the application, load the iPod, open
+**Sync with Host**, proceed to **Review Sync** with no media changes selected,
+and choose **Refresh Library**. Disable Playlist reconciliation in the review if
+only the database refresh is wanted. Non-SQLite iPods with Tracks, including
+Classic models, rebuild their retained Albums index/jump-table pairs. Normal Sync
+also requests this rebuild. SQLite iPods retain their existing complete SQLite
+regeneration workflow. Refresh uses normal signing, source-fingerprint checks,
+and a recoverable Storage Transaction; it does not require media reimport.
+
+At the iPodDB boundary, callers can request the same repair explicitly:
+
+```python
+draft = source.begin_draft(rebuild_album_indexes=True)
+plan = source.analyze(draft, target)
+result = source.prepare(plan, resources)
+```
+
+`target` carries the device's usual signing and format requirements, and
+`resources` carries the captured evidence needed by preparation. A successful
+result still requires normal application review and Storage publication. The
+intent is also available on `LibraryPreparationRequest`. Repair-only preparation
+preserves Track metadata, native Album records, Master occurrences, unrelated
+indexes, and Unknown Data. Missing or duplicate halves of an existing sort-4 pair,
+or ambiguous Master membership, block repair. A source with neither half remains
+unchanged unless a structural edit independently requires index creation. Loading,
+`serialize()`, and default no-op drafts do not repair or normalize source bytes.
+
 Retained sort-36 album indexes use a matching captured collation profile when group
 order needs rebuilding. If none matches, preparation uses the explicit default
 profile and reports a `library.album_index` warning that album browsing order may

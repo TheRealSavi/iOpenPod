@@ -10462,6 +10462,18 @@ Playlists: %3</translation>
         <translation>Dieser Schreibvorgang für die Mediathek erfordert einen erfassten Dateibestand ohne ausstehende positionsbezogene Wiedergabe-Begleitdateien. Behalten Sie diese bei oder gleichen Sie sie ab, bevor Sie die Ausgabe vorbereiten.</translation>
     </message>
     <message>
+        <source>Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.</source>
+        <translation>Zum Neuaufbau des Albumindex sind genau ein Paar aus Index und Sprungtabelle sowie vollständige, eindeutige Einträge in der Hauptwiedergabeliste erforderlich.</translation>
+    </message>
+    <message>
+        <source>Album rebuilding changed Master Playlist occurrences.</source>
+        <translation>Der Neuaufbau der Albumindizes hat Einträge der Hauptwiedergabeliste verändert.</translation>
+    </message>
+    <message>
+        <source>Album rebuilding lost or duplicated a retained browse index.</source>
+        <translation>Beim Neuaufbau der Albumindizes ging ein beibehaltener Ansichtsindex verloren oder wurde dupliziert.</translation>
+    </message>
+    <message>
         <source>Tracks</source>
         <translation>Titel</translation>
     </message>

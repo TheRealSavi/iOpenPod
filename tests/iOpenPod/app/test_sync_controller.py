@@ -277,14 +277,20 @@ def test_playlist_only_sync_requires_enabled_review_choice(
         SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
     )
     try:
-        assert not controller.start(
+        assert controller.start(
             SyncPlan(()), host, ipod, active, reconcile_playlists=False
         )
+        wait_for(lambda: not controller.busy)
+        assert service.request is not None and not service.request.reconcile_playlists
+        # Refresh can run without Playlist reconciliation; the next attempt needs
+        # the newly published Library as its source.
+        active = devices.active_ipod
+        assert active is not None
         assert controller.start(
             SyncPlan(()), host, ipod, active, reconcile_playlists=True
         )
         wait_for(lambda: not controller.busy)
-        assert service.request is not None and service.request.reconcile_playlists
+        assert service.request.reconcile_playlists
         assert controller.result is not None
         assert controller.result.status is SyncExecutionStatus.SUCCESS
     finally:
@@ -331,9 +337,11 @@ def test_pending_database_repair_allows_sync_without_media_changes(
 
 
 @pytest.mark.parametrize("sqlite", (False, True))
-def test_only_sqlite_targets_allow_refresh_without_selected_changes(
+@pytest.mark.parametrize("has_tracks", (False, True))
+def test_library_refresh_admission_without_selected_changes(
     session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
     sqlite: bool,
+    has_tracks: bool,
 ) -> None:
     coordinator, devices, workspace, _ = session
     active = coordinator.active_ipod
@@ -342,7 +350,9 @@ def test_only_sqlite_targets_allow_refresh_without_selected_changes(
         profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC688")
         assert profile is not None
         active = replace(active, profile=profile)
-        devices.finish_library_save(active)
+    if not has_tracks:
+        active = replace(active, library=replace(active.library, tracks=()))
+    devices.finish_library_save(active)
     workspace.load(active.library)
     _, host, ipod = _inputs()
     service = SyncExecutionStub()
@@ -354,8 +364,9 @@ def test_only_sqlite_targets_allow_refresh_without_selected_changes(
         SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
     )
     try:
-        assert controller.start(SyncPlan(()), host, ipod, active) is sqlite
-        if sqlite:
+        allowed = sqlite or has_tracks
+        assert controller.start(SyncPlan(()), host, ipod, active) is allowed
+        if allowed:
             wait_for(lambda: not controller.busy)
             assert service.request is not None
             assert service.request.plan.change_count == 0

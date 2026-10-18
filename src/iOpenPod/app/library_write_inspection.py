@@ -275,6 +275,7 @@ def inspect_library_write(
             "workspace_revision": request.workspace_revision,
             "source_connection": request.source.candidate.id.value,
             "delete_omissions": request.delete_omissions,
+            "rebuild_album_indexes": request.rebuild_album_indexes,
             "source_database": request.source.database_name,
             "source_fingerprint": {
                 "size": request.source.database_fingerprint.size,

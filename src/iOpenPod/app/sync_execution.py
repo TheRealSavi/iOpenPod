@@ -571,6 +571,7 @@ class SyncExecutor:
                     )
                     if requested_changes or (
                         not draft.regenerate_sqlite
+                        and not draft.rebuild_album_indexes
                         and not any(
                             can_refresh_smart_playlist(playlist)
                             for playlist in draft.snapshot.playlists
@@ -2400,6 +2401,8 @@ def _draft(
             if item.item.action is SyncPlanAction.UPDATE
         ),
         regenerate_sqlite=request.source.profile.capabilities.database.uses_sqlite_database,
+        rebuild_album_indexes=bool(request.source.library.tracks)
+        and not request.source.profile.capabilities.database.uses_sqlite_database,
     )
     return draft, tuple(completed), reconciled or normalized != desired
 

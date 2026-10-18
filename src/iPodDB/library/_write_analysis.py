@@ -28,9 +28,17 @@ def analyze(
     draft: LibraryDraft,
     target: WriteTarget,
     timezone_offset: TimeConversion = 0,
+    *,
+    has_album_indexes: bool = False,
 ) -> LibraryWritePlan:
     issues: list[WriteIssue] = []
     changes: list[LibraryChange] = []
+    if draft.rebuild_album_indexes and has_album_indexes:
+        changes.append(
+            LibraryChange(
+                "library", None, "repair", "Album browsing", ("album_indexes",)
+            )
+        )
     media: list[int] = []
     artwork: list[int] = []
     old_tracks = {t.track_id: t for t in original.tracks}

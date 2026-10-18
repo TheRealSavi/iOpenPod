@@ -395,6 +395,7 @@ class SyncController(QObject):
             and not source.artwork_repairs_pending
             and not source.photos_repairs_pending
             and not source.profile.capabilities.database.uses_sqlite_database
+            and not source.library.tracks
             and not (
                 reconcile_playlists and preview_playlist_sync(plan, host, ipod, source)
             )

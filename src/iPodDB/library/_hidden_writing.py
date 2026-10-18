@@ -102,7 +102,7 @@ def reconcile_hidden(
     issues: list[WriteIssue],
     indexes: tuple[BrowseIndex, ...],
 ) -> DatabaseDocument[MhbdHeader]:
-    if original.tracks == desired.tracks:
+    if original.tracks == desired.tracks and not any(i.affected for i in indexes):
         return document
 
     replacements: dict[int, ParsedChunk[ChunkHeader] | None] = {}
@@ -152,6 +152,8 @@ def reconcile_hidden(
                     chunk, payload=replace(chunk.payload, entries=index.jumps)
                 )
     document = rebuild(document, replacements)
+    if original.tracks == desired.tracks:
+        return document
     persistent_tracks = {
         s.chunk.header.track_id: s.chunk.header.db_track_id
         for s in document.find_chunks(MhitHeader)

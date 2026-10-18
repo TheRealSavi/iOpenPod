@@ -62,6 +62,8 @@ def verify_playlists(
     output_bytes: bytes,
     generated_podcasts: frozenset[int] = frozenset(),
     device_time: TimeConversion = 0,
+    *,
+    rebuild_album_indexes: bool = False,
 ) -> tuple[WriteIssue, ...]:
     issues = list(
         structure_issues(
@@ -236,6 +238,36 @@ def verify_playlists(
         baseline = old.get((kind, identity))
         items = tuple(s.chunk for s in selection.find_chunks(MhipHeader))
         if is_master(kind, chunk.header):
+            if rebuild_album_indexes and baseline is not None and not structural_tracks:
+
+                def album_chunks(master: ParsedChunk[MhypHeader]) -> Counter[int]:
+                    return Counter(
+                        c.header.mhod_type
+                        for c in master.children
+                        if isinstance(c.header, MhodHeader)
+                        and isinstance(
+                            c.prefix,
+                            MhodLibraryIndexPrefix | MhodLibraryJumpTablePrefix,
+                        )
+                        and c.prefix.sort_type == 4
+                    )
+
+                if album_chunks(baseline.chunk) != album_chunks(chunk):
+                    fail(
+                        "playlist_index",
+                        "Album rebuilding lost or duplicated a retained browse index.",
+                        kind,
+                        chunk,
+                    )
+                if tuple(c.header.track_id for c in items) != tuple(
+                    s.chunk.header.track_id for s in baseline.find_chunks(MhipHeader)
+                ):
+                    fail(
+                        "master_membership",
+                        "Album rebuilding changed Master Playlist occurrences.",
+                        kind,
+                        chunk,
+                    )
             if before.device_name != desired.device_name or baseline is None:
                 master_title = next(
                     (
@@ -366,7 +398,10 @@ def verify_playlists(
                             child.prefix.sort_type,
                             prior_tracks,
                             final_tracks,
-                            retained=retained_index,
+                            retained=retained_index
+                            and not (
+                                rebuild_album_indexes and child.prefix.sort_type == 4
+                            ),
                         )
                     if error:
                         fail("playlist_index", error, kind, chunk)

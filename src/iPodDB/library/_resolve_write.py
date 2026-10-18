@@ -1,10 +1,12 @@
 """Resolve desired edits and their consequences before changing retained documents."""
 
 import math
+from collections import Counter
 from dataclasses import replace
 
 from iPodDB.device_time import DeviceTimeContext
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
@@ -120,7 +122,25 @@ def resolve(
     source_revision: str,
     device_time: DeviceTimeContext,
 ) -> ResolvedWrite:
-    plan = analyze(source_revision, original, draft, target, device_time)
+    rows = playlist_rows(document)
+    plan = analyze(
+        source_revision,
+        original,
+        draft,
+        target,
+        device_time,
+        has_album_indexes=any(
+            is_master(kind, row.chunk.header)
+            and any(
+                isinstance(
+                    c.prefix, MhodLibraryIndexPrefix | MhodLibraryJumpTablePrefix
+                )
+                and c.prefix.sort_type == 4
+                for c in row.chunk.children
+            )
+            for kind, row in rows
+        ),
+    )
     issues = [*plan.issues, *source_warnings(document, original)]
     requested = draft.snapshot
     desired = requested
@@ -200,7 +220,44 @@ def resolve(
         for i in old_playlists.keys() | new_playlists.keys()
         if old_playlists.get(i) != new_playlists.get(i)
     ) | frozenset(f.playlist_id for f in folders)
-    rows = playlist_rows(document)
+    if draft.rebuild_album_indexes:
+        for kind, row in rows:
+            if not is_master(kind, row.chunk.header):
+                continue
+            album_chunks = [
+                c
+                for c in row.chunk.children
+                if isinstance(c.header, MhodHeader)
+                and isinstance(
+                    c.prefix, MhodLibraryIndexPrefix | MhodLibraryJumpTablePrefix
+                )
+                and c.prefix.sort_type == 4
+            ]
+            if not album_chunks:
+                continue
+            members = [
+                c.header.track_id
+                for c in row.chunk.children
+                if isinstance(c.header, MhipHeader)
+            ]
+            if Counter(
+                c.header.mhod_type
+                for c in album_chunks
+                if isinstance(c.header, MhodHeader)
+            ) != Counter((52, 53)) or (
+                not structural
+                and Counter(members) != Counter(t.track_id for t in original.tracks)
+            ):
+                issues.append(
+                    WriteIssue(
+                        "library.album_rebuild_ambiguous",
+                        "Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.",
+                        phase="resolution",
+                        subject="playlist",
+                        record_id=row.chunk.header.playlist_id,
+                        detail=f"Dataset {kind}.",
+                    )
+                )
     old_tracks = {t.track_id: t for t in original.tracks}
     albums_changed = {
         t.track_id
@@ -253,6 +310,13 @@ def resolve(
                             offset=selection.chunk.offset,
                         )
                     )
+    if draft.rebuild_album_indexes:
+        # An explicit Albums-only rebuild does not change the inputs to other,
+        # potentially unknown, retained indexes.
+        indexes = tuple(
+            replace(index, affected=True) if index.sort_type == 4 else index
+            for index in indexes
+        )
     native_tracks = document.find_chunks(MhitHeader)
     native_playlists = document.find_chunks(MhypHeader)
     track_ids: dict[int, int] = {}

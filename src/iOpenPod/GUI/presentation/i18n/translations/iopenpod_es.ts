@@ -10462,6 +10462,18 @@ Playlists: %3</translation>
         <translation>Esta escritura de la biblioteca requiere un inventario capturado sin archivos auxiliares de posiciones de reproducción pendientes. Consérvalos o ajústalos antes de preparar el resultado.</translation>
     </message>
     <message>
+        <source>Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.</source>
+        <translation>La reconstrucción del índice de álbumes requiere un único par de índice y tabla de saltos, además de entradas completas e inequívocas en la lista principal.</translation>
+    </message>
+    <message>
+        <source>Album rebuilding changed Master Playlist occurrences.</source>
+        <translation>La reconstrucción de los índices de álbumes cambió las entradas de la lista principal.</translation>
+    </message>
+    <message>
+        <source>Album rebuilding lost or duplicated a retained browse index.</source>
+        <translation>La reconstrucción de los índices de álbumes perdió o duplicó un índice de navegación conservado.</translation>
+    </message>
+    <message>
         <source>Tracks</source>
         <translation>Pistas</translation>
     </message>

@@ -280,6 +280,7 @@ class IPodLibrary:
         replace_photos: tuple[int, ...] = (),
         retag_tracks: tuple[int, ...] = (),
         regenerate_sqlite: bool = False,
+        rebuild_album_indexes: bool = False,
     ) -> LibraryDraft:
         """Bind desired state to this source, rejecting omissions unless opted in.
 
@@ -292,6 +293,8 @@ class IPodLibrary:
         PreparedLyrics evidence derives the final size without new codec facts.
         ``regenerate_sqlite`` requests a fresh firmware projection even when the
         desired Library is unchanged. It does not authorize file publication.
+        ``rebuild_album_indexes`` repairs retained Albums browse indexes without
+        requiring metadata edits. Other indexes and Master occurrences remain.
         """
         return LibraryDraft(
             self._source_revision,
@@ -301,6 +304,7 @@ class IPodLibrary:
             replace_photos=tuple(replace_photos),
             retag_tracks=tuple(retag_tracks),
             regenerate_sqlite=regenerate_sqlite,
+            rebuild_album_indexes=rebuild_album_indexes,
         )
 
     def analyze(

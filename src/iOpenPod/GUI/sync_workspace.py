@@ -508,6 +508,7 @@ class SyncWorkspace(QWidget):
         self._photos_repairs_pending = active_ipod.photos_repairs_pending
         self._library_refresh_available = (
             active_ipod.profile.capabilities.database.uses_sqlite_database
+            or bool(active_ipod.library.tracks)
         )
         self._scan_issues.load(library.issues)
         self._storage_projection = SyncStorageProjection(

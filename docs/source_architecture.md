@@ -1748,6 +1748,13 @@ Sync and quick or manual Library saves publish those entries in the same transac
 Playlists with Live updating disabled retain saved membership. Each pass uses one
 time and the input draft's saved Playlist memberships; unsupported rules and firmware-managed Playlists remain
 preserved. No-change Sync also reaches this step. See ADR-0142.
+Sync also carries an explicit database refresh intent. SQLite targets regenerate
+their companion artifacts under ADR-0147; non-SQLite targets with Tracks rebuild
+retained sort-4 Albums indexes under ADR-0148. The GUI exposes **Refresh Library**
+when no changes are selected. iPodDB derives contiguous Album groups and verifies
+their indexes; the Application Layer and Storage retain ordinary review, signing,
+source validation, and recoverable publication. Default no-op drafts and ordinary
+serialization remain byte-exact.
 Successful saves automatically clean their committed transaction's recovery files.
 A cleanup failure reports the retained journal and underlying reason while keeping
 the Library saved. Automatic saves open warning diagnostics, and reloading the iPod

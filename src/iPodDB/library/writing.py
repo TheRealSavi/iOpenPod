@@ -104,6 +104,8 @@ class LibraryDraft:
     # Explicit firmware-projection refresh; retained binary artifacts stay
     # byte-exact when the desired Library itself is unchanged.
     regenerate_sqlite: bool = field(default=False, kw_only=True)
+    # Explicit repair of retained type-4 browse indexes and their jump tables.
+    rebuild_album_indexes: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

@@ -65,6 +65,7 @@ class LibraryPreparationRequest:
     replace_photos: tuple[int, ...] = field(default=(), kw_only=True)
     discard_removed_track_media: bool = field(default=False, kw_only=True)
     regenerate_sqlite: bool = field(default=False, kw_only=True)
+    rebuild_album_indexes: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

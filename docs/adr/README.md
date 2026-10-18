@@ -220,3 +220,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0145: Select Track layouts for all Library writes](0145-select-track-layouts-for-all-library-writes.md)
 - [ADR-0146: Remove routine Podcast and re-encoding notices](0146-remove-routine-podcast-and-reencoding-notices.md)
 - [ADR-0147: Restore late-iPod firmware write compatibility](0147-restore-late-ipod-firmware-write-compatibility.md)
+- [ADR-0148: Keep Album browse groups contiguous](0148-keep-album-browse-groups-contiguous.md)

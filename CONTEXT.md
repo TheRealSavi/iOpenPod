@@ -418,6 +418,12 @@ Snapshot and Library Workspace for reconciliation but is omitted from the sideba
 tree. Unsaved drafts clear when the Active iPod changes or the application closes.
 See ADR-0020 and ADR-0022 for hierarchy and editor behavior.
 
+Sync's **Refresh Library** action can repair existing Albums browse indexes on
+non-SQLite iPods with Tracks, including Classic models, without reimporting media.
+SQLite targets regenerate their companion Library artifacts. Both paths use the
+normal verified Storage Transaction. Loading and ordinary no-op serialization
+remain byte-exact. See ADR-0147 and ADR-0148.
+
 The Library Workspace retains Photos and Photo Albums in that same desired snapshot.
 Retained Photo rating/dates and retained user Photo Album names, membership,
 slideshow settings, and music Track references use the existing source-bound Library

@@ -143,12 +143,15 @@ def test_pending_database_repair_is_visible_and_executable_without_media_changes
 
 
 @pytest.mark.parametrize("reset", ["clear", "scan"])
-def test_sqlite_library_refresh_is_available_without_media_changes(
-    tmp_path: Path, workspace: SyncWorkspace, reset: str
+@pytest.mark.parametrize("sqlite", [False, True])
+def test_library_refresh_is_available_without_media_changes(
+    tmp_path: Path, workspace: SyncWorkspace, reset: str, sqlite: bool
 ) -> None:
     device = build_device(tmp_path)
     try:
-        profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC688")
+        profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number(
+            "MC688" if sqlite else "MB145"
+        )
         assert profile is not None
         workspace.load_comparison(
             HostMediaLibrary(LibrarySnapshot(), (), (), HostMediaCacheStats()),

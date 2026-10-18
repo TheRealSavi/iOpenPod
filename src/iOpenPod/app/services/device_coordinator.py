@@ -1342,6 +1342,7 @@ class DeviceCoordinator:
                     ),
                     regenerate_sqlite=request.regenerate_sqlite
                     and capabilities.database.uses_sqlite_database,
+                    rebuild_album_indexes=request.rebuild_album_indexes,
                 ),
                 target,
             )

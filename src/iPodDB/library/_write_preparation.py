@@ -798,6 +798,7 @@ def _prepare(
                 checked_logical,
                 generated_podcasts,
                 source.device_time,
+                rebuild_album_indexes=plan.draft.rebuild_album_indexes,
             )
         )
         if _blocked(issues):

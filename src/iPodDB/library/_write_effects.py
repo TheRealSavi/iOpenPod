@@ -85,7 +85,7 @@ def describe_effects(
             c.subject == "track"
             and (c.action != "edit" or BROWSE_FIELDS.intersection(c.fields))
         )
-        or (c.subject == "library" and c.fields == ("tracks",))
+        or (c.subject == "library" and c.fields in (("tracks",), ("album_indexes",)))
     )
     podcast_causes = tuple(
         i

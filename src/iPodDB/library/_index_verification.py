@@ -14,6 +14,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod import (
     MhodLibraryJumpTablePayload,
 )
+from iPodDB.library._browse_groups import group_key
 from iPodDB.library.models import Track
 
 
@@ -25,6 +26,39 @@ def _text(value: str) -> str:
 
 
 def _keys(tracks: Sequence[Track], kind: int) -> tuple[tuple[str | int, ...], ...]:
+    if kind == 4:
+        # Independently choose each Album's representative in disc/track order.
+        # Do not consume the writer's keys or calculated permutation.
+        representatives: dict[tuple[str, ...], Track] = {}
+        for track in tracks:
+            identity = group_key(track, album=True)
+            previous = representatives.get(identity)
+            if previous is None or (track.metadata.disc_number, track.track_number) < (
+                previous.metadata.disc_number,
+                previous.track_number,
+            ):
+                representatives[identity] = track
+        album_keys: list[tuple[str | int, ...]] = []
+        for track in tracks:
+            identity = group_key(track, album=True)
+            representative = representatives[identity]
+            meta = representative.metadata
+            album_keys.append(
+                (
+                    _text(meta.sort_album or representative.album),
+                    _text(
+                        meta.sort_album_artist
+                        or representative.album_artist
+                        or meta.sort_artist
+                        or representative.artist
+                    ),
+                    *identity,
+                    track.metadata.disc_number,
+                    track.track_number,
+                    _text(track.metadata.sort_title or track.title),
+                )
+            )
+        return tuple(album_keys)
     result: list[tuple[str | int, ...]] = []
     for track in tracks:
         meta = track.metadata
@@ -38,8 +72,6 @@ def _keys(tracks: Sequence[Track], kind: int) -> tuple[tuple[str | int, ...], ..
         match kind:
             case 3:
                 key = (title,)
-            case 4:
-                key = album_order
             case 5:
                 key = (artist, *album_order)
             case 7:
@@ -107,6 +139,20 @@ def verify_index(
     # Every key for a given kind has the same types in the same positions.
     order = tuple(sorted(range(len(keys)), key=lambda i: (*keys[i], i)))
     if isinstance(payload, MhodLibraryIndexPayload):
+        if sorted(payload.indices) != list(range(len(desired))):
+            return (
+                "The library index is not a permutation of Master Playlist occurrences."
+            )
+        if kind == 4:
+            seen: set[tuple[str, ...]] = set()
+            previous_identity: tuple[str, ...] | None = None
+            for position in payload.indices:
+                identity = group_key(desired[position], album=True)
+                if identity != previous_identity:
+                    if identity in seen:
+                        return "The Albums index splits one Album into repeated groups."
+                    seen.add(identity)
+                    previous_identity = identity
         if payload.indices != order:
             return "The library index does not have the required stable browse order."
         return None
