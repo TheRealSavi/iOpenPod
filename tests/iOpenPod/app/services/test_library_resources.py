@@ -24,7 +24,10 @@ from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
+from iPodDB.device_time import mac_to_unix
 from iPodDB.iTunesDB.cdb import compress_iTunesCDB
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.library import (
     CoverFormat,
     CoverPixelFormat,
@@ -215,6 +218,36 @@ def device(tmp_path: Path) -> Iterator[Device]:
         yield fixture
     finally:
         fixture.coordinator.close()
+
+
+def test_podcast_playlist_dates_use_one_captured_application_time(
+    device: Device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    written_at = 1_800_000_000
+    monkeypatch.setattr(library_resources, "time", lambda: written_at)
+    desired = replace(
+        device.active.library,
+        tracks=tuple(
+            replace(track, metadata=replace(track.metadata, podcast=True))
+            for track in device.active.library.tracks
+        ),
+    )
+    review = device.prepare(desired)
+    assert review.result.prepared is not None, review.result.issues
+    assert review.resources is not None
+    assert review.resources.playlist_timestamp == written_at
+    document = parse_iTunesDB(review.result.prepared.itunes)
+    podcasts = [
+        row.chunk.header
+        for row in document.find_chunks(MhypHeader)
+        if row.chunk.header.playlist_kind_flags & 1
+    ]
+    assert len(podcasts) == 2
+    for header in podcasts:
+        assert (
+            mac_to_unix(header.timestamp, document.header.timezone_offset) == written_at
+        )
+        assert header.timestamp_2 == header.timestamp
 
 
 def cover_snapshot(device: Device) -> LibrarySnapshot:

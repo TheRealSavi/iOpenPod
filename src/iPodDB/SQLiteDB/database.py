@@ -1,8 +1,8 @@
 """SQLite iPod database generation without filesystem access.
 
 Late iPod nano firmware reads five SQLite databases plus a checksum book.  The
-binary iTunesCDB remains the sole readable editing authority; these databases
-are a disposable, firmware-facing projection of the checked CDB generation.
+binary iTunesCDB remains the editing authority. Its checked projection updates
+captured firmware schemas while retaining version and unrepresented metadata.
 """
 
 from __future__ import annotations
@@ -49,7 +49,9 @@ from iPodDB.SQLiteDB.inputs import (
     SQLiteContainer,
     SQLiteNativeMetadata,
     SQLiteSmartPreferences,
+    SQLiteSource,
 )
+from iPodDB.SQLiteDB.retention import retain_database
 from iPodDB.SQLiteDB.schema import (
     DYNAMIC_SCHEMA,
     EXTRAS_SCHEMA,
@@ -119,6 +121,13 @@ def _s64(value: int) -> int:
 
 def _core_data(value: int) -> int:
     return unix_to_core_data(value)
+
+
+def _combined_media_kinds(track_ids: tuple[int, ...], kinds: dict[int, int]) -> int:
+    result = 0
+    for identity in track_ids:
+        result |= kinds.get(identity, 0)
+    return result
 
 
 def _track_pid(track: Track) -> int:
@@ -308,6 +317,10 @@ def build_sqlite_databases(
     postprocess_commands: tuple[str, ...] = (),
     smart_criteria: Mapping[int, bytes] | None = None,
     native: SQLiteNativeMetadata | None = None,
+    retained: tuple[SQLiteSource, ...] = (),
+    cleared_lyrics: frozenset[int] = frozenset(),
+    cleared_chapters: frozenset[int] = frozenset(),
+    replaced_tracks: frozenset[int] = frozenset(),
 ) -> SQLiteDatabaseSet:
     """Project a verified Library Snapshot into all firmware SQLite artifacts."""
 
@@ -323,6 +336,10 @@ def build_sqlite_databases(
                 postprocess_commands=postprocess_commands,
                 smart_criteria=smart_criteria,
                 native=native or SQLiteNativeMetadata(),
+                retained=retained,
+                cleared_lyrics=cleared_lyrics,
+                cleared_chapters=cleared_chapters,
+                replaced_tracks=replaced_tracks,
                 connections=connections,
             )
         except sqlite3.DatabaseError as error:
@@ -340,6 +357,10 @@ def _build_sqlite_databases(
     postprocess_commands: tuple[str, ...],
     smart_criteria: Mapping[int, bytes] | None,
     native: SQLiteNativeMetadata,
+    retained: tuple[SQLiteSource, ...],
+    cleared_lyrics: frozenset[int],
+    cleared_chapters: frozenset[int],
+    replaced_tracks: frozenset[int],
     connections: ExitStack,
 ) -> SQLiteDatabaseSet:
     library = connections.enter_context(closing(_new(LIBRARY_SCHEMA)))
@@ -347,7 +368,10 @@ def _build_sqlite_databases(
     dynamic = connections.enter_context(closing(_new(DYNAMIC_SCHEMA)))
     extras = connections.enter_context(closing(_new(EXTRAS_SCHEMA)))
     genius = connections.enter_context(closing(_new(GENIUS_SCHEMA)))
-    library.execute("INSERT INTO version_info VALUES (1,1,111,0,0,1104,2)")
+    library.execute(
+        "INSERT INTO version_info VALUES (1,1,?,0,0,1104,2)", (native.database_version,)
+    )
+    database_id = native.database_id or database_id
     containers = (
         native.containers
         if native.containers is not None
@@ -357,7 +381,9 @@ def _build_sqlite_databases(
     # Native Smart rules can refer to user Playlist IDs. Keep those identities
     # even when a category or the database's master seed uses the same value.
     master_pid = _allocate_pids(
-        "master", (((str(database_id),), database_id or 1),), reserved=user_ids
+        "master",
+        (((str(database_id),), native.master_id or database_id or 1),),
+        reserved=user_ids,
     )[0]
     library.execute(
         "INSERT INTO db_info VALUES (?,?,NULL,-1,-1,NULL,NULL,NULL)",
@@ -548,7 +574,10 @@ def _build_sqlite_databases(
             series_ranks[series_names[track.track_id]],
             metadata.comment or None,
             metadata.grouping or None,
-            metadata.description or None,
+            (metadata.subtitle or metadata.description[:255] or None)
+            if media_kind & MEDIA_TYPE_PODCAST
+            else metadata.description or None,
+            metadata.description or None if media_kind & MEDIA_TYPE_PODCAST else None,
             metadata.copyright or None,
             _s64(track_artist_pid),
             order,
@@ -567,7 +596,7 @@ def _build_sqlite_databases(
               bpm,relative_volume,eq_preset,genre_id,category_id,album_pid,artist_pid,
               composer_pid,title,artist,album,album_artist,composer,sort_title,sort_artist,
               sort_album,sort_album_artist,sort_composer,title_order,artist_order,album_order,
-              genre_order,composer_order,album_artist_order,album_by_artist_order,series_name_order,comment,grouping,description,
+              genre_order,composer_order,album_artist_order,album_by_artist_order,series_name_order,comment,grouping,description,description_long,
               copyright,track_artist_pid,physical_order,has_lyrics,date_released)
               VALUES ("""
             + ",".join("?" for _value in item_values)
@@ -614,7 +643,7 @@ def _build_sqlite_databases(
                 (
                     _s64(pid),
                     _core_data(metadata.release_date),
-                    None,
+                    metadata.podcast_guid or track.episode or None,
                     metadata.podcast_rss_url,
                     metadata.track_keywords,
                 ),
@@ -641,7 +670,7 @@ def _build_sqlite_databases(
             "INSERT INTO item_stats VALUES (?,?,?,?,0,?,?,0,?,?,?,?,0,?,?,0)",
             (
                 _s64(pid),
-                int(track.play_count > 0),
+                int(metadata.played or track.play_count > 0),
                 _core_data(metadata.last_played),
                 track.play_count,
                 _core_data(metadata.last_skipped),
@@ -711,8 +740,12 @@ def _build_sqlite_databases(
         snapshot.device_name or "iPod",
         None,
         PlaylistKind.PLAYLIST,
-        now,
+        _core_data(native.master_date_created) if native.master_date_created else now,
+        modified=_core_data(native.master_date_modified)
+        if native.master_date_modified
+        else now,
         hidden=True,
+        media_kinds=_combined_media_kinds(tuple(media_kinds), media_kinds),
     )
     membership: list[tuple[int, int, int]] = []
     for position, track in enumerate(snapshot.tracks):
@@ -756,10 +789,16 @@ def _build_sqlite_databases(
             if container.date_modified
             else now,
             name_order=len(container_pids) * 100,
-            distinguished_kind=container.category
+            distinguished_kind=11
+            if container.podcast
+            else container.category
             if container.category in (4, 5)
             else 0,
-            media_kinds=0 if container.category == 5 else 1,
+            media_kinds=_combined_media_kinds(playlist.track_ids, media_kinds)
+            if container.podcast
+            else 0
+            if container.category == 5
+            else 1,
             hidden=container.hidden,
             description=playlist.description,
             smart=playlist.smart,
@@ -790,6 +829,64 @@ def _build_sqlite_databases(
             postprocess_commands,
             connections,
         )
+    generated = {
+        "Library.itdb": library,
+        "Locations.itdb": locations,
+        "Dynamic.itdb": dynamic,
+        "Extras.itdb": extras,
+        "Genius.itdb": genius,
+    }
+    if len({s.name for s in retained}) != len(retained) or any(
+        s.name not in generated for s in retained
+    ):
+        raise ValueError("Retained SQLite sources must have unique supported names")
+    track_pids = frozenset(_s64(pid) for pid in pids.values())
+    for source in retained:
+        generated[source.name] = connections.enter_context(
+            closing(
+                retain_database(
+                    generated[source.name],
+                    source.data,
+                    artifact=source.name,
+                    tracks=track_pids,
+                    containers=frozenset(_s64(pid) for pid in container_pids),
+                    cleared_lyrics=frozenset(_s64(pid) for pid in cleared_lyrics),
+                    cleared_chapters=frozenset(_s64(pid) for pid in cleared_chapters),
+                    replaced_tracks=frozenset(_s64(pid) for pid in replaced_tracks),
+                )
+            )
+        )
+    library, locations, dynamic, extras, genius = (
+        generated[name]
+        for name in (
+            "Library.itdb",
+            "Locations.itdb",
+            "Dynamic.itdb",
+            "Extras.itdb",
+            "Genius.itdb",
+        )
+    )
+    chapter_pids = frozenset(
+        int(row[0]) for row in extras.execute("SELECT item_pid FROM chapter")
+    )
+    lyrics_pids = frozenset(
+        int(row[0]) for row in extras.execute("SELECT item_pid FROM lyrics")
+    )
+    if not (chapter_pids | lyrics_pids) <= track_pids:
+        raise ValueError("Retained Extras reference missing Tracks")
+    required_chapters = frozenset(
+        _s64(pids[t.track_id])
+        for t in snapshot.tracks
+        if t.metadata.chapters or t.track_id in native_chapters
+    )
+    required_lyrics = frozenset(
+        _s64(pids[t.track_id]) for t in snapshot.tracks if t.metadata.lyrics
+    )
+    if not required_chapters <= chapter_pids or not required_lyrics <= lyrics_pids:
+        raise ValueError("Retained schema lost authored chapters or lyrics")
+    library.executemany(
+        "UPDATE item SET has_lyrics=1 WHERE pid=?", ((pid,) for pid in lyrics_pids)
+    )
     validate_databases(
         library,
         locations,
@@ -800,14 +897,8 @@ def _build_sqlite_databases(
             frozenset(_s64(pid) for pid in pids.values()),
             frozenset(_s64(pid) for pid in container_pids),
             tuple(membership),
-            frozenset(
-                _s64(pids[t.track_id])
-                for t in snapshot.tracks
-                if t.metadata.chapters or t.track_id in native_chapters
-            ),
-            frozenset(
-                _s64(pids[t.track_id]) for t in snapshot.tracks if t.metadata.lyrics
-            ),
+            chapter_pids,
+            lyrics_pids,
         ),
     )
     library_bytes = _serialize(library)

@@ -169,7 +169,7 @@ def album_source(
 
 
 def album_orders(data: bytes) -> dict[int, tuple[int, ...]]:
-    result = {}
+    result: dict[int, tuple[int, ...]] = {}
     for dataset in parse_iTunesDB(data).find_chunks(MhsdHeader):
         for master in dataset.find_chunks(MhypHeader):
             if not master.chunk.header.master_flag:

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, cast
 from urllib.error import URLError
@@ -121,6 +122,10 @@ def download_episode(
 def episode_track(addition: PodcastEpisodeAddition, *, video: bool = False) -> Track:
     """Translate publisher metadata into the common incoming Track contract."""
     subscription, episode = addition.subscription, addition.episode
+    year = 0
+    if episode.published_at:
+        with suppress(OverflowError, OSError, ValueError):
+            year = datetime.fromtimestamp(episode.published_at, UTC).year
     return Track(
         0,
         episode.title or "Untitled Episode",
@@ -128,9 +133,12 @@ def episode_track(addition: PodcastEpisodeAddition, *, video: bool = False) -> T
         subscription.title,
         episode.duration_seconds * 1000,
         genre="Podcast",
+        year=year,
         track_number=episode.episode_number or 0,
         play_count=episode.play_count,
-        media_types=(MediaType.VIDEO_PODCAST if video else MediaType.PODCAST,),
+        media_types=(MediaType.VIDEO_PODCAST,)
+        if video
+        else (MediaType.AUDIO, MediaType.PODCAST),
         show=subscription.title,
         episode=episode.guid,
         album_artist=subscription.author,
@@ -138,9 +146,13 @@ def episode_track(addition: PodcastEpisodeAddition, *, video: bool = False) -> T
         episode_number=episode.episode_number or 0,
         metadata=TrackMetadata(
             podcast=True,
-            podcast_enclosure_url=episode.enclosure_url,
+            podcast_guid=episode.guid or episode.enclosure_url,
             podcast_rss_url=subscription.feed_url,
             description=episode.description,
+            subtitle=episode.subtitle or episode.description[:255],
+            content_advisory=episode.content_advisory,
+            disc_number=1,
+            last_modified=int(time.time()),
             release_date=episode.published_at,
             category=subscription.category,
             skip_shuffle=True,

@@ -1,5 +1,8 @@
 # ADR-0092: Enforce Podcast and video playback options
 
+> ADR-0149 extends the Podcast policy with audio media mask 5, disc 1, GUID
+> compatibility, and missing display metadata.
+
 - Status: Accepted
 - Date: 2026-09-27
 - Amends: ADR-0088's preservation of all other metadata during reclassification

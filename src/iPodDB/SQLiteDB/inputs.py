@@ -6,6 +6,14 @@ from iPodDB.library.playlists import Playlist
 
 
 @dataclass(frozen=True, slots=True)
+class SQLiteSource:
+    """Caller-captured companion bytes, never filesystem authority."""
+
+    name: str
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class SQLiteSmartPreferences:
     live_update: int = 1
     check_rules: int = 1
@@ -27,6 +35,7 @@ class SQLiteContainer:
     date_modified: int = 0
     preferences: SQLiteSmartPreferences | None = None
     criteria: bytes | None = None
+    podcast: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,3 +54,8 @@ class SQLiteNativeMetadata:
 
     containers: tuple[SQLiteContainer, ...] | None = None
     chapters: tuple[SQLiteChapter, ...] = ()
+    database_id: int = 0
+    master_id: int = 0
+    database_version: int = 111
+    master_date_created: int = 0
+    master_date_modified: int = 0

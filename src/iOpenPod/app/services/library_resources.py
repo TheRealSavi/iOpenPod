@@ -7,6 +7,7 @@ import re
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
+from time import time
 from typing import TYPE_CHECKING
 
 from iOpenPod.app.artwork_policy import rockbox_artwork
@@ -32,6 +33,7 @@ from iPodDB.library import (
     is_playback_sidecar,
     remap_playback_sidecar,
 )
+from iPodDB.SQLiteDB.inputs import SQLiteSource
 from storage import (
     DeviceEntryKind,
     DevicePath,
@@ -275,14 +277,21 @@ def capture(
         FilePrecondition(PHOTOSDB, request.source.photos_database_fingerprint),
         *additional_preconditions,
     ]
+    sqlite_sources: list[SQLiteSource] = []
     if plan.changes_sqlite:
-        files.extend(
-            FilePrecondition(
-                path,
-                session.fingerprint(path) if session.exists(path) else None,
-            )
-            for path in SQLITE_DATABASE_PATHS
-        )
+        for path in SQLITE_DATABASE_PATHS:
+            checkpoint()
+            if session.exists(path) and path.name.endswith(".itdb"):
+                captured = session.read_snapshot(path, max_bytes=_MAX_CAPTURE_BYTES)
+                sqlite_sources.append(SQLiteSource(path.name, captured.data))
+                files.append(FilePrecondition(path, captured.fingerprint))
+            else:
+                files.append(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                )
     if primary == ITUNESCDB and plan.changes_itunes:
         files.append(
             FilePrecondition(
@@ -690,6 +699,8 @@ def capture(
         pending_playback_sidecars=False if plan.requires_sidecar_inventory else None,
         create_file_buffer=staging.new_buffer,
         reserved_artwork_paths=tuple(reserved_artwork),
+        playlist_timestamp=int(time()),
+        sqlite_sources=tuple(sqlite_sources),
     )
     logger.debug(
         "Captured Library resources files=%d artwork_bytes=%d removals=%d",

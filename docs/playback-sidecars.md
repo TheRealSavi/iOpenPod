@@ -33,8 +33,15 @@ Binary Play Counts rating zero clears a rating; `0xFFFFFFFF` or an absent field
 leaves it unchanged. Plist rating zero is unspecified. Only nonzero bookmarks
 replace retained positions. Plays and skips add to their respective cumulative
 totals; plays also add to the existing unscrobbled count and mark the Track played.
-Nonzero dates use the newer observed value. Local Mac dates require the captured
-Device Time Context, never the Host timezone. Ambiguous dates block consumption.
+Nonzero dates use the newer observed value, except the exact binary Play Counts
+missing-date sentinel evidenced in the Nano 5 captures: the Mac plus Core Data
+epoch offsets plus the captured database UTC offset. It contributes no new date
+and never clears existing history. Detection precedes geographic timezone
+conversion, avoiding a historical DST shift. Other real dates survive even with
+zero completed plays. This does not reinterpret plist dates or ordinary Track
+dates. See the [capture evidence](research/finder-playcounts-compatibility-2026-10-18.md)
+and ADR-0150. Local Mac dates require the captured Device Time Context, never the
+Host timezone. Ambiguous dates block consumption.
 
 Projection retains skip history even when the source MHIT ends before its fields.
 Saving can expand an affected Track using the selected Device Profile's database

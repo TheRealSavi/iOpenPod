@@ -1,11 +1,16 @@
 # ADR-0061: Support late-iPod Library artifact sets
 
+> ADR-0150 supersedes fingerprint-only SQLite capture and deliberate replacement
+> of SQLite-only metadata. It also requires dual HASH72/HASH58 signatures for
+> changed HASH72 databases. The historical decision below describes the baseline.
+
 - Status: Accepted
 - Date: 2026-09-16
 - Extends: ADR-0006, ADR-0019, ADR-0021, ADR-0029, and ADR-0033
 - Supersedes: the compressed-database and SQLite-companion blockers in ADR-0021
 - Partially superseded by: ADR-0115 (device-supplied postprocessing is optional)
 - Amended by: ADR-0141 (checked native CDB metadata supplements the Snapshot)
+- Amended by: ADR-0150 (retained SQLite metadata and dual HASH72/HASH58 publication)
 
 ## Context
 

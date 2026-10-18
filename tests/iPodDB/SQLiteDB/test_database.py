@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 from dataclasses import replace
@@ -11,11 +10,17 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 from tests.iPodDB.library.test_browse_relationships import browse_source
+from tests.iPodDB.SQLiteDB.sqlite_test_support import (
+    sample_snapshot,
+    sqlite_rows,
+    sqlite_value,
+)
 
 from iPodDB.iTunesDB.cdb import compress_iTunesCDB
 from iPodDB.iTunesDB.shared.constants import FILE_EXTENSION_INT
 from iPodDB.library import (
     AudioEncoding,
+    ContentAdvisory,
     FileDependency,
     IPodLibrary,
     IPodTrackDetails,
@@ -23,12 +28,10 @@ from iPodDB.library import (
     MediaType,
     PreparedMedia,
     Track,
-    TrackChapter,
     TrackMetadata,
     WriteResources,
     prepared_audio,
 )
-from iPodDB.library.playlists import Playlist, playlist_entries
 from iPodDB.library.writing import WriteChecksum
 from iPodDB.SQLiteDB.checksum import (
     build_locations_cbk,
@@ -36,60 +39,65 @@ from iPodDB.SQLiteDB.checksum import (
     verify_locations_cbk,
 )
 from iPodDB.SQLiteDB.database import build_sqlite_databases
+from iPodDB.SQLiteDB.inputs import SQLiteContainer, SQLiteNativeMetadata
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _snapshot() -> LibrarySnapshot:
-    track = Track(
-        7,
-        "Title",
-        "Artist",
-        "Album",
-        12_345,
-        genre="Genre",
-        year=2020,
-        track_number=2,
-        size_bytes=123_456,
-        bitrate_kbps=256,
-        play_count=3,
-        rating=80,
-        metadata=TrackMetadata(
-            file_format="m4a",
-            date_added=1_700_000_000,
-            sample_rate_hz=44_100,
-            location=":iPod_Control:Music:F03:ABCD.m4a",
-            lyrics="words",
-            chapters=(TrackChapter("Opening", 0),),
+def test_podcast_projection_carries_finder_identity_classification_and_descriptions() -> (
+    None
+):
+    snapshot = sample_snapshot()
+    original = snapshot.tracks[0]
+    episode = replace(
+        original,
+        ipod=IPodTrackDetails(db_track_id=123, media_type_code=5),
+        media_types=(MediaType.AUDIO, MediaType.PODCAST),
+        episode_number=7,
+        season_number=2,
+        metadata=replace(
+            original.metadata,
+            podcast=True,
+            podcast_guid="opaque-guid",
+            podcast_rss_url="https://publisher.example/feed",
+            subtitle="Short summary",
+            description="Full episode description",
+            disc_number=1,
+            content_advisory=ContentAdvisory.EXPLICIT,
         ),
-        ipod=IPodTrackDetails(db_track_id=0xF123456789ABCDEF, app_rating=60),
     )
-    return LibrarySnapshot(
-        (track,),
-        (Playlist(23, "Favorites", entries=playlist_entries((7,))),),
-        "Test iPod",
+    snapshot = replace(snapshot, tracks=(episode,))
+    native = SQLiteNativeMetadata(
+        containers=(
+            SQLiteContainer(
+                replace(snapshot.playlists[0], name="Podcasts"), podcast=True
+            ),
+        )
     )
-
-
-def _value(data: bytes, query: str) -> object:
-    connection = sqlite3.connect(":memory:")
-    connection.deserialize(data)
-    result = connection.execute(query).fetchone()[0]
-    connection.close()
-    return result
-
-
-def _rows(data: bytes, query: str) -> tuple[tuple[object, ...], ...]:
-    connection = sqlite3.connect(":memory:")
-    connection.deserialize(data)
-    result = tuple(connection.execute(query))
-    connection.close()
-    return result
+    databases = build_sqlite_databases(
+        snapshot, database_id=42, checksum=WriteChecksum.NONE, native=native
+    )
+    library = dict(databases.artifacts())["Library.itdb"]
+    assert sqlite_rows(library, "SELECT external_guid, feed_url FROM podcast_info") == (
+        ("opaque-guid", "https://publisher.example/feed"),
+    )
+    assert sqlite_rows(
+        library,
+        "SELECT media_kind,is_song,is_podcast,disc_number,description,description_long FROM item",
+    ) == ((5, 1, 1, 1, "Short summary", "Full episode description"),)
+    assert sqlite_rows(
+        library,
+        "SELECT distinguished_kind,media_kinds,is_hidden FROM container WHERE name='Podcasts'",
+    ) == ((11, 5, 0),)
+    assert (
+        sqlite_value(library, "SELECT media_kinds FROM container WHERE is_hidden=1")
+        == 5
+    )
 
 
 def test_builds_complete_sqlite_projection_from_cdb_snapshot() -> None:
-    snapshot = _snapshot()
+    snapshot = sample_snapshot()
     databases = build_sqlite_databases(
         snapshot,
         database_id=42,
@@ -105,17 +113,19 @@ def test_builds_complete_sqlite_projection_from_cdb_snapshot() -> None:
         "Locations.itdb.cbk",
     )
     assert verify_locations_cbk(databases, WriteChecksum.NONE)
-    assert _value(databases.library, "SELECT title FROM item") == "Title"
-    assert _value(databases.library, "SELECT year FROM item") == 2020
-    assert _value(databases.library, "SELECT name FROM container WHERE pid=23") == (
-        "Favorites"
-    )
-    assert _value(databases.locations, "SELECT location FROM location") == (
+    assert sqlite_value(databases.library, "SELECT title FROM item") == "Title"
+    assert sqlite_value(databases.library, "SELECT year FROM item") == 2020
+    assert sqlite_value(
+        databases.library, "SELECT name FROM container WHERE pid=23"
+    ) == ("Favorites")
+    assert sqlite_value(databases.locations, "SELECT location FROM location") == (
         "F03/ABCD.m4a"
     )
-    assert _value(databases.dynamic, "SELECT play_count_user FROM item_stats") == 3
-    assert _value(databases.dynamic, "SELECT user_rating FROM item_stats") == 80
-    chapter_size = _value(databases.extras, "SELECT length(data) FROM chapter")
+    assert (
+        sqlite_value(databases.dynamic, "SELECT play_count_user FROM item_stats") == 3
+    )
+    assert sqlite_value(databases.dynamic, "SELECT user_rating FROM item_stats") == 80
+    chapter_size = sqlite_value(databases.extras, "SELECT length(data) FROM chapter")
     assert isinstance(chapter_size, int) and chapter_size > 0
 
 
@@ -123,7 +133,7 @@ def test_builds_complete_sqlite_projection_from_cdb_snapshot() -> None:
 def test_album_browse_ranks_put_b_before_z_without_device_postprocessing(
     reverse: bool,
 ) -> None:
-    base = _snapshot().tracks[0]
+    base = sample_snapshot().tracks[0]
     tracks = tuple(
         replace(
             base,
@@ -139,21 +149,21 @@ def test_album_browse_ranks_put_b_before_z_without_device_postprocessing(
         LibrarySnapshot(tracks), database_id=42, checksum=WriteChecksum.NONE
     )
 
-    assert _rows(
+    assert sqlite_rows(
         databases.library,
         "SELECT name,name_order,sort_order FROM album ORDER BY sort_order,pid",
     ) == (("Blink 182", 100, 100), ("Zimbo Trio", 200, 200))
-    assert _rows(
+    assert sqlite_rows(
         databases.library,
         "SELECT album,album_order FROM item ORDER BY album_order,pid",
     ) == (("Blink 182", 100), ("Zimbo Trio", 200))
-    assert _rows(
+    assert sqlite_rows(
         databases.library, "SELECT pid FROM item ORDER BY physical_order"
     ) == tuple((track.track_id,) for track in tracks)
 
 
 def test_album_ranks_respect_sort_tags_articles_case_and_separate_artists() -> None:
-    base = _snapshot().tracks[0]
+    base = sample_snapshot().tracks[0]
     tracks = tuple(
         replace(
             base,
@@ -179,7 +189,7 @@ def test_album_ranks_respect_sort_tags_articles_case_and_separate_artists() -> N
         LibrarySnapshot(tracks), database_id=42, checksum=WriteChecksum.NONE
     )
 
-    assert _rows(
+    assert sqlite_rows(
         databases.library,
         "SELECT name,sort_name,name_order,sort_order FROM album ORDER BY pid",
     ) == (
@@ -190,7 +200,7 @@ def test_album_ranks_respect_sort_tags_articles_case_and_separate_artists() -> N
         ("9", "9", 400, 400),
         (None, None, 500, 500),
     )
-    assert _rows(
+    assert sqlite_rows(
         databases.library,
         "SELECT album,sort_album,album_order FROM item ORDER BY pid",
     ) == (
@@ -205,7 +215,7 @@ def test_album_ranks_respect_sort_tags_articles_case_and_separate_artists() -> N
 
 def test_device_postprocessing_can_replace_generated_album_ranks() -> None:
     databases = build_sqlite_databases(
-        _snapshot(),
+        sample_snapshot(),
         database_id=42,
         checksum=WriteChecksum.NONE,
         postprocess_commands=(
@@ -214,10 +224,10 @@ def test_device_postprocessing_can_replace_generated_album_ranks() -> None:
         ),
     )
 
-    assert _rows(databases.library, "SELECT name_order,sort_order FROM album") == (
-        (700, 800),
-    )
-    assert _value(databases.library, "SELECT album_order FROM item") == 800
+    assert sqlite_rows(
+        databases.library, "SELECT name_order,sort_order FROM album"
+    ) == ((700, 800),)
+    assert sqlite_value(databases.library, "SELECT album_order FROM item") == 800
 
 
 @pytest.mark.parametrize(
@@ -262,7 +272,7 @@ def test_semantic_media_types_encode_native_bitmasks_and_flags(
     podcast_rows: int,
     rental_rows: int,
 ) -> None:
-    track = replace(_snapshot().tracks[0], media_types=(media_type,), ipod=None)
+    track = replace(sample_snapshot().tracks[0], media_types=(media_type,), ipod=None)
     databases = build_sqlite_databases(
         LibrarySnapshot((track,)), database_id=42, checksum=WriteChecksum.NONE
     )
@@ -282,7 +292,7 @@ def test_semantic_media_types_encode_native_bitmasks_and_flags(
         "is_digital_booklet",
         "is_podcast",
     )
-    row = _rows(
+    row = sqlite_rows(
         databases.library,
         "SELECT media_kind," + ",".join(flag_names) + " FROM item",
     )[0]
@@ -291,15 +301,20 @@ def test_semantic_media_types_encode_native_bitmasks_and_flags(
     assert {name for name, value in zip(flag_names, row[1:], strict=True) if value} == (
         set_flags
     )
-    assert _value(databases.library, "SELECT count(*) FROM video_info") == video_rows
-    assert _value(databases.library, "SELECT count(*) FROM podcast_info") == (
+    assert (
+        sqlite_value(databases.library, "SELECT count(*) FROM video_info") == video_rows
+    )
+    assert sqlite_value(databases.library, "SELECT count(*) FROM podcast_info") == (
         podcast_rows
     )
-    assert _value(databases.dynamic, "SELECT count(*) FROM rental_info") == rental_rows
+    assert (
+        sqlite_value(databases.dynamic, "SELECT count(*) FROM rental_info")
+        == rental_rows
+    )
 
 
 def test_checked_native_media_masks_retain_composites_and_drive_size_totals() -> None:
-    base = _snapshot().tracks[0]
+    base = sample_snapshot().tracks[0]
     details = base.ipod
     assert details is not None
     tracks = (
@@ -332,7 +347,7 @@ def test_checked_native_media_masks_retain_composites_and_drive_size_totals() ->
         LibrarySnapshot(tracks), database_id=42, checksum=WriteChecksum.NONE
     )
 
-    assert _rows(
+    assert sqlite_rows(
         databases.library,
         "SELECT title,media_kind,is_music_video,is_movie,is_tv_show,is_rental,"
         "is_podcast FROM item ORDER BY physical_order",
@@ -341,12 +356,12 @@ def test_checked_native_media_masks_retain_composites_and_drive_size_totals() ->
         ("Rental movie", 0x8002, 0, 1, 0, 1, 0),
         ("Video podcast", 0x6, 0, 1, 0, 0, 1),
     )
-    assert _rows(
+    assert sqlite_rows(
         databases.library, "SELECT kind,size FROM track_size_calc ORDER BY pid"
     ) == (("audio", 0), ("video", 600), ("music_video", 100))
-    assert _value(databases.library, "SELECT count(*) FROM video_info") == 3
-    assert _value(databases.library, "SELECT count(*) FROM podcast_info") == 1
-    assert _value(databases.dynamic, "SELECT count(*) FROM rental_info") == 1
+    assert sqlite_value(databases.library, "SELECT count(*) FROM video_info") == 3
+    assert sqlite_value(databases.library, "SELECT count(*) FROM podcast_info") == 1
+    assert sqlite_value(databases.dynamic, "SELECT count(*) FROM rental_info") == 1
 
 
 def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation() -> None:
@@ -399,14 +414,14 @@ def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation() -> Non
     )
     locations = {
         pid: (extension, kind_id)
-        for pid, extension, kind_id in _rows(
+        for pid, extension, kind_id in sqlite_rows(
             databases.locations,
             "SELECT item_pid,extension,kind_id FROM location",
         )
     }
     actual = {
         title: (audio_format, *locations[pid])
-        for pid, title, audio_format in _rows(
+        for pid, title, audio_format in sqlite_rows(
             databases.library,
             "SELECT item.pid,item.title,avformat_info.audio_format FROM item "
             "JOIN avformat_info ON item.pid=avformat_info.item_pid "
@@ -424,7 +439,7 @@ def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation() -> Non
 
 
 def test_aac_purchase_flag_does_not_override_native_filetype_kind() -> None:
-    track = _snapshot().tracks[0]
+    track = sample_snapshot().tracks[0]
     details = track.ipod
     assert details is not None
     track = replace(
@@ -441,11 +456,11 @@ def test_aac_purchase_flag_does_not_override_native_filetype_kind() -> None:
         LibrarySnapshot((track,)), database_id=42, checksum=WriteChecksum.NONE
     )
 
-    library_row = _rows(
+    library_row = sqlite_rows(
         databases.library,
         "SELECT item_pid,audio_format FROM avformat_info",
     )[0]
-    location_row = _rows(
+    location_row = sqlite_rows(
         databases.locations, "SELECT item_pid,extension,kind_id FROM location"
     )[0]
     assert library_row[0] == location_row[0]
@@ -457,7 +472,7 @@ def test_aac_purchase_flag_does_not_override_native_filetype_kind() -> None:
 
 
 def test_sqlite_uses_native_volume_and_sound_check_units() -> None:
-    base = replace(_snapshot().tracks[0], ipod=None)
+    base = replace(sample_snapshot().tracks[0], ipod=None)
     values = (
         ("negative", -50.0, None, -128, 0),
         ("zero", 0.0, 0.0, 0, 1_000),
@@ -483,7 +498,7 @@ def test_sqlite_uses_native_volume_and_sound_check_units() -> None:
         LibrarySnapshot(tracks), database_id=42, checksum=WriteChecksum.NONE
     )
 
-    assert _rows(
+    assert sqlite_rows(
         databases.library,
         "SELECT item.title,item.relative_volume,"
         "avformat_info.volume_normalization_energy FROM item JOIN avformat_info "
@@ -496,7 +511,7 @@ def test_sqlite_uses_native_volume_and_sound_check_units() -> None:
 def test_hashab_checksum_book_is_device_bound() -> None:
     guid = bytes.fromhex("f832c65917da6785")
     databases = build_sqlite_databases(
-        _snapshot(),
+        sample_snapshot(),
         database_id=42,
         checksum=WriteChecksum.HASHAB,
         firewire_guid=guid,
@@ -520,7 +535,7 @@ def test_hash72_material_can_be_recovered_from_a_valid_retained_checksum_book() 
 
 
 def test_duplicate_native_artist_references_get_distinct_projection_ids() -> None:
-    snapshot = _snapshot()
+    snapshot = sample_snapshot()
     first = snapshot.tracks[0]
     details = first.ipod
     assert details is not None
@@ -547,7 +562,9 @@ def test_duplicate_native_artist_references_get_distinct_projection_ids() -> Non
         checksum=WriteChecksum.NONE,
     )
 
-    assert _value(databases.library, "SELECT count(DISTINCT pid) FROM artist") == 2
+    assert (
+        sqlite_value(databases.library, "SELECT count(DISTINCT pid) FROM artist") == 2
+    )
 
 
 def test_genre_and_category_ids_are_stable_across_hash_seeds() -> None:
@@ -622,7 +639,7 @@ def test_album_grouping_computes_each_track_key_once(
         return original(track)
 
     monkeypatch.setattr(database_module, "_album_key", counted)
-    base = replace(_snapshot().tracks[0], ipod=None)
+    base = replace(sample_snapshot().tracks[0], ipod=None)
     tracks = tuple(
         replace(base, track_id=index, title=f"Track {index}", album=f"Album {index}")
         for index in range(1, 41)
@@ -632,12 +649,12 @@ def test_album_grouping_computes_each_track_key_once(
     )
 
     assert calls == len(tracks)
-    assert _value(databases.library, "SELECT count(*) FROM album") == len(tracks)
+    assert sqlite_value(databases.library, "SELECT count(*) FROM album") == len(tracks)
 
 
 def test_device_postprocess_commands_can_update_all_attached_databases() -> None:
     databases = build_sqlite_databases(
-        _snapshot(),
+        sample_snapshot(),
         database_id=42,
         checksum=WriteChecksum.NONE,
         postprocess_commands=(
@@ -647,14 +664,14 @@ def test_device_postprocess_commands_can_update_all_attached_databases() -> None
         ),
     )
 
-    assert _value(databases.library, "SELECT sort_title FROM item")
-    assert _value(databases.locations, "SELECT kind_id FROM location") == 9
+    assert sqlite_value(databases.library, "SELECT sort_title FROM item")
+    assert sqlite_value(databases.locations, "SELECT kind_id FROM location") == 9
     assert verify_locations_cbk(databases, WriteChecksum.NONE)
 
 
 def test_one_postprocess_command_may_contain_multiple_statements() -> None:
     databases = build_sqlite_databases(
-        _snapshot(),
+        sample_snapshot(),
         database_id=42,
         checksum=WriteChecksum.NONE,
         postprocess_commands=(
@@ -663,7 +680,7 @@ def test_one_postprocess_command_may_contain_multiple_statements() -> None:
         ),
     )
 
-    assert _rows(databases.library, "SELECT sort_title,sort_album FROM item") == (
+    assert sqlite_rows(databases.library, "SELECT sort_title,sort_album FROM item") == (
         ("first", "second"),
     )
 
@@ -673,7 +690,7 @@ def test_device_postprocess_commands_cannot_attach_a_host_path(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="postprocessing failed"):
         build_sqlite_databases(
-            _snapshot(),
+            sample_snapshot(),
             database_id=42,
             checksum=WriteChecksum.NONE,
             postprocess_commands=(f"ATTACH DATABASE '{target}' AS escaped",),

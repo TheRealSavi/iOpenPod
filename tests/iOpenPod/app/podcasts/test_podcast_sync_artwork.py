@@ -49,7 +49,7 @@ def _subscription(identity: str, cover: str) -> PodcastSubscription:
 def test_shared_publisher_cover_fits_once_in_bounded_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(sync_artwork, "_MAX_BATCH_BYTES", 12)
+    monkeypatch.setattr(sync_artwork, "MAX_PODCAST_COVER_BYTES", 12)
     loader = _Loader()
     cover_url = "https://publisher.example/shared.png"
     result = sync_artwork.prepare_podcast_covers(
@@ -91,3 +91,20 @@ def test_cancellation_after_cover_download_stops_preparation() -> None:
             loader=loader,
         )
     assert len(loader.requests) == 1
+
+
+def test_publisher_cover_budget_includes_retained_episode_covers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sync_artwork, "MAX_PODCAST_COVER_BYTES", 12)
+    result = sync_artwork.prepare_podcast_covers(
+        (_subscription("show", "https://publisher.example/cover.png"),),
+        128,
+        checkpoint=lambda: None,
+        progress=lambda _: None,
+        loader=_Loader(),
+        retained_bytes=6,
+    )
+    assert result.covers == ()
+    assert len(result.issues) == 1
+    assert "preparation limit" in result.issues[0].detail

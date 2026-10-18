@@ -4,8 +4,11 @@ Apply to incoming or desired Library state only. Retained database projections
 remain truthful, and iPodDB keeps its lossless unchanged-document contract.
 """
 
+from contextlib import suppress
 from dataclasses import replace
+from datetime import UTC, datetime
 
+from iOpenPod.app.podcasts.identity import track_podcast_identity
 from iPodDB.library import LibrarySnapshot, MediaType, Track
 
 _REQUIRED_TYPES = frozenset(
@@ -33,6 +36,38 @@ def enforce_track_playback_policy(track: Track) -> Track:
         kind in (MediaType.PODCAST, MediaType.VIDEO_PODCAST)
         for kind in track.media_types
     )
+    if podcast:
+        original = track
+        metadata = track.metadata
+        year = track.year
+        if not year and metadata.release_date:
+            with suppress(OverflowError, OSError, ValueError):
+                year = datetime.fromtimestamp(metadata.release_date, UTC).year
+        types = track.media_types
+        if not any(
+            kind in types
+            for kind in (
+                MediaType.VIDEO_PODCAST,
+                MediaType.VIDEO,
+                MediaType.AUDIO_VIDEO,
+            )
+        ):
+            types = (MediaType.AUDIO, MediaType.PODCAST)
+        track = replace(
+            track,
+            media_types=types,
+            year=year,
+            metadata=replace(
+                metadata,
+                podcast_guid=track_podcast_identity(track).guid,
+                disc_number=1,
+                last_modified=metadata.last_modified
+                or int(datetime.now(UTC).timestamp()),
+                subtitle=metadata.subtitle or metadata.description[:255],
+            ),
+        )
+        if track == original:
+            track = original
     if not requires_track_playback_policy(track) or (
         track.metadata.skip_shuffle
         and track.metadata.remember_position

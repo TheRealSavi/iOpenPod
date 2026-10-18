@@ -27,7 +27,7 @@ def _track() -> Track:
         metadata=TrackMetadata(
             podcast=True,
             podcast_rss_url="https://example.test/feed",
-            podcast_enclosure_url="https://example.test/episode.mp3",
+            podcast_guid="https://example.test/episode.mp3",
             last_played=1_700_000_000,
         ),
     )

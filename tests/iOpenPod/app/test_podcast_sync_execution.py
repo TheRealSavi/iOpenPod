@@ -140,7 +140,10 @@ def test_podcast_add_replace_and_remove_publish_verified_media_without_overwriti
         )
         assert podcast.title == addition.episode.title
         assert podcast.metadata.podcast_rss_url == addition.subscription.feed_url
-        assert podcast.metadata.podcast_enclosure_url == addition.episode.enclosure_url
+        assert podcast.metadata.podcast_guid == addition.episode.guid
+        assert podcast.ipod is not None and podcast.ipod.media_type_code == 5
+        assert podcast.metadata.disc_number == 1
+        assert podcast.metadata.last_modified > 0
         assert (
             podcast.metadata.podcast
             and podcast.metadata.skip_shuffle

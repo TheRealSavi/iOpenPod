@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from iPodDB.library import ContentAdvisory
+
 
 class SubscriptionSource(StrEnum):
     """How a subscription first became part of this iPod's catalog."""
@@ -113,6 +115,8 @@ class PodcastEpisode:
     play_count: int = 0
     last_played: int = 0
     automatically_cleared: bool = False
+    subtitle: str = ""
+    content_advisory: ContentAdvisory = ContentAdvisory.UNSPECIFIED
 
     def __post_init__(self) -> None:
         if not self.episode_id.strip():

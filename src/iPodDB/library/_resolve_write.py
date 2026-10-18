@@ -37,6 +37,7 @@ from iPodDB.library.models import LibrarySnapshot, Track
 from iPodDB.library.playlists import PlaylistKind
 from iPodDB.library.writing import (
     IssueSeverity,
+    LibraryChange,
     LibraryDraft,
     LibraryResolution,
     WriteIssue,
@@ -141,6 +142,32 @@ def resolve(
             for kind, row in rows
         ),
     )
+    repair_ids = frozenset(
+        row.chunk.header.playlist_id
+        for kind, row in rows
+        if draft.repair_podcast_links
+        and is_podcasts(kind, row.chunk.header)
+        and row.chunk.header.playlist_id
+        in {p.playlist_id for p in draft.snapshot.playlists}
+        and any(
+            not item.chunk.header.podcast_group_flag & 0x100
+            and not item.chunk.header.group_id_ref
+            for item in row.find_chunks(MhipHeader)
+        )
+    )
+    if repair_ids:
+        plan = replace(
+            plan,
+            changes=(
+                *plan.changes,
+                *(
+                    LibraryChange(
+                        "playlist", identity, "repair", "Podcasts", ("podcast_links",)
+                    )
+                    for identity in sorted(repair_ids)
+                ),
+            ),
+        )
     issues = [*plan.issues, *source_warnings(document, original)]
     requested = draft.snapshot
     desired = requested
@@ -148,7 +175,7 @@ def resolve(
     # Invalid parent graphs and malformed draft values must not enter derivation.
     if not plan.blocked:
         desired, generated = normalize_podcast_order(
-            document, original, requested, issues
+            document, original, requested, issues, repair_ids=repair_ids
         )
         desired = _values(original, desired, issues)
     if plan.blocked:
@@ -170,6 +197,8 @@ def resolve(
             (),
         )
     affected = affected_datasets(original, desired)
+    if repair_ids:
+        affected |= frozenset((2, 3))
     if plan.changes_itunes:
         datasets = document.find_chunks(MhsdHeader)
         issues.extend(
@@ -215,11 +244,15 @@ def resolve(
     )
     old_playlists = {p.playlist_id: p for p in original.playlists}
     new_playlists = {p.playlist_id: p for p in desired.playlists}
-    changed = frozenset(
-        i
-        for i in old_playlists.keys() | new_playlists.keys()
-        if old_playlists.get(i) != new_playlists.get(i)
-    ) | frozenset(f.playlist_id for f in folders)
+    changed = (
+        frozenset(
+            i
+            for i in old_playlists.keys() | new_playlists.keys()
+            if old_playlists.get(i) != new_playlists.get(i)
+        )
+        | frozenset(f.playlist_id for f in folders)
+        | repair_ids
+    )
     if draft.rebuild_album_indexes:
         for kind, row in rows:
             if not is_master(kind, row.chunk.header):
@@ -264,18 +297,22 @@ def resolve(
         for t in desired.tracks
         if t.track_id not in old_tracks or old_tracks[t.track_id].album != t.album
     }
-    podcasts = generated | frozenset(
-        s.chunk.header.playlist_id
-        for kind, s in rows
-        if is_podcasts(kind, s.chunk.header)
-        and (
-            s.chunk.header.playlist_id in new_playlists
+    podcasts = (
+        generated
+        | repair_ids
+        | frozenset(
+            s.chunk.header.playlist_id
+            for kind, s in rows
+            if is_podcasts(kind, s.chunk.header)
             and (
-                s.chunk.header.playlist_id not in old_playlists
-                or old_playlists[s.chunk.header.playlist_id].entries
-                != new_playlists[s.chunk.header.playlist_id].entries
-                or albums_changed.intersection(
-                    new_playlists[s.chunk.header.playlist_id].track_ids
+                s.chunk.header.playlist_id in new_playlists
+                and (
+                    s.chunk.header.playlist_id not in old_playlists
+                    or old_playlists[s.chunk.header.playlist_id].entries
+                    != new_playlists[s.chunk.header.playlist_id].entries
+                    or albums_changed.intersection(
+                        new_playlists[s.chunk.header.playlist_id].track_ids
+                    )
                 )
             )
         )

@@ -61,7 +61,7 @@ def _library(show: PodcastSubscription, *, date_added: int = 1_000) -> LibrarySn
                 metadata=TrackMetadata(
                     podcast=True,
                     date_added=date_added,
-                    podcast_enclosure_url=episode.enclosure_url,
+                    podcast_guid=episode.enclosure_url,
                     podcast_rss_url=show.feed_url,
                 ),
             )

@@ -30,13 +30,16 @@ unconditional overwrite is unavailable.
 
 Every load reconciles iTunesDB Podcast Tracks before presentation. A normalized RSS
 URL identifies the Podcast Subscription when present; otherwise the Podcast title
-and author provide a deterministic device-only fallback. A normalized enclosure URL
-identifies an episode across RSS and iTunesDB, followed by the RSS GUID and then
-bounded title/date/number evidence. This makes `on_device` and the Track identity a
+and author provide a deterministic device-only fallback. As amended by ADR-0149,
+MHOD 15 carries the Podcast GUID; older URL-in-MHOD-15 records remain readable.
+Catalog identities and unique GUIDs match Episodes, with a unique same-feed
+title/publication-time fallback and compatible Episode/season numbers. This makes `on_device` and the Track identity a
 fresh projection rather than persisted truth. Podcast Tracks absent from the
 subscription document create a subscription automatically. Play count, played flag,
 and last-played time update Listening History, while an explicit user
 listened/unlistened override remains authoritative.
+Successful downloads also retain neutral identity/enclosure records in Listening
+History so reconnecting preserves catalog identity without marking them listened.
 
 Feed refresh uses the maintained `feedparser` dependency because real Podcast RSS
 and Atom feeds vary substantially and use Apple namespace extensions. iOpenPod owns

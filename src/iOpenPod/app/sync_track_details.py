@@ -47,7 +47,7 @@ METADATA_TAG_FIELDS = (
     "composer",
     "grouping",
     "description",
-    "podcast_enclosure_url",
+    "podcast_guid",
     "podcast_rss_url",
     "subtitle",
     "tv_network",

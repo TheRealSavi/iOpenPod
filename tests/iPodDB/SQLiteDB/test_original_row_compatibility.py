@@ -5,8 +5,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from tests.iPodDB.SQLiteDB.test_database import (
-    _rows,  # pyright: ignore[reportPrivateUsage]
+from tests.iPodDB.SQLiteDB.sqlite_test_support import (
+    sqlite_rows,
 )
 
 from iPodDB.iTunesDB.shared.constants import FILE_EXTENSION_INT
@@ -27,7 +27,7 @@ _REFERENCE = json.loads(
 )
 
 
-def _snapshot(*, native_ids: bool = True) -> LibrarySnapshot:
+def sample_snapshot(*, native_ids: bool = True) -> LibrarySnapshot:
     names = (
         ("Artist", "Album", "Album Artist", "Composer"),
         ("Another Singer", "Album", "Album Artist", "Composer"),
@@ -79,38 +79,42 @@ def test_browse_ids_and_missing_references_match_original_rows(
     native_ids: bool, table: str
 ) -> None:
     data = build_sqlite_databases(
-        _snapshot(native_ids=native_ids), database_id=42, checksum=WriteChecksum.NONE
+        sample_snapshot(native_ids=native_ids),
+        database_id=42,
+        checksum=WriteChecksum.NONE,
     ).library
 
-    assert [list(row) for row in _rows(data, _REFERENCE["queries"][table])] == (
+    assert [list(row) for row in sqlite_rows(data, _REFERENCE["queries"][table])] == (
         _REFERENCE["rows"][table]
     )
 
 
 def test_store_dates_do_not_create_incomplete_store_rows() -> None:
     data = build_sqlite_databases(
-        _snapshot(), database_id=42, checksum=WriteChecksum.NONE
+        sample_snapshot(), database_id=42, checksum=WriteChecksum.NONE
     ).library
 
     assert (
-        list(_rows(data, _REFERENCE["queries"]["store_info"]))
+        list(sqlite_rows(data, _REFERENCE["queries"]["store_info"]))
         == (_REFERENCE["rows"]["store_info"])
     )
-    assert _rows(data, "SELECT DISTINCT date_released FROM item") == ((721692790,),)
+    assert sqlite_rows(data, "SELECT DISTINCT date_released FROM item") == (
+        (721692790,),
+    )
 
 
 def test_ordinary_container_checked_flags_match_original_rows() -> None:
     data = build_sqlite_databases(
-        _snapshot(), database_id=42, checksum=WriteChecksum.NONE
+        sample_snapshot(), database_id=42, checksum=WriteChecksum.NONE
     ).library
 
     assert [
-        list(row) for row in _rows(data, _REFERENCE["queries"]["container"])
+        list(row) for row in sqlite_rows(data, _REFERENCE["queries"]["container"])
     ] == _REFERENCE["rows"]["container"]
 
 
 def test_checked_only_smart_playlist_retains_its_explicit_flag() -> None:
-    snapshot = _snapshot()
+    snapshot = sample_snapshot()
     smart = Playlist(
         24,
         "Checked Smart",
@@ -123,7 +127,7 @@ def test_checked_only_smart_playlist_retains_its_explicit_flag() -> None:
         checksum=WriteChecksum.NONE,
     ).library
 
-    assert _rows(
+    assert sqlite_rows(
         data, "SELECT smart_enabled_only FROM container WHERE name='Checked Smart'"
     ) == ((1,),)
 
@@ -163,11 +167,11 @@ def test_location_kinds_match_original_without_discarding_codec_evidence() -> No
 
     assert [
         list(row)
-        for row in _rows(
+        for row in sqlite_rows(
             data.locations,
             "SELECT item_pid,extension,kind_id FROM location ORDER BY item_pid",
         )
     ] == _REFERENCE["rows"]["location"]
-    assert _rows(
+    assert sqlite_rows(
         data.library, "SELECT audio_format FROM avformat_info ORDER BY item_pid"
     ) == ((502,), (502,), (503,), (502,), (502,), (301,))

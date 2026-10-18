@@ -69,9 +69,8 @@ def test_read_layouts_reject_conflicting_cover_and_chapter_definitions() -> None
     classic = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
     assert classic is not None
     original = classic.capabilities.artwork
-    profile = replace(
-        classic,
-        capabilities=replace(
+    profile = classic.with_capabilities(
+        replace(
             classic.capabilities,
             artwork=replace(
                 original,

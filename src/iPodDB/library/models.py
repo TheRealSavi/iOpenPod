@@ -138,7 +138,7 @@ class TrackMetadata:
     composer: str = ""
     grouping: str = ""
     description: str = ""
-    podcast_enclosure_url: str = ""
+    podcast_guid: str = ""
     podcast_rss_url: str = ""
     subtitle: str = ""
     tv_network: str = ""

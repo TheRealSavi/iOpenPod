@@ -26,6 +26,46 @@ from iOpenPod.app.podcasts.models import (
     SubscriptionSource,
 )
 from iOpenPod.app.podcasts.sync_artwork import prepare_podcast_covers
+from iPodDB.library import ContentAdvisory
+
+
+@pytest.mark.parametrize(
+    "feed_value,episode_value,expected",
+    (
+        ("true", "", ContentAdvisory.EXPLICIT),
+        (" true ", "", ContentAdvisory.EXPLICIT),
+        ("yes", "false", ContentAdvisory.CLEAN),
+        ("true", "clean", ContentAdvisory.CLEAN),
+        ("false", "yes", ContentAdvisory.EXPLICIT),
+        ("", "no", ContentAdvisory.CLEAN),
+        ("", "", ContentAdvisory.UNSPECIFIED),
+    ),
+)
+def test_explicit_advisory_and_subtitle_survive_feed_normalization(
+    monkeypatch: pytest.MonkeyPatch,
+    feed_value: str,
+    episode_value: str,
+    expected: ContentAdvisory,
+) -> None:
+    payload = f"""<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel>
+    <title>Show</title><itunes:explicit>{feed_value}</itunes:explicit><item>
+    <guid isPermaLink="false">opaque-guid</guid><title>Episode</title>
+    <itunes:explicit>{episode_value}</itunes:explicit><itunes:subtitle>Short summary</itunes:subtitle>
+    <description>Full episode description</description>
+    <enclosure url="https://cdn.example.test/one.mp3" type="audio/mpeg" />
+    </item></channel></rss>""".encode()
+
+    def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
+        return payload, url
+
+    monkeypatch.setattr(feed_client, "_request_bytes", request_bytes)
+    episode = (
+        FeedparserPodcastClient().fetch("https://publisher.example/feed").episodes[0]
+    )
+    assert episode.content_advisory is expected
+    assert episode.subtitle == "Short summary"
+    assert episode.description == "Full episode description"
+    assert episode.guid == "opaque-guid"
 
 
 def test_directory_retains_text_and_feed_url_without_promotional_artwork(

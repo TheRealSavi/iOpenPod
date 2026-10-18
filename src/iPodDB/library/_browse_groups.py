@@ -4,7 +4,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from iPodDB.library.models import Track
+from iPodDB.library.models import MediaKind, Track
 
 
 def group_key(track: Track, *, album: bool) -> tuple[str, ...]:
@@ -41,6 +41,7 @@ class AlbumValues:
     show: str
     compilation: bool
     season: int
+    content_type: int
 
 
 def album_values(members: Sequence[Track]) -> AlbumValues:
@@ -65,4 +66,7 @@ def album_values(members: Sequence[Track]) -> AlbumValues:
         first.show,
         first.metadata.compilation,
         first.season_number,
+        3
+        if any(t.media_kind is MediaKind.PODCAST or t.metadata.podcast for t in members)
+        else 2,
     )

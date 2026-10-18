@@ -1,5 +1,8 @@
 # ADR-0147: Restore late-iPod firmware write compatibility
 
+> ADR-0150 amends refresh to retain existing SQLite schemas, version rows, and
+> unrepresented metadata while applying the checked CDB projection.
+
 - Status: Accepted
 - Date: 2026-10-16
 - Amends: ADR-0033, ADR-0061, and ADR-0141

@@ -46,10 +46,17 @@ from iOpenPod.app.media.photo_sync import (
     prepare_sync_photo,
 )
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
-from iOpenPod.app.media.sync_artwork import capture_sync_artwork
+from iOpenPod.app.media.sync_artwork import (
+    capture_embedded_artwork,
+    capture_embedded_chapter_artwork,
+    capture_sync_artwork,
+)
 from iOpenPod.app.media.transcoding import MediaTranscoder, TranscodeSettings
 from iOpenPod.app.podcasts.media import download_episode, episode_track
-from iOpenPod.app.podcasts.sync_artwork import prepare_podcast_covers
+from iOpenPod.app.podcasts.sync_artwork import (
+    MAX_PODCAST_COVER_BYTES,
+    prepare_podcast_covers,
+)
 from iOpenPod.app.podcasts.sync_preparation import (
     prepare_podcast_sync,
     state_after_podcast_sync,
@@ -94,6 +101,8 @@ from iPodDB.library import (
     Playlist,
     PlaylistKind,
     PreparedPhoto,
+    TimedArtworkAsset,
+    TimedArtworkFrame,
     Track,
     WriteIssue,
     content_chunks,
@@ -127,6 +136,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.scrobbling.service import ScrobbleService
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from iOpenPod.app.sync_plan import SyncPlan
+    from storage import HostPath
     from storage.content_workspace import ContentWorkspace
     from storage.media_processing import MediaTools
 
@@ -215,6 +225,10 @@ class _PreparedPodcast:
     replaces_track_id: int | None = None
     subscription_id: str = ""
     acoustic_fingerprint: str = ""
+    # The download's lifetime stays in the execution ExitStack. Transcoded media
+    # may have lost its embedded pictures, so inspect this captured source.
+    cover_source: HostPath | None = None
+    chapter_artwork: tuple[TimedArtworkFrame, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1541,17 +1555,19 @@ class SyncExecutor:
                         # Media kind follows inspected output, never the enclosure suffix.
                         track = replace(
                             output.metadata or track,
-                            media_types=(
-                                MediaType.VIDEO_PODCAST
-                                if output.inspection.video_streams
-                                else MediaType.PODCAST,
-                            ),
+                            media_types=(MediaType.VIDEO_PODCAST,)
+                            if output.inspection.video_streams
+                            else (MediaType.AUDIO, MediaType.PODCAST),
                         )
                         song = _song(request, track, replace(output, metadata=track))
                         invalid = incoming_track_issues(song.track)
                         if invalid:
                             issues.extend(
-                                replace(issue, record_id=None)
+                                replace(
+                                    issue,
+                                    record_id=None,
+                                    artifact=episode.enclosure_url,
+                                )
                                 for issue in describe_track_issues(
                                     invalid, (song.track,)
                                 )
@@ -1625,6 +1641,7 @@ class SyncExecutor:
                                 addition.replaces_track_id,
                                 addition.subscription.subscription_id,
                                 acoustic_fingerprint,
+                                source,
                             )
                         )
                         issues.extend(
@@ -2166,7 +2183,7 @@ def _draft(
     }
     replaced: list[int] = []
     media: list[LibraryMediaSource] = []
-    artwork: list[ArtworkAsset] = []
+    artwork: list[ArtworkAsset | TimedArtworkAsset] = []
     artwork_ids: dict[int, int] = {}
     metadata_updates = [] if metadata_updates is None else metadata_updates
     rockbox_media: list[RockboxMediaUpdate] = []
@@ -2176,7 +2193,7 @@ def _draft(
             return 0
         identity = id(pixels)
         if identity not in artwork_ids:
-            artwork_ids[identity] = -len(artwork_ids) - 1
+            artwork_ids[identity] = -len(artwork) - 1
             artwork.append(ArtworkAsset(artwork_ids[identity], pixels))
         return artwork_ids[identity]
 
@@ -2285,9 +2302,23 @@ def _draft(
         identity = next_track_id
         next_track_id -= 1
         song = podcast.song
-        tracks[identity] = replace(
-            song.track, track_id=identity, artwork_id=cover_identity(song.artwork)
-        )
+        if podcast.chapter_artwork:
+            timeline = {
+                frame.display_time_ms: frame for frame in podcast.chapter_artwork
+            }
+            timeline.setdefault(
+                0,
+                TimedArtworkFrame(0, song.artwork or podcast.chapter_artwork[0].source),
+            )
+            artwork_id = -len(artwork) - 1
+            artwork.append(
+                TimedArtworkAsset(
+                    artwork_id, tuple(timeline[time] for time in sorted(timeline))
+                )
+            )
+        else:
+            artwork_id = cover_identity(song.artwork)
+        tracks[identity] = replace(song.track, track_id=identity, artwork_id=artwork_id)
         media.append(
             replace(song.source, media=replace(song.source.media, track_id=identity))
         )
@@ -2401,6 +2432,7 @@ def _draft(
             if item.item.action is SyncPlanAction.UPDATE
         ),
         regenerate_sqlite=request.source.profile.capabilities.database.uses_sqlite_database,
+        repair_podcast_links=True,
         rebuild_album_indexes=bool(request.source.library.tracks)
         and not request.source.profile.capabilities.database.uses_sqlite_database,
     )
@@ -2902,7 +2934,55 @@ def _capture_podcast_artwork(
     list[_PreparedPodcast], tuple[_PodcastArtworkRepair, ...], tuple[WriteIssue, ...]
 ]:
     formats = application_artwork_formats(request.source.profile)
-    incoming = {podcast.subscription_id for podcast in prepared}
+    target_px = max(max(item.width, item.height) for item in formats)
+    embedded: list[_PreparedPodcast] = []
+    issues: list[WriteIssue] = []
+    retained_bytes = 0
+    for podcast in prepared:
+        checkpoint()
+        if podcast.cover_source is not None:
+            progress(
+                WriteProgress(
+                    "sync.podcast_artwork",
+                    source_text(
+                        "Preparing artwork for {title}…", title=podcast.song.track.title
+                    ),
+                    current_item=podcast.song.track.title,
+                )
+            )
+            try:
+                pixels = capture_embedded_artwork(
+                    podcast.cover_source, target_px, checkpoint=checkpoint
+                )
+                if pixels is not None:
+                    if retained_bytes + len(pixels.rgb888) > MAX_PODCAST_COVER_BYTES:
+                        raise ValueError(
+                            "Podcast covers exceed the 64 MiB preparation limit; sync fewer Podcasts at once"
+                        )
+                    retained_bytes += len(pixels.rgb888)
+                    podcast = replace(
+                        podcast, song=replace(podcast.song, artwork=pixels)
+                    )
+            except PreparationCancelledError:
+                raise
+            except Exception as error:
+                issues.append(
+                    WriteIssue(
+                        "sync.podcast_embedded_artwork_skipped",
+                        source_text(
+                            "Embedded artwork for {title} could not be prepared. "
+                            "The Episode can still sync with available publisher artwork.",
+                            title=podcast.song.track.title,
+                        ),
+                        severity=IssueSeverity.WARNING,
+                        detail=exception_text(error),
+                        artifact=podcast.item.host_path or "",
+                    )
+                )
+        embedded.append(podcast)
+    incoming = {
+        podcast.subscription_id for podcast in embedded if podcast.song.artwork is None
+    }
     shows = {
         addition.subscription.subscription_id: addition.subscription
         for addition in plan.additions
@@ -2938,18 +3018,19 @@ def _capture_podcast_artwork(
                 shows[subscription.subscription_id] = subscription
     result = prepare_podcast_covers(
         tuple(shows.values()),
-        max(max(item.width, item.height) for item in formats),
+        target_px,
         checkpoint=checkpoint,
         progress=progress,
+        retained_bytes=retained_bytes,
     )
     covers = {cover.subscription_id: cover.pixels for cover in result.covers}
     incoming_covers = [
         replace(
             podcast, song=replace(podcast.song, artwork=covers[podcast.subscription_id])
         )
-        if podcast.subscription_id in covers
+        if podcast.song.artwork is None and podcast.subscription_id in covers
         else podcast
-        for podcast in prepared
+        for podcast in embedded
     ]
     retained_covers = tuple(
         _PodcastArtworkRepair(
@@ -2968,7 +3049,54 @@ def _capture_podcast_artwork(
         for identity, subscription_id in repairs.items()
         if subscription_id in covers
     )
-    return incoming_covers, retained_covers, result.issues
+    retained_bytes += sum(len(cover.pixels.rgb888) for cover in result.covers)
+    with_chapters: list[_PreparedPodcast] = []
+    for podcast in incoming_covers:
+        if podcast.cover_source is not None:
+            try:
+                captured = capture_embedded_chapter_artwork(
+                    podcast.cover_source,
+                    max(
+                        (
+                            target_px,
+                            *(
+                                max(item.width, item.height)
+                                for item in request.source.profile.capabilities.artwork.chapter_formats
+                            ),
+                        )
+                    ),
+                    frozenset(
+                        chapter.start_ms
+                        for chapter in podcast.song.track.metadata.chapters
+                    ),
+                    max_bytes=MAX_PODCAST_COVER_BYTES - retained_bytes,
+                    checkpoint=checkpoint,
+                )
+                podcast = replace(podcast, chapter_artwork=captured.frames)
+                retained_bytes += sum(
+                    len(frame.source.rgb888)
+                    for frame in captured.frames
+                    if isinstance(frame.source, ArtworkPixels)
+                )
+                if captured.skipped:
+                    raise ValueError("; ".join(captured.skipped[:4]))
+            except PreparationCancelledError:
+                raise
+            except Exception as error:
+                issues.append(
+                    WriteIssue(
+                        "sync.podcast_chapter_artwork_skipped",
+                        source_text(
+                            "Embedded artwork for {title} could not be prepared. "
+                            "The Episode can still sync with available publisher artwork.",
+                            title=podcast.song.track.title,
+                        ),
+                        severity=IssueSeverity.WARNING,
+                        detail=exception_text(error),
+                    )
+                )
+        with_chapters.append(podcast)
+    return with_chapters, retained_covers, (*issues, *result.issues)
 
 
 __all__ = [

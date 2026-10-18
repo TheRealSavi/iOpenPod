@@ -180,7 +180,7 @@ def test_context_menu_converts_tracks_to_podcasts_and_requires_album_for_chapter
         convert.trigger()
 
         converted = context.library_workspace.tracks[0]
-        assert converted.media_types == (MediaType.PODCAST,)
+        assert converted.media_types == (MediaType.AUDIO, MediaType.PODCAST)
         assert converted.album == converted.show == "Host"
         assert converted.genre == converted.metadata.category == "Podcast"
         assert converted.metadata.podcast
@@ -888,6 +888,12 @@ def test_media_type_selector_preserves_current_values_until_changed(
                 skip_shuffle=True,
                 remember_position=True,
                 podcast=MediaType.PODCAST in types,
+                disc_number=1
+                if MediaType.PODCAST in types
+                else track.metadata.disc_number,
+                last_modified=workspace.tracks[0].metadata.last_modified
+                if MediaType.PODCAST in types
+                else track.metadata.last_modified,
             )
             if MediaType.VIDEO in types
             else track.metadata

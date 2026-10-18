@@ -78,7 +78,7 @@ def test_ipod_library_translates_optional_metadata_without_exposing_chunks() -> 
         new_string_mhod(MhodType.GROUPING, "Grouping"),
         new_string_mhod(MhodType.DESCRIPTION, "Description"),
         new_url_mhod(
-            MhodType.PODCAST_ENCLOSURE_URL,
+            MhodType.PODCAST_GUID,
             "https://example.test/enclosure.m4a",
         ),
         new_url_mhod(
@@ -304,7 +304,7 @@ def test_ipod_library_translates_optional_metadata_without_exposing_chunks() -> 
             composer="Composer",
             grouping="Grouping",
             description="Description",
-            podcast_enclosure_url="https://example.test/enclosure.m4a",
+            podcast_guid="https://example.test/enclosure.m4a",
             podcast_rss_url="https://example.test/feed",
             subtitle="Subtitle",
             tv_network="Network",

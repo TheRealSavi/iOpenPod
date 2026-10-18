@@ -420,9 +420,12 @@ See ADR-0020 and ADR-0022 for hierarchy and editor behavior.
 
 Sync's **Refresh Library** action can repair existing Albums browse indexes on
 non-SQLite iPods with Tracks, including Classic models, without reimporting media.
-SQLite targets regenerate their companion Library artifacts. Both paths use the
-normal verified Storage Transaction. Loading and ordinary no-op serialization
-remain byte-exact. See ADR-0147 and ADR-0148.
+SQLite targets refresh their companion Library artifacts while retaining captured
+firmware schemas, version rows, and metadata absent from the CDB. Changed HASH72
+databases receive valid HASH58 and HASH72 signatures. Binary Play Counts ignores
+the evidenced missing-date reference epoch. Both paths use the normal verified
+Storage Transaction. Loading and ordinary no-op serialization remain byte-exact.
+See ADR-0147, ADR-0148, and ADR-0150.
 
 The Library Workspace retains Photos and Photo Albums in that same desired snapshot.
 Retained Photo rating/dates and retained user Photo Album names, membership,
@@ -544,8 +547,17 @@ invalid incoming Episode metadata is reported by title and show and skipped befo
 the shared Library build. Independent Episodes can still Sync, and failed
 replacements keep their existing Tracks. Blocking Library errors do not generate
 secondary missing-lyrics errors, and cover retries do not inflate diagnostic counts.
-Publisher covers use the shared ArtworkDB and thumbnail preparation; Podcast Sync
-also fills missing covers on retained Episodes without downloading their media again.
+Incoming Episodes prefer embedded covers from their original downloads, with
+publisher show covers as a fallback. Covers use shared ArtworkDB and thumbnail
+preparation; Podcast Sync also fills missing covers on retained Episodes from
+refreshed feeds without downloading their media again. See the
+[Finder capture research](docs/research/podcast-finder-captures-2026-10-18.md).
+ID3 chapter pictures now feed the timed-artwork writer from those same captured
+originals, including after transcoding. Podcast GUIDs occupy MHOD 15 separately
+from download URLs. Audio Podcasts use media mask 5 and disc 1, with publication
+year, modification time, subtitle, and publisher advisory supplied. Sync repairs
+missing show links, and checked CDB metadata supplies SQLite Podcast identity,
+container classification, and descriptions. See ADR-0149.
 Episode slots are an automatic filling target;
 manual additions may exceed it. Episode count alone never authorizes removal.
 Both Newest and Next clear by listened state or time on the iPod. Newest replaces

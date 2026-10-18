@@ -222,9 +222,14 @@ def verify_browse_groups(
                         f"Album {identity}: representative {row.header.album_track_db_id} is not one of {sorted(owners)}.",
                         row,
                     )
-                if (row.header.album_compilation_flag, row.header.season_number) != (
+                if (
+                    row.header.album_compilation_flag,
+                    row.header.season_number,
+                    row.header.content_type_flag,
+                ) != (
                     int(values.compilation),
                     values.season,
+                    values.content_type,
                 ):
                     fail(
                         "album_flags",

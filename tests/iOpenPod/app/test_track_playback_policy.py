@@ -41,15 +41,22 @@ def test_all_podcasts_and_video_types_require_both_flags(kind: MediaType) -> Non
     updated = enforce_track_playback_policy(original)
 
     assert requires_track_playback_policy(original)
+    podcast = kind in (MediaType.PODCAST, MediaType.VIDEO_PODCAST)
     assert updated == replace(
         original,
+        media_types=(MediaType.AUDIO, MediaType.PODCAST)
+        if kind is MediaType.PODCAST
+        else original.media_types,
         metadata=replace(
             original.metadata,
             skip_shuffle=True,
             remember_position=True,
             podcast=kind in (MediaType.PODCAST, MediaType.VIDEO_PODCAST),
+            disc_number=1 if podcast else 0,
+            last_modified=updated.metadata.last_modified if podcast else 0,
         ),
     )
+    assert bool(updated.metadata.last_modified) == podcast
     assert enforce_track_playback_policy(updated) is updated
     assert not original.metadata.skip_shuffle
     assert not original.metadata.remember_position
@@ -81,7 +88,7 @@ def test_legacy_semantic_podcast_flag_also_requires_both_flags() -> None:
     updated = enforce_track_playback_policy(track)
 
     assert updated.metadata.skip_shuffle and updated.metadata.remember_position
-    assert updated.media_types == track.media_types
+    assert updated.media_types == (MediaType.AUDIO, MediaType.PODCAST)
 
 
 @pytest.mark.parametrize("kind", (MediaType.AUDIO, MediaType.AUDIOBOOK, MediaType.MEMO))

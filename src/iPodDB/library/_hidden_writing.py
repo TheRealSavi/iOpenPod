@@ -326,6 +326,7 @@ def reconcile_hidden(
                         row,
                         header=replace(
                             row.header,
+                            content_type_flag=values.content_type,
                             album_compilation_flag=int(exemplar.metadata.compilation),
                             season_number=exemplar.season_number,
                             album_track_db_id=row.header.album_track_db_id

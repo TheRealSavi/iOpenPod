@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from iPodDB.library.photos import Photo, PhotoThumbnailFormat
     from iPodDB.library.signing import Hash72Material
     from iPodDB.library.sqlite import SQLiteDatabaseSet
+    from iPodDB.SQLiteDB.inputs import SQLiteSource
 
 
 class IssueSeverity(StrEnum):
@@ -106,6 +107,7 @@ class LibraryDraft:
     regenerate_sqlite: bool = field(default=False, kw_only=True)
     # Explicit repair of retained type-4 browse indexes and their jump tables.
     rebuild_album_indexes: bool = field(default=False, kw_only=True)
+    repair_podcast_links: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,6 +312,10 @@ class WriteResources:
     # Observed paths unavailable for capture. These reserve names only and
     # supply neither file-content evidence nor overwrite authority.
     reserved_artwork_paths: tuple[str, ...] = field(default=(), kw_only=True)
+    # Caller-captured UTC Unix seconds for affected Podcast playlist dates.
+    # Zero supplies no clock evidence; iPodDB never reads the Host clock.
+    playlist_timestamp: int = field(default=0, kw_only=True)
+    sqlite_sources: tuple[SQLiteSource, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

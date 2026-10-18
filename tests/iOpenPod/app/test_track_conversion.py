@@ -33,7 +33,9 @@ def test_reclassification_preserves_unrelated_metadata(
         1000,
         size_bytes=1024,
         media_types=(before,),
-        metadata=TrackMetadata(location="iPod_Control/Music/F00/media.mp4"),
+        metadata=TrackMetadata(
+            location="iPod_Control/Music/F00/media.mp4", last_modified=1
+        ),
     )
 
     required = after in (
@@ -45,12 +47,17 @@ def test_reclassification_preserves_unrelated_metadata(
     )
     assert reclassify_track(track, after) == replace(
         track,
-        media_types=(after,),
+        media_types=(MediaType.AUDIO, MediaType.PODCAST)
+        if after is MediaType.PODCAST
+        else (after,),
         metadata=replace(
             track.metadata,
             skip_shuffle=required,
             remember_position=required,
             podcast=after in (MediaType.PODCAST, MediaType.VIDEO_PODCAST),
+            disc_number=1
+            if after in (MediaType.PODCAST, MediaType.VIDEO_PODCAST)
+            else 0,
         ),
     )
 

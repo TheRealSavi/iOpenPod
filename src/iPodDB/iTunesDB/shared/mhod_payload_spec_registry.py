@@ -100,7 +100,7 @@ MHOD_DEFINITIONS: Mapping[int, MhodDefinitionSpec] = MappingProxyType(
             _mhod(12, "Composer", MhodPayloadKind.STRING),
             _mhod(13, "Grouping", MhodPayloadKind.STRING),
             _mhod(14, "Description", MhodPayloadKind.STRING),
-            _mhod(15, "Podcast Enclosure URL", MhodPayloadKind.URL),
+            _mhod(15, "Podcast GUID", MhodPayloadKind.URL),
             _mhod(16, "Podcast RSS URL", MhodPayloadKind.URL),
             _mhod(17, "Chapter Data", MhodPayloadKind.CHAPTER_DATA),
             _mhod(18, "Subtitle", MhodPayloadKind.STRING),

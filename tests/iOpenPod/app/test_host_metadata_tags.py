@@ -236,6 +236,7 @@ def test_mp4_video_fields(tmp_path: Path, kind: int, expected: MediaKind) -> Non
             "trkn": [(3, 10)],
             "disk": [(1, 2)],
             "purl": ["https://example.test/feed"],
+            "egid": ["opaque-podcast-guid"],
             "catg": ["TV"],
             "keyw": ["episode"],
             "apID": ["account@example.test"],
@@ -270,6 +271,7 @@ def test_mp4_video_fields(tmp_path: Path, kind: int, expected: MediaKind) -> Non
     ) == (3, 10, 1, 2)
     assert track.metadata.podcast is (kind == 21)
     assert track.metadata.podcast_rss_url == "https://example.test/feed"
+    assert track.metadata.podcast_guid == "opaque-podcast-guid"
     assert track.metadata.purchase_account == "account@example.test"
     assert track.metadata.purchaser_name == "Purchaser"
 

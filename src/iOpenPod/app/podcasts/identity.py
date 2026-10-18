@@ -3,7 +3,34 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from urllib.parse import SplitResult, urlsplit, urlunsplit
+
+if TYPE_CHECKING:
+    from iPodDB.library import Track
+
+
+@dataclass(frozen=True, slots=True)
+class PodcastTrackIdentity:
+    guid: str
+    enclosure_url: str = ""
+
+
+def track_podcast_identity(track: Track) -> PodcastTrackIdentity:
+    """Read Apple GUIDs and the URL/GUID pair written by earlier iOpenPod.
+
+    GUIDs can themselves be URLs. Keep that identifier intact, while exposing
+    HTTP values as legacy enclosure evidence for matching existing catalogs.
+    Merely reading this compatibility evidence never changes native bytes.
+    """
+    native = track.metadata.podcast_guid.strip()
+    legacy = track.episode.strip()
+    enclosure = normalize_feed_url(native)
+    return PodcastTrackIdentity(
+        legacy if enclosure and legacy else native or legacy,
+        enclosure,
+    )
 
 
 def normalize_feed_url(value: str) -> str:

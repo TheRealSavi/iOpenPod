@@ -7,7 +7,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from iOpenPod.app.podcasts.identity import normalize_feed_url
+from iOpenPod.app.podcasts.identity import normalize_feed_url, track_podcast_identity
 from iOpenPod.app.podcasts.models import (
     PodcastClearMethod,
     PodcastEpisode,
@@ -249,11 +249,10 @@ def _ambiguous_identity(
             )
         )
     )
-    guids = Counter(track.episode for track in matched if track.episode)
+    identities = tuple(track_podcast_identity(track) for track in matched)
+    guids = Counter(item.guid for item in identities if item.guid)
     enclosures = Counter(
-        normalize_feed_url(track.metadata.podcast_enclosure_url)
-        for track in matched
-        if normalize_feed_url(track.metadata.podcast_enclosure_url)
+        item.enclosure_url for item in identities if item.enclosure_url
     )
     if any(
         not episode.on_device

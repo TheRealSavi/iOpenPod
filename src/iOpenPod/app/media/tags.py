@@ -56,7 +56,7 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "podcast": ("PCST", "pcst", "podcast"),
     "category": ("TCAT", "catg", "category"),
     "podcast_rss_url": ("WFED", "purl", "podcasturl", "podcastfeedurl", "feedurl"),
-    "podcast_enclosure_url": ("enclosureurl", "podcastenclosureurl"),
+    "podcast_guid": ("podcastguid", "podcastid", "egid", "tgid"),
     "track_keywords": ("TKWD", "keyw", "keywords"),
     "show": ("tvsh", "show", "tvshow", "WM/TVShowName"),
     "episode": ("tven", "episode_id", "tvepisodeid", "WM/TVEpisodeID"),
@@ -419,9 +419,7 @@ def apply_tag_values(
             copyright=text("copyright", metadata.copyright),
             category=text("category", metadata.category),
             podcast_rss_url=text("podcast_rss_url", metadata.podcast_rss_url),
-            podcast_enclosure_url=text(
-                "podcast_enclosure_url", metadata.podcast_enclosure_url
-            ),
+            podcast_guid=text("podcast_guid", metadata.podcast_guid),
             track_keywords=text("track_keywords", metadata.track_keywords),
             tv_network=text("tv_network", metadata.tv_network),
             sort_title=text("sort_title", metadata.sort_title),

@@ -2,7 +2,12 @@
 
 from dataclasses import dataclass, replace
 
-from iPodDB.device_time import DeviceTimeContext, mac_to_unix
+from iPodDB.device_time import (
+    CORE_DATA_EPOCH_UNIX_OFFSET,
+    MAC_EPOCH_UNIX_OFFSET,
+    DeviceTimeContext,
+    mac_to_unix,
+)
 from iPodDB.library.models import LibrarySnapshot, Track
 from iPodDB.library.playlists import Playlist, PlaylistEntry, PlaylistSortOrder
 from iPodDB.library.writing import WriteIssue
@@ -24,9 +29,25 @@ class SidecarProjection:
     issues: tuple[WriteIssue, ...] = ()
 
 
-def _merge(track: Track, entry: PlaybackEntry, context: DeviceTimeContext) -> Track:
+def _merge(
+    track: Track,
+    entry: PlaybackEntry,
+    context: DeviceTimeContext,
+    *,
+    play_counts: bool = False,
+) -> Track:
     def date(value: int, previous: int) -> int:
         if not value:
+            return previous
+        # Finder's Play Counts captures encode an absent Core Data date as the
+        # reference epoch shifted by the database's captured offset. Compare raw
+        # values before geographical-zone conversion: January's DST offset can
+        # differ and would turn this sentinel into a spurious 01:00 timestamp.
+        if play_counts and value == (
+            MAC_EPOCH_UNIX_OFFSET
+            + CORE_DATA_EPOCH_UNIX_OFFSET
+            + context.database_offset_seconds
+        ):
             return previous
         decoded = (
             mac_to_unix(value, context)
@@ -76,7 +97,12 @@ def _tracks(
     if len(document.entries) > len(tracks):
         raise ValueError("Playback sidecar has more rows than the Track table.")
     return tuple(
-        _merge(track, document.entries[index], context)
+        _merge(
+            track,
+            document.entries[index],
+            context,
+            play_counts=document.format == "Play Counts",
+        )
         if index < len(document.entries)
         else track
         for index, track in enumerate(tracks)

@@ -48,6 +48,7 @@ from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.writer.signature import (
     sign_hash72,
+    verify_hash58,
     verify_hash72,
     verify_hashab,
 )
@@ -70,6 +71,7 @@ from iPodDB.PhotosDB.shared.chunk_defs.mhni import MhniHeader as PhotoMhniHeader
 from iPodDB.PhotosDB.shared.constants import PhotosMhodType
 from iPodDB.PhotosDB.writer.write_PhotosDB import write_PhotosDB
 from iPodDB.SQLiteDB.checksum import build_locations_cbk, verify_locations_cbk
+from iPodDB.SQLiteDB.database import build_sqlite_databases
 from storage import (
     AccessMode,
     DevicePath,
@@ -972,7 +974,9 @@ def test_nano_library_save_publishes_cdb_and_sqlite_as_one_generation(
     assert review.result.prepared is not None, review.result.issues
     assert saved.active is not None, saved.issues
     assert IPodLibrary.parse(cdb.read_bytes()).snapshot.tracks[0].title == "Late Nano"
-    assert verify_hash72(cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)))
+    assert verify_hash72(
+        cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)), hashing_scheme=1
+    )
     assert (root / "iPod_Control" / "iTunes" / "iTunesDB").read_bytes() == b""
     assert review.result.prepared.sqlite is not None
     library_database = sqlite3.connect(":memory:")
@@ -1001,7 +1005,11 @@ def test_nano5_recovers_missing_hashinfo_from_retained_checksum_book(
     (root / "iPod_Control" / "Device" / "HashInfo").unlink()
     sqlite_directory = root / "iPod_Control" / "iTunes" / "iTunes Library.itlp"
     sqlite_directory.mkdir()
-    locations = b"retained Locations database"
+    locations = build_sqlite_databases(
+        IPodLibrary.parse(cdb.read_bytes()).snapshot,
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+    ).locations
     (sqlite_directory / "Locations.itdb").write_bytes(locations)
     (sqlite_directory / "Locations.itdb.cbk").write_bytes(
         build_locations_cbk(
@@ -1028,7 +1036,9 @@ def test_nano5_recovers_missing_hashinfo_from_retained_checksum_book(
     saved = coordinator.save_library(review, active, lambda _: None, Event())
 
     assert saved.active is not None, saved.issues
-    assert verify_hash72(cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)))
+    assert verify_hash72(
+        cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)), hashing_scheme=1
+    )
     coordinator.close()
 
 
@@ -1063,7 +1073,67 @@ def test_nano5_recovers_missing_hashinfo_from_retained_cdb(tmp_path: Path) -> No
     saved = coordinator.save_library(review, active, lambda _: None, Event())
 
     assert saved.active is not None, saved.issues
-    assert verify_hash72(cdb.read_bytes(), iv, random_part)
+    assert verify_hash58(cdb.read_bytes(), guid)
+    assert verify_hash72(cdb.read_bytes(), iv, random_part, hashing_scheme=1)
+    coordinator.close()
+
+
+def test_nano5_save_captures_and_retains_sqlite_firmware_metadata(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(
+        tmp_path / "nano", model_number="MC027", database_name="iTunesCDB"
+    )
+    cdb = root / "iPod_Control" / "iTunes" / "iTunesCDB"
+    cdb.write_bytes(compress_iTunesCDB(_database_with_track()))
+    guid = bytes.fromhex("000A270012345678")
+    _install_nano5_hash72_metadata(root, guid)
+    baseline = build_sqlite_databases(
+        IPodLibrary.parse(cdb.read_bytes()).snapshot,
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+    )
+    sql_directory = cdb.parent / "iTunes Library.itlp"
+    sql_directory.mkdir()
+    for name, data in baseline.artifacts():
+        (sql_directory / name).write_bytes(data)
+    connection = sqlite3.connect(sql_directory / "Library.itdb")
+    connection.executescript("""
+        UPDATE version_info SET minor=117,device_update_level=1100;
+        ALTER TABLE item ADD COLUMN retained_value TEXT DEFAULT 'present';
+        INSERT INTO store_info (item_pid,store_item_id) SELECT pid,789 FROM item;
+    """)
+    connection.close()
+    platform.add_volume(root, label="Nano")
+    coordinator = DeviceCoordinator(Storage(platform))
+    active = coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+    desired = replace(
+        active.library, tracks=(replace(active.library.tracks[0], title="Edited"),)
+    )
+    review = coordinator.prepare_library(
+        LibraryPreparationRequest(desired, active, 1, 1),
+        lambda _: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+    saved = coordinator.save_library(review, active, lambda _: None, Event())
+    assert saved.active is not None, saved.issues
+    connection = sqlite3.connect(sql_directory / "Library.itdb")
+    assert connection.execute(
+        "SELECT minor,device_update_level FROM version_info"
+    ).fetchall() == [(117, 1100)]
+    assert connection.execute("SELECT title,retained_value FROM item").fetchall() == [
+        ("Edited", "present")
+    ]
+    assert connection.execute("SELECT store_item_id FROM store_info").fetchall() == [
+        (789,)
+    ]
+    connection.close()
+    assert verify_hash58(cdb.read_bytes(), guid)
+    assert verify_hash72(
+        cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)), hashing_scheme=1
+    )
     coordinator.close()
 
 
@@ -1156,7 +1226,9 @@ def test_nano5_selection_commits_playback_without_postprocess_metadata(
         )
         assert not (directory / "OTGPlaylistInfo").exists()
         assert (directory / "OTGPlaylistInfo.bak").read_bytes() == playlist
-        assert verify_hash72(cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)))
+        assert verify_hash72(
+            cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)), hashing_scheme=1
+        )
         sqlite_directory = directory / "iTunes Library.itlp"
         for name in ("Library", "Locations", "Dynamic", "Extras", "Genius"):
             connection = sqlite3.connect(":memory:")
@@ -1384,7 +1456,9 @@ def test_nano5_signing_does_not_require_sysinfo(tmp_path: Path, source: str) -> 
             (metadata / "SysInfoExtended").unlink()
         saved = coordinator.save_library(review, active, lambda _: None, Event())
         assert saved.active is not None, saved.issues
-        assert verify_hash72(cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)))
+        assert verify_hash72(
+            cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32)), hashing_scheme=1
+        )
         assert saved.active.library.tracks[0].title == "Signing fallback"
     finally:
         coordinator.close()
@@ -1619,7 +1693,10 @@ def test_modern_nano_selection_expands_short_tracks_and_preserves_skip_history(
         assert sidecar.with_name(sidecar.name + ".bak").read_bytes() == history
         if model == "MC027":
             assert verify_hash72(
-                cdb.read_bytes(), bytes(range(16)), bytes(range(20, 32))
+                cdb.read_bytes(),
+                bytes(range(16)),
+                bytes(range(20, 32)),
+                hashing_scheme=1,
             )
         else:
             assert verify_hashab(cdb.read_bytes(), guid)

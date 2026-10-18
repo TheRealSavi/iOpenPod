@@ -101,6 +101,9 @@ def _container(
         project_mac(header.timestamp_2 or header.timestamp, device_time),
         preferences,
         criteria,
+        podcast=dataset in (2, 3)
+        and bool(header.playlist_kind_flags & 1)
+        and not bool(header.playlist_kind_flags & 0x100),
     )
 
 
@@ -153,4 +156,26 @@ def project_sqlite_metadata(
                 )
                 chapters.append(SQLiteChapter(track.chunk.header.track_id, data))
                 break
-    return SQLiteNativeMetadata(tuple(containers), tuple(chapters))
+    master = (
+        next(
+            (
+                s.chunk.header
+                for s in canonical.find_chunks(MhypHeader)
+                if s.chunk.header.master_flag & 1
+            ),
+            None,
+        )
+        if canonical is not None
+        else None
+    )
+    return SQLiteNativeMetadata(
+        tuple(containers),
+        tuple(chapters),
+        document.header.db_persistent_id or document.header.db_id,
+        master.playlist_id if master is not None else 0,
+        document.header.version,
+        project_mac(master.timestamp, device_time) if master is not None else 0,
+        project_mac(master.timestamp_2 or master.timestamp, device_time)
+        if master is not None
+        else 0,
+    )

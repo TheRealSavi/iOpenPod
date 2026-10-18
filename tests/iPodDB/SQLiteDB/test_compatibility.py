@@ -12,9 +12,9 @@ from tests.iPodDB.library.test_playlists import (
     _smart,  # pyright: ignore[reportPrivateUsage]
     _string_rule,  # pyright: ignore[reportPrivateUsage]
 )
-from tests.iPodDB.SQLiteDB.test_database import (
-    _rows,  # pyright: ignore[reportPrivateUsage]
-    _value,  # pyright: ignore[reportPrivateUsage]
+from tests.iPodDB.SQLiteDB.sqlite_test_support import (
+    sqlite_rows,
+    sqlite_value,
 )
 
 from iPodDB.device_time import unix_to_mac
@@ -147,7 +147,7 @@ def test_native_container_dates_preserve_the_core_data_epoch() -> None:
     data = _prepare_metadata_edit(
         IPodLibrary(compress_iTunesCDB(write_iTunesDB(document)))
     ).library
-    assert _rows(
+    assert sqlite_rows(
         data, "SELECT date_created,date_modified FROM container WHERE name='Playlist'"
     ) == ((0, 60),)
 
@@ -232,13 +232,13 @@ def test_native_smart_preferences_and_rule_bytes_survive_projection(
     data = _prepare_metadata_edit(
         IPodLibrary(compress_iTunesCDB(write_iTunesDB(document)))
     ).library
-    assert _rows(
+    assert sqlite_rows(
         data,
         "SELECT smart_is_dynamic,smart_is_filtered,smart_is_limited,smart_limit_kind,smart_limit_order,smart_limit_value,smart_enabled_only,smart_reverse_limit_order FROM container WHERE smart_criteria IS NOT NULL",
     ) == ((0, 1, 0, 3, 23, 73, 1, 1),)
     criteria, _ = encode_mhod_body(metadata[1], MhodPayloadKind.SMART_RULES)
     assert (
-        _value(
+        sqlite_value(
             data,
             "SELECT smart_criteria FROM container WHERE smart_criteria IS NOT NULL",
         )
@@ -270,7 +270,7 @@ def test_extras_preserves_checked_native_chapter_preamble_and_unknown_atoms() ->
         IPodLibrary(compress_iTunesCDB(write_iTunesDB(document)))
     )
     expected, _ = encode_mhod_body(chapter, MhodPayloadKind.CHAPTER_DATA)
-    assert _rows(databases.extras, "SELECT item_pid,data FROM chapter") == (
+    assert sqlite_rows(databases.extras, "SELECT item_pid,data FROM chapter") == (
         (101, expected),
     )
 
@@ -287,17 +287,17 @@ def test_container_identity_collisions_keep_folder_edges_and_repeated_entries() 
         snapshot, database_id=42, checksum=WriteChecksum.NONE
     )
     assert (
-        _value(
+        sqlite_value(
             databases.library,
             "SELECT p.name FROM container c JOIN container p ON c.parent_pid=p.pid WHERE c.name='Child'",
         )
         == "Folder"
     )
-    assert _rows(
+    assert sqlite_rows(
         databases.library,
         "SELECT i.item_pid,i.physical_order FROM item_to_container i JOIN container c ON c.pid=i.container_pid WHERE c.name='Child' ORDER BY physical_order",
     ) == ((7, 0), (7, 1))
-    assert _value(databases.dynamic, "SELECT count(*) FROM container_ui") == 3
+    assert sqlite_value(databases.dynamic, "SELECT count(*) FROM container_ui") == 3
 
 
 def test_audio_duration_uses_native_samples_then_original_duration_fallback() -> None:
@@ -315,7 +315,9 @@ def test_audio_duration_uses_native_samples_then_original_duration_fallback() ->
     data = build_sqlite_databases(
         LibrarySnapshot(tracks), database_id=42, checksum=WriteChecksum.NONE
     ).library
-    assert _rows(data, "SELECT duration FROM avformat_info ORDER BY item_pid") == (
+    assert sqlite_rows(
+        data, "SELECT duration FROM avformat_info ORDER BY item_pid"
+    ) == (
         (52199,),
         (52920,),
     )
@@ -374,7 +376,7 @@ def test_original_indexes_and_all_item_browse_orders_exist_without_postprocessin
     ).library
     assert {
         row[0]
-        for row in _rows(
+        for row in sqlite_rows(
             data,
             "SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL",
         )
@@ -389,14 +391,14 @@ def test_original_indexes_and_all_item_browse_orders_exist_without_postprocessin
         "item_to_container_container_pid_idx",
         "item_to_container_physical_order_idx",
     }
-    assert _rows(
+    assert sqlite_rows(
         data,
         "SELECT title_order,artist_order,album_order,genre_order,composer_order,album_artist_order,album_by_artist_order,series_name_order FROM item ORDER BY pid",
     ) == (
         (200, 200, 200, 200, 200, 200, 200, 100),
         (100, 100, 100, 100, 100, 100, 100, 100),
     )
-    assert _rows(
+    assert sqlite_rows(
         data,
         "SELECT sort_title,sort_artist,sort_album_artist,sort_composer FROM item ORDER BY pid",
     ) == (
@@ -439,11 +441,11 @@ def test_browse_groups_have_artwork_links_ranks_and_calculated_counts() -> None:
     data = build_sqlite_databases(
         LibrarySnapshot(tracks), database_id=42, checksum=WriteChecksum.NONE
     ).library
-    assert _rows(
+    assert sqlite_rows(
         data,
         "SELECT artist_count_calc,album_count_calc,compilation_count_calc FROM genre_map",
     ) == ((2, 2, 1),)
-    assert _rows(
+    assert sqlite_rows(
         data,
         "SELECT name,name_order,sort_name,artwork_status FROM artist ORDER BY name_order",
     ) == (
@@ -451,17 +453,19 @@ def test_browse_groups_have_artwork_links_ranks_and_calculated_counts() -> None:
         ("The Zebra", 200, "Zebra", 1),
     )
     assert (
-        _value(
+        sqlite_value(
             data,
             "SELECT a.artwork_item_pid FROM artist r JOIN album a ON a.pid=r.artwork_album_pid WHERE r.name='The Zebra'",
         )
         == 1
     )
-    assert _rows(data, "SELECT name,name_order FROM composer ORDER BY name_order") == (
+    assert sqlite_rows(
+        data, "SELECT name,name_order FROM composer ORDER BY name_order"
+    ) == (
         ("Amy", 100),
         ("Zed", 200),
     )
-    assert _rows(
+    assert sqlite_rows(
         data,
         "SELECT name,album_count,has_non_compilation_tracks FROM track_artist ORDER BY name",
     ) == (("Apple", 1, 1), ("The Zebra", 1, 0))
@@ -525,17 +529,19 @@ def test_cdb_preparation_projects_native_categories_and_dynamic_rows(
     databases = result.prepared.sqlite
     assert databases is not None
     assert (
-        _value(databases.library, "SELECT pid FROM container WHERE name='Playlist'")
+        sqlite_value(
+            databases.library, "SELECT pid FROM container WHERE name='Playlist'"
+        )
         == 10
     )
-    assert _rows(
+    assert sqlite_rows(
         databases.library,
         "SELECT name,distinguished_kind,media_kinds,is_hidden,smart_is_folder FROM container WHERE distinguished_kind!=0 ORDER BY distinguished_kind",
     ) == (
         ("Music", 4, 1, 1, 0),
         ("Audiobooks", 5, 0, 1, 0),
     )
-    assert _rows(
+    assert sqlite_rows(
         databases.library,
         "SELECT c.name,count(i.item_pid) FROM container c LEFT JOIN item_to_container i ON c.pid=i.container_pid GROUP BY c.pid ORDER BY c.name",
     ) == (
@@ -544,7 +550,9 @@ def test_cdb_preparation_projects_native_categories_and_dynamic_rows(
         ("My iPod", 1 if remove_track else 2),
         ("Playlist", 1 if remove_track else 3),
     )
-    assert _rows(databases.library, "SELECT pid FROM container ORDER BY pid") == _rows(
+    assert sqlite_rows(
+        databases.library, "SELECT pid FROM container ORDER BY pid"
+    ) == sqlite_rows(
         databases.dynamic,
         "SELECT container_pid FROM container_ui ORDER BY container_pid",
     )
@@ -578,7 +586,7 @@ def test_media_browse_flags_do_not_turn_spoken_content_into_songs() -> None:
         database_id=42,
         checksum=WriteChecksum.NONE,
     ).library
-    assert _rows(data, "SELECT has_songs,has_music_videos,has_movies FROM album") == (
-        (0, 0, 0),
-    )
-    assert _value(data, "SELECT has_songs FROM artist") == 0
+    assert sqlite_rows(
+        data, "SELECT has_songs,has_music_videos,has_movies FROM album"
+    ) == ((0, 0, 0),)
+    assert sqlite_value(data, "SELECT has_songs FROM artist") == 0

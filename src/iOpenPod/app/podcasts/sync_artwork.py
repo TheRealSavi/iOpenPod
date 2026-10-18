@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.podcasts.feed_client import PodcastArtworkLoader
     from iOpenPod.app.podcasts.models import PodcastSubscription
 
-_MAX_BATCH_BYTES = 64 * 1024 * 1024
+MAX_PODCAST_COVER_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,13 +39,13 @@ def prepare_podcast_covers(
     checkpoint: Callable[[], None],
     progress: Callable[[WriteProgress], None],
     loader: PodcastArtworkLoader | None = None,
+    retained_bytes: int = 0,
 ) -> PreparedPodcastCovers:
     """Decode each publisher URL once; artwork failure never discards media."""
     client = loader or HttpPodcastArtworkLoader(checkpoint=checkpoint)
     by_url: dict[str, ArtworkPixels | None] = {}
     covers: list[PodcastCover] = []
     issues: list[WriteIssue] = []
-    retained_bytes = 0
     for subscription in subscriptions:
         checkpoint()
         url = subscription.artwork_url
@@ -69,7 +69,7 @@ def prepare_podcast_covers(
                     raise ValueError(
                         "The publisher did not provide a usable HTTP(S) cover"
                     )
-                if retained_bytes + image.byte_count > _MAX_BATCH_BYTES:
+                if retained_bytes + image.byte_count > MAX_PODCAST_COVER_BYTES:
                     raise ValueError(
                         "Podcast covers exceed the 64 MiB preparation limit; sync fewer Podcasts at once"
                     )

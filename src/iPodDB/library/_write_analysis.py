@@ -212,7 +212,7 @@ def analyze(
     if target.sqlite_database and (changes or draft.regenerate_sqlite):
         checksums.add(target.sqlite_checksum)
     if (
-        checksums & {WriteChecksum.HASH58, WriteChecksum.HASHAB}
+        checksums & {WriteChecksum.HASH58, WriteChecksum.HASH72, WriteChecksum.HASHAB}
         and len(target.firewire_guid) != 8
     ):
         issues.append(

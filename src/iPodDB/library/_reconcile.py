@@ -38,7 +38,10 @@ from iPodDB.library._playlist_writing import (
     playlist_preferences,
     position_item,
 )
-from iPodDB.library._podcast_writing import reconcile_podcasts
+from iPodDB.library._podcast_writing import (
+    complete_podcast_settings,
+    reconcile_podcasts,
+)
 from iPodDB.library._resolved_write import ResolvedWrite
 from iPodDB.library._track_header_requirements import derived_header_requirements
 from iPodDB.library._track_writing import edit_text, edit_track
@@ -588,21 +591,35 @@ def reconcile(
     )
     document = reconcile_album_indexes(source_document, document, issues)
 
-    for _, selection in playlist_rows(document):
-        if selection.chunk.header.playlist_id in {
-            playlist_ids[i] for i in generated_podcasts
-        }:
-            document = document.replace_chunk(
-                selection,
-                replace(
-                    selection.chunk,
-                    header=replace(
-                        selection.chunk.header,
-                        playlist_kind_flags=selection.chunk.header.playlist_kind_flags
-                        | 1,
-                    ),
+    generated_native = {playlist_ids[i] for i in generated_podcasts}
+    affected_native = {
+        playlist_ids[i]
+        for i in resolved.changed_playlists | resolved.podcast_playlists
+        if i in playlist_ids
+    }
+    for kind, selection in playlist_rows(document):
+        if kind not in (2, 3):
+            continue
+        chunk = selection.chunk
+        if chunk.header.playlist_id in generated_native:
+            chunk = replace(
+                chunk,
+                header=replace(
+                    chunk.header,
+                    playlist_kind_flags=chunk.header.playlist_kind_flags | 1,
+                    phase_game_flag=11,
                 ),
             )
+        if (
+            chunk.header.playlist_id in affected_native
+            and chunk.header.playlist_kind_flags & 1
+            and not chunk.header.playlist_kind_flags & 0x100
+        ):
+            chunk = complete_podcast_settings(
+                chunk, resources.playlist_timestamp, device_time
+            )
+        if chunk != selection.chunk:
+            document = document.replace_chunk(selection, chunk)
     document = reconcile_podcasts(
         document, original, desired, track_ids, playlist_ids, resolved.podcast_playlists
     )

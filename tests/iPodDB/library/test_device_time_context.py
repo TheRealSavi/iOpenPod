@@ -9,9 +9,7 @@ from tests.iPodDB.library.test_photos import (
     _photos_bytes,  # pyright: ignore[reportPrivateUsage]
 )
 from tests.iPodDB.library.test_writing import library
-from tests.iPodDB.SQLiteDB.test_database import (
-    _rows,  # pyright: ignore[reportPrivateUsage]
-)
+from tests.iPodDB.SQLiteDB.sqlite_test_support import sqlite_rows
 
 from iPodDB.device_time import (
     MAC_EPOCH_UNIX_OFFSET as EPOCH,
@@ -199,14 +197,14 @@ def test_sqlite_uses_utc_2001_epoch_without_header_or_city_shift() -> None:
     )
     # Dates alone do not establish Store metadata. Release dates still use the
     # UTC 2001 epoch in item, while ordinary Tracks leave store_info empty.
-    assert _rows(result.library, "SELECT * FROM store_info") == ()
-    assert _rows(
+    assert sqlite_rows(result.library, "SELECT * FROM store_info") == ()
+    assert sqlite_rows(
         result.library, "SELECT date_modified,date_released FROM item ORDER BY pid"
     ) == tuple((t - 978307200, t - 978307200) for t in (WINTER, SUMMER))
-    assert _rows(
+    assert sqlite_rows(
         result.locations, "SELECT date_created FROM location ORDER BY item_pid"
     ) == tuple((t - 978307200,) for t in (WINTER, SUMMER))
-    assert _rows(
+    assert sqlite_rows(
         result.dynamic,
         "SELECT date_played,date_skipped FROM item_stats ORDER BY item_pid",
     ) == tuple((t - 978307200, t - 978307200) for t in (WINTER, SUMMER))

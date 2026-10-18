@@ -57,7 +57,7 @@ def device_episode(
         metadata=TrackMetadata(
             podcast=True,
             podcast_rss_url=feed_url,
-            podcast_enclosure_url="https://cdn.example.test/episode-1.mp3",
+            podcast_guid="https://cdn.example.test/episode-1.mp3",
             release_date=1_700_000_000,
             last_played=1_710_000_000 if play_count else 0,
         ),

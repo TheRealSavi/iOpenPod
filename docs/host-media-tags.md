@@ -23,7 +23,7 @@ see [ADR-0083](adr/0083-tolerate-host-native-media-variants.md) and
 | Sort title, artist, album, album artist, composer, show | Native names and editor aliases including `ARTISTSORT`, `SORT_ARTIST`, `TVSHOWSORT` |
 | Media classification | MP4 `stik`/`pcst`, ID3 `PCST.value`, named `MEDIA_TYPE`/`MEDIA_KIND`/`ITUNESMEDIATYPE`/`PODCAST`; `.m4b` fallback |
 | Show, episode ID, season, episode number, network | MP4 TV atoms; ID3 TXXX names; Vorbis/APE and FFprobe aliases |
-| Podcast category, feed URL, enclosure URL, keywords | ID3 `TCAT`, `WFED`, `TKWD`; MP4 `catg`, `purl`, `keyw`; explicit named URL fields |
+| Podcast category, feed URL, GUID, keywords | ID3 `TCAT`, `WFED`, `TKWD`; MP4 `catg`, `purl`, `egid`, `keyw`; explicit named GUID fields |
 | Unsynchronized lyrics and presence | ID3 `USLT`, MP4 `©lyr`, `LYRICS`, `UNSYNCEDLYRICS`, `UNSYNCED LYRICS`, ASF `WM/Lyrics`, FFprobe language-qualified lyrics |
 | Content advisory | MP4 `rtng`, `ITUNESADVISORY`, `CONTENTRATING`; separate from star ratings |
 | Rating | ID3 POPM, using the Original iOpenPod's five-star thresholds |

@@ -2776,8 +2776,8 @@
         <translation>Gespielt</translation>
     </message>
     <message>
-        <source>Podcast enclosure url</source>
-        <translation>URL der Podcast-Mediendatei</translation>
+        <source>Podcast GUID</source>
+        <translation>Podcast-GUID</translation>
     </message>
     <message>
         <source>Podcast rss url</source>
@@ -7595,8 +7595,8 @@ Playlists: %3</translation>
         <translation>Kategorie</translation>
     </message>
     <message>
-        <source>Enclosure URL</source>
-        <translation>URL der Mediendatei</translation>
+        <source>Podcast GUID</source>
+        <translation>Podcast-GUID</translation>
     </message>
     <message>
         <source>RSS URL</source>
@@ -8696,6 +8696,10 @@ Playlists: %3</translation>
     <message>
         <source>Embedded artwork could not be verified; existing iPod covers will be kept.</source>
         <translation>Eingebettete Cover konnten nicht geprüft werden; vorhandene iPod-Cover bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Embedded artwork for {title} could not be prepared. The Episode can still sync with available publisher artwork.</source>
+        <translation>Das eingebettete Cover für {title} konnte nicht vorbereitet werden. Die Folge kann trotzdem mit einem verfügbaren Cover des Herausgebers synchronisiert werden.</translation>
     </message>
     <message>
         <source>Encoding the chaptered Album…</source>

@@ -1,5 +1,10 @@
 # Project native CDB metadata into SQLite
 
+> ADR-0149 adds captured Podcast GUID, container classification, media-mask, and
+> short/full description mappings while retaining the category policy below.
+> ADR-0150 retains existing firmware schemas, versions, and unrepresented metadata;
+> the Original-compatible schemas below are defaults for missing artifacts.
+
 - Status: Accepted
 - Date: 2026-10-13
 - Amends: ADR-0061's Snapshot-only SQLite generation input

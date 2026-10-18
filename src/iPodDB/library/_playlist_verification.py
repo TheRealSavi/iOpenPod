@@ -3,7 +3,7 @@
 from collections import Counter
 from dataclasses import replace
 
-from iPodDB.device_time import TimeConversion
+from iPodDB.device_time import TimeConversion, unix_to_mac
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
@@ -18,6 +18,10 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
     MhodLibraryJumpTablePayload,
     MhodLibraryJumpTablePrefix,
 )
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.settings_mhod import (
+    DEFAULT_PODCAST_SETTINGS,
+    MhodSettingsPayload,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
     MhodSmartNumericRuleData,
     MhodSmartRulesPayload,
@@ -28,6 +32,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
+from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._album_index import master_tracks, verify_album_index
 from iPodDB.library._hierarchy import folder_hierarchy
 from iPodDB.library._index_verification import verify_index
@@ -64,6 +69,8 @@ def verify_playlists(
     device_time: TimeConversion = 0,
     *,
     rebuild_album_indexes: bool = False,
+    podcast_playlists: frozenset[int] = frozenset(),
+    playlist_timestamp: int = 0,
 ) -> tuple[WriteIssue, ...]:
     issues = list(
         structure_issues(
@@ -445,6 +452,62 @@ def verify_playlists(
                 chunk,
             )
         affected = playlist != previous or playlist.playlist_id in changed_folders
+        if (
+            kind in (2, 3)
+            and chunk.header.playlist_kind_flags & 1
+            and not chunk.header.playlist_kind_flags & 0x100
+            and (affected or playlist.playlist_id in podcast_playlists)
+        ):
+            settings = [
+                child
+                for child in chunk.children
+                if isinstance(child.header, MhodHeader)
+                and child.header.mhod_type == MhodType.PLAYLIST_SETTINGS_BINARY
+            ]
+            source_row = baseline or old.get((3, identity)) or old.get((2, identity))
+            retained_settings = (
+                []
+                if source_row is None
+                else [
+                    child
+                    for child in source_row.chunk.children
+                    if isinstance(child.header, MhodHeader)
+                    and child.header.mhod_type == MhodType.PLAYLIST_SETTINGS_BINARY
+                ]
+            )
+            settings_valid = (
+                [_bytes(child, output_bytes) for child in settings]
+                == [_bytes(child, original_bytes) for child in retained_settings]
+                if retained_settings
+                else len(settings) == 1
+                and isinstance(settings[0].payload, MhodSettingsPayload)
+                and len(settings[0].payload.data) == len(DEFAULT_PODCAST_SETTINGS.data)
+                and settings[0].payload.nonzero_fields
+                == DEFAULT_PODCAST_SETTINGS.nonzero_fields
+                and not settings[0].payload.trailing_data
+            )
+            if not settings_valid:
+                fail(
+                    "podcast_settings",
+                    "Podcast settings were not preserved or initialized from the captured defaults.",
+                    kind,
+                    chunk,
+                )
+            if playlist_timestamp:
+                modified = unix_to_mac(playlist_timestamp, device_time)
+                created = (
+                    source_row.chunk.header.timestamp if source_row is not None else 0
+                ) or modified
+                if (chunk.header.timestamp, chunk.header.timestamp_2) != (
+                    created,
+                    modified,
+                ):
+                    fail(
+                        "podcast_dates",
+                        "Podcast dates do not match the retained creation date and captured write time.",
+                        kind,
+                        chunk,
+                    )
         if affected or baseline is None:
             expected_playlist = replace(
                 playlist,
@@ -490,6 +553,7 @@ def verify_playlists(
         membership_changed = previous is None or previous.entries != playlist.entries
         if is_podcasts(kind, chunk.header) and (
             membership_changed
+            or playlist.playlist_id in podcast_playlists
             or any(
                 old_albums.get(e.track_id)
                 != albums.get(tracks.get(e.track_id, e.track_id))

@@ -1,5 +1,8 @@
 # ADR-0091: Sync Podcasts through shared media publication
 
+> ADR-0149 amends native GUID/metadata authoring, neutral downloaded identity
+> records, show-link repair, and embedded chapter-picture import.
+
 - Status: Accepted
 - Date: 2026-09-27
 - Extends: ADR-0037 and ADR-0076
@@ -92,3 +95,16 @@ Subscription document joins the Library and Listening History in the same
 recoverable Storage Transaction. An incomplete removal keeps the Subscription;
 Listening History remains independent. A show with no Episodes on the iPod uses
 the existing direct Subscription save.
+
+## Amendment: prefer embedded Episode covers (2026-10-18)
+
+The [four-model Finder captures](../research/podcast-finder-captures-2026-10-18.md)
+contain embedded MP3 covers without native ArtworkDB resources. Incoming Podcast
+Episodes now prefer a usable embedded cover from their original Storage-owned
+download; transcoding may omit that image from its output. The show-level publisher
+cover is a fallback, including when the embedded image is unusable. Both sources
+share the retained cover budget and the existing bounded decoding, cancellation,
+and verified Library publication. This preserves Episode-specific artwork instead
+of replacing it with a generic show cover. Existing Episode cover repair remains
+publisher-based without a device-media reread. Nested chapter images remain a
+separate import requirement.

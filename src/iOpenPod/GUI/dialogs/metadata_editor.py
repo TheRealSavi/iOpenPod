@@ -215,7 +215,7 @@ _SUBGROUPS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
     str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Podcast")): (
         (
             str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Feed")),
-            ("metadata.podcast_enclosure_url", "metadata.podcast_rss_url"),
+            ("metadata.podcast_guid", "metadata.podcast_rss_url"),
         ),
         (
             str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Category & Display")),

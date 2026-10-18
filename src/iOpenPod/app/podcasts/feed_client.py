@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from xml.etree import ElementTree
 
 import feedparser  # type: ignore[import-untyped]
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -30,6 +31,7 @@ from iOpenPod.app.podcasts.models import (
     PodcastSubscription,
     SubscriptionSource,
 )
+from iPodDB.library import ContentAdvisory
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -118,10 +120,20 @@ class FeedparserPodcastClient:
         feed = _mapping(parsed.get("feed", {}))
         title = _text(feed.get("title")) or "Unknown Podcast"
         author = _text(feed.get("author")) or _text(feed.get("itunes_author"))
+        feed_advisory, episode_advisories = _explicit_metadata(payload)
         episodes = tuple(
             episode
             for raw in entries
-            if (episode := _episode(_mapping(raw))) is not None
+            if (
+                episode := _episode(
+                    _mapping(raw),
+                    advisory=_first_advisory(
+                        feed_advisory, _content_advisory(feed.get("itunes_explicit"))
+                    ),
+                    explicit_metadata=episode_advisories,
+                )
+            )
+            is not None
         )
         if not episodes:
             raise PodcastFeedError(
@@ -321,7 +333,12 @@ def _request_bytes(
     return payload, final_url
 
 
-def _episode(entry: Mapping[str, object]) -> PodcastEpisode | None:
+def _episode(
+    entry: Mapping[str, object],
+    *,
+    advisory: ContentAdvisory = ContentAdvisory.UNSPECIFIED,
+    explicit_metadata: Mapping[str, ContentAdvisory] | None = None,
+) -> PodcastEpisode | None:
     enclosure_url = ""
     size_bytes = 0
     for name in ("enclosures", "links"):
@@ -356,6 +373,9 @@ def _episode(entry: Mapping[str, object]) -> PodcastEpisode | None:
     guid = _text(entry.get("id"))
     episode_number = _positive_integer(entry.get("itunes_episode"))
     season_number = _positive_integer(entry.get("itunes_season"))
+    explicit = (explicit_metadata or {}).get(guid) or (explicit_metadata or {}).get(
+        enclosure_url
+    )
     return PodcastEpisode(
         episode_identity(
             enclosure_url=enclosure_url,
@@ -368,7 +388,14 @@ def _episode(entry: Mapping[str, object]) -> PodcastEpisode | None:
         guid=guid,
         title=title,
         description=_plain_text(
-            _text(entry.get("subtitle")) or _text(entry.get("summary"))
+            _text(entry.get("summary")) or _text(entry.get("subtitle"))
+        ),
+        subtitle=_plain_text(_text(entry.get("subtitle")))
+        or _plain_text(_text(entry.get("summary")))[:255],
+        content_advisory=_first_advisory(
+            explicit or ContentAdvisory.UNSPECIFIED,
+            _content_advisory(entry.get("itunes_explicit")),
+            advisory,
         ),
         enclosure_url=enclosure_url,
         published_at=published_at,
@@ -386,6 +413,65 @@ def _artwork_url(feed: Mapping[str, object]) -> str:
         if url:
             return url
     return ""
+
+
+def _explicit_metadata(
+    payload: bytes,
+) -> tuple[ContentAdvisory, dict[str, ContentAdvisory]]:
+    """Retain modern true/false values that feedparser reduces to None.
+
+    Only direct namespace-qualified advisories are read. Conflicting duplicate
+    episode identities cannot override the feed's declaration.
+    """
+    try:
+        root = ElementTree.fromstring(payload)
+    except ElementTree.ParseError:
+        return ContentAdvisory.UNSPECIFIED, {}
+    channel = root.find("channel")
+    if channel is None:
+        channel = root
+    explicit_tag = "{http://www.itunes.com/dtds/podcast-1.0.dtd}explicit"
+    feed_advisory = _content_advisory(channel.findtext(explicit_tag))
+    values: dict[str, ContentAdvisory] = {}
+    conflicts: set[str] = set()
+    for entry in channel:
+        if entry.tag not in ("item", "{http://www.w3.org/2005/Atom}entry"):
+            continue
+        value = _content_advisory(entry.findtext(explicit_tag))
+        if value is ContentAdvisory.UNSPECIFIED:
+            continue
+        identities = [
+            entry.findtext("guid", ""),
+            entry.findtext("{http://www.w3.org/2005/Atom}id", ""),
+        ]
+        identities.extend(child.get("url", "") for child in entry.findall("enclosure"))
+        identities.extend(
+            child.get("href", "")
+            for child in entry.findall("{http://www.w3.org/2005/Atom}link")
+            if child.get("rel") == "enclosure"
+        )
+        for identity in (text.strip() for text in identities if text.strip()):
+            if identity in values and values[identity] != value:
+                conflicts.add(identity)
+            values[identity] = value
+    return feed_advisory, {
+        key: value for key, value in values.items() if key not in conflicts
+    }
+
+
+def _first_advisory(*values: ContentAdvisory) -> ContentAdvisory:
+    return next(
+        (value for value in values if value is not ContentAdvisory.UNSPECIFIED),
+        ContentAdvisory.UNSPECIFIED,
+    )
+
+
+def _content_advisory(value: object) -> ContentAdvisory:
+    if value is True or str(value).strip().casefold() in ("yes", "true", "explicit"):
+        return ContentAdvisory.EXPLICIT
+    if value is False or str(value).strip().casefold() in ("no", "false", "clean"):
+        return ContentAdvisory.CLEAN
+    return ContentAdvisory.UNSPECIFIED
 
 
 def _category(feed: Mapping[str, object]) -> str:

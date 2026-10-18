@@ -101,7 +101,7 @@ def edit_text[H: ChunkHeader](
     else:
         new = (
             new_url_mhod(kind, value)
-            if kind in (MhodType.PODCAST_ENCLOSURE_URL, MhodType.PODCAST_RSS_URL)
+            if kind in (MhodType.PODCAST_GUID, MhodType.PODCAST_RSS_URL)
             else new_string_mhod(kind, value)
         )
         # MHODs precede MHIPs in Playlist child groups.

@@ -8,24 +8,73 @@ import logging
 from dataclasses import replace
 from itertools import groupby
 
+from iPodDB.device_time import TimeConversion, unix_to_mac
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import DEFINITION as MHIP
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.settings_mhod import (
+    DEFAULT_PODCAST_SETTINGS,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
     MhodStringPayload,
 )
+from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library._playlist_datasets import is_podcasts, is_visible, playlist_rows
 from iPodDB.library._playlist_writing import position_item
 from iPodDB.library._track_writing import edit_text
 from iPodDB.library.models import LibrarySnapshot, MediaKind
-from iPodDB.library.playlists import Playlist, PlaylistEntry, PlaylistKind
+from iPodDB.library.playlists import (
+    Playlist,
+    PlaylistEntry,
+    PlaylistKind,
+    PlaylistSortOrder,
+)
 from iPodDB.library.writing import WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 logger = logging.getLogger(__name__)
+
+
+def complete_podcast_settings(
+    chunk: ParsedChunk[MhypHeader],
+    timestamp: int,
+    device_time: TimeConversion,
+) -> ParsedChunk[MhypHeader]:
+    """Fill missing settings and date an affected special Playlist counterpart."""
+    children = chunk.children
+    if not any(
+        isinstance(child.header, MhodHeader)
+        and child.header.mhod_type == MhodType.PLAYLIST_SETTINGS_BINARY
+        for child in children
+    ):
+        settings = new_itunes_chunk(
+            MHOD,
+            MhodHeader(mhod_type=MhodType.PLAYLIST_SETTINGS_BINARY),
+            payload=DEFAULT_PODCAST_SETTINGS,
+        )
+        index = next(
+            (
+                i
+                for i, child in enumerate(children)
+                if isinstance(child.header, MhipHeader)
+            ),
+            len(children),
+        )
+        children = (*children[:index], settings, *children[index:])
+    header = chunk.header
+    if timestamp:
+        modified = unix_to_mac(timestamp, device_time)
+        header = replace(
+            header,
+            timestamp=header.timestamp or modified,
+            timestamp_2=modified,
+        )
+    return replace(chunk, header=header, children=children)
 
 
 def normalize_podcast_order(
@@ -33,6 +82,8 @@ def normalize_podcast_order(
     original: LibrarySnapshot,
     desired: LibrarySnapshot,
     issues: list[WriteIssue],
+    *,
+    repair_ids: frozenset[int] = frozenset(),
 ) -> tuple[LibrarySnapshot, frozenset[int]]:
     """Maintain podcast membership and the contiguous shows required by firmware."""
     special = {
@@ -109,8 +160,22 @@ def normalize_podcast_order(
     output: list[Playlist] = []
     for playlist in desired.playlists:
         previous = prior.get(playlist.playlist_id)
+        if (
+            playlist.playlist_id in special
+            and playlist.sort_order is PlaylistSortOrder.DEFAULT
+            and (
+                playlist != previous
+                or playlist.playlist_id in repair_ids
+                or any(
+                    old_albums.get(e.track_id) != albums.get(e.track_id)
+                    for e in playlist.entries
+                )
+            )
+        ):
+            playlist = replace(playlist, sort_order=PlaylistSortOrder.TITLE)
         if playlist.playlist_id not in grouped_ids or (
             previous is not None
+            and playlist.playlist_id not in repair_ids
             and playlist.entries == previous.entries
             and all(
                 old_albums.get(e.track_id) == albums.get(e.track_id)
@@ -245,5 +310,9 @@ def reconcile_podcasts(
         # Empty or renamed original groups are retained: their private metadata
         # remains available and they cannot resurrect an episode association.
         children.extend(group for album, group in by_album.items() if album not in seen)
-        edits[id(chunk)] = replace(chunk, children=tuple(children))
+        edits[id(chunk)] = replace(
+            chunk,
+            header=replace(chunk.header, phase_game_flag=11),
+            children=tuple(children),
+        )
     return rebuild(document, edits)

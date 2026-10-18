@@ -166,7 +166,7 @@ def test_device_reconciliation_retains_unique_guid_when_url_changes() -> None:
         _device_episode(),
         metadata=replace(
             _device_episode().metadata,
-            podcast_enclosure_url="https://new.example.test/episode.mp3",
+            podcast_guid="https://new.example.test/episode.mp3",
         ),
     )
 
@@ -258,7 +258,7 @@ def test_refresh_drops_absent_history_only_episode_without_deleting_history() ->
 
 
 def test_device_episode_matches_a_subscription_when_its_feed_url_changed() -> None:
-    enclosure_url = _device_episode().metadata.podcast_enclosure_url
+    enclosure_url = _device_episode().metadata.podcast_guid
     subscription = PodcastSubscription(
         subscription_identity("https://old.example.test/feed", "A Good Podcast"),
         "https://old.example.test/feed",
@@ -307,7 +307,7 @@ def test_feed_refresh_merges_with_a_device_only_show_by_episode_evidence() -> No
             PodcastEpisode(
                 existing.episodes[0].episode_id,
                 title="Fresh title",
-                enclosure_url=device_track.metadata.podcast_enclosure_url,
+                enclosure_url=device_track.metadata.podcast_guid,
             ),
         ),
     )
@@ -512,7 +512,7 @@ def test_automatic_clear_survives_restart_guid_url_change_and_manual_readdition(
 
     refreshed = merge_fetched_subscription(restarted, fetched)
     changed_track = replace(
-        track, metadata=replace(track.metadata, podcast_enclosure_url=new_url)
+        track, metadata=replace(track.metadata, podcast_guid=new_url)
     )
     readded = reconcile_device_podcasts(refreshed, (changed_track,))
 

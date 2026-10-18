@@ -16,6 +16,86 @@ from iPodDB.library import IPodLibrary, WriteResources
 from iPodDB.sidecars import PlaybackSidecar
 
 
+@pytest.mark.parametrize("offset", [-14400, 0, 19800])
+def test_play_counts_reference_epoch_does_not_create_playback_dates(
+    offset: int,
+) -> None:
+    # Finder's Nano 5 capture: a summer device offset encodes the missing Core
+    # Data date; interpreting it with January DST rules would create 01:00 UTC.
+    context = DeviceTimeContext(
+        ZoneInfo("America/New_York"),
+        DeviceTimeSource.PREFERENCES_CITY,
+        database_offset_seconds=offset,
+    )
+    source = library()
+    document = parse_iTunesDB(source.serialize().itunes)
+    document = replace(
+        document, header=replace(document.header, timezone_offset=offset)
+    )
+    selected = document.find_chunks(MhitHeader)[0]
+    document = document.replace_chunk(
+        selected,
+        replace(selected.chunk, header=replace(selected.chunk.header, length=20000)),
+    )
+    source = IPodLibrary(write_iTunesDB(document)).with_device_time(context)
+    sentinel = 3061152000 + offset
+    sidecar = counts(((0, sentinel, 12005, 0, 512, 0, sentinel),))
+    loaded = source.with_sidecars((PlaybackSidecar("Play Counts", sidecar),))
+    track = loaded.snapshot.tracks[0]
+    assert track.metadata.last_played == 0
+    assert track.metadata.last_skipped == 0
+    assert track.metadata.bookmark_time_ms == 12005
+    prepared = loaded.prepare(
+        loaded.analyze(loaded.begin_draft()),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert prepared.prepared is not None, prepared.issues
+    reread = IPodLibrary(prepared.prepared.itunes).snapshot.tracks[0]
+    assert reread.metadata.last_played == reread.metadata.last_skipped == 0
+
+
+def test_real_play_counts_date_survives_with_zero_completed_plays() -> None:
+    source = library()
+    sidecar = counts(((0, 3875145178, 500, 0, 512, 0, 0),))
+    loaded = source.with_sidecars((PlaybackSidecar("Play Counts", sidecar),))
+    track = loaded.snapshot.tracks[0]
+    assert track.play_count == 0
+    assert track.metadata.last_played == mac_to_unix(3875145178, loaded.device_time)
+    assert track.metadata.bookmark_time_ms == 500
+
+
+def test_reference_epoch_does_not_erase_previous_playback_history() -> None:
+    source = library()
+    track = source.snapshot.tracks[0]
+    desired = replace(
+        source.snapshot,
+        tracks=(
+            replace(
+                track,
+                metadata=replace(
+                    track.metadata,
+                    last_played=1_700_000_000,
+                    last_skipped=1_700_000_100,
+                ),
+            ),
+            *source.snapshot.tracks[1:],
+        ),
+    )
+    saved = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert saved.prepared is not None, saved.issues
+    source = IPodLibrary(saved.prepared.itunes)
+    sentinel = 3061152000 + source.device_time.database_offset_seconds
+    loaded = source.with_sidecars(
+        (
+            PlaybackSidecar(
+                "Play Counts", counts(((0, sentinel, 0, 0, 512, 0, sentinel),))
+            ),
+        )
+    )
+    assert loaded.snapshot.tracks[0].metadata.last_played == 1_700_000_000
+    assert loaded.snapshot.tracks[0].metadata.last_skipped == 1_700_000_100
+
+
 def test_playback_overlay_is_visible_lossless_and_idempotent() -> None:
     source = library()
     original = source.serialize()

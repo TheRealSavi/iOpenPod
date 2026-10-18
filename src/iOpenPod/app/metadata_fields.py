@@ -92,7 +92,7 @@ _GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "Podcast": (
         "metadata.category",
-        "metadata.podcast_enclosure_url",
+        "metadata.podcast_guid",
         "metadata.podcast_rss_url",
         "metadata.podcast",
         "metadata.played",
@@ -114,6 +114,7 @@ _GROUPS: dict[str, tuple[str, ...]] = {
     ),
 }
 _LABELS = {
+    "metadata.podcast_guid": "Podcast GUID",
     "media_types": "Media type",
     "track_number": "Track number",
     "metadata.total_tracks": "Total tracks",

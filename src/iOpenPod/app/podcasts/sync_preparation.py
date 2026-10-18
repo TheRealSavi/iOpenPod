@@ -16,6 +16,8 @@ from iOpenPod.app.podcasts.feed_client import (
     FeedparserPodcastClient,
     PodcastFeedError,
 )
+from iOpenPod.app.podcasts.identity import track_podcast_identity
+from iOpenPod.app.podcasts.models import ListeningRecord
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan, plan_podcast_sync
 from iPodDB.library import WriteIssue
 
@@ -182,9 +184,43 @@ def state_after_podcast_sync(
         and episode_tracks <= set(plan.removals)
         and not (episode_tracks & retained_tracks)
     )
-    if not selections and not unsubscribe_ready:
-        return None
     snapshot = prepared.state.snapshot
+    history = {
+        (record.subscription_id, record.episode_id): record
+        for record in snapshot.history
+    }
+    for addition in plan.additions:
+        episode = addition.episode
+        key = (addition.subscription.subscription_id, episode.episode_id)
+        if key in history or not any(
+            track_podcast_identity(track).guid
+            == (episode.guid or episode.enclosure_url)
+            and track.metadata.podcast_rss_url == addition.subscription.feed_url
+            for track in library.tracks
+        ):
+            continue
+        # MHOD 15 now carries the GUID. Retain the local catalog identity and
+        # download URL in the existing history document, including unplayed
+        # downloads, so a reload cannot change the selected Episode identity.
+        history[key] = ListeningRecord(
+            *key,
+            guid=episode.guid,
+            enclosure_url=episode.enclosure_url,
+            title=episode.title,
+            observed_play_count=episode.play_count,
+            last_played=episode.last_played,
+            listened_override=episode.listened_override,
+            published_at=episode.published_at,
+            episode_number=episode.episode_number,
+            automatically_cleared=episode.automatically_cleared,
+        )
+    if (
+        not selections
+        and not unsubscribe_ready
+        and len(history) == len(snapshot.history)
+    ):
+        return None
+    snapshot = replace(snapshot, history=tuple(history[key] for key in sorted(history)))
     if selections:
         snapshot = mark_episodes_automatically_cleared(snapshot, tuple(selections))
     if unsubscribe_ready and unsubscribe_subscription_id is not None:

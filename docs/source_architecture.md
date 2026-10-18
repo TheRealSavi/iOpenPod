@@ -808,13 +808,17 @@ and validation of the five late-iPod SQLite projections and the Locations checks
 book from a checked Library Snapshot and typed native metadata from the same checked
 CDB. The latter carries firmware categories, native container preferences and rule
 bodies, dates, and chapter bodies without exposing them as editable user Playlists.
-Generation supplies Original-compatible schemas, indexes, browse ranks, and group
-aggregates before optional device postprocessing. Integrity and relationship checks
-cover the complete artifact set before signing; see ADR-0141. Its Interface returns
+Generation supplies Original-compatible schemas for missing artifacts, browse ranks,
+and group aggregates before optional device postprocessing. For existing artifacts,
+typed captured bytes retain firmware schemas, version rows, and metadata absent
+from the CDB while its checked projection updates owned fields. Integrity and
+relationship checks cover the complete artifact set before signing; see ADR-0141
+and ADR-0150. Its Interface returns
 artifact names with bytes; it knows neither device paths nor persistence. Device
 Registry chooses required artifacts and per-artifact checksums. iOpenPod maps those
-artifacts to device-relative paths and publishes them through Storage, but never
-loads them as Library input.
+artifacts to device-relative paths and publishes them through Storage. It captures
+existing companions with their Review-bound fingerprints but never projects them
+into the editable Library Snapshot.
 Browse-group IDs follow Original's positive sequential allocation while Track and
 user Playlist persistent identities retain their native meaning. A Sync may request
 SQLite regeneration without a CDB edit; this explicit Library Draft intent still
@@ -1838,8 +1842,13 @@ paired existing Track is retained. Complete Library validation remains mandatory
 Diagnostics identify the Episode and show, retain the source URL, and count each
 affected record once across cover retries. Blocked semantic plans return their
 primary errors before validating resources deliberately left unprepared.
-The worker reuses bounded publisher artwork loading and submits owned cover pixels
-to the same ArtworkDB and thumbnail preparation as Host media.
+The worker reads incoming Episode covers from the original Storage-owned downloads,
+retained through media preparation. It uses bounded publisher artwork loading when
+an embedded cover is unavailable. Both sources share the retained cover budget and
+submit owned pixels to the same ArtworkDB and thumbnail preparation as Host media.
+Bounded ID3 CHAP/APIC images from the same original become timed Artwork Assets,
+sharing the cover memory budget. Chapter metadata contains titles and positions;
+ArtworkDB owns the separate image timeline. See ADR-0149.
 Successfully refreshed subscriptions can also fill missing covers on retained
 Episodes without downloading their media. Existing covers survive, and cover
 failures produce warnings rather than dropping otherwise valid Episodes.
@@ -1851,7 +1860,12 @@ their media remains unchanged. Audio and video Podcasts also require the Podcast
 Now Playing marker; enabling it uses the existing native `0x01` mapping, while
 already-enabled retained native values remain untouched. Raw iPodDB reads and
 unchanged round-trips preserve
-the original flags. See ADR-0092.
+the original flags. See ADR-0092 and ADR-0149. Audio Podcasts use media mask 5 and
+disc 1. Podcast GUIDs occupy MHOD 15 independently of enclosure URLs; publication
+year, modification time, subtitle, advisory, Episode number, and season number
+are supplied by the application. Sync explicitly repairs missing show links while
+unchanged iPodDB round-trips preserve them. Checked CDB Podcast metadata also
+supplies SQLite GUIDs, container kind/masks, and short/full descriptions.
 
 Episode slots limit automatic filling, not manual additions or retained membership.
 Both fill modes clear by listened state or time on the iPod. Newest fills vacancies

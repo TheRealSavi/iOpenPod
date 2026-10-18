@@ -64,7 +64,7 @@ class _TrackTextMetadata:
     composer: str = ""
     grouping: str = ""
     description: str = ""
-    podcast_enclosure_url: str = ""
+    podcast_guid: str = ""
     podcast_rss_url: str = ""
     subtitle: str = ""
     show: str = ""
@@ -216,7 +216,7 @@ def _project_metadata(
         composer=text.composer,
         grouping=text.grouping,
         description=text.description,
-        podcast_enclosure_url=text.podcast_enclosure_url,
+        podcast_guid=text.podcast_guid,
         podcast_rss_url=text.podcast_rss_url,
         subtitle=text.subtitle,
         tv_network=text.tv_network,
@@ -272,7 +272,7 @@ def _project_track_children(
             composer=values.get(MhodType.COMPOSER, ""),
             grouping=values.get(MhodType.GROUPING, ""),
             description=values.get(MhodType.DESCRIPTION, ""),
-            podcast_enclosure_url=values.get(MhodType.PODCAST_ENCLOSURE_URL, ""),
+            podcast_guid=values.get(MhodType.PODCAST_GUID, ""),
             podcast_rss_url=values.get(MhodType.PODCAST_RSS_URL, ""),
             subtitle=values.get(MhodType.SUBTITLE, ""),
             show=values.get(MhodType.SHOW, ""),

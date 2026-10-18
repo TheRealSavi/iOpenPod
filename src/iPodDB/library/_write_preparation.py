@@ -95,6 +95,7 @@ if TYPE_CHECKING:
     )
     from iPodDB.PhotosDB.shared.chunk_defs.mhfd import MhfdHeader as PhotosMhfdHeader
     from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
+    from iPodDB.SQLiteDB.artifacts import SQLiteDatabaseSet
 
 
 def _blocked(issues: list[WriteIssue]) -> bool:
@@ -135,8 +136,11 @@ def _finalize_itunes(
         material = target.hash72_material
         if material is None:
             raise ValueError("HASH72 output requires retained signing material")
-        data = sign_hash72(data, material.iv, material.random_part)
-        valid = verify_hash72(data, material.iv, material.random_part)
+        data = sign_hash72(data, material.iv, material.random_part, hashing_scheme=1)
+        data = sign_hash58(data, target.firewire_guid)
+        valid = verify_hash58(data, target.firewire_guid) and verify_hash72(
+            data, material.iv, material.random_part, hashing_scheme=1
+        )
     elif target.checksum is WriteChecksum.HASHAB:
         data = sign_hashab(data, target.firewire_guid)
         valid = verify_hashab(data, target.firewire_guid)
@@ -239,6 +243,56 @@ def prepare(
             error.error,
         )
         raise error.error from None
+
+
+def _prepare_sqlite(
+    source: IPodLibrary,
+    checked: LibrarySnapshot,
+    checked_document: DatabaseDocument[MhbdHeader],
+    plan: LibraryWritePlan,
+    resources: WriteResources,
+) -> SQLiteDatabaseSet | None:
+    """Project checked native state with the explicit supplemental-data invalidations."""
+    if not plan.changes_sqlite:
+        return None
+    hash72_material = plan.target.hash72_material
+    previous_tracks = {t.track_id: t for t in source.snapshot.tracks}
+    replaced_pids = frozenset(
+        t.ipod.db_track_id if t.ipod else t.track_id
+        for t in checked.tracks
+        if t.track_id in plan.draft.replace_media
+    )
+    cleared_lyrics = frozenset(
+        t.ipod.db_track_id if t.ipod else t.track_id
+        for t in checked.tracks
+        if (old := previous_tracks.get(t.track_id)) is not None
+        and (
+            old.metadata.lyrics != t.metadata.lyrics
+            or old.metadata.has_lyrics != t.metadata.has_lyrics
+        )
+    )
+    cleared_chapters = frozenset(
+        t.ipod.db_track_id if t.ipod else t.track_id
+        for t in checked.tracks
+        if (old := previous_tracks.get(t.track_id)) is not None
+        and old.metadata.chapters != t.metadata.chapters
+    )
+    return build_sqlite_databases(
+        checked,
+        database_id=checked_document.header.db_id,
+        checksum=plan.target.sqlite_checksum,
+        firewire_guid=plan.target.firewire_guid,
+        hash72_iv=hash72_material.iv if hash72_material is not None else b"",
+        hash72_random=hash72_material.random_part
+        if hash72_material is not None
+        else b"",
+        postprocess_commands=plan.target.sqlite_postprocess_commands,
+        native=project_sqlite_metadata(checked_document, checked, source.device_time),
+        retained=resources.sqlite_sources,
+        cleared_lyrics=cleared_lyrics | replaced_pids,
+        cleared_chapters=cleared_chapters | replaced_pids,
+        replaced_tracks=replaced_pids,
+    )
 
 
 def _prepare(
@@ -799,6 +853,8 @@ def _prepare(
                 generated_podcasts,
                 source.device_time,
                 rebuild_album_indexes=plan.draft.rebuild_album_indexes,
+                podcast_playlists=resolved.podcast_playlists,
+                playlist_timestamp=resources.playlist_timestamp,
             )
         )
         if _blocked(issues):
@@ -1025,23 +1081,7 @@ def _prepare(
             )
         if _blocked(issues):
             return LibraryWriteResult(tuple(issues))
-        sqlite = None
-        if plan.changes_sqlite:
-            hash72_material = plan.target.hash72_material
-            sqlite = build_sqlite_databases(
-                checked,
-                database_id=checked_document.header.db_id,
-                checksum=plan.target.sqlite_checksum,
-                firewire_guid=plan.target.firewire_guid,
-                hash72_iv=(hash72_material.iv if hash72_material is not None else b""),
-                hash72_random=(
-                    hash72_material.random_part if hash72_material is not None else b""
-                ),
-                postprocess_commands=plan.target.sqlite_postprocess_commands,
-                native=project_sqlite_metadata(
-                    checked_document, checked, source.device_time
-                ),
-            )
+        sqlite = _prepare_sqlite(source, checked, checked_document, plan, resources)
         return LibraryWriteResult(
             tuple(issues),
             PreparedLibrary(

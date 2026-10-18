@@ -25,6 +25,15 @@ sessions.
 - [`sync-artwork-audit-2026-10-08.md`](sync-artwork-audit-2026-10-08.md) — artwork loss reproductions, automatic repairs, publication safety, and source research.
 - [Photo shard research](research/photo-sharding-2026-10-08.md) — shared per-format
   iTHMB files, allocation bounds, Photo-specific records, and verified append policy.
+- [Podcast Finder captures](research/podcast-finder-captures-2026-10-18.md) — four-model
+  metadata, grouping, embedded artwork/chapter evidence, and tested import behavior.
+- [Virtual Podcast comparison](research/podcast-virtual-comparison-2026-10-18.md) —
+  actual four-model Podcast Sync output versus Apple, including identity matching,
+  Nano SQLite classification, and metadata differences.
+- [Podcast fixes verification](research/podcast-fixes-verification-2026-10-18.md) —
+  regenerated virtual devices, corrected metadata, timed artwork, and integrity checks.
+- [Finder and Play Counts compatibility](research/finder-playcounts-compatibility-2026-10-18.md) —
+  paired Nano 5 evidence, missing-date handling, dual signatures, and retained SQLite metadata.
 - [`packaging.md`](packaging.md) — native builds, store metadata, validation, and
   unresolved store-release requirements.
 - [`licensing.md`](licensing.md) — GPL distribution, corresponding source,

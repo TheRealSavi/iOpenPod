@@ -11,6 +11,7 @@ from iOpenPod.app.podcasts.identity import (
     episode_identity,
     normalize_feed_url,
     subscription_identity,
+    track_podcast_identity,
 )
 from iOpenPod.app.podcasts.models import (
     ListeningRecord,
@@ -43,10 +44,15 @@ def reconcile_device_podcasts(
     history_guids = _history_guid_index(history.values())
     device_tracks = tuple(tracks)
     guid_counts = Counter(
-        track.episode.strip()
+        track_podcast_identity(track).guid
         for track in device_tracks
-        if track.episode.strip()
+        if track_podcast_identity(track).guid
         and (track.media_kind is MediaKind.PODCAST or track.metadata.podcast)
+    )
+    device_episodes = tuple(
+        (normalize_feed_url(t.metadata.podcast_rss_url), _episode_from_track(t))
+        for t in device_tracks
+        if t.media_kind is MediaKind.PODCAST or t.metadata.podcast
     )
 
     for track in device_tracks:
@@ -85,6 +91,12 @@ def reconcile_device_podcasts(
         existing = retained.get(episode.episode_id)
         if existing is None and guid_counts[episode.guid] == 1:
             existing = _episode_matching_guid(subscription.episodes, episode.guid)
+        if existing is None and feed_url and feed_url == subscription.feed_url:
+            existing = _episode_matching_publication(
+                subscription.episodes,
+                episode,
+                tuple(e for url, e in device_episodes if url == feed_url),
+            )
         observed = _matching_history(
             history,
             history_guids,
@@ -99,7 +111,7 @@ def reconcile_device_podcasts(
                 existing,
                 title=episode.title or existing.title,
                 description=episode.description or existing.description,
-                guid=episode.guid or existing.guid,
+                guid=existing.guid or episode.guid,
                 enclosure_url=episode.enclosure_url or existing.enclosure_url,
                 published_at=episode.published_at or existing.published_at,
                 duration_seconds=episode.duration_seconds or existing.duration_seconds,
@@ -215,6 +227,17 @@ def merge_fetched_subscription(
         unique_guid = guid_counts[episode.guid] == 1
         if old is None and unique_guid and current is not None:
             match = _episode_matching_guid(current.episodes, episode.guid)
+            if match is not None:
+                old = retained.pop(match.episode_id, None)
+        if (
+            old is None
+            and current is not None
+            and fetched.feed_url
+            and fetched.feed_url == current.feed_url
+        ):
+            match = _episode_matching_publication(
+                current.episodes, episode, fetched.episodes
+            )
             if match is not None:
                 old = retained.pop(match.episode_id, None)
         record = (
@@ -434,10 +457,10 @@ def _project_history(snapshot: PodcastSnapshot) -> PodcastSnapshot:
 
 
 def _episode_from_track(track: Track) -> PodcastEpisode:
-    enclosure = track.metadata.podcast_enclosure_url.strip()
-    guid = track.episode.strip()
+    identity = track_podcast_identity(track)
+    enclosure, guid = identity.enclosure_url, identity.guid
     published_at = track.metadata.release_date or track.metadata.date_added
-    episode_number = track.episode_number or None
+    episode_number = track.episode_number or track.track_number or None
     season_number = track.season_number or None
     return PodcastEpisode(
         episode_identity(
@@ -451,6 +474,8 @@ def _episode_from_track(track: Track) -> PodcastEpisode:
         guid=guid,
         title=track.title.strip() or "Untitled Episode",
         description=track.metadata.description.strip(),
+        subtitle=track.metadata.subtitle,
+        content_advisory=track.metadata.content_advisory,
         enclosure_url=enclosure,
         published_at=published_at,
         duration_seconds=max(0, track.length_ms // 1000),
@@ -562,6 +587,39 @@ def _episode_matching_guid(
         return None
     matches = tuple(episode for episode in episodes if episode.guid == guid)
     return matches[0] if len(matches) == 1 else None
+
+
+def _episode_matching_publication(
+    candidates: Iterable[PodcastEpisode],
+    episode: PodcastEpisode,
+    incoming: Iterable[PodcastEpisode],
+) -> PodcastEpisode | None:
+    """Recover a publisher GUID change only from unique same-feed evidence."""
+    if not episode.published_at or not episode.title.strip():
+        return None
+
+    def matches(other: PodcastEpisode) -> bool:
+        return (
+            other.title.strip().casefold() == episode.title.strip().casefold()
+            and other.published_at == episode.published_at
+            and (
+                not other.episode_number
+                or not episode.episode_number
+                or other.episode_number == episode.episode_number
+            )
+            and (
+                not other.season_number
+                or not episode.season_number
+                or other.season_number == episode.season_number
+            )
+        )
+
+    found = tuple(item for item in candidates if matches(item))
+    return (
+        found[0]
+        if len(found) == 1 and sum(matches(item) for item in incoming) == 1
+        else None
+    )
 
 
 def _matching_history(

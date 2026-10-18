@@ -75,7 +75,7 @@ _COLUMN_TRANSLATION_SOURCES = frozenset(
         QT_TRANSLATE_NOOP("TrackTableModel", "Description"),
         QT_TRANSLATE_NOOP("TrackTableModel", "Subtitle"),
         QT_TRANSLATE_NOOP("TrackTableModel", "Category"),
-        QT_TRANSLATE_NOOP("TrackTableModel", "Enclosure URL"),
+        QT_TRANSLATE_NOOP("TrackTableModel", "Podcast GUID"),
         QT_TRANSLATE_NOOP("TrackTableModel", "RSS URL"),
         QT_TRANSLATE_NOOP("TrackTableModel", "Podcast"),
         QT_TRANSLATE_NOOP("TrackTableModel", "Chapters"),
@@ -660,7 +660,7 @@ def _build_column_definitions() -> tuple[TrackColumnDefinition, ...]:
         _column("Description", lambda track: track.metadata.description),
         _column("Subtitle", lambda track: track.metadata.subtitle),
         _column("Category", lambda track: track.metadata.category),
-        _column("Enclosure URL", lambda track: track.metadata.podcast_enclosure_url),
+        _column("Podcast GUID", lambda track: track.metadata.podcast_guid),
         _column("RSS URL", lambda track: track.metadata.podcast_rss_url),
         _column(
             "Podcast",

@@ -34,6 +34,10 @@ new or structurally edited Masters receive missing standard browse index pairs.
 Missing, repeated, or displaced existing Masters block dependent edits instead of
 being automatically replaced. Unrelated edits retain source anomalies with warnings.
 
+ADR-0149 adds Finder-backed Podcast sort/settings defaults and caller-supplied
+creation/modification dates for affected special Podcasts Playlists. Existing
+creation dates and settings remain retained; unchanged preparation stays byte-exact.
+
 Podcast grouping applies only to the special podcast-marked Playlist in dataset 3.
 The first episode creates its show group. Grouping retains native metadata and
 stable duplicate occurrences; ambiguous retained ownership blocks the change.

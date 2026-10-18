@@ -38,9 +38,7 @@ def describe_track_issues(
             replace(
                 issue,
                 detail=detail,
-                artifact=issue.artifact
-                or track.metadata.podcast_enclosure_url
-                or track.metadata.location,
+                artifact=issue.artifact or track.metadata.location,
             )
         )
     return tuple(described)

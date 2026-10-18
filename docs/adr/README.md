@@ -221,3 +221,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0146: Remove routine Podcast and re-encoding notices](0146-remove-routine-podcast-and-reencoding-notices.md)
 - [ADR-0147: Restore late-iPod firmware write compatibility](0147-restore-late-ipod-firmware-write-compatibility.md)
 - [ADR-0148: Keep Album browse groups contiguous](0148-keep-album-browse-groups-contiguous.md)
+- [ADR-0149: Author Podcasts from Finder capture evidence](0149-author-podcasts-from-finder-capture-evidence.md)
+- [ADR-0150: Retain firmware SQLite metadata and dual signatures](0150-retain-firmware-sqlite-metadata-and-dual-signatures.md)

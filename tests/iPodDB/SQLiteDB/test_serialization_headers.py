@@ -8,8 +8,8 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pytest
-from tests.iPodDB.SQLiteDB.test_database import (
-    _snapshot,  # pyright: ignore[reportPrivateUsage]
+from tests.iPodDB.SQLiteDB.sqlite_test_support import (
+    sample_snapshot,
 )
 
 from iPodDB.library import LibrarySnapshot
@@ -30,7 +30,7 @@ def test_serialized_artifacts_match_file_backed_sqlite(
     populated: bool,
     postprocess: bool,
 ) -> None:
-    snapshot = _snapshot() if populated else LibrarySnapshot((), (), "Empty iPod")
+    snapshot = sample_snapshot() if populated else LibrarySnapshot((), (), "Empty iPod")
     commands = (
         ('PRAGMA main.user_version=42; PRAGMA "Locations.itdb".user_version=7;',)
         if postprocess
@@ -81,7 +81,7 @@ def test_serialized_artifacts_match_file_backed_sqlite(
 
 
 def test_simultaneous_generations_keep_independent_private_databases() -> None:
-    snapshot = _snapshot()
+    snapshot = sample_snapshot()
 
     def generate(index: int) -> str:
         selected = replace(

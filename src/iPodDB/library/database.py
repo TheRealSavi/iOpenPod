@@ -281,6 +281,7 @@ class IPodLibrary:
         retag_tracks: tuple[int, ...] = (),
         regenerate_sqlite: bool = False,
         rebuild_album_indexes: bool = False,
+        repair_podcast_links: bool = False,
     ) -> LibraryDraft:
         """Bind desired state to this source, rejecting omissions unless opted in.
 
@@ -305,6 +306,7 @@ class IPodLibrary:
             retag_tracks=tuple(retag_tracks),
             regenerate_sqlite=regenerate_sqlite,
             rebuild_album_indexes=rebuild_album_indexes,
+            repair_podcast_links=repair_podcast_links,
         )
 
     def analyze(

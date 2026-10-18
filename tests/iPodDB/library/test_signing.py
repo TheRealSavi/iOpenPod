@@ -3,6 +3,36 @@
 from iPodDB.library import Hash72Material, parse_hash72_info
 
 
+def test_hash72_publication_also_refreshes_hash58() -> None:
+    from dataclasses import replace
+
+    from tests.iPodDB.library.test_writing import library
+
+    from iPodDB.iTunesDB.writer.signature import verify_hash58, verify_hash72
+    from iPodDB.library.writing import WriteChecksum, WriteTarget
+
+    source = library()
+    guid = bytes.fromhex("000A2700200D5D8E")
+    material = Hash72Material(guid + bytes(12), bytes(range(12)), bytes(range(16)))
+    desired = replace(source.snapshot, device_name="Signed for Finder")
+    result = source.prepare(
+        source.analyze(
+            source.begin_draft(desired),
+            WriteTarget(
+                checksum=WriteChecksum.HASH72,
+                firewire_guid=guid,
+                hash72_material=material,
+                compressed_database=True,
+            ),
+        )
+    )
+    assert result.prepared is not None, result.issues
+    assert verify_hash58(result.prepared.itunes, guid)
+    assert verify_hash72(
+        result.prepared.itunes, material.iv, material.random_part, hashing_scheme=1
+    )
+
+
 def test_parse_hash72_info_preserves_typed_device_binding() -> None:
     guid = bytes.fromhex("000A270012345678")
     random_part = bytes(range(12))
