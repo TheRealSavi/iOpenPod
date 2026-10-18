@@ -1,8 +1,9 @@
 ---
-title: Install & setup — iOpenPod
+title: Install iOpenPod on Windows, Mac & Linux — Setup guide
 description: Install iOpenPod on Windows, macOS, and Linux from GitHub or PyPI with uv, or use Microsoft Store. Set up media tools and prepare your first sync.
 body_class: iop2-page setup-page
 permalink: /install-help/
+breadcrumb_title: Setup guide
 ---
 {% include product-nav.html %}
 {% assign windows = site.data.distribution.platforms | where: 'id', 'windows' | first %}
@@ -13,8 +14,9 @@ permalink: /install-help/
 {% assign intel_download = macos.channels | where: 'id', 'macos-x64' | first %}
 {% assign linux_download = linux.channels | where: 'id', 'linux-binary' | first %}
 <main class="container setup-main" id="main-content">
+  <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{{ '/' | relative_url }}">Home</a><span aria-hidden="true">/</span><span aria-current="page">Setup guide</span></nav>
   <header class="setup-intro">
-    <h1>A little setup.<br>A lot of music.</h1>
+    <h1>Install iOpenPod.</h1>
     <p>Installation and first steps for iOpenPod on Windows, macOS, and Linux.</p>
   </header>
   <div class="availability-note">
@@ -119,6 +121,7 @@ permalink: /install-help/
       <summary>A write was interrupted</summary>
       <div class="details-body"><p>Reconnect the same iPod and follow the recovery action shown by iOpenPod. Keep recovery files in place until recovery completes. Backup Snapshots are an additional user-controlled copy of your data.</p></div>
     </details>
+    <p>New to managing an iPod? Follow the <a href="{{ '/guides/sync-ipod-without-itunes/' | relative_url }}">first-Sync walkthrough</a>. If your device does not appear, use the <a href="{{ '/guides/ipod-not-detected/' | relative_url }}">detection checklist</a>.</p>
     <p class="support-link">Still stuck? <a href="https://github.com/TheRealSavi/iOpenPod/issues">Report an issue</a> with your iOpenPod version, install channel, operating system, iPod model, and steps to reproduce.</p>
   </section>
 </main>

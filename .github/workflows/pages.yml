@@ -38,8 +38,27 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.12.7"
-      - name: Check rendered FAQ and structured data
+      - name: Check rendered SEO, internal links, and structured data
         run: uv run --no-project --managed-python --python 3.12 python tests/website/check_seo.py _site
+      - name: Prepare project-path hosting check
+        run: |
+          uv run --no-project --managed-python --python 3.12 python - <<'PY'
+          from pathlib import Path
+          from shutil import copytree
+
+          copytree("website", "_project-site-source")
+          config = Path("_project-site-source/_config.yml")
+          text = config.read_text(encoding="utf-8")
+          assert 'baseurl: ""' in text, "Expected custom-domain production configuration"
+          config.write_text(text.replace('baseurl: ""', 'baseurl: "/iOpenPod"', 1), encoding="utf-8")
+          PY
+      - name: Build project-path hosting variant
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./_project-site-source
+          destination: ./_site-project
+      - name: Check SEO under project-path hosting
+        run: uv run --no-project --managed-python --python 3.12 python tests/website/check_seo.py _site-project
       - uses: actions/upload-pages-artifact@v4
         with:
           path: ./_site

@@ -1,8 +1,8 @@
 ---
-title: iOpenPod — Your music. Your iPod.
-description: Browse, play, organize, and sync your iPod with iOpenPod. Download for Windows, macOS, and Linux, or install from PyPI with uv or Microsoft Store.
-og_title: iOpenPod — Your music. Your iPod.
-og_description: A new home for your iPod library. Get native downloads for Windows, macOS, and Linux, or install from PyPI with uv or Microsoft Store.
+title: iOpenPod — Free iPod manager for Windows, Mac & Linux
+description: Manage and sync your iPod without iTunes. iOpenPod is free and open source for Windows, macOS, and Linux, with playlists, artwork, conversion, and backups.
+og_title: iOpenPod — Your iPod, without iTunes
+og_description: A free, open-source iPod manager for Windows, macOS, and Linux. Browse your library, choose your music, and review changes before syncing.
 body_class: iop2-page home-page
 include_faq_schema: true
 permalink: /
@@ -11,16 +11,17 @@ permalink: /
 <main id="main-content">
   <header class="intro container">
     <div class="intro-title">
-      <h1>Your music.<br>Your iPod.</h1>
+      <h1>Your iPod.<br>Without iTunes.</h1>
       <div class="project-stats" role="group" aria-label="iOpenPod project statistics">
-        <a href="https://github.com/TheRealSavi/iOpenPod/stargazers" aria-label="View iOpenPod stars on GitHub">
-          <img src="https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=for-the-badge&amp;logo=github&amp;color=0a6fdb" alt="GitHub stars" height="28" referrerpolicy="no-referrer">
+        <a href="https://github.com/TheRealSavi/iOpenPod" aria-label="Explore iOpenPod on GitHub">
+          <span class="project-source-link">Explore on GitHub <span aria-hidden="true">↗</span></span>
         </a>
         <a href="https://github.com/TheRealSavi/iOpenPod/releases" aria-label="View iOpenPod releases on GitHub; downloads total all release assets">
           <img src="https://img.shields.io/github/downloads/TheRealSavi/iOpenPod/total?style=for-the-badge&amp;logo=github&amp;logoColor=white&amp;color=0a6fdb&amp;label=Total%20downloads&amp;cacheSeconds=86400" alt="Total GitHub release downloads" height="28" referrerpolicy="no-referrer">
         </a>
       </div>
-      <p class="intro-description">Meet iOpenPod. Manage your library, and sync any file format directly to your iPod.</p>
+      <p class="intro-description">A free, open-source iPod manager for Windows, macOS, and Linux. Browse your library, organize playlists, and sync music from your computer.</p>
+      <a class="text-link intro-download" href="#install">Download iOpenPod <span aria-hidden="true">↗</span></a>
       <a class="text-link intro-explore" href="#tour">Explore the app <span aria-hidden="true">↓</span></a>
     </div>
     <div class="intro-aside">
@@ -69,9 +70,9 @@ permalink: /
         <div class="sync-showcase-row">
           {% include product-shot.html file="audio-transcoding-settings.webp" width=1486 height=993 alt="Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media" caption="Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media." %}
           <div class="sync-showcase-copy">
-            <h3>Any file type you want.</h3>
-            <p>Device-aware conversion prepares compatible media. Acoustic matching recognizes recordings across format and metadata changes.</p>
-            <p class="tool-note">Conversion and fingerprinting need FFmpeg, FFprobe, and Chromaprint.
+            <h3>Prepare music for your iPod.</h3>
+            <p>Device-aware conversion prepares compatible media from supported source formats. Optional acoustic matching helps recognize recordings across format and metadata changes.</p>
+            <p class="tool-note">Conversion needs FFmpeg and FFprobe. Chromaprint enables optional acoustic matching. <a href="{{ '/guides/flac-to-ipod/' | relative_url }}">Learn about FLAC conversion</a>.</p>
           </div>
         </div>
       </div>
@@ -119,7 +120,8 @@ permalink: /
         <div><dt>iPod Mini</dt><dd>1st and 2nd generation</dd></div>
         <div><dt>iPod Nano</dt><dd>1st-7th generation</dd></div>
       </dl>
-      <p>iPod shuffle and iPod touch not yet supported.</p>
+      <p>iPod shuffle, iPod touch, and iPhone are not supported. The computer must be able to access the iPod's filesystem; device-specific validation is ongoing.</p>
+      <p><a href="{{ '/guides/ipod-compatibility/' | relative_url }}">Check model targets and compatibility limits</a>.</p>
     </div>
   </section>
 
@@ -162,8 +164,8 @@ permalink: /
   </section>
   <section class="migration-section container" id="migration" aria-labelledby="migration-heading">
     <div class="section-intro">
-      <h2 id="migration-heading">Migrating from legacy tools</h2>
-      <p>Looking for an iTunes alternative, or moving on from gtkpod, YamiPod, CopyPod, EphPod, Strawberry, or Clementine? Here is what to expect from iOpenPod.</p>
+      <h2 id="migration-heading">An iTunes alternative for your iPod.</h2>
+      <p>Bring the music folders you already have. iOpenPod works with the library on your iPod and lets you review what to add, update, or remove.</p>
     </div>
     <div class="migration-grid">
       <div>
@@ -183,7 +185,20 @@ permalink: /
         <p>See additions, updates, and removals in Sync Review. Removal candidates start unchecked. Backup Snapshots are user-controlled, and interrupted writes have an explicit recovery workflow.</p>
       </div>
     </div>
-    <a class="text-link migration-help" href="{{ '/install-help/#first-sync' | relative_url }}">Prepare your first sync <span aria-hidden="true">↗</span></a>
+    <a class="text-link migration-help" href="{{ '/guides/sync-ipod-without-itunes/' | relative_url }}">Learn to sync without iTunes <span aria-hidden="true">↗</span></a>
+  </section>
+
+  <section class="guides-section container" aria-labelledby="guides-heading">
+    <div class="section-intro">
+      <h2 id="guides-heading">Start with a little know-how.</h2>
+      <p>Choose the right download, check your iPod, and plan your first Sync.</p>
+    </div>
+    <ul class="guide-links">
+      {% for guide in site.data.guides %}
+      <li><a href="{{ guide.url | relative_url }}">{{ guide.title | escape }}</a><p>{{ guide.description | escape }}</p></li>
+      {% endfor %}
+    </ul>
+    <a class="text-link" href="{{ '/guides/' | relative_url }}">Browse all iPod guides <span aria-hidden="true">↗</span></a>
   </section>
 
   <section class="faq-section container" id="faq" aria-labelledby="faq-heading">

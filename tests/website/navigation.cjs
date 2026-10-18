@@ -1,36 +1,102 @@
 // Run against a built Jekyll preview with Playwright available to Node.
 const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const path = require("node:path");
 const { chromium } = require("playwright");
 
 const preview = process.argv[2] || "http://127.0.0.1:8876/iOpenPod/";
+// An optional third argument saves screenshots and a machine-readable QA report.
+const evidenceDirectory = process.argv[3] && path.resolve(process.argv[3]);
+const guideRoutes = [
+  "guides/sync-ipod-without-itunes/",
+  "guides/ipod-compatibility/",
+  "guides/flac-to-ipod/",
+  "guides/ipod-manager-windows-mac-linux/",
+  "guides/ipod-not-detected/",
+];
+const results = [];
+const screenshots = [];
+
+function relativeTarget(route) {
+  const url = new URL(route, preview);
+  return url.pathname + url.hash;
+}
+
+async function saveReport(error) {
+  if (!evidenceDirectory) return;
+  await fs.mkdir(evidenceDirectory, { recursive: true });
+  await fs.writeFile(path.join(evidenceDirectory, "navigation-results.json"), JSON.stringify({
+    preview,
+    checkedAt: new Date().toISOString(),
+    status: error ? "failed" : "passed",
+    cases: results,
+    screenshots,
+    ...(error ? { error: error.stack || String(error) } : {}),
+  }, null, 2) + "\n");
+}
 
 (async () => {
+  if (evidenceDirectory) await fs.mkdir(evidenceDirectory, { recursive: true });
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
     for (const colorScheme of ["light", "dark"]) {
       const context = await browser.newContext({ colorScheme, reducedMotion: "reduce" });
       const page = await context.newPage();
-      for (const route of ["", "install-help/"]) {
+      for (const route of ["", "install-help/", "guides/", ...guideRoutes]) {
         for (const width of [320, 375, 414, 768, 1280, 1920]) {
           await page.setViewportSize({ width, height: 900 });
-          await page.goto(new URL(route, preview).href);
+          const response = await page.goto(new URL(route, preview).href);
+          const testCase = `${route || "home"}, ${colorScheme}, ${width}px`;
+          assert.equal(response.status(), 200, `${testCase}: page must load successfully`);
           await page.evaluate(() => document.fonts.ready);
           const nav = page.getByRole("navigation", { name: "Primary navigation" });
           assert.equal(await nav.getByRole("link", { name: "Help", exact: true }).getAttribute("href"), new URL("install-help/", preview).pathname);
+          assert.equal(await nav.getByRole("link", { name: "Guides", exact: true }).getAttribute("href"), relativeTarget("guides/"));
           assert.equal(await nav.getByRole("link", { name: "Source", exact: true }).getAttribute("href"), await page.getByRole("link", { name: "Source on GitHub" }).getAttribute("href"));
           assert.equal(await nav.getByRole("link", { name: "Discord", exact: true }).getAttribute("href"), "https://discord.gg/9Yy499Tf5d");
+          assert.equal(await page.locator("h1").count(), 1, `${testCase}: each page must have one main heading`);
+          assert(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${testCase}: document must not overflow horizontally`);
           assert(await nav.locator("a, button").evaluateAll((controls) => {
             const boxes = controls.map((control) => control.getBoundingClientRect());
             return boxes.every((box, index) => box.x >= 0 && box.right <= innerWidth && box.height >= 44 &&
               boxes.slice(index + 1).every((other) => box.right <= other.x || other.right <= box.x || box.bottom <= other.y || other.bottom <= box.y));
           }), "Header controls must have usable targets without overlapping or overflowing");
           assert(await page.locator("img").evaluateAll((images) => images.every((image) => parseFloat(getComputedStyle(image).borderTopLeftRadius) > 0)), "All images should have rounded corners");
+          if (route.startsWith("guides/")) {
+            const breadcrumbs = page.getByRole("navigation", { name: "Breadcrumb", exact: true });
+            const isDirectory = route === "guides/";
+            assert.deepEqual(await breadcrumbs.getByRole("link").evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+              isDirectory ? [relativeTarget("")] : [relativeTarget(""), relativeTarget("guides/")],
+              `${testCase}: breadcrumbs must return to the site and guide directory`);
+            assert.equal(await breadcrumbs.locator('[aria-current="page"]').count(), 1);
+            assert((await breadcrumbs.locator('[aria-current="page"]').innerText()).trim());
+            const nextSteps = page.locator(".guide-next");
+            assert.deepEqual(await nextSteps.getByRole("link").evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+              [relativeTarget("#install"), relativeTarget("install-help/")],
+              `${testCase}: guide calls to action must reach downloads and setup`);
+            if (isDirectory) {
+              assert.deepEqual(await page.locator(".guide-directory a").evaluateAll((links) => links.map((link) => link.getAttribute("href"))), guideRoutes.map(relativeTarget));
+            } else {
+              assert(await nextSteps.getByRole("link", { name: "Get iOpenPod", exact: true }).isVisible());
+              assert(await nextSteps.getByRole("link", { name: "Installation help", exact: true }).isVisible());
+            }
+          }
+          if (evidenceDirectory && [375, 1280].includes(width) && ["", guideRoutes[0]].includes(route)) {
+            await page.locator("img").evaluateAll((images) => Promise.all(images.map((image) => {
+              image.loading = "eager";
+              return image.decode().catch(() => {});
+            })));
+            const filename = `${route ? "sync-guide" : "home"}-${colorScheme}-${width}.png`;
+            await page.screenshot({ path: path.join(evidenceDirectory, filename), fullPage: true, animations: "disabled" });
+            screenshots.push(filename);
+          }
           if (!route) {
             assert(await page.locator(".intro-visual").evaluate((hero) => hero.nextElementSibling.id === "tour" && hero.nextElementSibling.querySelector("#sync-heading")), "The hero should lead directly to Sync");
             await page.getByRole("link", { name: "Explore the app" }).click();
             assert.equal(new URL(page.url()).hash, "#tour");
           }
-          console.log(`PASS: ${route || "home"}, ${colorScheme}, ${width}px`);
+          results.push({ route: route || "home", colorScheme, width });
+          console.log(`PASS: ${testCase}`);
         }
 
         const toggles = page.locator("[data-theme-toggle]");
@@ -57,7 +123,9 @@ const preview = process.argv[2] || "http://127.0.0.1:8876/iOpenPod/";
   } finally {
     await browser.close();
   }
-})().catch((error) => {
+  await saveReport();
+})().catch(async (error) => {
   console.error(error);
+  await saveReport(error);
   process.exitCode = 1;
 });

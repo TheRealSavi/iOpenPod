@@ -1,8 +1,8 @@
-# iOpenPod: The Open-Source iPod Manager & iTunes Alternative for Windows, macOS, and Linux
+# iOpenPod: Free iPod Manager and iTunes Alternative
 
 **Your music. Your iPod.**
 
-[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=plastic)](LICENSE)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=plastic)](https://github.com/TheRealSavi/iOpenPod/blob/main/LICENSE)
 [![Platform: Win | Mac | Linux](https://img.shields.io/badge/Platform-Win%20%7C%20Mac%20%7C%20Linux-2ea44f.svg?style=plastic)](#download-and-install)
 [![GitHub: Download latest](https://img.shields.io/badge/GitHub-Download%20latest-0a6fdb?style=plastic)](https://github.com/TheRealSavi/iOpenPod/releases/latest)
 [![GitHub Stars](https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=plastic\&color=6e5494)](https://github.com/TheRealSavi/iOpenPod/stargazers)
@@ -12,13 +12,18 @@
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/johngibbons)
 
 iOpenPod is a free, open-source iPod manager and iTunes alternative for
-**Windows, macOS, and Linux**. Browse your music, edit your library, and sync audio,
-video, photos, and podcasts from your computer. Built-in conversion prepares media
-for your iPod, and Sync Review lets you choose what gets added, updated, or removed.
-Built with Python and Qt6.
+**Windows, macOS, and Linux**. Sync music from folders on your computer without
+iTunes, browse the library already on your iPod, and edit metadata and playlists.
+Sync Review lets you choose what gets added, updated, or removed.
+
+The target devices are filesystem-accessible **iPod classic, iPod mini, iPod nano,
+and earlier full-size iPods**. Audio, video, photo, and podcast capabilities depend
+on the model. Media conversion uses separately installed FFmpeg and FFprobe.
+See [iPod compatibility](#ipod-compatibility) before getting started.
 
 [Website](https://iopenpod.com) ·
 [Install help](https://iopenpod.com/install-help/) ·
+[iPod guides](https://iopenpod.com/guides/) ·
 [Discord](https://discord.gg/9Yy499Tf5d) ·
 [Support development](https://ko-fi.com/johngibbons)
 
@@ -33,12 +38,9 @@ Built with Python and Qt6.
 </a>
 <!-- markdownlint-enable MD033 -->
 
-Native downloads are available for all three platforms (Windows, MacOS, Linux) on the
+Native downloads for Windows, macOS, and Linux are available on the
 [latest release page](https://github.com/TheRealSavi/iOpenPod/releases/latest).
-
-Choose the asset for your platform from below.
-
-you do not need Python to install these.
+Choose your platform below; these downloads do not require a separate Python installation.
 See the [installation guide](https://iopenpod.com/install-help/) for setup and troubleshooting.
 
 | Platform              | Latest release assets                                                           | Installation                                                           |
@@ -53,10 +55,10 @@ on a fixed NTFS drive for in-app updates. Windows users can also install through
 [Microsoft Store](https://apps.microsoft.com/detail/9P2LXCHHWLG9).
 
 On macOS, launch from Applications after copying the app and ejecting the DMG.
-The build targets macOS 12.3 or later. Current downloads are ad-hoc signed and not notarized; so you will have to allow the app to run in System Settings>Privacy and Secutiy. See the
-[Mac setup guide](https://iopenpod.com/install-help/#native-macos)
-which covers the first-launch prompts. Choose a DMG to install; the ZIPs labeled
-`sparkle-update` are reserved for the built-in updater and arent inteded for users.
+The build targets macOS 12.3 or later. Current downloads are ad-hoc signed and not
+notarized. Follow the [Mac setup guide](https://iopenpod.com/install-help/#native-macos)
+for first-launch approval in **System Settings → Privacy & Security**. Choose a
+DMG to install; the ZIPs labeled `sparkle-update` are reserved for the built-in updater.
 
 On Linux, extract into a folder you can write to, preserve executable permissions,
 and keep the whole `iOpenPod` folder together. Always start its top-level launcher,
@@ -103,7 +105,8 @@ uv tool upgrade iopenpod
 ### Media tools
 
 **FFmpeg and FFprobe** are installed separately for media conversion and inspection.
-**Chromaprint's fpcalc** is also installed seperately and enables acoustic matching during Sync.
+**Chromaprint's fpcalc** is optional, installed separately, and enables acoustic
+matching during Sync.
 
 The startup popup or **Settings → Media Tools → Set Up Media Tools** can install
 missing tools after you choose **Install Missing Tools**. Native setup uses WinGet,
@@ -184,6 +187,17 @@ iOpenPod targets these iPod families. Available features depend on the model.
 
 **iPod shuffle, iPod touch, and iPhone are not yet supported.** The computer
 must already be able to read and write the iPod’s filesystem.
+
+### Guides for your iPod
+
+* [Sync an iPod without iTunes](https://iopenpod.com/guides/sync-ipod-without-itunes/)
+  — choose media folders and review your first Sync.
+* [Check iPod compatibility](https://iopenpod.com/guides/ipod-compatibility/)
+  — understand model and filesystem requirements.
+* [Put FLAC music on an iPod](https://iopenpod.com/guides/flac-to-ipod/)
+  — convert supported source files for your model during Sync.
+* [Troubleshoot an iPod that is not detected](https://iopenpod.com/guides/ipod-not-detected/)
+  — check the connection and whether the computer can access the device.
 
 ![Photo Library with the Manage Albums dialog and selected photo inspector](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/photo-albums.webp)
 

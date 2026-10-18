@@ -1,0 +1,36 @@
+---
+layout: default
+---
+{% include product-nav.html %}
+<main class="container guide-main" id="main-content">
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ '/' | relative_url }}">Home</a><span aria-hidden="true">/</span>
+    <a href="{{ '/guides/' | relative_url }}">Guides</a><span aria-hidden="true">/</span>
+    <span aria-current="page">{{ page.breadcrumb_title | escape }}</span>
+  </nav>
+  <article class="guide-article">
+    <header class="guide-header">
+      <h1>{{ page.heading | escape }}</h1>
+      <p class="guide-lead">{{ page.lead | escape }}</p>
+    </header>
+    <div class="guide-body">{{ content }}</div>
+    <aside class="guide-next" aria-label="Get started">
+      <h2>Put your iPod back to work.</h2>
+      <p>iOpenPod is free and open source. Choose a download for your computer, then follow the setup guide.</p>
+      <div class="guide-actions">
+        <a class="download-nav" href="{{ '/#install' | relative_url }}">Get iOpenPod <span aria-hidden="true">↗</span></a>
+        <a href="{{ '/install-help/' | relative_url }}">Installation help</a>
+      </div>
+    </aside>
+  </article>
+  <section class="guide-related" aria-labelledby="related-heading">
+    <h2 id="related-heading">Keep reading</h2>
+    <ul class="guide-links">
+      {% for guide in site.data.guides %}{% unless guide.url == page.url %}
+      <li><a href="{{ guide.url | relative_url }}">{{ guide.title | escape }}</a><p>{{ guide.description | escape }}</p></li>
+      {% endunless %}{% endfor %}
+    </ul>
+  </section>
+</main>
+{% include product-footer.html %}
+{% include screenshot-viewer.html %}
