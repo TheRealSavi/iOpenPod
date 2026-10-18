@@ -13,6 +13,7 @@
   {% assign webpage_id = canonical_url | append: '#webpage' %}
   {% assign faq_id = canonical_url | append: '#faq' %}
   {% assign breadcrumb_id = canonical_url | append: '#breadcrumb' %}
+  {% assign asset_version = site.time | date: '%s' %}
   <script>
   (() => {
     try {
@@ -59,9 +60,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;700&amp;family=Inter:wght@400;700&amp;family=Manrope:wght@700&amp;display=swap">
-    <link rel="stylesheet" href="{{ '/site.css' | relative_url }}">
-    <link rel="stylesheet" href="{{ '/theme.css' | relative_url }}">
-    <link rel="stylesheet" href="{{ '/iop2.css' | relative_url }}">
+    <link rel="stylesheet" href="{{ '/tokens.css' | relative_url }}?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ '/site.css' | relative_url }}?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ '/theme.css' | relative_url }}?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ '/iop2.css' | relative_url }}?v={{ asset_version }}">
 
     {% capture structured_data %}
     {
@@ -161,7 +163,7 @@
 </head>
 <body class="{{ page.body_class | default: '' | escape }}">
     {{ content }}
-  <script src="{{ '/theme.js' | relative_url }}" defer></script>
-  <script src="{{ '/screenshot-viewer.js' | relative_url }}" defer></script>
+  <script src="{{ '/theme.js' | relative_url }}?v={{ asset_version }}" defer></script>
+  <script src="{{ '/screenshot-viewer.js' | relative_url }}?v={{ asset_version }}" defer></script>
 </body>
 </html>

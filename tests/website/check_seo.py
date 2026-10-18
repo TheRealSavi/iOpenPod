@@ -263,6 +263,7 @@ def main() -> None:
     assert urlsplit(home_url).scheme == "https" and home_url.endswith("/"), home_url
     indexable: dict[Path, Page] = {}
     navigation: dict[Path, set[Path]] = {}
+    asset_versions: set[str] = set()
     references_checked = 0
     for path, page in pages.items():
         navigation[path] = set()
@@ -277,6 +278,12 @@ def main() -> None:
         assert not parsed.fragment and not parsed.query, f"{path}: noncanonical URL"
         for reference in page.references:
             target = check_reference(reference, page, home_url, built, pages)
+            if target and target.suffix in {".css", ".js"}:
+                query = urlsplit(reference.url).query
+                assert re.fullmatch(r"v=\d+", query), (
+                    f"{path}: local stylesheet/script needs a build version: {reference.url}"
+                )
+                asset_versions.add(query)
             if target in pages and reference.tag == "a":
                 navigation[path].add(target)
             references_checked += 1
@@ -331,6 +338,7 @@ def main() -> None:
         if not page.noindex:
             indexable[path] = page
     assert (built / "404.html") in pages and pages[built / "404.html"].noindex
+    assert len(asset_versions) == 1, "All pages must share one asset build version"
     reachable: set[Path] = set()
     pending = [home.path]
     while pending:
