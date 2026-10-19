@@ -81,7 +81,6 @@ from iOpenPod.app.scrobbling.settings import configured_accounts
 from iOpenPod.app.services.media_tools import MediaToolSetup
 from iOpenPod.app.subsonic.controller import SubsonicController
 from iOpenPod.app.subsonic.models import (
-    SubsonicPlaylist,
     SubsonicSyncMode,
     SubsonicSyncResult,
 )
@@ -1477,14 +1476,6 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _sync_subsonic_now(self) -> None:
-        if self._context.device_controller.active_ipod is None:
-            self._context.status.show(
-                "subsonic",
-                self.tr("Select an Active iPod before syncing Subsonic."),
-                timeout_ms=5_000,
-            )
-            return
-
         url = self._context.settings.get(SUBSONIC_URL).strip()
         username = self._context.settings.get(SUBSONIC_USERNAME).strip()
         password = self._subsonic.credentials.load_password(username)
@@ -1494,20 +1485,18 @@ class MainWindow(QMainWindow):
             self._context.status.show(
                 "subsonic",
                 self.tr(
-                    "Configure Subsonic server URL and username in Settings first."
+                    "Configure your Subsonic server in Settings first."
                 ),
                 timeout_ms=10_000,
             )
             return
 
-        saved_ids: tuple[str, ...] = self._context.settings.get(SUBSONIC_PLAYLIST_IDS)
-        if not saved_ids:
-            self._show_page(PageId.SETTINGS.value)
-            self._settings_page.show_sync_settings()
+        active_ipod = self._context.device_controller.active_ipod
+        if active_ipod is None:
             self._context.status.show(
                 "subsonic",
-                self.tr("Select at least one Subsonic playlist in Settings to sync."),
-                timeout_ms=10_000,
+                self.tr("Select an Active iPod before syncing Subsonic."),
+                timeout_ms=5_000,
             )
             return
 
@@ -1516,20 +1505,12 @@ class MainWindow(QMainWindow):
             try:
                 from iOpenPod.app.subsonic.client import SubsonicClient
 
-                client = SubsonicClient(url, username, password, timeout=5)
+                client = SubsonicClient(url, username, password, timeout=6)
                 all_playlists = client.get_playlists()
             except Exception as exc:
                 logger.debug("Could not pre-fetch Subsonic playlists: %s", exc)
 
-        selected_playlists = tuple(
-            p for p in all_playlists if p.playlist_id in saved_ids
-        )
-        if not selected_playlists:
-            selected_playlists = tuple(
-                SubsonicPlaylist(playlist_id=str(pid), name=str(pid))
-                for pid in saved_ids
-            )
-
+        saved_ids: tuple[str, ...] = self._context.settings.get(SUBSONIC_PLAYLIST_IDS)
         saved_mappings_raw = (
             self._context.settings.get(SUBSONIC_PLAYLIST_MAPPINGS) or {}
         )
@@ -1539,16 +1520,27 @@ class MainWindow(QMainWindow):
                 saved_mappings[str(k)] = int(v)
 
         dialog = SubsonicPlaylistMappingDialog(
-            selected_playlists,
+            all_playlists,
             self._context.library_workspace.playlists,
             saved_mappings=saved_mappings,
+            saved_selected_ids=saved_ids,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
-            self._context.status.clear("subsonic")
             return
 
         mappings = dialog.get_mappings()
+        if not mappings:
+            self._context.status.show(
+                "subsonic",
+                self.tr("No Subsonic playlists selected to sync."),
+                timeout_ms=5_000,
+            )
+            return
+
+        selected_ids = dialog.get_selected_playlist_ids()
+        self._context.settings.set_global(SUBSONIC_PLAYLIST_IDS, selected_ids)
+
         new_mappings_store: dict[str, int] = {
             m.subsonic_id: (
                 -m.target_ipod_id
@@ -1562,12 +1554,15 @@ class MainWindow(QMainWindow):
             SUBSONIC_PLAYLIST_MAPPINGS, new_mappings_store
         )
 
+        scope = dialog.sync_scope
         self._subsonic.sync_playlists(
             self._context.library_workspace,
             mappings,
             url,
             username,
             password,
+            scope=scope,
+            active_ipod=active_ipod,
         )
 
     @Slot()
@@ -1593,9 +1588,14 @@ class MainWindow(QMainWindow):
             )
             self._context.status.show("subsonic", message, timeout_ms=15_000)
         else:
+            extra = (
+                f", {result.songs_downloaded} {self.tr('song(s) downloaded')}"
+                if result.songs_downloaded > 0
+                else ""
+            )
             message = (
                 f"{self.tr('Subsonic sync staged')}: "
-                f"{result.playlists_synced} {self.tr('playlist(s) updated')} "
+                f"{result.playlists_synced} {self.tr('playlist(s) updated')}{extra} "
                 f"({result.tracks_matched} {self.tr('tracks matched')}, "
                 f"{result.tracks_unmatched} {self.tr('unmatched')}). "
                 f"{self.tr('Click Review Changes to write to your iPod.')}"

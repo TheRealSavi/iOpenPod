@@ -6,10 +6,15 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QButtonGroup,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
     QLabel,
+    QRadioButton,
     QScrollArea,
     QTabWidget,
     QVBoxLayout,
@@ -20,10 +25,12 @@ from iOpenPod.app.subsonic.models import (
     SubsonicPlaylist,
     SubsonicPlaylistMapping,
     SubsonicSyncMode,
+    SubsonicSyncScope,
 )
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.themed_buttons import (
+    ActionButton,
     ActionButtonKind,
     apply_action_button_kind,
 )
@@ -34,19 +41,20 @@ if TYPE_CHECKING:
 
 
 class SubsonicPlaylistMappingDialog(QDialog):
-    """Two-tab dialog for mapping Subsonic playlists and configuring sync mode."""
+    """Dialog for selecting Subsonic playlists, mapping to iPod targets, and choosing sync scope."""
 
     def __init__(
         self,
         subsonic_playlists: tuple[SubsonicPlaylist, ...],
         ipod_playlists: tuple[Playlist, ...],
         saved_mappings: dict[str, int] | None = None,
+        saved_selected_ids: tuple[str, ...] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Subsonic Playlist Sync"))
-        self.resize(560, 420)
-        self.setMinimumSize(480, 360)
+        self.setWindowTitle(self.tr("Subsonic Sync"))
+        self.resize(600, 520)
+        self.setMinimumSize(500, 400)
 
         self._subsonic_playlists = subsonic_playlists
         self._ipod_playlists = tuple(
@@ -55,7 +63,13 @@ class SubsonicPlaylistMappingDialog(QDialog):
             if getattr(p, "kind", None) == PlaylistKind.PLAYLIST
         )
         self._saved_mappings = saved_mappings or {}
+        self._saved_selected_ids = (
+            set(saved_selected_ids)
+            if saved_selected_ids
+            else {p.playlist_id for p in subsonic_playlists}
+        )
 
+        self._checkboxes: dict[str, QCheckBox] = {}
         self._mapping_combos: dict[str, AppComboBox] = {}
         self._mode_combos: dict[str, AppComboBox] = {}
 
@@ -68,12 +82,33 @@ class SubsonicPlaylistMappingDialog(QDialog):
         )
         layout.setSpacing(LAYOUT.space_md)
 
-        header = QLabel(
-            self.tr("Choose how to sync each selected Subsonic playlist:"), self
+        # 1. Sync Scope Selection
+        scope_group = QGroupBox(self.tr("Sync Content"), self)
+        scope_layout = QVBoxLayout(scope_group)
+        scope_layout.setContentsMargins(
+            LAYOUT.space_md, LAYOUT.space_sm, LAYOUT.space_md, LAYOUT.space_sm
         )
-        header.setWordWrap(True)
-        layout.addWidget(header)
+        scope_layout.setSpacing(LAYOUT.space_xs)
 
+        self._radio_playlists_only = QRadioButton(
+            self.tr("Playlists only (match existing iPod tracks, no downloads)"),
+            scope_group,
+        )
+        self._radio_playlists_only.setChecked(True)
+        self._radio_all_songs = QRadioButton(
+            self.tr("Include all songs (download missing tracks from server)"),
+            scope_group,
+        )
+
+        self._scope_button_group = QButtonGroup(self)
+        self._scope_button_group.addButton(self._radio_playlists_only)
+        self._scope_button_group.addButton(self._radio_all_songs)
+
+        scope_layout.addWidget(self._radio_playlists_only)
+        scope_layout.addWidget(self._radio_all_songs)
+        layout.addWidget(scope_group)
+
+        # 2. Select & Map Playlists
         tabs = QTabWidget(self)
 
         mapping_scroll = QScrollArea(tabs)
@@ -97,6 +132,15 @@ class SubsonicPlaylistMappingDialog(QDialog):
         mode_layout.setSpacing(LAYOUT.space_sm)
 
         for pl in self._subsonic_playlists:
+            cb = QCheckBox(
+                f"{pl.name} ({pl.song_count} songs)"
+                if pl.song_count
+                else pl.name,
+                mapping_content,
+            )
+            cb.setChecked(pl.playlist_id in self._saved_selected_ids)
+            self._checkboxes[pl.playlist_id] = cb
+
             m_combo = AppComboBox(mapping_content)
             m_combo.addItem(self.tr("New playlist (same name)"), None)
             saved_target = self._saved_mappings.get(pl.playlist_id)
@@ -111,8 +155,10 @@ class SubsonicPlaylistMappingDialog(QDialog):
                     current_index = idx
                 idx += 1
             m_combo.setCurrentIndex(current_index)
+            m_combo.setEnabled(cb.isChecked())
             self._mapping_combos[pl.playlist_id] = m_combo
-            mapping_layout.addRow(QLabel(f"{pl.name} (Subsonic):"), m_combo)
+
+            mapping_layout.addRow(cb, m_combo)
 
             mode_combo = AppComboBox(mode_content)
             mode_combo.addItem(
@@ -125,16 +171,44 @@ class SubsonicPlaylistMappingDialog(QDialog):
                 mode_combo.setCurrentIndex(1)
             else:
                 mode_combo.setCurrentIndex(0)
+            mode_combo.setEnabled(cb.isChecked())
             self._mode_combos[pl.playlist_id] = mode_combo
             mode_layout.addRow(QLabel(f"{pl.name}:"), mode_combo)
+
+            # Toggle combos based on checkbox
+            cb.toggled.connect(m_combo.setEnabled)
+            cb.toggled.connect(mode_combo.setEnabled)
 
         mapping_scroll.setWidget(mapping_content)
         mode_scroll.setWidget(mode_content)
 
-        tabs.addTab(mapping_scroll, self.tr("Mapping"))
-        tabs.addTab(mode_scroll, self.tr("Sync Mode"))
+        tabs.addTab(mapping_scroll, self.tr("Playlists & Mapping"))
+        tabs.addTab(mode_scroll, self.tr("Merge / Overwrite"))
         layout.addWidget(tabs, 1)
 
+        # Quick Select buttons
+        actions_bar = QWidget(self)
+        actions_bar_layout = QHBoxLayout(actions_bar)
+        actions_bar_layout.setContentsMargins(0, 0, 0, 0)
+        actions_bar_layout.setSpacing(LAYOUT.space_sm)
+
+        select_all_btn = ActionButton(
+            parent=actions_bar, kind=ActionButtonKind.QUIET
+        )
+        select_all_btn.setText(self.tr("Select All"))
+        select_all_btn.clicked.connect(self._select_all)
+        deselect_all_btn = ActionButton(
+            parent=actions_bar, kind=ActionButtonKind.QUIET
+        )
+        deselect_all_btn.setText(self.tr("Deselect All"))
+        deselect_all_btn.clicked.connect(self._deselect_all)
+
+        actions_bar_layout.addWidget(select_all_btn)
+        actions_bar_layout.addWidget(deselect_all_btn)
+        actions_bar_layout.addStretch(1)
+        layout.addWidget(actions_bar)
+
+        # Dialog Buttons
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             Qt.Orientation.Horizontal,
@@ -147,10 +221,37 @@ class SubsonicPlaylistMappingDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def _select_all(self) -> None:
+        for cb in self._checkboxes.values():
+            cb.setChecked(True)
+
+    def _deselect_all(self) -> None:
+        for cb in self._checkboxes.values():
+            cb.setChecked(False)
+
+    @property
+    def sync_scope(self) -> SubsonicSyncScope:
+        """Whether to sync playlists only or include all songs."""
+        if self._radio_all_songs.isChecked():
+            return SubsonicSyncScope.ALL_SONGS
+        return SubsonicSyncScope.PLAYLISTS_ONLY
+
+    def get_selected_playlist_ids(self) -> tuple[str, ...]:
+        """Return the tuple of checked Subsonic playlist IDs."""
+        return tuple(
+            pl.playlist_id
+            for pl in self._subsonic_playlists
+            if self._checkboxes.get(pl.playlist_id, None) is not None
+            and self._checkboxes[pl.playlist_id].isChecked()
+        )
+
     def get_mappings(self) -> tuple[SubsonicPlaylistMapping, ...]:
-        """Return the user-configured playlist mappings."""
+        """Return the user-configured playlist mappings for checked playlists."""
         result: list[SubsonicPlaylistMapping] = []
         for pl in self._subsonic_playlists:
+            cb = self._checkboxes.get(pl.playlist_id)
+            if cb is None or not cb.isChecked():
+                continue
             m_combo = self._mapping_combos.get(pl.playlist_id)
             mode_combo = self._mode_combos.get(pl.playlist_id)
             target_id: int | None = m_combo.currentData() if m_combo else None

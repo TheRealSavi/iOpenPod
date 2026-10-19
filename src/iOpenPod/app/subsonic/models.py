@@ -13,6 +13,13 @@ class SubsonicSyncMode(StrEnum):
     OVERWRITE = "overwrite"
 
 
+class SubsonicSyncScope(StrEnum):
+    """Whether to sync playlists only or download missing songs as well."""
+
+    PLAYLISTS_ONLY = "playlists_only"
+    ALL_SONGS = "all_songs"
+
+
 @dataclass(frozen=True, slots=True)
 class SubsonicPlaylist:
     """One playlist metadata record returned by OpenSubsonic getPlaylists."""
@@ -57,4 +64,5 @@ class SubsonicSyncResult:
     playlists_synced: int
     tracks_matched: int
     tracks_unmatched: int
+    songs_downloaded: int = 0
     errors: tuple[str, ...] = field(default_factory=tuple)

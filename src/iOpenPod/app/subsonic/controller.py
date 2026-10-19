@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
@@ -13,17 +15,20 @@ from iPodDB.library import PlaylistKind
 from .client import SubsonicClient, SubsonicConnectionError
 from .credentials import SubsonicCredentialStore, SystemSubsonicCredentialStore
 from .models import (
+    SubsonicPlaylist,
     SubsonicPlaylistMapping,
+    SubsonicSong,
     SubsonicSyncMode,
     SubsonicSyncResult,
+    SubsonicSyncScope,
 )
-from .sync import index_library_tracks, match_subsonic_entries
+from .sync import index_library_tracks, normalize_match_key
 
 if TYPE_CHECKING:
     from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.library_workspace import LibraryWorkspace
-
-    from .models import SubsonicPlaylist
+    from iOpenPod.app.media.importing import ImportedSong
+    from iOpenPod.app.models.device import ActiveIPod
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +79,7 @@ class _LoadPlaylistsWork(QRunnable):
 
 
 class _SyncSignals(QObject):
-    matched = Signal(object, object)
+    matched = Signal(object, object, object)
     error = Signal(str)
 
 
@@ -84,20 +89,28 @@ class _SyncPlaylistsWork(QRunnable):
         client: SubsonicClient,
         mappings: tuple[SubsonicPlaylistMapping, ...],
         track_index: dict[tuple[str, str], int],
+        scope: SubsonicSyncScope,
+        cache_dir: Path,
     ) -> None:
         super().__init__()
         self.client = client
         self.mappings = mappings
         self.track_index = track_index
+        self.scope = scope
+        self.cache_dir = cache_dir
         self.cancelled = threading.Event()
         self.signals = _SyncSignals()
 
     def run(self) -> None:
         try:
-            matched_items: list[
-                tuple[SubsonicPlaylistMapping, tuple[int, ...], int]
+            matched_playlists: list[
+                tuple[SubsonicPlaylistMapping, list[tuple[str, str]]]
             ] = []
+            downloaded: dict[tuple[str, str], tuple[SubsonicSong, Path]] = {}
             errors: list[str] = []
+
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+
             for mapping in self.mappings:
                 if self.cancelled.is_set():
                     return
@@ -109,17 +122,36 @@ class _SyncPlaylistsWork(QRunnable):
                     errors.append(err_msg)
                     continue
 
-                if self.cancelled.is_set():
-                    return
+                playlist_keys: list[tuple[str, str]] = []
+                for song in entries:
+                    if self.cancelled.is_set():
+                        return
+                    key = normalize_match_key(song.title, song.artist)
+                    if key in self.track_index:
+                        playlist_keys.append(key)
+                    elif self.scope == SubsonicSyncScope.ALL_SONGS:
+                        dest = self.cache_dir / f"{song.song_id}.mp3"
+                        try:
+                            if not dest.exists() or dest.stat().st_size == 0:
+                                self.client.download_track(song.song_id, str(dest))
+                            downloaded[key] = (song, dest)
+                            playlist_keys.append(key)
+                        except Exception as exc:
+                            logger.warning(
+                                "Failed to download Subsonic track %s: %s",
+                                song.title,
+                                exc,
+                            )
 
-                matched_ids, unmatched = match_subsonic_entries(
-                    entries, self.track_index
-                )
-                matched_items.append((mapping, matched_ids, unmatched))
+                matched_playlists.append((mapping, playlist_keys))
 
             if self.cancelled.is_set():
                 return
-            self.signals.matched.emit(tuple(matched_items), tuple(errors))
+            self.signals.matched.emit(
+                tuple(matched_playlists),
+                tuple(downloaded.values()),
+                tuple(errors),
+            )
         except Exception as exc:
             if not self.cancelled.is_set():
                 self.signals.error.emit(f"Subsonic sync failed: {exc}")
@@ -147,6 +179,8 @@ class SubsonicController(QObject):
         )
         self._pool = QThreadPool.globalInstance()
         self._active_workspace: LibraryWorkspace | None = None
+        self._active_ipod: ActiveIPod | None = None
+        self._active_track_index: dict[tuple[str, str], int] = {}
         self._test_job: _TestConnectionWork | None = None
         self._load_job: _LoadPlaylistsWork | None = None
         self._sync_job: _SyncPlaylistsWork | None = None
@@ -209,6 +243,9 @@ class SubsonicController(QObject):
         url: str,
         username: str,
         password: str,
+        *,
+        scope: SubsonicSyncScope = SubsonicSyncScope.PLAYLISTS_ONLY,
+        active_ipod: ActiveIPod | None = None,
     ) -> None:
         """Execute playlist sync in a background thread, applying changes to workspace on main thread."""
         if not mappings:
@@ -220,10 +257,14 @@ class SubsonicController(QObject):
             return
 
         self._active_workspace = workspace
+        self._active_ipod = active_ipod
+        self._active_track_index = index_library_tracks(workspace.tracks)
         self.syncStarted.emit()
-        track_index = index_library_tracks(workspace.tracks)
         client = SubsonicClient(url, username, password)
-        work = _SyncPlaylistsWork(client, mappings, track_index)
+        cache_dir = Path(tempfile.gettempdir()) / "iopenpod_subsonic"
+        work = _SyncPlaylistsWork(
+            client, mappings, self._active_track_index, scope, cache_dir
+        )
         self._sync_job = work
         work.signals.matched.connect(
             self._apply_sync_results, Qt.ConnectionType.QueuedConnection
@@ -233,26 +274,92 @@ class SubsonicController(QObject):
         )
         self._pool.start(work)
 
-    @Slot(object, object)
+    @Slot(object, object, object)
     def _apply_sync_results(
         self,
-        matched_items: tuple[tuple[SubsonicPlaylistMapping, tuple[int, ...], int], ...],
+        matched_playlists: tuple[
+            tuple[SubsonicPlaylistMapping, list[tuple[str, str]]], ...
+        ],
+        downloaded_tracks: tuple[tuple[SubsonicSong, Path], ...],
         errors: tuple[str, ...],
     ) -> None:
         self._sync_job = None
         workspace = self._active_workspace
+        active = self._active_ipod
         if workspace is None:
             self.error.emit("Library workspace was disconnected during sync.")
             return
 
+        track_index = dict(self._active_track_index)
+        songs_downloaded = 0
+        all_errors = list(errors)
+
+        if downloaded_tracks and active is not None:
+            try:
+                from iOpenPod.app.media.importing import MusicImporter, relocate_song
+                from iOpenPod.app.media.music_paths import MusicPathAllocator
+                from storage import HostPath
+
+                importer = MusicImporter()
+                occupied = tuple(
+                    track.metadata.location
+                    for track in (*active.library.tracks, *workspace.tracks)
+                )
+                allocator = MusicPathAllocator(
+                    active.profile.capabilities.database.music_directory_count,
+                    occupied,
+                )
+                imported_songs: list[ImportedSong] = []
+                song_key_to_loc: dict[tuple[str, str], str] = {}
+                for sub_song, path in downloaded_tracks:
+                    try:
+                        song = importer.inspect(
+                            HostPath(path),
+                            active.profile,
+                            checkpoint=lambda: None,
+                        )
+                        ext = path.suffix.removeprefix(".") or "mp3"
+                        dest = allocator.allocate(ext)
+                        relocated = relocate_song(song, dest)
+                        imported_songs.append(relocated)
+                        song_key_to_loc[
+                            normalize_match_key(sub_song.title, sub_song.artist)
+                        ] = dest
+                    except Exception as exc:
+                        logger.warning(
+                            "Could not inspect downloaded song %s: %s",
+                            sub_song.title,
+                            exc,
+                        )
+
+                if imported_songs:
+                    workspace.add_songs(tuple(imported_songs), workspace.edit_revision)
+                    songs_downloaded = len(imported_songs)
+                    loc_to_id = {
+                        t.metadata.location: t.track_id for t in workspace.tracks
+                    }
+                    for key, loc in song_key_to_loc.items():
+                        if loc in loc_to_id:
+                            track_index[key] = loc_to_id[loc]
+            except Exception as exc:
+                err_msg = f"Failed to import downloaded songs into iPod library: {exc}"
+                logger.error(err_msg, exc_info=True)
+                all_errors.append(err_msg)
+
         playlists_synced = 0
         total_matched = 0
         total_unmatched = 0
-        all_errors = list(errors)
 
-        for mapping, matched_ids, unmatched in matched_items:
+        for mapping, keys in matched_playlists:
+            matched_ids: list[int] = []
+            for key in keys:
+                tid = track_index.get(key)
+                if tid is not None:
+                    matched_ids.append(tid)
+                else:
+                    total_unmatched += 1
+
             total_matched += len(matched_ids)
-            total_unmatched += unmatched
 
             if not matched_ids:
                 logger.info(
@@ -266,7 +373,7 @@ class SubsonicController(QObject):
                     workspace.create(
                         kind=PlaylistKind.PLAYLIST,
                         name=mapping.subsonic_name,
-                        track_ids=matched_ids,
+                        track_ids=tuple(matched_ids),
                     )
                     playlists_synced += 1
                 else:
@@ -275,11 +382,13 @@ class SubsonicController(QObject):
                         workspace.create(
                             kind=PlaylistKind.PLAYLIST,
                             name=mapping.subsonic_name,
-                            track_ids=matched_ids,
+                            track_ids=tuple(matched_ids),
                         )
                         playlists_synced += 1
                     elif mapping.mode == SubsonicSyncMode.OVERWRITE:
-                        workspace.set_tracks(mapping.target_ipod_id, matched_ids)
+                        workspace.set_tracks(
+                            mapping.target_ipod_id, tuple(matched_ids)
+                        )
                         playlists_synced += 1
                     else:
                         existing_ids = tuple(
@@ -300,6 +409,7 @@ class SubsonicController(QObject):
             playlists_synced=playlists_synced,
             tracks_matched=total_matched,
             tracks_unmatched=total_unmatched,
+            songs_downloaded=songs_downloaded,
             errors=tuple(all_errors),
         )
         self.syncFinished.emit(result)

@@ -8,6 +8,7 @@ from iOpenPod.app.subsonic.controller import SubsonicController
 from iOpenPod.app.subsonic.models import (
     SubsonicPlaylist,
     SubsonicSyncMode,
+    SubsonicSyncScope,
 )
 from iOpenPod.app.subsonic.settings import (
     SUBSONIC_URL,
@@ -51,6 +52,14 @@ def test_subsonic_playlist_mapping_dialog() -> None:
     assert len(dlg._ipod_playlists) == 1
     assert dlg._ipod_playlists[0].playlist_id == 1
 
+    # Default scope is PLAYLISTS_ONLY
+    scope: SubsonicSyncScope = dlg.sync_scope
+    assert scope == SubsonicSyncScope.PLAYLISTS_ONLY
+    dlg._radio_all_songs.setChecked(True)
+    scope = dlg.sync_scope
+    assert scope == SubsonicSyncScope.ALL_SONGS
+    dlg._radio_playlists_only.setChecked(True)
+
     mappings = dlg.get_mappings()
     assert len(mappings) == 2
     assert mappings[0].subsonic_id == "sub-1"
@@ -59,6 +68,11 @@ def test_subsonic_playlist_mapping_dialog() -> None:
 
     assert mappings[1].subsonic_id == "sub-2"
     assert mappings[1].target_ipod_id is None
+
+    # Unchecking a playlist excludes it from get_mappings
+    dlg._checkboxes["sub-2"].setChecked(False)
+    assert len(dlg.get_mappings()) == 1
+    assert dlg.get_selected_playlist_ids() == ("sub-1",)
 
 
 def test_subsonic_settings_widget() -> None:

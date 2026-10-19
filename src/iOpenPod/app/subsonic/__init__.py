@@ -9,6 +9,7 @@ from .models import (
     SubsonicSong,
     SubsonicSyncMode,
     SubsonicSyncResult,
+    SubsonicSyncScope,
 )
 from .settings import (
     SUBSONIC_PLAYLIST_IDS,
@@ -40,6 +41,7 @@ __all__ = [
     "SubsonicSong",
     "SubsonicSyncMode",
     "SubsonicSyncResult",
+    "SubsonicSyncScope",
     "SystemSubsonicCredentialStore",
     "delete_subsonic_password",
     "get_subsonic_password",
