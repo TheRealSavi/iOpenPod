@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, Qt, Slot
+from PySide6.QtCore import QEvent, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -34,6 +34,8 @@ if TYPE_CHECKING:
 
 class SubsonicSettings(QWidget):
     """Configuration interface for Subsonic / OpenSubsonic server integration."""
+
+    syncRequested = Signal()
 
     def __init__(
         self,
@@ -137,10 +139,15 @@ class SubsonicSettings(QWidget):
             parent=self._actions_panel, kind=ActionButtonKind.QUIET
         )
         self._deselect_all_button.setText(self.tr("Deselect All"))
+        self._sync_button = ActionButton(
+            parent=self._actions_panel, kind=ActionButtonKind.PRIMARY
+        )
+        self._sync_button.setText(self.tr("Sync to iPod"))
 
         actions_layout.addWidget(self._refresh_button)
         actions_layout.addWidget(self._select_all_button)
         actions_layout.addWidget(self._deselect_all_button)
+        actions_layout.addWidget(self._sync_button)
 
         self._pl_actions_row = SettingRow(
             self.tr("Playlist Actions"),
@@ -205,6 +212,7 @@ class SubsonicSettings(QWidget):
         self._refresh_button.clicked.connect(self._on_refresh_clicked)
         self._select_all_button.clicked.connect(self._select_all)
         self._deselect_all_button.clicked.connect(self._deselect_all)
+        self._sync_button.clicked.connect(self._on_sync_clicked)
 
         self._controller.connectionTested.connect(
             self._on_connection_tested, Qt.ConnectionType.QueuedConnection
@@ -223,6 +231,20 @@ class SubsonicSettings(QWidget):
         self._settings.set_global(SUBSONIC_URL, url)
         self._settings.set_global(SUBSONIC_USERNAME, username)
         self._controller.credentials.save_password(username, password)
+
+    @Slot()
+    def _on_sync_clicked(self) -> None:
+        self._save_credentials()
+        self.syncRequested.emit()
+
+    def set_active_ipod(self, active: object) -> None:
+        self._sync_button.setEnabled(active is not None)
+        if active is None:
+            self._sync_button.setToolTip(self.tr("Select an Active iPod before Sync."))
+        else:
+            self._sync_button.setToolTip(
+                self.tr("Sync selected Subsonic playlists to your iPod.")
+            )
 
     @Slot()
     def _on_test_clicked(self) -> None:
@@ -336,6 +358,7 @@ class SubsonicSettings(QWidget):
         self._refresh_button.setText(self.tr("Refresh Playlists"))
         self._select_all_button.setText(self.tr("Select All"))
         self._deselect_all_button.setText(self.tr("Deselect All"))
+        self._sync_button.setText(self.tr("Sync to iPod"))
         self._actions_panel.setMinimumWidth(self._actions_panel.sizeHint().width())
 
     def changeEvent(self, event: QEvent) -> None:

@@ -466,6 +466,7 @@ class MainWindow(QMainWindow):
         self._app_update_status_changed()
         self._sidebar.scrobbleRequested.connect(self._scrobble_now)
         self._sidebar.subsonicSyncRequested.connect(self._sync_subsonic_now)
+        self._settings_page.subsonicSyncRequested.connect(self._sync_subsonic_now)
         self._scrobbling.changed.connect(self._scrobbling_changed)
         self._sidebar.set_scrobble_available(self._scrobbling.can_scrobble)
         self._settings_page.set_active_ipod(context.device_controller.active_ipod)

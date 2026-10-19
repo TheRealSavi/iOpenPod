@@ -88,6 +88,7 @@ class SettingsPage(QWidget):
     mediaToolsCheckRequested = Signal()
     appUpdatesRequested = Signal()
     chooseIPodRequested = Signal()
+    subsonicSyncRequested = Signal()
 
     def __init__(
         self,
@@ -366,6 +367,10 @@ class SettingsPage(QWidget):
         self._subsonic_settings = (
             SubsonicSettings(settings, subsonic, self) if subsonic is not None else None
         )
+        if self._subsonic_settings is not None:
+            self._subsonic_settings.syncRequested.connect(
+                self.subsonicSyncRequested.emit
+            )
         self._sync_tab = self._add_tab(
             "syncSettingsScroll",
             self._sync_settings,
@@ -677,6 +682,8 @@ class SettingsPage(QWidget):
     def set_active_ipod(self, active: ActiveIPod | None) -> None:
         self._active_ipod = active
         self._ipod_preferences.set_active_ipod(active)
+        if self._subsonic_settings is not None:
+            self._subsonic_settings.set_active_ipod(active)
         self._update_scope_state()
 
     def _select_scope(self, device: bool) -> None:
