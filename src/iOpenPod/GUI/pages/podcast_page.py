@@ -14,10 +14,11 @@ from PySide6.QtCore import (
     QSignalBlocker,
     Qt,
     QTimer,
+    QUrl,
     Signal,
     Slot,
 )
-from PySide6.QtGui import QAction, QHideEvent, QShowEvent
+from PySide6.QtGui import QAction, QDesktopServices, QHideEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -44,6 +45,8 @@ from iOpenPod.app.models.podcast_list_models import (
     PodcastSubscriptionListModel,
 )
 from iOpenPod.app.podcasts.controller import PodcastController, PodcastOperationFailure
+from iOpenPod.app.podcasts.identity import normalize_feed_url
+from iOpenPod.app.podcasts.models import PodcastShowType
 from iOpenPod.GUI.delegates.podcast_delegates import (
     PodcastEpisodeDelegate,
     PodcastShowDelegate,
@@ -68,8 +71,9 @@ from iOpenPod.GUI.widgets.podcast_artwork import (
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
-_PODCAST_HERO_MAX_HEIGHT = 240
-_PODCAST_DESCRIPTION_LINES = 4
+_PODCAST_HERO_MAX_HEIGHT = 208
+_PODCAST_HERO_ARTWORK = 144
+_PODCAST_DESCRIPTION_LINES = 2
 _STATUS_SOURCE = "podcasts"
 
 if TYPE_CHECKING:
@@ -161,6 +165,7 @@ class PodcastPage(QWidget):
         self._add_episode_action.triggered.connect(self._add_selected_episodes)
         self._remove_episode_action.triggered.connect(self._remove_selected_episodes)
         self._refresh_show.clicked.connect(self._refresh_selected)
+        self._show_website.clicked.connect(self._open_show_website)
         self._unsubscribe.clicked.connect(self._unsubscribe_selected)
         self._shows.selectionModel().currentChanged.connect(self._subscription_changed)
         self._episodes.selectionModel().selectionChanged.connect(
@@ -173,6 +178,9 @@ class PodcastPage(QWidget):
         self._mark_listened.triggered.connect(lambda: self._set_listened(True))
         self._mark_unlistened.triggered.connect(lambda: self._set_listened(False))
         artwork_provider.artworkChanged.connect(self._artwork_changed)
+        if device_artwork_provider is not None:
+            device_artwork_provider.artworkChanged.connect(self._device_artwork_changed)
+            device_artwork_provider.cleared.connect(self._device_artwork_changed)
         theme_manager.effectiveThemeChanged.connect(self._theme_changed)
         controller.changed.connect(self._controller_changed)
         controller.busyChanged.connect(self._availability_changed)
@@ -246,18 +254,20 @@ class PodcastPage(QWidget):
         hero.setFixedHeight(_PODCAST_HERO_MAX_HEIGHT)
         self._show_artwork_stack = QStackedWidget(hero)
         self._show_artwork_stack.setObjectName("podcastShowArtworkStack")
-        self._show_artwork_stack.setFixedSize(176, 176)
+        self._show_artwork_stack.setFixedSize(
+            _PODCAST_HERO_ARTWORK, _PODCAST_HERO_ARTWORK
+        )
         self._show_artwork = PodcastArtworkView(
             self._theme_manager,
             self._artwork_provider,
-            176,
+            _PODCAST_HERO_ARTWORK,
             self._show_artwork_stack,
         )
         self._show_artwork_stack.addWidget(self._show_artwork)
         self._collection_show_artwork = PodcastCollectionArtworkView(
             self._theme_manager,
             self._artwork_provider,
-            176,
+            _PODCAST_HERO_ARTWORK,
             self._show_artwork_stack,
             device_artwork_provider=self._device_artwork_provider,
         )
@@ -272,7 +282,9 @@ class PodcastPage(QWidget):
             else None
         )
         if self._device_show_artwork is not None:
-            self._device_show_artwork.setFixedSize(176, 176)
+            self._device_show_artwork.setFixedSize(
+                _PODCAST_HERO_ARTWORK, _PODCAST_HERO_ARTWORK
+            )
             self._show_artwork_stack.addWidget(self._device_show_artwork)
         self._show_title = QLabel(hero)
         self._show_title.setObjectName("podcastShowTitle")
@@ -282,6 +294,7 @@ class PodcastPage(QWidget):
         self._show_description = ElidedLabel(
             _PODCAST_DESCRIPTION_LINES,
             hero,
+            tooltip_on_elision=False,
         )
         self._show_description.setObjectName("podcastShowDescription")
         show_copy = QVBoxLayout()
@@ -292,11 +305,14 @@ class PodcastPage(QWidget):
         show_copy.addStretch(1)
         self._refresh_show = ActionButton(parent=hero)
         self._refresh_show.setObjectName("podcastRefreshShow")
+        self._show_website = ActionButton(parent=hero)
+        self._show_website.setObjectName("podcastShowWebsite")
         self._unsubscribe = ActionButton(parent=hero, kind=ActionButtonKind.DANGER)
         self._unsubscribe.setObjectName("podcastUnsubscribe")
         hero_actions = QHBoxLayout()
         hero_actions.setSpacing(LAYOUT.space_xs)
         hero_actions.addStretch(1)
+        hero_actions.addWidget(self._show_website)
         hero_actions.addWidget(self._refresh_show)
         hero_actions.addWidget(self._unsubscribe)
         hero_layout = QGridLayout(hero)
@@ -372,7 +388,11 @@ class PodcastPage(QWidget):
         self._episodes.setObjectName("podcastEpisodeList")
         self._episodes.setModel(self._episode_model)
         self._episode_delegate = PodcastEpisodeDelegate(
-            self._theme_manager, self._episodes
+            self._theme_manager,
+            self._episodes,
+            artwork_provider=self._artwork_provider,
+            device_artwork_provider=self._device_artwork_provider,
+            artwork_id_for_episode=self._episode_artwork_id,
         )
         self._episodes.setItemDelegate(self._episode_delegate)
         self._episode_delegate.actionRequested.connect(self._episode_action_requested)
@@ -428,13 +448,9 @@ class PodcastPage(QWidget):
         episode_actions.addWidget(self._add_episodes)
         episode_actions.addWidget(self._remove_episodes)
         episode_actions.addStretch(1)
-        sync_actions = QHBoxLayout()
-        sync_actions.setSpacing(LAYOUT.space_xs)
-        sync_actions.addWidget(self._sync_show)
-        sync_actions.addWidget(self._sync_settings)
-        sync_actions.addStretch(1)
+        episode_actions.addWidget(self._sync_show)
+        episode_actions.addWidget(self._sync_settings)
         episodes_layout.setSpacing(LAYOUT.space_sm)
-        episodes_layout.addLayout(sync_actions)
         episodes_layout.addLayout(episode_heading)
         episodes_layout.addWidget(self._episodes, 1)
         episodes_layout.addLayout(episode_actions)
@@ -491,6 +507,7 @@ class PodcastPage(QWidget):
         self._show_shelf.set_title(self.tr("YOUR SHOWS"))
         self._refresh_show.setText(self.tr("Refresh Show"))
         self._unsubscribe.setText(self.tr("Unsubscribe"))
+        self._show_website.setText(self.tr("Website"))
         self._episodes_label.setText(self.tr("Episodes"))
         self._filter_button.setText(self.tr("Filter"))
         self._filter_button.setAccessibleName(self.tr("Filter Podcast episodes"))
@@ -560,6 +577,7 @@ class PodcastPage(QWidget):
                 self._controller,
                 self._theme_manager,
                 self,
+                artwork_provider=self._artwork_provider,
             )
         self._dialog.show()
         self._dialog.raise_()
@@ -709,9 +727,9 @@ class PodcastPage(QWidget):
             return
         self._pending_open_source_id = None
         if source_id == ALL_PODCASTS_SOURCE_ID:
-            self._controller.refresh()
+            self._controller.refresh(only_if_stale=True)
         else:
-            self._controller.refresh(source_id)
+            self._controller.refresh(source_id, only_if_stale=True)
 
     @Slot(QItemSelection, QItemSelection)
     def _episode_selection_changed(
@@ -741,6 +759,8 @@ class PodcastPage(QWidget):
         removable = syncable and bool(self._selected_sync_identities(on_device=True))
         self._add_episodes.setEnabled(addable)
         self._remove_episodes.setEnabled(removable)
+        self._add_episodes.setVisible(selected_episodes)
+        self._remove_episodes.setVisible(selected_episodes)
         self._add_episode_action.setEnabled(addable)
         self._remove_episode_action.setEnabled(removable)
         if (
@@ -817,9 +837,39 @@ class PodcastPage(QWidget):
                 track_menu.addSeparator()
                 track_menu.addAction(self._mark_listened)
                 track_menu.addAction(self._mark_unlistened)
-                track_menu.aboutToHide.connect(track_menu.deleteLater)
                 menu = track_menu
+        episode = self._episode_model.episode_at(index.row())
+        if episode is not None and len(self._selected_episode_identities()) == 1:
+            links = tuple(
+                link for link in episode.links if normalize_feed_url(link.url)
+            )
+            if links:
+                if menu is self._episode_menu:
+                    menu = QMenu(self)
+                    menu.addActions(self._episode_menu.actions())
+                submenu = menu.addMenu(self.tr("Episode links"))
+                for link in links:
+                    action = submenu.addAction(
+                        (link.title or link.url).replace("&", "&&")
+                    )
+                    action.triggered.connect(
+                        lambda _checked=False, url=link.url: self._open_publisher_link(
+                            url
+                        )
+                    )
+        if menu is not self._episode_menu:
+            menu.aboutToHide.connect(menu.deleteLater)
         menu.popup(self._episodes.viewport().mapToGlobal(position))
+
+    @Slot()
+    def _open_show_website(self) -> None:
+        subscription = self._selected_subscription()
+        if subscription is not None:
+            self._open_publisher_link(subscription.website_url)
+
+    def _open_publisher_link(self, url: str) -> None:
+        if normalize_feed_url(url):
+            QDesktopServices.openUrl(QUrl(url))
 
     def _set_listened(self, listened: bool) -> None:
         identities = self._selected_episode_identities()
@@ -857,6 +907,10 @@ class PodcastPage(QWidget):
             self._render_all_podcasts()
             return
         subscription = self._selected_subscription()
+        self._show_website.setVisible(
+            subscription is not None
+            and bool(normalize_feed_url(subscription.website_url))
+        )
         if subscription is None:
             self._episode_model.replace("", ())
             self._show_artwork.set_artwork("", 0)
@@ -884,7 +938,11 @@ class PodcastPage(QWidget):
             part
             for part in (
                 subscription.author,
-                subscription.category,
+                ", ".join(subscription.categories) or subscription.category,
+                {
+                    PodcastShowType.SERIAL: self.tr("Serial"),
+                    PodcastShowType.EPISODIC: self.tr("Episodic"),
+                }.get(subscription.show_type, ""),
                 episode_count_text(len(subscription.episodes)),
                 self.tr("%n on iPod", None, subscription.on_device_count)
                 if subscription.on_device_count
@@ -894,14 +952,22 @@ class PodcastPage(QWidget):
         )
         self._show_meta.setText(meta)
         self._show_description.setText(
-            subscription.description
-            or self.tr("No show description is available from this feed.")
+            "\n".join(
+                part
+                for part in (
+                    subscription.description
+                    or self.tr("No show description is available from this feed."),
+                    subscription.copyright,
+                )
+                if part
+            )
         )
         self._episode_model.replace(
             subscription.subscription_id,
             subscription.episodes,
             self._query,
             self._episode_filter(),
+            artwork_url=subscription.artwork_url,
         )
         visible = self._episode_model.rowCount()
         filters_active = self._episode_filter().active
@@ -912,6 +978,7 @@ class PodcastPage(QWidget):
         )
 
     def _render_all_podcasts(self) -> None:
+        self._show_website.hide()
         subscriptions = self._snapshot.subscriptions
         episode_count = sum(len(item.episodes) for item in subscriptions)
         on_device_count = sum(item.on_device_count for item in subscriptions)
@@ -1021,6 +1088,17 @@ class PodcastPage(QWidget):
     @Slot(str)
     def _artwork_changed(self, _source_url: str) -> None:
         self._shows.viewport().update()
+        self._episodes.viewport().update()
+
+    def _episode_artwork_id(self, episode: PodcastEpisode) -> int:
+        track = self._controller.track_for_episode(episode.track_id)
+        return track.artwork_id if track is not None else 0
+
+    @Slot()
+    @Slot(object)
+    def _device_artwork_changed(self, _value: object = None) -> None:
+        self._shows.viewport().update()
+        self._episodes.viewport().update()
 
     @Slot(str)
     def _theme_changed(self, _theme: str) -> None:

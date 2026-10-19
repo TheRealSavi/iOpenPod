@@ -226,3 +226,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0151: Write audio Podcasts with media type four](0151-write-audio-podcasts-with-media-type-four.md)
 - [ADR-0152: Normalize Podcast Sync to the 12.6 baseline structure](0152-normalize-podcast-sync-to-baseline.md)
 - [ADR-0153: Normalize SQLite Podcast Sync from Nano 5 evidence](0153-normalize-sqlite-podcast-sync.md)
+- [ADR-0154: Import publisher Podcast metadata and images](0154-import-publisher-podcast-metadata-and-images.md)
+- [ADR-0155: Preview publisher covers in Podcast discovery](0155-preview-publisher-covers-in-podcast-discovery.md)

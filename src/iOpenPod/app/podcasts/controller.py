@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import StrEnum
+from time import time
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
@@ -41,6 +42,8 @@ if TYPE_CHECKING:
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from iPodDB.library import Track
+
+_NAVIGATION_REFRESH_INTERVAL_SECONDS = 15 * 60
 
 
 class PodcastOperation(StrEnum):
@@ -311,7 +314,10 @@ class PodcastController(QObject):
 
         self._begin_device_write(PodcastOperation.SUBSCRIBE, action)
 
-    def refresh(self, subscription_id: str | None = None) -> None:
+    def refresh(
+        self, subscription_id: str | None = None, *, only_if_stale: bool = False
+    ) -> None:
+        """Refresh feeds, optionally reusing each show's last 15 minutes of metadata."""
         source = self._require_editable_source()
         if source is None:
             return
@@ -325,6 +331,14 @@ class PodcastController(QObject):
             if subscription_id is not None
             else loaded.snapshot.subscriptions
         )
+        if only_if_stale:
+            cutoff = int(time()) - _NAVIGATION_REFRESH_INTERVAL_SECONDS
+            selected = tuple(
+                item
+                for item in selected
+                if item.feed_url
+                and (item.last_refreshed == 0 or item.last_refreshed <= cutoff)
+            )
         if not selected:
             return
 

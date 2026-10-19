@@ -129,7 +129,7 @@ def episode_track(addition: PodcastEpisodeAddition, *, video: bool = False) -> T
     return Track(
         0,
         episode.title or "Untitled Episode",
-        subscription.author,
+        episode.author or subscription.author,
         subscription.title,
         episode.duration_seconds * 1000,
         genre="Podcast",
@@ -152,6 +152,7 @@ def episode_track(addition: PodcastEpisodeAddition, *, video: bool = False) -> T
             last_modified=int(time.time()),
             release_date=episode.published_at,
             category=subscription.category,
+            copyright=subscription.copyright,
             skip_shuffle=True,
             remember_position=True,
             played=episode.listened,

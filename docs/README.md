@@ -27,6 +27,8 @@ sessions.
   iTHMB files, allocation bounds, Photo-specific records, and verified append policy.
 - [Podcast Finder captures](research/podcast-finder-captures-2026-10-18.md) — four-model
   metadata, grouping, embedded artwork/chapter evidence, and tested import behavior.
+- [Apple Podcasts capabilities](research/apple-podcasts-capabilities-2026-10-19.md) —
+  public API, publisher metadata, artwork/chapter sources, and native iPod implementation gaps.
 - [Virtual Podcast comparison](research/podcast-virtual-comparison-2026-10-18.md) —
   actual four-model Podcast Sync output versus Apple, including identity matching,
   Nano SQLite classification, and metadata differences.

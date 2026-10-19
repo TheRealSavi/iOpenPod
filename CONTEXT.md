@@ -531,10 +531,14 @@ current Active iPod's Podcast Tracks. Existing device Podcasts are recovered int
 subscriptions automatically; enclosure-based reconciliation exposes current
 on-device membership immediately, while listened state survives later Track removal
 or unsubscription. The GUI can search Apple's public directory, add direct RSS
-feeds, immediately refresh a show when it is opened, mark episodes listened or
+feeds, refresh a show on navigation once its last successful refresh is at least
+15 minutes old, mark episodes listened or
 unlistened, and play Tracks already on the iPod. Its All Podcasts view combines
 every subscription's Episodes newest-first while retaining each Episode's source
 identity; it is a runtime projection, not another persisted Podcast Subscription.
+Search results lazily resolve publisher-feed show covers, and Episode tiles prefer
+Episode RSS artwork with device/show fallbacks. Compact metadata and an optional
+direct-RSS form keep browsing focused on shows and Episodes. See ADR-0155.
 Device files use
 fingerprint-checked Storage writes under
 `iPod_Control/iOpenPod/Podcasts`. Podcast Episodes can be added or removed manually,
@@ -547,14 +551,20 @@ invalid incoming Episode metadata is reported by title and show and skipped befo
 the shared Library build. Independent Episodes can still Sync, and failed
 replacements keep their existing Tracks. Blocking Library errors do not generate
 secondary missing-lyrics errors, and cover retries do not inflate diagnostic counts.
-Incoming Episodes prefer embedded covers from their original downloads, with
-publisher show covers as a fallback. Covers use shared ArtworkDB and thumbnail
-preparation; Podcast Sync also fills missing covers on retained Episodes from
-refreshed feeds without downloading their media again. See the
+Incoming Episodes prefer embedded covers from their original downloads, then
+publisher Episode covers, with show covers as the final fallback. Covers use shared
+ArtworkDB and thumbnail preparation; Podcast Sync also fills missing covers on
+retained Episodes from refreshed feeds without downloading their media again. See the
 [Finder capture research](docs/research/podcast-finder-captures-2026-10-18.md).
-ID3 chapter pictures now feed the timed-artwork writer from those same captured
-originals, including after transcoding. Podcast GUIDs occupy MHOD 15 separately
-from download URLs. Audio Podcasts use media mask 4 and preserve supplied or retained
+ID3 chapter pictures feed the timed-artwork writer from those same captured
+originals, including after transcoding. Publisher JSON and inline Podlove chapter
+images also supply Artwork Display Times without importing external chapter
+navigation.
+Show metadata retains multiple categories, copyright, website, and show type;
+Episodes retain individual authors, episode type, and publisher links. Native
+imports use Episode authors and show copyright, while the Podcast browser exposes
+the additional display metadata and links. See ADR-0154. Podcast GUIDs occupy MHOD 15
+separately from download URLs. Audio Podcasts use media mask 4 and preserve supplied or retained
 disc numbers, with publication year, modification time, subtitle, and publisher
 advisory supplied. Sync repairs
 missing show links, and checked CDB metadata supplies SQLite Podcast identity,
@@ -577,9 +587,9 @@ Listening History retains publication chronology and separate automatic-clear
 exclusions. These exclusions prevent automatic re-addition without marking an
 unlistened Episode listened; explicit additions bypass them. Pre-Sync reconciliation
 saves observed history, while new exclusions commit in the same verified Storage
-Transaction as successful media and Library removals. Subscription and Listening
-History documents encode version 2 at their existing paths and still read version 1.
-See ADR-0037 and ADR-0091.
+Transaction as successful media and Library removals. Subscription documents encode
+version 3 and read versions 1 and 2; Listening History encodes version 2 and reads
+version 1. Existing paths remain unchanged. See ADR-0037, ADR-0091, and ADR-0154.
 
 The Library Workspace now holds Track metadata, the device name, Playlists, and
 Photos in one session draft. Sidebar naming, shared Track and collection context
@@ -806,9 +816,10 @@ them through narrow interfaces.
 - Device-specific settings intended to travel with an iPod are associated with its
   stable Device Identity and stored in an application-owned Device Path on that iPod.
   iOpenPod coordinates their access through Storage. Podcast Subscriptions and
-  Listening History use separate version-2 JSON documents under
+  Listening History use separate version-3 and version-2 JSON documents under
   `iPod_Control/iOpenPod/Podcasts/`, retaining the existing `-v1.json` filenames and
-  backward reads of version 1; other settings retain their own formats.
+  backward reads of subscription versions 1 and 2 and History version 1; other
+  settings retain their own formats.
 
 ## Core device workflow
 

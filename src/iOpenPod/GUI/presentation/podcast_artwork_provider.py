@@ -33,6 +33,7 @@ class PodcastArtworkPixmapProvider(QObject):
         self._closed = False
         controller.artworkReady.connect(self._artwork_ready)
         controller.artworkUnavailable.connect(self.artworkChanged)
+        controller.feedArtworkChanged.connect(self.artworkChanged)
 
     def pixmap(
         self,
@@ -52,7 +53,18 @@ class PodcastArtworkPixmapProvider(QObject):
         self._closed = True
         self._controller.artworkReady.disconnect(self._artwork_ready)
         self._controller.artworkUnavailable.disconnect(self.artworkChanged)
+        self._controller.feedArtworkChanged.disconnect(self.artworkChanged)
         self._pixmaps.clear()
+
+    def feed_pixmap(
+        self, feed_url: str, logical_size: int, device_pixel_ratio: float
+    ) -> QPixmap | None:
+        """Use publisher-feed artwork for a visible directory result."""
+        if self._closed or not feed_url.strip() or logical_size <= 0:
+            return None
+        target_px = max(1, ceil(logical_size * max(1.0, device_pixel_ratio)))
+        image = self._controller.request_feed(feed_url, target_px)
+        return self._pixmap_for(image) if image is not None else None
 
     @Slot(object)
     def _artwork_ready(self, value: object) -> None:

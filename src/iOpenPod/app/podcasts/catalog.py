@@ -84,6 +84,8 @@ def reconcile_device_podcasts(
                 SubscriptionSource.DEVICE,
                 author=author,
                 artwork_id=track.artwork_id,
+                copyright=track.metadata.copyright,
+                category=track.metadata.category,
             )
         subscription_id = subscription.subscription_id
 
@@ -110,6 +112,7 @@ def reconcile_device_podcasts(
             episode = replace(
                 existing,
                 title=episode.title or existing.title,
+                author=existing.author or episode.author,
                 description=episode.description or existing.description,
                 guid=existing.guid or episode.guid,
                 enclosure_url=episode.enclosure_url or existing.enclosure_url,
@@ -473,6 +476,7 @@ def _episode_from_track(track: Track) -> PodcastEpisode:
         ),
         guid=guid,
         title=track.title.strip() or "Untitled Episode",
+        author=track.artist,
         description=track.metadata.description.strip(),
         subtitle=track.metadata.subtitle,
         content_advisory=track.metadata.content_advisory,

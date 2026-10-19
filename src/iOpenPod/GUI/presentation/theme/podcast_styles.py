@@ -13,9 +13,9 @@ def render_podcast_page_style(
 ) -> str:
     """Render the catalogue page without leaking theme literals into widgets."""
 
-    return f"""/* Hallmark · macrostructure: Catalogue · genre: editorial · tone: premium restrained
- * pre-emit critique: P5 H5 E5 S5 R5 V5 · theme: iOpenPod semantic
- * anchor hue: iPod blue · contrast: pass (40-41) · slop: pass (42-58)
+    return f"""/* Hallmark · pre-emit critique: P4 H4 E4 S5 R4 V3
+ * macrostructure: Catalogue · genre: modern-minimal · tone: quiet, cover-led
+ * theme: iOpenPod semantic · anchor hue: iPod blue
  * designed-as-app · enrichment: real feed and device artwork
  */
 QWidget#podcastsPage,
@@ -88,16 +88,16 @@ def render_podcast_search_style(
 ) -> str:
     """Render discovery and direct-feed controls from semantic tokens."""
 
-    return f"""/* Hallmark · component: Podcast discovery · genre: editorial · theme: iOpenPod
+    return f"""/* Hallmark · pre-emit critique: P4 H4 E4 S5 R4 V3
+ * component: Podcast discovery · genre: modern-minimal · theme: iOpenPod
  * states: default · hover · focus · pressed · disabled · loading · error · success
  */
 QDialog#podcastSearchDialog {{
     color: {tokens.text};
     background-color: {tokens.window};
 }}
-QLabel#podcastDialogEyebrow,
 QLabel#podcastFieldLabel {{
-    color: {tokens.accent};
+    color: {tokens.text_secondary};
     font-size: {typography.small_pt:g}pt;
     font-weight: 700;
 }}
@@ -109,14 +109,14 @@ QLabel#podcastDialogTitle {{
 }}
 QLabel#podcastDialogIntro,
 QLabel#podcastRssDetail,
-QLabel#podcastSearchStatus {{
+QLabel#podcastSearchStatus,
+QLabel#podcastSearchEmpty {{
     color: {tokens.text_secondary};
 }}
 QListView#podcastDirectoryResults {{
     color: {tokens.text};
-    background-color: {tokens.surface};
-    border: 1px solid {tokens.border};
-    border-radius: {LAYOUT.radius_panel}px;
+    background-color: {tokens.window};
+    border: none;
     outline: none;
 }}
 QListView#podcastDirectoryResults::item {{
@@ -125,9 +125,8 @@ QListView#podcastDirectoryResults::item {{
 }}
 QFrame#podcastRssPanel {{
     color: {tokens.text};
-    background-color: {tokens.surface_alt};
-    border: 1px solid {tokens.border};
-    border-radius: {LAYOUT.radius_panel}px;
+    background-color: {tokens.window};
+    border-top: 1px solid {tokens.border};
 }}
 QLabel#podcastRssTitle {{
     color: {tokens.text};

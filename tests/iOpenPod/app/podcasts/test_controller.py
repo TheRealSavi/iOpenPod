@@ -11,6 +11,7 @@ from tests.iOpenPod.app.podcasts.podcast_test_support import active_ipod as _act
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
 from iOpenPod.app.podcasts.controller import PodcastController
+from iOpenPod.app.podcasts.feed_client import PodcastFeedError
 from iOpenPod.app.podcasts.models import (
     PodcastEpisode,
     PodcastSearchResult,
@@ -95,9 +96,13 @@ class _Coordinator:
 class _Feeds:
     def __init__(self, subscription: PodcastSubscription) -> None:
         self.subscription = subscription
+        self.requests: list[str] = []
+        self.error: PodcastFeedError | None = None
 
     def fetch(self, feed_url: str) -> PodcastSubscription:
-        del feed_url
+        self.requests.append(feed_url)
+        if self.error is not None:
+            raise self.error
         return self.subscription
 
 
@@ -117,11 +122,13 @@ def _controller(
     coordinator: _Coordinator,
     devices: _Devices,
     feed: PodcastSubscription,
+    *,
+    feeds: _Feeds | None = None,
 ) -> PodcastController:
     return PodcastController(
         cast("DeviceCoordinator", coordinator),
         cast("DeviceController", devices),
-        feeds=_Feeds(feed),
+        feeds=feeds or _Feeds(feed),
         directory=_Directory(),
     )
 
@@ -132,6 +139,177 @@ def _wait_until(condition: Callable[[], bool]) -> None:
         APPLICATION.processEvents()
         QTest.qWait(10)
     assert condition()
+
+
+@pytest.mark.parametrize(
+    "age_seconds,only_if_stale,expected",
+    (
+        (None, True, True),
+        (0, True, False),
+        (899, True, False),
+        (900, True, True),
+        (901, True, True),
+        (1, False, True),
+    ),
+)
+def test_refresh_respects_saved_timestamp_and_manual_override(
+    monkeypatch: pytest.MonkeyPatch,
+    age_seconds: int | None,
+    only_if_stale: bool,
+    expected: bool,
+) -> None:
+    now = 1_800_000_000
+    monkeypatch.setattr("iOpenPod.app.podcasts.controller.time", lambda: now)
+    saved = PodcastSubscription(
+        "feed-1",
+        "https://example.test/feed",
+        "Show",
+        SubscriptionSource.USER,
+        last_refreshed=now - age_seconds if age_seconds is not None else 0,
+    )
+    fetched = replace(saved, last_refreshed=now)
+    feeds = _Feeds(fetched)
+    coordinator = _Coordinator(
+        LoadedPodcastState(
+            PodcastSnapshot((saved,), writable=True), PodcastStateRevision()
+        )
+    )
+    devices = _Devices()
+    controller = _controller(coordinator, devices, fetched, feeds=feeds)
+    try:
+        devices.activeIPodChanged.emit(_active_ipod())
+        _wait_until(lambda: controller.can_edit)
+        controller.refresh(saved.subscription_id, only_if_stale=only_if_stale)
+        _wait_until(lambda: controller.can_edit)
+        assert feeds.requests == ([saved.feed_url] if expected else [])
+        assert len(coordinator.saved) == int(expected)
+        assert controller.snapshot.subscriptions[0].last_refreshed == (
+            now if expected else saved.last_refreshed
+        )
+    finally:
+        controller.shutdown()
+
+
+def test_successful_manual_refresh_restarts_the_navigation_interval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [1_800_000_000]
+    monkeypatch.setattr("iOpenPod.app.podcasts.controller.time", lambda: clock[0])
+    saved = PodcastSubscription(
+        "feed-1", "https://example.test/feed", "Show", SubscriptionSource.USER
+    )
+    feeds = _Feeds(replace(saved, last_refreshed=clock[0]))
+    coordinator = _Coordinator(
+        LoadedPodcastState(
+            PodcastSnapshot((saved,), writable=True), PodcastStateRevision()
+        )
+    )
+    devices = _Devices()
+    controller = _controller(coordinator, devices, saved, feeds=feeds)
+    try:
+        devices.activeIPodChanged.emit(_active_ipod())
+        _wait_until(lambda: controller.can_edit)
+        controller.refresh(saved.subscription_id, only_if_stale=True)
+        _wait_until(lambda: controller.can_edit)
+        clock[0] += 899
+        controller.refresh(saved.subscription_id, only_if_stale=True)
+        assert feeds.requests == [saved.feed_url]
+
+        feeds.subscription = replace(saved, last_refreshed=clock[0])
+        controller.refresh(saved.subscription_id)
+        _wait_until(lambda: controller.can_edit)
+        clock[0] += 1
+        controller.refresh(saved.subscription_id, only_if_stale=True)
+        assert feeds.requests == [saved.feed_url] * 2
+
+        clock[0] += 899
+        feeds.subscription = replace(saved, last_refreshed=clock[0])
+        controller.refresh(saved.subscription_id, only_if_stale=True)
+        _wait_until(lambda: controller.can_edit)
+        assert feeds.requests == [saved.feed_url] * 3
+    finally:
+        controller.shutdown()
+
+
+def test_all_podcasts_refreshes_only_stale_feeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = 1_800_000_000
+    monkeypatch.setattr("iOpenPod.app.podcasts.controller.time", lambda: now)
+    stale = PodcastSubscription(
+        "stale",
+        "https://example.test/stale",
+        "Old show",
+        SubscriptionSource.USER,
+        last_refreshed=now - 900,
+    )
+    fresh = replace(
+        stale,
+        subscription_id="fresh",
+        feed_url="https://example.test/fresh",
+        last_refreshed=now - 899,
+    )
+    device_only = replace(
+        stale, subscription_id="device-only", feed_url="", last_refreshed=0
+    )
+    feeds = _Feeds(replace(stale, last_refreshed=now))
+    coordinator = _Coordinator(
+        LoadedPodcastState(
+            PodcastSnapshot((stale, fresh, device_only), writable=True),
+            PodcastStateRevision(),
+        )
+    )
+    devices = _Devices()
+    controller = _controller(coordinator, devices, stale, feeds=feeds)
+    try:
+        devices.activeIPodChanged.emit(_active_ipod())
+        _wait_until(lambda: controller.can_edit)
+        controller.refresh(only_if_stale=True)
+        _wait_until(lambda: controller.can_edit)
+        assert feeds.requests == [stale.feed_url]
+        assert controller.snapshot.subscription(fresh.subscription_id) == fresh
+        assert not controller.snapshot.issues
+        controller.refresh(only_if_stale=True)
+        assert feeds.requests == [stale.feed_url]
+        assert len(coordinator.saved) == 1
+    finally:
+        controller.shutdown()
+
+
+def test_failed_refresh_does_not_postpone_the_next_navigation_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = 1_800_000_000
+    monkeypatch.setattr("iOpenPod.app.podcasts.controller.time", lambda: now)
+    saved = PodcastSubscription(
+        "feed-1",
+        "https://example.test/feed",
+        "Show",
+        SubscriptionSource.USER,
+        last_refreshed=now - 900,
+    )
+    feeds = _Feeds(saved)
+    feeds.error = PodcastFeedError("Publisher unavailable")
+    coordinator = _Coordinator(
+        LoadedPodcastState(
+            PodcastSnapshot((saved,), writable=True), PodcastStateRevision()
+        )
+    )
+    devices = _Devices()
+    controller = _controller(coordinator, devices, saved, feeds=feeds)
+    try:
+        devices.activeIPodChanged.emit(_active_ipod())
+        _wait_until(lambda: controller.can_edit)
+        for _ in range(2):
+            controller.refresh(saved.subscription_id, only_if_stale=True)
+            _wait_until(lambda: controller.can_edit)
+        assert feeds.requests == [saved.feed_url] * 2
+        assert (
+            controller.snapshot.subscriptions[0].last_refreshed == saved.last_refreshed
+        )
+        assert not coordinator.saved
+    finally:
+        controller.shutdown()
 
 
 def test_controller_loads_then_saves_subscriptions_and_history_off_thread() -> None:

@@ -19,6 +19,12 @@ from xml.etree import ElementTree
 import feedparser  # type: ignore[import-untyped]
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from iOpenPod.app.podcasts.feed_extensions import (
+    EpisodeExtensions,
+    description_links,
+    episode_extensions,
+    publisher_url,
+)
 from iOpenPod.app.podcasts.identity import (
     episode_identity,
     normalize_feed_url,
@@ -27,7 +33,9 @@ from iOpenPod.app.podcasts.models import (
     PodcastArtworkImage,
     PodcastArtworkRequest,
     PodcastEpisode,
+    PodcastEpisodeType,
     PodcastSearchResult,
+    PodcastShowType,
     PodcastSubscription,
     SubscriptionSource,
 )
@@ -101,7 +109,7 @@ class FeedparserPodcastClient:
         normalized = normalize_feed_url(feed_url)
         if not normalized:
             raise PodcastFeedError("Enter a valid HTTP or HTTPS podcast feed URL")
-        payload, final_url = _request_bytes(
+        payload, final_url = request_podcast_bytes(
             normalized,
             limit=_FEED_LIMIT,
             timeout_seconds=self.timeout_seconds,
@@ -121,6 +129,7 @@ class FeedparserPodcastClient:
         title = _text(feed.get("title")) or "Unknown Podcast"
         author = _text(feed.get("author")) or _text(feed.get("itunes_author"))
         feed_advisory, episode_advisories = _explicit_metadata(payload)
+        extensions = episode_extensions(payload, final_url)
         episodes = tuple(
             episode
             for raw in entries
@@ -131,6 +140,8 @@ class FeedparserPodcastClient:
                         feed_advisory, _content_advisory(feed.get("itunes_explicit"))
                     ),
                     explicit_metadata=episode_advisories,
+                    extensions=extensions,
+                    base_url=final_url,
                 )
             )
             is not None
@@ -152,6 +163,10 @@ class FeedparserPodcastClient:
             ),
             artwork_url=_artwork_url(feed),
             category=_category(feed),
+            categories=_categories(feed),
+            copyright=_plain_text(_text(feed.get("rights"))),
+            website_url=_website_url(feed, final_url),
+            show_type=_show_type(_text(feed.get("itunes_type"))),
             language=_text(feed.get("language")),
             last_refreshed=int(time.time()),
             episodes=tuple(
@@ -184,7 +199,7 @@ class ApplePodcastDirectoryClient:
                 "limit": max(1, min(50, self.result_limit)),
             }
         )
-        payload, _ = _request_bytes(
+        payload, _ = request_podcast_bytes(
             f"{_DIRECTORY_URL}?{parameters}",
             limit=_SEARCH_LIMIT,
             timeout_seconds=self.timeout_seconds,
@@ -241,7 +256,7 @@ class HttpPodcastArtworkLoader:
         normalized = normalize_feed_url(request.source_url)
         if not normalized:
             return None
-        payload, _final_url = _request_bytes(
+        payload, _final_url = request_podcast_bytes(
             normalized,
             limit=_ARTWORK_LIMIT,
             timeout_seconds=self.timeout_seconds,
@@ -255,27 +270,30 @@ class HttpPodcastArtworkLoader:
                 if width <= 0 or height <= 0 or width * height > _ARTWORK_PIXEL_LIMIT:
                     raise PodcastFeedError("The Podcast artwork dimensions are unsafe")
                 oriented = ImageOps.exif_transpose(opened)
-                square = ImageOps.fit(
-                    oriented.convert("RGB"),
-                    (target_px, target_px),
-                    method=Image.Resampling.LANCZOS,
-                )
-                rgb888 = square.tobytes()
+                pixels = oriented.convert("RGB")
+                if request.preserve_aspect:
+                    pixels.thumbnail((target_px, target_px), Image.Resampling.LANCZOS)
+                else:
+                    pixels = ImageOps.fit(
+                        pixels, (target_px, target_px), method=Image.Resampling.LANCZOS
+                    )
+                width, height = pixels.size
+                rgb888 = pixels.tobytes()
         except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as error:
             raise PodcastFeedError(
                 "The Podcast artwork could not be decoded"
             ) from error
         digest = hashlib.sha256(payload).hexdigest()
         return PodcastArtworkImage(
-            cache_key=f"{digest}/{target_px}",
+            cache_key=f"{digest}/{target_px}/{request.preserve_aspect}",
             source_url=request.source_url,
-            width=target_px,
-            height=target_px,
+            width=width,
+            height=height,
             rgb888=rgb888,
         )
 
 
-def _request_bytes(
+def request_podcast_bytes(
     url: str,
     *,
     limit: int,
@@ -283,6 +301,7 @@ def _request_bytes(
     accept: str,
     checkpoint: Callable[[], None] | None = None,
 ) -> tuple[bytes, str]:
+    """Fetch a bounded Podcast resource and return its bytes and final HTTP(S) URL."""
     deadline = time.monotonic() + _REQUEST_DEADLINE_SECONDS
 
     def check() -> None:
@@ -338,6 +357,8 @@ def _episode(
     *,
     advisory: ContentAdvisory = ContentAdvisory.UNSPECIFIED,
     explicit_metadata: Mapping[str, ContentAdvisory] | None = None,
+    extensions: Mapping[str, EpisodeExtensions] | None = None,
+    base_url: str = "",
 ) -> PodcastEpisode | None:
     enclosure_url = ""
     size_bytes = 0
@@ -376,6 +397,22 @@ def _episode(
     explicit = (explicit_metadata or {}).get(guid) or (explicit_metadata or {}).get(
         enclosure_url
     )
+    extension = (
+        (extensions or {}).get(guid)
+        or (extensions or {}).get(enclosure_url)
+        or EpisodeExtensions()
+    )
+    raw_description = _text(entry.get("summary")) or _text(entry.get("subtitle"))
+    website = _website_url(entry, base_url)
+    link_text = "\n".join(
+        (
+            raw_description,
+            *(
+                _text(_mapping(value).get("value"))
+                for value in _sequence(entry.get("content", ()))
+            ),
+        )
+    )
     return PodcastEpisode(
         episode_identity(
             enclosure_url=enclosure_url,
@@ -403,7 +440,38 @@ def _episode(
         size_bytes=size_bytes,
         episode_number=episode_number,
         season_number=season_number,
+        author=_plain_text(extension.author),
+        episode_type=_episode_type(_text(entry.get("itunes_episodetype"))),
+        website_url=website,
+        links=description_links(link_text, website, base_url),
+        artwork_url=publisher_url(_artwork_url(entry), base_url),
+        chapter_images=extension.chapter_images,
+        chapter_document_url=extension.chapter_document_url,
     )
+
+
+def _website_url(value: Mapping[str, object], base_url: str) -> str:
+    for link in _sequence(value.get("links", ())):
+        row = _mapping(link)
+        if _text(row.get("rel")) == "alternate":
+            url = publisher_url(_text(row.get("href")), base_url)
+            if url:
+                return url
+    return ""
+
+
+def _show_type(value: str) -> PodcastShowType:
+    try:
+        return PodcastShowType(value.casefold())
+    except ValueError:
+        return PodcastShowType.UNSPECIFIED
+
+
+def _episode_type(value: str) -> PodcastEpisodeType:
+    try:
+        return PodcastEpisodeType(value.casefold())
+    except ValueError:
+        return PodcastEpisodeType.UNSPECIFIED
 
 
 def _artwork_url(feed: Mapping[str, object]) -> str:
@@ -475,11 +543,18 @@ def _content_advisory(value: object) -> ContentAdvisory:
 
 
 def _category(feed: Mapping[str, object]) -> str:
+    return next(iter(_categories(feed)), "")
+
+
+def _categories(feed: Mapping[str, object]) -> tuple[str, ...]:
+    categories: dict[str, None] = {}
     for value in _sequence(feed.get("tags", ())):
         tag = _mapping(value)
         if term := _text(tag.get("term")):
-            return term
-    return ""
+            categories.setdefault(term, None)
+            if len(categories) >= 100:
+                break
+    return tuple(categories)
 
 
 def _duration(value: str) -> int:
@@ -543,4 +618,5 @@ __all__ = [
     "PodcastDirectoryClient",
     "PodcastFeedClient",
     "PodcastFeedError",
+    "request_podcast_bytes",
 ]

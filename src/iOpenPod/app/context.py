@@ -34,7 +34,10 @@ from iOpenPod.app.playback.qt_backend import QtPlaybackBackend
 from iOpenPod.app.playback_controller import PlaybackController
 from iOpenPod.app.podcasts.artwork_controller import PodcastArtworkController
 from iOpenPod.app.podcasts.controller import PodcastController
-from iOpenPod.app.podcasts.feed_client import HttpPodcastArtworkLoader
+from iOpenPod.app.podcasts.feed_client import (
+    FeedparserPodcastClient,
+    HttpPodcastArtworkLoader,
+)
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iOpenPod.app.synesthesia import SynesthesiaController, WholeTrackMusicAnalyzer
 from iOpenPod.app.synesthesia.audio import FFmpegDecoder
@@ -177,6 +180,7 @@ class AppContext:
         podcast_artwork_controller = PodcastArtworkController(
             HttpPodcastArtworkLoader(),
             application,
+            feed_client=FeedparserPodcastClient(),
         )
         status = ApplicationStatus(application)
         library_write_controller = LibraryWriteController(

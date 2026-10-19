@@ -31,6 +31,7 @@ class _PodcastEpisodeItem:
     subscription_title: str
     subscription_author: str
     episode: PodcastEpisode
+    subscription_artwork_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,7 @@ class PodcastListRole(IntEnum):
     ON_DEVICE_COUNT = Qt.ItemDataRole.UserRole.value + 6
     SUBSCRIPTION_TITLE = Qt.ItemDataRole.UserRole.value + 7
     SUBSCRIPTIONS = Qt.ItemDataRole.UserRole.value + 8
+    SUBSCRIPTION_ARTWORK_URL = Qt.ItemDataRole.UserRole.value + 9
 
 
 class PodcastSubscriptionListModel(QAbstractListModel):
@@ -151,7 +153,9 @@ class PodcastSubscriptionListModel(QAbstractListModel):
         if role == PodcastListRole.IDENTITY:
             return item.subscription_id
         if role == PodcastListRole.SEARCH_TEXT:
-            return "\x1f".join((item.title, item.author, item.category)).casefold()
+            return "\x1f".join(
+                (item.title, item.author, item.category, *item.categories)
+            ).casefold()
         if role == PodcastListRole.IS_AGGREGATE:
             return False
         if role == PodcastListRole.EPISODE_COUNT:
@@ -185,10 +189,12 @@ class PodcastEpisodeListModel(QAbstractListModel):
         items: tuple[PodcastEpisode, ...],
         query: str = "",
         episode_filter: PodcastEpisodeFilter | None = None,
+        *,
+        artwork_url: str = "",
     ) -> None:
         self._replace(
             tuple(
-                _PodcastEpisodeItem(subscription_id, "", "", episode)
+                _PodcastEpisodeItem(subscription_id, "", "", episode, artwork_url)
                 for episode in items
             ),
             query,
@@ -211,6 +217,7 @@ class PodcastEpisodeListModel(QAbstractListModel):
                         subscription.title,
                         subscription.author,
                         episode,
+                        subscription.artwork_url,
                     )
                     for subscription in subscriptions
                     for episode in subscription.episodes
@@ -246,6 +253,7 @@ class PodcastEpisodeListModel(QAbstractListModel):
                         item.subscription_title,
                         item.subscription_author,
                         item.episode.title,
+                        item.episode.author,
                         item.episode.description,
                     )
                 ).casefold()
@@ -297,11 +305,27 @@ class PodcastEpisodeListModel(QAbstractListModel):
                     item.subscription_title,
                     item.subscription_author,
                     item.episode.title,
+                    item.episode.author,
                     item.episode.description,
                 )
             ).casefold()
         if role == PodcastListRole.SUBSCRIPTION_TITLE:
             return item.subscription_title
+        if role == PodcastListRole.SUBSCRIPTION_ARTWORK_URL:
+            return item.subscription_artwork_url
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return item.episode.title
+        if role == Qt.ItemDataRole.AccessibleTextRole:
+            return "\n".join(
+                text
+                for text in (
+                    item.episode.title,
+                    item.subscription_title,
+                    item.episode.author,
+                    item.episode.description,
+                )
+                if text
+            )
         return None
 
 
@@ -342,6 +366,10 @@ class PodcastSearchResultListModel(QAbstractListModel):
             return item.feed_url
         if role == PodcastListRole.SEARCH_TEXT:
             return "\x1f".join((item.title, item.author, item.category)).casefold()
+        if role in (Qt.ItemDataRole.ToolTipRole, Qt.ItemDataRole.AccessibleTextRole):
+            return "\n".join(
+                text for text in (item.title, item.author, item.category) if text
+            )
         return None
 
 

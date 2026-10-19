@@ -15,6 +15,44 @@ class SubscriptionSource(StrEnum):
     DEVICE = "device"
 
 
+class PodcastShowType(StrEnum):
+    UNSPECIFIED = ""
+    EPISODIC = "episodic"
+    SERIAL = "serial"
+
+
+class PodcastEpisodeType(StrEnum):
+    UNSPECIFIED = ""
+    FULL = "full"
+    BONUS = "bonus"
+    TRAILER = "trailer"
+
+
+@dataclass(frozen=True, slots=True)
+class PodcastLink:
+    url: str
+    title: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class PodcastChapterImage:
+    """A publisher image at an Artwork Display Time, not a chapter jump."""
+
+    display_time_ms: int
+    source_url: str
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.display_time_ms) is not int
+            or not 0 <= self.display_time_ms < 0xFFFFFFFF
+        ):
+            raise ValueError(
+                "A Podcast image time must be an ordinary millisecond position"
+            )
+        if not self.source_url.strip():
+            raise ValueError("A Podcast chapter image requires a source URL")
+
+
 class PodcastIssueCode(StrEnum):
     """Stable failure vocabulary suitable for translation at the GUI edge."""
 
@@ -117,6 +155,13 @@ class PodcastEpisode:
     automatically_cleared: bool = False
     subtitle: str = ""
     content_advisory: ContentAdvisory = ContentAdvisory.UNSPECIFIED
+    author: str = ""
+    episode_type: PodcastEpisodeType = PodcastEpisodeType.UNSPECIFIED
+    website_url: str = ""
+    links: tuple[PodcastLink, ...] = ()
+    artwork_url: str = ""
+    chapter_images: tuple[PodcastChapterImage, ...] = ()
+    chapter_document_url: str = ""
 
     def __post_init__(self) -> None:
         if not self.episode_id.strip():
@@ -155,6 +200,10 @@ class PodcastSubscription:
     last_refreshed: int = 0
     episodes: tuple[PodcastEpisode, ...] = ()
     sync_settings: PodcastSyncSettings = PodcastSyncSettings()
+    categories: tuple[str, ...] = ()
+    copyright: str = ""
+    website_url: str = ""
+    show_type: PodcastShowType = PodcastShowType.UNSPECIFIED
 
     def __post_init__(self) -> None:
         if not self.subscription_id.strip():
@@ -260,10 +309,11 @@ class PodcastSearchResult:
 
 @dataclass(frozen=True, slots=True)
 class PodcastArtworkRequest:
-    """Ask for one remote Podcast cover near a display-size target."""
+    """Ask for a remote image, optionally retaining its full aspect ratio."""
 
     source_url: str
     target_px: int
+    preserve_aspect: bool = False
 
     def __post_init__(self) -> None:
         if not self.source_url.strip():
@@ -274,7 +324,7 @@ class PodcastArtworkRequest:
 
 @dataclass(frozen=True, slots=True)
 class PodcastArtworkImage:
-    """Owned square RGB888 pixels decoded from one remote Podcast cover."""
+    """Owned RGB888 pixels decoded from one remote Podcast image."""
 
     cache_key: str
     source_url: str

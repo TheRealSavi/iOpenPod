@@ -22,10 +22,13 @@ class ElidedLabel(QLabel):
         self,
         maximum_lines: int,
         parent: QWidget | None = None,
+        *,
+        tooltip_on_elision: bool = True,
     ) -> None:
         if maximum_lines <= 0:
             raise ValueError("An ElidedLabel requires at least one visible line")
         self._maximum_lines = maximum_lines
+        self._tooltip_on_elision = tooltip_on_elision
         super().__init__(parent)
         self.setWordWrap(True)
         self.setTextFormat(Qt.TextFormat.PlainText)
@@ -129,7 +132,9 @@ class ElidedLabel(QLabel):
         self._sync_tooltip()
 
     def _sync_tooltip(self) -> None:
-        self.setToolTip(self.text() if self.is_elided else "")
+        self.setToolTip(
+            self.text() if self._tooltip_on_elision and self.is_elided else ""
+        )
 
 
 def _layout_lines(

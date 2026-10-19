@@ -154,7 +154,7 @@ def test_history_version_must_be_a_supported_integer(version: object) -> None:
     (
         b"not json",
         b'{"schema":"wrong","version":1,"subscriptions":[]}',
-        b'{"schema":"iopenpod.podcast-subscriptions","version":3,"subscriptions":[]}',
+        b'{"schema":"iopenpod.podcast-subscriptions","version":4,"subscriptions":[]}',
         b'{"schema":"iopenpod.podcast-subscriptions","version":1,"subscriptions":{}}',
     ),
 )
@@ -163,7 +163,7 @@ def test_invalid_subscription_documents_fail_closed(payload: bytes) -> None:
         decode_subscriptions(payload)
 
 
-def test_subscription_settings_round_trip_in_version_two() -> None:
+def test_subscription_settings_round_trip_in_version_three() -> None:
     subscription = PodcastSubscription(
         "show",
         "https://example.test/feed",
@@ -180,7 +180,7 @@ def test_subscription_settings_round_trip_in_version_two() -> None:
 
     encoded = encode_subscriptions((subscription,))
 
-    assert json.loads(encoded)["version"] == 2
+    assert json.loads(encoded)["version"] == 3
     assert decode_subscriptions(encoded) == (subscription,)
 
 

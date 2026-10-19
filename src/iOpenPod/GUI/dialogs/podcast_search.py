@@ -1,8 +1,8 @@
-"""Textual Podcast directory and direct-RSS subscription dialog."""
+"""Cover-led Podcast discovery with a secondary direct-RSS path."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from PySide6.QtCore import QEvent, QItemSelection, QModelIndex, Qt, Slot
 from PySide6.QtWidgets import (
@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListView,
+    QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -37,6 +39,9 @@ from iOpenPod.GUI.widgets.themed_buttons import (
 )
 
 if TYPE_CHECKING:
+    from iOpenPod.GUI.presentation.podcast_artwork_provider import (
+        PodcastArtworkPixmapProvider,
+    )
     from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 
 
@@ -48,18 +53,22 @@ class PodcastSearchDialog(QDialog):
         controller: PodcastController,
         theme_manager: ThemeManager,
         parent: QWidget | None = None,
+        *,
+        artwork_provider: PodcastArtworkPixmapProvider | None = None,
     ) -> None:
         super().__init__(parent)
         self._controller = controller
         self._theme_manager = theme_manager
+        self._search_state: Literal[
+            "initial", "loading", "results", "empty", "error"
+        ] = "initial"
+        self._search_error = ""
         self._results_model = PodcastSearchResultListModel(self)
         self.setObjectName("podcastSearchDialog")
         self.setModal(True)
-        self.setMinimumSize(720, 620)
-        self.resize(820, 680)
+        self.setMinimumSize(640, 560)
+        self.resize(820, 720)
 
-        self._eyebrow = QLabel(self)
-        self._eyebrow.setObjectName("podcastDialogEyebrow")
         self._title = QLabel(self)
         self._title.setObjectName("podcastDialogTitle")
         self._intro = QLabel(self)
@@ -89,6 +98,7 @@ class PodcastSearchDialog(QDialog):
             PodcastSearchResultDelegate(
                 theme_manager,
                 self._results,
+                artwork_provider=artwork_provider,
             )
         )
         self._results.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -100,9 +110,26 @@ class PodcastSearchDialog(QDialog):
         self._results.setMouseTracking(True)
         self._results.setUniformItemSizes(True)
         self._results.activated.connect(self._subscribe_selected)
+        self._result_stack = QStackedWidget(self)
+        self._result_stack.setMinimumHeight(120)
+        self._result_stack.addWidget(self._results)
+        self._empty_results = QLabel(self)
+        self._empty_results.setObjectName("podcastSearchEmpty")
+        self._empty_results.setWordWrap(True)
+        self._empty_results.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._result_stack.addWidget(self._empty_results)
+        self._result_stack.setCurrentWidget(self._empty_results)
+        if artwork_provider is not None:
+            artwork_provider.artworkChanged.connect(self._artwork_changed)
 
         rss_panel = QFrame(self)
+        self._rss_panel = rss_panel
         rss_panel.setObjectName("podcastRssPanel")
+        rss_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self._rss_toggle = ActionButton(parent=self, kind=ActionButtonKind.QUIET)
+        self._rss_toggle.setObjectName("podcastToggleRss")
+        self._rss_toggle.setCheckable(True)
+        self._rss_toggle.toggled.connect(self._toggle_rss)
         self._rss_title = QLabel(rss_panel)
         self._rss_title.setObjectName("podcastRssTitle")
         self._rss_detail = QLabel(rss_panel)
@@ -136,6 +163,7 @@ class PodcastSearchDialog(QDialog):
         rss_layout.addSpacing(LAYOUT.space_2xs)
         rss_layout.addWidget(self._rss_label)
         rss_layout.addLayout(rss_row)
+        rss_panel.hide()
 
         self._status = QLabel(self)
         self._status.setObjectName("podcastSearchStatus")
@@ -162,13 +190,13 @@ class PodcastSearchDialog(QDialog):
             LAYOUT.space_lg,
         )
         layout.setSpacing(LAYOUT.space_sm)
-        layout.addWidget(self._eyebrow)
         layout.addWidget(self._title)
         layout.addWidget(self._intro)
         layout.addSpacing(LAYOUT.space_xs)
         layout.addWidget(self._query_label)
         layout.addLayout(search_row)
-        layout.addWidget(self._results, 1)
+        layout.addWidget(self._result_stack, 1)
+        layout.addWidget(self._rss_toggle, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(rss_panel)
         layout.addWidget(self._status)
         layout.addWidget(self._buttons)
@@ -184,19 +212,14 @@ class PodcastSearchDialog(QDialog):
 
     def retranslate_ui(self) -> None:
         self.setWindowTitle(self.tr("Add Podcast"))
-        self._eyebrow.setText(self.tr("PODCAST DIRECTORY"))
         self._title.setText(self.tr("Find your next show"))
-        self._intro.setText(
-            self.tr(
-                "Search the public directory by show name and publisher, "
-                "then subscribe to keep the feed with this iPod."
-            )
-        )
+        self._intro.setText(self.tr("Search by show name or publisher."))
         self._query_label.setText(self.tr("Podcast name"))
         self._query.setPlaceholderText(self.tr("e.g. 99% Invisible"))
         self._query.setAccessibleName(self.tr("Podcast search query"))
         self._search_button.setText(self.tr("Search"))
         self._rss_title.setText(self.tr("Have a feed URL?"))
+        self._rss_toggle.setText(self.tr("Add using an RSS feed"))
         self._rss_detail.setText(
             self.tr("Subscribe directly when a Podcast is not listed in the directory.")
         )
@@ -205,6 +228,24 @@ class PodcastSearchDialog(QDialog):
         self._rss_url.setAccessibleName(self.tr("Podcast RSS URL"))
         self._add_url.setText(self.tr("Add Feed"))
         self._subscribe.setText(self.tr("Subscribe"))
+        self._render_result_text()
+
+    def _render_result_text(self) -> None:
+        if self._search_state == "results":
+            self._status.setText(podcasts_found_text(self._results_model.rowCount()))
+            return
+        self._status.clear()
+        if self._search_state == "error":
+            message = workflow_text(self._search_error)
+        elif self._search_state == "loading":
+            message = self.tr("Searching the Podcast directory…")
+        elif self._search_state == "empty":
+            message = self.tr(
+                "No matching Podcasts were found. Try another name or add the RSS feed below."
+            )
+        else:
+            message = self.tr("Discover a show to take with you.")
+        self._empty_results.setText(message)
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
@@ -217,7 +258,10 @@ class PodcastSearchDialog(QDialog):
             self._status.setText(self.tr("Enter a Podcast name, then choose Search."))
             self._query.setFocus()
             return
-        self._status.setText(self.tr("Searching the Podcast directory…"))
+        self._search_state = "loading"
+        self._results_model.replace(())
+        self._render_result_text()
+        self._result_stack.setCurrentWidget(self._empty_results)
         self._controller.search(self._query.text())
 
     @Slot(object)
@@ -226,20 +270,20 @@ class PodcastSearchDialog(QDialog):
         if results is None:
             return
         self._results_model.replace(results)
+        self._search_state = "results" if results else "empty"
+        self._render_result_text()
         if results:
+            self._result_stack.setCurrentWidget(self._results)
             self._results.setCurrentIndex(self._results_model.index(0, 0))
-            self._status.setText(podcasts_found_text(len(results)))
         else:
-            self._status.setText(
-                self.tr(
-                    "No matching Podcasts were found. Try another name or add the RSS feed below."
-                )
-            )
+            self._result_stack.setCurrentWidget(self._empty_results)
         self._availability_changed()
 
     @Slot()
     @Slot(QModelIndex)
     def _subscribe_selected(self, _index: QModelIndex | None = None) -> None:
+        if self._controller.busy or not self._controller.can_edit:
+            return
         result = self._results_model.result_at(self._results.currentIndex().row())
         if result is None:
             return
@@ -271,11 +315,15 @@ class PodcastSearchDialog(QDialog):
             isinstance(value, PodcastOperationFailure)
             and value.operation is PodcastOperation.SEARCH
         ):
-            self._status.setText(workflow_text(value.message))
+            self._search_state = "error"
+            self._search_error = value.message
+            self._render_result_text()
+            self._result_stack.setCurrentWidget(self._empty_results)
 
     @Slot()
     def _availability_changed(self) -> None:
         idle = not self._controller.busy
+        self._results.setEnabled(idle)
         self._query.setEnabled(idle)
         self._search_button.setEnabled(idle)
         self._rss_url.setEnabled(idle and self._controller.can_edit)
@@ -294,6 +342,19 @@ class PodcastSearchDialog(QDialog):
         _deselected: QItemSelection,
     ) -> None:
         self._availability_changed()
+
+    @Slot(bool)
+    def _toggle_rss(self, visible: bool) -> None:
+        self._rss_panel.setVisible(visible)
+        self.setMinimumHeight(
+            max(560, self.minimumSizeHint().height()) if visible else 560
+        )
+        if visible:
+            self._rss_url.setFocus()
+
+    @Slot(str)
+    def _artwork_changed(self, _source: str) -> None:
+        self._results.viewport().update()
 
     @Slot(str)
     def _theme_changed(self, _theme: str) -> None:

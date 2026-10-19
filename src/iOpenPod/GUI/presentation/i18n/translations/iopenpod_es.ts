@@ -4395,6 +4395,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Cancelar suscripción</translation>
     </message>
     <message>
+        <source>Website</source>
+        <translation>Sitio web</translation>
+    </message>
+    <message>
         <source>Episodes</source>
         <translation>Episodios</translation>
     </message>
@@ -4451,6 +4455,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Al cancelar la suscripción, se eliminarán del iPod los episodios de este pódcast. ¿Continuar?</translation>
     </message>
     <message>
+        <source>Episode links</source>
+        <translation>Enlaces del episodio</translation>
+    </message>
+    <message>
         <source>Remove this Podcast&apos;s episodes from the iPod before unsubscribing.</source>
         <translation type="vanished">Quita del iPod los episodios de este pódcast antes de cancelar la suscripción.</translation>
     </message>
@@ -4465,6 +4473,14 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Select a Podcast</source>
         <translation>Selecciona un pódcast</translation>
+    </message>
+    <message>
+        <source>Serial</source>
+        <translation>Por entregas</translation>
+    </message>
+    <message>
+        <source>Episodic</source>
+        <translation>Episodios independientes</translation>
     </message>
     <message numerus="yes">
         <source>%n on iPod</source>
@@ -4537,6 +4553,18 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>ESCUCHADO</translation>
     </message>
     <message>
+        <source>Full episode</source>
+        <translation>Episodio completo</translation>
+    </message>
+    <message>
+        <source>Bonus</source>
+        <translation>Extra</translation>
+    </message>
+    <message>
+        <source>Trailer</source>
+        <translation>Tráiler</translation>
+    </message>
+    <message>
         <source>%1 hr %2 min</source>
         <translation>%1 h %2 min</translation>
     </message>
@@ -4565,7 +4593,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>PODCAST DIRECTORY</source>
-        <translation>DIRECTORIO DE PÓDCAST</translation>
+        <translation type="vanished">DIRECTORIO DE PÓDCAST</translation>
     </message>
     <message>
         <source>Find your next show</source>
@@ -4573,7 +4601,11 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Search the public directory by show name and publisher, then subscribe to keep the feed with this iPod.</source>
-        <translation>Busca en el directorio público por nombre del programa y editor. Suscríbete para guardar la fuente con este iPod.</translation>
+        <translation type="vanished">Busca en el directorio público por nombre del programa y editor. Suscríbete para guardar la fuente con este iPod.</translation>
+    </message>
+    <message>
+        <source>Search by show name or publisher.</source>
+        <translation>Busca por nombre del programa o editor.</translation>
     </message>
     <message>
         <source>Podcast name</source>
@@ -4596,6 +4628,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>¿Tienes la URL de una fuente?</translation>
     </message>
     <message>
+        <source>Add using an RSS feed</source>
+        <translation>Añadir mediante un canal RSS</translation>
+    </message>
+    <message>
         <source>Subscribe directly when a Podcast is not listed in the directory.</source>
         <translation>Suscríbete directamente si un pódcast no aparece en el directorio.</translation>
     </message>
@@ -4614,6 +4650,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Add Feed</source>
         <translation>Añadir fuente</translation>
+    </message>
+    <message>
+        <source>Discover a show to take with you.</source>
+        <translation>Descubre un programa para llevar contigo.</translation>
     </message>
     <message>
         <source>Enter a Podcast name, then choose Search.</source>
@@ -8367,7 +8407,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Artwork for {title} could not be prepared. Episodes can still sync. Sync this Podcast again to retry its artwork.</source>
-        <translation>No se pudo preparar la portada de {title}. Los episodios aún pueden sincronizarse. Vuelve a sincronizar este pódcast para reintentar la portada.</translation>
+        <translation type="vanished">No se pudo preparar la portada de {title}. Los episodios aún pueden sincronizarse. Vuelve a sincronizar este pódcast para reintentar la portada.</translation>
     </message>
     <message>
         <source>ArtworkDB changed while it was loading.</source>
@@ -10504,6 +10544,10 @@ Playlists: %3</translation>
     <message>
         <source>Album rebuilding lost or duplicated a retained browse index.</source>
         <translation>La reconstrucción de los índices de álbumes perdió o duplicó un índice de navegación conservado.</translation>
+    </message>
+    <message>
+        <source>Artwork for {title} could not be prepared. Episodes can still sync.</source>
+        <translation>No se han podido preparar las imágenes de {title}. Los episodios se pueden sincronizar de todos modos.</translation>
     </message>
     <message>
         <source>Normalize Podcast album ownership, representative links, show identities and target-specific Playlist traversal.</source>

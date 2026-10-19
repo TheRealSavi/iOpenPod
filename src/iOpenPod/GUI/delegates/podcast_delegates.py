@@ -28,12 +28,19 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
 )
-from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QWidget,
+)
 
 from iOpenPod.app.models.artwork_seed import stable_artwork_seed
 from iOpenPod.app.models.podcast_list_models import PodcastListRole
 from iOpenPod.app.podcasts.models import (
     PodcastEpisode,
+    PodcastEpisodeType,
     PodcastSearchResult,
     PodcastSubscription,
 )
@@ -48,6 +55,8 @@ from iOpenPod.GUI.presentation.podcast_collection_artwork import (
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT, ThemeTokens, TypographyTokens
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
     from iOpenPod.GUI.presentation.podcast_artwork_provider import (
         PodcastArtworkPixmapProvider,
@@ -57,8 +66,8 @@ if TYPE_CHECKING:
 _SHOW_WIDTH = 248
 _SHOW_HEIGHT = 72
 _SHOW_ARTWORK = 48
-_EPISODE_HEIGHT = 128
-_SEARCH_HEIGHT = 88
+_EPISODE_HEIGHT = 148
+_SEARCH_HEIGHT = 120
 
 
 class PodcastShowDelegate(QStyledItemDelegate):
@@ -152,6 +161,12 @@ class PodcastShowDelegate(QStyledItemDelegate):
                 _SHOW_ARTWORK,
                 option.widget.devicePixelRatioF(),
             )
+            if pixmap is None and self._device_artwork_provider is not None:
+                pixmap = self._device_artwork_provider.pixmap(
+                    subscription.artwork_id,
+                    _SHOW_ARTWORK,
+                    option.widget.devicePixelRatioF(),
+                )
             if pixmap is None:
                 paint_artwork_placeholder(
                     painter,
@@ -227,7 +242,7 @@ class PodcastShowDelegate(QStyledItemDelegate):
 
 
 class PodcastEpisodeDelegate(QStyledItemDelegate):
-    """Paint editorial episode rows with metadata, synopsis, and device state."""
+    """Paint cover-led Episode rows with a short reading hierarchy."""
 
     actionRequested = Signal(QModelIndex)
 
@@ -235,11 +250,18 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
         self,
         theme_manager: ThemeManager,
         parent: QWidget | None = None,
+        *,
+        artwork_provider: PodcastArtworkPixmapProvider | None = None,
+        device_artwork_provider: ArtworkPixmapProvider | None = None,
+        artwork_id_for_episode: Callable[[PodcastEpisode], int] | None = None,
     ) -> None:
         super().__init__(parent)
         self._theme_manager = theme_manager
         self._add_enabled = False
         self._pressed_action = QPersistentModelIndex()
+        self._artwork_provider = artwork_provider
+        self._device_artwork_provider = device_artwork_provider
+        self._artwork_id_for_episode = artwork_id_for_episode
 
     def set_add_enabled(self, enabled: bool) -> None:
         self._add_enabled = enabled
@@ -282,6 +304,13 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
             and (episode.on_device or self._add_enabled)
             and self.action_rect(option, index).contains(event.position())
         )
+        if event.type() in (
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+        ):
+            view = self.parent()
+            if isinstance(view, QAbstractItemView):
+                view.viewport().update()
         if event.type() is QEvent.Type.MouseButtonPress:
             self._pressed_action = (
                 QPersistentModelIndex(index) if actionable else QPersistentModelIndex()
@@ -336,9 +365,17 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
             float(LAYOUT.radius_control),
             float(LAYOUT.radius_control),
         )
-        left = row.left() + 16
-        right_reserve = 160.0
-        text_width = max(80.0, row.width() - 32 - right_reserve)
+        cover_size = 104 if row.width() >= 640 else 80
+        cover = QRectF(
+            row.left() + LAYOUT.space_md,
+            row.top() + LAYOUT.space_md,
+            cover_size,
+            cover_size,
+        )
+        self._paint_cover(painter, cover, option, index, episode)
+        left = cover.right() + LAYOUT.space_md
+        action = _episode_state_rect(row, episode, option.font, typography)
+        text_width = max(0.0, action.left() - LAYOUT.space_md - left)
         meta_font = _font(option.font, typography.small_pt, QFont.Weight.Medium)
         title_font = _font(option.font, typography.heading_pt, QFont.Weight.DemiBold)
         body_font = _font(option.font, typography.body_pt, QFont.Weight.Normal)
@@ -347,32 +384,41 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
         body_metrics = QFontMetrics(body_font)
 
         subscription_title = str(index.data(PodcastListRole.SUBSCRIPTION_TITLE) or "")
-        meta = episode_meta_text(episode, subscription_title)
-        painter.setFont(meta_font)
-        painter.setPen(
-            QColor(tokens.accent if episode.on_device else tokens.text_secondary)
-        )
-        painter.drawText(
-            QRectF(left, row.top() + 12, text_width, meta_metrics.height()),
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            meta.upper(),
-        )
-        title_y = row.top() + 12 + meta_metrics.height() + LAYOUT.space_3xs
+        title_y = row.top() + LAYOUT.space_md
+        if subscription_title:
+            painter.setFont(meta_font)
+            painter.setPen(QColor(tokens.text_secondary))
+            painter.drawText(
+                QRectF(left, title_y, text_width, meta_metrics.height()),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                meta_metrics.elidedText(
+                    subscription_title, Qt.TextElideMode.ElideRight, round(text_width)
+                ),
+            )
+            title_y += meta_metrics.lineSpacing() + LAYOUT.space_2xs
         painter.setFont(title_font)
         painter.setPen(QColor(tokens.text))
+        title_lines = _draw_wrapped_text(
+            painter,
+            episode.title
+            or QCoreApplication.translate("PodcastPresentation", "Untitled Episode"),
+            QRectF(left, title_y, text_width, title_metrics.lineSpacing() * 2),
+            title_metrics,
+            max_lines=2,
+        )
+        meta_y = title_y + title_metrics.lineSpacing() * title_lines + LAYOUT.space_2xs
+        painter.setFont(meta_font)
+        painter.setPen(QColor(tokens.text_secondary))
         painter.drawText(
-            QRectF(left, title_y, text_width, title_metrics.height()),
+            QRectF(left, meta_y, text_width, meta_metrics.height()),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            title_metrics.elidedText(
-                episode.title
-                or QCoreApplication.translate(
-                    "PodcastPresentation", "Untitled Episode"
-                ),
+            meta_metrics.elidedText(
+                episode_meta_text(episode, compact=not selected),
                 Qt.TextElideMode.ElideRight,
                 round(text_width),
             ),
         )
-        description_y = title_y + title_metrics.height() + LAYOUT.space_2xs
+        description_y = meta_y + meta_metrics.lineSpacing() + LAYOUT.space_xs
         painter.setFont(body_font)
         painter.setPen(QColor(tokens.text_secondary))
         _draw_wrapped_text(
@@ -388,7 +434,16 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
                 max(0.0, row.bottom() - description_y - 8),
             ),
             body_metrics,
-            max_lines=2,
+            max_lines=min(
+                2 if selected else 1,
+                max(
+                    0,
+                    int(
+                        (row.bottom() - description_y - LAYOUT.space_xs)
+                        / body_metrics.lineSpacing()
+                    ),
+                ),
+            ),
         )
         _paint_episode_state(
             painter,
@@ -398,22 +453,74 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
             typography,
             tokens,
             add_enabled=self._add_enabled,
+            pressed=self._pressed_action == index,
         )
         if focused:
             _paint_focus(painter, row, tokens)
         painter.restore()
 
+    def _paint_cover(
+        self,
+        painter: QPainter,
+        rect: QRectF,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+        episode: PodcastEpisode,
+    ) -> None:
+        ratio = painter.device().devicePixelRatioF()
+        size = round(rect.width())
+        pixmap = (
+            self._artwork_provider.pixmap(episode.artwork_url, size, ratio)
+            if self._artwork_provider is not None
+            else None
+        )
+        if (
+            pixmap is None
+            and self._device_artwork_provider is not None
+            and self._artwork_id_for_episode is not None
+        ):
+            pixmap = self._device_artwork_provider.pixmap(
+                self._artwork_id_for_episode(episode),
+                size,
+                ratio,
+            )
+        if pixmap is None and self._artwork_provider is not None:
+            pixmap = self._artwork_provider.pixmap(
+                str(index.data(PodcastListRole.SUBSCRIPTION_ARTWORK_URL) or ""),
+                size,
+                ratio,
+            )
+        if pixmap is None:
+            paint_artwork_placeholder(
+                painter,
+                rect,
+                stable_artwork_seed(episode.episode_id),
+                self._theme_manager.tokens,
+                float(LAYOUT.radius_control),
+            )
+        else:
+            paint_artwork_pixmap(
+                painter,
+                rect,
+                pixmap,
+                self._theme_manager.tokens,
+                float(LAYOUT.radius_control),
+            )
+
 
 class PodcastSearchResultDelegate(QStyledItemDelegate):
-    """Paint directory matches as legible text without remote promotional art."""
+    """Pair directory matches with lazily resolved publisher covers."""
 
     def __init__(
         self,
         theme_manager: ThemeManager,
         parent: QWidget | None = None,
+        *,
+        artwork_provider: PodcastArtworkPixmapProvider | None = None,
     ) -> None:
         super().__init__(parent)
         self._theme_manager = theme_manager
+        self._artwork_provider = artwork_provider
 
     def sizeHint(
         self,
@@ -449,7 +556,29 @@ class PodcastSearchResultDelegate(QStyledItemDelegate):
                 float(LAYOUT.radius_control),
                 float(LAYOUT.radius_control),
             )
-        left = row.left() + 12
+        cover = QRectF(
+            row.left() + LAYOUT.space_sm, row.top() + LAYOUT.space_sm, 88, 88
+        )
+        pixmap = (
+            self._artwork_provider.feed_pixmap(
+                result.feed_url, 88, option.widget.devicePixelRatioF()
+            )
+            if self._artwork_provider is not None
+            else None
+        )
+        if pixmap is None:
+            paint_artwork_placeholder(
+                painter,
+                cover,
+                stable_artwork_seed(result.feed_url),
+                tokens,
+                float(LAYOUT.radius_control),
+            )
+        else:
+            paint_artwork_pixmap(
+                painter, cover, pixmap, tokens, float(LAYOUT.radius_control)
+            )
+        left = cover.right() + LAYOUT.space_md
         width = max(80.0, row.right() - left - 12)
         title_font = _font(option.font, typography.heading_pt, QFont.Weight.DemiBold)
         detail_font = _font(option.font, typography.body_pt, QFont.Weight.Normal)
@@ -459,21 +588,23 @@ class PodcastSearchResultDelegate(QStyledItemDelegate):
         small_metrics = QFontMetrics(small_font)
         painter.setFont(title_font)
         painter.setPen(QColor(tokens.text))
-        painter.drawText(
-            QRectF(left, row.top() + 8, width, title_metrics.height()),
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            title_metrics.elidedText(
-                result.title,
-                Qt.TextElideMode.ElideRight,
-                round(width),
-            ),
+        title_y = cover.top() + LAYOUT.space_2xs
+        title_lines = _draw_wrapped_text(
+            painter,
+            result.title,
+            QRectF(left, title_y, width, title_metrics.lineSpacing() * 2),
+            title_metrics,
+            max_lines=2,
+        )
+        publisher_y = (
+            title_y + title_metrics.lineSpacing() * title_lines + LAYOUT.space_2xs
         )
         painter.setFont(detail_font)
         painter.setPen(QColor(tokens.text_secondary))
         painter.drawText(
             QRectF(
                 left,
-                row.top() + 12 + title_metrics.height(),
+                publisher_y,
                 width,
                 detail_metrics.height(),
             ),
@@ -501,12 +632,14 @@ class PodcastSearchResultDelegate(QStyledItemDelegate):
         painter.drawText(
             QRectF(
                 left,
-                row.bottom() - small_metrics.height() - 8,
+                publisher_y + detail_metrics.lineSpacing() + LAYOUT.space_xs,
                 width,
                 small_metrics.height(),
             ),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            details,
+            small_metrics.elidedText(
+                details, Qt.TextElideMode.ElideRight, round(width)
+            ),
         )
         if focused:
             _paint_focus(painter, row, tokens)
@@ -522,6 +655,7 @@ def _paint_episode_state(
     tokens: ThemeTokens,
     *,
     add_enabled: bool,
+    pressed: bool = False,
 ) -> None:
     font = _font(base_font, typography.small_pt, QFont.Weight.DemiBold)
     painter.setFont(font)
@@ -533,6 +667,8 @@ def _paint_episode_state(
         QColor(
             tokens.surface_selected
             if episode.on_device
+            else tokens.accent_pressed
+            if pressed and addable
             else tokens.accent
             if addable
             else tokens.surface_alt
@@ -555,7 +691,7 @@ def _paint_episode_state(
     painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, state_text)
     if episode.on_device:
         circle = _episode_play_rect(row)
-        painter.setBrush(QColor(tokens.accent))
+        painter.setBrush(QColor(tokens.accent_pressed if pressed else tokens.accent))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(circle)
         path = QPainterPath()
@@ -575,7 +711,7 @@ def _episode_state_rect(
 ) -> QRectF:
     font = _font(base_font, typography.small_pt, QFont.Weight.DemiBold)
     width = min(
-        132,
+        180,
         QFontMetrics(font).horizontalAdvance(episode_status_text(episode))
         + LAYOUT.space_lg,
     )
@@ -583,12 +719,14 @@ def _episode_state_rect(
         row.right() - width - LAYOUT.space_md,
         row.top() + LAYOUT.space_md,
         width,
-        LAYOUT.control_height_compact,
+        LAYOUT.control_height_compact
+        if episode.on_device
+        else LAYOUT.control_height_large,
     )
 
 
 def _episode_play_rect(row: QRectF) -> QRectF:
-    return QRectF(row.right() - 56, row.bottom() - 56, 40, 40)
+    return QRectF(row.right() - 60, row.bottom() - 60, 44, 44)
 
 
 def episode_status_text(episode: PodcastEpisode) -> str:
@@ -603,7 +741,9 @@ def episode_status_text(episode: PodcastEpisode) -> str:
     return QCoreApplication.translate("PodcastPresentation", "ON IPOD")
 
 
-def episode_meta_text(episode: PodcastEpisode, subscription_title: str = "") -> str:
+def episode_meta_text(
+    episode: PodcastEpisode, subscription_title: str = "", *, compact: bool = False
+) -> str:
     """Return the metadata line shown above an Episode's title."""
     parts = (
         [QCoreApplication.translate("PodcastPresentation", "LISTENED")]
@@ -612,6 +752,23 @@ def episode_meta_text(episode: PodcastEpisode, subscription_title: str = "") -> 
     )
     if subscription_title:
         parts.append(subscription_title)
+    if episode.author and not compact:
+        parts.append(episode.author)
+    type_label = {
+        PodcastEpisodeType.FULL: QCoreApplication.translate(
+            "PodcastPresentation", "Full episode"
+        ),
+        PodcastEpisodeType.BONUS: QCoreApplication.translate(
+            "PodcastPresentation", "Bonus"
+        ),
+        PodcastEpisodeType.TRAILER: QCoreApplication.translate(
+            "PodcastPresentation", "Trailer"
+        ),
+    }.get(episode.episode_type, "")
+    if type_label and (
+        not compact or episode.episode_type is not PodcastEpisodeType.FULL
+    ):
+        parts.append(type_label)
     if episode.published_at:
         with suppress(OSError, OverflowError, ValueError):
             published = datetime.fromtimestamp(episode.published_at, UTC)
@@ -633,7 +790,7 @@ def episode_meta_text(episode: PodcastEpisode, subscription_title: str = "") -> 
                 "%1", QLocale().toString(minutes)
             )
         )
-    if episode.episode_number is not None:
+    if episode.episode_number is not None and not compact:
         parts.append(
             QCoreApplication.translate("PodcastPresentation", "Episode %1").replace(
                 "%1", QLocale().toString(episode.episode_number)
@@ -651,7 +808,7 @@ def _draw_wrapped_text(
     metrics: QFontMetrics,
     *,
     max_lines: int,
-) -> None:
+) -> int:
     lines = _wrapped_lines(text, metrics, round(rect.width()), max_lines)
     y = rect.top()
     for line in lines:
@@ -661,6 +818,7 @@ def _draw_wrapped_text(
             line,
         )
         y += metrics.lineSpacing()
+    return len(lines)
 
 
 def _wrapped_lines(

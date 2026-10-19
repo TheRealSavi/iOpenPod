@@ -10,6 +10,7 @@ from iOpenPod.app.podcasts.models import (
     PodcastClearAge,
     PodcastClearMethod,
     PodcastFillMode,
+    PodcastShowType,
     PodcastSubscription,
     PodcastSyncSettings,
     SubscriptionSource,
@@ -37,9 +38,9 @@ _HISTORY_FIELDS = frozenset(
         "automatically_cleared",
     )
 )
-# Keep the established path, but older apps must reject documents whose retention
-# choices they cannot preserve. Version 1 loads with Original iOpenPod defaults.
-_SUBSCRIPTIONS_VERSION = 2
+# Keep the established path, but reject versions with metadata or retention choices
+# the reader cannot preserve. Version 1 loads with Original iOpenPod defaults.
+_SUBSCRIPTIONS_VERSION = 3
 _MAX_SUBSCRIPTIONS = 500
 _MAX_HISTORY_RECORDS = 250_000
 
@@ -62,6 +63,10 @@ def encode_subscriptions(subscriptions: Sequence[PodcastSubscription]) -> bytes:
                 "description": item.description,
                 "artwork_url": item.artwork_url,
                 "category": item.category,
+                "categories": list(item.categories),
+                "copyright": item.copyright,
+                "website_url": item.website_url,
+                "show_type": item.show_type.value,
                 "language": item.language,
                 "last_refreshed": item.last_refreshed,
                 "sync_settings": {
@@ -79,7 +84,9 @@ def encode_subscriptions(subscriptions: Sequence[PodcastSubscription]) -> bytes:
 
 
 def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
-    root = _root(payload, _SUBSCRIPTIONS_SCHEMA, versions=(1, _SUBSCRIPTIONS_VERSION))
+    root = _root(
+        payload, _SUBSCRIPTIONS_SCHEMA, versions=(1, 2, _SUBSCRIPTIONS_VERSION)
+    )
     rows = _sequence(root.get("subscriptions", ()), "subscriptions")
     if len(rows) > _MAX_SUBSCRIPTIONS:
         raise PodcastDocumentError("The subscriptions file contains too many shows")
@@ -98,11 +105,15 @@ def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
                     description=_text(row, "description"),
                     artwork_url=_text(row, "artwork_url"),
                     category=_text(row, "category"),
+                    categories=_categories(row.get("categories", [])),
+                    copyright=_text(row, "copyright"),
+                    website_url=_text(row, "website_url"),
+                    show_type=PodcastShowType(_text(row, "show_type")),
                     language=_text(row, "language"),
                     last_refreshed=_integer(row, "last_refreshed"),
                     sync_settings=(
                         _decode_settings(row.get("sync_settings"))
-                        if root.get("version") == _SUBSCRIPTIONS_VERSION
+                        if root.get("version") in (2, _SUBSCRIPTIONS_VERSION)
                         else PodcastSyncSettings()
                     ),
                 )
@@ -119,6 +130,15 @@ def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
     except ValueError as error:
         raise PodcastDocumentError(str(error)) from error
     return tuple(subscriptions)
+
+
+def _categories(value: object) -> tuple[str, ...]:
+    items = _sequence(value, "categories")
+    if len(items) > 100 or any(
+        not isinstance(item, str) or not item.strip() for item in items
+    ):
+        raise PodcastDocumentError("categories must contain at most 100 nonempty names")
+    return tuple(dict.fromkeys(cast("str", item).strip() for item in items))
 
 
 def encode_history(records: Sequence[ListeningRecord]) -> bytes:

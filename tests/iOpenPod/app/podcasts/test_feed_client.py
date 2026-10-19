@@ -58,7 +58,7 @@ def test_explicit_advisory_and_subtitle_survive_feed_normalization(
     def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
         return payload, url
 
-    monkeypatch.setattr(feed_client, "_request_bytes", request_bytes)
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
     episode = (
         FeedparserPodcastClient().fetch("https://publisher.example/feed").episodes[0]
     )
@@ -100,7 +100,7 @@ def test_directory_retains_text_and_feed_url_without_promotional_artwork(
         assert accept == "application/json"
         return payload, url
 
-    monkeypatch.setattr(feed_client, "_request_bytes", request_bytes)
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
 
     results = ApplePodcastDirectoryClient().search("Example Show")
 
@@ -152,7 +152,7 @@ def test_feedparser_client_normalizes_typed_podcast_metadata(
         del url, limit, timeout_seconds, accept
         return payload, "https://example.test/feed"
 
-    monkeypatch.setattr(feed_client, "_request_bytes", request_bytes)
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
 
     subscription = FeedparserPodcastClient().fetch("https://example.test/feed")
 
@@ -186,7 +186,7 @@ def test_artwork_loader_returns_bounded_square_rgb_pixels(
         del url, limit, timeout_seconds, accept, checkpoint
         return payload.getvalue(), "https://cdn.example.test/cover.png"
 
-    monkeypatch.setattr(feed_client, "_request_bytes", request_bytes)
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
 
     image = HttpPodcastArtworkLoader().load_artwork(
         PodcastArtworkRequest("https://example.test/cover.png", 96)
@@ -197,6 +197,25 @@ def test_artwork_loader_returns_bounded_square_rgb_pixels(
     assert image.width == 96
     assert image.height == 96
     assert len(image.rgb888) == 96 * 96 * 3
+
+
+def test_chapter_images_keep_their_full_aspect_ratio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = BytesIO()
+    Image.new("RGB", (240, 120), "blue").save(payload, format="PNG")
+
+    def request_bytes(url: str, **_kwargs: object) -> tuple[bytes, str]:
+        return payload.getvalue(), url
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+    image = HttpPodcastArtworkLoader().load_artwork(
+        PodcastArtworkRequest(
+            "https://publisher.test/slide.png", 96, preserve_aspect=True
+        )
+    )
+    assert image is not None
+    assert (image.width, image.height) == (96, 48)
 
 
 class _TrickleResponse:

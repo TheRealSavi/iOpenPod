@@ -287,6 +287,16 @@ asynchronous loads repaint only banners that reference the changed artwork ID.
 Cover opacity remains subordinate to metadata in every theme, controls retain their
 semantic opaque surfaces, and the ribbon has no decorative animation.
 
+The Podcast browser uses a compact show header and virtualized, cover-led Episode
+tiles. Title and artwork lead; date, duration, and nonstandard Episode type provide
+the scan line. Selection reveals additional metadata without expanding every row.
+Show Sync controls sit below the Episode list, alongside selection-only batch
+actions. Discovery uses publisher-feed covers with title, author, and brief metadata;
+the direct-RSS form opens on request. Image failures retain device/show fallbacks
+and deterministic placeholders. Full descriptions do not appear on hover. All
+surfaces use shared semantic tokens and native
+keyboard focus; see [ADR-0155](adr/0155-preview-publisher-covers-in-podcast-discovery.md).
+
 In the split Library view, the Track context and local Track search form the actual
 `QSplitterHandle`. The title names the selected album, or all Tracks, without a row
 count. Dragging any non-control part of that surface resizes the views; using its

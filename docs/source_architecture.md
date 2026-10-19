@@ -1814,6 +1814,10 @@ The module owns normalized Podcast and Episode identities, deterministic documen
 encoding, bounded RSS/Atom and directory clients, and catalog reconciliation. The
 Podcast Controller is the Qt-facing asynchronous adapter: it rejects stale work and
 publishes typed snapshots but does not expose device paths or feed-parser objects.
+Navigation refreshes reuse each Subscription's saved last-successful-refresh time
+for 15 minutes. All Podcasts applies that cutoff per show; manual refresh bypasses
+it, and failed attempts do not advance it. This does not persist Episode catalogs
+or schedule background polling.
 The GUI may project every subscription's Episodes into one newest-first All Podcasts
 view, but each row retains its source Subscription and Episode identities so edits
 remain ordinary catalog operations rather than synthetic persisted feed state.
@@ -1821,6 +1825,10 @@ Remote Podcast covers use a separate byte-bounded asynchronous artwork controlle
 the GUI consumes owned RGB pixels and never performs network I/O. Device-recovered
 Artwork IDs remain an ephemeral projection and reuse the existing iPod artwork
 pipeline instead of being written into the subscription document.
+Discovery uses that controller to resolve publisher covers from visible results'
+feed URLs without subscribing or retaining Apple directory promotional images.
+Episode rows carry their source show's cover URL and prefer Episode RSS images,
+then device artwork, then show artwork while browsing. See ADR-0155.
 The Device Coordinator performs fingerprint-checked writes through Storage to the
 two independent versioned documents under
 `iPod_Control/iOpenPod/Podcasts/`. Existing malformed or future-version documents
@@ -1844,11 +1852,17 @@ affected record once across cover retries. Blocked semantic plans return their
 primary errors before validating resources deliberately left unprepared.
 The worker reads incoming Episode covers from the original Storage-owned downloads,
 retained through media preparation. It uses bounded publisher artwork loading when
-an embedded cover is unavailable. Both sources share the retained cover budget and
+an embedded cover is unavailable, preferring the Episode RSS image before the show
+cover. These sources share the retained cover budget and
 submit owned pixels to the same ArtworkDB and thumbnail preparation as Host media.
 Bounded ID3 CHAP/APIC images from the same original become timed Artwork Assets,
 sharing the cover memory budget. Chapter metadata contains titles and positions;
-ArtworkDB owns the separate image timeline. See ADR-0149.
+ArtworkDB owns the separate image timeline. Publisher JSON and inline Podlove image
+sources also supply validated Artwork Display Times; their chapter titles/navigation
+are not imported. Embedded pictures win at equal times, and chapter images preserve
+aspect ratio. Episode authors and show copyright map to supported native fields.
+Multiple show categories, show type, Episode type, websites, and show-note links
+remain typed catalog data displayed by the Podcast browser. See ADR-0149 and ADR-0154.
 Successfully refreshed subscriptions can also fill missing covers on retained
 Episodes without downloading their media. Existing covers survive, and cover
 failures produce warnings rather than dropping otherwise valid Episodes.
@@ -1897,8 +1911,10 @@ Listening History retains publication dates, episode numbers, and automatic-clea
 exclusions. New exclusions are staged only for actual automatic removals in the final
 Library Draft and publish in the same verified Storage Transaction as media and
 Library changes. Failed replacements and interrupted publication cannot leave an
-exclusion without its removal. Both Podcast documents now encode version 2 at their
-existing filenames and read version 1 with defaults. See ADR-0091.
+exclusion without its removal. Subscriptions encode version 3 at their existing
+filename and read versions 1 and 2, preserving version-2 retention settings.
+Listening History retains version 2 and version-1 reads. Episode catalogs remain
+runtime projections. See ADR-0091 and ADR-0154.
 
 #### `app/synesthesia`
 
