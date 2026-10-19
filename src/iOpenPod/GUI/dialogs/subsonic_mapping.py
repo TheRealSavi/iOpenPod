@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QRadioButton,
@@ -52,6 +51,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("subsonicMappingDialog")
         self.setWindowTitle(self.tr("Subsonic Sync"))
         self.resize(600, 520)
         self.setMinimumSize(500, 400)
@@ -82,39 +82,47 @@ class SubsonicPlaylistMappingDialog(QDialog):
         )
         layout.setSpacing(LAYOUT.space_md)
 
-        # 1. Sync Scope Selection
-        scope_group = QGroupBox(self.tr("Sync Content"), self)
-        scope_layout = QVBoxLayout(scope_group)
-        scope_layout.setContentsMargins(
-            LAYOUT.space_md, LAYOUT.space_sm, LAYOUT.space_md, LAYOUT.space_sm
+        self._title = QLabel(self.tr("Sync Subsonic"), self)
+        self._title.setObjectName("dialogTitle")
+        layout.addWidget(self._title)
+
+        self._description = QLabel(
+            self.tr(
+                "Choose whether to sync playlists only or include missing music files from your server."
+            ),
+            self,
         )
-        scope_layout.setSpacing(LAYOUT.space_xs)
+        self._description.setObjectName("pageDescription")
+        self._description.setWordWrap(True)
+        layout.addWidget(self._description)
 
         self._radio_playlists_only = QRadioButton(
             self.tr("Playlists only (match existing iPod tracks, no downloads)"),
-            scope_group,
+            self,
         )
         self._radio_playlists_only.setChecked(True)
         self._radio_all_songs = QRadioButton(
             self.tr("Include all songs (download missing tracks from server)"),
-            scope_group,
+            self,
         )
 
         self._scope_button_group = QButtonGroup(self)
         self._scope_button_group.addButton(self._radio_playlists_only)
         self._scope_button_group.addButton(self._radio_all_songs)
 
-        scope_layout.addWidget(self._radio_playlists_only)
-        scope_layout.addWidget(self._radio_all_songs)
-        layout.addWidget(scope_group)
+        layout.addWidget(self._radio_playlists_only)
+        layout.addWidget(self._radio_all_songs)
 
-        # 2. Select & Map Playlists
         tabs = QTabWidget(self)
+        tabs.setObjectName("subsonicTabs")
 
         mapping_scroll = QScrollArea(tabs)
+        mapping_scroll.setObjectName("subsonicScroll")
         mapping_scroll.setWidgetResizable(True)
         mapping_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        mapping_scroll.viewport().setStyleSheet("background: transparent;")
         mapping_content = QWidget(mapping_scroll)
+        mapping_content.setStyleSheet("background: transparent;")
         mapping_layout = QFormLayout(mapping_content)
         mapping_layout.setContentsMargins(
             LAYOUT.space_sm, LAYOUT.space_sm, LAYOUT.space_sm, LAYOUT.space_sm
@@ -122,9 +130,12 @@ class SubsonicPlaylistMappingDialog(QDialog):
         mapping_layout.setSpacing(LAYOUT.space_sm)
 
         mode_scroll = QScrollArea(tabs)
+        mode_scroll.setObjectName("subsonicScroll")
         mode_scroll.setWidgetResizable(True)
         mode_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        mode_scroll.viewport().setStyleSheet("background: transparent;")
         mode_content = QWidget(mode_scroll)
+        mode_content.setStyleSheet("background: transparent;")
         mode_layout = QFormLayout(mode_content)
         mode_layout.setContentsMargins(
             LAYOUT.space_sm, LAYOUT.space_sm, LAYOUT.space_sm, LAYOUT.space_sm
