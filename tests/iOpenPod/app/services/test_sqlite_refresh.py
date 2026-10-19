@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
+from contextlib import closing
+from dataclasses import replace
 from threading import Event
 from typing import TYPE_CHECKING
 
@@ -13,6 +16,8 @@ from tests.iOpenPod.app.services.test_device_coordinator import (
 from tests.iOpenPod.app.test_sync_execution import (
     _photo_host,  # pyright: ignore[reportPrivateUsage]
 )
+from tests.iPodDB.library.test_podcast_normalization import observed_source
+from tests.iPodDB.SQLiteDB.sqlite_test_support import sqlite_rows, sqlite_value
 
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
 from iOpenPod.app.library_sync_helper import IPodMediaCacheStats, IPodMediaLibrary
@@ -26,7 +31,7 @@ from iOpenPod.app.sync_execution import (
 )
 from iOpenPod.app.sync_plan import SyncPlan, SyncPlanAction, prepare_sync_plan
 from iPodDB.iTunesDB.cdb import compress_iTunesCDB
-from iPodDB.library import IPodLibrary, LibrarySnapshot
+from iPodDB.library import IPodLibrary, LibrarySnapshot, SQLiteDatabaseSet
 from iPodDB.library.writing import WriteChecksum, WriteResources, WriteTarget
 from iPodDB.SQLiteDB.checksum import verify_locations_cbk
 from storage import Storage
@@ -47,6 +52,35 @@ _NAMES = (
 _GUID = bytes.fromhex("000A270012345678")
 
 
+def _sqlite_bytes(directory: Path) -> dict[str, bytes]:
+    return {name: (directory / name).read_bytes() for name in _NAMES}
+
+
+def _assert_refreshed(directory: Path, original: dict[str, bytes]) -> None:
+    artifacts = _sqlite_bytes(directory)
+    assert sqlite_rows(artifacts["Library.itdb"], "SELECT title FROM item") == (
+        ("Blue Train",),
+    )
+    assert sqlite_rows(
+        artifacts["Locations.itdb"], "SELECT location FROM location"
+    ) == (("F00/track.m4a",),)
+    assert sqlite_rows(
+        artifacts["Dynamic.itdb"], "SELECT play_count_user FROM item_stats"
+    ) == ((0,),)
+    for name in ("Library.itdb", "Locations.itdb", "Dynamic.itdb"):
+        assert artifacts[name] != original[name]
+    for name in _NAMES[:-1]:
+        assert (
+            sqlite_value(artifacts[name], "SELECT value FROM retained_fixture_metadata")
+            == name
+        )
+    assert verify_locations_cbk(
+        SQLiteDatabaseSet(*(artifacts[name] for name in _NAMES)),
+        WriteChecksum.HASHAB,
+        _GUID,
+    )
+
+
 def _nano6(tmp_path: Path, *, signing_identity: bool = True) -> Path:
     root = _ipod_volume(
         tmp_path / "nano6", model_number="MC525", database_name="iTunesCDB"
@@ -63,8 +97,37 @@ def _nano6(tmp_path: Path, *, signing_identity: bool = True) -> Path:
         )
     directory = root / "iPod_Control/iTunes/iTunes Library.itlp"
     directory.mkdir()
-    for name in _NAMES:
-        (directory / name).write_bytes(b"stale firmware projection")
+    source = IPodLibrary.parse(cdb.read_bytes())
+    target = WriteTarget(
+        compressed_database=True,
+        sqlite_database=True,
+        sqlite_checksum=WriteChecksum.HASHAB,
+        firewire_guid=_GUID,
+    )
+    result = source.prepare(
+        source.analyze(source.begin_draft(regenerate_sqlite=True), target),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    assert result.prepared.sqlite is not None
+    stale_values = {
+        "Library.itdb": "UPDATE item SET title='Stale title'",
+        "Locations.itdb": "UPDATE location SET location='F00/stale.m4a'",
+        "Dynamic.itdb": "UPDATE item_stats SET play_count_user=99",
+    }
+    for name, data in result.prepared.sqlite.artifacts():
+        if name.endswith(".itdb"):
+            with closing(sqlite3.connect(":memory:")) as connection:
+                connection.deserialize(data)
+                connection.execute("CREATE TABLE retained_fixture_metadata(value TEXT)")
+                connection.execute(
+                    "INSERT INTO retained_fixture_metadata VALUES (?)", (name,)
+                )
+                if name in stale_values:
+                    connection.execute(stale_values[name])
+                connection.commit()
+                data = connection.serialize()
+        (directory / name).write_bytes(data)
     return root
 
 
@@ -75,6 +138,7 @@ def test_unchanged_sync_replaces_all_sqlite_without_rewriting_cdb(
     cdb = root / "iPod_Control/iTunes/iTunesCDB"
     retained = cdb.read_bytes()
     directory = root / "iPod_Control/iTunes/iTunes Library.itlp"
+    original = _sqlite_bytes(directory)
     platform = VirtualStoragePlatform()
     platform.add_volume(root, label="Nano 6")
     coordinator = DeviceCoordinator(Storage(platform))
@@ -82,10 +146,7 @@ def test_unchanged_sync_replaces_all_sqlite_without_rewriting_cdb(
         active = coordinator.select_device(
             coordinator.discover_devices().candidates[0].id
         )
-        assert all(
-            (directory / name).read_bytes() == b"stale firmware projection"
-            for name in _NAMES
-        )
+        assert _sqlite_bytes(directory) == original
         review = coordinator.prepare_library(
             LibraryPreparationRequest(
                 active.library, active, 1, 1, regenerate_sqlite=True
@@ -101,10 +162,7 @@ def test_unchanged_sync_replaces_all_sqlite_without_rewriting_cdb(
         assert {
             change.path.rsplit("/", 1)[-1] for change in review.file_changes
         } == set(_NAMES)
-        assert all(
-            (directory / name).read_bytes() == b"stale firmware projection"
-            for name in _NAMES
-        )
+        assert _sqlite_bytes(directory) == original
 
         saved = coordinator.save_library(review, active, lambda _: None, Event())
 
@@ -115,6 +173,7 @@ def test_unchanged_sync_replaces_all_sqlite_without_rewriting_cdb(
             for name, data in artifacts.artifacts()
         )
         assert verify_locations_cbk(artifacts, WriteChecksum.HASHAB, _GUID)
+        _assert_refreshed(directory, original)
     finally:
         coordinator.close()
 
@@ -125,6 +184,7 @@ def test_unchanged_sync_rechecks_every_sqlite_file(tmp_path: Path, name: str) ->
     cdb = root / "iPod_Control/iTunes/iTunesCDB"
     retained = cdb.read_bytes()
     directory = root / "iPod_Control/iTunes/iTunes Library.itlp"
+    original = _sqlite_bytes(directory)
     platform = VirtualStoragePlatform()
     platform.add_volume(root, label="Nano 6")
     coordinator = DeviceCoordinator(Storage(platform))
@@ -150,7 +210,7 @@ def test_unchanged_sync_rechecks_every_sqlite_file(tmp_path: Path, name: str) ->
         assert cdb.read_bytes() == retained
         assert (directory / name).read_bytes() == b"external change"
         assert all(
-            (directory / other).read_bytes() == b"stale firmware projection"
+            (directory / other).read_bytes() == original[other]
             for other in _NAMES
             if other != name
         )
@@ -160,6 +220,8 @@ def test_unchanged_sync_rechecks_every_sqlite_file(tmp_path: Path, name: str) ->
 
 def test_unchanged_sync_requires_signing_identity(tmp_path: Path) -> None:
     root = _nano6(tmp_path, signing_identity=False)
+    directory = root / "iPod_Control/iTunes/iTunes Library.itlp"
+    original = _sqlite_bytes(directory)
     platform = VirtualStoragePlatform()
     platform.add_volume(root, label="Nano 6")
     coordinator = DeviceCoordinator(Storage(platform))
@@ -179,11 +241,7 @@ def test_unchanged_sync_requires_signing_identity(tmp_path: Path) -> None:
         assert any(
             issue.code == "target.missing_guid" for issue in review.result.issues
         )
-        directory = root / "iPod_Control/iTunes/iTunes Library.itlp"
-        assert all(
-            (directory / name).read_bytes() == b"stale firmware projection"
-            for name in _NAMES
-        )
+        assert _sqlite_bytes(directory) == original
     finally:
         coordinator.close()
 
@@ -211,6 +269,7 @@ def test_sync_executor_refreshes_sqlite_with_no_media_or_smart_playlists(
     cdb = root / "iPod_Control/iTunes/iTunesCDB"
     retained = cdb.read_bytes()
     directory = root / "iPod_Control/iTunes/iTunes Library.itlp"
+    original = _sqlite_bytes(directory)
     platform = VirtualStoragePlatform()
     platform.add_volume(root, label="Nano 6")
     coordinator = DeviceCoordinator(Storage(platform))
@@ -238,10 +297,7 @@ def test_sync_executor_refreshes_sqlite_with_no_media_or_smart_playlists(
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None
         assert cdb.read_bytes() == retained
-        assert all(
-            (directory / name).read_bytes() != b"stale firmware projection"
-            for name in _NAMES
-        )
+        _assert_refreshed(directory, original)
     finally:
         coordinator.close()
 
@@ -251,6 +307,7 @@ def test_photo_only_sync_also_refreshes_sqlite(tmp_path: Path) -> None:
     cdb = root / "iPod_Control/iTunes/iTunesCDB"
     retained = cdb.read_bytes()
     directory = root / "iPod_Control/iTunes/iTunes Library.itlp"
+    original = _sqlite_bytes(directory)
     platform = VirtualStoragePlatform()
     platform.add_volume(root, label="Nano 6")
     coordinator = DeviceCoordinator(Storage(platform))
@@ -278,10 +335,78 @@ def test_photo_only_sync_also_refreshes_sqlite(tmp_path: Path) -> None:
         assert result.active.library.photos is not None
         assert len(result.active.library.photos.photos) == 1
         assert cdb.read_bytes() == retained
-        assert all(
-            (directory / name).read_bytes() != b"stale firmware projection"
-            for name in _NAMES
+        _assert_refreshed(directory, original)
+    finally:
+        coordinator.close()
+
+
+@pytest.mark.parametrize("baseline", [True, False])
+def test_sqlite_sync_submits_podcast_normalization_for_either_input(
+    tmp_path: Path, baseline: bool
+) -> None:
+    root = _nano6(tmp_path)
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root, label="SQLite Podcast policy")
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        active = coordinator.select_device(
+            coordinator.discover_devices().candidates[0].id
         )
+        active = replace(active, library=observed_source(baseline).snapshot)
+        request = SyncExecutionRequest(
+            SyncPlan(()),
+            HostMediaLibrary(LibrarySnapshot(), (), (), HostMediaCacheStats()),
+            IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False),
+            active,
+            1,
+            1,
+            reconcile_playlists=False,
+        )
+        draft, _, _ = _draft(request, [], [])
+        assert draft.normalize_podcasts and draft.regenerate_sqlite
+        assert not draft.rebuild_album_indexes
+    finally:
+        coordinator.close()
+
+
+@pytest.mark.parametrize("name", _NAMES[:-1])
+def test_sqlite_refresh_rejects_corrupt_companions_before_publication(
+    tmp_path: Path, name: str
+) -> None:
+    root = _nano6(tmp_path)
+    cdb = root / "iPod_Control/iTunes/iTunesCDB"
+    retained = cdb.read_bytes()
+    directory = root / "iPod_Control/iTunes/iTunes Library.itlp"
+    (directory / name).write_bytes(b"damaged SQLite")
+    original = _sqlite_bytes(directory)
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root, label="Nano 6")
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        active = coordinator.select_device(
+            coordinator.discover_devices().candidates[0].id
+        )
+        request = SyncExecutionRequest(
+            SyncPlan(()),
+            HostMediaLibrary(LibrarySnapshot(), (), (), HostMediaCacheStats()),
+            IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False),
+            active,
+            1,
+            1,
+            reconcile_playlists=False,
+        )
+
+        result = SyncExecutor(coordinator).execute(request, lambda _: None, Event())
+
+        assert result.status is SyncExecutionStatus.FAILED
+        assert any(
+            "SQLite Library generation failed" in issue.message
+            for issue in result.issues
+        )
+        assert result.active is None
+        assert not result.completed
+        assert cdb.read_bytes() == retained
+        assert _sqlite_bytes(directory) == original
     finally:
         coordinator.close()
 

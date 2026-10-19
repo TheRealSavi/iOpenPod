@@ -221,6 +221,11 @@ def test_empty_podcasts_gains_groups_only_in_dataset3(
         set(track_ids)
     )
     assert all(s.chunk.header.group_id for s in grouped)
+    grouped_ids = [s.chunk.header.group_id for s in grouped]
+    assert grouped_ids == sorted(set(grouped_ids))
+    assert [s.chunk.header.group_id for s in standard] == [
+        s.chunk.header.group_id for s in grouped if s.chunk.header.track_id
+    ]
 
 
 @pytest.mark.parametrize("category", [0, 2, 3, 4, 5, 6, 7])

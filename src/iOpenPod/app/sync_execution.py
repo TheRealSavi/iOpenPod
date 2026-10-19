@@ -114,6 +114,7 @@ from iPodDB.library import (
 )
 from storage import DeviceEntry, DeviceEntryKind, DevicePath, StorageError
 from storage.content_workspace import content_workspace
+from storage.device_capture import capture_device_file
 from storage.host_input import LocalHostFile
 from storage.media_processing import MediaToolFinder, available_compute_threads
 
@@ -233,8 +234,10 @@ class _PreparedPodcast:
 
 @dataclass(frozen=True, slots=True)
 class _PodcastArtworkRepair:
-    item: SyncPlanItem
+    track_id: int
     pixels: ArtworkPixels
+    item: SyncPlanItem | None = None
+    dependency: FileDependency | None = None
 
 
 class SyncExecutor:
@@ -463,6 +466,17 @@ class SyncExecutor:
                     )
                     issues.extend(cover_issues)
                     podcast_changes += len(podcast_artwork_repairs)
+                embedded_repairs, embedded_issues = _capture_retained_podcast_artwork(
+                    request,
+                    self._coordinator,
+                    podcast_tracks,
+                    podcast_artwork_repairs,
+                    () if podcast_plan is None else podcast_plan.removals,
+                    progress,
+                    checkpoint,
+                )
+                podcast_artwork_repairs += embedded_repairs
+                issues.extend(embedded_issues)
                 photos, photo_issues, photo_workspace = self._prepare_photos(
                     request, progress, checkpoint, resources
                 )
@@ -586,6 +600,7 @@ class SyncExecutor:
                     if requested_changes or (
                         not draft.regenerate_sqlite
                         and not draft.rebuild_album_indexes
+                        and not draft.normalize_podcasts
                         and not any(
                             can_refresh_smart_playlist(playlist)
                             for playlist in draft.snapshot.playlists
@@ -1557,7 +1572,7 @@ class SyncExecutor:
                             output.metadata or track,
                             media_types=(MediaType.VIDEO_PODCAST,)
                             if output.inspection.video_streams
-                            else (MediaType.AUDIO, MediaType.PODCAST),
+                            else (MediaType.PODCAST,),
                         )
                         song = _song(request, track, replace(output, metadata=track))
                         invalid = incoming_track_issues(song.track)
@@ -2356,15 +2371,13 @@ def _draft(
         item for item in request.plan.items if item.action is SyncPlanAction.ATTENTION
     )
     for repair in podcast_artwork_repairs:
-        repair_identity = repair.item.ipod_id
-        repair_track = (
-            tracks.get(repair_identity) if repair_identity is not None else None
-        )
+        repair_track = tracks.get(repair.track_id)
         if repair_track is not None and repair_track.artwork_id == 0:
             tracks[repair_track.track_id] = replace(
                 repair_track, artwork_id=cover_identity(repair.pixels)
             )
-            completed.append(repair.item)
+            if repair.item is not None:
+                completed.append(repair.item)
     if unresolved:
         issues.append(
             WriteIssue(
@@ -2423,6 +2436,11 @@ def _draft(
         or any(item.action is SyncPlanAction.REMOVE for item in completed),
         media=tuple(media),
         artwork=tuple(artwork),
+        artwork_dependencies=tuple(
+            repair.dependency
+            for repair in podcast_artwork_repairs
+            if repair.dependency is not None
+        ),
         replace_media=tuple(replaced),
         rockbox_media=tuple(rockbox_media),
         photos=tuple(item.asset for item in prepared_photos),
@@ -2433,6 +2451,10 @@ def _draft(
         ),
         regenerate_sqlite=request.source.profile.capabilities.database.uses_sqlite_database,
         repair_podcast_links=True,
+        normalize_podcasts=any(
+            t.media_kind is MediaKind.PODCAST or t.metadata.podcast
+            for t in normalized.tracks
+        ),
         rebuild_album_indexes=bool(request.source.library.tracks)
         and not request.source.profile.capabilities.database.uses_sqlite_database,
     )
@@ -2923,6 +2945,112 @@ def _capture_artwork(
     return tuple(issues)
 
 
+def _capture_retained_podcast_artwork(
+    request: SyncExecutionRequest,
+    coordinator: DeviceCoordinator,
+    prepared: list[_PreparedPodcast],
+    existing: tuple[_PodcastArtworkRepair, ...],
+    removed: tuple[int, ...],
+    progress: Callable[[WriteProgress], None],
+    checkpoint: Callable[[], None],
+) -> tuple[tuple[_PodcastArtworkRepair, ...], tuple[WriteIssue, ...]]:
+    """Fill missing native covers from retained media, bound to publication."""
+    if request.source.profile.capabilities.database.uses_sqlite_database:
+        return (), ()
+    formats = application_artwork_formats(request.source.profile)
+    if not formats:
+        return (), ()
+    unavailable = set(removed) | {r.track_id for r in existing}
+    unavailable.update(
+        p.replaces_track_id for p in prepared if p.replaces_track_id is not None
+    )
+    unavailable.update(
+        i.ipod_id
+        for i in request.plan.items
+        if i.action in (SyncPlanAction.REMOVE, SyncPlanAction.UPDATE)
+        and i.ipod_id is not None
+    )
+    candidates = [
+        t
+        for t in request.source.library.tracks
+        if (t.media_kind is MediaKind.PODCAST or t.metadata.podcast)
+        and not t.artwork_id
+        and t.track_id not in unavailable
+        and t.metadata.location
+    ]
+    if not candidates:
+        return (), ()
+    target_px = max(max(f.width, f.height) for f in formats)
+    used = sum(len(r.pixels.rgb888) for r in existing)
+    used += sum(
+        len(p.song.artwork.rgb888) for p in prepared if p.song.artwork is not None
+    )
+    used += sum(
+        len(f.source.rgb888)
+        for p in prepared
+        for f in p.chapter_artwork
+        if isinstance(f.source, ArtworkPixels)
+    )
+    repairs: list[_PodcastArtworkRepair] = []
+    issues: list[WriteIssue] = []
+    with coordinator.sync_session(request.source) as session:
+        for track in candidates:
+            checkpoint()
+            progress(
+                WriteProgress(
+                    "sync.podcast_artwork",
+                    source_text("Preparing artwork for {title}…", title=track.title),
+                    current_item=track.title,
+                )
+            )
+            try:
+                path = DevicePath(track.metadata.location)
+                before = session.fingerprint(path)
+                with capture_device_file(
+                    session, path, checkpoint=checkpoint
+                ) as captured:
+                    pixels = capture_embedded_artwork(
+                        captured, target_px, checkpoint=checkpoint
+                    )
+                if session.fingerprint(path) != before:
+                    raise ValueError(
+                        "The retained Podcast media changed during cover capture."
+                    )
+                if pixels is None:
+                    continue
+                if used + len(pixels.rgb888) > MAX_PODCAST_COVER_BYTES:
+                    raise ValueError(
+                        "Podcast covers exceed the 64 MiB preparation limit."
+                    )
+                used += len(pixels.rgb888)
+                repairs.append(
+                    _PodcastArtworkRepair(
+                        track.track_id,
+                        pixels,
+                        dependency=FileDependency(
+                            track.metadata.location, before.size, before.sha256
+                        ),
+                    )
+                )
+            except PreparationCancelledError:
+                raise
+            except (OSError, ValueError, StorageError) as error:
+                issues.append(
+                    WriteIssue(
+                        "sync.podcast_retained_artwork_skipped",
+                        source_text(
+                            "Embedded artwork for {title} could not be prepared.",
+                            title=track.title,
+                        ),
+                        severity=IssueSeverity.WARNING,
+                        detail=exception_text(error),
+                        record_id=track.track_id,
+                        artifact=track.metadata.location,
+                    )
+                )
+    return tuple(repairs), tuple(issues)
+
+
 def _capture_podcast_artwork(
     request: SyncExecutionRequest,
     podcast_sync: PreparedPodcastSync,
@@ -3034,7 +3162,9 @@ def _capture_podcast_artwork(
     ]
     retained_covers = tuple(
         _PodcastArtworkRepair(
-            SyncPlanItem(
+            identity,
+            covers[subscription_id],
+            item=SyncPlanItem(
                 SyncPlanAction.UPDATE,
                 SyncPlanMediaKind.TRACK,
                 SyncPlanBasis.HOST_FACTS_CHANGED,
@@ -3044,7 +3174,6 @@ def _capture_podcast_artwork(
                 ipod_path=retained[identity].metadata.location,
                 ipod_id=identity,
             ),
-            covers[subscription_id],
         )
         for identity, subscription_id in repairs.items()
         if subscription_id in covers

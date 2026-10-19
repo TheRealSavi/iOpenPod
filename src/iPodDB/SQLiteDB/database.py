@@ -38,6 +38,7 @@ from iPodDB.library._native_values import (
 from iPodDB.library.models import (
     ContentAdvisory,
     LibrarySnapshot,
+    MediaKind,
     Track,
 )
 from iPodDB.library.playlists import PlaylistKind, SmartPlaylist
@@ -67,7 +68,7 @@ if TYPE_CHECKING:
     from iPodDB.library.writing import WriteChecksum
 
 
-type _AlbumKey = tuple[str, str, str]
+type _AlbumKey = tuple[str, str, str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +176,7 @@ def _album_key(track: Track) -> _AlbumKey:
         track.album.strip(),
         track.album_artist.strip() or track.artist.strip(),
         track.show.strip(),
+        "album",
     )
 
 
@@ -222,8 +224,32 @@ def _group_tracks_by_album(
     """Group Tracks in snapshot order while computing each album key once."""
 
     grouped: dict[_AlbumKey, list[Track]] = {}
+    podcasts = tuple(
+        t for t in tracks if t.media_kind is MediaKind.PODCAST or t.metadata.podcast
+    )
+    feeds: dict[str, set[str]] = {}
+    for track in podcasts:
+        if track.metadata.podcast_rss_url:
+            feeds.setdefault(track.album, set()).add(track.metadata.podcast_rss_url)
+    shows: dict[tuple[str, str], _AlbumKey] = {}
+    podcast_keys: dict[int, _AlbumKey] = {}
+    for track in podcasts:
+        candidates = feeds.get(track.album, set())
+        feed = track.metadata.podcast_rss_url
+        if not feed and len(candidates) == 1:
+            feed = next(iter(candidates))
+        podcast_keys[track.track_id] = shows.setdefault(
+            (track.album, feed),
+            (
+                track.album,
+                track.album_artist.strip() or track.artist.strip(),
+                feed,
+                "podcast",
+            ),
+        )
     for track in tracks:
-        grouped.setdefault(_album_key(track), []).append(track)
+        key = podcast_keys.get(track.track_id) or _album_key(track)
+        grouped.setdefault(key, []).append(track)
     return {key: tuple(members) for key, members in grouped.items()}
 
 
@@ -377,6 +403,12 @@ def _build_sqlite_databases(
         if native.containers is not None
         else tuple(SQLiteContainer(p) for p in snapshot.playlists)
     )
+    if native.normalize_podcasts:
+        # Empty firmware categories are native templates, not saved user
+        # Playlists. Nano's Podcast baseline exposes only populated categories.
+        containers = tuple(
+            c for c in containers if c.dataset != 5 or c.playlist.entries
+        )
     user_ids = frozenset(c.playlist.playlist_id for c in containers if c.dataset != 5)
     # Native Smart rules can refer to user Playlist IDs. Keep those identities
     # even when a category or the database's master seed uses the same value.
@@ -466,10 +498,11 @@ def _build_sqlite_databases(
             artist_pid,user_rating,name,name_order,all_compilations,feed_url,
             season_number,is_unknown,has_songs,has_music_videos,sort_order,
             artist_order,has_any_compilations,sort_name,artist_count_calc,
-            has_movies,item_count) VALUES (?,2,?,?,?,?,?,?,?, ?,?, ?,1,0,?,
+            has_movies,item_count) VALUES (?,?,?,?,?,?,?,?,?, ?,?, ?,1,0,?,
             100,?,?,0,0,?)""",
             (
                 _s64(album_pid),
+                3 if album_key[-1] == "podcast" else 2,
                 int(artwork_track is not None),
                 _s64(_track_pid(artwork_track)) if artwork_track is not None else 0,
                 artist_ids.get(album_key[1], 0),
@@ -670,7 +703,11 @@ def _build_sqlite_databases(
             "INSERT INTO item_stats VALUES (?,?,?,?,0,?,?,0,?,?,?,?,0,?,?,0)",
             (
                 _s64(pid),
-                int(metadata.played or track.play_count > 0),
+                int(
+                    metadata.played
+                    or track.play_count > 0
+                    or metadata.bookmark_time_ms > 0
+                ),
                 _core_data(metadata.last_played),
                 track.play_count,
                 _core_data(metadata.last_skipped),
@@ -866,6 +903,21 @@ def _build_sqlite_databases(
             "Genius.itdb",
         )
     )
+    if native.normalize_podcasts:
+        # This is explicit Sync intent, applied after retention so old manual UI
+        # state cannot undo the selected Release Date policy. Other UI survives.
+        dynamic.executemany(
+            "UPDATE container_ui SET play_order=40,is_reversed=1 WHERE container_pid=?",
+            (
+                (_s64(pid),)
+                for c, pid in zip(containers, allocated, strict=True)
+                if c.podcast
+            ),
+        )
+        dynamic.execute(
+            "UPDATE container_ui SET play_order=7,is_reversed=0 WHERE container_pid=?",
+            (_s64(master_pid),),
+        )
     chapter_pids = frozenset(
         int(row[0]) for row in extras.execute("SELECT item_pid FROM chapter")
     )

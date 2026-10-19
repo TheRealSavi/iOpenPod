@@ -732,7 +732,14 @@ class MediaTranscoder:
         """Add verified Rockbox artwork to an already prepared private file."""
 
         checkpoint()
-        ExportMediaTagger().prepare(prepared.source, track, artwork)
+        suffix = (
+            ".m4v"
+            if prepared.encoding is VideoEncoding.MP4
+            else _SUFFIXES[prepared.encoding]
+        )
+        ExportMediaTagger().prepare(
+            prepared.source, track, artwork, file_name=f"media{suffix}"
+        )
         inspection = MediaInspector(find_tool=self._find_tool).inspect(
             prepared.source, checkpoint=checkpoint
         )
@@ -901,11 +908,10 @@ class MediaTranscoder:
                     raise ValueError("Rockbox metadata requires the reviewed Track")
                 reviewed_track = metadata
                 tagger = ExportMediaTagger()
-                output = workspace.transform_bytes(
+                output = workspace.transform_stream(
                     output_path,
-                    plan.suffix,
-                    lambda data: tagger.prepare_bytes(
-                        data, f"media{plan.suffix}", reviewed_track
+                    lambda stream: tagger.prepare_stream(
+                        stream, f"media{plan.suffix}", reviewed_track
                     ),
                 )
                 output_path = output.snapshot

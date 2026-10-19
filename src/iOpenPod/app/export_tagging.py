@@ -192,6 +192,9 @@ def _tag_id3_container(
     tags: Any = audio.tags
 
     _apply_id3_tags(tags, track, cover, preserve_artwork=preserve_artwork)
+    if not isinstance(path, Path):
+        # Mutagen expects a file object at offset zero for every operation.
+        path.seek(0)
     audio.save(path, **({"padding": _no_padding} if not isinstance(path, Path) else {}))
     return _tag_signature(audio.tags)
 
@@ -209,6 +212,8 @@ def _tag_raw_aac(
     except ID3NoHeaderError:
         tags = _ID3_TAG()
     _apply_id3_tags(tags, track, cover, preserve_artwork=preserve_artwork)
+    if not isinstance(path, Path):
+        path.seek(0)
     tags.save(path, **({"padding": _no_padding} if not isinstance(path, Path) else {}))
     return _tag_signature(tags)
 
@@ -358,6 +363,8 @@ def _tag_mp4(
             tags.pop(key, None)
         else:
             tags[key] = value
+    if not isinstance(path, Path):
+        path.seek(0)
     audio.save(path, **({"padding": _no_padding} if not isinstance(path, Path) else {}))
     return _tag_signature(audio.tags)
 

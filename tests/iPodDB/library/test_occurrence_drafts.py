@@ -83,17 +83,12 @@ def test_membership_edits_retain_occurrences_and_derive_output_positions(
                 if s.chunk.header.track_id
             )
             for i, item in enumerate(episodes):
-                expected = (
-                    item.header.group_id
-                    if podcasts and dataset.chunk.header.dataset_type == 3
-                    else i
-                )
                 positions = tuple(
                     c.prefix.position
                     for c in item.children
                     if isinstance(c.prefix, MhodPlaylistPositionPrefix)
                 )
-                assert positions and set(positions) == {expected}
+                assert positions and set(positions) == {i}
 
 
 @pytest.mark.parametrize("new_occurrence", [False, True])

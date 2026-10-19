@@ -89,6 +89,8 @@ def _keys(tracks: tuple[Track, ...], kind: int) -> tuple[tuple[str, ...], ...]:
 
 
 def _jump(value: str) -> int:
+    if not value:
+        return 0
     return next(
         (
             ord(c.upper()[0]) if not c.isdigit() else ord("0")

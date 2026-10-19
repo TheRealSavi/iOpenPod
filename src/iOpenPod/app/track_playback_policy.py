@@ -52,7 +52,7 @@ def enforce_track_playback_policy(track: Track) -> Track:
                 MediaType.AUDIO_VIDEO,
             )
         ):
-            types = (MediaType.AUDIO, MediaType.PODCAST)
+            types = (MediaType.PODCAST,)
         track = replace(
             track,
             media_types=types,
@@ -60,7 +60,6 @@ def enforce_track_playback_policy(track: Track) -> Track:
             metadata=replace(
                 metadata,
                 podcast_guid=track_podcast_identity(track).guid,
-                disc_number=1,
                 last_modified=metadata.last_modified
                 or int(datetime.now(UTC).timestamp()),
                 subtitle=metadata.subtitle or metadata.description[:255],

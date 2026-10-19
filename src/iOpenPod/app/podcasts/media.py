@@ -136,9 +136,7 @@ def episode_track(addition: PodcastEpisodeAddition, *, video: bool = False) -> T
         year=year,
         track_number=episode.episode_number or 0,
         play_count=episode.play_count,
-        media_types=(MediaType.VIDEO_PODCAST,)
-        if video
-        else (MediaType.AUDIO, MediaType.PODCAST),
+        media_types=(MediaType.VIDEO_PODCAST,) if video else (MediaType.PODCAST,),
         show=subscription.title,
         episode=episode.guid,
         album_artist=subscription.author,
@@ -151,7 +149,6 @@ def episode_track(addition: PodcastEpisodeAddition, *, video: bool = False) -> T
             description=episode.description,
             subtitle=episode.subtitle or episode.description[:255],
             content_advisory=episode.content_advisory,
-            disc_number=1,
             last_modified=int(time.time()),
             release_date=episode.published_at,
             category=subscription.category,

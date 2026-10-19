@@ -554,10 +554,18 @@ refreshed feeds without downloading their media again. See the
 [Finder capture research](docs/research/podcast-finder-captures-2026-10-18.md).
 ID3 chapter pictures now feed the timed-artwork writer from those same captured
 originals, including after transcoding. Podcast GUIDs occupy MHOD 15 separately
-from download URLs. Audio Podcasts use media mask 5 and disc 1, with publication
-year, modification time, subtitle, and publisher advisory supplied. Sync repairs
+from download URLs. Audio Podcasts use media mask 4 and preserve supplied or retained
+disc numbers, with publication year, modification time, subtitle, and publisher
+advisory supplied. Sync repairs
 missing show links, and checked CDB metadata supplies SQLite Podcast identity,
-container classification, and descriptions. See ADR-0149.
+container classification, and descriptions. See ADR-0149 and ADR-0151.
+Sync now normalizes retained and new Podcasts to the 12.6 baseline's album, show,
+Playlist, and database-reference relationships. Classic traversal and SQLite
+Podcast order follow their respective captured structures; SQLite show ownership
+and partial-playback evidence are preserved across refreshes.
+It also recovers missing native covers from retained embedded media. Both supplied
+starting structures use this explicit policy; loading and ordinary no-op writes
+remain lossless. See ADR-0152 and ADR-0153.
 Episode slots are an automatic filling target;
 manual additions may exceed it. Episode count alone never authorizes removal.
 Both Newest and Next clear by listened state or time on the iPod. Newest replaces

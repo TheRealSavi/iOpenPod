@@ -84,6 +84,25 @@ has its own nonzero row ID, and its type-100 position equals that row ID.
 **All 15 episode `group_id_ref` values are zero on every model.** The separate
 unknown u16 at MHIP `0x12` is also zero in these captures.
 
+Follow-up on **2026-10-19** confirmed that all 12 show groups have an ID exactly
+one below their first Episode's row ID, followed by consecutive increasing Episode
+IDs. Gaps occur between shows. For example, Classic groups 8807, 8818, and 8836
+precede Episode ranges 8808–8812, 8819–8824, and 8837–8840. The ordinary
+counterparts use the same Episode row IDs. This agrees with the Original/libgpod
+group-first allocation convention. It does not establish that Finder rejects all
+other numbering, nor justify copying Apple's absent parent references.
+
+The later **Classic 6.5 Apple PlayCount** capture breaks the apparent identity
+between row IDs and positions: Episode row IDs are now 76–90, while both dataset
+counterparts retain positions 8808–8812, 8819–8824, and 8837–8840. The user reports
+that Finder accepts this capture. After restoring it and refreshing with
+iOpenPod, **Classic 6.5 Latest** has positions 92–96, 98–103, and 105–108 in dataset
+3, while dataset 2 still retains the Apple values. This establishes a counterpart
+mismatch introduced by iOpenPod, not a Finder requirement that positions equal
+current row IDs. The writer now preserves the flat value during repair and shares
+it with the grouped Episode; whether the mismatch caused rejection still requires
+a device test.
+
 The ordinary dataset-2 counterparts, where present, contain 15 flat occurrences.
 No inspected Playlist or group title contains literal `Root`. The database still
 contains all three named groups on the Classic.

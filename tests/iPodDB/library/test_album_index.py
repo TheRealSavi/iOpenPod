@@ -400,9 +400,16 @@ def test_verifier_rejects_an_incorrect_album_index_writer(
         previous: tuple[Track, ...],
         desired: tuple[Track, ...],
         original_payload: MhodLibraryIndexPayload,
+        *,
+        normalize_podcasts: bool = False,
     ) -> _album_index.PreparedAlbumIndex:
         prepared = writer(
-            source_document, candidate, previous, desired, original_payload
+            source_document,
+            candidate,
+            previous,
+            desired,
+            original_payload,
+            normalize_podcasts=normalize_podcasts,
         )
         return replace(
             prepared,

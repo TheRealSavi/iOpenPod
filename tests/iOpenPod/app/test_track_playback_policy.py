@@ -35,8 +35,19 @@ from storage import FileFingerprint, HostPath
         MediaType.MUSIC_VIDEO,
     ),
 )
-def test_all_podcasts_and_video_types_require_both_flags(kind: MediaType) -> None:
-    original = Track(1, "Title", "Artist", "Album", 1_000, media_types=(kind,))
+@pytest.mark.parametrize("disc_number", (0, 1, 3))
+def test_all_podcasts_and_video_types_require_both_flags(
+    kind: MediaType, disc_number: int
+) -> None:
+    original = Track(
+        1,
+        "Title",
+        "Artist",
+        "Album",
+        1_000,
+        media_types=(kind,),
+        metadata=TrackMetadata(disc_number=disc_number),
+    )
 
     updated = enforce_track_playback_policy(original)
 
@@ -44,15 +55,11 @@ def test_all_podcasts_and_video_types_require_both_flags(kind: MediaType) -> Non
     podcast = kind in (MediaType.PODCAST, MediaType.VIDEO_PODCAST)
     assert updated == replace(
         original,
-        media_types=(MediaType.AUDIO, MediaType.PODCAST)
-        if kind is MediaType.PODCAST
-        else original.media_types,
         metadata=replace(
             original.metadata,
             skip_shuffle=True,
             remember_position=True,
             podcast=kind in (MediaType.PODCAST, MediaType.VIDEO_PODCAST),
-            disc_number=1 if podcast else 0,
             last_modified=updated.metadata.last_modified if podcast else 0,
         ),
     )
@@ -88,7 +95,7 @@ def test_legacy_semantic_podcast_flag_also_requires_both_flags() -> None:
     updated = enforce_track_playback_policy(track)
 
     assert updated.metadata.skip_shuffle and updated.metadata.remember_position
-    assert updated.media_types == (MediaType.AUDIO, MediaType.PODCAST)
+    assert updated.media_types == (MediaType.PODCAST,)
 
 
 @pytest.mark.parametrize("kind", (MediaType.AUDIO, MediaType.AUDIOBOOK, MediaType.MEMO))

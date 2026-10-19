@@ -111,6 +111,8 @@ def project_sqlite_metadata(
     document: DatabaseDocument[MhbdHeader],
     snapshot: LibrarySnapshot,
     device_time: TimeConversion,
+    *,
+    normalize_podcasts: bool = False,
 ) -> SQLiteNativeMetadata:
     """Keep dataset ownership, native rules and chapter Unknown Data intact."""
 
@@ -178,4 +180,5 @@ def project_sqlite_metadata(
         project_mac(master.timestamp_2 or master.timestamp, device_time)
         if master is not None
         else 0,
+        normalize_podcasts=normalize_podcasts,
     )

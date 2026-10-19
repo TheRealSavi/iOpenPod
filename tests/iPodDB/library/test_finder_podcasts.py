@@ -103,9 +103,7 @@ def finder_source(*, compressed: bool = False) -> IPodLibrary:
                         new_itunes_chunk(
                             MHOD,
                             MhodHeader(mhod_type=100),
-                            prefix=MhodPlaylistPositionPrefix(
-                                position=group + 1 if dataset == 3 else identity - 1
-                            ),
+                            prefix=MhodPlaylistPositionPrefix(position=group + 1),
                             payload=MhodPlaylistPositionPayload(),
                         ),
                     ),
@@ -205,17 +203,30 @@ def test_affected_finder_podcast_groups_gain_explicit_parent_links(
         else:
             assert groups[item.header.group_id_ref] == albums[item.header.track_id]
             assert item.header.mhip_persistent_id == 1003 + item.header.track_id
-            assert (
-                next(
-                    c.prefix.position
-                    for c in item.children
-                    if isinstance(c.prefix, MhodPlaylistPositionPrefix)
-                )
-                == item.header.group_id
-            )
+            assert next(
+                c.prefix.position
+                for c in item.children
+                if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+            ) == (0 if change == "remove" else item.header.track_id * 100 + 1)
     flat = rows(checked, 2)[1].find_chunks(MhipHeader)
     assert all(not i.chunk.header.group_id_ref for i in flat)
     assert all(not i.chunk.header.podcast_group_flag for i in flat)
+    assert {
+        i.chunk.header.track_id: next(
+            c.prefix.position
+            for c in i.chunk.children
+            if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+        )
+        for i in flat
+    } == {
+        i.chunk.header.track_id: next(
+            c.prefix.position
+            for c in i.chunk.children
+            if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+        )
+        for i in rows(checked, 3)[1].find_chunks(MhipHeader)
+        if i.chunk.header.track_id
+    }
 
 
 @pytest.mark.parametrize("malformation", ("duplicate_title", "foreign_reference"))

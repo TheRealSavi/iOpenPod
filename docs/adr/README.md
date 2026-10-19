@@ -223,3 +223,6 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0148: Keep Album browse groups contiguous](0148-keep-album-browse-groups-contiguous.md)
 - [ADR-0149: Author Podcasts from Finder capture evidence](0149-author-podcasts-from-finder-capture-evidence.md)
 - [ADR-0150: Retain firmware SQLite metadata and dual signatures](0150-retain-firmware-sqlite-metadata-and-dual-signatures.md)
+- [ADR-0151: Write audio Podcasts with media type four](0151-write-audio-podcasts-with-media-type-four.md)
+- [ADR-0152: Normalize Podcast Sync to the 12.6 baseline structure](0152-normalize-podcast-sync-to-baseline.md)
+- [ADR-0153: Normalize SQLite Podcast Sync from Nano 5 evidence](0153-normalize-sqlite-podcast-sync.md)

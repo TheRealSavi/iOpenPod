@@ -71,6 +71,8 @@ def verify_playlists(
     rebuild_album_indexes: bool = False,
     podcast_playlists: frozenset[int] = frozenset(),
     playlist_timestamp: int = 0,
+    normalize_podcasts: bool = False,
+    sqlite: bool = False,
 ) -> tuple[WriteIssue, ...]:
     issues = list(
         structure_issues(
@@ -168,7 +170,10 @@ def verify_playlists(
     if (
         affected_datasets(before, desired).intersection((2, 3))
         and 3 in kinds
-        and (2 not in kinds or kinds.index(3) > kinds.index(2))
+        and (
+            (2 not in kinds and not sqlite)
+            or (2 in kinds and kinds.index(3) > kinds.index(2))
+        )
     ):
         fail(
             "playlist_dataset_order",
@@ -292,7 +297,7 @@ def verify_playlists(
                         chunk,
                     )
             if structural_tracks or baseline is None:
-                if desired.tracks:
+                if desired.tracks and not sqlite:
                     present_indexes = {
                         (c.header.mhod_type, c.prefix.sort_type)
                         for c in chunk.children
@@ -394,6 +399,17 @@ def verify_playlists(
                                 master_tracks(chunk, project_tracks(checked)),
                                 original_indexes[0],
                                 child.payload,
+                                normalize_podcasts=normalize_podcasts,
+                            )
+                        elif normalize_podcasts and not original_indexes:
+                            error = verify_album_index(
+                                original,
+                                checked,
+                                (),
+                                master_tracks(chunk, project_tracks(checked)),
+                                MhodLibraryIndexPayload((), b""),
+                                child.payload,
+                                normalize_podcasts=True,
                             )
                     else:
                         if len(prior_tracks) != len(before.tracks):
@@ -563,8 +579,18 @@ def verify_playlists(
             groups: dict[int, str] = {}
             native_ids: set[int] = set()
             active_group = 0
+            previous_id = 0
             for item in items:
                 h = item.header
+                if h.group_id <= previous_id:
+                    fail(
+                        "podcast_row_order",
+                        "Podcast row identifiers must increase in serialized group and Episode order.",
+                        kind,
+                        chunk,
+                        item=item,
+                    )
+                previous_id = h.group_id
                 if not h.group_id or h.group_id in native_ids:
                     fail(
                         "podcast_group",
@@ -606,16 +632,68 @@ def verify_playlists(
                         for c in item.children
                         if isinstance(c.prefix, MhodPlaylistPositionPrefix)
                     ]
-                    if not positions or any(value != h.group_id for value in positions):
+                    if not positions or len(set(positions)) != 1:
                         fail(
                             "podcast_position",
-                            "Podcast episode position metadata must reference its native row identifier.",
+                            "Podcast episode position metadata is missing or ambiguous.",
                             kind,
                             chunk,
-                            detail=f"Track {h.track_id}, row ID {h.group_id}, expected position {h.group_id}, actual positions {positions}.",
+                            detail=f"Track {h.track_id}, row ID {h.group_id}, actual positions {positions}.",
+                            item=item,
+                        )
+            counterpart = output.get((2, identity))
+            if counterpart is not None:
+                grouped_ids = Counter(
+                    (item.header.track_id, item.header.group_id)
+                    for item in items
+                    if not item.header.podcast_group_flag & 0x100
+                )
+                flat_ids = Counter(
+                    (s.chunk.header.track_id, s.chunk.header.group_id)
+                    for s in counterpart.find_chunks(MhipHeader)
+                )
+                if grouped_ids != flat_ids:
+                    fail(
+                        "podcast_row_mirror",
+                        "Podcast counterparts must use matching Episode row identifiers.",
+                        2,
+                        counterpart.chunk,
+                    )
+                grouped_positions = {
+                    (item.header.track_id, item.header.group_id): {
+                        c.prefix.position
+                        for c in item.children
+                        if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+                    }
+                    for item in items
+                    if not item.header.podcast_group_flag & 0x100
+                }
+                for occurrence in counterpart.find_chunks(MhipHeader):
+                    item = occurrence.chunk
+                    flat_positions = {
+                        c.prefix.position
+                        for c in item.children
+                        if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+                    }
+                    expected_positions = grouped_positions.get(
+                        (item.header.track_id, item.header.group_id)
+                    )
+                    if len(flat_positions) != 1 or flat_positions != expected_positions:
+                        fail(
+                            "podcast_position_mirror",
+                            "Podcast counterparts must use matching Episode positions.",
+                            2,
+                            counterpart.chunk,
+                            detail=f"Track {item.header.track_id}, row ID {item.header.group_id}, expected positions {expected_positions}, actual positions {flat_positions}.",
                             item=item,
                         )
         elif membership_changed or playlist.playlist_id in changed_folders:
+            grouped = output.get((3, identity))
+            podcast_counterpart = (
+                kind == 2
+                and grouped is not None
+                and is_podcasts(3, grouped.chunk.header)
+            )
             for position, item in enumerate(items):
                 if item.header.podcast_group_flag & 0x100 or item.header.group_id_ref:
                     fail(
@@ -627,6 +705,10 @@ def verify_playlists(
                         item=item,
                     )
                     break
+                if podcast_counterpart:
+                    # The grouped pass checks these positions against the matching
+                    # Episode, including values retained from older Apple row IDs.
+                    continue
                 positions = [
                     c.prefix.position
                     for c in item.children

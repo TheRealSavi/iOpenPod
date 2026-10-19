@@ -1344,6 +1344,7 @@ class DeviceCoordinator:
                     and capabilities.database.uses_sqlite_database,
                     rebuild_album_indexes=request.rebuild_album_indexes,
                     repair_podcast_links=request.repair_podcast_links,
+                    normalize_podcasts=request.normalize_podcasts,
                 ),
                 target,
             )

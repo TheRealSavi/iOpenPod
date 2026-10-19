@@ -141,8 +141,8 @@ def test_podcast_add_replace_and_remove_publish_verified_media_without_overwriti
         assert podcast.title == addition.episode.title
         assert podcast.metadata.podcast_rss_url == addition.subscription.feed_url
         assert podcast.metadata.podcast_guid == addition.episode.guid
-        assert podcast.ipod is not None and podcast.ipod.media_type_code == 5
-        assert podcast.metadata.disc_number == 1
+        assert podcast.ipod is not None and podcast.ipod.media_type_code == 4
+        assert podcast.metadata.disc_number == 0
         assert podcast.metadata.last_modified > 0
         assert (
             podcast.metadata.podcast
@@ -156,6 +156,7 @@ def test_podcast_add_replace_and_remove_publish_verified_media_without_overwriti
             ).find_chunks(MhitHeader)
             if selection.chunk.header.track_id == podcast.track_id
         )
+        assert native.media_type == 4
         assert native.podcast_now_playing_flag == 1
         assert podcast.metadata.release_date == addition.episode.published_at
         assert (podcast.episode_number, podcast.season_number) == (7, 2)

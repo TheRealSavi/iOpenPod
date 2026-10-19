@@ -28,7 +28,10 @@ from iPodDB.library._playlist_datasets import (
     playlist_rows,
     structure_issues,
 )
-from iPodDB.library._podcast_writing import normalize_podcast_order
+from iPodDB.library._podcast_writing import (
+    normalize_podcast_order,
+    podcast_rows_need_repair,
+)
 from iPodDB.library._resolved_write import FolderWrite, ResolvedWrite
 from iPodDB.library._source_warnings import source_warnings
 from iPodDB.library._write_analysis import analyze
@@ -145,14 +148,25 @@ def resolve(
     repair_ids = frozenset(
         row.chunk.header.playlist_id
         for kind, row in rows
-        if draft.repair_podcast_links
+        if (draft.repair_podcast_links or draft.normalize_podcasts)
         and is_podcasts(kind, row.chunk.header)
         and row.chunk.header.playlist_id
         in {p.playlist_id for p in draft.snapshot.playlists}
-        and any(
-            not item.chunk.header.podcast_group_flag & 0x100
-            and not item.chunk.header.group_id_ref
-            for item in row.find_chunks(MhipHeader)
+        and (
+            draft.normalize_podcasts
+            or podcast_rows_need_repair(
+                tuple(item.chunk for item in row.find_chunks(MhipHeader)),
+                next(
+                    (
+                        tuple(item.chunk for item in flat.find_chunks(MhipHeader))
+                        for dataset, flat in rows
+                        if dataset == 2
+                        and flat.chunk.header.playlist_id
+                        == row.chunk.header.playlist_id
+                    ),
+                    None,
+                ),
+            )
         )
     )
     if repair_ids:
@@ -175,7 +189,13 @@ def resolve(
     # Invalid parent graphs and malformed draft values must not enter derivation.
     if not plan.blocked:
         desired, generated = normalize_podcast_order(
-            document, original, requested, issues, repair_ids=repair_ids
+            document,
+            original,
+            requested,
+            issues,
+            repair_ids=repair_ids,
+            normalize=draft.normalize_podcasts,
+            sqlite=target.sqlite_database,
         )
         desired = _values(original, desired, issues)
     if plan.blocked:
@@ -456,6 +476,13 @@ def resolve(
         desired,
         generated_changes,
         describe_effects(document, resolved, generated_changes),
-        PRESERVATION,
+        (
+            (
+                "Explicit Podcast normalization replaces its defined native relationships and authoring fields; unrelated values and Unknown Data remain retained.",
+                *PRESERVATION[1:],
+            )
+            if draft.normalize_podcasts
+            else PRESERVATION
+        ),
     )
     return replace(resolved, plan=replace(resolved.plan, resolution=resolution))

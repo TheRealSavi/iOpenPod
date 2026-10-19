@@ -103,6 +103,8 @@ def _keys(tracks: Sequence[Track], kind: int) -> tuple[tuple[str | int, ...], ..
 def _letter(value: str | int) -> int:
     if isinstance(value, int):
         return ord("0")
+    if value == "":
+        return 0
     for character in value:
         upper = character.upper()[0]
         if character.isalnum() and ord(upper) <= 0xFFFF:

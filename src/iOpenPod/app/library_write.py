@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         ArtworkAsset,
         ArtworkPixels,
         ArtworkRead,
+        FileDependency,
         LibrarySnapshot,
         LibraryWritePlan,
         LibraryWriteResult,
@@ -67,6 +68,9 @@ class LibraryPreparationRequest:
     regenerate_sqlite: bool = field(default=False, kw_only=True)
     rebuild_album_indexes: bool = field(default=False, kw_only=True)
     repair_podcast_links: bool = field(default=False, kw_only=True)
+    normalize_podcasts: bool = field(default=False, kw_only=True)
+    # Retained media whose embedded covers supplied new native artwork.
+    artwork_dependencies: tuple[FileDependency, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

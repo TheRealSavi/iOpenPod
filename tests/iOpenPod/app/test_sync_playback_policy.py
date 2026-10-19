@@ -142,14 +142,14 @@ def test_sync_saves_playback_repairs_without_media_changes(
         assert headers[first.track_id].podcast_now_playing_flag == 1
         assert headers[music.track_id].podcast_now_playing_flag == 0
 
-        # With repaired flags, another Sync has no database work to publish.
-        database = device.root / "iPod_Control/iTunes/iTunesDB"
-        original_bytes = database.read_bytes()
+        # Explicit Podcast normalization may date the Playlist again, while
+        # preserving the normalized Library, identities, playback and media.
         repeated = SyncExecutor(
             device.coordinator, transcoder=_NoMediaPreparation()
         ).execute(_request(reloaded), lambda _: None, Event())
         assert repeated.status is SyncExecutionStatus.SUCCESS, repeated.issues
         assert not repeated.completed
-        assert database.read_bytes() == original_bytes
+        assert repeated.active is not None
+        assert repeated.active.library == reloaded.library
     finally:
         device.coordinator.close()

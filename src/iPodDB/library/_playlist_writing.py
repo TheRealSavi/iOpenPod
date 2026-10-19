@@ -207,7 +207,7 @@ def edit_playlist(
             )
         # Entries can carry source-native Podcast row IDs or positions from before
         # a generated regroup. Rebuild ordinary positions from the resulting order;
-        # the dataset-3 Podcast pass assigns episode row IDs afterward.
+        # the Podcast pass assigns row IDs and mirrors counterpart positions afterward.
         replacement_items.append(position_item(item, index))
     visible_ids = set(known_entries)
     hidden = [item for index, item in enumerate(items) if str(index) not in visible_ids]

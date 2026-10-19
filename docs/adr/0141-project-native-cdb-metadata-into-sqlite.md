@@ -4,6 +4,8 @@
 > short/full description mappings while retaining the category policy below.
 > ADR-0150 retains existing firmware schemas, versions, and unrepresented metadata;
 > the Original-compatible schemas below are defaults for missing artifacts.
+> ADR-0153 omits empty category templates only during explicit Podcast normalization;
+> native templates, populated categories, and user Playlists remain retained.
 
 - Status: Accepted
 - Date: 2026-10-13

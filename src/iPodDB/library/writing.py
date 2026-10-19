@@ -14,8 +14,7 @@ if TYPE_CHECKING:
     from iPodDB.library.models import LibrarySnapshot
     from iPodDB.library.photos import Photo, PhotoThumbnailFormat
     from iPodDB.library.signing import Hash72Material
-    from iPodDB.library.sqlite import SQLiteDatabaseSet
-    from iPodDB.SQLiteDB.inputs import SQLiteSource
+    from iPodDB.library.sqlite import SQLiteDatabaseSet, SQLiteSource
 
 
 class IssueSeverity(StrEnum):
@@ -108,6 +107,8 @@ class LibraryDraft:
     # Explicit repair of retained type-4 browse indexes and their jump tables.
     rebuild_album_indexes: bool = field(default=False, kw_only=True)
     repair_podcast_links: bool = field(default=False, kw_only=True)
+    # Explicit Sync authoring policy; ordinary no-op preparation stays lossless.
+    normalize_podcasts: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

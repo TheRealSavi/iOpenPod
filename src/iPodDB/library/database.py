@@ -282,6 +282,7 @@ class IPodLibrary:
         regenerate_sqlite: bool = False,
         rebuild_album_indexes: bool = False,
         repair_podcast_links: bool = False,
+        normalize_podcasts: bool = False,
     ) -> LibraryDraft:
         """Bind desired state to this source, rejecting omissions unless opted in.
 
@@ -296,6 +297,8 @@ class IPodLibrary:
         desired Library is unchanged. It does not authorize file publication.
         ``rebuild_album_indexes`` repairs retained Albums browse indexes without
         requiring metadata edits. Other indexes and Master occurrences remain.
+        ``normalize_podcasts`` converges Podcast relationships, albums, Playlist
+        settings and traversal indexes on the 12.6 authoring policy (ADR-0152).
         """
         return LibraryDraft(
             self._source_revision,
@@ -307,6 +310,7 @@ class IPodLibrary:
             regenerate_sqlite=regenerate_sqlite,
             rebuild_album_indexes=rebuild_album_indexes,
             repair_podcast_links=repair_podcast_links,
+            normalize_podcasts=normalize_podcasts,
         )
 
     def analyze(

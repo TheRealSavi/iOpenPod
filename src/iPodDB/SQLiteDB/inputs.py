@@ -59,3 +59,4 @@ class SQLiteNativeMetadata:
     database_version: int = 111
     master_date_created: int = 0
     master_date_modified: int = 0
+    normalize_podcasts: bool = False

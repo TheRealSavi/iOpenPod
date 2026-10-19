@@ -9,7 +9,7 @@ from iPodDB.library._field_policy import (
 from iPodDB.library._photo_analysis import analyze_photos
 from iPodDB.library._smart_writing import smart_chunks
 from iPodDB.library._track_writing import validate_track
-from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.models import LibrarySnapshot, MediaKind
 from iPodDB.library.playlists import PlaylistKind
 from iPodDB.library.smart_rules import smart_playlist_references
 from iPodDB.library.writing import (
@@ -33,6 +33,13 @@ def analyze(
 ) -> LibraryWritePlan:
     issues: list[WriteIssue] = []
     changes: list[LibraryChange] = []
+    if draft.normalize_podcasts and any(
+        t.media_kind is MediaKind.PODCAST or t.metadata.podcast
+        for t in draft.snapshot.tracks
+    ):
+        changes.append(
+            LibraryChange("library", None, "repair", "Podcasts", ("podcast_structure",))
+        )
     if draft.rebuild_album_indexes and has_album_indexes:
         changes.append(
             LibraryChange(

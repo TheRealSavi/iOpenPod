@@ -38,6 +38,11 @@ from iPodDB.library._playlist_writing import (
     playlist_preferences,
     position_item,
 )
+from iPodDB.library._podcast_normalization import (
+    normalize_albums,
+    normalize_identities,
+    remove_empty_artists,
+)
 from iPodDB.library._podcast_writing import (
     complete_podcast_settings,
     reconcile_podcasts,
@@ -89,7 +94,10 @@ def reconcile(
     existing_rows = frozenset(
         (k, s.chunk.header.playlist_id) for k, s in playlist_rows(document)
     )
-    if resolved.affected_datasets.intersection((2, 3)):
+    if resolved.affected_datasets.intersection((2, 3)) and (
+        not resolved.plan.target.sqlite_database
+        or any(kind == 2 for kind, _ in existing_rows)
+    ):
         document = ensure_companion(document, occurrence_allocator)
     track_ids = dict(resolved.track_ids)
     playlist_ids = dict(resolved.playlist_ids)
@@ -221,18 +229,21 @@ def reconcile(
             new_itunes_chunk(
                 MHYP,
                 MhypHeader(master_flag=1, playlist_id=master_id, sort_order=5),
-                children=tuple(
-                    position_item(
-                        new_itunes_chunk(
-                            MHIP,
-                            MhipHeader(
-                                track_id=track_ids[t.track_id],
-                                track_persistent_id=persistent_ids[t.track_id],
+                children=(
+                    playlist_preferences(),
+                    *(
+                        position_item(
+                            new_itunes_chunk(
+                                MHIP,
+                                MhipHeader(
+                                    track_id=track_ids[t.track_id],
+                                    track_persistent_id=persistent_ids[t.track_id],
+                                ),
                             ),
-                        ),
-                        i,
-                    )
-                    for i, t in enumerate(desired.tracks)
+                            i,
+                        )
+                        for i, t in enumerate(desired.tracks)
+                    ),
                 ),
             ),
             MhodType.TITLE,
@@ -241,7 +252,6 @@ def reconcile(
         )
         master = replace(
             master,
-            children=(*master.children, playlist_preferences()),
             header=replace(master.header, string_mhod_child_count=1),
         )
         document = document.append_child(
@@ -582,14 +592,24 @@ def reconcile(
     document = reconcile_hidden(
         document, original, desired, track_ids, issues, resolved.indexes
     )
-    document = ensure_master_indexes(
+    if not resolved.plan.target.sqlite_database:
+        document = ensure_master_indexes(
+            document,
+            desired,
+            existing_rows,
+            resolved.indexes,
+            structural_tracks=structural_tracks,
+        )
+    if resolved.plan.draft.normalize_podcasts:
+        document = normalize_albums(document)
+        document = remove_empty_artists(document)
+    document = reconcile_album_indexes(
+        source_document,
         document,
-        desired,
-        existing_rows,
-        resolved.indexes,
-        structural_tracks=structural_tracks,
+        issues,
+        normalize_podcasts=resolved.plan.draft.normalize_podcasts
+        and not resolved.plan.target.sqlite_database,
     )
-    document = reconcile_album_indexes(source_document, document, issues)
 
     generated_native = {playlist_ids[i] for i in generated_podcasts}
     affected_native = {
@@ -621,8 +641,16 @@ def reconcile(
         if chunk != selection.chunk:
             document = document.replace_chunk(selection, chunk)
     document = reconcile_podcasts(
-        document, original, desired, track_ids, playlist_ids, resolved.podcast_playlists
+        document,
+        original,
+        desired,
+        track_ids,
+        playlist_ids,
+        resolved.podcast_playlists,
+        normalize=resolved.plan.draft.normalize_podcasts,
     )
+    if resolved.plan.draft.normalize_podcasts:
+        document = normalize_identities(document)
     # New occurrences receive private native identities. Retained short headers
     # and even pre-existing zero IDs are left exactly as loaded.
     occurrence_edits: dict[int, ParsedChunk[ChunkHeader] | None] = {}

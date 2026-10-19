@@ -1860,12 +1860,28 @@ their media remains unchanged. Audio and video Podcasts also require the Podcast
 Now Playing marker; enabling it uses the existing native `0x01` mapping, while
 already-enabled retained native values remain untouched. Raw iPodDB reads and
 unchanged round-trips preserve
-the original flags. See ADR-0092 and ADR-0149. Audio Podcasts use media mask 5 and
-disc 1. Podcast GUIDs occupy MHOD 15 independently of enclosure URLs; publication
+the original flags. See ADR-0092, ADR-0149, and ADR-0151. Audio Podcasts use media
+mask 4 and preserve supplied or retained disc numbers, including an unset zero. Podcast GUIDs
+occupy MHOD 15 independently of enclosure URLs; publication
 year, modification time, subtitle, advisory, Episode number, and season number
 are supplied by the application. Sync explicitly repairs missing show links while
 unchanged iPodDB round-trips preserve them. Checked CDB Podcast metadata also
 supplies SQLite GUIDs, container kind/masks, and short/full descriptions.
+
+For targets containing Podcasts, Sync submits explicit
+`normalize_podcasts` intent to iPodDB. It reconciles retained and newly added
+Episodes to one album per unambiguous show, valid representative and root database
+references, persistent show identities, Release Date Playlist settings, matching
+row-ID positions, and target-specific traversal. Non-SQLite targets use
+newest-first sort-36 traversal and create missing indexes. SQLite targets store
+ascending publication dates with reversed Release Date UI order, unify Podcast
+SQLite albums, and keep missing native indexes and flat counterparts optional.
+Independent verification checks the serialized result. This scope
+supersedes ADR-0149's preservation policy for these known relationships during
+Sync; ordinary lossless preparation remains unchanged. Missing native covers can
+also be decoded from Storage captures of retained media. Their fingerprints become
+transaction preconditions, so changed source media cannot publish stale pixels.
+See ADR-0152 and ADR-0153.
 
 Episode slots limit automatic filling, not manual additions or retained membership.
 Both fill modes clear by listened state or time on the iPod. Newest fills vacancies

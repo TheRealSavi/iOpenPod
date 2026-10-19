@@ -4,6 +4,9 @@
 - Date: 2026-10-18
 - Amends: ADR-0037, ADR-0091, ADR-0092, and ADR-0141
 
+> ADR-0151 supersedes this record's audio Podcast media-mask choice. Current
+> application writes use type 4; the rest of this decision remains in force.
+
 ## Context
 
 The four [Finder captures](../research/podcast-finder-captures-2026-10-18.md)
@@ -31,9 +34,12 @@ Listening History document, including neutral records for unplayed Episodes.
 These records do not mark an Episode listened. They publish with the media and
 Library transaction so reconnecting cannot change its local identity.
 
-Audio Podcasts use media mask 5 (Audio plus Podcast), disc 1, and the existing
-resume, skip-shuffle, and Podcast Now Playing policy. Video Podcasts retain their
-video classification. Imports derive year from publication time and supply a
+Audio Podcasts use media mask 5 (Audio plus Podcast) and the existing resume,
+skip-shuffle, and Podcast Now Playing policy. As amended on 2026-10-19, Podcast
+classification preserves the supplied or retained disc number, including an unset
+zero; new Episodes do not receive an invented disc number. This withdraws only the
+original disc-1 normalization. Video Podcasts retain their video classification.
+Imports derive year from publication time and supply a
 modification timestamp. A supplied subtitle becomes MHOD 18; otherwise the first
 255 characters of the plain description provide a fallback. The application also
 fills these missing display fields on retained Podcasts when publishing a Draft.
@@ -58,6 +64,30 @@ groups Episodes by show, and verifies native references and positions after
 serialization. Existing identity ambiguity still blocks repair. Ordinary iPodDB
 no-op preparation and serialization preserve the original bytes exactly.
 
+As amended on 2026-10-19, affected dataset-3 Podcast rows have strictly increasing
+native row IDs in serialized order: each show group precedes its Episodes both
+physically and numerically. An already ordered prefix retains its IDs; rows that
+would break the order receive new IDs above all existing MHIP row IDs, with later
+rows following them. Episode parent references follow the resulting group IDs.
+Dataset-2 counterparts receive matching Episode row IDs, retaining their own
+order, persistent identities, and private metadata. Retained empty groups
+remain after populated groups and participate in numbering. Explicit Podcast
+repair also detects backwards or missing row IDs even when parent links exist.
+This follows the [captured numbering convention](../research/podcast-finder-captures-2026-10-18.md#podcast-playlist-structure-and-root-hypothesis);
+Finder acceptance remains a separate device test.
+
+The later Apple PlayCount capture retains Episode type-100 positions from older
+row IDs in both datasets even after Apple renumbers the rows. Accordingly, row
+repair preserves the dataset-2 position and copies it to the matching dataset-3
+Episode instead of replacing it with the new row ID. Repeated Tracks pair by
+occurrence order. A missing flat position falls back to the grouped value; only
+when neither exists does the new row ID supply a position. Creating a missing
+flat counterpart also preserves the grouped positions. Membership edits continue
+to regenerate consecutive positions, now shared by both counterparts. Explicit
+repair detects mismatched or missing positions, and verification checks agreement
+between counterparts independently of row numbering. Finder acceptance of this
+change remains untested.
+
 New special Podcasts Playlists use Playlist Sort Order Title (native value 3).
 When an existing special Playlist is affected by edits or group repair, its unset
 sort order becomes Title; explicit nondefault orders remain retained. Missing
@@ -66,6 +96,15 @@ dataset-2/3 Podcast counterparts across the four models. The four nonzero words
 remain opaque; their meaning is not inferred. Existing settings, including unknown
 bytes and extensions, remain untouched. Both flat and grouped counterparts receive
 the settings, while episode membership retains the existing grouping policy.
+
+As amended on 2026-10-19, Master MHOD 52 / sort 36 treats wholly Podcast album
+groups as newest first by publication date, with missing dates last and retained
+order breaking ties. This is independent of the special Playlist's MHYP sort
+order and leaves sort 4 and non-Podcast disc/track ordering unchanged. The
+[sort-36 investigation](../research/itunesdb-sort-36.md#podcast-member-order-investigated-on-2026-10-19)
+matches all four useful Apple captures but cannot distinguish publication date
+from descending track number; date precedence and missing-date behavior are
+explicit authoring choices. Unchanged indexes remain byte-exact.
 
 The Application Layer supplies one captured UTC Unix timestamp through
 `WriteResources.playlist_timestamp`. Affected Podcast Playlists retain a nonzero

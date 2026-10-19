@@ -47,6 +47,7 @@ from iPodDB.library._photo_resources import validate_photos
 from iPodDB.library._photo_writing import reconcile_photos
 from iPodDB.library._playlist_projection import project_playlists
 from iPodDB.library._playlist_verification import verify_playlists
+from iPodDB.library._podcast_verification import verify_normalized_podcasts
 from iPodDB.library._projection import link_artwork, project_tracks
 from iPodDB.library._reconcile import reconcile
 from iPodDB.library._sqlite_projection import project_sqlite_metadata
@@ -287,7 +288,12 @@ def _prepare_sqlite(
         if hash72_material is not None
         else b"",
         postprocess_commands=plan.target.sqlite_postprocess_commands,
-        native=project_sqlite_metadata(checked_document, checked, source.device_time),
+        native=project_sqlite_metadata(
+            checked_document,
+            checked,
+            source.device_time,
+            normalize_podcasts=plan.draft.normalize_podcasts,
+        ),
         retained=resources.sqlite_sources,
         cleared_lyrics=cleared_lyrics | replaced_pids,
         cleared_chapters=cleared_chapters | replaced_pids,
@@ -796,6 +802,7 @@ def _prepare(
                 source.device_time,
                 database_version=plan.target.database_version,
                 artwork_tracks=resolved.artwork_tracks,
+                normalize_podcasts=plan.draft.normalize_podcasts,
             )
         )
         issues.extend(
@@ -806,6 +813,7 @@ def _prepare(
                 desired,
                 mappings,
                 database_version=plan.target.database_version,
+                normalize_podcasts=plan.draft.normalize_podcasts,
             )
         )
         expected_retained_artwork = (
@@ -813,6 +821,12 @@ def _prepare(
             if source.artwork_repairs and original_bytes.artwork is not None
             else original_bytes.artwork
         )
+        if plan.draft.normalize_podcasts:
+            issues.extend(
+                verify_normalized_podcasts(
+                    document, checked_document, sqlite=plan.target.sqlite_database
+                )
+            )
         if (
             not resolved.artwork_tracks
             and not resolved.deleted_tracks
@@ -855,6 +869,9 @@ def _prepare(
                 rebuild_album_indexes=plan.draft.rebuild_album_indexes,
                 podcast_playlists=resolved.podcast_playlists,
                 playlist_timestamp=resources.playlist_timestamp,
+                normalize_podcasts=plan.draft.normalize_podcasts
+                and not plan.target.sqlite_database,
+                sqlite=plan.target.sqlite_database,
             )
         )
         if _blocked(issues):

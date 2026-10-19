@@ -8,6 +8,9 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import DEFINITION as MHIP
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
+    MhodPlaylistPositionPrefix,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import DEFINITION as MHSD
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
@@ -251,7 +254,20 @@ def ensure_companion(
                     mhip_persistent_id=allocator.take(),
                 ),
             )
-            items.append(position_item(typed, position))
+            retained_position = next(
+                (
+                    c.prefix.position
+                    for c in typed.children
+                    if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+                ),
+                position,
+            )
+            items.append(
+                position_item(
+                    typed,
+                    retained_position if is_podcasts(3, child.header) else position,
+                )
+            )
         rows.append(replace(child, children=tuple(items)))
     companion = new_itunes_chunk(
         MHSD,

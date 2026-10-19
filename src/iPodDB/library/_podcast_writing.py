@@ -1,10 +1,11 @@
 """Retain podcast group ownership while reconciling affected album groups.
 
-The layout follows Original iOpenPod's mhyp_writer/_build_podcast_grouped_mhips:
-group MHIPs use flag 0x100; episode positions contain their own group_id.
+Group MHIPs use flag 0x100. Episode positions agree across dataset counterparts;
+Apple captures retain these values even when native row IDs change.
 """
 
 import logging
+from collections import defaultdict, deque
 from dataclasses import replace
 from itertools import groupby
 
@@ -15,6 +16,9 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhip import DEFINITION as MHIP
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
+    MhodPlaylistPositionPrefix,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.settings_mhod import (
     DEFAULT_PODCAST_SETTINGS,
 )
@@ -84,6 +88,8 @@ def normalize_podcast_order(
     issues: list[WriteIssue],
     *,
     repair_ids: frozenset[int] = frozenset(),
+    normalize: bool = False,
+    sqlite: bool = False,
 ) -> tuple[LibrarySnapshot, frozenset[int]]:
     """Maintain podcast membership and the contiguous shows required by firmware."""
     special = {
@@ -111,7 +117,7 @@ def normalize_podcast_order(
         if t.media_kind is MediaKind.PODCAST or t.metadata.podcast
     )
     generated: frozenset[int] = frozenset()
-    if original_members != desired_members:
+    if original_members != desired_members or (normalize and desired_members):
         if not special and desired_members:
             if not any(kind == 3 for kind, _ in playlist_rows(document)):
                 issues.append(
@@ -157,9 +163,12 @@ def normalize_podcast_order(
     prior = {p.playlist_id: p for p in original.playlists}
     old_albums = {t.track_id: t.album for t in original.tracks}
     albums = {t.track_id: t.album for t in desired.tracks}
+    dates = {t.track_id: t.metadata.release_date for t in desired.tracks}
     output: list[Playlist] = []
     for playlist in desired.playlists:
         previous = prior.get(playlist.playlist_id)
+        if normalize and playlist.playlist_id in special:
+            playlist = replace(playlist, sort_order=PlaylistSortOrder.RELEASE_DATE)
         if (
             playlist.playlist_id in special
             and playlist.sort_order is PlaylistSortOrder.DEFAULT
@@ -187,6 +196,11 @@ def normalize_podcast_order(
         groups: dict[str, list[PlaylistEntry]] = {}
         for entry in playlist.entries:
             groups.setdefault(albums.get(entry.track_id, ""), []).append(entry)
+        if normalize and sqlite:
+            # Nano stores ascending dates; Dynamic.itdb reverses the display.
+            # Stable ties preserve occurrence identity. Undated Episodes follow.
+            for members in groups.values():
+                members.sort(key=lambda e: (not dates[e.track_id], dates[e.track_id]))
         entries = tuple(e for group in groups.values() for e in group)
         if entries != playlist.entries:
             logger.debug(
@@ -199,6 +213,51 @@ def normalize_podcast_order(
     return replace(desired, playlists=tuple(output)), generated
 
 
+def _positions(item: ParsedChunk[MhipHeader]) -> tuple[int, ...]:
+    return tuple(
+        c.prefix.position
+        for c in item.children
+        if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+    )
+
+
+def podcast_rows_need_repair(
+    items: tuple[ParsedChunk[MhipHeader], ...],
+    counterpart: tuple[ParsedChunk[MhipHeader], ...] | None = None,
+) -> bool:
+    """Explicit repair includes row numbering, links, and counterpart positions."""
+    flat: dict[int, deque[ParsedChunk[MhipHeader]]] = defaultdict(deque)
+    for item in counterpart or ():
+        flat[item.header.track_id].append(item)
+    previous = 0
+    for item in items:
+        header = item.header
+        if header.group_id <= previous or (
+            not header.podcast_group_flag & 0x100 and not header.group_id_ref
+        ):
+            return True
+        previous = header.group_id
+        if header.podcast_group_flag & 0x100:
+            continue
+        positions = _positions(item)
+        if not positions or len(set(positions)) != 1:
+            return True
+        if counterpart is not None:
+            matches = flat[header.track_id]
+            if not matches:
+                return True
+            other = matches.popleft()
+            if (
+                other.header.group_id != header.group_id
+                or other.header.podcast_group_flag & 0x100
+                or other.header.group_id_ref
+                or not _positions(other)
+                or set(_positions(other)) != set(positions)
+            ):
+                return True
+    return any(flat.values())
+
+
 def reconcile_podcasts(
     document: DatabaseDocument[MhbdHeader],
     original: LibrarySnapshot,
@@ -206,11 +265,22 @@ def reconcile_podcasts(
     track_ids: dict[int, int],
     playlist_ids: dict[int, int],
     affected_playlists: frozenset[int],
+    *,
+    normalize: bool = False,
 ) -> DatabaseDocument[MhbdHeader]:
+    if not affected_playlists:
+        return document
     old_tracks = {t.track_id: t for t in original.tracks}
     albums = {track_ids[t.track_id]: t.album for t in desired.tracks}
     changed_playlists = {playlist_ids[i] for i in affected_playlists}
     edits: dict[int, ParsedChunk[ChunkHeader] | None] = {}
+    cursor = (
+        max(
+            (s.chunk.header.group_id for s in document.find_chunks(MhipHeader)),
+            default=0,
+        )
+        + 1
+    )
     for kind, selection in playlist_rows(document):
         chunk = selection.chunk
         if not is_podcasts(kind, chunk.header):
@@ -269,16 +339,39 @@ def reconcile_podcasts(
                 raise ValueError(
                     "An affected podcast episode has an ambiguous retained show relationship."
                 )
-        cursor = max((c.header.group_id for c in items), default=0) + 1
+        previous_id = 0
 
-        def identity() -> int:
-            nonlocal cursor
-            value, cursor = cursor, cursor + 1
+        def identity(retained: int) -> int:
+            nonlocal cursor, previous_id
+            # Preserve an ordered prefix. Once a new row or a moved occurrence
+            # needs an ID, allocate above every existing MHIP in the document.
+            # Later rows then follow it numerically as well as physically.
+            value = retained
+            if value <= previous_id:
+                value, cursor = cursor, cursor + 1
             if value > 0xFFFFFFFF:
                 raise ValueError("Podcast group identities are exhausted.")
+            previous_id = value
             return value
 
         children = [c for c in chunk.children if not isinstance(c.header, MhipHeader)]
+        counterpart = next(
+            (
+                row
+                for _, row in playlist_rows(document, (2,))
+                if row.chunk.header.playlist_id == chunk.header.playlist_id
+            ),
+            None,
+        )
+        flat: dict[int, deque[ParsedChunk[MhipHeader]]] = defaultdict(deque)
+        if counterpart is not None:
+            for occurrence in counterpart.find_chunks(MhipHeader):
+                item = occurrence.chunk
+                if item.header.podcast_group_flag & 0x100 or item.header.group_id_ref:
+                    raise ValueError(
+                        "Podcast counterparts have ambiguous Episode membership."
+                    )
+                flat[item.header.track_id].append(item)
         seen: set[str] = set()
         for album, run in groupby(episodes, key=lambda c: albums[c.header.track_id]):
             if album in seen:
@@ -289,15 +382,38 @@ def reconcile_podcasts(
             group = by_album.get(album)
             if group is None:
                 group = edit_text(
-                    new_itunes_chunk(
-                        MHIP, MhipHeader(podcast_group_flag=0x100, group_id=identity())
-                    ),
+                    new_itunes_chunk(MHIP, MhipHeader(podcast_group_flag=0x100)),
                     MhodType.TITLE,
                     album,
                 )
+            group = replace(
+                group,
+                header=replace(group.header, group_id=identity(group.header.group_id)),
+            )
             children.append(group)
             for episode in run:
-                item_id = episode.header.group_id or identity()
+                item_id = identity(episode.header.group_id)
+                # Counterparts can have different Track orders and persistent IDs.
+                # Pair repeated Tracks by occurrence order, as playlist editing does.
+                other = None
+                if counterpart is not None:
+                    matches = flat[episode.header.track_id]
+                    if not matches:
+                        raise ValueError(
+                            "Podcast counterparts have ambiguous Episode membership."
+                        )
+                    other = matches.popleft()
+                # Dataset 2 retains Apple's positions during link/row repair.
+                # Membership edits already regenerate its ordinary positions.
+                # Use the grouped value only when the flat value is unavailable.
+                positions = (() if other is None else _positions(other)) or _positions(
+                    episode
+                )
+                if len(set(positions)) > 1:
+                    raise ValueError("Podcast Episode positions are ambiguous.")
+                position = positions[0] if positions else item_id
+                if normalize:
+                    position = item_id
                 episode = replace(
                     episode,
                     header=replace(
@@ -306,13 +422,34 @@ def reconcile_podcasts(
                         group_id_ref=group.header.group_id,
                     ),
                 )
-                children.append(position_item(episode, item_id))
+                children.append(position_item(episode, position))
+                if other is not None:
+                    edits[id(other)] = position_item(
+                        replace(other, header=replace(other.header, group_id=item_id)),
+                        position,
+                    )
+        if any(flat.values()):
+            raise ValueError("Podcast counterparts have ambiguous Episode membership.")
         # Empty or renamed original groups are retained: their private metadata
         # remains available and they cannot resurrect an episode association.
-        children.extend(group for album, group in by_album.items() if album not in seen)
+        for album, group in by_album.items():
+            if album not in seen:
+                children.append(
+                    replace(
+                        group,
+                        header=replace(
+                            group.header, group_id=identity(group.header.group_id)
+                        ),
+                    )
+                )
         edits[id(chunk)] = replace(
             chunk,
-            header=replace(chunk.header, phase_game_flag=11),
+            header=replace(
+                chunk.header,
+                phase_game_flag=((chunk.header.phase_game_flag & ~0x1FF) | 0x10B)
+                if normalize
+                else 11,
+            ),
             children=tuple(children),
         )
     return rebuild(document, edits)

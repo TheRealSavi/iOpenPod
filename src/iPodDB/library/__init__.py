@@ -94,7 +94,7 @@ from iPodDB.library.smart_rules import (
     smart_value_kind,
     validate_smart_playlist,
 )
-from iPodDB.library.sqlite import SQLiteDatabaseSet
+from iPodDB.library.sqlite import SQLiteDatabaseSet, SQLiteSource
 from iPodDB.library.writing import (
     ArtworkAsset,
     ArtworkGroupReference,
@@ -187,6 +187,7 @@ __all__ = [
     "ReadableContent",
     "RetainedArtworkFile",
     "SQLiteDatabaseSet",
+    "SQLiteSource",
     "SmartField",
     "SmartLimitSort",
     "SmartLimitUnit",

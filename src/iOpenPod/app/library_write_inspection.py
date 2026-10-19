@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, cast
 
@@ -276,6 +276,8 @@ def inspect_library_write(
             "source_connection": request.source.candidate.id.value,
             "delete_omissions": request.delete_omissions,
             "rebuild_album_indexes": request.rebuild_album_indexes,
+            "normalize_podcasts": request.normalize_podcasts,
+            "artwork_dependencies": [asdict(d) for d in request.artwork_dependencies],
             "source_database": request.source.database_name,
             "source_fingerprint": {
                 "size": request.source.database_fingerprint.size,

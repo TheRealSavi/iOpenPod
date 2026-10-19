@@ -133,14 +133,14 @@ def test_podcast_addition_retains_group_and_episode_private_metadata() -> None:
     assert rows[0].header.timestamp == 919
     assert tuple(c.header.timestamp for c in rows[1:4]) == (200, 201, 202)
     assert all(c.header.group_id_ref == 7 for c in rows[1:])
-    for child in rows[1:]:
+    for position, child in enumerate(rows[1:]):
         assert (
             next(
                 c.prefix.position
                 for c in child.children
                 if isinstance(c.prefix, MhodPlaylistPositionPrefix)
             )
-            == child.header.group_id
+            == position
         )
 
 

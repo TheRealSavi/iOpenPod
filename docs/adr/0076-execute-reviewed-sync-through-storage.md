@@ -100,9 +100,10 @@ and prevents further device writes until it is restored. Storage still verifies
 device identity and journal contents; a saved location never grants write authority.
 Prepared Photo originals are bounded to 64 MiB. ADR-0117 replaces the former
 512 MiB batch rejection with private Host disk storage for overflow. ADR-0086
-allows larger Host containers to supply a bounded still image. Optional
-full Rockbox metadata transformations are bounded to 256 MiB per file. Exceeding a
-bound skips the affected item with a remedy rather than risking unbounded memory.
+allows larger Host containers to supply a bounded still image. Optional full
+Rockbox metadata transformations originally used a 256 MiB whole-file buffer limit;
+the amendment below replaces that path with private Host file editing. Remaining
+bounds skip the affected item with a remedy rather than risking unbounded memory.
 
 Committed Syncs with retained recovery files expose Retry Cleanup separately from
 Retry Recovery. The cleanup reminder survives a restart. Cleanup only accepts a
@@ -135,3 +136,24 @@ normalization only reduces rates above 44.1 kHz. Normalize Tags After Sync appli
 the existing device-specific normalizer to the committed Library. Sound Check uses
 existing usable loudness tags where possible and analyzes missing values. Rockbox
 tags are written into private prepared media; Host sources are never changed.
+
+## Amendment: edit incoming media tags through private streams (2026-10-19)
+
+Incoming Host Tracks and Podcast Episodes use the same file-based tag writer as
+retained-file edits under ADR-0120. The 256 MiB buffer limit protected whole-file
+memory allocations; it was not a media-format limit. Applying it after download
+or conversion rejected otherwise usable large Episodes with Rockbox Metadata
+Support enabled. Refreshing the Podcast could not resolve that preparation limit.
+
+Storage opens only its private captured or converted file for the tag transform,
+then hashes the complete result in chunks. The application writes and reads back
+tags through that seekable stream, resetting its position before each Mutagen save
+so existing ID3 tags are replaced rather than duplicated. This avoids whole-media
+byte buffers and a second full output copy. Metadata parsing still uses memory
+proportional to embedded tags; this is not a total process-memory guarantee.
+
+Media compatibility checks, full decode verification, cancellation checkpoints,
+Host staging cleanup, and recoverable device publication remain required. Failure
+before publication discards the private preparation. The generic bounded byte
+transform retains its limit for callers that explicitly need complete byte arrays.
+No dependency or user setting changes are required.

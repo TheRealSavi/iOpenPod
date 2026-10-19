@@ -27,13 +27,13 @@ from iPodDB.library import (
     PlaybackSidecar,
     PreparedLyrics,
     SourceFile,
+    SQLiteSource,
     WriteIssue,
     WriteResources,
     content_sha256,
     is_playback_sidecar,
     remap_playback_sidecar,
 )
-from iPodDB.SQLiteDB.inputs import SQLiteSource
 from storage import (
     DeviceEntryKind,
     DevicePath,
@@ -277,6 +277,21 @@ def capture(
         FilePrecondition(PHOTOSDB, request.source.photos_database_fingerprint),
         *additional_preconditions,
     ]
+    retained_media = {t.metadata.location for t in request.source.library.tracks}
+    for dependency in request.artwork_dependencies:
+        checkpoint()
+        if dependency.relative_path not in retained_media:
+            raise ValueError(
+                "Embedded artwork dependencies must belong to retained Tracks."
+            )
+        path = DevicePath(dependency.relative_path)
+        fingerprint = session.fingerprint(path)
+        if (fingerprint.size, fingerprint.sha256) != (
+            dependency.size,
+            dependency.sha256,
+        ):
+            raise FilePreconditionError(f"Embedded artwork source changed: {path}")
+        files.append(FilePrecondition(path, fingerprint))
     sqlite_sources: list[SQLiteSource] = []
     if plan.changes_sqlite:
         for path in SQLITE_DATABASE_PATHS:

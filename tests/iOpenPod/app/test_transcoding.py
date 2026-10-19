@@ -8,8 +8,9 @@ import shutil
 import subprocess
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
+import mutagen
 import pytest
 from mutagen.mp3 import MP3
 from PIL import Image
@@ -42,6 +43,12 @@ if TYPE_CHECKING:
     from device_registry import DeviceProfile
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "media"
+
+
+class _MutagenReader(Protocol):
+    """The file-like read operation used from Mutagen's untyped API."""
+
+    def File(self, filething: io.BytesIO) -> Any: ...
 
 
 @pytest.fixture
@@ -405,8 +412,9 @@ def test_rockbox_tags_and_lyrics_are_written_to_private_copy_and_reverified(
     assert Path(original).read_bytes() == before
 
 
+@pytest.mark.parametrize("filename", ("tone.mp3", "tone.m4a"))
 def test_rockbox_artwork_is_added_after_media_preparation(
-    tmp_path: Path, transcoder: MediaTranscoder
+    tmp_path: Path, transcoder: MediaTranscoder, filename: str
 ) -> None:
     mini = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("M9802")
     assert mini is not None
@@ -417,7 +425,7 @@ def test_rockbox_artwork_is_added_after_media_preparation(
     )
 
     with transcoder.prepare(
-        source(tmp_path, "tone.mp3"),
+        source(tmp_path, filename),
         mini,
         TranscodeSettings(),
         metadata=track,
@@ -427,11 +435,15 @@ def test_rockbox_artwork_is_added_after_media_preparation(
         tagged = transcoder.embed_artwork(
             prepared, track, compact, checkpoint=lambda: None
         )
-        tags = cast("Callable[[io.BytesIO], Any]", MP3)(
+        tags = cast("_MutagenReader", mutagen).File(
             io.BytesIO(Path(tagged.source).read_bytes())
         )
         assert tags.tags is not None
-        cover = tags.tags.getall("APIC")[0].data
+        cover = (
+            tags.tags.getall("APIC")[0].data
+            if filename.endswith(".mp3")
+            else tags.tags["covr"][0]
+        )
         with Image.open(io.BytesIO(cover)) as image:
             assert image.size == (120, 120)
             assert image.mode == "L"

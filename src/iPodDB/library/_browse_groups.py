@@ -32,6 +32,21 @@ def browse_groups(
     return {key: tuple(members) for key, members in groups.items()}
 
 
+def podcast_groups(tracks: Sequence[Track]) -> dict[str, tuple[Track, ...]]:
+    """Podcast show rows use album titles; conflicting feeds are ambiguous."""
+    groups: dict[str, list[Track]] = defaultdict(list)
+    for track in tracks:
+        if track.media_kind is MediaKind.PODCAST or track.metadata.podcast:
+            groups[track.album].append(track)
+    for title, members in groups.items():
+        feeds = {
+            t.metadata.podcast_rss_url for t in members if t.metadata.podcast_rss_url
+        }
+        if len(feeds) > 1:
+            raise ValueError(f"Podcast show {title!r} has conflicting feed identities.")
+    return {title: tuple(members) for title, members in groups.items()}
+
+
 @dataclass(frozen=True, slots=True)
 class AlbumValues:
     title: str

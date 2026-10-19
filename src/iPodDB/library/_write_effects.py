@@ -85,7 +85,10 @@ def describe_effects(
             c.subject == "track"
             and (c.action != "edit" or BROWSE_FIELDS.intersection(c.fields))
         )
-        or (c.subject == "library" and c.fields in (("tracks",), ("album_indexes",)))
+        or (
+            c.subject == "library"
+            and c.fields in (("tracks",), ("album_indexes",), ("podcast_structure",))
+        )
     )
     podcast_causes = tuple(
         i
@@ -94,7 +97,9 @@ def describe_effects(
             c.subject == "track"
             and (c.action != "edit" or PODCAST_FIELDS.intersection(c.fields))
         )
-        or (c.subject == "library" and c.fields == ("tracks",))
+        or (
+            c.subject == "library" and c.fields in (("tracks",), ("podcast_structure",))
+        )
     )
     topology_causes = tuple(
         i
@@ -168,6 +173,14 @@ def describe_effects(
             WriteEffect(code, subject, identity, reason, causes, fields, dataset)
         )
 
+    if plan.draft.normalize_podcasts and podcast_causes:
+        effect(
+            "library.podcast_structure",
+            "library",
+            None,
+            "Normalize Podcast album ownership, representative links, show identities and target-specific Playlist traversal.",
+            ("podcast_structure",),
+        )
     for change in generated_changes:
         effect(
             "library.derived_values",
@@ -249,6 +262,9 @@ def describe_effects(
                 f"Maintain browse order and alphabetical groups for sort type {index.sort_type}.",
             )
     album_index_fields = {
+        "media_types",
+        "metadata.podcast",
+        "metadata.release_date",
         "artist",
         "album_artist",
         "album",

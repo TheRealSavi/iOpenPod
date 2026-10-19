@@ -18,7 +18,7 @@ from iPodDB.library._track_header_verification import (
     track_field_expectations,
     unmodeled_header_ranges,
 )
-from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.models import LibrarySnapshot, MediaKind
 from iPodDB.library.writing import IdentityMapping, WriteIssue, WriteResources
 from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import DatabaseDocument
@@ -40,6 +40,7 @@ def verify_native_tracks(
     *,
     database_version: int | None = None,
     artwork_tracks: tuple[int, ...] = (),
+    normalize_podcasts: bool = False,
 ) -> tuple[WriteIssue, ...]:
     """Compare reparsed fields with source identities and captured caller facts.
 
@@ -82,6 +83,14 @@ def verify_native_tracks(
         expected_fields = track_field_expectations(
             original_chunk, prior_track, track, device_time, database_version
         )
+        if (
+            normalize_podcasts
+            and (track.media_kind is MediaKind.PODCAST or track.metadata.podcast)
+            and field_fits("db_id_2_ref", output_chunk.generic_header.header_length)
+        ):
+            expected_fields["db_id_2_ref"] = (
+                original.header.db_id_2 or checked.header.db_id_2
+            )
         prepared = media.get(track.track_id)
         if prepared is not None:
             expected_fields.update(

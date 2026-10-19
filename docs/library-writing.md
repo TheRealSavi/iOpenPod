@@ -349,10 +349,11 @@ See [ADR-0053](adr/0053-project-photos-into-library-drafts.md) and
 
 `PlaylistEntry(entry_id, track_id, position)` identifies an occurrence within its
 Playlist and source revision. `position` is the optional value stored in the
-entry's MHIP type-100 child: zero-based for ordinary entries, with native episode
-IDs used by grouped Podcasts. Move existing entries to reorder duplicates. Keeping
-their source position values is valid; preparation derives the final ordinary
-positions and Podcast episode IDs. Newly supplied positions must match the desired
+entry's MHIP type-100 child: zero-based for ordinary entries; retained Podcasts
+can carry values from older Episode row IDs. Move existing entries to reorder
+duplicates. Keeping their source position values is valid; preparation derives
+positions for membership edits and maintains matching Podcast positions across
+datasets 2 and 3. Newly supplied positions must match the desired
 order. The
 `playlist_entries(track_ids, previous_entries)` helper retains matching occurrences
 in order, allocates new identities for new occurrences, and assigns consecutive
@@ -674,8 +675,14 @@ readable Library authority: device selection
 does not require or parse the SQLite files. Ordinary no-op serialization returns
 the exact retained CDB and does not touch SQLite. Every CDB-changing save generates
 and publishes all six SQLite artifacts from the independently reparsed candidate
-snapshot, replacing missing, stale, or damaged companions as one transaction
-generation. A user-directed Sync explicitly requests SQLite regeneration even
+snapshot as one transaction generation. Missing companions use the built-in schema;
+valid stale companions retain their schema and unprojected firmware metadata while
+CDB-owned values are refreshed. Unreadable or incompatible existing companions
+block preparation before publication. The application captures those bytes through
+Storage and supplies them through the public `iPodDB.library.SQLiteSource` contract
+in `WriteResources.sqlite_sources`.
+See [ADR-0150](adr/0150-retain-firmware-sqlite-metadata-and-dual-signatures.md).
+A user-directed Sync explicitly requests SQLite regeneration even
 without Library edits. That intent preserves unchanged CDB bytes, captures all six
 companion preconditions and signing evidence, and publishes the regenerated set
 through the same recoverable Storage Transaction. See
@@ -732,6 +739,11 @@ and the Original writer's display preferences. Master membership, known browse
 indexes, album/artist/composer links, folder child rules and aggregates, and podcast
 groups are reconciled and checked independently after reparse.
 
+Rebuilt alphabetical jump tables use letter code `0` (`U+0000`) for an empty
+primary browse key, matching the captured empty Composer bucket. Numeric keys
+and nonempty keys without a supported alphanumeric character retain the ASCII
+`0` (`U+0030`) bucket. Independent verification checks this distinction.
+
 Sort-4 Albums indexes keep each semantic Album contiguous before sorting its
 Tracks. Normalized titles that compare equally (for example, `Nexus` and
 `The Nexus`) are separated by effective Album Artist and exact Album identity.
@@ -776,6 +788,12 @@ block preparation. Unchanged group sort values retain their source order. See
 [ADR-0137](adr/0137-warn-and-default-unrecognized-album-collation.md) and the
 [sort-36 research](research/itunesdb-sort-36.md).
 
+Within sort 36, wholly Podcast groups use descending publication date, with
+missing dates last and retained order breaking ties. Other groups retain the
+disc/track rule. This member order is independent of MHYP Playlist Sort Order;
+sort-4 Album indexes keep their own ascending rule. Publication-date and Podcast
+classification changes participate in sort-36 resolution and verification.
+
 Album browse rows maintain title, artist, sort artist, Podcast RSS URL, and show
 metadata. Shared optional values follow the Original writer: select the first
 nonempty sort album artist in Library Track order, with sort artist as fallback,
@@ -789,8 +807,46 @@ Podcast grouping belongs only to dataset 3's special Podcasts playlist, includin
 its first episode. Episodes are grouped by album, with the resulting order retained
 in the Prepared Library. Relevant podcast Track changes update special saved
 membership and can create that Playlist when dataset 3 establishes target support.
+Affected grouped rows receive increasing native row IDs in serialized order, with
+each show before its Episodes. Ordered prefixes retain their IDs; insertions and
+reorders renumber the affected suffix above all existing row IDs. Episode parent
+references follow their show IDs. Matching occurrences in the flat counterpart
+receive the same row IDs while keeping their separate persistent identities,
+private metadata, and retained ordering. Positions also match across counterparts:
+repair takes the flat position, falling back to the grouped value when absent,
+then to the Episode row ID when neither exists. Row renumbering alone does not
+replace a retained position. A newly created flat counterpart retains grouped
+positions; membership edits derive consecutive positions for both. Explicit
+`repair_podcast_links=True` also repairs non-increasing or missing row IDs and
+missing or mismatched counterpart positions;
+ordinary no-op preparation remains byte-exact. See
+[ADR-0149](adr/0149-author-podcasts-from-finder-capture-evidence.md).
 These routine membership and ordering changes do not produce informational
 diagnostics. See [ADR-0146](adr/0146-remove-routine-podcast-and-reencoding-notices.md).
+
+Explicit `normalize_podcasts=True` adopts the stronger Sync contract in
+[ADR-0152](adr/0152-normalize-podcast-sync-to-baseline.md). It applies even without
+Episode membership edits: one album per unambiguous show with a valid persistent
+Track backlink, matching root secondary references, persistent show identities,
+Release Date sort 24, baseline phase flags, and counterpart positions equal to row
+IDs. On non-SQLite targets it also repairs retained wrong sort-36 traversal and
+creates missing indexes.
+Canonical identities and compatible Unknown Data survive duplicate album merges;
+conflicting retained data blocks preparation. Application Sync opts in on both
+SQLite and non-SQLite targets containing Podcasts.
+The preceding preservation rules still describe ordinary drafts and standalone
+link repair. This intent never changes lossless parsing or ordinary no-op output.
+
+For SQLite targets, [ADR-0153](adr/0153-normalize-sqlite-podcast-sync.md) uses
+ascending per-show stored publication dates and reversed Release Date UI order.
+Missing native indexes and a missing flat counterpart remain optional. SQLite
+albums use Podcast kind 3 and feed/show ownership independently of optional
+Episode tags. Empty category templates remain native but are omitted from the
+normalized SQLite projection; populated categories and user Playlists survive.
+Partial bookmarks contribute to SQLite playback state without counting completed
+plays or marking the semantic Episode listened. Captured schemas, versions,
+supplemental metadata, and unrelated UI values retain ADR-0150's protection.
+
 The semantic writer does not evaluate Smart Playlists or firmware category rules.
 The Application Layer refreshes supported Smart Playlists with Live updating enabled
 before submission. Dataset 5

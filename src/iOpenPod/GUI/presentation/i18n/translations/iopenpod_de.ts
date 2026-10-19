@@ -8698,6 +8698,10 @@ Playlists: %3</translation>
         <translation>Eingebettete Cover konnten nicht geprüft werden; vorhandene iPod-Cover bleiben erhalten.</translation>
     </message>
     <message>
+        <source>Embedded artwork for {title} could not be prepared.</source>
+        <translation>Das eingebettete Cover für {title} konnte nicht vorbereitet werden.</translation>
+    </message>
+    <message>
         <source>Embedded artwork for {title} could not be prepared. The Episode can still sync with available publisher artwork.</source>
         <translation>Das eingebettete Cover für {title} konnte nicht vorbereitet werden. Die Folge kann trotzdem mit einem verfügbaren Cover des Herausgebers synchronisiert werden.</translation>
     </message>
@@ -8990,6 +8994,10 @@ Playlists: %3</translation>
         <translation>Vereinheitlichung angewendet.</translation>
     </message>
     <message>
+        <source>Normalize Podcast album ownership, representative links, show identities, Playlist settings and sort-36 traversal.</source>
+        <translation type="vanished">Albumzuordnung, repräsentative Verknüpfungen, Sendungskennungen, Wiedergabelisteneinstellungen und Sort-36-Reihenfolge für Podcasts vereinheitlichen.</translation>
+    </message>
+    <message>
         <source>Not decoded for this model or firmware</source>
         <translation>Für dieses Modell oder diese Firmware nicht dekodiert</translation>
     </message>
@@ -9187,7 +9195,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Podcast episode position metadata must reference its native row identifier.</source>
-        <translation>Positionsmetadaten einer Podcast-Folge müssen auf ihre Originalzeilenkennung verweisen.</translation>
+        <translation type="vanished">Positionsmetadaten einer Podcast-Folge müssen auf ihre Originalzeilenkennung verweisen.</translation>
     </message>
     <message>
         <source>Podcast files were verified, but the operating system did not confirm a complete device flush. Safe-eject before unplugging.</source>
@@ -9568,6 +9576,10 @@ Playlists: %3</translation>
     <message>
         <source>Rockbox artwork for {name} was not embedded. The media and iOpenPod artwork can still Sync; retry after correcting the file.</source>
         <translation>Das Rockbox-Cover für {name} wurde nicht eingebettet. Die Mediendatei und das iOpenPod-Cover können weiterhin synchronisiert werden; korrigieren Sie die Datei und versuchen Sie es erneut.</translation>
+    </message>
+    <message>
+        <source>SQLite Podcast Episodes must store ascending publication dates per show.</source>
+        <translation>Podcast-Folgen in SQLite müssen pro Sendung nach aufsteigendem Veröffentlichungsdatum gespeichert sein.</translation>
     </message>
     <message>
         <source>SQLite regeneration requires a SQLite-capable target.</source>
@@ -10466,6 +10478,22 @@ Playlists: %3</translation>
         <translation>Dieser Schreibvorgang für die Mediathek erfordert einen erfassten Dateibestand ohne ausstehende positionsbezogene Wiedergabe-Begleitdateien. Behalten Sie diese bei oder gleichen Sie sie ab, bevor Sie die Ausgabe vorbereiten.</translation>
     </message>
     <message>
+        <source>A Podcast show is missing unique persistent identity or group metadata.</source>
+        <translation>Einer Podcast-Sendung fehlt eine eindeutige dauerhafte Kennung oder es fehlen Gruppenmetadaten.</translation>
+    </message>
+    <message>
+        <source>A normalized Podcast Episode position differs from its row identity.</source>
+        <translation>Die Position einer vereinheitlichten Podcast-Folge weicht von ihrer Zeilenkennung ab.</translation>
+    </message>
+    <message>
+        <source>A normalized Podcast library must have one sort-36 index per Master.</source>
+        <translation>Eine vereinheitlichte Podcast-Mediathek muss je Hauptwiedergabeliste einen Sort-36-Index enthalten.</translation>
+    </message>
+    <message>
+        <source>A normalized Podcasts Playlist has inconsistent sort, flags or database identity.</source>
+        <translation>Eine vereinheitlichte Podcast-Wiedergabeliste hat eine inkonsistente Sortierung, Kennzeichen oder Datenbankkennung.</translation>
+    </message>
+    <message>
         <source>Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.</source>
         <translation>Zum Neuaufbau des Albumindex sind genau ein Paar aus Index und Sprungtabelle sowie vollständige, eindeutige Einträge in der Hauptwiedergabeliste erforderlich.</translation>
     </message>
@@ -10476,6 +10504,42 @@ Playlists: %3</translation>
     <message>
         <source>Album rebuilding lost or duplicated a retained browse index.</source>
         <translation>Beim Neuaufbau der Albumindizes ging ein beibehaltener Ansichtsindex verloren oder wurde dupliziert.</translation>
+    </message>
+    <message>
+        <source>Normalize Podcast album ownership, representative links, show identities and target-specific Playlist traversal.</source>
+        <translation>Albumzuordnung, repräsentative Verknüpfungen, Sendungsidentitäten und gerätespezifische Wiedergabelistenreihenfolge für Podcasts normalisieren.</translation>
+    </message>
+    <message>
+        <source>Podcast counterparts must use matching Episode positions.</source>
+        <translation>Zusammengehörige Podcast-Wiedergabelisten müssen übereinstimmende Folgenpositionen verwenden.</translation>
+    </message>
+    <message>
+        <source>Podcast counterparts must use matching Episode row identifiers.</source>
+        <translation>Zusammengehörige Podcast-Wiedergabelisten müssen übereinstimmende Zeilenkennungen für Folgen verwenden.</translation>
+    </message>
+    <message>
+        <source>Podcast dates do not match the retained creation date and captured write time.</source>
+        <translation>Podcast-Datumswerte stimmen nicht mit dem beibehaltenen Erstellungsdatum und dem erfassten Schreibzeitpunkt überein.</translation>
+    </message>
+    <message>
+        <source>Podcast episode position metadata is missing or ambiguous.</source>
+        <translation>Die Positionsmetadaten einer Podcast-Folge fehlen oder sind mehrdeutig.</translation>
+    </message>
+    <message>
+        <source>Podcast normalization changed or omitted the retained root identity.</source>
+        <translation>Die Podcast-Vereinheitlichung hat die beibehaltene Kennung der Datenbankwurzel geändert oder ausgelassen.</translation>
+    </message>
+    <message>
+        <source>Podcast normalization omitted the grouped Podcasts Playlist.</source>
+        <translation>Die Podcast-Vereinheitlichung hat die gruppierte Podcast-Wiedergabeliste ausgelassen.</translation>
+    </message>
+    <message>
+        <source>Podcast row identifiers must increase in serialized group and Episode order.</source>
+        <translation>Podcast-Zeilenkennungen müssen in der gespeicherten Reihenfolge der Gruppen und Folgen ansteigen.</translation>
+    </message>
+    <message>
+        <source>Podcast settings were not preserved or initialized from the captured defaults.</source>
+        <translation>Die Podcast-Einstellungen wurden weder beibehalten noch anhand der erfassten Standardwerte initialisiert.</translation>
     </message>
     <message>
         <source>Tracks</source>

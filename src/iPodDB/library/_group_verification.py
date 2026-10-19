@@ -18,12 +18,12 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._browse_groups import album_values, browse_groups
 from iPodDB.library._track_header_expansion import optional_field_available
-from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.models import LibrarySnapshot, MediaKind
 from iPodDB.library.writing import IdentityMapping, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 
-def _text(chunk: ParsedChunk[ChunkHeader], kind: MhodType) -> str:
+def group_text(chunk: ParsedChunk[ChunkHeader], kind: MhodType) -> str:
     return next(
         (
             c.payload.value
@@ -60,6 +60,7 @@ def verify_browse_groups(
     mappings: tuple[IdentityMapping, ...],
     *,
     database_version: int | None = None,
+    normalize_podcasts: bool = False,
 ) -> tuple[WriteIssue, ...]:
     issues: list[WriteIssue] = []
     track_ids = {m.draft_id: m.output_id for m in mappings if m.subject == "track"}
@@ -114,6 +115,17 @@ def verify_browse_groups(
         for identity, reference in source_refs.items():
             prior_owners[reference].add(identity)
         for key, members in groups.items():
+            if (
+                album
+                and normalize_podcasts
+                and all(
+                    t.media_kind is MediaKind.PODCAST or t.metadata.podcast
+                    for t in members
+                )
+            ):
+                # The explicit per-show policy is checked independently after
+                # reparse; it intentionally joins artist/season browse groups.
+                continue
             prior = prior_groups.get(key, ())
             member_ids = {t.track_id for t in members}
             affected = member_ids != {t.track_id for t in prior} or (
@@ -241,7 +253,7 @@ def verify_browse_groups(
             else:
                 expected = ((MhodType.ARTIST_ITEM_ARTIST, members[0].artist),)
             for mhod, expected_value in expected:
-                actual = _text(row, mhod)
+                actual = group_text(row, mhod)
                 if actual != expected_value:
                     fail(
                         "group_metadata",

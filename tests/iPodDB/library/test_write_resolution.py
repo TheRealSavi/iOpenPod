@@ -15,6 +15,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod import (
     MhodLibraryJumpTablePayload,
+    MhodLibraryJumpTablePrefix,
 )
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library import (
@@ -31,7 +32,9 @@ from iPodDB.library._field_policy import unclassified_fields
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 
-@pytest.mark.parametrize("corruption", ["permutation", "jump_letter", "missing"])
+@pytest.mark.parametrize(
+    "corruption", ["permutation", "jump_letter", "empty_jump_letter", "missing"]
+)
 def test_verification_rejects_plausible_but_wrong_browse_indexes(
     monkeypatch: pytest.MonkeyPatch, corruption: str
 ) -> None:
@@ -73,9 +76,14 @@ def test_verification_rejects_plausible_but_wrong_browse_indexes(
                         ),
                     ),
                 )
-            elif corruption == "jump_letter" and isinstance(
+            elif corruption in {"jump_letter", "empty_jump_letter"} and isinstance(
                 payload, MhodLibraryJumpTablePayload
             ):
+                if corruption == "empty_jump_letter" and (
+                    not isinstance(chunk.prefix, MhodLibraryJumpTablePrefix)
+                    or chunk.prefix.sort_type != 18
+                ):
+                    continue
                 document = document.replace_chunk(
                     selection,
                     replace(
@@ -83,7 +91,12 @@ def test_verification_rejects_plausible_but_wrong_browse_indexes(
                         payload=replace(
                             payload,
                             entries=tuple(
-                                replace(e, letter_code=ord("Z"))
+                                replace(
+                                    e,
+                                    letter_code=ord("0")
+                                    if corruption == "empty_jump_letter"
+                                    else ord("Z"),
+                                )
                                 for e in payload.entries
                             ),
                         ),
@@ -99,6 +112,55 @@ def test_verification_rejects_plausible_but_wrong_browse_indexes(
     assert result.prepared is None
     assert any(i.code == "verification.playlist_index" for i in result.issues)
     assert source.serialize() == original
+
+
+@pytest.mark.parametrize(
+    ("composer", "letter"), [("", 0), ("1984", 48), ("!!!", 48), ("Bach", 66)]
+)
+def test_composer_jump_tables_distinguish_empty_keys_when_created_and_rebuilt(
+    composer: str, letter: int
+) -> None:
+    source = library(mirrored=True)
+    first, second = source.snapshot.tracks
+    desired = replace(
+        source.snapshot,
+        tracks=(
+            replace(second, metadata=replace(second.metadata, composer=composer)),
+            first,
+        ),
+    )
+    expected = [(0, 0, 0, 2)] if not composer else [(0, 0, 0, 1), (letter, 0, 1, 1)]
+    # Create both Masters' indexes, then rebuild them through a title edit.
+    # The all-empty case matches the captured Composer bucket's U+0000 label.
+    for _ in range(2):
+        result = source.prepare(
+            source.analyze(source.begin_draft(desired)),
+            WriteResources(pending_playback_sidecars=False),
+        )
+        assert result.prepared is not None, result.issues
+        tables = [
+            selection.chunk.payload
+            for selection in parse_iTunesDB(result.prepared.itunes).find_chunks(
+                MhodHeader
+            )
+            if isinstance(selection.chunk.prefix, MhodLibraryJumpTablePrefix)
+            and selection.chunk.prefix.sort_type == 18
+            and isinstance(selection.chunk.payload, MhodLibraryJumpTablePayload)
+        ]
+        assert len(tables) == 2
+        for table in tables:
+            assert [
+                (e.letter_code, e.padding_0x02, e.start_index, e.entry_count)
+                for e in table.entries
+            ] == expected
+        source = IPodLibrary(result.prepared.itunes)
+        desired = replace(
+            source.snapshot,
+            tracks=(
+                replace(source.snapshot.tracks[0], title="AAA"),
+                source.snapshot.tracks[1],
+            ),
+        )
 
 
 def test_retained_tag_rewrite_requires_verified_file_even_when_lyrics_match() -> None:
