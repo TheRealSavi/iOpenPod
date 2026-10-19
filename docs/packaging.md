@@ -424,32 +424,45 @@ but this repository does not yet claim Debian/Fedora repository acceptance.
 
 ### Flatpak / Flathub
 
-The local candidate uses Freedesktop 25.08 and the generated native tree:
+The local candidate uses Freedesktop 26.08 and the generated native tree:
 
 ```shell
 flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-flatpak install --user flathub org.freedesktop.Sdk//25.08 org.freedesktop.Platform//25.08
-flatpak-builder --user --install --force-clean --repo=build/flatpak-repo build/flatpak packaging/linux/flatpak.json
+flatpak install --user flathub org.freedesktop.Sdk//26.08 org.freedesktop.Platform//26.08
+flatpak-builder --user --install --force-clean --repo=build/flatpak-repo build/flatpak packaging/linux/io.github.therealsavi.iOpenPod.json
 flatpak run --env=QT_QPA_PLATFORM=offscreen io.github.therealsavi.iOpenPod --smoke-test
 flatpak build-bundle build/flatpak-repo dist/iOpenPod.flatpak io.github.therealsavi.iOpenPod
 ```
 
+Run `freeze` and `linux-stage` on a builder whose glibc is no newer than the
+runtime's, such as the Ubuntu 24.04 CI image. PyInstaller copies Host libraries
+into the frozen tree; libraries from a newer Host fail to load inside the runtime.
+The Freedesktop SDK itself cannot run the freeze because it lacks the Kerberos
+library that PySide6's QtNetwork module links.
+
+Under [ADR-0151](adr/0151-bundle-media-tools-in-flatpak.md), the manifest builds
+x264, FFmpeg 7.1.5 (GPL configuration with x264 and LAME), and Chromaprint 1.6.2's
+fpcalc from pinned sources into `/app`. Storage's PATH discovery finds them without
+code changes; Path Overrides still take precedence.
+
 Permissions explicitly cover audio, graphics, network Podcast feeds, home media and
 Backup Archives, standard removable mount locations, read-only udev observations,
 UDisks2 eject, and MPRIS. They do not grant raw devices or a host-shell escape.
-The Host mounts the iPod. Verify discovery's mount/device correlation inside the
-sandbox; bind-mounted paths and hidden block devices may require a Storage adapter.
-The native Linux identity setup remains a separately explained Host operation.
+`--filesystem=home` is deliberate: music libraries, Backup Archives, and Path
+Overrides are saved as Host paths anywhere in the user's home, and document-portal
+paths would not stay valid across sessions. Flathub's linter reports
+`finish-args-home-filesystem-access`; a submission must request an exception with
+this justification. The Host mounts the iPod. Verify discovery's mount/device
+correlation inside the sandbox; bind-mounted paths and hidden block devices may
+require a Storage adapter. The native Linux identity setup remains a separately
+explained Host operation.
 
-This local-directory manifest is not a Flathub submission. Replace generated local
-sources with a reproducible, pinned upstream-source build and offline dependency
-inputs, including UV/Python 3.12. Add release metadata,
-Linux screenshots and stable source URLs, verify app-ID ownership, and pass Flathub
-manifest/AppStream lint and permissions review. The manual CI workflow produces a
-preview `.flatpak` without bundled media tools and never uploads it to a store.
-Host-installed executables are not automatically available inside Flatpak. Resolve
-and test a permitted user-installed tool integration before advertising Sync in a
-Flathub release; the current manifest does not implement one.
+This local-directory manifest is not a Flathub submission. Replace the generated
+iOpenPod tree with a reproducible, pinned upstream-source build and offline
+dependency inputs, including UV/Python 3.12. Add Linux screenshots and stable source
+URLs, add a `<release>` entry to the metainfo for every version, verify app-ID
+ownership, and pass Flathub manifest/AppStream lint and permissions review. The
+manual CI workflow produces a preview `.flatpak` and never uploads it to a store.
 See [Flatpak permissions](https://docs.flatpak.org/en/latest/sandbox-permissions.html)
 and [Flathub requirements](https://docs.flathub.org/docs/for-app-authors/requirements).
 

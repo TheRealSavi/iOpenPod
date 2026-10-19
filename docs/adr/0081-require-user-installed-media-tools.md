@@ -1,5 +1,7 @@
 # Require user-installed command-line media tools
 
+> ADR-0151 amends the Flatpak channel: its manifest builds and bundles the tools.
+>
 > ADR-0103 amends installation: users may now explicitly install missing tools
 > through a native package-manager helper. Executables remain unbundled.
 >

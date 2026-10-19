@@ -49,7 +49,9 @@ them.
 4. Verify the provenance and redistribution terms of every bundled library and
    asset. FFmpeg, FFprobe, and Chromaprint's fpcalc executables are user-installed
    and excluded from the package; their binary redistribution is outside this
-   release. Qt's FFmpeg playback libraries remain bundled and still require review
+   release. The Flatpak is the exception (ADR-0151): it builds a GPL FFmpeg with
+   x264 and LAME, plus fpcalc, from the pinned sources in its manifest. Those
+   sources, configure options, and notices must accompany a Flatpak release. Qt's FFmpeg playback libraries remain bundled and still require review
    of their exact build configuration, notices, and source obligations. Do not ship
    a nonfree FFmpeg build. See [FFmpeg legal information](https://ffmpeg.org/legal.html).
 5. Ensure the installer, store terms, and any DRM do not remove the rights granted
