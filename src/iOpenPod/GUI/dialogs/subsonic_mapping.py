@@ -147,7 +147,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
             current_index = 0
             idx = 1
             for ipod_pl in self._ipod_playlists:
-                m_combo.addItem(f"{ipod_pl.name} (iPod)", ipod_pl.playlist_id)
+                m_combo.addItem(f"{ipod_pl.name} (iPod)", str(ipod_pl.playlist_id))
                 if (
                     saved_target is not None
                     and abs(saved_target) == ipod_pl.playlist_id
@@ -162,10 +162,10 @@ class SubsonicPlaylistMappingDialog(QDialog):
 
             mode_combo = AppComboBox(mode_content)
             mode_combo.addItem(
-                self.tr("Add / Merge into iPod playlist"), SubsonicSyncMode.MERGE
+                self.tr("Add / Merge into iPod playlist"), SubsonicSyncMode.MERGE.value
             )
             mode_combo.addItem(
-                self.tr("Overwrite iPod playlist entirely"), SubsonicSyncMode.OVERWRITE
+                self.tr("Overwrite iPod playlist entirely"), SubsonicSyncMode.OVERWRITE.value
             )
             if saved_target is not None and saved_target < 0:
                 mode_combo.setCurrentIndex(1)
@@ -254,9 +254,13 @@ class SubsonicPlaylistMappingDialog(QDialog):
                 continue
             m_combo = self._mapping_combos.get(pl.playlist_id)
             mode_combo = self._mode_combos.get(pl.playlist_id)
-            target_id: int | None = m_combo.currentData() if m_combo else None
-            mode: SubsonicSyncMode = (
-                mode_combo.currentData() if mode_combo else SubsonicSyncMode.MERGE
+            raw_target = m_combo.currentData() if m_combo else None
+            target_id: int | None = int(raw_target) if raw_target is not None else None
+            raw_mode = mode_combo.currentData() if mode_combo else None
+            mode = (
+                SubsonicSyncMode(raw_mode)
+                if raw_mode in ("merge", "overwrite")
+                else SubsonicSyncMode.MERGE
             )
             result.append(
                 SubsonicPlaylistMapping(

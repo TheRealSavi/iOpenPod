@@ -129,3 +129,29 @@ def test_subsonic_settings_test_connection_click() -> None:
 
     assert "Connection failed" in widget._test_status.text()
     assert widget._test_button.isEnabled()
+
+
+def test_subsonic_playlist_mapping_dialog_handles_large_uint64_playlist_id() -> None:
+    _app = APPLICATION
+    large_id = 14823404775094956948  # Exceeds signed 64-bit int (2^63 - 1)
+    sub_playlists = (
+        SubsonicPlaylist(playlist_id="sub-1", name="Favorites", song_count=10),
+    )
+    ipod_playlists = (
+        Playlist(
+            large_id,
+            "iPod Playlist With Large ID",
+            PlaylistKind.PLAYLIST,
+            sort_order=PlaylistSortOrder.MANUAL,
+        ),
+    )
+
+    dlg = SubsonicPlaylistMappingDialog(
+        sub_playlists,
+        ipod_playlists,
+        saved_mappings={"sub-1": large_id},
+    )
+
+    mappings = dlg.get_mappings()
+    assert len(mappings) == 1
+    assert mappings[0].target_ipod_id == large_id
