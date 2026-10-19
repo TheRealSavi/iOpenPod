@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-import tempfile
 import threading
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
@@ -25,6 +23,8 @@ from .models import (
 from .sync import index_library_tracks, normalize_match_key
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.library_workspace import LibraryWorkspace
     from iOpenPod.app.media.importing import ImportedSong
@@ -261,7 +261,12 @@ class SubsonicController(QObject):
         self._active_track_index = index_library_tracks(workspace.tracks)
         self.syncStarted.emit()
         client = SubsonicClient(url, username, password)
-        cache_dir = Path(tempfile.gettempdir()) / "iopenpod_subsonic"
+        from storage import Storage
+
+        cache_dir = (
+            Storage().host_cache_file("iOpenPod", "subsonic").path.parent
+            / "subsonic"
+        )
         work = _SyncPlaylistsWork(
             client, mappings, self._active_track_index, scope, cache_dir
         )
