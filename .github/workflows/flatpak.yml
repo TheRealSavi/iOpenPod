@@ -31,10 +31,10 @@ jobs:
       - name: Install Flatpak SDK
         run: |
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user --noninteractive flathub org.freedesktop.Sdk//25.08 org.freedesktop.Platform//25.08
+          flatpak install --user --noninteractive flathub org.freedesktop.Sdk//26.08 org.freedesktop.Platform//26.08
       - name: Build and check local Flatpak candidate
         run: |
-          flatpak-builder --user --install --force-clean --repo=build/flatpak-repo build/flatpak packaging/linux/flatpak.json
+          flatpak-builder --user --install --force-clean --repo=build/flatpak-repo build/flatpak packaging/linux/io.github.therealsavi.iOpenPod.json
           flatpak run --env=QT_QPA_PLATFORM=offscreen io.github.therealsavi.iOpenPod --smoke-test
           flatpak build-bundle build/flatpak-repo dist/iOpenPod-Linux-x86_64.flatpak io.github.therealsavi.iOpenPod
           sha256sum dist/iOpenPod-Linux-x86_64.flatpak > dist/iOpenPod-Linux-x86_64.flatpak.sha256

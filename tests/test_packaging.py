@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib
+import json
 import os
 import platform
 import plistlib
@@ -186,6 +187,28 @@ def test_freeze_cli_needs_no_media_tools_or_special_flag(
     assert commands[-1][-1].endswith("iOpenPod.spec")
     assert commands[0][:3] == [sys.executable, "-m", "PyInstaller"]
     assert (tmp_path / "licenses/ACKNOWLEDGEMENTS.md").is_file()
+
+
+def test_flatpak_manifest_bundles_pinned_media_tools_and_current_release() -> None:
+    linux = package_app.ROOT / "packaging/linux"
+    manifest = json.loads((linux / f"{package_app.APP_ID}.json").read_text("utf-8"))
+    assert manifest["id"] == package_app.APP_ID
+    modules = {module["name"]: module for module in manifest["modules"]}
+    assert list(modules)[-1] == "iopenpod"
+    for name in ("x264", "ffmpeg", "chromaprint"):
+        for source in modules[name]["sources"]:
+            assert source.get("sha256") or source.get("commit")
+    ffmpeg = modules["ffmpeg"]["config-opts"]
+    assert {"--enable-gpl", "--enable-libx264", "--enable-libmp3lame"} <= set(ffmpeg)
+    assert "--enable-nonfree" not in ffmpeg
+    assert "-DBUILD_TOOLS=ON" in modules["chromaprint"]["config-opts"]
+    assert "--talk-name=org.freedesktop.Flatpak" not in manifest["finish-args"]
+
+    metainfo = ET.parse(linux / f"{package_app.APP_ID}.metainfo.xml").getroot()
+    assert metainfo.findtext("id") == package_app.APP_ID
+    release = metainfo.find("releases/release")
+    assert release is not None
+    assert release.get("version") == package_app.project_version()
 
 
 @pytest.mark.parametrize(
