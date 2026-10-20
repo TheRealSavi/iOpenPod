@@ -253,6 +253,7 @@ QDialog#mediaFolderSettingsDialog,
 QDialog#mediaToolsSetup,
 QDialog#externalPlaylistFilesDialog,
 QDialog#syncDuplicatesDialog,
+QDialog#subsonicMappingDialog,
 QDialog#linuxIdentitySetup,
 QDialog#linuxIdentityUninstall,
     QFileDialog,
@@ -1151,6 +1152,23 @@ QTabWidget#playbackTabs::pane {{
 QTabWidget#settingsTabs::pane {{
     border: none;
     border-top: 1px solid {tokens.border};
+}}
+
+QTabWidget#subsonicTabs,
+QTabWidget#subsonicTabs > QWidget,
+QTabWidget#subsonicTabs > QWidget > QWidget,
+QScrollArea#subsonicScroll,
+QScrollArea#subsonicScroll > QWidget,
+QScrollArea#subsonicScroll > QWidget > QWidget {{
+    color: {tokens.text};
+    background-color: transparent;
+    border: none;
+}}
+
+QTabWidget#subsonicTabs::pane {{
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
 }}
 
 QTabBar::tab {{

@@ -55,6 +55,7 @@ from iOpenPod.app.services.linux_identity import (
     inspect_udev_rule,
 )
 from iOpenPod.app.services.media_tools import MediaToolSetup
+from iOpenPod.app.subsonic.controller import SubsonicController
 from iOpenPod.app.updates.backend import InstallChannel
 from iOpenPod.GUI.dialogs.linux_identity_setup import (
     LinuxIdentityUninstallDialog,
@@ -72,6 +73,7 @@ from iOpenPod.GUI.widgets.scrobbling_settings import ScrobblingSettings
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
 from iOpenPod.GUI.widgets.settings_editor import ScopedSettingBinding, SettingsEditor
 from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
+from iOpenPod.GUI.widgets.subsonic_settings import SubsonicSettings
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
@@ -86,6 +88,7 @@ class SettingsPage(QWidget):
     mediaToolsCheckRequested = Signal()
     appUpdatesRequested = Signal()
     chooseIPodRequested = Signal()
+    subsonicSyncRequested = Signal()
 
     def __init__(
         self,
@@ -95,6 +98,7 @@ class SettingsPage(QWidget):
         parent: QWidget | None = None,
         *,
         scrobbling: ScrobbleController | None = None,
+        subsonic: SubsonicController | None = None,
     ) -> None:
         super().__init__(parent)
         self._settings = settings
@@ -360,12 +364,24 @@ class SettingsPage(QWidget):
             if scrobbling is not None
             else None
         )
+        self._subsonic_settings = (
+            SubsonicSettings(settings, subsonic, self) if subsonic is not None else None
+        )
+        if self._subsonic_settings is not None:
+            self._subsonic_settings.syncRequested.connect(
+                self.subsonicSyncRequested.emit
+            )
         self._sync_tab = self._add_tab(
             "syncSettingsScroll",
             self._sync_settings,
             *(
                 (self._scrobbling_settings,)
                 if self._scrobbling_settings is not None
+                else ()
+            ),
+            *(
+                (self._subsonic_settings,)
+                if self._subsonic_settings is not None
                 else ()
             ),
         )
@@ -520,6 +536,8 @@ class SettingsPage(QWidget):
     def retranslate_ui(self) -> None:
         self._update_version()
         self._media_tools.retranslate_ui()
+        if self._subsonic_settings is not None:
+            self._subsonic_settings.retranslate_ui()
         self._header.set_title(self.tr("Settings"))
         self._scope_switcher.retranslate_ui()
         self._choose_ipod.setText(self.tr("Choose iPod…"))
@@ -664,6 +682,8 @@ class SettingsPage(QWidget):
     def set_active_ipod(self, active: ActiveIPod | None) -> None:
         self._active_ipod = active
         self._ipod_preferences.set_active_ipod(active)
+        if self._subsonic_settings is not None:
+            self._subsonic_settings.set_active_ipod(active)
         self._update_scope_state()
 
     def _select_scope(self, device: bool) -> None:
@@ -695,6 +715,8 @@ class SettingsPage(QWidget):
         self._backup_location_row.setVisible(not device)
         if self._scrobbling_settings is not None:
             self._scrobbling_settings.setVisible(not device)
+        if self._subsonic_settings is not None:
+            self._subsonic_settings.setVisible(not device)
         self._update_scope_state()
 
     def _update_scope_state(self) -> None:

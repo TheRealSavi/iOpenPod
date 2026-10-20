@@ -467,6 +467,7 @@ class Sidebar(QFrame):
     chooseDeviceRequested = Signal()
     syncRequested = Signal()
     scrobbleRequested = Signal()
+    subsonicSyncRequested = Signal()
     reviewChangesRequested = Signal()
     ejectRequested = Signal()
 
@@ -525,6 +526,12 @@ class Sidebar(QFrame):
         self._scrobble.setEnabled(False)
         self._scrobble.clicked.connect(self.scrobbleRequested.emit)
         navigation_layout.addWidget(self._scrobble)
+        self._subsonic_sync = NavigationButton("", "refresh", self)
+        self._subsonic_sync.setObjectName("syncSubsonic")
+        self._subsonic_sync.setCheckable(False)
+        self._subsonic_sync.setEnabled(False)
+        self._subsonic_sync.clicked.connect(self.subsonicSyncRequested.emit)
+        navigation_layout.addWidget(self._subsonic_sync)
         normalize = self._buttons[PageId.NORMALIZE_TAGS]
         normalize.setObjectName("normalizationNavigation")
         self._normalization_badge = QLabel(normalize)
@@ -598,6 +605,7 @@ class Sidebar(QFrame):
             else self.tr("Select an Active iPod before Sync.")
         )
         self._buttons[PageId.NORMALIZE_TAGS].setEnabled(active_ipod is not None)
+        self._subsonic_sync.setEnabled(active_ipod is not None)
         if active_ipod is None:
             self.set_normalization_count(0)
         self._refresh_page_visibility()
@@ -622,6 +630,10 @@ class Sidebar(QFrame):
         self._scrobble.setText(self.tr("Scrobble now"))
         self._scrobble.setToolTip(
             self.tr("Submit pending iPod plays to Last.fm and ListenBrainz.")
+        )
+        self._subsonic_sync.setText(self.tr("Sync Subsonic"))
+        self._subsonic_sync.setToolTip(
+            self.tr("Sync playlists from a configured Subsonic server.")
         )
         if not self._sync.isEnabled():
             self._sync.setToolTip(self.tr("Select an Active iPod before Sync."))
