@@ -183,9 +183,7 @@ class PodcastShowDelegate(QStyledItemDelegate):
                     tokens,
                     float(LAYOUT.radius_control),
                 )
-        title_font = _font(
-            option.font, typography.album_card_title_pt, QFont.Weight.DemiBold
-        )
+        title_font = _font(option.font, typography.body_pt, QFont.Weight.DemiBold)
         detail_font = _font(option.font, typography.small_pt, QFont.Weight.Medium)
         title_metrics = QFontMetrics(title_font)
         detail_metrics = QFontMetrics(detail_font)

@@ -7,6 +7,7 @@ from itertools import pairwise
 from pathlib import Path
 from threading import Event
 
+import pytest
 from PySide6.QtCore import Qt, QTimer, QTranslator
 from PySide6.QtTest import QSignalSpy, QTest
 from tests.iOpenPod.app.services.test_library_resources import build_device
@@ -30,6 +31,7 @@ from iOpenPod.app.media.stream_selection import MediaStreamSelection
 from iOpenPod.app.media_stream_controller import MediaStreamController
 from iOpenPod.app.media_stream_preferences import MediaStreamPreferences
 from iOpenPod.app.models.sync_selection import SyncSelection
+from iOpenPod.app.models.track_table_model import TrackColumn, TrackRole
 from iOpenPod.app.sync_plan import (
     SyncPlan,
     SyncPlanAction,
@@ -37,9 +39,12 @@ from iOpenPod.app.sync_plan import (
     SyncPlanItem,
     SyncPlanMediaKind,
 )
+from iOpenPod.GUI.delegates.sync_track_delegate import SyncTrackDelegate
 from iOpenPod.GUI.dialogs.media_streams import MediaStreamsDialog
+from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.sync_workspace import SyncWorkspace
 from iOpenPod.GUI.widgets.media_stream_option import STREAM_OPTION_ROLE, StreamOption
+from iOpenPod.GUI.widgets.track_table import TrackTable
 from storage import AtomicHostFile, HostPath
 from storage.host_input import LocalHostFile
 
@@ -270,10 +275,14 @@ def test_cancelling_inspection_reaps_work_and_ignores_result(video: Path) -> Non
     assert ready.count() == failures.count() == 0
 
 
+@pytest.mark.parametrize("track_id", (100, (1 << 62) + 100, (1 << 63) - 1))
+@pytest.mark.parametrize("activation", ("mouse", "keyboard"))
 def test_workspace_stages_dialog_choices_in_review(
     workspace: SyncWorkspace,
     tmp_path: Path,
     video: Path,
+    track_id: int,
+    activation: str,
 ) -> None:
     device = build_device(tmp_path)
     timer = QTimer()
@@ -291,6 +300,13 @@ def test_workspace_stages_dialog_choices_in_review(
 
     try:
         host = host_library(video)
+        host = replace(
+            host,
+            snapshot=replace(
+                host.snapshot,
+                tracks=(replace(host.snapshot.tracks[0], track_id=track_id),),
+            ),
+        )
         item = SyncPlanItem(
             SyncPlanAction.ADD,
             SyncPlanMediaKind.TRACK,
@@ -304,12 +320,29 @@ def test_workspace_stages_dialog_choices_in_review(
             device.active,
             IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False),
         )
-        workspace.selection.set_tracks_checked((100,), True)
+        workspace.selection.set_tracks_checked((track_id,), True)
         timer.timeout.connect(choose)
         timer.start(10)
-        workspace._choose_streams(100)  # pyright: ignore[reportPrivateUsage]
-        choice = workspace.selection.stream_selection(100)
+        assert workspace.browser is not None
+        page = workspace.browser.page_widgets[PageId.TRACKS]
+        table = page.findChild(TrackTable)
+        assert table is not None
+        page.show()
+        APPLICATION.processEvents()
+        index = table.model().index(0, TrackColumn.SYNC_SELECTION)
+        assert index.data(TrackRole.TRACK_ID) == track_id
+        if activation == "mouse":
+            QTest.mouseClick(
+                table.viewport(),
+                Qt.MouseButton.LeftButton,
+                pos=SyncTrackDelegate.button_rect(table.visualRect(index)).center(),
+            )
+        else:
+            table.setCurrentIndex(index)
+            QTest.keyClick(table, Qt.Key.Key_Return)
+        choice = workspace.selection.stream_selection(track_id)
         assert choice is not None and choice.video is not None and choice.audio is None
+        assert index.data(TrackRole.STREAM_MANUAL) is True
         workspace.show_review()
         assert workspace.plan is not None
         assert workspace.plan.items[0].stream_selection == choice
@@ -320,7 +353,7 @@ def test_workspace_stages_dialog_choices_in_review(
             device.active,
             IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False),
         )
-        assert workspace.selection.stream_selection(100) == choice
+        assert workspace.selection.stream_selection(track_id) == choice
     finally:
         timer.stop()
         device.coordinator.close()

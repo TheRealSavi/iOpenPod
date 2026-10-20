@@ -77,6 +77,7 @@ class DevicePickerDialog(QDialog):
 
         self._detail = QLabel(self)
         self._detail.setObjectName("deviceCandidateDetail")
+        self._detail.setTextFormat(Qt.TextFormat.PlainText)
         self._detail.setWordWrap(True)
 
         self._refresh = ActionButton(parent=self)
@@ -249,7 +250,7 @@ class DevicePickerDialog(QDialog):
         detail = self.tr("%1 · %2").replace("%1", profile).replace("%2", status)
         issue_details = tuple(_issue_text(self, issue) for issue in candidate.issues)
         if issue_details:
-            detail = f"{detail}\n{issue_details[0]}"
+            detail = "\n".join((detail, *issue_details))
         self._detail.setText(detail)
 
     def _show_linux_setup(self) -> None:
@@ -341,7 +342,7 @@ def _issue_text(
     _dialog: DevicePickerDialog,
     issue: DeviceCandidateIssue,
 ) -> str:
-    return {
+    summary = {
         DeviceCandidateIssueCode.TIMEZONE_UNCERTAIN: QCoreApplication.translate(
             "DevicePickerDialog",
             "Some dates need a timezone fallback or cannot be interpreted uniquely.",
@@ -394,3 +395,9 @@ def _issue_text(
             "DevicePickerDialog", "The device filesystem could not be inspected."
         ),
     }[issue.code]
+    if (
+        issue.code is DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE
+        and issue.detail
+    ):
+        return f"{summary}\n{issue.detail}"
+    return summary

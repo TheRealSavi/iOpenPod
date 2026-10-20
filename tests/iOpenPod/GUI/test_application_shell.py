@@ -1240,7 +1240,7 @@ def test_implemented_library_routes_are_distinct_real_pages() -> None:
         assert pages is not None
 
         expected_tables = {
-            PageId.TRACKS: ("tracks", 5),
+            PageId.TRACKS: ("tracks", 1),
             PageId.ARTISTS: ("artists-tracks", 1),
             PageId.GENRES: ("genres-tracks", 1),
             PageId.AUDIOBOOKS: ("audiobooks", 1),

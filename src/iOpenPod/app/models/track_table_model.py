@@ -43,6 +43,7 @@ class TrackRole(IntEnum):
     SORT_VALUE = Qt.ItemDataRole.UserRole.value + 5
     ARTWORK_SEED = Qt.ItemDataRole.UserRole.value + 6
     ARTWORK_ID = Qt.ItemDataRole.UserRole.value + 7
+    STREAM_MANUAL = Qt.ItemDataRole.UserRole.value + 8
 
 
 class TrackTableModel(QAbstractTableModel):
@@ -155,12 +156,10 @@ class TrackTableModel(QAbstractTableModel):
         if selection is self._sync_selection:
             return
         if self._sync_selection is not None:
-            self._sync_selection.hostSelectionChanged.disconnect(
-                self._selection_changed
-            )
+            self._sync_selection.changed.disconnect(self._selection_changed)
         self._sync_selection = selection
         if selection is not None:
-            selection.hostSelectionChanged.connect(self._selection_changed)
+            selection.changed.connect(self._selection_changed)
         self._selection_changed()
         self.syncSelectionEnabledChanged.emit(self.sync_selection_enabled)
 
@@ -199,6 +198,19 @@ class TrackTableModel(QAbstractTableModel):
 
         track = self._tracks[index.row()]
         position = self._playlist_positions[index.row()]
+        if self._sync_selection is not None:
+            manual = self._sync_selection.stream_selection(track.track_id) is not None
+            if role == TrackRole.STREAM_MANUAL:
+                return manual
+            if index.column() == TrackColumn.SYNC_SELECTION and role in (
+                Qt.ItemDataRole.ToolTipRole,
+                Qt.ItemDataRole.AccessibleTextRole,
+            ):
+                return (
+                    self.tr("Manual stream choices. Choose streams… (Enter)")
+                    if manual
+                    else self.tr("Automatic stream selection. Choose streams… (Enter)")
+                )
         if (
             role == Qt.ItemDataRole.CheckStateRole
             and self._sync_selection is not None
@@ -314,7 +326,13 @@ class TrackTableModel(QAbstractTableModel):
         self.dataChanged.emit(
             self.index(0, TrackColumn.SYNC_SELECTION),
             self.index(len(self._tracks) - 1, TrackColumn.SYNC_SELECTION),
-            [Qt.ItemDataRole.CheckStateRole.value, TrackRole.SORT_VALUE],
+            [
+                Qt.ItemDataRole.CheckStateRole.value,
+                Qt.ItemDataRole.ToolTipRole.value,
+                Qt.ItemDataRole.AccessibleTextRole.value,
+                TrackRole.SORT_VALUE,
+                TrackRole.STREAM_MANUAL,
+            ],
         )
 
 

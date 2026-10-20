@@ -18,7 +18,9 @@ def _application() -> QApplication:
 APPLICATION = _application()
 
 
-@pytest.mark.parametrize("name", ("music", "play-next", "play-last", "bell"))
+@pytest.mark.parametrize(
+    "name", ("music", "all-media", "play-next", "play-last", "bell")
+)
 def test_glyph_icon_renders_visible_pixels(name: str) -> None:
     icon = glyph_icon(name, 18, QColor("#176FD1"), 2.0)
     image = icon.pixmap(QSize(18, 18)).toImage()

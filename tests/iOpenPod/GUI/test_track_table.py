@@ -3,8 +3,9 @@
 from math import ceil
 from typing import Any, ClassVar
 
-from PySide6.QtCore import QItemSelectionModel, QMimeData, QPoint, Qt
-from PySide6.QtGui import QAction, QPixmap
+import pytest
+from PySide6.QtCore import QEvent, QItemSelectionModel, QMimeData, QPoint, QPointF, Qt
+from PySide6.QtGui import QAction, QMouseEvent, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -23,12 +24,19 @@ from iOpenPod.app.core.settings.stores import (
 )
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
 from iOpenPod.app.library_workspace import LibraryWorkspace
+from iOpenPod.app.media.models import MediaStream, StreamKind
+from iOpenPod.app.media.stream_selection import MediaStreamSelection
 from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 from iOpenPod.app.models.library_drag import TrackSelectionMimeData
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
 from iOpenPod.app.models.sync_selection import SyncSelection
-from iOpenPod.app.models.track_table_model import TrackColumn, TrackTableModel
+from iOpenPod.app.models.track_table_model import (
+    TrackColumn,
+    TrackRole,
+    TrackTableModel,
+)
 from iOpenPod.app.sync_plan import SyncPlan
+from iOpenPod.GUI.delegates.sync_track_delegate import SyncTrackDelegate
 from iOpenPod.GUI.delegates.track_artwork_delegate import TrackArtworkDelegate
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
@@ -443,6 +451,9 @@ def test_sync_checkbox_click_selects_and_deselects_track() -> None:
             QStyle.SubElement.SE_ItemViewItemCheckIndicator, option, table
         )
         assert not indicator.isEmpty()
+        assert not indicator.intersects(
+            SyncTrackDelegate.button_rect(table.visualRect(index))
+        )
         QTest.mouseClick(
             table.viewport(), Qt.MouseButton.LeftButton, pos=indicator.center()
         )
@@ -507,6 +518,157 @@ def test_sync_column_follows_selection_mode_and_preserves_saved_metadata_layout(
         assert not table.isColumnHidden(TrackColumn.SYNC_SELECTION)
         source.set_sync_selection(None)
         assert table.isColumnHidden(TrackColumn.SYNC_SELECTION)
+    finally:
+        table.close()
+
+
+@pytest.mark.parametrize(
+    ("click_offset", "movement"),
+    [
+        (QPoint(), QPoint()),
+        (QPoint(-10, 0), QPoint(1, 0)),
+        (QPoint(10, 0), QPoint(0, 1)),
+        (QPoint(0, -10), QPoint(3, 3)),
+        (QPoint(0, 10), QPoint()),
+        (QPoint(), QPoint(11, 0)),
+    ],
+)
+def test_stream_button_targets_sorted_row_without_changing_sync_membership(
+    movement: QPoint,
+    click_offset: QPoint,
+) -> None:
+    tracks = tuple(
+        Track(
+            track_id,
+            title,
+            "Artist",
+            "Album",
+            180_000,
+            metadata=TrackMetadata(location=f"/host/{track_id}.mp3"),
+        )
+        for track_id, title in ((1, "Zulu"), (2, "Alpha"))
+    )
+    selection = SyncSelection()
+    selection.reset(
+        HostMediaLibrary(LibrarySnapshot(tracks=tracks), (), (), HostMediaCacheStats()),
+        SyncPlan(()),
+    )
+    table = _track_table(tracks=tracks, sync_selection=selection)
+    opened: list[int] = []
+    table.chooseStreamsRequested.connect(opened.append)
+    try:
+        table.resize(900, 320)
+        table.sortByColumn(TrackColumn.TITLE, Qt.SortOrder.AscendingOrder)
+        table.show()
+        APPLICATION.processEvents()
+        table.setCurrentIndex(table.model().index(1, TrackColumn.TITLE))
+        index = table.model().index(0, TrackColumn.SYNC_SELECTION)
+        assert index.data(TrackRole.TRACK_ID) == 2
+        assert index.data(TrackRole.STREAM_MANUAL) is False
+        automatic = table.viewport().grab(table.visualRect(index)).toImage()
+        button = SyncTrackDelegate.button_rect(table.visualRect(index))
+        click = button.center() + click_offset
+        window = table.windowHandle()
+        window_click = table.viewport().mapTo(table, click)
+        QTest.mouseMove(window, window_click)
+        APPLICATION.processEvents()
+        assert table.viewport().cursor().shape() == Qt.CursorShape.PointingHandCursor
+        QTest.mousePress(window, Qt.MouseButton.LeftButton, pos=window_click)
+        QTest.qWait(20)
+        APPLICATION.sendEvent(
+            table.viewport(),
+            QMouseEvent(
+                QEvent.Type.MouseMove,
+                QPointF(click + movement),
+                QPointF(table.viewport().mapToGlobal(click + movement)),
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
+        QTest.mouseRelease(
+            window, Qt.MouseButton.LeftButton, pos=window_click + movement
+        )
+        assert opened == [2]
+        assert table.currentIndex() == index
+        assert selection.selected_host_count == 0
+        table.setCurrentIndex(index)
+        QTest.keyClick(table, Qt.Key.Key_Return)
+        assert opened == [2, 2]
+        # A button press must not turn into a click on a different Track.
+        other = table.model().index(1, TrackColumn.SYNC_SELECTION)
+        other_button = SyncTrackDelegate.button_rect(table.visualRect(other))
+        QTest.mousePress(
+            table.viewport(), Qt.MouseButton.LeftButton, pos=button.center()
+        )
+        QTest.mouseRelease(
+            table.viewport(), Qt.MouseButton.LeftButton, pos=other_button.center()
+        )
+        assert opened == [2, 2]
+        assert selection.selected_host_count == 0
+        QTest.mouseMove(
+            window, table.viewport().mapTo(table, table.visualRect(index).bottomRight())
+        )
+        assert table.viewport().cursor().shape() == Qt.CursorShape.ArrowCursor
+        assert selection.selected_host_count == 0
+
+        choice = MediaStreamSelection(
+            None,
+            MediaStream(
+                index=0,
+                kind=StreamKind.AUDIO,
+                codec="mp3",
+                codec_tag="",
+                profile="",
+                level=None,
+                duration_seconds=None,
+                start_seconds=None,
+                time_base=None,
+                duration_ticks=None,
+                bitrate_bps=None,
+                sample_rate_hz=44100,
+                channels=2,
+                channel_layout="stereo",
+                bits_per_sample=None,
+                bits_per_raw_sample=None,
+                width=None,
+                height=None,
+                pixel_format="",
+                frame_rate=None,
+                nominal_frame_rate=None,
+                sample_aspect_ratio=None,
+                attached_picture=False,
+                default=True,
+                dispositions=(),
+                tags=(),
+            ),
+        )
+        selection.set_stream_selection(2, choice)
+        APPLICATION.processEvents()
+        assert index.data(TrackRole.STREAM_MANUAL) is True
+        assert "Manual" in index.data(Qt.ItemDataRole.AccessibleTextRole)
+        assert table.viewport().grab(table.visualRect(index)).toImage() != automatic
+        assert (
+            table.model()
+            .index(1, TrackColumn.SYNC_SELECTION)
+            .data(TrackRole.STREAM_MANUAL)
+            is False
+        )
+        selection.set_stream_selection(2, None)
+        assert index.data(TrackRole.STREAM_MANUAL) is False
+
+        # Releasing over the button after pressing elsewhere must not open it.
+        QTest.mousePress(
+            table.viewport(),
+            Qt.MouseButton.LeftButton,
+            pos=table.visualRect(index).bottomRight(),
+        )
+        QTest.mouseRelease(
+            table.viewport(),
+            Qt.MouseButton.LeftButton,
+            pos=button.center(),
+        )
+        assert opened == [2, 2]
     finally:
         table.close()
 

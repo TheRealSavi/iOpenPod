@@ -22,10 +22,12 @@ from iOpenPod.app.services.device_coordinator import (
 from storage import (
     AccessMode,
     FilePreconditionError,
+    FlushResult,
     Storage,
     StorageOperationError,
     StorageTransaction,
 )
+from storage.models import VolumeObservation
 from storage.testing import VirtualStoragePlatform
 
 _COMPANIONS = (
@@ -314,6 +316,58 @@ def test_native_failure_does_not_undo_saved_name(
         assert any("permission denied" in issue.detail for issue in result.issues)
     finally:
         device.coordinator.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "filesystem", "expected"),
+    [
+        ("My iPod", "fat32", "MY IPOD"),
+        ("John's long iPod name", "fat32", "JOHN'S LONG"),
+        ("Zoë / iPod", "fat32", "ZOE  IPOD"),
+        ("Music / Podcasts", "exfat", "Music  Podcasts"),
+    ],
+)
+def test_native_label_formatting_is_silent_on_repeated_updates(
+    tmp_path: Path, name: str, filesystem: str, expected: str
+) -> None:
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path, filesystem_type=filesystem)
+    storage = Storage(platform)
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        for _ in range(2):
+            assert volume_presentation.apply_native(session, name) == ()
+            assert platform.inspect(tmp_path).volume.label == expected
+
+
+def test_native_failures_retain_all_reasons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path, filesystem_type="fat32")
+    storage = Storage(platform)
+
+    def refused_icon(_observation: VolumeObservation) -> None:
+        raise StorageOperationError("Could not enable the Volume icon: access denied")
+
+    def wrong_label(_observation: VolumeObservation, _label: str) -> str:
+        return "WRONG"
+
+    def refused_flush(_observation: VolumeObservation) -> FlushResult:
+        return FlushResult(False, "Volume flush: access denied")
+
+    monkeypatch.setattr(platform, "enable_volume_icon", refused_icon)
+    monkeypatch.setattr(platform, "set_volume_label", wrong_label)
+    monkeypatch.setattr(platform, "flush", refused_flush)
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        assert volume_presentation.apply_native(session, "My iPod") == (
+            "Could not enable the Volume icon: access denied",
+            "Volume label did not verify: expected 'MY IPOD', observed 'WRONG'",
+            "Volume flush: access denied",
+        )
 
 
 def test_companion_merge_preserves_other_settings_and_removes_stale_localized_names(

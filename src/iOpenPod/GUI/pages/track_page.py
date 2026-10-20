@@ -10,12 +10,13 @@ from iOpenPod.GUI.navigation import PageId, page_label
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
+from iOpenPod.GUI.widgets.track_media_switch import TrackMediaSwitch
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import MediaKind
 
 
 class TrackPage(QWidget):
-    """Present one stable media subset in its own configurable table."""
+    """Present a media subset in its own configurable table."""
 
     currentTrackChanged = Signal(object)
     trackActivated = Signal(object)
@@ -30,6 +31,8 @@ class TrackPage(QWidget):
         table_id: str,
         media_kinds: tuple[MediaKind, ...] | None,
         parent: QWidget | None = None,
+        *,
+        show_media_switch: bool = False,
     ) -> None:
         super().__init__(parent)
         self._page_id = page_id
@@ -39,6 +42,12 @@ class TrackPage(QWidget):
         self._proxy.set_media_kinds(media_kinds)
         self._toolbar = LibraryToolbar(self)
         self._toolbar.set_namespace(page_id.value)
+        self._media_switch: TrackMediaSwitch | None = None
+        if show_media_switch:
+            self._media_switch = TrackMediaSwitch(self)
+            self._toolbar.add_filter(self._media_switch)
+            self._media_switch.allMediaChanged.connect(self._set_all_media)
+            self._set_all_media(False)
         self._table = TrackTable(
             self._proxy,
             settings,
@@ -71,6 +80,15 @@ class TrackPage(QWidget):
     def select_track(self, track_id: int) -> bool:
         """Reveal a diagnostic's Track using the existing table and inspector."""
         self._toolbar.set_query("")
+        self._proxy.set_query("")
+        if self._media_switch is not None:
+            source = self._proxy.sourceModel()
+            if isinstance(source, TrackTableModel):
+                for source_track in source.tracks:
+                    if source_track.track_id == track_id:
+                        if source_track.media_kind is not MediaKind.MUSIC:
+                            self._media_switch.set_all_media(True)
+                        break
         for row in range(self._proxy.rowCount()):
             index = self._proxy.index(row, 0)
             track = self._proxy.track_at(index)
@@ -80,6 +98,9 @@ class TrackPage(QWidget):
                 self._table.setFocus()
                 return True
         return False
+
+    def _set_all_media(self, enabled: bool) -> None:
+        self._proxy.set_media_kinds(None if enabled else (MediaKind.MUSIC,))
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:

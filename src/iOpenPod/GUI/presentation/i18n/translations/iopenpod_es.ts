@@ -7116,6 +7116,17 @@ Playlists: %3</translation>
     </message>
 </context>
 <context>
+    <name>SyncTrackDelegate</name>
+    <message>
+        <source>Auto</source>
+        <translation>Auto</translation>
+    </message>
+    <message>
+        <source>Manual</source>
+        <translation>Manual</translation>
+    </message>
+</context>
+<context>
     <name>SyncWorkspace</name>
     <message>
         <source>Sync Podcasts</source>
@@ -7615,6 +7626,29 @@ Playlists: %3</translation>
     <message>
         <source>All Tracks</source>
         <translation>Todas las pistas</translation>
+    </message>
+</context>
+<context>
+    <name>TrackMediaSwitch</name>
+    <message>
+        <source>Track media types</source>
+        <translation>Tipos de contenido de las pistas</translation>
+    </message>
+    <message>
+        <source>Music only</source>
+        <translation>Solo música</translation>
+    </message>
+    <message>
+        <source>Show music only</source>
+        <translation>Mostrar solo música</translation>
+    </message>
+    <message>
+        <source>All media</source>
+        <translation>Todo el contenido</translation>
+    </message>
+    <message>
+        <source>Show all media types</source>
+        <translation>Mostrar todos los tipos de contenido</translation>
     </message>
 </context>
 <context>
@@ -8136,6 +8170,14 @@ Playlists: %3</translation>
     <message>
         <source>PDF Book</source>
         <translation>Libro PDF</translation>
+    </message>
+    <message>
+        <source>Manual stream choices. Choose streams… (Enter)</source>
+        <translation>Selección manual de pistas. Elegir pistas… (Intro)</translation>
+    </message>
+    <message>
+        <source>Automatic stream selection. Choose streams… (Enter)</source>
+        <translation>Selección automática de pistas. Elegir pistas… (Intro)</translation>
     </message>
 </context>
 <context>

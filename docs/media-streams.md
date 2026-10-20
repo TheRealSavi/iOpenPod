@@ -1,8 +1,12 @@
 # Choose streams for Sync
 
-In **Sync with Host → Select Media**, right-click one Track in a Track table and
-choose **Choose streams…**. For a movie or TV episode, open its Track list first
-if the browser is showing collection cards.
+In **Sync with Host → Select Media**, click the sliders button beside a Track's
+Sync checkbox to open **Choose streams…**. The adjacent **Auto** badge means
+automatic stream selection; **Manual** means explicit choices are saved for that
+Host file. Opening the chooser does not select or deselect the Track for Sync.
+With the Sync cell focused, Enter opens the chooser and Space toggles membership.
+You can also right-click one Track and choose **Choose streams…**. For a movie or
+TV episode, open its Track list first if the browser is showing collection cards.
 
 Turn off **Use automatic stream selection**, then choose:
 

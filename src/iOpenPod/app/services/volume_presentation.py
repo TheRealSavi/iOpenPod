@@ -189,11 +189,9 @@ def apply_native(session: FilesystemSession, name: str) -> tuple[str, ...]:
         issues.append(str(error))
     if name and session.is_active:
         try:
-            label = session.set_volume_label(name)
-            if label != name:
-                issues.append(
-                    f"The filesystem volume label is {label!r}; its format cannot represent the full iPod name {name!r}."
-                )
+            # Storage verifies the filesystem-compatible label. Its expected
+            # formatting does not indicate an incomplete appearance update.
+            session.set_volume_label(name)
         except (StorageError, ValueError) as error:
             issues.append(str(error))
     if session.is_active:

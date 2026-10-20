@@ -31,6 +31,7 @@ from iOpenPod.app.models.selection_grouping import (
 from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackRole
 from iOpenPod.app.sync_plan import SyncPlan
+from iOpenPod.GUI.delegates.sync_track_delegate import SyncTrackDelegate
 from iOpenPod.GUI.host_library_browser import HostLibraryBrowser
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.collection_page import CollectionPage
@@ -62,7 +63,12 @@ type SyncBrowser = tuple[
 
 
 @pytest.fixture
-def browser() -> Iterator[SyncBrowser]:
+def stream_requests() -> list[int]:
+    return []
+
+
+@pytest.fixture
+def browser(stream_requests: list[int]) -> Iterator[SyncBrowser]:
     tracks = tuple(
         Track(
             offset + number,
@@ -95,7 +101,13 @@ def browser() -> Iterator[SyncBrowser]:
     provider = ArtworkPixmapProvider(controller)
     parent = QStackedWidget()
     host = HostLibraryBrowser(
-        settings, theme, provider, LibraryWorkspace(), parent, selection
+        settings,
+        theme,
+        provider,
+        LibraryWorkspace(),
+        parent,
+        selection,
+        choose_streams=stream_requests.append,
     )
     host.load(library)
     for page in host.pages:
@@ -131,6 +143,37 @@ def _click_card(grid: AlbumGridView | CollectionGridView, title: str) -> None:
         grid.viewport(), Qt.MouseButton.LeftButton, pos=grid.visualRect(index).center()
     )
     APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("page_id", "title"),
+    (
+        (PageId.ALBUMS, "Album A"),
+        (PageId.ARTISTS, "Artist A"),
+        (PageId.GENRES, "Rock"),
+        (PageId.TV_SHOWS, "Show A"),
+        (PageId.MUSIC_VIDEOS, "Album A"),
+    ),
+)
+def test_stream_button_opens_chooser_from_collection(
+    browser: SyncBrowser, stream_requests: list[int], page_id: PageId, title: str
+) -> None:
+    host, selection, parent, _theme = browser
+    page = host.page_widgets[page_id]
+    parent.setCurrentWidget(page)
+    APPLICATION.processEvents()
+    grid = page.findChild(
+        AlbumGridView if page_id is PageId.ALBUMS else CollectionGridView
+    )
+    assert isinstance(grid, AlbumGridView | CollectionGridView)
+    _click_card(grid, title)
+    table = page.findChild(TrackTable)
+    assert table is not None and table.isVisible()
+    index = table.model().index(0, TrackColumn.SYNC_SELECTION)
+    button = SyncTrackDelegate.button_rect(table.visualRect(index))
+    QTest.mouseClick(table.viewport(), Qt.MouseButton.LeftButton, pos=button.center())
+    assert stream_requests == [index.data(TrackRole.TRACK_ID)]
+    assert selection.selected_host_count == 0
 
 
 @pytest.mark.parametrize(

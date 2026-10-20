@@ -266,6 +266,8 @@ class HostLibraryBrowser:
                 else:
                     table.setDragEnabled(False)
                     table.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
+                    if choose_streams is not None:
+                        table.chooseStreamsRequested.connect(choose_streams)
             for grid in (
                 *page.findChildren(AlbumGridView),
                 *page.findChildren(CollectionGridView),

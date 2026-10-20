@@ -333,6 +333,7 @@ class MainWindow(QMainWindow):
             "tracks",
             None,
             self._pages,
+            show_media_switch=True,
         )
         artists_page = CollectionPage(
             context.track_model,

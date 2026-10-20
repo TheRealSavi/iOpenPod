@@ -5,12 +5,13 @@ from PySide6.QtCore import (
     QEvent,
     QEventLoop,
     QModelIndex,
+    QPersistentModelIndex,
     QPoint,
     Qt,
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QDrag
+from PySide6.QtGui import QDrag, QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
@@ -31,6 +32,7 @@ from iOpenPod.app.models.track_columns import (
     track_column_groups,
 )
 from iOpenPod.app.models.track_table_model import TrackRole, TrackTableModel
+from iOpenPod.GUI.delegates.sync_track_delegate import SyncTrackDelegate
 from iOpenPod.GUI.delegates.track_artwork_delegate import TrackArtworkDelegate
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.i18n.text import track_count_text
@@ -52,6 +54,8 @@ class TrackTable(QTableView):
 
     currentTrackChanged = Signal(object)
     trackActivated = Signal(object)
+    # Host Track identities are 63-bit; Qt's Signal(int) narrows them to 32 bits.
+    chooseStreamsRequested = Signal(object)
 
     def __init__(
         self,
@@ -86,6 +90,9 @@ class TrackTable(QTableView):
         self.setProperty("tableId", table_id)
         self.setAccessibleName(self.tr("Tracks"))
         self.setModel(model)
+        self._sync_delegate = SyncTrackDelegate(theme_manager, self)
+        self.setItemDelegateForColumn(TrackColumn.SYNC_SELECTION, self._sync_delegate)
+        self.setMouseTracking(True)
         self.setItemDelegateForColumn(
             TrackColumn.ARTWORK,
             TrackArtworkDelegate(theme_manager, artwork_provider, self),
@@ -267,7 +274,101 @@ class TrackTable(QTableView):
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
             self.setAccessibleName(self.tr("Tracks"))
+            self._apply_sync_selection_column()
         super().changeEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        index = self.currentIndex()
+        if (
+            self._sync_selection_enabled
+            and index.isValid()
+            and index.column() == TrackColumn.SYNC_SELECTION
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        ):
+            self.chooseStreamsRequested.emit(index.data(TrackRole.TRACK_ID))
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _stream_button_at(self, position: QPoint) -> QModelIndex:
+        """Hit-test the painted button in viewport coordinates, outside Qt editing."""
+        index = self.indexAt(position)
+        if (
+            self._sync_selection_enabled
+            and index.isValid()
+            and index.column() == TrackColumn.SYNC_SELECTION
+            and index.flags() & Qt.ItemFlag.ItemIsEnabled
+            and self._sync_delegate.button_rect(self.visualRect(index)).contains(
+                position
+            )
+        ):
+            return index
+        return QModelIndex()
+
+    def _hover_stream_button(self, index: QModelIndex) -> None:
+        previous = self._sync_delegate.hovered_button
+        if previous == index:
+            return
+        self._sync_delegate.hovered_button = QPersistentModelIndex(index)
+        self.viewport().setCursor(
+            Qt.CursorShape.PointingHandCursor
+            if index.isValid()
+            else Qt.CursorShape.ArrowCursor
+        )
+        for changed in (previous, index):
+            if changed.isValid():
+                self.viewport().update(self.visualRect(changed))
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            index = self._stream_button_at(event.position().toPoint())
+            self._sync_delegate.pressed_button = QPersistentModelIndex(index)
+            if index.isValid():
+                self.setFocus(Qt.FocusReason.MouseFocusReason)
+                self.setCurrentIndex(index)
+                self._hover_stream_button(index)
+                self.viewport().update(self.visualRect(index))
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self._hover_stream_button(self._stream_button_at(event.position().toPoint()))
+        if self._sync_delegate.pressed_button.isValid():
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            pressed = self._sync_delegate.pressed_button
+            self._sync_delegate.pressed_button = QPersistentModelIndex()
+            if pressed.isValid():
+                index = self._stream_button_at(event.position().toPoint())
+                self._hover_stream_button(index)
+                self.viewport().update(self.visualRect(pressed))
+                event.accept()
+                if pressed == index:
+                    self.chooseStreamsRequested.emit(index.data(TrackRole.TRACK_ID))
+                return
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self._stream_button_at(event.position().toPoint()).isValid()
+        ):
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def viewportEvent(self, event: QEvent) -> bool:
+        if event.type() in (QEvent.Type.Hide, QEvent.Type.UngrabMouse):
+            self._sync_delegate.pressed_button = QPersistentModelIndex()
+            self._hover_stream_button(QModelIndex())
+        elif event.type() == QEvent.Type.Leave:
+            self._hover_stream_button(QModelIndex())
+        return super().viewportEvent(event)
 
     def _current_changed(
         self,
@@ -279,6 +380,8 @@ class TrackTable(QTableView):
             self.currentTrackChanged.emit(track)
 
     def _activated(self, index: QModelIndex) -> None:
+        if index.column() == TrackColumn.SYNC_SELECTION:
+            return
         track = self._track_model.track_at(index)
         if track is not None:
             self.trackActivated.emit(track)
@@ -314,6 +417,12 @@ class TrackTable(QTableView):
         if self._sync_selection_enabled:
             header = self.horizontalHeader()
             header.moveSection(header.visualIndex(TrackColumn.SYNC_SELECTION), 0)
+            header.setSectionResizeMode(
+                TrackColumn.SYNC_SELECTION, QHeaderView.ResizeMode.Fixed
+            )
+            self.setColumnWidth(
+                TrackColumn.SYNC_SELECTION, self._sync_delegate.minimum_width()
+            )
 
     def _theme_changed(self, _theme: str) -> None:
         self.viewport().update()
@@ -436,6 +545,8 @@ class TrackTable(QTableView):
     def _fitted_column_width(self, column: TrackColumn) -> int:
         """Measure a representative row sample so large Libraries stay responsive."""
 
+        if column is TrackColumn.SYNC_SELECTION:
+            return self._sync_delegate.minimum_width()
         header = self.horizontalHeader()
         horizontal_padding = 2 * LAYOUT.space_sm
         header_width = (
