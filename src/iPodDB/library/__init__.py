@@ -95,6 +95,11 @@ from iPodDB.library.smart_rules import (
     validate_smart_playlist,
 )
 from iPodDB.library.sqlite import SQLiteDatabaseSet, SQLiteSource
+from iPodDB.library.video import (
+    SubtitleSelection,
+    VideoPlaybackMetadata,
+    is_video_track,
+)
 from iPodDB.library.writing import (
     ArtworkAsset,
     ArtworkGroupReference,
@@ -112,6 +117,7 @@ from iPodDB.library.writing import (
     PreparedLyrics,
     PreparedMedia,
     PreparedPhoto,
+    PreparedVideoMetadata,
     RetainedArtworkFile,
     SourceFile,
     TimedArtworkAsset,
@@ -130,6 +136,7 @@ from iPodDB.sidecars import (
     is_playback_sidecar,
     remap_playback_sidecar,
 )
+from iPodDB.SQLiteDB.video import video_metadata_required
 
 __all__ = [
     "MAX_SIDECAR_BYTES",
@@ -184,6 +191,7 @@ __all__ = [
     "PreparedLyrics",
     "PreparedMedia",
     "PreparedPhoto",
+    "PreparedVideoMetadata",
     "ReadableContent",
     "RetainedArtworkFile",
     "SQLiteDatabaseSet",
@@ -202,6 +210,7 @@ __all__ = [
     "SmartRuleGroup",
     "SmartValueKind",
     "SourceFile",
+    "SubtitleSelection",
     "TimedArtworkAsset",
     "TimedArtworkFrame",
     "Track",
@@ -211,6 +220,7 @@ __all__ = [
     "TrackMetadata",
     "UnsupportedPlaylistSortOrder",
     "UnsupportedSmartRule",
+    "VideoPlaybackMetadata",
     "WriteChecksum",
     "WriteEffect",
     "WriteIssue",
@@ -225,6 +235,7 @@ __all__ = [
     "encode_photo_thumbnail",
     "incoming_track_issues",
     "is_playback_sidecar",
+    "is_video_track",
     "metadata_edit_issues",
     "order_playlist_entries",
     "parse_hash72_info",
@@ -242,4 +253,5 @@ __all__ = [
     "smart_playlist_references",
     "smart_value_kind",
     "validate_smart_playlist",
+    "video_metadata_required",
 ]

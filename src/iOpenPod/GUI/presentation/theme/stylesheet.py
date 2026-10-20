@@ -253,6 +253,8 @@ QDialog#mediaFolderSettingsDialog,
 QDialog#mediaToolsSetup,
 QDialog#externalPlaylistFilesDialog,
 QDialog#syncDuplicatesDialog,
+QDialog#playlistMatchDialog,
+QDialog#mediaStreamsDialog,
 QDialog#linuxIdentitySetup,
 QDialog#linuxIdentityUninstall,
     QFileDialog,
@@ -569,6 +571,7 @@ QScrollArea#syncDuplicateDetailScroll > QWidget > QWidget {{
     border: none;
 }}
 
+QListWidget#playlistSyncTargets,
 QListWidget#syncDuplicateGroups {{
     color: {tokens.text};
     background-color: {tokens.window};
@@ -576,23 +579,45 @@ QListWidget#syncDuplicateGroups {{
     outline: none;
 }}
 
+QListWidget#playlistSyncTargets::item,
 QListWidget#syncDuplicateGroups::item {{
     padding: {LAYOUT.space_sm}px {LAYOUT.space_xs}px;
     border: 2px solid transparent;
     border-radius: {LAYOUT.radius_control}px;
 }}
 
+QListWidget#playlistSyncTargets::item:hover,
 QListWidget#syncDuplicateGroups::item:hover {{
     background-color: {tokens.surface_hover};
 }}
 
+QListWidget#playlistSyncTargets::item:selected,
 QListWidget#syncDuplicateGroups::item:selected {{
     color: {tokens.text};
     background-color: {tokens.surface_selected};
 }}
 
+QListWidget#playlistSyncTargets::item:focus,
 QListWidget#syncDuplicateGroups::item:focus {{
     border-color: {tokens.focus};
+}}
+
+QListWidget#subtitleStreams,
+QListWidget#captionStreams {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_control}px;
+}}
+
+QListWidget#subtitleStreams::item,
+QListWidget#captionStreams::item {{
+    padding: {LAYOUT.space_sm}px;
+}}
+
+QListWidget#subtitleStreams::item:disabled,
+QListWidget#captionStreams::item:disabled {{
+    color: {tokens.text_secondary};
 }}
 
 QTreeWidget#syncDuplicateHosts,
@@ -2165,6 +2190,7 @@ QTableView[trackTable="true"] {{
     outline: none;
 }}
 
+QTableView#syncPlaylistReviewChanges,
 QTableView#externalPlaylistFilesTable,
 QTableView#syncPlanTable {{
     color: {tokens.text};
@@ -2177,6 +2203,7 @@ QTableView#syncPlanTable {{
     outline: none;
 }}
 
+QTableView#syncPlaylistReviewChanges::item,
 QTableView#externalPlaylistFilesTable::item,
 QTableView#syncPlanTable::item {{
     padding: 0 {LAYOUT.space_sm}px;
@@ -2184,22 +2211,26 @@ QTableView#syncPlanTable::item {{
     border-bottom: 1px solid {tokens.border};
 }}
 
+QTableView#syncPlaylistReviewChanges::item:hover,
 QTableView#externalPlaylistFilesTable::item:hover,
 QTableView#syncPlanTable::item:hover {{
     background-color: {tokens.surface_hover};
 }}
 
+QTableView#syncPlaylistReviewChanges::item:selected,
 QTableView#externalPlaylistFilesTable::item:selected,
 QTableView#syncPlanTable::item:selected {{
     color: {tokens.text};
     background-color: {tokens.surface_selected};
 }}
 
+QTableView#syncPlaylistReviewChanges::item:focus,
 QTableView#externalPlaylistFilesTable::item:focus,
 QTableView#syncPlanTable::item:focus {{
     border: 2px solid {tokens.focus};
 }}
 
+QTableView#syncPlaylistReviewChanges::item:disabled,
 QTableView#externalPlaylistFilesTable::item:disabled,
 QTableView#syncPlanTable::item:disabled {{
     color: {tokens.text_disabled};

@@ -12,7 +12,7 @@ from PIL import Image, ImageOps
 
 from iOpenPod.app.host_media_library import (
     HostArtworkKind,
-    embedded_artwork_from_stream,
+    embedded_artwork_from_file,
 )
 from iPodDB.library import ArtworkPixels, TimedArtworkFrame
 from storage.host_input import LocalHostFile
@@ -98,8 +98,9 @@ def capture_embedded_artwork(
 ) -> ArtworkPixels | None:
     """Read a cover from the original Storage-owned Podcast download."""
     checkpoint()
-    with LocalHostFile.observe(source).open_read(checkpoint=checkpoint) as stream:
-        payload = embedded_artwork_from_stream(stream)
+    payload = embedded_artwork_from_file(
+        LocalHostFile.observe(source), checkpoint=checkpoint
+    )
     checkpoint()
     return None if payload is None else _decode_cover(payload, target_px, checkpoint)
 
@@ -122,8 +123,7 @@ def capture_sync_artwork(
             "The artwork source changed after scanning. Rescan before retrying."
         )
     if source.kind is HostArtworkKind.EMBEDDED:
-        with observed.open_read(checkpoint=checkpoint) as stream:
-            payload = embedded_artwork_from_stream(stream)
+        payload = embedded_artwork_from_file(observed, checkpoint=checkpoint)
     else:
         payload = observed.read_bytes(max_bytes=64 * 1024 * 1024, checkpoint=checkpoint)
     if payload is None or hashlib.sha256(payload).hexdigest() != source.content_sha256:

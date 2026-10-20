@@ -38,13 +38,16 @@ from iOpenPod.app.core.settings.device import (
 )
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.library_sync_helper import (
+    LIBRARY_SYNC_HELPER_PATH,
     IPodMediaLibrary,
     IPodMediaScanner,
     IPodMediaScanProgress,
     LibrarySyncHelperCancelledError,
+    LibrarySyncHelperError,
     SyncedImage,
     SyncedTrack,
     publish_sync_helper,
+    retain_retagged_sync_details,
 )
 from iOpenPod.app.library_write import WriteProgress
 from iOpenPod.app.media.photo_image import photo_viewing_image
@@ -128,6 +131,7 @@ if TYPE_CHECKING:
         LibrarySaveResult,
     )
     from iOpenPod.app.playback.backend import PlaybackSource
+    from iOpenPod.app.playlist_sync import PlaylistAssociation
     from iPodDB.library import (
         ArtworkGroupReference,
         Hash72Material,
@@ -593,6 +597,8 @@ class DeviceCoordinator:
         previous: IPodMediaLibrary | None,
         tracks: tuple[SyncedTrack, ...],
         images: tuple[SyncedImage, ...] = (),
+        *,
+        playlists: tuple[PlaylistAssociation, ...] = (),
     ) -> IPodMediaLibrary:
         """Refresh the non-authoritative helper after a verified Library commit."""
 
@@ -604,6 +610,7 @@ class DeviceCoordinator:
                 tracks,
                 images,
                 library_sha256=expected.database_fingerprint.sha256,
+                playlists=playlists,
             )
 
     def finalize_sync_success(self, expected: ActiveIPod, recovery_path: str) -> None:
@@ -1693,8 +1700,38 @@ class DeviceCoordinator:
                                 session, issued.discarded_track_media
                             )
 
+                    transaction = issued.transaction
+                    if not retain_recovery:
+                        # Sync publishes its own provenance after committing. An
+                        # ordinary save must carry existing associations through
+                        # known tag rewrites without claiming a new Host Sync.
+                        replaced = set(plan.required_media) | set(
+                            plan.draft.replace_media
+                        )
+                        database_path = library_resources.database_path(
+                            expected.database_name
+                        )
+                        transaction = retain_retagged_sync_details(
+                            session,
+                            transaction,
+                            expected.library,
+                            updated_source.snapshot,
+                            tuple(
+                                identity
+                                for identity in plan.required_lyrics
+                                if identity not in replaced
+                            ),
+                            library_sha256=next(
+                                (
+                                    write.content.sha256
+                                    for write in transaction.writes
+                                    if write.path == database_path
+                                ),
+                                expected.database_fingerprint.sha256,
+                            ),
+                        )
                     committed = session.execute_transaction(
-                        issued.transaction,
+                        transaction,
                         checkpoint=cancel_checkpoint,
                         progress=transaction_progress,
                         activity=lambda event: progress(
@@ -1746,6 +1783,51 @@ class DeviceCoordinator:
                             ),
                         )
                     )
+                    if (
+                        not retain_recovery
+                        and any(
+                            change.subject == "track" and change.action == "delete"
+                            for change in plan.changes
+                        )
+                        and not any(
+                            write.path == LIBRARY_SYNC_HELPER_PATH
+                            for write in transaction.writes
+                        )
+                    ):
+                        # Sync refreshes its helper separately. Ordinary removals
+                        # must also prune cached identities after verified commit,
+                        # without inventing new Sync Details or creating a cache.
+                        try:
+                            if session.exists(LIBRARY_SYNC_HELPER_PATH):
+                                helper = publish_sync_helper(
+                                    session,
+                                    updated.library,
+                                    None,
+                                    (),
+                                    library_sha256=database_fingerprint.sha256,
+                                )
+                                issues += tuple(
+                                    WriteIssue(
+                                        "save.sync_helper_warning",
+                                        item.detail,
+                                        severity=IssueSeverity.WARNING,
+                                        phase="save",
+                                    )
+                                    for item in helper.issues
+                                )
+                        except Exception as error:
+                            # The Library is already committed; keep its accepted
+                            # state even if this non-authoritative cache fails.
+                            issues += (
+                                WriteIssue(
+                                    "save.sync_helper_failed",
+                                    "Library changes were saved, but Sync history could not be updated. "
+                                    "Keep the iPod connected and rescan before another Sync.",
+                                    severity=IssueSeverity.WARNING,
+                                    phase="save",
+                                    detail=exception_text(error),
+                                ),
+                            )
                     if (
                         issued.presentation_policy.enabled
                         and expected.library.device_name != updated.library.device_name
@@ -1898,7 +1980,7 @@ class DeviceCoordinator:
                     str(error),
                     error.recovery_path,
                 )
-            except (StorageError, DeviceChangedError) as error:
+            except (StorageError, DeviceChangedError, LibrarySyncHelperError) as error:
                 return failure(
                     "save.source_unavailable",
                     "The iPod could not be saved. Reconnect or reload before retrying.",

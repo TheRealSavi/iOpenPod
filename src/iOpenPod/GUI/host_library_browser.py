@@ -36,6 +36,8 @@ from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import MediaKind
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from PySide6.QtWidgets import QStackedWidget
 
     from iOpenPod.app.core.settings.service import SettingsService
@@ -59,6 +61,8 @@ class HostLibraryBrowser:
         workspace: LibraryWorkspace,
         parent: QStackedWidget,
         selection: SyncSelection | None = None,
+        *,
+        choose_streams: Callable[[int], None] | None = None,
     ) -> None:
         self.workspace = workspace
         self.track_model = TrackTableModel(parent)
@@ -247,7 +251,9 @@ class HostLibraryBrowser:
         }
         self.pages: tuple[_HostLibraryPage, ...] = tuple(self.page_widgets.values())
         self._sync_actions = (
-            SyncSelectionActions(selection, parent) if selection is not None else None
+            SyncSelectionActions(selection, parent, choose_streams=choose_streams)
+            if selection is not None
+            else None
         )
 
         for page in self.pages:

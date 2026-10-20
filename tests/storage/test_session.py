@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+from time import monotonic
 
 import pytest
 
@@ -68,6 +70,80 @@ def test_reads_stats_and_lists_only_root_bound_device_paths(tmp_path: Path) -> N
     assert session.stat(DevicePath("Music")).kind is DeviceEntryKind.DIRECTORY
     assert session.fingerprint(DevicePath("Music/a.mp3")) == snapshot.fingerprint
     assert session.free_space() > 0
+
+
+def test_read_only_tool_can_seek_without_capturing_the_device_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _, session = _session(tmp_path, writable=False)
+    source = root / "movie.bin"
+    with source.open("wb") as stream:
+        stream.write(b"head")
+        stream.seek(64 * 1024 * 1024)
+        stream.write(b"tail")
+
+    def reject_full_read(*args: object, **kwargs: object) -> None:
+        pytest.fail("A tool input must not copy or hash the whole file")
+
+    monkeypatch.setattr(FilesystemSession, "copy_to_host", reject_full_read)
+    monkeypatch.setattr(FilesystemSession, "fingerprint", reject_full_read)
+    monkeypatch.setattr(storage_filesystem, "read_and_fingerprint", reject_full_read)
+    output = session.read_with_tool(
+        DevicePath("movie.bin"),
+        HostPath(sys.executable),
+        (
+            "-c",
+            "import sys; f=open(sys.argv[1], 'rb'); a=f.read(4); f.seek(-4, 2); sys.stdout.buffer.write(a+f.read(4))",
+        ),
+        checkpoint=lambda: None,
+    )
+    assert output.stdout == b"headtail"
+    assert output.returncode == 0
+
+
+def test_device_tool_is_cancelled_when_its_session_is_invalidated(
+    tmp_path: Path,
+) -> None:
+    root, _, session = _session(tmp_path)
+    (root / "movie.bin").write_bytes(b"content")
+    marker = tmp_path / "started"
+
+    def checkpoint() -> None:
+        if marker.exists():
+            session.invalidate("Disconnected during analysis")
+
+    started = monotonic()
+    with pytest.raises(SessionInvalidatedError):
+        session.read_with_tool(
+            DevicePath("movie.bin"),
+            HostPath(sys.executable),
+            (
+                "-c",
+                "import sys,time,pathlib; f=open(sys.argv[2], 'rb'); pathlib.Path(sys.argv[1]).touch(); time.sleep(30)",
+                str(marker),
+            ),
+            checkpoint=checkpoint,
+        )
+    assert marker.exists()
+    assert monotonic() - started < 5
+    assert not session.is_active
+
+
+def test_device_tool_rejects_a_link_outside_its_volume(tmp_path: Path) -> None:
+    root, _, session = _session(tmp_path)
+    external = tmp_path / "outside.txt"
+    external.write_text("outside", encoding="utf-8")
+    try:
+        (root / "linked.txt").symlink_to(external)
+    except OSError:
+        pytest.skip("Creating symbolic links requires platform privileges")
+    with pytest.raises(UnsafeFilesystemPathError):
+        session.read_with_tool(
+            DevicePath("linked.txt"),
+            HostPath(sys.executable),
+            ("-c", "pass"),
+            checkpoint=lambda: None,
+        )
 
 
 @pytest.mark.parametrize(

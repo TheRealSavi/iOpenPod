@@ -32,7 +32,7 @@ from iOpenPod.app.sync_execution import (
     SyncExecutionResult,
     SyncExecutionStatus,
     SyncOptions,
-    preview_playlist_sync,
+    review_playlist_sync,
 )
 from iPodDB.library import IssueSeverity, WriteIssue
 
@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.library_workspace import LibraryWorkspace
     from iOpenPod.app.library_write import WriteProgress
     from iOpenPod.app.models.device import ActiveIPod
+    from iOpenPod.app.playlist_sync import PlaylistSyncChoice
     from iOpenPod.app.podcasts.sync import PodcastSyncRequest
     from iOpenPod.app.sync_plan import SyncPlan
 
@@ -364,6 +365,7 @@ class SyncController(QObject):
         source: ActiveIPod,
         *,
         reconcile_playlists: bool = True,
+        playlist_choices: tuple[PlaylistSyncChoice, ...] = (),
         podcasts: PodcastSyncRequest | None = None,
     ) -> bool:
         self.last_error = ""
@@ -397,7 +399,13 @@ class SyncController(QObject):
             and not source.profile.capabilities.database.uses_sqlite_database
             and not source.library.tracks
             and not (
-                reconcile_playlists and preview_playlist_sync(plan, host, ipod, source)
+                reconcile_playlists
+                and any(
+                    item.actionable
+                    for item in review_playlist_sync(
+                        plan, host, ipod, source, playlist_choices
+                    )
+                )
             )
         ):
             self.last_error = "Select at least one change in Review."
@@ -420,6 +428,7 @@ class SyncController(QObject):
                     rockbox_metadata=self._settings.get(ROCKBOX_METADATA_SUPPORT),
                 ),
                 reconcile_playlists=reconcile_playlists,
+                playlist_choices=playlist_choices,
                 podcasts=podcasts,
                 scrobble_accounts=configured_accounts(self._settings),
             )

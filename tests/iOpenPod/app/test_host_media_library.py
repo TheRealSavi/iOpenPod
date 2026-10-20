@@ -172,6 +172,8 @@ def test_v13_cache_reparses_rejected_playlist_references_without_rereading_media
     HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
     document = json.loads(cache.path.read_bytes())
     document["version"] = 13
+    for row in document["entries"]:
+        row["metadata"].pop("no_audio", None)
     playlist = next(row for row in document["entries"] if row["kind"] == "playlist")
     # Earlier spelling validation could drop a reference from an unchanged Playlist.
     playlist["metadata"]["references"] = []
@@ -270,7 +272,7 @@ def test_malformed_cache_falls_back_to_scanning(tmp_path: Path, payload: bytes) 
     result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(result.snapshot.tracks) == 1
     assert result.cache.reused == 0
-    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 14
+    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 15
 
 
 def test_changed_tracks_use_existing_acoustic_analysis_without_full_stream_hashing(
@@ -393,7 +395,7 @@ def test_in_memory_cache_notices_external_invalidation(
         cache.path.write_bytes(b"invalid")
     changed = scanner.scan((folder,), checkpoint=lambda: None)
     assert changed.cache == HostMediaCacheStats(inspected=1)
-    assert json.loads(cache.path.read_bytes())["version"] == 14
+    assert json.loads(cache.path.read_bytes())["version"] == 15
 
 
 def test_cache_save_failure_retains_work_in_memory_and_retries_persistence(
@@ -1464,7 +1466,8 @@ def test_host_track_artwork_prefers_embedded_front_cover_over_folder_art(
     track_path = selected / "Track.wav"
     _write_wav(track_path)
     _embed_front_cover(track_path, "#c83232")
-    Image.new("RGB", (12, 8), "#3250c8").save(selected / "cover.png")
+    Image.new("RGB", (12, 8), "#3250c8").save(selected / "cover.jpg")
+    Image.new("RGB", (12, 8), "#32c850").save(selected / "poster.jpg")
     scanner = HostMediaScanner()
 
     pending = scanner.scan(
@@ -1477,21 +1480,22 @@ def test_host_track_artwork_prefers_embedded_front_cover_over_folder_art(
     loader.replace_library(library)
 
     assert track.artwork_id > 0
+    assert library.artwork_sources[0].path == HostPath(track_path)
     image = loader.load_artwork(ArtworkRequest(track.artwork_id, target_px=6))
     assert image is not None
     assert (image.width, image.height) == (6, 4)
     assert image.rgb888[:3] == bytes((200, 50, 50))
 
 
+@pytest.mark.parametrize("cover_name", ["cover.png", "poster.jpg", "POSTER.PNG"])
 def test_host_track_artwork_falls_back_to_common_folder_cover_names(
-    tmp_path: Path,
+    tmp_path: Path, cover_name: str
 ) -> None:
     selected = tmp_path / "Selected"
     selected.mkdir()
     track_path = selected / "Track.wav"
     _write_wav(track_path)
-    Image.new("RGB", (12, 8), "#32c850").save(selected / "cover.png")
-    Image.new("RGB", (12, 8), "#c83232").save(selected / "front.png")
+    Image.new("RGB", (12, 8), "#32c850").save(selected / cover_name)
     scanner = HostMediaScanner()
 
     pending = scanner.scan(
@@ -1504,12 +1508,32 @@ def test_host_track_artwork_falls_back_to_common_folder_cover_names(
     loader.replace_library(library)
 
     assert track.artwork_id > 0
+    assert library.artwork_sources[0].path == HostPath(selected / cover_name)
     image = loader.load_artwork(ArtworkRequest(track.artwork_id, target_px=6))
     assert image is not None
-    assert image.rgb888[:3] == bytes((50, 200, 80))
+    assert (image.width, image.height) == (6, 4)
 
 
-def test_new_folder_cover_invalidates_an_unchanged_cached_track(tmp_path: Path) -> None:
+def test_existing_folder_cover_priority_is_preserved_with_a_poster(
+    tmp_path: Path,
+) -> None:
+    _write_wav(tmp_path / "Track.wav")
+    for name in ("poster.jpg", "front.png", "cover.png", "cover.jpg"):
+        Image.new("RGB", (12, 8), "blue").save(tmp_path / name)
+    scanner = HostMediaScanner()
+
+    pending = scanner.scan(
+        (create_host_media_folder(tmp_path),), checkpoint=lambda: None
+    )
+    library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+
+    assert library.artwork_sources[0].path == HostPath(tmp_path / "cover.jpg")
+
+
+@pytest.mark.parametrize("cover_name", ["cover.png", "poster.jpg"])
+def test_new_folder_cover_invalidates_an_unchanged_cached_track(
+    tmp_path: Path, cover_name: str
+) -> None:
     selected = tmp_path / "Selected"
     selected.mkdir()
     track_path = selected / "Track.wav"
@@ -1524,7 +1548,7 @@ def test_new_folder_cover_invalidates_an_unchanged_cached_track(tmp_path: Path) 
     first = scanner.complete(first_pending, frozenset(), checkpoint=lambda: None)
     assert first.snapshot.tracks[0].artwork_id == 0
 
-    Image.new("RGB", (12, 8), "#32c850").save(selected / "cover.png")
+    Image.new("RGB", (12, 8), "#32c850").save(selected / cover_name)
     second_scanner = HostMediaScanner(AtomicHostFile(cache_path))
     second_pending = second_scanner.scan((folder,), checkpoint=lambda: None)
     second = second_scanner.complete(
@@ -1599,7 +1623,7 @@ def test_folder_cover_bytes_are_not_reread_until_file_facts_change(
     assert changed.snapshot.tracks[0].artwork_id != first.snapshot.tracks[0].artwork_id
 
 
-@pytest.mark.parametrize("version", [9, 10, 11, 12, 13])
+@pytest.mark.parametrize("version", [9, 10, 11, 12, 13, 14])
 def test_prior_host_cache_reuses_unchanged_media_and_cover(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
 ) -> None:
@@ -1618,6 +1642,7 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
     document["version"] = version
+    document["entries"][0]["metadata"].pop("no_audio")
     if version < 12:
         document["entries"][0]["metadata"].pop("embedded_artwork_available")
     if version < 11:
@@ -1672,7 +1697,7 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
         == "1,2,3"
     )
     stored = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert stored["version"] == 14
+    assert stored["version"] == 15
     assert "payload_sha256" not in stored["entries"][0]["metadata"]
 
 
@@ -2127,7 +2152,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 14
+    assert document["version"] == 15
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {
@@ -2156,6 +2181,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
         "media_type",
         "tag_values",
         "acoustic_fingerprint",
+        "no_audio",
         "metadata_complete",
         "embedded_artwork_available",
         "artwork_content_sha256",

@@ -299,6 +299,60 @@ def _media_label(kind: SyncPlanMediaKind) -> str:
 
 
 def _basis_label(item: SyncPlanItem) -> str:
+    if item.stream_selection_changed and item.stream_selection is None:
+        return QCoreApplication.translate(
+            "SyncPlanTableModel", "Restore automatic stream selection"
+        )
+    if item.stream_selection is not None:
+        selection = item.stream_selection
+        groups = (
+            (
+                QCoreApplication.translate("SyncPlanTableModel", "Video"),
+                (selection.video,) if selection.video else (),
+            ),
+            (
+                QCoreApplication.translate("SyncPlanTableModel", "Audio"),
+                (selection.audio,) if selection.audio else (),
+            ),
+            (
+                QCoreApplication.translate("SyncPlanTableModel", "Subtitles"),
+                selection.subtitles,
+            ),
+            (
+                QCoreApplication.translate("SyncPlanTableModel", "Captions"),
+                selection.captions,
+            ),
+        )
+        return QCoreApplication.translate(
+            "SyncPlanTableModel", "Selected streams: %1"
+        ).replace(
+            "%1",
+            "; ".join(
+                label
+                + ": "
+                + (
+                    ", ".join(
+                        str(stream.index)
+                        + " "
+                        + next(
+                            (
+                                tag.value
+                                for tag in stream.tags
+                                if tag.name.casefold() == "language"
+                            ),
+                            "",
+                        )
+                        for stream in streams
+                    ).strip()
+                    or QCoreApplication.translate("SyncPlanTableModel", "None")
+                )
+                for label, streams in groups
+            ),
+        )
+    if item.basis is SyncPlanBasis.MEDIA_SOURCE_CHANGED:
+        return QCoreApplication.translate(
+            "SyncPlanTableModel", "Video or selected-stream source changed"
+        )
     if item.basis is SyncPlanBasis.AUDIO_PAYLOAD_CHANGED:
         return QCoreApplication.translate(
             "SyncPlanTableModel", "Audio payload fingerprint changed"

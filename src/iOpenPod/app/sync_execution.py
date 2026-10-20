@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
@@ -46,12 +45,26 @@ from iOpenPod.app.media.photo_sync import (
     prepare_sync_photo,
 )
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
+from iOpenPod.app.media.stream_selection_codec import selection_digest
 from iOpenPod.app.media.sync_artwork import (
     capture_embedded_artwork,
     capture_embedded_chapter_artwork,
     capture_sync_artwork,
 )
 from iOpenPod.app.media.transcoding import MediaTranscoder, TranscodeSettings
+from iOpenPod.app.media.video_artwork import capture_video_frame
+from iOpenPod.app.playlist_sync import (
+    PlaylistAssociation,
+    PlaylistSyncChoice,
+    PlaylistSyncReviewItem,
+    reconcile_playlist_sync,
+)
+from iOpenPod.app.playlist_sync import (
+    PlaylistSyncChange as PlaylistSyncChange,
+)
+from iOpenPod.app.playlist_sync import (
+    playlist_changes as _playlist_changes,
+)
 from iOpenPod.app.podcasts.media import download_episode, episode_track
 from iOpenPod.app.podcasts.sync_artwork import (
     MAX_PODCAST_COVER_BYTES,
@@ -81,6 +94,7 @@ from iOpenPod.app.sync_plan import (
     host_path_identity,
     prepare_sync_plan,
     resolve_sync_duplicates,
+    with_stream_selection,
 )
 from iOpenPod.app.sync_track_details import apply_track_tags, track_tag_sha256
 from iOpenPod.app.tag_normalizer import normalize_tags, tag_profile
@@ -94,12 +108,12 @@ from iPodDB.library import (
     AudioEncoding,
     FileDependency,
     IssueSeverity,
+    MediaContent,
     MediaKind,
     MediaType,
     PhotoPixelFormat,
     PhotoThumbnailFormat,
     Playlist,
-    PlaylistKind,
     PreparedPhoto,
     TimedArtworkAsset,
     TimedArtworkFrame,
@@ -108,7 +122,6 @@ from iPodDB.library import (
     content_chunks,
     edit_track_metadata,
     incoming_track_issues,
-    playlist_entries,
     prepared_audio,
     prepared_video,
 )
@@ -119,12 +132,14 @@ from storage.host_input import LocalHostFile
 from storage.media_processing import MediaToolFinder, available_compute_threads
 
 _PHOTO_MEMORY_BUDGET = 2 * 1024 * 1024 * 1024
+_PODCAST_PREPARATION_WORKERS = 4
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from iOpenPod.app.host_media_library import HostMediaLibrary, HostMediaSource
     from iOpenPod.app.library_sync_helper import IPodMediaLibrary
+    from iOpenPod.app.library_write import LibraryReview
     from iOpenPod.app.media.transcoding import PreparedTranscode
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.podcasts.models import PodcastEpisode
@@ -161,15 +176,6 @@ class SyncOptions:
 
 
 @dataclass(frozen=True, slots=True)
-class PlaylistSyncChange:
-    name: str
-    action: str
-    added_count: int
-    removed_count: int
-    order_changed: bool
-
-
-@dataclass(frozen=True, slots=True)
 class SyncExecutionRequest:
     plan: SyncPlan
     host: HostMediaLibrary
@@ -182,6 +188,7 @@ class SyncExecutionRequest:
     reconcile_playlists: bool = True
     podcasts: PodcastSyncRequest | None = None
     scrobble_accounts: tuple[Account, ...] = ()
+    playlist_choices: tuple[PlaylistSyncChoice, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -381,23 +388,37 @@ class SyncExecutor:
                 if podcast_plan is not None
                 else 0
             )
+            requested_rows: list[PlaylistSyncReviewItem] = []
             requested_playlists = (
-                _preview_playlist_sync(request, comparison=comparison)
+                _preview_playlist_sync(
+                    request, comparison=comparison, rows=requested_rows
+                )
                 if request.reconcile_playlists
                 else ()
             )
-            track_jobs = sum(
+            host_jobs = sum(
                 item.media_kind is SyncPlanMediaKind.TRACK
                 and _requires_media_preparation(item)
                 for item in request.plan.items
-            ) + (len(podcast_plan.additions) if podcast_plan is not None else 0)
+            )
+            podcast_jobs = (
+                len(podcast_plan.additions) if podcast_plan is not None else 0
+            )
+            track_jobs = host_jobs + podcast_jobs
             if self._default_transcoder:
                 self._transcoder = MediaTranscoder(
                     find_tool=self._find_tool,
                     threads_per_job=max(
                         1,
                         available_compute_threads()
-                        // min(self._workers, track_jobs or 1),
+                        // min(
+                            self._workers,
+                            max(
+                                host_jobs,
+                                min(_PODCAST_PREPARATION_WORKERS, podcast_jobs),
+                                1,
+                            ),
+                        ),
                     ),
                 )
             with ExitStack() as resources:
@@ -447,7 +468,13 @@ class SyncExecutor:
                             issues.extend(failures)
                 checkpoint()
                 issues.extend(
-                    _capture_artwork(request, prepared, metadata_updates, checkpoint)
+                    _capture_artwork(
+                        request,
+                        prepared,
+                        metadata_updates,
+                        checkpoint,
+                        find_tool=self._find_tool,
+                    )
                 )
                 if request.options.rockbox_metadata:
                     issues.extend(
@@ -463,6 +490,7 @@ class SyncExecutor:
                             podcast_tracks,
                             progress,
                             checkpoint,
+                            find_tool=self._find_tool,
                         )
                     )
                     issues.extend(cover_issues)
@@ -535,14 +563,20 @@ class SyncExecutor:
                         for photo, asset in zip(photos, packed, strict=True)
                     )
                 metadata_updates = stable_metadata
-                playlist_sources_valid = _validate_playlist_sources(
+                invalid_playlists = _validate_playlist_sources(
                     request, issues, checkpoint
                 )
-                draft_request = (
-                    request
-                    if playlist_sources_valid
-                    else replace(request, reconcile_playlists=False)
+                draft_request = replace(
+                    request,
+                    host=replace(
+                        request.host,
+                        incomplete_playlist_ids=tuple(
+                            set(request.host.incomplete_playlist_ids)
+                            | invalid_playlists
+                        ),
+                    ),
                 )
+                playlist_associations: list[PlaylistAssociation] = []
                 draft, completed, library_changed = _draft(
                     draft_request,
                     prepared,
@@ -553,6 +587,7 @@ class SyncExecutor:
                     podcast_plan.removals if podcast_plan is not None else (),
                     podcast_artwork_repairs,
                     comparison=comparison,
+                    playlist_associations=playlist_associations,
                 )
                 playlist_changes = (
                     _playlist_changes(
@@ -568,8 +603,8 @@ class SyncExecutor:
                     else ()
                 )
                 skipped_playlists = {
-                    (change.name, change.action) for change in requested_playlists
-                } - {(change.name, change.action) for change in playlist_changes}
+                    row.host_playlist_id for row in requested_rows if row.actionable
+                } - {item.host_playlist_id for item in playlist_associations}
                 if skipped_playlists:
                     issues.append(
                         WriteIssue(
@@ -589,10 +624,14 @@ class SyncExecutor:
                     and not request.source.artwork_repairs_pending
                     and not request.source.photos_repairs_pending
                 )
-                if unchanged_draft:
+                association_changes = any(
+                    item not in request.ipod.playlist_associations
+                    for item in playlist_associations
+                )
+                if unchanged_draft and not association_changes:
                     requested_changes = bool(
                         request.plan.change_count
-                        or requested_playlists
+                        or any(row.actionable for row in requested_rows)
                         or podcast_changes
                         or any(
                             issue.severity is IssueSeverity.ERROR for issue in issues
@@ -643,7 +682,17 @@ class SyncExecutor:
                 has_user_match = any(
                     item.basis is SyncPlanBasis.USER_MATCH for item in completed
                 )
-                if has_user_match or unchanged_draft:
+                # Optional frame failure can leave an artwork-only Update with
+                # the exact current Library. Still verify it and retain the
+                # previous cover baseline without an empty Storage transaction.
+                allow_unchanged = (
+                    has_user_match
+                    or unchanged_draft
+                    or any(
+                        issue.code == "sync.video_artwork_skipped" for issue in issues
+                    )
+                )
+                if allow_unchanged:
                     review = self._coordinator.prepare_library(
                         draft,
                         progress,
@@ -675,7 +724,10 @@ class SyncExecutor:
                                 "Retrying Library preparation while keeping existing covers…",
                             )
                         )
-                        if has_user_match or unchanged_draft:
+                        if (
+                            allow_unchanged
+                            or fallback.snapshot == request.source.library
+                        ):
                             review = self._coordinator.prepare_library(
                                 fallback,
                                 progress,
@@ -765,6 +817,7 @@ class SyncExecutor:
                         request.plan.change_count
                         or requested_playlists
                         or podcast_changes
+                        or association_changes
                     ):
                         helper = self._coordinator.publish_sync_success(
                             saved.active,
@@ -773,13 +826,13 @@ class SyncExecutor:
                             else None,
                             (
                                 *(
-                                    pending_cover_provenance(item.provenance)
+                                    _pending_cover_provenance(request, item)
                                     if artwork_deferred
                                     else item.provenance
                                     for item in prepared
                                 ),
                                 *(
-                                    pending_cover_provenance(item.provenance)
+                                    _pending_cover_provenance(request, item)
                                     if artwork_deferred
                                     else item.provenance
                                     for item in metadata_updates
@@ -794,6 +847,9 @@ class SyncExecutor:
                                 ),
                             ),
                             tuple(item.provenance for item in photos),
+                            playlists=_committed_playlist_associations(
+                                tuple(playlist_associations), review
+                            ),
                         )
                         issues.extend(
                             WriteIssue(
@@ -1391,6 +1447,7 @@ class SyncExecutor:
                     .suffix.lstrip(".")
                     .casefold(),
                     was_transcoded=False,
+                    stream_selection_sha256=selection_digest(item.stream_selection),
                     host_tag_sha256=track_tag_sha256(host_track),
                     host_artwork_sha256="" if not host_track.artwork_id else None,
                     file_tag_policy=rockbox_tag_policy(request.source.profile)
@@ -1478,8 +1535,116 @@ class SyncExecutor:
         checkpoint: Callable[[], None],
         reserved: tuple[str, ...],
     ) -> tuple[list[_PreparedPodcast], list[WriteIssue]]:
+        if not plan.additions:
+            return [], []
+        completed = 0
+        ready: dict[int, _PreparedPodcast] = {}
+        failures: dict[int, list[WriteIssue]] = {}
+        cleanup_lock = Lock()
+        activity_lock = Lock()
+        activity_updated = Event()
+        stopped = Event()
+        active: dict[int, MediaPreparationProgress] = {}
+
+        def check() -> None:
+            if stopped.is_set():
+                raise PreparationCancelledError
+            checkpoint()
+
+        def report(index: int, update: MediaPreparationProgress) -> None:
+            # Coalesce worker samples; only this Sync's owning thread calls the GUI.
+            with activity_lock:
+                active[index] = update
+                activity_updated.set()
+
+        def publish() -> None:
+            with activity_lock:
+                items = tuple(
+                    WriteItemProgress(
+                        f"podcast:{index}",
+                        plan.additions[index].episode.title,
+                        update,
+                    )
+                    for index, update in sorted(active.items())
+                )
+            progress(
+                WriteProgress(
+                    "sync.podcast_prepare",
+                    "Preparing Podcast media for the iPod…",
+                    completed=completed,
+                    total=len(plan.additions),
+                    unit="episodes",
+                    active_items=items,
+                )
+            )
+
+        def prepare(
+            index: int,
+        ) -> tuple[_PreparedPodcast | None, list[WriteIssue]]:
+            try:
+                check()
+                with ExitStack() as lifetime:
+                    result = self._prepare_podcast(
+                        request,
+                        plan.additions[index],
+                        tools,
+                        lifetime,
+                        lambda update: report(index, update),
+                        check,
+                    )
+                    # Own successful captures before returning a Future. Progress
+                    # failure/cancellation must also clean results never consumed.
+                    with cleanup_lock:
+                        resources.callback(lifetime.pop_all().close)
+                    return result
+            finally:
+                with activity_lock:
+                    active.pop(index, None)
+                    activity_updated.set()
+
+        limit = min(self._workers, _PODCAST_PREPARATION_WORKERS, len(plan.additions))
+        with ThreadPoolExecutor(
+            max_workers=limit, thread_name_prefix="sync-podcast"
+        ) as pool:
+            futures: dict[
+                Future[tuple[_PreparedPodcast | None, list[WriteIssue]]], int
+            ] = {}
+            remaining = iter(range(len(plan.additions)))
+            try:
+                while True:
+                    check()
+                    # One whole Episode per worker bounds downloads and codec work
+                    # together, without accumulating a separate prefetch backlog.
+                    while len(futures) < limit:
+                        check()
+                        index = next(remaining, None)
+                        if index is None:
+                            break
+                        futures[pool.submit(prepare, index)] = index
+                    if not futures:
+                        break
+                    activity_updated.wait(timeout=0.1)
+                    activity_updated.clear()
+                    done = wait(futures, timeout=0, return_when=FIRST_COMPLETED).done
+                    for future in done:
+                        index = futures.pop(future)
+                        result, issues = future.result()
+                        failures[index] = issues
+                        if result is not None:
+                            ready[index] = result
+                        completed += 1
+                    publish()
+            finally:
+                stopped.set()
+                for future in futures:
+                    future.cancel()
+                # The pool joins all workers before the outer resources can close.
+
+        checkpoint()
         prepared: list[_PreparedPodcast] = []
-        issues: list[WriteIssue] = []
+        issues = [issue for index in sorted(failures) for issue in failures[index]]
+        # Reserve paths in plan order on the owning thread, including Host paths
+        # and replacements that must remain present until verified publication.
         with self._coordinator.sync_session(request.source) as session:
             allocator = MusicPathAllocator(
                 request.source.profile.capabilities.database.music_directory_count,
@@ -1492,187 +1657,99 @@ class SyncExecutor:
                 ),
                 exists=session.exists,
             )
-            for index, addition in enumerate(plan.additions):
+            for index in sorted(ready):
                 checkpoint()
-                episode = addition.episode
-                item = _podcast_add_item(addition)
-
-                def downloaded(
-                    size: int, total: int | None, episode: PodcastEpisode = episode
-                ) -> None:
-                    progress(
-                        WriteProgress(
-                            "sync.podcast_download",
-                            source_text("Downloading {title}…", title=episode.title)
-                            if episode.title
-                            else source_text("Downloading Podcast Episode…"),
-                            completed=size,
-                            total=total,
-                            current_item=episode.title,
-                            unit="bytes",
-                        )
+                result = ready[index]
+                try:
+                    extension = result.song.source.media.file.relative_path.rsplit(
+                        ".", 1
+                    )[-1]
+                    location = allocator.allocate(extension, checkpoint=checkpoint)
+                    prepared.append(
+                        replace(result, song=relocate_song(result.song, location))
                     )
-
-                def activity(
-                    update: MediaPreparationProgress,
-                    episode: PodcastEpisode = episode,
-                    index: int = index,
-                ) -> None:
-                    progress(
-                        WriteProgress(
-                            "sync.podcast_prepare",
-                            "Preparing Podcast media for the iPod…",
-                            completed=index,
-                            total=len(plan.additions),
-                            current_item=episode.title,
-                            unit="episodes",
-                            active_items=(
-                                WriteItemProgress(
-                                    episode.episode_id, episode.title, update
-                                ),
+                except (OSError, StorageError, ValueError) as error:
+                    issues.append(
+                        WriteIssue(
+                            "sync.podcast_failed",
+                            _podcast_add_failure_message(
+                                result.item.name,
+                                replacing=result.replaces_track_id is not None,
                             ),
+                            detail=exception_text(error),
+                            artifact=plan.additions[index].episode.enclosure_url,
                         )
                     )
+        return prepared, issues
 
-                progress(
-                    WriteProgress(
-                        "sync.podcast_download",
-                        source_text("Downloading {title}…", title=episode.title)
-                        if episode.title
-                        else source_text("Downloading Podcast Episode…"),
-                        completed=0,
-                        current_item=episode.title,
-                        unit="bytes",
+    def _prepare_podcast(
+        self,
+        request: SyncExecutionRequest,
+        addition: PodcastEpisodeAddition,
+        tools: MediaTools,
+        resources: ExitStack,
+        progress: Callable[[MediaPreparationProgress], None],
+        checkpoint: Callable[[], None],
+    ) -> tuple[_PreparedPodcast | None, list[WriteIssue]]:
+        prepared: _PreparedPodcast | None = None
+        issues: list[WriteIssue] = []
+        episode = addition.episode
+        item = _podcast_add_item(addition)
+
+        def downloaded(size: int, total: int | None) -> None:
+            progress(
+                MediaPreparationProgress(
+                    MediaPreparationPhase.READING,
+                    source_text("Downloading {title}…", title=episode.title)
+                    if episode.title
+                    else source_text("Downloading Podcast Episode…"),
+                    processed_bytes=size,
+                    total_bytes=total,
+                )
+            )
+
+        downloaded(0, None)
+        try:
+            with ExitStack() as lifetime:
+                source = lifetime.enter_context(
+                    download_episode(
+                        addition, checkpoint=checkpoint, progress=downloaded
                     )
                 )
-                try:
-                    with ExitStack() as lifetime:
-                        source = lifetime.enter_context(
-                            download_episode(
-                                addition, checkpoint=checkpoint, progress=downloaded
-                            )
+                track = episode_track(addition)
+                output = lifetime.enter_context(
+                    self._transcoder.prepare(
+                        source,
+                        request.source.profile,
+                        request.settings,
+                        checkpoint=checkpoint,
+                        spoken_word=True,
+                        tools=tools,
+                        metadata=track,
+                        rockbox_metadata=request.options.rockbox_metadata,
+                        normalize_tags=request.options.normalize_tags,
+                        compute_sound_check=request.options.compute_sound_check,
+                        progress=progress,
+                    )
+                )
+                # Media kind follows inspected output, never the enclosure suffix.
+                track = replace(
+                    output.metadata or track,
+                    media_types=(MediaType.VIDEO_PODCAST,)
+                    if output.inspection.video_streams
+                    else (MediaType.PODCAST,),
+                )
+                song = _song(request, track, replace(output, metadata=track))
+                invalid = incoming_track_issues(song.track)
+                if invalid:
+                    issues.extend(
+                        replace(
+                            issue,
+                            record_id=None,
+                            artifact=episode.enclosure_url,
                         )
-                        track = episode_track(addition)
-                        output = lifetime.enter_context(
-                            self._transcoder.prepare(
-                                source,
-                                request.source.profile,
-                                request.settings,
-                                checkpoint=checkpoint,
-                                spoken_word=True,
-                                tools=tools,
-                                metadata=track,
-                                rockbox_metadata=request.options.rockbox_metadata,
-                                normalize_tags=request.options.normalize_tags,
-                                compute_sound_check=request.options.compute_sound_check,
-                                progress=activity,
-                            )
-                        )
-                        # Media kind follows inspected output, never the enclosure suffix.
-                        track = replace(
-                            output.metadata or track,
-                            media_types=(MediaType.VIDEO_PODCAST,)
-                            if output.inspection.video_streams
-                            else (MediaType.PODCAST,),
-                        )
-                        song = _song(request, track, replace(output, metadata=track))
-                        invalid = incoming_track_issues(song.track)
-                        if invalid:
-                            issues.extend(
-                                replace(
-                                    issue,
-                                    record_id=None,
-                                    artifact=episode.enclosure_url,
-                                )
-                                for issue in describe_track_issues(
-                                    invalid, (song.track,)
-                                )
-                            )
-                            issues.append(
-                                WriteIssue(
-                                    "sync.podcast_failed",
-                                    _podcast_add_failure_message(
-                                        episode.title,
-                                        replacing=addition.replaces_track_id
-                                        is not None,
-                                    ),
-                                    detail=source_text(
-                                        "Correct this Episode's metadata or exclude it from the next Sync."
-                                    ),
-                                    artifact=episode.enclosure_url,
-                                )
-                            )
-                            continue
-                        extension = song.source.media.file.relative_path.rsplit(".", 1)[
-                            -1
-                        ]
-                        location = allocator.allocate(extension, checkpoint=checkpoint)
-                        song = relocate_song(song, location)
-                        acoustic_fingerprint = ""
-                        progress(
-                            WriteProgress(
-                                "sync.podcast_fingerprint",
-                                "Fingerprinting Podcast media…",
-                                completed=index,
-                                total=len(plan.additions),
-                                current_item=episode.title,
-                                unit="episodes",
-                            )
-                        )
-                        try:
-                            # Pass-through captures have no extension. Use the
-                            # verified output format, not the publisher's filename.
-                            acoustic_fingerprint = FpcalcFingerprinter(
-                                input_suffix=f".{extension}", find_tool=self._find_tool
-                            ).fingerprint(output.source, checkpoint=checkpoint)
-                        except (
-                            FpcalcError,
-                            OSError,
-                            StorageError,
-                            ValueError,
-                        ) as error:
-                            issues.append(
-                                WriteIssue(
-                                    "sync.podcast_fingerprint_unavailable",
-                                    source_text(
-                                        "{title} could not be fingerprinted. The Episode can still be added, "
-                                        "but its acoustic matching evidence is unavailable.",
-                                        title=episode.title,
-                                    )
-                                    if episode.title
-                                    else source_text(
-                                        "Podcast Episode could not be fingerprinted. The Episode can still be added, "
-                                        "but its acoustic matching evidence is unavailable."
-                                    ),
-                                    severity=IssueSeverity.WARNING,
-                                    detail=exception_text(error),
-                                    artifact=episode.enclosure_url,
-                                )
-                            )
-                        resources.callback(lifetime.pop_all().close)
-                        prepared.append(
-                            _PreparedPodcast(
-                                item,
-                                song,
-                                addition.replaces_track_id,
-                                addition.subscription.subscription_id,
-                                acoustic_fingerprint,
-                                source,
-                                episode=episode,
-                            )
-                        )
-                        issues.extend(
-                            WriteIssue(
-                                "sync.podcast_media_warning",
-                                warning,
-                                severity=IssueSeverity.INFO,
-                                artifact=episode.enclosure_url,
-                            )
-                            for warning in output.warnings
-                        )
-                except PreparationCancelledError:
-                    raise
-                except Exception as error:
+                        for issue in describe_track_issues(invalid, (song.track,))
+                    )
                     issues.append(
                         WriteIssue(
                             "sync.podcast_failed",
@@ -1680,10 +1757,84 @@ class SyncExecutor:
                                 episode.title,
                                 replacing=addition.replaces_track_id is not None,
                             ),
+                            detail=source_text(
+                                "Correct this Episode's metadata or exclude it from the next Sync."
+                            ),
+                            artifact=episode.enclosure_url,
+                        )
+                    )
+                    return None, issues
+                extension = song.source.media.file.relative_path.rsplit(".", 1)[-1]
+                acoustic_fingerprint = ""
+                progress(
+                    MediaPreparationProgress(
+                        MediaPreparationPhase.READING,
+                        "Fingerprinting Podcast media…",
+                    )
+                )
+                try:
+                    # Pass-through captures have no extension. Use the
+                    # verified output format, not the publisher's filename.
+                    acoustic_fingerprint = FpcalcFingerprinter(
+                        input_suffix=f".{extension}", find_tool=self._find_tool
+                    ).fingerprint(output.source, checkpoint=checkpoint)
+                except (
+                    FpcalcError,
+                    OSError,
+                    StorageError,
+                    ValueError,
+                ) as error:
+                    issues.append(
+                        WriteIssue(
+                            "sync.podcast_fingerprint_unavailable",
+                            source_text(
+                                "{title} could not be fingerprinted. The Episode can still be added, "
+                                "but its acoustic matching evidence is unavailable.",
+                                title=episode.title,
+                            )
+                            if episode.title
+                            else source_text(
+                                "Podcast Episode could not be fingerprinted. The Episode can still be added, "
+                                "but its acoustic matching evidence is unavailable."
+                            ),
+                            severity=IssueSeverity.WARNING,
                             detail=exception_text(error),
                             artifact=episode.enclosure_url,
                         )
                     )
+                resources.callback(lifetime.pop_all().close)
+                prepared = _PreparedPodcast(
+                    item,
+                    song,
+                    addition.replaces_track_id,
+                    addition.subscription.subscription_id,
+                    acoustic_fingerprint,
+                    source,
+                    episode=episode,
+                )
+                issues.extend(
+                    WriteIssue(
+                        "sync.podcast_media_warning",
+                        warning,
+                        severity=IssueSeverity.INFO,
+                        artifact=episode.enclosure_url,
+                    )
+                    for warning in output.warnings
+                )
+        except PreparationCancelledError:
+            raise
+        except Exception as error:
+            issues.append(
+                WriteIssue(
+                    "sync.podcast_failed",
+                    _podcast_add_failure_message(
+                        episode.title,
+                        replacing=addition.replaces_track_id is not None,
+                    ),
+                    detail=exception_text(error),
+                    artifact=episode.enclosure_url,
+                )
+            )
         return prepared, issues
 
     def _prepare_one(
@@ -1713,6 +1864,7 @@ class SyncExecutor:
                     normalize_tags=request.options.normalize_tags,
                     compute_sound_check=request.options.compute_sound_check,
                     progress=activity,
+                    stream_selection=item.stream_selection,
                 )
             )
             if (
@@ -1742,6 +1894,7 @@ class SyncExecutor:
                     source.path.path.suffix.lstrip(".").casefold(),
                     result.encoding.value,
                     result.was_transcoded,
+                    stream_selection_sha256=selection_digest(item.stream_selection),
                     host_artwork_sha256=prior_sync.host_artwork_sha256
                     if prior_sync is not None and not item.artwork_changed
                     else None,
@@ -2027,6 +2180,7 @@ def _validate_plan(request: SyncExecutionRequest) -> SyncPlan:
             artwork_changed=False,
             audio_payload_changed=False,
             file_tags_changed=False,
+            applied_stream_selection_sha256=None,
         )
         for item in comparison.items
         if item.ipod_id is not None
@@ -2043,10 +2197,30 @@ def _validate_plan(request: SyncExecutionRequest) -> SyncPlan:
         and item.host_path is not None
         and item.ipod_id is None
     )
+    stream_candidates: dict[str, list[SyncPlanItem]] = {}
+    for candidate in allowed:
+        if (
+            candidate.host_path is not None
+            and candidate.media_kind is SyncPlanMediaKind.TRACK
+            and candidate.action
+            in {
+                SyncPlanAction.ADD,
+                SyncPlanAction.UPDATE,
+                SyncPlanAction.UNCHANGED,
+            }
+        ):
+            stream_candidates.setdefault(candidate.host_path, []).append(candidate)
     hosts: set[str] = set()
     devices: set[tuple[SyncPlanMediaKind, int]] = set()
     for item in request.plan.items:
-        if item not in allowed:
+        if item.stream_selection is not None or item.stream_selection_changed:
+            valid = any(
+                with_stream_selection(candidate, item.stream_selection) == item
+                for candidate in stream_candidates.get(item.host_path or "", ())
+            )
+        else:
+            valid = item in allowed
+        if not valid:
             raise ValueError(
                 "The selected Sync Plan no longer matches its scanned sources. Review a fresh plan."
             )
@@ -2185,6 +2359,7 @@ def _draft(
     podcast_artwork_repairs: tuple[_PodcastArtworkRepair, ...] = (),
     *,
     comparison: SyncPlan | None = None,
+    playlist_associations: list[PlaylistAssociation] | None = None,
 ) -> tuple[LibraryPreparationRequest, tuple[SyncPlanItem, ...], bool]:
     """Build desired state, completed actions, and whether implicit changes exist."""
     original = request.source.library
@@ -2197,6 +2372,11 @@ def _draft(
     host_tracks_by_path = {
         host_path_identity(track.metadata.location): track
         for track in request.host.snapshot.tracks
+    }
+    video_paths = {
+        host_path_identity(str(source.path))
+        for source in request.host.sources
+        if source.kind is HostMediaFileKind.VIDEO
     }
     replaced: list[int] = []
     media: list[LibraryMediaSource] = []
@@ -2236,7 +2416,12 @@ def _draft(
                 rating=old.rating,
                 play_count=old.play_count,
                 artwork_id=(
-                    (cover_id or old.artwork_id if host_track.artwork_id else 0)
+                    (
+                        cover_id or old.artwork_id
+                        if host_track.artwork_id
+                        or host_path_identity(item.host_path or "") in video_paths
+                        else 0
+                    )
                     if item.artwork_changed
                     else old.artwork_id
                 ),
@@ -2282,7 +2467,12 @@ def _draft(
         if item.artwork_changed:
             track = replace(
                 track,
-                artwork_id=(cover_id or old.artwork_id if host_track.artwork_id else 0),
+                artwork_id=(
+                    cover_id or old.artwork_id
+                    if host_track.artwork_id
+                    or host_path_identity(item.host_path or "") in video_paths
+                    else 0
+                ),
             )
         if (
             request.options.compute_sound_check
@@ -2308,7 +2498,11 @@ def _draft(
                     embedded_artwork,
                     preserve_artwork=(
                         update.artwork is None
-                        and (not item.artwork_changed or host_track.artwork_id != 0)
+                        and (
+                            not item.artwork_changed
+                            or host_track.artwork_id != 0
+                            or host_path_identity(item.host_path or "") in video_paths
+                        )
                     ),
                 )
             )
@@ -2391,7 +2585,9 @@ def _draft(
                 severity=IssueSeverity.INFO,
             )
         )
-    playlists, reconciled = _playlists(request, mapping, frozenset(tracks), issues)
+    playlists, reconciled = _playlists(
+        request, mapping, frozenset(tracks), issues, associations=playlist_associations
+    )
     photos = original.photos
     removed_tracks = {track.track_id for track in original.tracks} - tracks.keys()
     for prepared_photo in prepared_photos:
@@ -2498,6 +2694,26 @@ def _normalized_tracks(
     )
 
 
+def _committed_playlist_associations(
+    associations: tuple[PlaylistAssociation, ...], review: LibraryReview
+) -> tuple[PlaylistAssociation, ...]:
+    assert review.result.prepared is not None
+    identities = {
+        item.draft_id: item.output_id
+        for item in review.result.prepared.identities
+        if item.subject == "playlist"
+    }
+    return tuple(
+        replace(
+            item,
+            ipod_playlist_id=identities.get(
+                item.ipod_playlist_id, item.ipod_playlist_id
+            ),
+        )
+        for item in associations
+    )
+
+
 def _retained_playlist_mapping(
     request: SyncExecutionRequest, *, comparison: SyncPlan | None = None
 ) -> dict[int, int]:
@@ -2547,6 +2763,7 @@ def preview_playlist_sync(
     host: HostMediaLibrary,
     ipod: IPodMediaLibrary,
     source: ActiveIPod,
+    choices: tuple[PlaylistSyncChoice, ...] = (),
 ) -> tuple[PlaylistSyncChange, ...]:
     """Describe Host reconciliation using the same pure rules as execution.
 
@@ -2555,12 +2772,33 @@ def preview_playlist_sync(
     Removing a Track always removes its references and is already reviewed as a
     media removal, so that automatic cleanup is excluded from this preview.
     """
-    request = SyncExecutionRequest(plan, host, ipod, source, 0, 0)
+    request = SyncExecutionRequest(
+        plan, host, ipod, source, 0, 0, playlist_choices=choices
+    )
     return _preview_playlist_sync(request)
 
 
+def review_playlist_sync(
+    plan: SyncPlan,
+    host: HostMediaLibrary,
+    ipod: IPodMediaLibrary,
+    source: ActiveIPod,
+    choices: tuple[PlaylistSyncChoice, ...] = (),
+) -> tuple[PlaylistSyncReviewItem, ...]:
+    """Include unchanged matches and skipped reasons alongside proposed changes."""
+    rows: list[PlaylistSyncReviewItem] = []
+    request = SyncExecutionRequest(
+        plan, host, ipod, source, 0, 0, playlist_choices=choices
+    )
+    _preview_playlist_sync(request, rows=rows)
+    return tuple(rows)
+
+
 def _preview_playlist_sync(
-    request: SyncExecutionRequest, *, comparison: SyncPlan | None = None
+    request: SyncExecutionRequest,
+    *,
+    comparison: SyncPlan | None = None,
+    rows: list[PlaylistSyncReviewItem] | None = None,
 ) -> tuple[PlaylistSyncChange, ...]:
     """Reuse execution's validated comparison while keeping preview drafts isolated."""
     mapping = _retained_playlist_mapping(request, comparison=comparison)
@@ -2586,45 +2824,8 @@ def _preview_playlist_sync(
             assert identity is not None
             mapping[host_tracks[host_path_identity(item.host_path)]] = identity
     retained = frozenset(retained_ids)
-    playlists, _ = _playlists(request, mapping, retained, [])
+    playlists, _ = _playlists(request, mapping, retained, [], rows=rows)
     return _playlist_changes(_playlist_baseline(request, retained), playlists)
-
-
-def _playlist_changes(
-    before: tuple[Playlist, ...], after: tuple[Playlist, ...]
-) -> tuple[PlaylistSyncChange, ...]:
-    by_id = {playlist.playlist_id: playlist for playlist in before}
-    changes: list[PlaylistSyncChange] = []
-    for playlist in after:
-        previous = by_id.get(playlist.playlist_id)
-        if previous is not None and previous.track_ids == playlist.track_ids:
-            continue
-        original = () if previous is None else previous.track_ids
-        old_counts, new_counts = Counter(original), Counter(playlist.track_ids)
-        common = old_counts & new_counts
-
-        def retained_order(
-            identities: tuple[int, ...], counts: Counter[int]
-        ) -> tuple[int, ...]:
-            remaining = counts.copy()
-            result: list[int] = []
-            for identity in identities:
-                if remaining[identity]:
-                    remaining[identity] -= 1
-                    result.append(identity)
-            return tuple(result)
-
-        changes.append(
-            PlaylistSyncChange(
-                playlist.name,
-                "create" if previous is None else "update",
-                sum((new_counts - old_counts).values()),
-                sum((old_counts - new_counts).values()),
-                retained_order(original, common)
-                != retained_order(playlist.track_ids, common),
-            )
-        )
-    return tuple(changes)
 
 
 def _playlist_baseline(
@@ -2649,6 +2850,9 @@ def _playlists(
     mapping: dict[int, int],
     retained_ids: frozenset[int],
     issues: list[WriteIssue],
+    *,
+    rows: list[PlaylistSyncReviewItem] | None = None,
+    associations: list[PlaylistAssociation] | None = None,
 ) -> tuple[tuple[Playlist, ...], bool]:
     """Reconcile unambiguous regular playlists, preserving failed memberships."""
 
@@ -2660,16 +2864,6 @@ def _playlists(
     if not request.reconcile_playlists:
         result = tuple(playlists.values())
         return result, result != original
-    hosts = request.host.snapshot.playlists
-    host_names = Counter(playlist.name.casefold() for playlist in hosts)
-    ipod_names = Counter(
-        playlist.name.casefold() for playlist in original if playlist.parent_id is None
-    )
-    by_name = {
-        playlist.name.casefold(): playlist
-        for playlist in original
-        if playlist.parent_id is None
-    }
     host_tracks = {
         host_path_identity(track.metadata.location): track.track_id
         for track in request.host.snapshot.tracks
@@ -2709,94 +2903,38 @@ def _playlists(
         and host_tracks[host_path_identity(host.host_path)] not in selected
         and host_tracks[host_path_identity(host.host_path)] not in removed_hosts
     )
-    next_playlist_id = min((0, *playlists)) - 1
-    incomplete = frozenset(request.host.incomplete_playlist_ids)
-    for host in hosts:
-        if host.kind is not PlaylistKind.PLAYLIST or host.parent_id is not None:
-            continue
-        if unresolved.intersection(host.track_ids):
-            issues.append(
-                WriteIssue(
-                    "sync.playlist_unresolved_matches",
-                    source_text(
-                        "Playlist {name} was preserved because some of its Tracks have unresolved matches. "
-                        "Review those matches before updating this Playlist.",
-                        name=host.name,
-                    ),
-                    severity=IssueSeverity.WARNING,
-                )
-            )
-            continue
-        if host.playlist_id in incomplete:
-            issues.append(
-                WriteIssue(
-                    "sync.playlist_incomplete",
-                    source_text(
-                        "Playlist {name} was preserved because some source entries were excluded "
-                        "or could not be read. Resolve its missing or declined references and rescan "
-                        "before updating this Playlist.",
-                        name=host.name,
-                    ),
-                    severity=IssueSeverity.WARNING,
-                )
-            )
-            continue
-        desired = tuple(
-            mapping[identity] for identity in host.track_ids if identity in mapping
+    result, review, applied = reconcile_playlist_sync(
+        request.host.snapshot.playlists,
+        tuple(playlists.values()),
+        mapping,
+        selected=selected,
+        unresolved=unresolved,
+        incomplete=frozenset(request.host.incomplete_playlist_ids),
+        associations=request.ipod.playlist_associations,
+        choices=request.playlist_choices,
+        source_paths={
+            source.playlist_id: str(source.path)
+            for source in request.host.sources
+            if source.playlist_id is not None
+        },
+    )
+    if rows is not None:
+        rows.extend(review)
+    if associations is not None:
+        associations.extend(applied)
+    issues.extend(
+        WriteIssue(
+            row.issue_code,
+            source_text(
+                "Playlist {name} was preserved. {detail}",
+                name=row.name,
+                detail=row.detail,
+            ),
+            severity=IssueSeverity.WARNING,
         )
-        if not desired and host.entries:
-            continue
-        name = host.name.casefold()
-        existing = by_name.get(name)
-        if (
-            host_names[name] != 1
-            or ipod_names[name] > 1
-            or (
-                existing is not None
-                and (
-                    existing.kind is not PlaylistKind.PLAYLIST
-                    or existing.system_managed
-                )
-            )
-        ):
-            issues.append(
-                WriteIssue(
-                    "sync.playlist_ambiguous",
-                    source_text(
-                        "Playlist {name} was preserved because its name matches an ambiguous or managed Playlist. Rename the Host Playlist and retry.",
-                        name=host.name,
-                    ),
-                    severity=IssueSeverity.WARNING,
-                )
-            )
-            continue
-        if any(
-            identity in selected and identity not in mapping
-            for identity in host.track_ids
-        ):
-            issues.append(
-                WriteIssue(
-                    "sync.playlist_incomplete",
-                    source_text(
-                        "Playlist {name} was preserved because one of its selected Tracks failed. Retry those Tracks to update this Playlist.",
-                        name=host.name,
-                    ),
-                    severity=IssueSeverity.WARNING,
-                )
-            )
-            continue
-        if existing is None:
-            identity = next_playlist_id
-            next_playlist_id -= 1
-            playlists[identity] = Playlist(
-                identity, host.name, entries=playlist_entries(desired)
-            )
-        else:
-            current = playlists[existing.playlist_id]
-            playlists[existing.playlist_id] = replace(
-                current, entries=playlist_entries(desired, current.entries)
-            )
-    result = tuple(playlists.values())
+        for row in review
+        if row.choice.included and row.issue_code
+    )
     return result, result != original
 
 
@@ -2826,35 +2964,60 @@ def _validate_playlist_sources(
     request: SyncExecutionRequest,
     issues: list[WriteIssue],
     checkpoint: Callable[[], None],
-) -> bool:
-    valid = True
-    if request.reconcile_playlists:
-        retained_paths = {
-            host_path_identity(item.host_path)
-            for item in request.plan.items
-            if item.host_path is not None and item.action is SyncPlanAction.UNCHANGED
-        }
-        for source in request.host.sources:
-            if (
-                source.kind is not HostMediaFileKind.PLAYLIST
-                and host_path_identity(str(source.path)) not in retained_paths
-            ):
-                continue
-            checkpoint()
-            try:
-                _validate_host_source(source)
-            except (OSError, ValueError, StorageError) as error:
-                valid = False
-                issues.append(
-                    WriteIssue(
-                        "sync.playlist_source_changed",
-                        "A Host Playlist or one of its retained sources changed or became unavailable after Review. "
-                        "Host Playlist reconciliation was skipped; rescan before retrying.",
-                        severity=IssueSeverity.WARNING,
-                        detail=exception_text(error),
-                    )
+) -> frozenset[int]:
+    """A changed source blocks only the selected Playlists that depend on it."""
+    if not request.reconcile_playlists:
+        return frozenset()
+    choices = {item.host_playlist_id: item for item in request.playlist_choices}
+    selected = {
+        item.playlist_id: item
+        for item in request.host.snapshot.playlists
+        if choices.get(item.playlist_id, PlaylistSyncChoice(item.playlist_id)).included
+    }
+    known = {item.playlist_id for item in request.host.snapshot.playlists}
+    tracks = {
+        host_path_identity(item.metadata.location): item.track_id
+        for item in request.host.snapshot.tracks
+    }
+    retained_paths = {
+        host_path_identity(item.host_path)
+        for item in request.plan.items
+        if item.host_path is not None and item.action is SyncPlanAction.UNCHANGED
+    }
+    invalid: set[int] = set()
+    for source in request.host.sources:
+        if source.kind is HostMediaFileKind.PLAYLIST:
+            identity = source.playlist_id
+            # An unprojected source is conservative evidence for every selection.
+            affected = (
+                ({identity} & selected.keys()) if identity in known else set(selected)
+            )
+        elif host_path_identity(str(source.path)) in retained_paths:
+            track_id = tracks.get(host_path_identity(str(source.path)))
+            affected = {
+                identity
+                for identity, playlist in selected.items()
+                if track_id in playlist.track_ids
+            }
+        else:
+            continue
+        if not affected:
+            continue
+        checkpoint()
+        try:
+            _validate_host_source(source)
+        except (OSError, ValueError, StorageError) as error:
+            invalid.update(affected)
+            issues.append(
+                WriteIssue(
+                    "sync.playlist_source_changed",
+                    "A Host Playlist or one of its retained sources changed or became unavailable after Review. "
+                    "Affected Playlists were skipped; rescan before retrying.",
+                    severity=IssueSeverity.WARNING,
+                    detail=exception_text(error),
                 )
-    return valid
+            )
+    return frozenset(invalid)
 
 
 def _capture_artwork(
@@ -2862,6 +3025,8 @@ def _capture_artwork(
     tracks: list[_PreparedTrack],
     metadata_updates: list[_PreparedMetadataUpdate],
     checkpoint: Callable[[], None],
+    *,
+    find_tool: MediaToolFinder | None = None,
 ) -> tuple[WriteIssue, ...]:
     formats = application_artwork_formats(request.source.profile)
     target_px = max(max(item.width, item.height) for item in formats)
@@ -2869,6 +3034,13 @@ def _capture_artwork(
     by_path = {
         host_path_identity(track.metadata.location): track
         for track in request.host.snapshot.tracks
+    }
+    media_sources = {
+        host_path_identity(str(source.path)): source for source in request.host.sources
+    }
+    existing = {track.track_id: track for track in request.source.library.tracks}
+    unavailable = {
+        host_path_identity(path) for path in request.host.unavailable_artwork_paths
     }
     candidates: tuple[_PreparedTrack | _PreparedMetadataUpdate, ...] = (
         *(
@@ -2920,8 +3092,68 @@ def _capture_artwork(
                     track.song = replace(track.song, artwork=pixels)
                 else:
                     track.artwork = pixels
+    failed_frames: set[str] = set()
     for track in candidates:
-        host_track = by_path[host_path_identity(track.item.host_path or "")]
+        path_key = host_path_identity(track.item.host_path or "")
+        host_track = by_path[path_key]
+        media_source = media_sources[path_key]
+        old_track = existing.get(track.item.ipod_id or 0)
+        if (
+            host_track.artwork_id
+            or media_source.kind is not HostMediaFileKind.VIDEO
+            or (
+                track.item.action is not SyncPlanAction.ADD
+                and not track.item.artwork_changed
+            )
+            or (
+                path_key in unavailable
+                and old_track is not None
+                and old_track.artwork_id
+            )
+        ):
+            continue
+        checkpoint()
+        try:
+            pixels = capture_video_frame(
+                track.song.source.source
+                if isinstance(track, _PreparedTrack)
+                else media_source.path,
+                target_px,
+                checkpoint=checkpoint,
+                find_tool=find_tool,
+                duration_seconds=(
+                    float(track.output.inspection.duration_seconds)
+                    if isinstance(track, _PreparedTrack)
+                    and track.output is not None
+                    and track.output.inspection.duration_seconds is not None
+                    else host_track.length_ms / 1000 or None
+                ),
+            )
+        except PreparationCancelledError:
+            raise
+        except Exception as error:
+            failed_frames.add(path_key)
+            issues.append(
+                WriteIssue(
+                    "sync.video_artwork_skipped",
+                    source_text(
+                        "A video frame for {name} could not be prepared. "
+                        "Media can still Sync; any existing iPod artwork was preserved.",
+                        name=track.item.name,
+                    ),
+                    severity=IssueSeverity.WARNING,
+                    detail=exception_text(error),
+                )
+            )
+        else:
+            if isinstance(track, _PreparedTrack):
+                track.song = replace(track.song, artwork=pixels)
+            else:
+                track.artwork = pixels
+    previous = {track.track_id: track.sync for track in request.ipod.tracks}
+    for track in candidates:
+        path_key = host_path_identity(track.item.host_path or "")
+        host_track = by_path[path_key]
         source = sources.get(host_track.artwork_id)
         artwork = (
             track.song.artwork if isinstance(track, _PreparedTrack) else track.artwork
@@ -2933,6 +3165,13 @@ def _capture_artwork(
             if source is not None and artwork is not None
             else None
         )
+        frame_failed = path_key in failed_frames
+        cover_unavailable = (
+            path_key in unavailable and not host_track.artwork_id and artwork is None
+        )
+        if frame_failed or cover_unavailable:
+            prior = previous.get(track.item.ipod_id or 0)
+            digest = None if prior is None else prior.host_artwork_sha256
         if track.provenance.sync is not None:
             track.provenance = replace(
                 track.provenance,
@@ -2940,11 +3179,53 @@ def _capture_artwork(
                     track.provenance.sync,
                     host_artwork_sha256=digest,
                     file_tag_policy=track.provenance.sync.file_tag_policy
-                    if digest is not None
+                    if digest is not None and not frame_failed and not cover_unavailable
                     else None,
                 ),
             )
     return tuple(issues)
+
+
+def _pending_cover_provenance(
+    request: SyncExecutionRequest, track: _PreparedTrack | _PreparedMetadataUpdate
+) -> SyncedTrack:
+    """Retain a removed Host cover baseline if its replacement frame was deferred."""
+    pending = pending_cover_provenance(track.provenance)
+    if pending.sync is None:
+        return pending
+    identity = host_path_identity(track.item.host_path or "")
+    video = any(
+        source.kind is HostMediaFileKind.VIDEO
+        and host_path_identity(str(source.path)) == identity
+        for source in request.host.sources
+    )
+    host = next(
+        (
+            item
+            for item in request.host.snapshot.tracks
+            if host_path_identity(item.metadata.location) == identity
+        ),
+        None,
+    )
+    if video and host is not None and not host.artwork_id:
+        prior = next(
+            (
+                item.sync
+                for item in request.ipod.tracks
+                if item.track_id == track.item.ipod_id
+            ),
+            None,
+        )
+        return replace(
+            pending,
+            sync=replace(
+                pending.sync,
+                host_artwork_sha256=None
+                if prior is None
+                else prior.host_artwork_sha256,
+            ),
+        )
+    return pending
 
 
 def _capture_retained_podcast_artwork(
@@ -3060,6 +3341,8 @@ def _capture_podcast_artwork(
     prepared: list[_PreparedPodcast],
     progress: Callable[[WriteProgress], None],
     checkpoint: Callable[[], None],
+    *,
+    find_tool: MediaToolFinder | None = None,
 ) -> tuple[
     list[_PreparedPodcast], tuple[_PodcastArtworkRepair, ...], tuple[WriteIssue, ...]
 ]:
@@ -3217,6 +3500,41 @@ def _capture_podcast_artwork(
                 podcast.chapter_artwork,
             )
             podcast = replace(podcast, chapter_artwork=frames)
+        if (
+            podcast.song.artwork is None
+            and not podcast.chapter_artwork
+            and podcast.song.source.media.content
+            in (MediaContent.VIDEO, MediaContent.AUDIO_VIDEO)
+        ):
+            try:
+                pixels = capture_video_frame(
+                    podcast.song.source.source,
+                    target_px,
+                    checkpoint=checkpoint,
+                    find_tool=find_tool,
+                    duration_seconds=podcast.song.track.length_ms / 1000 or None,
+                )
+                if len(pixels.rgb888) > artwork.remaining_bytes:
+                    raise ValueError(
+                        "Podcast covers exceed the 64 MiB preparation limit."
+                    )
+                artwork.used_bytes += len(pixels.rgb888)
+                podcast = replace(podcast, song=replace(podcast.song, artwork=pixels))
+            except PreparationCancelledError:
+                raise
+            except Exception as error:
+                issues.append(
+                    WriteIssue(
+                        "sync.video_artwork_skipped",
+                        source_text(
+                            "A video frame for {name} could not be prepared. "
+                            "The Episode can still sync without artwork.",
+                            name=podcast.song.track.title,
+                        ),
+                        severity=IssueSeverity.WARNING,
+                        detail=exception_text(error),
+                    )
+                )
         with_chapters.append(podcast)
     return with_chapters, tuple(repairs), (*issues, *artwork.issues)
 

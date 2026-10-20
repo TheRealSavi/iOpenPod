@@ -52,6 +52,7 @@ from iPodDB.library._projection import link_artwork, project_tracks
 from iPodDB.library._reconcile import reconcile
 from iPodDB.library._sqlite_projection import project_sqlite_metadata
 from iPodDB.library._track_verification import verify_native_tracks
+from iPodDB.library._video_resources import validate_video_metadata
 from iPodDB.library._write_logging import log_resources, log_result
 from iPodDB.library._write_verification import retained_artwork, verify_relationships
 from iPodDB.library.file_content import content_sha256
@@ -93,6 +94,7 @@ if TYPE_CHECKING:
         LibraryDraft,
         PreparedLyrics,
         PreparedMedia,
+        PreparedVideoMetadata,
     )
     from iPodDB.PhotosDB.shared.chunk_defs.mhfd import MhfdHeader as PhotosMhfdHeader
     from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
@@ -252,6 +254,7 @@ def _prepare_sqlite(
     checked_document: DatabaseDocument[MhbdHeader],
     plan: LibraryWritePlan,
     resources: WriteResources,
+    mappings: tuple[IdentityMapping, ...],
 ) -> SQLiteDatabaseSet | None:
     """Project checked native state with the explicit supplemental-data invalidations."""
     if not plan.changes_sqlite:
@@ -298,6 +301,17 @@ def _prepare_sqlite(
         cleared_lyrics=cleared_lyrics | replaced_pids,
         cleared_chapters=cleared_chapters | replaced_pids,
         replaced_tracks=replaced_pids,
+        video_metadata={
+            next(
+                (
+                    m.output_id
+                    for m in mappings
+                    if m.subject == "track" and m.draft_id == item.track_id
+                ),
+                item.track_id,
+            ): item.playback
+            for item in resources.video_metadata
+        },
     )
 
 
@@ -329,6 +343,7 @@ def _prepare(
     media = {m.track_id: m for m in resources.media}
     lyrics = {item.track_id: item for item in resources.lyrics}
     issues.extend(validate_lyrics(plan, resources))
+    issues.extend(validate_video_metadata(plan, resources))
     issues.extend(validate_photos(plan, resources, source.snapshot.photos))
     assets = {a.artwork_id: a for a in resources.artwork}
     if len(media) != len(resources.media) or len(assets) != len(resources.artwork):
@@ -390,9 +405,12 @@ def _prepare(
                 )
             else:
                 dependencies[key] = photo_file.dependency
-    captured_media: tuple[PreparedMedia | PreparedLyrics, ...] = (
+    captured_media: tuple[
+        PreparedMedia | PreparedLyrics | PreparedVideoMetadata, ...
+    ] = (
         *resources.media,
         *resources.lyrics,
+        *resources.video_metadata,
     )
     for prepared_media in captured_media:
         key = prepared_media.file.relative_path.casefold()
@@ -1098,7 +1116,9 @@ def _prepare(
             )
         if _blocked(issues):
             return LibraryWriteResult(tuple(issues))
-        sqlite = _prepare_sqlite(source, checked, checked_document, plan, resources)
+        sqlite = _prepare_sqlite(
+            source, checked, checked_document, plan, resources, mappings
+        )
         return LibraryWriteResult(
             tuple(issues),
             PreparedLibrary(

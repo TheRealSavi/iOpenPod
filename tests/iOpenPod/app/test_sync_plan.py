@@ -207,6 +207,104 @@ def _sync(path: Path, *, size: int = 100, modified: int = 1_000) -> SyncDetails:
     )
 
 
+@pytest.mark.parametrize(
+    "video_type",
+    (
+        MediaType.VIDEO,
+        MediaType.AUDIO_VIDEO,
+        MediaType.MUSIC_VIDEO,
+        MediaType.TV_SHOW,
+        MediaType.VIDEO_PODCAST,
+    ),
+)
+@pytest.mark.parametrize("host_is_video", (False, True))
+def test_audio_and_video_do_not_match_by_shared_acoustic_fingerprint(
+    tmp_path: Path, video_type: MediaType, host_is_video: bool
+) -> None:
+    track, source = _host_track(
+        tmp_path / "edition.mp4", track_id=100, fingerprint="1,2,3"
+    )
+    snapshot = _ipod_snapshot(1)
+    if host_is_video:
+        track = replace(track, media_types=(video_type,))
+        source = replace(source, kind=HostMediaFileKind.VIDEO)
+    else:
+        snapshot = replace(
+            snapshot,
+            tracks=(replace(snapshot.tracks[0], media_types=(video_type,)),),
+        )
+
+    plan = prepare_sync_plan(
+        _host_library((track,), (), (source,)),
+        _ipod_library((_ipod_track(track_id=1, fingerprint="1,2,3"),)),
+        snapshot,
+    )
+
+    assert {item.action for item in plan.items} == {
+        SyncPlanAction.ADD,
+        SyncPlanAction.REMOVE,
+    }
+    assert not plan.duplicate_groups
+
+
+def test_audio_and_video_editions_form_separate_content_groups(tmp_path: Path) -> None:
+    audio, audio_source = _host_track(
+        tmp_path / "audio.mp3", track_id=100, fingerprint="1,2,3"
+    )
+    video, video_source = _host_track(
+        tmp_path / "video.mp4", track_id=101, fingerprint="1,2,3"
+    )
+    video = replace(video, media_types=(MediaType.MUSIC_VIDEO,))
+    video_source = replace(video_source, kind=HostMediaFileKind.VIDEO)
+    snapshot = _ipod_snapshot(1, 2)
+    snapshot = replace(
+        snapshot,
+        tracks=(
+            snapshot.tracks[0],
+            replace(snapshot.tracks[1], media_types=(MediaType.VIDEO,)),
+        ),
+    )
+
+    plan = prepare_sync_plan(
+        _host_library((audio, video), (), (audio_source, video_source)),
+        _ipod_library(
+            tuple(_ipod_track(track_id=i, fingerprint="1,2,3") for i in (1, 2))
+        ),
+        snapshot,
+    )
+
+    assert {(item.host_path, item.ipod_id) for item in plan.items} == {
+        (str(audio_source.path), 1),
+        (str(video_source.path), None),
+        (None, 2),
+    }
+    assert plan.count(SyncPlanAction.UNCHANGED) == 1
+    assert plan.count(SyncPlanAction.ATTENTION) == 2
+    (group,) = plan.duplicate_groups
+    assert tuple(h.host_path for h in group.hosts) == (str(video_source.path),)
+    assert tuple(i.ipod_id for i in group.ipods) == (2,)
+
+
+def test_prior_path_association_survives_a_media_family_change(tmp_path: Path) -> None:
+    path = tmp_path / "edition.mp4"
+    track, source = _host_track(path, track_id=100, fingerprint="1,2,3")
+    plan = prepare_sync_plan(
+        _host_library(
+            (replace(track, media_types=(MediaType.VIDEO,)),),
+            (),
+            (replace(source, kind=HostMediaFileKind.VIDEO),),
+        ),
+        _ipod_library(
+            (_ipod_track(track_id=1, fingerprint="1,2,3", sync=_sync(path)),)
+        ),
+        _ipod_snapshot(1),
+    )
+
+    assert len(plan.items) == 1
+    assert plan.items[0].host_path == str(path)
+    assert plan.items[0].ipod_id == 1
+
+
 @pytest.mark.parametrize("changed", [False, True])
 def test_prior_sync_path_still_matches_when_acoustic_analysis_is_unavailable(
     tmp_path: Path, changed: bool
@@ -662,6 +760,73 @@ def test_photos_use_exact_content_identity_and_sync_facts(tmp_path: Path) -> Non
     assert plan.items[0].host_size_changed is False
 
 
+@pytest.mark.parametrize("converted", (False, True))
+@pytest.mark.parametrize("modified", (2_000, 3_000))
+def test_moved_photo_matches_committed_host_digest(
+    tmp_path: Path, converted: bool, modified: int
+) -> None:
+    path = tmp_path / "moved" / "renamed.jpg"
+    photo, source = _host_photo(
+        path, photo_id=1, fingerprint="a" * 64, modified=modified
+    )
+    image = IPodImageFingerprint(
+        image_id=91,
+        path=DevicePath("Photos/Full Resolution/photo-91.png"),
+        size_bytes=150 if converted else 200,
+        modified_ns=2_000,
+        content_sha256=("b" if converted else "a") * 64,
+        sync=replace(
+            _sync(tmp_path / "original.jpg", size=200, modified=2_000),
+            host_content_sha256="a" * 64,
+            was_transcoded=converted,
+        ),
+    )
+
+    plan = prepare_sync_plan(
+        _host_library((), (photo,), (source,)),
+        _ipod_library((), (image,)),
+        _ipod_snapshot(photo_ids=(91,)),
+    )
+
+    (item,) = plan.items
+    assert item.host_path == str(path)
+    assert item.ipod_id == 91
+    assert item.action is (
+        SyncPlanAction.UNCHANGED if modified == 2_000 else SyncPlanAction.UPDATE
+    )
+    assert not plan.duplicate_groups
+
+
+def test_moved_changed_photo_does_not_match_old_host_digest(tmp_path: Path) -> None:
+    photo, source = _host_photo(
+        tmp_path / "moved.jpg", photo_id=1, fingerprint="c" * 64
+    )
+    image = IPodImageFingerprint(
+        image_id=91,
+        path=DevicePath("Photos/Full Resolution/photo-91.png"),
+        size_bytes=150,
+        modified_ns=2_000,
+        content_sha256="b" * 64,
+        sync=replace(
+            _sync(tmp_path / "original.jpg", size=200, modified=2_000),
+            host_content_sha256="a" * 64,
+            was_transcoded=True,
+        ),
+    )
+
+    plan = prepare_sync_plan(
+        _host_library((), (photo,), (source,)),
+        _ipod_library((), (image,)),
+        _ipod_snapshot(photo_ids=(91,)),
+    )
+
+    assert {item.action for item in plan.items} == {
+        SyncPlanAction.ADD,
+        SyncPlanAction.REMOVE,
+    }
+    assert not plan.duplicate_groups
+
+
 def test_repeated_host_source_is_one_track_but_keeps_playlist_occurrences(
     tmp_path: Path,
 ) -> None:
@@ -1001,8 +1166,10 @@ def test_explicit_matching_tags_still_commit_association_without_payload_change(
     assert not item.audio_payload_changed
 
 
+@pytest.mark.parametrize("converted", (False, True))
 def test_photo_duplicate_choices_use_exact_digest_and_retain_extra_photo(
     tmp_path: Path,
+    converted: bool,
 ) -> None:
     photo, source = _host_photo(
         tmp_path / "photo.jpg", photo_id=1, fingerprint="a" * 64
@@ -1015,7 +1182,14 @@ def test_photo_duplicate_choices_use_exact_digest_and_retain_extra_photo(
                 path=DevicePath(f"Photos/Full Resolution/photo-{item_id}.jpg"),
                 size_bytes=200,
                 modified_ns=2000,
-                content_sha256="a" * 64,
+                content_sha256=("b" if converted else "a") * 64,
+                sync=replace(
+                    _sync(tmp_path / f"old-{item_id}.jpg", size=200, modified=2000),
+                    host_content_sha256="a" * 64,
+                    was_transcoded=True,
+                )
+                if converted
+                else None,
             )
             for item_id in (90, 91)
         ),
@@ -1243,6 +1417,67 @@ def test_unchanged_file_facts_with_changed_audio_payload_need_update(
     assert plan.items[0].action is SyncPlanAction.UPDATE
     assert plan.items[0].basis is SyncPlanBasis.AUDIO_PAYLOAD_CHANGED
     assert plan.items[0].audio_payload_changed is True
+
+
+@pytest.mark.parametrize(
+    "media_type",
+    [
+        MediaType.VIDEO,
+        MediaType.TV_SHOW,
+        MediaType.MUSIC_VIDEO,
+        MediaType.VIDEO_PODCAST,
+        MediaType.AUDIO_VIDEO,
+    ],
+)
+def test_video_audio_match_needs_review_and_changed_visuals_need_replacement(
+    tmp_path: Path, media_type: MediaType
+) -> None:
+    path = tmp_path / "edition.mp4"
+    track, source = _host_track(path, track_id=1, fingerprint="1,2,3")
+    track = replace(track, media_types=(media_type,))
+    source = replace(source, kind=HostMediaFileKind.VIDEO)
+    host = _host_library((track,), (), (source,))
+    ipod_snapshot = _ipod_snapshot(10)
+    ipod_snapshot = replace(
+        ipod_snapshot,
+        tracks=(replace(ipod_snapshot.tracks[0], media_types=(media_type,)),),
+    )
+    ipod = _ipod_library((_ipod_track(track_id=10, fingerprint="1,2,3"),))
+    comparison = prepare_sync_plan(host, ipod, ipod_snapshot)
+    assert all(item.action is SyncPlanAction.ATTENTION for item in comparison.items)
+    (group,) = comparison.duplicate_groups
+    assert group.requires_resolution and group.pairable_ipod_ids(str(path)) == (10,)
+    matched = resolve_sync_duplicates(
+        comparison,
+        (
+            SyncDuplicateResolution(
+                group.group_id, pairs=(SyncDuplicatePair(str(path), 10),)
+            ),
+        ),
+    )
+    assert matched.items[0].audio_payload_changed
+    committed = replace(ipod, tracks=(replace(ipod.tracks[0], sync=_sync(path)),))
+    (cover_update,) = prepare_sync_plan(host, committed, ipod_snapshot).items
+    assert cover_update.action is SyncPlanAction.UPDATE
+    assert cover_update.artwork_changed
+    assert not cover_update.audio_payload_changed
+    covered_snapshot = replace(
+        ipod_snapshot,
+        tracks=(replace(ipod_snapshot.tracks[0], artwork_id=7),),
+    )
+    assert (
+        prepare_sync_plan(host, committed, covered_snapshot).items[0].action
+        is SyncPlanAction.UNCHANGED
+    )
+    changed = replace(
+        host, sources=(replace(source, modified_ns=source.modified_ns + 1),)
+    )
+    (replacement,) = prepare_sync_plan(changed, committed, covered_snapshot).items
+    assert (
+        replacement.action is SyncPlanAction.UPDATE
+        and replacement.audio_payload_changed
+    )
+    assert replacement.basis is SyncPlanBasis.MEDIA_SOURCE_CHANGED
 
 
 def test_sync_selection_defaults_to_correlated_host_media_and_opt_in_removals(

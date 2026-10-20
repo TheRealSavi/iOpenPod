@@ -164,9 +164,13 @@ def run_media_tool(
     low_priority: bool = False,
     check: bool = True,
     input_file: HostPath | None = None,
+    arguments_after_input: tuple[str, ...] = (),
     progress: Callable[[MediaToolProgress], None] | None = None,
 ) -> ToolOutput:
-    """Run a bounded tool, optionally appending one pinned, seekable Host input.
+    """Run a bounded tool, optionally including one pinned, seekable Host input.
+
+    The pinned input follows ``arguments`` and precedes ``arguments_after_input``.
+    A suffix requires ``input_file``.
 
     With ``progress``, stdout must contain FFmpeg's ``-progress pipe:1`` protocol.
     Records are bounded individually and callbacks run on the calling thread during
@@ -183,6 +187,8 @@ def run_media_tool(
         raise ValueError("Media tool output limit must be positive")
     if max_stderr_bytes is not None and max_stderr_bytes <= 0:
         raise ValueError("Media tool diagnostic limit must be positive")
+    if arguments_after_input and input_file is None:
+        raise ValueError("Arguments after input require a pinned input file")
     checkpoint()
     if input_file is not None:
         observed = LocalHostFile.observe(input_file)
@@ -194,7 +200,7 @@ def run_media_tool(
                 path = f"/dev/fd/{inherited_fds[0]}"
             return _run_media_tool(
                 executable,
-                (*arguments, path),
+                (*arguments, path, *arguments_after_input),
                 checkpoint=checkpoint,
                 timeout_seconds=timeout_seconds,
                 max_output_bytes=max_output_bytes,

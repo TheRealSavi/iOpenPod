@@ -27,6 +27,7 @@ from iOpenPod.app.display_text import source_text
 from iOpenPod.app.host_media_fingerprint import (
     FpcalcError,
     FpcalcFingerprinter,
+    FpcalcNoAudioError,
 )
 from iOpenPod.app.host_media_folders import HostMediaFolder, HostMediaType
 from iOpenPod.app.host_media_traversal import walk_linked_folders
@@ -35,6 +36,7 @@ from iOpenPod.app.host_playlists import (
     PLAYLIST_EXTENSIONS,
     parse_host_playlist,
 )
+from iOpenPod.app.media.container_artwork import container_artwork
 from iOpenPod.app.media.content_type import classify_content_type
 from iOpenPod.app.media.fingerprint_codec import decode_fingerprint, encode_fingerprint
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
@@ -78,7 +80,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 14
+_CACHE_VERSION = 15
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
 _MAX_INSPECTION_WORKERS = 8
@@ -162,6 +164,7 @@ _TRACK_METADATA_FIELDS = frozenset(
         "media_type",
         "tag_values",
         "acoustic_fingerprint",
+        "no_audio",
         "metadata_complete",
         "embedded_artwork_available",
         "artwork_content_sha256",
@@ -181,6 +184,7 @@ _FOLDER_ARTWORK_STEMS = (
     "album art",
     "album",
     "artwork",
+    "poster",
 )
 _FOLDER_ARTWORK_EXTENSIONS = (
     ".jpg",
@@ -277,6 +281,13 @@ class HostMediaSource:
     modified_ns: int
     acoustic_fingerprint: str | None = None
     content_sha256: str | None = None
+
+    @property
+    def playlist_id(self) -> int | None:
+        """Use the same source identity as the Playlist projection, independent of title."""
+        if self.kind is HostMediaFileKind.PLAYLIST:
+            return _stable_identity(self.path.path, "playlist")
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,13 +412,12 @@ class HostMediaArtworkLoader:
                     "Run Sync again."
                 )
             if source.kind is HostArtworkKind.EMBEDDED:
-                with observed.open_read() as stream:
-                    payload = _embedded_artwork(stream)
+                payload = embedded_artwork_from_file(observed, checkpoint=lambda: None)
             else:
                 payload = observed.read_bytes(
                     max_bytes=_MAX_ARTWORK_BYTES, checkpoint=lambda: None
                 )
-        except (OSError, StorageError) as error:
+        except (OSError, StorageError, MediaInspectionError, ValueError) as error:
             raise HostMediaTreeChangedError(
                 "The Host artwork source changed or is no longer safe to read. "
                 "Run Sync again."
@@ -624,6 +634,7 @@ class _CachedFileRecord:
 @dataclass(frozen=True, slots=True)
 class _CachedTrackRecord(_CachedFileRecord):
     metadata_complete: bool = False
+    no_audio: bool = False
     embedded_artwork_available: bool = True
     title: str = ""
     artist: str = ""
@@ -679,7 +690,14 @@ class _CachedTrackRecord(_CachedFileRecord):
         folder_artwork: _ArtworkReference | None = None,
     ) -> bool:
         del folder_artwork
-        return self.metadata_complete and _CachedFileRecord.matches(self, observation)
+        return (
+            self.metadata_complete
+            and (
+                self.kind is not HostMediaFileKind.VIDEO
+                or self.embedded_artwork_available
+            )
+            and _CachedFileRecord.matches(self, observation)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1070,7 +1088,7 @@ class HostMediaScanner:
             if (
                 metadata_reusable
                 and isinstance(previous, _CachedTrackRecord)
-                and previous.acoustic_fingerprint
+                and (previous.acoustic_fingerprint or previous.no_audio)
             ):
                 record = _track_with_folder_artwork(previous, None)
                 reused += 1
@@ -1113,6 +1131,9 @@ class HostMediaScanner:
                                     and _CachedFileRecord.matches(previous, observation)
                                     else ""
                                 ),
+                                cached_no_audio=isinstance(previous, _CachedTrackRecord)
+                                and _CachedFileRecord.matches(previous, observation)
+                                and previous.no_audio,
                             )
                         )
                         assert isinstance(record, _CachedTrackRecord)
@@ -2343,6 +2364,7 @@ def _inspect_selected_files(
                         if (
                             not isinstance(record, _CachedTrackRecord)
                             or record.acoustic_fingerprint
+                            or record.no_audio
                         ):
                             publish(observation, record, from_cache=True)
                             continue
@@ -2370,6 +2392,9 @@ def _inspect_selected_files(
                             and _CachedFileRecord.matches(previous, observation)
                             else ""
                         ),
+                        cached_no_audio=isinstance(previous, _CachedTrackRecord)
+                        and _CachedFileRecord.matches(previous, observation)
+                        and previous.no_audio,
                     )
                     pending[future] = observation
                 if not pending:
@@ -2409,6 +2434,7 @@ def _inspect_file(
     folder_artwork: _ArtworkReference | None = None,
     checkpoint: CancellationCheck,
     cached_fingerprint: str = "",
+    cached_no_audio: bool = False,
     inspector: MediaInspector | None = None,
 ) -> _CachedRecord:
     if observation.kind in (
@@ -2436,6 +2462,8 @@ def _inspect_file(
             record = fallback
         if cached_fingerprint:
             return replace(record, acoustic_fingerprint=cached_fingerprint)
+        if cached_no_audio:
+            record = replace(record, no_audio=True)
         return _fingerprint_track(
             observation, record, fingerprinter, checkpoint=checkpoint
         )
@@ -2467,6 +2495,13 @@ def _fingerprint_track(
     *,
     checkpoint: CancellationCheck,
 ) -> _CachedTrackRecord:
+    if record.no_audio:
+        return replace(
+            record,
+            warning=_combine_warnings(
+                record.warning, f"{_FINGERPRINT_WARNING}{FpcalcNoAudioError()}"
+            ),
+        )
     try:
         acoustic_fingerprint = fingerprinter.fingerprint(
             observation.path, checkpoint=checkpoint
@@ -2474,6 +2509,7 @@ def _fingerprint_track(
     except FpcalcError as error:
         return replace(
             record,
+            no_audio=isinstance(error, FpcalcNoAudioError),
             warning=_combine_warnings(record.warning, f"{_FINGERPRINT_WARNING}{error}"),
         )
     return replace(record, acoustic_fingerprint=acoustic_fingerprint)
@@ -2533,10 +2569,36 @@ def _inspect_track(
     bitrate = (
         (preferred.bitrate_bps if preferred else None) or observed.bitrate_bps or 0
     )
+    if not record.embedded_artwork_available:
+        try:
+            payload = container_artwork(
+                _observed_file(observation),
+                metadata=observed,
+                checkpoint=checkpoint,
+            )
+        except (OSError, StorageError, ValueError) as error:
+            record = replace(
+                record,
+                warning=(
+                    ""
+                    if record.artwork is not None
+                    else f"Embedded artwork could not be verified; existing iPod covers will be kept: {error}"
+                ),
+            )
+        else:
+            record = replace(record, embedded_artwork_available=True, warning="")
+            if payload is not None:
+                record = replace(
+                    record,
+                    artwork_kind=HostArtworkKind.EMBEDDED,
+                    artwork_path=observation.path,
+                    artwork_size_bytes=observation.size_bytes,
+                    artwork_modified_ns=observation.modified_ns,
+                    artwork_content_sha256=hashlib.sha256(payload).hexdigest(),
+                )
     return replace(
         record,
         metadata_complete=True,
-        warning="",
         tag_values=values,
         media_type=tagged.media_types[0],
         title=tagged.title,
@@ -2653,6 +2715,21 @@ def embedded_artwork_from_bytes(data: bytes) -> bytes | None:
 def embedded_artwork_from_stream(stream: BinaryIO) -> bytes | None:
     """Read bounded image payloads without loading the enclosing media file."""
     return _embedded_artwork(stream)
+
+
+def embedded_artwork_from_file(
+    source: LocalHostFile, *, checkpoint: CancellationCheck
+) -> bytes | None:
+    """Read native tags first, then cover streams unsupported by Mutagen."""
+    with source.open_read(checkpoint=checkpoint) as stream:
+        try:
+            parsed = cast("_MutagenReader", mutagen).File(stream, easy=False)
+            artwork = _embedded_artwork_observation(parsed)
+        except mutagen.MutagenError:
+            artwork = _EmbeddedArtworkObservation(None, False)
+    if artwork.available:
+        return artwork.payload
+    return container_artwork(source, checkpoint=checkpoint)
 
 
 def _parsed_embedded_artwork(parsed: Any) -> bytes | None:
@@ -3025,7 +3102,7 @@ def _decode_cache_contents(
     version = _integer(document.get("version"), "version")
     if version == 9:
         expected = {"version", "entries", "catalog_sha256"}
-    elif version in (10, 11, 12, 13, _CACHE_VERSION):
+    elif version in (10, 11, 12, 13, 14, _CACHE_VERSION):
         expected = {
             "version",
             "entries",
@@ -3150,6 +3227,7 @@ def _record_document(record: _CachedRecord) -> dict[str, object]:
             if record.acoustic_fingerprint
             else "",
             "metadata_complete": record.metadata_complete,
+            "no_audio": record.no_audio,
             "embedded_artwork_available": record.embedded_artwork_available,
             "artwork_kind": (
                 "" if record.artwork_kind is None else record.artwork_kind.value
@@ -3202,6 +3280,8 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
     if kind in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO):
         # Ignore the unused digest emitted by an earlier v10 development build.
         expected = _TRACK_METADATA_FIELDS
+        if version < 15:
+            expected = expected - {"no_audio"}
         if version < 12:
             expected = expected - {"embedded_artwork_available"}
         if version < 11:
@@ -3225,6 +3305,9 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
                 acoustic_fingerprint = decode_fingerprint(acoustic_fingerprint)
             except ValueError as error:
                 raise ValueError("Cached Acoustic Fingerprint is invalid") from error
+        no_audio = metadata.get("no_audio", False)
+        if not isinstance(no_audio, bool) or (no_audio and acoustic_fingerprint):
+            raise ValueError("Cached Track audio status is invalid")
         artwork_kind_value = _text(metadata["artwork_kind"], "artwork_kind")
         embedded_artwork_available = metadata.get("embedded_artwork_available")
         if version >= 12:
@@ -3286,6 +3369,7 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
                 "sample_rate_hz",
             ),
             acoustic_fingerprint=acoustic_fingerprint,
+            no_audio=no_audio,
             artwork_kind=artwork_kind,
             artwork_path=artwork_path,
             artwork_size_bytes=_integer(

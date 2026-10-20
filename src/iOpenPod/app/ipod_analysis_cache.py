@@ -29,6 +29,7 @@ class IPodAnalysisRecord:
     size_bytes: int
     modified_ns: int
     fingerprint: str
+    no_audio: bool = False
 
     @property
     def key(self) -> tuple[str, int, DevicePath]:
@@ -81,7 +82,7 @@ class IPodAnalysisCache:
         if set(document) != {"version", "identity", "records", "sha256"}:
             raise ValueError("The iPod analysis cache fields are invalid")
         version = document["version"]
-        if isinstance(version, bool) or version != 1:
+        if isinstance(version, bool) or version not in (1, 2):
             raise ValueError("The iPod analysis cache version is unsupported")
         if document["identity"] != self._identity:
             raise ValueError("The iPod analysis cache belongs to a different device")
@@ -93,7 +94,7 @@ class IPodAnalysisCache:
             raise ValueError("The iPod analysis cache records are invalid")
         if hashlib.sha256(_json(rows)).hexdigest() != document["sha256"]:
             raise ValueError("The iPod analysis cache checksum does not match")
-        records = [_decode(row) for row in rows]
+        records = [_decode(row, version=version) for row in rows]
         indexed = {record.key: record for record in records}
         if len(indexed) != len(records):
             raise ValueError("The iPod analysis cache contains duplicate identities")
@@ -128,7 +129,7 @@ class IPodAnalysisCache:
         records = [_encode(record) for record in self._records.values()]
         payload = _json(
             {
-                "version": 1,
+                "version": 2,
                 "identity": self._identity,
                 "records": records,
                 "sha256": hashlib.sha256(_json(records)).hexdigest(),
@@ -149,18 +150,22 @@ def _encode(record: IPodAnalysisRecord) -> list[object]:
         record.size_bytes,
         record.modified_ns,
         encode_fingerprint(record.fingerprint)
-        if record.kind != "image"
+        if record.kind != "image" and record.fingerprint
         else record.fingerprint,
+        record.no_audio,
     ]
 
 
-def _decode(value: object) -> IPodAnalysisRecord:
+def _decode(value: object, *, version: int) -> IPodAnalysisRecord:
     if not isinstance(value, list):
         raise ValueError("The iPod analysis record fields are invalid")
     values = cast("list[object]", value)
-    if len(values) != 6:
+    if len(values) != (6 if version == 1 else 7):
         raise ValueError("The iPod analysis record fields are invalid")
-    kind, identity, path, size, modified, fingerprint = values
+    kind, identity, path, size, modified, fingerprint = values[:6]
+    no_audio = False if version == 1 else values[6]
+    if not isinstance(no_audio, bool):
+        raise ValueError("The iPod analysis audio status is invalid")
     if not isinstance(kind, str) or kind not in ("database", "track", "image"):
         raise ValueError("The iPod analysis record kind is invalid")
     if (
@@ -183,16 +188,21 @@ def _decode(value: object) -> IPodAnalysisRecord:
     ):
         raise ValueError("The iPod analysis file facts are invalid")
     if kind == "image":
+        if no_audio:
+            raise ValueError("Image analysis cannot describe an audio stream")
         if len(fingerprint) != 64 or any(
             c not in "0123456789abcdef" for c in fingerprint
         ):
             raise ValueError("The iPod analysis image digest is invalid")
+    elif no_audio:
+        if fingerprint:
+            raise ValueError("A file without audio cannot have an Acoustic Fingerprint")
     else:
         fingerprint = decode_fingerprint(fingerprint)
         if not fingerprint:
             raise ValueError("The iPod analysis acoustic fingerprint is empty")
     return IPodAnalysisRecord(
-        kind, int(identity), DevicePath(path), size, modified, fingerprint
+        kind, int(identity), DevicePath(path), size, modified, fingerprint, no_audio
     )
 
 

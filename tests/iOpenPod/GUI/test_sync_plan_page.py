@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QTableView,
     QToolButton,
@@ -659,11 +658,19 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         summary = workspace.findChild(QLabel, "syncReviewSummary")
         assert summary is not None
         assert summary.text() == "3 of 3 selected · 1 Playlist change"
-        playlist_preview = workspace.findChild(
-            QPlainTextEdit, "syncPlaylistReviewChanges"
-        )
+        playlist_preview = workspace.findChild(QTableView, "syncPlaylistReviewChanges")
         assert playlist_preview is not None
-        assert playlist_preview.toPlainText() == "Create Playlist: 0 added, 0 removed"
+        playlist_model = playlist_preview.model()
+        assert playlist_model.rowCount() == 1
+        assert [playlist_model.index(0, column).data() for column in range(3)] == [
+            "Playlist",
+            "Create new Playlist",
+            "Create",
+        ]
+        assert (
+            playlist_model.index(0, 0).data(Qt.ItemDataRole.CheckStateRole)
+            is Qt.CheckState.Checked
+        )
         back = workspace.findChild(QPushButton, "backToSyncSelection")
         assert back is not None and back.text() == "Edit Selection"
         back.click()

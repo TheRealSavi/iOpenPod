@@ -61,10 +61,12 @@ from iPodDB.SQLiteDB.schema import (
     LOCATIONS_SCHEMA,
 )
 from iPodDB.SQLiteDB.validation import SQLiteRelationships, validate_databases
+from iPodDB.SQLiteDB.video import apply_video_metadata
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from iPodDB.library.video import VideoPlaybackMetadata
     from iPodDB.library.writing import WriteChecksum
 
 
@@ -347,6 +349,7 @@ def build_sqlite_databases(
     cleared_lyrics: frozenset[int] = frozenset(),
     cleared_chapters: frozenset[int] = frozenset(),
     replaced_tracks: frozenset[int] = frozenset(),
+    video_metadata: Mapping[int, VideoPlaybackMetadata] | None = None,
 ) -> SQLiteDatabaseSet:
     """Project a verified Library Snapshot into all firmware SQLite artifacts."""
 
@@ -366,6 +369,7 @@ def build_sqlite_databases(
                 cleared_lyrics=cleared_lyrics,
                 cleared_chapters=cleared_chapters,
                 replaced_tracks=replaced_tracks,
+                video_metadata=video_metadata or {},
                 connections=connections,
             )
         except sqlite3.DatabaseError as error:
@@ -387,6 +391,7 @@ def _build_sqlite_databases(
     cleared_lyrics: frozenset[int],
     cleared_chapters: frozenset[int],
     replaced_tracks: frozenset[int],
+    video_metadata: Mapping[int, VideoPlaybackMetadata],
     connections: ExitStack,
 ) -> SQLiteDatabaseSet:
     library = connections.enter_context(closing(_new(LIBRARY_SCHEMA)))
@@ -903,6 +908,7 @@ def _build_sqlite_databases(
             "Genius.itdb",
         )
     )
+    apply_video_metadata(library, video_metadata, pids)
     if native.normalize_podcasts:
         # This is explicit Sync intent, applied after retention so old manual UI
         # state cannot undo the selected Release Date policy. Other UI survives.

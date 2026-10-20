@@ -74,7 +74,7 @@ from iOpenPod.app.sync_execution import (
     SyncExecutionResult,
     SyncExecutionStatus,
     SyncExecutor,
-    preview_playlist_sync,
+    review_playlist_sync,
 )
 from iOpenPod.app.sync_plan import prepare_sync_plan
 from iOpenPod.app.synesthesia import AnalysisProgress, TrackAnalysis
@@ -533,6 +533,7 @@ class MainWindow(QMainWindow):
             context.theme_manager,
             self._artwork_provider,
             self._workspaces,
+            stream_preferences=context.stream_preferences,
         )
         self._workspaces.addWidget(self._sync_workspace)
         self._host_drop = HostMediaDropTarget(self._pages, self._can_drop_host_media)
@@ -568,7 +569,7 @@ class MainWindow(QMainWindow):
         )
         self._sync_workspace.selection.changed.connect(self._refresh_playlist_preview)
         self._sync_workspace.playlistReconciliationChanged.connect(
-            self._refresh_sync_availability
+            self._refresh_playlist_preview
         )
         context.library_workspace.changed.connect(self._refresh_sync_availability)
         self._player_position: PlayerPosition | None = None
@@ -1839,13 +1840,19 @@ class MainWindow(QMainWindow):
     def _refresh_playlist_preview(self) -> None:
         host, ipod, active = self._review_host, self._review_ipod, self._review_active
         changes = (
-            preview_playlist_sync(
-                self._sync_workspace.selection.selected_plan, host, ipod, active
+            review_playlist_sync(
+                self._sync_workspace.selection.selected_plan,
+                host,
+                ipod,
+                active,
+                self._sync_workspace.playlist_choices,
             )
             if host is not None and ipod is not None and active is not None
             else ()
         )
-        self._sync_workspace.set_playlist_preview(changes)
+        self._sync_workspace.set_playlist_preview(
+            changes, active.library if active is not None else None
+        )
 
     def _refresh_sync_availability(self) -> None:
         podcasts = self._context.podcast_controller
@@ -1873,6 +1880,7 @@ class MainWindow(QMainWindow):
             ipod,
             active,
             reconcile_playlists=self._sync_workspace.reconcile_playlists,
+            playlist_choices=self._sync_workspace.playlist_choices,
             podcasts=(
                 self._context.podcast_controller.sync_request()
                 if self._context.podcast_controller.snapshot.writable

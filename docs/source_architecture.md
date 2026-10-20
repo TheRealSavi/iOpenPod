@@ -1248,7 +1248,7 @@ the existing explicit review. Other application pages and the Sync Workspace do
 not accept external media drops; internal Library drags retain their behavior.
 
 Optional acoustic analysis does not gate explicit incoming Adds. Previously proven
-Sync paths match before missing acoustic evidence is classified. Helper v5 permits
+Sync paths match before missing acoustic evidence is classified. Helper v7 permits
 an empty fingerprint only alongside committed Sync Details and continues reading
 v1 through v4. Converted Photos retain separate Host and iPod content digests; oversized
 image containers are streamed into bounded PNG stills (ADR-0086). Photo originals
@@ -1272,6 +1272,30 @@ first-probe-order motion-video and audio stream when a container carries multipl
 choices, and scopes FFmpeg options to the selected encoder. Removing extra streams
 forces a prepared output and reports the selected streams as warnings. See ADR-0083.
 
+Select Media also offers an explicit Media Stream Selection for each Host Track.
+Its cancellable background inspection uses Storage's pinned metadata reads without
+whole-file captures. Selected stream facts and indices travel with the reviewed
+Sync Plan and are checked against the captured source during preparation. Explicit
+choices request media preparation when different from the committed choice,
+without changing removal authority. The chooser supports one audio and
+one motion-video stream, optional silence for video, and supported separate subtitle
+and caption tracks. Common text subtitles can convert to dimensioned iPod text;
+mixed text/caption output retains `tx3g` and `c608` sample entries. Durable Host
+preferences survive comparison resets. Library Sync Helper v7 records the applied
+choice digest after commit; older helpers remain readable. Metadata-only updates
+retain that digest. Matching audio suggests a video candidate for explicit Review;
+established Host paths retain their association. Changed video or selected-stream
+source facts require preparation even with equal bounded audio fingerprints. See
+ADR-0157, ADR-0158, and [Choose streams for Sync](media-streams.md).
+
+Text subtitle preparation lives in `app/media/subtitles/`. Pure per-format
+converters recover words from demuxed packets; shared timing combines overlapping
+cues and stages literal UTF-8 text through Storage. Automatic and explicit
+preparation both convert supported text streams, retaining explicit exclusions.
+The output is checked for actual text and timing, not just stream headers.
+Unrecoverable text blocks that item's preparation with a visible explanation;
+recoverable styling and timing losses are reported. See ADR-0160.
+
 Storage owns Host directory enumeration, file observations, and read-only stream
 lifetimes for metadata, Photos, and artwork. Media parsers receive seekable streams
 or captured bytes instead of filenames. Storage pins the observed file and its path
@@ -1281,7 +1305,7 @@ media file or loading it entirely into memory. Storage also launches fingerprint
 processes against validated inputs and owns temporary device-scan captures.
 
 Host scanning, music import, and Sync enrichment share `app/media/tags.py` for native
-tag interpretation and common Track projection. Cache v14 retains recognized tag
+tag interpretation and common Track projection. Cache v15 retains recognized tag
 values, including classification, TV/Podcast details, sorting, and lyrics. Videos
 without useful native tags or timing can use bounded FFprobe metadata inspection
 through a pinned, seekable Storage input without a whole-file capture. Successful
@@ -1339,10 +1363,13 @@ The Application Layer loads the versioned, checksummed
 `iPod_Control/iOpenPod/library-sync-helper.json` through the Active connection and
 indexes it by persistent database Track ID and Photo ID. An entry is reusable only
 while its Device Path, size, and filesystem-aware modification time still match.
-Only missing or stale Track entries are copied through Storage to verified temporary
-Host snapshots for bounded Chromaprint calculation. One serialized Storage capture
-can overlap one acoustic calculation, retaining at most two captures. Cached entries
-need one current stat; content analysis also rechecks facts after the read.
+Only missing or stale Track entries require bounded Chromaprint calculation.
+Native fpcalc reads pinned, seekable device inputs through Storage without a
+whole-file capture. Device decodes are serialized, and connection and source checks
+remain mandatory. Host-only analysis adapters retain the bounded capture fallback.
+Cached entries need one current stat; content analysis also rechecks facts after
+the read. Confirmed absence of audio is reusable under the same file-fact gates;
+other failures remain retryable. See ADR-0156.
 Full-resolution Photo files use
 Storage-calculated SHA-256 fingerprints; Photos with only packed iTHMB
 representations report that exact correlation is unavailable.
@@ -1356,14 +1383,16 @@ recovery. A separate iPod Analysis Cache in Host storage retains completed analy
 for repeated pre-Review scans, including on read-only devices. It is bound to device
 and Volume identities, validates current file facts, checkpoints on cancellation,
 and contains no Sync Details. Host Photo records carry matching SHA-256 evidence in
-Host Media Scan Cache v14. Versions 9 through 13 migrate while retaining reusable
-Track and Photo records. Cached Playlist interpretations are discarded so even
+Host Media Scan Cache v15. Versions 9 through 14 migrate while retaining reusable
+Track and Photo records. Pre-v14 Playlist interpretations are discarded so even
 unchanged Playlists are reparsed once and previously excluded network references
 and valid POSIX names become available without editing the source. See ADR-0083 and
 ADR-0136. Older no-cover records
 are reinspected once to distinguish absent artwork from previously unrecorded
 decoding failures. Long Acoustic Fingerprints use a lossless bounded binary
-encoding in Host cache v14 and helper v5; readers retain prior decimal support.
+encoding in Host cache v15 and helper v7; readers retain prior decimal support.
+Host cache v15 and iPod Analysis Cache v2 also retain confirmed no-audio results,
+independent of metadata completion and without inventing matching evidence.
 The Host Media Scan Cache, iPod Analysis Cache, and Library Sync Helper have no
 aggregate encoded-byte or decoded-fingerprint-byte ceiling. Their checksums,
 record-count limits, and individual fingerprint validation remain enforced. These
@@ -1374,7 +1403,7 @@ memory by reusing unchanged device records without recapturing media. Because v3
 does not contain a committed iPod Track tag or artwork baseline, migration does not
 stamp the current Track as that baseline; until a successful Sync records v4
 provenance, Sync conservatively compares current Host and iPod Track semantics.
-The next writable helper publication writes v5, retaining existing v4 provenance.
+The next writable helper publication writes v7, retaining existing v4 provenance.
 None of these caches is part of the common Library Snapshot or grants
 permission to mutate a device. See ADR-0065 and ADR-0123.
 
@@ -1465,6 +1494,26 @@ changes into the existing issued Library Review and ordered Storage Transaction.
 The Library Sync Helper is updated only after verified publication. Device writes
 remain sequential; the USB bus is not used for parallel transcoding. See ADR-0066,
 ADR-0067, ADR-0070, ADR-0076, and ADR-0119.
+
+Ordinary Library saves that remove Tracks also prune an existing Library Sync Helper
+after verified commit, preserving valid surviving evidence and Sync Details without
+creating new history. A missing helper stays absent; a helper refresh failure
+reports a warning about the saved Library. When the same save retags retained media,
+pruning accompanies the existing transactional helper update so its recovery
+fingerprint remains valid. Preparation and cancellation before publication leave the
+helper unchanged.
+
+Playlist Review exposes individual selections, iPod targets, name changes,
+membership counts, ordering changes and skipped reasons. The pure Playlist Sync
+planner uses successful associations before unique case-insensitive names; explicit
+choices can select a supported existing target or create a new Playlist. Competing
+selected claims cannot update the same target. Track selection remains independent.
+Changed sources block only affected selected Playlists. Library Sync Helper v7 adds
+one-to-one pairs of path-derived Host Playlist IDs and persistent iPod Playlist IDs,
+while retaining v1–v6 readability. Verified writer identity mappings resolve new
+Playlist IDs before helper publication. Unchanged accepted matches use the existing
+verified no-op Library path. Failed and skipped changes do not advance matches.
+See ADR-0159.
 
 During execution, the progress page exposes safe cancellation. Completion replaces
 the progress steps with a dedicated result screen showing the actual Sync outcome,

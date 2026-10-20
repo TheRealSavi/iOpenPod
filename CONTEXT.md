@@ -207,7 +207,10 @@ helper remains matching evidence rather than Library or mutation authority. The
 pre-Review scan does not persist it; successful Sync publishes its new provenance
 after the verified Library commit. A separate, device-bound iPod Analysis Cache on
 the Host retains completed analysis across pre-Review scans and cancellation,
-including for read-only devices; it contains no Sync Details. See ADR-0123.
+including for read-only devices; it contains no Sync Details. Native device
+fingerprinting now uses pinned, seekable Storage inputs without whole-file
+captures. Both Host and iPod analysis caches retain confirmed absence of audio
+while retrying other failures. See ADR-0123 and ADR-0156.
 The Application Layer then
 prepares an immutable Sync Plan for Tracks and full-resolution Photos. Proven Host
 path relationships are considered before unique content identities; current Host
@@ -250,7 +253,11 @@ Library Draft. Failed independent items are reported and excluded while successf
 items can still commit. The verified Library and media publish through Storage;
 successful Sync Details follow the commit. Cancellation and interrupted publication
 have explicit cleanup/recovery results. See ADR-0065 through ADR-0067, ADR-0070,
-and ADR-0076.
+and ADR-0076. Playlist Review has individual choices, visible iPod targets, and
+reasons for skipped updates. Users can choose an existing regular Playlist or
+create a new one. Successful source-to-iPod associations survive title and
+membership changes; skipping a Playlist leaves Track selection unchanged.
+See ADR-0159.
 Interrupted Sync recovery is a choice for the selected iPod: restore the previous
 Library or explicitly keep current contents after a warning about incomplete
 changes. Recovery and cleanup are discovered from device journals, never persisted
@@ -263,7 +270,7 @@ read-only, and foreign or declined journals remain untouched. Only actual cleanu
 failures require a cleanup warning and retry. See ADR-0089 and ADR-0093.
 Host tag interpretation now shares native ID3, MP4, Vorbis/APE, ASF, and FFprobe
 aliases across scanning and import. Media classification, TV and Podcast fields,
-lyrics, sorting, advisory, and normalization metadata survive Scan Cache v14.
+lyrics, sorting, advisory, and normalization metadata survive Scan Cache v15.
 Embedded artwork availability is retained separately from absence; older cached
 no-cover records are reinspected once.
 Migrating cache versions 9 through 13 retains reusable Track and Photo records but
@@ -278,7 +285,7 @@ See [Host tag coverage](docs/host-media-tags.md) and ADR-0099 for precedence and
 
 Optional acoustic analysis no longer gates readable Host media or explicit Adds.
 Sync checks media tools only for incoming Tracks and preserves committed Host-path
-provenance independently of Acoustic Fingerprints in Library Sync Helper v5.
+provenance independently of Acoustic Fingerprints in Library Sync Helper v7.
 Embedded artwork uses seekable reads, including for large audiobooks. Successful
 FFprobe output remains usable with incidental metadata diagnostics. Preparation
 reports all concurrent Tracks with separate phase progress measured from FFmpeg's
@@ -551,6 +558,10 @@ invalid incoming Episode metadata is reported by title and show and skipped befo
 the shared Library build. Independent Episodes can still Sync, and failed
 replacements keep their existing Tracks. Blocking Library errors do not generate
 secondary missing-lyrics errors, and cover retries do not inflate diagnostic counts.
+Podcast downloads and media preparation now overlap across up to four Episodes,
+within the Sync worker limit. Each active Episode has independent transfer or
+codec progress, while destination allocation and device publication remain
+ordered. Cancellation joins active work before releasing Host captures. See ADR-0087.
 Incoming Episodes prefer embedded covers from their original downloads, then
 publisher Episode covers, with show covers as the final fallback. Covers use shared
 ArtworkDB and thumbnail preparation; Podcast Sync also fills missing covers on
@@ -632,11 +643,18 @@ tags independently of Library classification. Inspection has cancellation, proce
 and output limits, and content fingerprints. Music import applies a bounded audio
 compatibility policy and maps observed facts into native codec fields. The same
 reviewed transaction stages the song, thumbnails, ArtworkDB, and iTunesDB before
-publication. Sync preparation accepts Host-native path spelling, chooses marked-
-default or first-probe-order streams from multi-stream video, and scopes encoder
-options to the selected FFmpeg encoder while reporting those choices as warnings.
-Exact gapless analysis, conversion, the Sync engine, video import, and document
-inspection such as PDF/EPUB remain future work. See ADR-0031, ADR-0032, and ADR-0083.
+publication. Sync preparation accepts Host-native path spelling and prepares media
+for the Active iPod. Select Media offers per-Track audio, video, subtitle, and
+caption choices; automatic selection uses marked-default or first-probe-order
+audio/video streams. Choices are remembered for each Host path across scans and
+Syncs. Changed choices request replacement; successfully applied choices remain
+In sync. Changed video sources are prepared again, and audio alone cannot silently
+establish a new video association. See [Choose streams for Sync](docs/media-streams.md),
+ADR-0083, ADR-0157, and ADR-0158.
+Supported embedded text subtitles are retained automatically or by explicit choice.
+Preparation preserves readable words when styling cannot survive and reports
+unrecoverable subtitles instead of creating empty tracks. See ADR-0160.
+Exact gapless analysis and document inspection such as PDF/EPUB remain future work.
 
 Playback is an Application Layer workflow behind a typed, replaceable Playback
 Backend. `PlaybackController` owns runtime Queue, History, current Track, and

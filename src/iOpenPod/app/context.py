@@ -1,6 +1,6 @@
 """Application dependency composition."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PySide6.QtWidgets import QApplication
 
@@ -23,6 +23,7 @@ from iOpenPod.app.library_sync_helper import IPodMediaScanner
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.library_write_controller import LibraryWriteController
 from iOpenPod.app.lyrics_controller import LyricsController
+from iOpenPod.app.media_stream_preferences import MediaStreamPreferences
 from iOpenPod.app.models.album_list_model import AlbumListModel
 from iOpenPod.app.models.collection_list_model import (
     CollectionKind,
@@ -76,6 +77,9 @@ class AppContext:
     theme_manager: ThemeManager
     i18n_manager: I18nManager
     find_media_tool: MediaToolFinder
+    stream_preferences: MediaStreamPreferences = field(
+        default_factory=MediaStreamPreferences
+    )
 
     def __post_init__(self) -> None:
         self.library_workspace.tracksChanged.connect(self._workspace_tracks_changed)
@@ -213,6 +217,9 @@ class AppContext:
         )
 
         return cls(
+            stream_preferences=MediaStreamPreferences(
+                storage.host_config_file("iOpenPod", "media-stream-selections.json")
+            ),
             device_coordinator=device_coordinator,
             device_controller=device_controller,
             artwork_controller=artwork_controller,

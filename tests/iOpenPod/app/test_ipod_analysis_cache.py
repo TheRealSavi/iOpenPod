@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -129,3 +130,42 @@ def test_analysis_cache_rejects_excessive_json_nesting_as_invalid_data(
     file.replace_bytes(b"[" * 10_000 + b"0" + b"]" * 10_000)
     with pytest.raises(ValueError, match="nested too deeply"):
         IPodAnalysisCache(file, "a" * 64).load()
+
+
+def test_no_audio_result_round_trips_without_creating_a_fingerprint(
+    tmp_path: Path,
+) -> None:
+    file = AtomicHostFile(tmp_path / "cache.json")
+    record = replace(_record(1), fingerprint="", no_audio=True)
+    cache = IPodAnalysisCache(file, "a" * 64)
+    cache.remember(record)
+    cache.save(force=True)
+    restored = IPodAnalysisCache(file, "a" * 64)
+    restored.load()
+    assert restored.get(*record.key) == record
+
+
+def test_v1_analysis_cache_retains_completed_fingerprints(tmp_path: Path) -> None:
+    file = AtomicHostFile(tmp_path / "cache.json")
+    cache = IPodAnalysisCache(file, "a" * 64)
+    record = _record(1)
+    cache.remember(record)
+    cache.save(force=True)
+    payload = file.read_bytes()
+    assert payload is not None
+    document = json.loads(payload)
+    document["version"] = 1
+    document["records"][0].pop()
+    document["sha256"] = hashlib.sha256(
+        json.dumps(
+            document["records"],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    file.replace_bytes(json.dumps(document).encode())
+    restored = IPodAnalysisCache(file, "a" * 64)
+    restored.load()
+    assert restored.get(*record.key) == record

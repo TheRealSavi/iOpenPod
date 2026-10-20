@@ -67,6 +67,7 @@ from iOpenPod.app.media.transcoding import (
     VideoEncoding,
 )
 from iOpenPod.app.models.device import ActiveIPod
+from iOpenPod.app.playlist_sync import PlaylistAssociation, PlaylistSyncChoice
 from iOpenPod.app.services import library_resources
 from iOpenPod.app.services.device_coordinator import SyncCleanupCompletedError
 from iOpenPod.app.sync_execution import (
@@ -79,6 +80,7 @@ from iOpenPod.app.sync_execution import (
     _PreparedTrack,  # pyright: ignore[reportPrivateUsage]
     _song,  # pyright: ignore[reportPrivateUsage]
     preview_playlist_sync,
+    review_playlist_sync,
 )
 from iOpenPod.app.sync_plan import (
     SyncPlan,
@@ -393,6 +395,27 @@ def test_large_photo_sync_preserves_host_original_and_matches_again_after_reload
             next(item for item in plan.items if item.host_path == str(path)).action
             is SyncPlanAction.UNCHANGED
         )
+
+        moved_directory = tmp_path / "moved"
+        moved_directory.mkdir()
+        moved_path = path.rename(moved_directory / "renamed.png")
+        pending = scanner.scan(
+            (create_host_media_folder(moved_directory),), checkpoint=lambda: None
+        )
+        moved_host = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+        assert not moved_host.issues
+        moved_plan = prepare_sync_plan(moved_host, reloaded, result.active.library)
+        (matched,) = tuple(
+            item for item in moved_plan.items if item.host_path == str(moved_path)
+        )
+        assert matched.ipod_id == synced.image_id
+        assert matched.action is SyncPlanAction.UNCHANGED
+        assert moved_plan.count(SyncPlanAction.ADD) == 0
+        assert not any(
+            item.action is SyncPlanAction.REMOVE and item.ipod_id == synced.image_id
+            for item in moved_plan.items
+        )
+        assert (device.root / str(synced.path)).read_bytes() == stored
     finally:
         device.coordinator.close()
 
@@ -3128,5 +3151,206 @@ def test_library_retry_reports_each_track_error_once_with_readable_context(
         assert "Album" in failures[0].detail
         assert failures[0].artifact
         device.assert_original()
+    finally:
+        device.coordinator.close()
+
+
+def _playlist_host(tmp_path: Path, *names: str) -> HostMediaLibrary:
+    records: list[_CachedPlaylistRecord] = []
+    for index, name in enumerate(names):
+        path = tmp_path / f"playlist-{index}.m3u"
+        path.write_text(f"#EXTM3U\n#PLAYLIST:{name}\n", encoding="utf-8")
+        facts = LocalHostFile.observe(HostPath(path))
+        records.append(
+            _CachedPlaylistRecord(
+                facts.path,
+                HostMediaFileKind.PLAYLIST,
+                facts.size_bytes,
+                facts.modified_ns,
+                title=name,
+            )
+        )
+    return _build_library(tuple(records), (), HostMediaCacheStats())
+
+
+def test_playlist_saved_match_survives_helper_reload_and_source_title_change(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _playlist_host(tmp_path, "Road trip")
+        first = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            _request(device, host), lambda _: None, Event()
+        )
+        assert first.status is SyncExecutionStatus.SUCCESS, first.issues
+        assert first.active is not None and first.helper is not None
+        identity = next(
+            item.playlist_id
+            for item in first.active.library.playlists
+            if item.name == "Road trip"
+        )
+        host_id = host.snapshot.playlists[0].playlist_id
+        assert first.helper.playlist_associations == (
+            PlaylistAssociation(host_id, identity),
+        )
+        # Read the serialized helper anew, rather than reusing the result object.
+        reloaded = device.coordinator.scan_ipod_media(
+            first.active, lambda _: None, Event()
+        )
+        assert reloaded.playlist_associations == first.helper.playlist_associations
+        renamed = _playlist_host(tmp_path, "Holiday")
+        assert renamed.snapshot.playlists[0].playlist_id == host_id
+        plan = SyncPlan(())
+        rows = review_playlist_sync(plan, renamed, reloaded, device.active)
+        assert rows[0].target_id == identity
+        assert rows[0].change is not None and rows[0].change.renamed
+        second = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            SyncExecutionRequest(plan, renamed, reloaded, device.active, 1, 1),
+            lambda _: None,
+            Event(),
+        )
+        assert second.status is SyncExecutionStatus.SUCCESS, second.issues
+        assert second.active is not None and second.helper is not None
+        assert (
+            next(
+                item
+                for item in second.active.library.playlists
+                if item.playlist_id == identity
+            ).name
+            == "Holiday"
+        )
+        assert len(second.active.library.playlists) == len(
+            first.active.library.playlists
+        )
+        assert second.helper.playlist_associations == first.helper.playlist_associations
+        again = review_playlist_sync(plan, renamed, second.helper, second.active)
+        assert not again[0].actionable
+    finally:
+        device.coordinator.close()
+
+
+def test_playlist_explicit_unchanged_match_only_publishes_helper(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        saved = device.save(
+            device.prepare(
+                replace(
+                    device.active.library,
+                    playlists=(
+                        *device.active.library.playlists,
+                        Playlist(-1, "Favorites"),
+                    ),
+                )
+            )
+        )
+        assert saved.active is not None
+        target = next(
+            item for item in saved.active.library.playlists if item.name == "Favorites"
+        )
+        host = _playlist_host(tmp_path, "Favorites")
+        choice = PlaylistSyncChoice(
+            host.snapshot.playlists[0].playlist_id,
+            automatic=False,
+            target_id=target.playlist_id,
+        )
+        request = replace(_request(device, host), playlist_choices=(choice,))
+        before = {path: (device.root / path).read_bytes() for path in device.original}
+        rows = review_playlist_sync(
+            request.plan, host, request.ipod, request.source, (choice,)
+        )
+        assert rows[0].actionable and rows[0].change is None
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.helper is not None
+        assert result.helper.playlist_associations == (
+            PlaylistAssociation(choice.host_playlist_id, target.playlist_id),
+        )
+        assert result.playlist_change_count == 0
+        assert {path: (device.root / path).read_bytes() for path in before} == before
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("unchecked", [False, True])
+def test_playlist_changed_source_does_not_skip_independent_playlist(
+    tmp_path: Path, unchecked: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _playlist_host(tmp_path, "Changed", "Ready")
+        changed_id = host.snapshot.playlists[0].playlist_id
+        request = replace(
+            _request(device, host),
+            playlist_choices=(PlaylistSyncChoice(changed_id, included=not unchecked),),
+        )
+        Path(host.sources[0].path.path).write_text(
+            "changed after Review", encoding="utf-8"
+        )
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is (
+            SyncExecutionStatus.SUCCESS if unchecked else SyncExecutionStatus.PARTIAL
+        ), result.issues
+        assert result.active is not None and result.helper is not None
+        assert result.playlist_change_count == 1
+        assert any(item.name == "Ready" for item in result.active.library.playlists)
+        assert not any(
+            item.name == "Changed" for item in result.active.library.playlists
+        )
+        assert all(
+            item.host_playlist_id != changed_id
+            for item in result.helper.playlist_associations
+        )
+        assert (
+            any(issue.code == "sync.playlist_source_changed" for issue in result.issues)
+            is not unchecked
+        )
+    finally:
+        device.coordinator.close()
+
+
+def test_changed_source_cannot_enable_a_previously_conflicting_playlist(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        saved = device.save(
+            device.prepare(
+                replace(
+                    device.active.library,
+                    playlists=(*device.active.library.playlists, Playlist(-1, "Keep")),
+                )
+            )
+        )
+        assert saved.active is not None
+        target = next(
+            item for item in saved.active.library.playlists if item.name == "Keep"
+        )
+        host = _playlist_host(tmp_path, "A", "B")
+        choices = tuple(
+            PlaylistSyncChoice(
+                item.playlist_id, automatic=False, target_id=target.playlist_id
+            )
+            for item in host.snapshot.playlists
+        )
+        request = replace(_request(device, host), playlist_choices=choices)
+        assert not any(
+            row.actionable
+            for row in review_playlist_sync(
+                request.plan, host, request.ipod, request.source, choices
+            )
+        )
+        Path(host.sources[0].path.path).write_text("Changed", encoding="utf-8")
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.playlist_change_count == 0
+        assert device.active.library.playlists == saved.active.library.playlists
+        assert result.helper is None or not result.helper.playlist_associations
     finally:
         device.coordinator.close()

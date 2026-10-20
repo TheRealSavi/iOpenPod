@@ -12,12 +12,14 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from threading import Event
+from time import time_ns
 from typing import TYPE_CHECKING, Protocol, cast
 
 from iOpenPod.app.display_text import source_text
 from iOpenPod.app.host_media_fingerprint import (
     FpcalcError,
     FpcalcFingerprinter,
+    FpcalcNoAudioError,
     FpcalcUnavailableError,
     normalize_fpcalc_fingerprint,
 )
@@ -27,16 +29,19 @@ from iOpenPod.app.ipod_analysis_cache import (
     ipod_analysis_cache_identity,
 )
 from iOpenPod.app.media.fingerprint_codec import decode_fingerprint, encode_fingerprint
+from iOpenPod.app.playlist_sync import PlaylistAssociation, playlist_sync_target
 from iOpenPod.app.sync_track_details import track_tag_sha256
 from iPodDB.library import PhotoRepresentationKind
 from storage import (
     DeviceEntry,
     DeviceEntryKind,
     DevicePath,
+    FileContent,
     FileFingerprint,
     FilesystemSessionError,
     HostPath,
     StorageError,
+    TransactionWrite,
 )
 from storage.device_capture import capture_device_file
 
@@ -45,13 +50,13 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from iPodDB.library import LibrarySnapshot, Photo, Track
-    from storage import AtomicHostFile, FilesystemSession
+    from storage import AtomicHostFile, FilesystemSession, StorageTransaction
 
 
 LIBRARY_SYNC_HELPER_PATH = DevicePath("iPod_Control/iOpenPod/library-sync-helper.json")
 _IPOD_CONTROL_PATH = DevicePath("iPod_Control")
 _PHOTOS_PATH = DevicePath("Photos")
-_FORMAT_VERSION = 5
+_FORMAT_VERSION = 7
 _MAX_RECORDS = 250_000
 
 
@@ -99,6 +104,7 @@ class SyncDetails:
     ipod_baseline_pending: bool = False
     host_tag_sha256: str | None = None
     file_tag_policy: str | None = None
+    stream_selection_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not self.last_synced_at.strip():
@@ -115,6 +121,10 @@ class SyncDetails:
             _require_sha256(self.ipod_tag_sha256, "iPod Track tag fingerprint")
         if self.host_tag_sha256 is not None:
             _require_sha256(self.host_tag_sha256, "Host Track tag fingerprint")
+        if self.stream_selection_sha256 is not None:
+            _require_sha256(
+                self.stream_selection_sha256, "Media Stream Selection fingerprint"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +193,7 @@ class IPodMediaLibrary:
     cache: IPodMediaCacheStats
     helper_revision: FileFingerprint | None
     persisted: bool
+    playlist_associations: tuple[PlaylistAssociation, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +215,107 @@ class SyncedImage:
     sync: SyncDetails
 
 
+def retain_retagged_sync_details(
+    session: FilesystemSession,
+    transaction: StorageTransaction,
+    original: LibrarySnapshot,
+    updated: LibrarySnapshot,
+    track_ids: tuple[int, ...],
+    *,
+    library_sha256: str,
+) -> StorageTransaction:
+    """Carry established associations through verified retained-file tag edits.
+
+    The caller supplies only retained-file retag identities, never replacements.
+    Captured write preconditions must still match the helper's old identity and
+    file facts. Publish refreshed facts with the media in the same recoverable
+    transaction; Host Sync baselines and acoustic evidence remain untouched.
+    """
+    before = {track.track_id: track for track in original.tracks}
+    after = {track.track_id: track for track in updated.tracks}
+    writes = {write.path: write for write in transaction.writes}
+    eligible: dict[tuple[str, int], tuple[Track, TransactionWrite]] = {}
+    for identity in track_ids:
+        prior, current = before.get(identity), after.get(identity)
+        if (
+            prior is None
+            or current is None
+            or _track_key_for_track(prior) != _track_key_for_track(current)
+            or prior.metadata.location != current.metadata.location
+        ):
+            continue
+        write = writes.get(_track_path(prior))
+        if write is not None and write.expected is not None:
+            eligible[_track_key_for_track(prior)] = (current, write)
+    if not eligible:
+        return transaction
+    loaded, issue = _load_helper(session)
+    if issue is not None or not loaded.writable:
+        raise LibrarySyncHelperError(
+            "The existing Sync helper is invalid and was preserved. Recover it "
+            "before saving media tag edits."
+        )
+    if loaded.revision is None:
+        return transaction
+    # FAT represents modification times in two-second increments. Storage verifies
+    # this timestamp along with content, including after interrupted-write recovery.
+    modified_ns = time_ns() // 2_000_000_000 * 2_000_000_000
+    refreshed: set[DevicePath] = set()
+    tracks: list[IPodTrackFingerprint] = []
+    for record in loaded.tracks:
+        candidate = eligible.get(_track_key(record))
+        if candidate is not None and record.sync is not None:
+            track, write = candidate
+            expected = write.expected
+            assert expected is not None
+            if (
+                record.path == write.path
+                and record.size_bytes == expected.size
+                and session.modified_time_matches(
+                    record.modified_ns, expected.modified_ns
+                )
+            ):
+                record = replace(
+                    record,
+                    track_id=track.track_id,
+                    size_bytes=write.content.size,
+                    modified_ns=modified_ns,
+                )
+                refreshed.add(write.path)
+        tracks.append(record)
+    if not refreshed:
+        return transaction
+    # A save can retag retained Tracks and remove others together. Keep helper
+    # pruning in this same transaction so later publication cannot invalidate
+    # the helper fingerprint needed for recovery or durability verification.
+    retained_keys = {_track_key_for_track(track) for track in updated.tracks}
+    tracks = [record for record in tracks if _track_key(record) in retained_keys]
+    payload = _encode_helper(
+        tuple(tracks),
+        loaded.images,
+        library_sha256,
+        updated_at=datetime.now(UTC).isoformat(),
+        playlists=loaded.playlists,
+    )
+    return replace(
+        transaction,
+        writes=(
+            *(
+                replace(write, modified_ns=modified_ns)
+                if write.path in refreshed
+                else write
+                for write in transaction.writes
+            ),
+            TransactionWrite(
+                LIBRARY_SYNC_HELPER_PATH,
+                payload,
+                FileContent(len(payload), hashlib.sha256(payload).hexdigest()),
+                loaded.revision,
+            ),
+        ),
+    )
+
+
 def publish_sync_helper(
     session: FilesystemSession,
     library: LibrarySnapshot,
@@ -212,6 +324,7 @@ def publish_sync_helper(
     synced_images: tuple[SyncedImage, ...] = (),
     *,
     library_sha256: str,
+    playlists: tuple[PlaylistAssociation, ...] = (),
 ) -> IPodMediaLibrary:
     """Publish matching evidence only after the caller's Library commit succeeds.
 
@@ -380,8 +493,31 @@ def publish_sync_helper(
                         ),
                     )
                 )
+    valid_targets = {
+        item.playlist_id for item in library.playlists if playlist_sync_target(item)
+    }
+    if any(item.ipod_playlist_id not in valid_targets for item in playlists):
+        raise LibrarySyncHelperError(
+            "A successful Playlist match is absent from the committed Library"
+        )
+    _validate_playlist_associations(playlists)
+    host_claims = {item.host_playlist_id for item in playlists}
+    target_claims = {item.ipod_playlist_id for item in playlists}
+    retained_playlists = tuple(
+        item
+        for item in loaded.playlists
+        if item.ipod_playlist_id in valid_targets
+        and item.host_playlist_id not in host_claims
+        and item.ipod_playlist_id not in target_claims
+    )
+    associations = (*retained_playlists, *playlists)
     revision = _save_helper(
-        session, tuple(tracks), tuple(images), library_sha256, loaded
+        session,
+        tuple(tracks),
+        tuple(images),
+        library_sha256,
+        loaded,
+        playlists=associations,
     )
     flush = session.flush()
     if not flush.complete:
@@ -402,6 +538,7 @@ def publish_sync_helper(
         IPodMediaCacheStats(reused=len(tracks) + len(images)),
         revision,
         True,
+        associations,
     )
 
 
@@ -427,6 +564,7 @@ class _LoadedHelper:
     version: int = _FORMAT_VERSION
     revision: FileFingerprint | None = None
     writable: bool = True
+    playlists: tuple[PlaylistAssociation, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -616,6 +754,9 @@ class IPodMediaScanner:
                     )
                     label = source_text("Continuing without acoustic matching…")
                 else:
+                    if isinstance(error, FpcalcNoAudioError):
+                        reused += int(outcome.reused)
+                        fingerprinted += int(not outcome.reused)
                     issues.append(
                         IPodMediaScanIssue(f"Track {track.track_id}", str(error))
                     )
@@ -788,6 +929,7 @@ class IPodMediaScanner:
             IPodMediaCacheStats(reused, fingerprinted),
             helper_revision,
             persisted,
+            loaded.playlists,
         )
 
     def _track_outcomes(
@@ -799,10 +941,11 @@ class IPodMediaScanner:
         checkpoint: CancellationCheck,
         remember: Callable[[IPodAnalysisRecord], None],
     ) -> Generator[_TrackOutcome]:
-        """Keep device reads serial while decoding the previous private capture."""
+        """Read native decoder inputs directly; retain capture fallback for adapters."""
         pending: _PendingTrack | None = None
         stopped = Event()
         fingerprints: dict[tuple[DevicePath, int, int], str] = {}
+        no_audio: set[tuple[DevicePath, int, int]] = set()
         unavailable = False
         fingerprinter = self._fingerprinter
         prepared_fingerprinter = False
@@ -818,7 +961,24 @@ class IPodMediaScanner:
         def finish(item: _PendingTrack) -> _TrackOutcome:
             nonlocal unavailable
             try:
-                acoustic = item.future.result()
+                try:
+                    acoustic = item.future.result()
+                except FpcalcNoAudioError as error:
+                    _verify_file_unchanged(session, item.path, item.entry)
+                    kind, identity = _track_key_for_track(item.track)
+                    remember(
+                        IPodAnalysisRecord(
+                            kind,
+                            identity,
+                            item.path,
+                            item.entry.size,
+                            item.entry.modified_ns,
+                            "",
+                            no_audio=True,
+                        )
+                    )
+                    no_audio.add((item.path, item.entry.size, item.entry.modified_ns))
+                    return _TrackOutcome(item.index, item.track, item.path, error=error)
                 _verify_file_unchanged(session, item.path, item.entry)
                 record = _analyzed_track(
                     item.track, item.path, item.entry, acoustic, item.previous
@@ -842,7 +1002,7 @@ class IPodMediaScanner:
                 try:
                     path = _track_path(track)
                     key = _track_key_for_track(track)
-                    previous = committed.get(key)
+                    previous: IPodTrackFingerprint | None = committed.get(key)
                     while True:
                         checkpoint()
                         entry = _regular_file(session, path)
@@ -852,13 +1012,21 @@ class IPodMediaScanner:
                         acoustic = fingerprints.get(
                             (path, entry.size, entry.modified_ns)
                         )
+                        without_audio = (
+                            path,
+                            entry.size,
+                            entry.modified_ns,
+                        ) in no_audio
                         cached = cache.get(*key, path) if cache is not None else None
                         if (
                             acoustic is None
                             and cached is not None
                             and _analysis_matches(session, cached, entry)
                         ):
-                            acoustic = cached.fingerprint
+                            if cached.no_audio:
+                                without_audio = True
+                            else:
+                                acoustic = cached.fingerprint
                         same_pending_file = pending is not None and (
                             pending.path,
                             pending.entry.size,
@@ -867,6 +1035,7 @@ class IPodMediaScanner:
                         if pending is not None and (
                             matches_committed
                             or acoustic is not None
+                            or without_audio
                             or same_pending_file
                         ):
                             item, pending = pending, None
@@ -887,6 +1056,11 @@ class IPodMediaScanner:
                                 database_track_id=_database_track_id(track),
                             ),
                             reused=True,
+                        )
+                        continue
+                    if without_audio:
+                        yield _TrackOutcome(
+                            index, track, path, error=FpcalcNoAudioError(), reused=True
                         )
                         continue
                     if acoustic is not None:
@@ -910,6 +1084,24 @@ class IPodMediaScanner:
                         if isinstance(fingerprinter, FpcalcFingerprinter):
                             fingerprinter = fingerprinter.for_scan()
                         prepared_fingerprinter = True
+                    if isinstance(fingerprinter, FpcalcFingerprinter):
+                        # Native decoders seek within the device file. Finish the
+                        # previous read before starting another on the same device.
+                        if pending is not None:
+                            item, pending = pending, None
+                            yield finish(item)
+                        if unavailable:
+                            continue
+                        future = executor.submit(
+                            fingerprinter.fingerprint_device,
+                            session,
+                            path,
+                            checkpoint=decode_checkpoint,
+                        )
+                        pending = _PendingTrack(
+                            index, track, path, entry, previous, ExitStack(), future
+                        )
+                        continue
                     with ExitStack() as capture:
                         captured = capture.enter_context(
                             capture_device_file(
@@ -1031,9 +1223,14 @@ def _save_helper(
     images: tuple[IPodImageFingerprint, ...],
     library_sha256: str,
     loaded: _LoadedHelper,
+    *,
+    playlists: tuple[PlaylistAssociation, ...] | None = None,
 ) -> FileFingerprint:
+    if playlists is None:
+        playlists = loaded.playlists
     unchanged = (
         tracks == loaded.tracks
+        and playlists == loaded.playlists
         and images == loaded.images
         and library_sha256 == loaded.library_sha256
         and loaded.version == _FORMAT_VERSION
@@ -1047,6 +1244,7 @@ def _save_helper(
         images,
         library_sha256,
         updated_at=datetime.now(UTC).isoformat(),
+        playlists=playlists,
     )
     result = session.atomic_write(
         LIBRARY_SYNC_HELPER_PATH,
@@ -1168,12 +1366,21 @@ def _encode_helper(
     library_sha256: str,
     *,
     updated_at: str,
+    playlists: tuple[PlaylistAssociation, ...] = (),
 ) -> bytes:
-    if len(tracks) + len(images) > _MAX_RECORDS:
+    _validate_playlist_associations(playlists)
+    if len(tracks) + len(images) + len(playlists) > _MAX_RECORDS:
         raise LibrarySyncHelperError("The Sync helper contains too many records")
     records = {
         "tracks": [_track_document(item) for item in tracks],
         "images": [_image_document(item) for item in images],
+        "playlists": [
+            {
+                "host_playlist_id": str(item.host_playlist_id),
+                "ipod_playlist_id": str(item.ipod_playlist_id),
+            }
+            for item in playlists
+        ],
     }
     document = {
         "version": _FORMAT_VERSION,
@@ -1200,19 +1407,26 @@ def _decode_helper(payload: bytes) -> _LoadedHelper:
         "catalog_sha256",
     }
     version = _nonnegative_integer(document.get("version"), "version")
+    if version >= 7:
+        expected.add("playlists")
     if set(document) != expected or version not in (
         1,
         2,
         3,
         4,
+        5,
+        6,
         _FORMAT_VERSION,
     ):
         raise ValueError("Sync helper fields or version are unsupported")
     tracks_raw = _array(document["tracks"], "tracks")
     images_raw = _array(document["images"], "images")
-    if len(tracks_raw) + len(images_raw) > _MAX_RECORDS:
+    playlists_raw = _array(document["playlists"], "playlists") if version >= 7 else []
+    if len(tracks_raw) + len(images_raw) + len(playlists_raw) > _MAX_RECORDS:
         raise ValueError("Sync helper contains too many records")
     records = {"tracks": tracks_raw, "images": images_raw}
+    if version >= 7:
+        records["playlists"] = playlists_raw
     catalog_sha256 = _text(document["catalog_sha256"], "catalog_sha256")
     _require_sha256(catalog_sha256, "catalog checksum")
     if hashlib.sha256(_canonical_json(records)).hexdigest() != catalog_sha256:
@@ -1225,13 +1439,35 @@ def _decode_helper(payload: bytes) -> _LoadedHelper:
         raise ValueError("Sync helper contains duplicate Track identities")
     if len({item.image_id for item in images}) != len(images):
         raise ValueError("Sync helper contains duplicate image identities")
+    playlists = tuple(_playlist_from_document(item) for item in playlists_raw)
+    _validate_playlist_associations(playlists)
     return _LoadedHelper(
         tracks,
         images,
         library_sha256,
         _text(document["updated_at"], "updated_at"),
         version,
+        playlists=playlists,
     )
+
+
+def _playlist_from_document(value: object) -> PlaylistAssociation:
+    document = _exact_object(
+        value, "Playlist match", {"host_playlist_id", "ipod_playlist_id"}
+    )
+    return PlaylistAssociation(
+        _decimal_identifier(document["host_playlist_id"], "Host Playlist identity"),
+        _decimal_identifier(document["ipod_playlist_id"], "iPod Playlist identity"),
+    )
+
+
+def _validate_playlist_associations(values: tuple[PlaylistAssociation, ...]) -> None:
+    if any(item.host_playlist_id <= 0 or item.ipod_playlist_id <= 0 for item in values):
+        raise ValueError("Playlist matches require positive identities")
+    if len({item.host_playlist_id for item in values}) != len(values) or len(
+        {item.ipod_playlist_id for item in values}
+    ) != len(values):
+        raise ValueError("Playlist matches must be one-to-one")
 
 
 def _track_document(value: IPodTrackFingerprint) -> dict[str, object]:
@@ -1275,6 +1511,7 @@ def _sync_document(value: SyncDetails | None) -> dict[str, object] | None:
         "ipod_baseline_pending": value.ipod_baseline_pending,
         "host_tag_sha256": value.host_tag_sha256,
         "file_tag_policy": value.file_tag_policy,
+        "stream_selection_sha256": value.stream_selection_sha256,
     }
 
 
@@ -1351,6 +1588,7 @@ def _sync_from_document(value: object) -> SyncDetails | None:
         "host_payload_sha256",  # Ignored field from an earlier v4 development build.
         "host_tag_sha256",
         "file_tag_policy",
+        "stream_selection_sha256",
     }
     row = _object(value, "Sync details")
     if not required <= row.keys() or row.keys() - required - optional:
@@ -1394,6 +1632,11 @@ def _sync_from_document(value: object) -> SyncDetails | None:
             None
             if row.get("file_tag_policy") is None
             else _text(row["file_tag_policy"], "file_tag_policy")
+        ),
+        stream_selection_sha256=(
+            None
+            if row.get("stream_selection_sha256") is None
+            else _text(row["stream_selection_sha256"], "stream_selection_sha256")
         ),
         host_tag_sha256=(
             None

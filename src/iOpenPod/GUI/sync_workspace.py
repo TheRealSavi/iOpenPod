@@ -12,10 +12,10 @@ from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QProgressBar,
     QScrollArea,
     QStackedWidget,
@@ -23,10 +23,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app.core.settings.media_tools import ConfiguredMediaTools
 from iOpenPod.app.core.settings.transcoding import read_transcoder_settings
 from iOpenPod.app.library_workspace import LibraryWorkspace
+from iOpenPod.app.media.inspection import MediaInspector
 from iOpenPod.app.models.sync_selection import SyncSelection
+from iOpenPod.app.sync_plan import host_path_identity
 from iOpenPod.app.sync_storage import SyncStorageProjection
+from iOpenPod.GUI.dialogs.media_streams import MediaStreamsDialog
 from iOpenPod.GUI.host_library_browser import HostLibraryBrowser
 from iOpenPod.GUI.navigation import PageId, page_label
 from iOpenPod.GUI.pages.sync_execution_page import SyncExecutionPage
@@ -36,6 +40,7 @@ from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.eta_label import EtaLabel
 from iOpenPod.GUI.widgets.host_scan_issues import HostScanIssues
+from iOpenPod.GUI.widgets.playlist_sync_review import PlaylistSyncReview
 from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.sync_storage_bar import SyncStorageBar
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -45,14 +50,17 @@ from iOpenPod.GUI.widgets.themed_buttons import (
 )
 
 if TYPE_CHECKING:
+    from device_registry import DeviceProfile
     from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.host_media_library import HostMediaLibrary
     from iOpenPod.app.library_sync_helper import IPodMediaLibrary
+    from iOpenPod.app.media_stream_preferences import MediaStreamPreferences
     from iOpenPod.app.models.device import ActiveIPod
-    from iOpenPod.app.sync_execution import PlaylistSyncChange
+    from iOpenPod.app.playlist_sync import PlaylistSyncChoice, PlaylistSyncReviewItem
     from iOpenPod.app.sync_plan import SyncPlan
     from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
     from iOpenPod.GUI.presentation.theme.manager import ThemeManager
+    from iPodDB.library import LibrarySnapshot
 
 
 class SyncStage(StrEnum):
@@ -261,21 +269,26 @@ class SyncWorkspace(QWidget):
         theme_manager: ThemeManager,
         artwork_provider: ArtworkPixmapProvider,
         parent: QWidget | None = None,
+        *,
+        stream_preferences: MediaStreamPreferences | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("syncWorkspace")
         self._stage = SyncStage.SCANNING
         self._podcast_execution = False
         self._settings = settings
+        self._stream_tools = ConfiguredMediaTools(settings)
         self._theme_manager = theme_manager
         self._artwork_provider = artwork_provider
         self._host_workspace = LibraryWorkspace(self)
         self._host_workspace.set_locked(True)
-        self.selection = SyncSelection(self)
+        self.selection = SyncSelection(self, stream_preferences=stream_preferences)
         self._storage_projection: SyncStorageProjection | None = None
-        self._playlist_preview: tuple[PlaylistSyncChange, ...] = ()
+        self._playlist_preview: tuple[PlaylistSyncReviewItem, ...] = ()
         self._storage_bar = SyncStorageBar(theme_manager, self)
         self.browser: HostLibraryBrowser | None = None
+        self._stream_profile: DeviceProfile | None = None
+        self._stream_dialog: MediaStreamsDialog | None = None
 
         self._title = QLabel(self)
         self._title.setObjectName("syncWorkspaceTitle")
@@ -370,13 +383,9 @@ class SyncWorkspace(QWidget):
         self._podcast_detail.setObjectName("syncPodcastReviewDetail")
         self._podcast_detail.setWordWrap(True)
         self._podcast_detail.setVisible(False)
-        self._playlist_changes = QPlainTextEdit(self)
-        self._playlist_changes.setObjectName("syncPlaylistReviewChanges")
-        self._playlist_changes.setReadOnly(True)
-        self._playlist_changes.setTabChangesFocus(True)
-        self._playlist_changes.setMaximumHeight(150)
-        self._playlist_changes.setMinimumHeight(64)
-        self._playlist_changes.setVisible(False)
+        self._playlist_changes = PlaylistSyncReview(self)
+        self._playlist_changes.choicesChanged.connect(self._playlist_choices_changed)
+        self._playlist_changes.hide()
         playlist_review = QFrame(self)
         playlist_review.setObjectName("syncPlaylistReview")
         playlist_layout = QVBoxLayout(playlist_review)
@@ -392,13 +401,20 @@ class SyncWorkspace(QWidget):
         playlist_layout.addWidget(self._podcast_detail)
         self._review_cancel = ActionButton(parent=self)
         self._review_cancel.setObjectName("cancelSyncReview")
-        review_footer = self._footer(
-            self._review.review_actions,
-            self._review_summary,
-            self._back,
-            self._review_cancel,
-            self._execute,
+        review_footer = QFrame(self)
+        review_footer.setObjectName("syncWorkspaceFooter")
+        review_footer_layout = QVBoxLayout(review_footer)
+        review_footer_layout.setContentsMargins(
+            LAYOUT.space_lg, LAYOUT.space_sm, LAYOUT.space_lg, LAYOUT.space_sm
         )
+        review_footer_layout.setSpacing(LAYOUT.space_xs)
+        review_footer_layout.addWidget(self._review_summary)
+        review_footer_actions = QHBoxLayout()
+        review_footer_actions.setSpacing(LAYOUT.space_xs)
+        review_footer_actions.addWidget(self._review.review_actions, 1)
+        for button in (self._back, self._review_cancel, self._execute):
+            review_footer_actions.addWidget(button)
+        review_footer_layout.addLayout(review_footer_actions)
         self._review.review_actions.show()
         review_page = QWidget(self)
         review_page.setObjectName("syncReviewPage")
@@ -430,6 +446,11 @@ class SyncWorkspace(QWidget):
         self._scan_issues = HostScanIssues(self)
         self._scan_issues.hide()
         layout.addWidget(self._scan_issues)
+        self._stream_error_label = QLabel(self)
+        self._stream_error_label.setWordWrap(True)
+        self._stream_error_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._stream_error_label.hide()
+        layout.addWidget(self._stream_error_label)
         layout.addWidget(self._content, 1)
 
         self._scan.cancelRequested.connect(self.scanCancelRequested.emit)
@@ -505,6 +526,7 @@ class SyncWorkspace(QWidget):
     ) -> None:
         self._reset_playlist_preview()
         self._artwork_repairs_pending = active_ipod.artwork_repairs_pending
+        self._stream_profile = active_ipod.profile
         self._photos_repairs_pending = active_ipod.photos_repairs_pending
         self._library_refresh_available = (
             active_ipod.profile.capabilities.database.uses_sqlite_database
@@ -518,6 +540,8 @@ class SyncWorkspace(QWidget):
         browser = self._ensure_browser()
         browser.load(library)
         self.selection.reset(library, comparison)
+        self._refresh_stream_error()
+        self._stream_error_label.setVisible(bool(self.selection.preference_error))
         self._show_library_page(PageId.ALBUMS.value)
         self.show_selection()
 
@@ -534,6 +558,8 @@ class SyncWorkspace(QWidget):
         self._review.review_pending_duplicates()
 
     def _request_execution(self) -> None:
+        if self.selection.preference_error:
+            return
         if not self._review.review_pending_duplicates():
             self.executeRequested.emit()
 
@@ -546,13 +572,27 @@ class SyncWorkspace(QWidget):
         self._podcast_count = count
         self._refresh_review_summary()
 
-    def set_playlist_preview(self, changes: tuple[PlaylistSyncChange, ...]) -> None:
-        """Present the exact playlist effects computed for the selected Sync Plan."""
-        if changes == self._playlist_preview:
-            return
+    @property
+    def playlist_choices(self) -> tuple[PlaylistSyncChoice, ...]:
+        return self._playlist_changes.choices
+
+    def set_playlist_preview(
+        self,
+        changes: tuple[PlaylistSyncReviewItem, ...],
+        library: LibrarySnapshot | None = None,
+    ) -> None:
+        """Present exact effects and skipped reasons without discarding row choices."""
+        from iPodDB.library import LibrarySnapshot
+
         self._playlist_preview = changes
+        self._playlist_changes.set_rows(changes, library or LibrarySnapshot())
         self._refresh_playlist_preview()
         self._refresh_review_summary()
+
+    def _playlist_choices_changed(self) -> None:
+        self._playlist_preview = self._playlist_changes.model.rows
+        self._refresh_review_summary()
+        self.playlistReconciliationChanged.emit()
 
     def show_execution(self, *, podcasts: bool = False) -> None:
         self._podcast_execution = podcasts
@@ -561,6 +601,10 @@ class SyncWorkspace(QWidget):
         self._set_stage(SyncStage.SYNC)
 
     def clear(self) -> None:
+        if self._stream_dialog is not None:
+            self._stream_dialog.reject()
+        self._stream_profile = None
+        self._stream_error_label.hide()
         self._scan_issues.load(())
         self.stop_scan()
         self._reset_playlist_preview()
@@ -571,11 +615,14 @@ class SyncWorkspace(QWidget):
         self._set_stage(SyncStage.SCANNING)
 
     def shutdown(self) -> None:
+        if self._stream_dialog is not None:
+            self._stream_dialog.reject()
         self.stop_scan()
         if self.browser is not None:
             self.browser.shutdown()
 
     def retranslate_ui(self) -> None:
+        self._refresh_stream_error()
         self._title.setText(
             self.tr("Sync Podcasts")
             if self._podcast_execution
@@ -595,7 +642,7 @@ class SyncWorkspace(QWidget):
         self._review_cancel.setText(
             QCoreApplication.translate("CommonActions", "Cancel")
         )
-        self._reconcile_playlists.setText(self.tr("Reconcile Playlists"))
+        self._reconcile_playlists.setText(self.tr("Sync Playlists"))
         self._reconcile_playlists.setToolTip(
             self.tr(
                 "Create and update supported Host Playlists using the selected media. "
@@ -603,15 +650,17 @@ class SyncWorkspace(QWidget):
                 "are removed from iPod Playlists even when this option is off."
             )
         )
-        self._playlist_changes.setAccessibleName(self.tr("Playlist changes"))
-        self._playlist_changes.setAccessibleDescription(
-            self.tr(
-                "Read-only preview of Playlist creation, membership, and order changes."
-            )
-        )
+        self._playlist_changes.retranslate()
         self._refresh_selection_summary()
         self._refresh_playlist_preview()
         self._refresh_review_summary()
+
+    def _refresh_stream_error(self) -> None:
+        self._stream_error_label.setText(
+            self.tr(
+                "Saved stream choices could not be loaded. Sync is paused to preserve your choices. Restore the preferences file and scan again. %1"
+            ).replace("%1", self.selection.preference_error)
+        )
 
     def _refresh_stage_labels(self) -> None:
         stage_labels = {
@@ -692,12 +741,61 @@ class SyncWorkspace(QWidget):
             self._host_workspace,
             self._library_stack,
             self.selection,
+            choose_streams=self._choose_streams,
         )
         for page in browser.pages:
             self._library_stack.addWidget(page)
         browser.playlist_page.playlistSelected.connect(self._playlist_page_selected)
         self.browser = browser
         return browser
+
+    def _choose_streams(self, track_id: int) -> None:
+        browser = self.browser
+        profile = self._stream_profile
+        if self._stage is not SyncStage.SELECT or browser is None or profile is None:
+            return
+        library = browser.library
+        if library is None:
+            return
+        track = next(
+            (track for track in library.snapshot.tracks if track.track_id == track_id),
+            None,
+        )
+        if track is None:
+            return
+        source = next(
+            (
+                source
+                for source in library.sources
+                if host_path_identity(str(source.path))
+                == host_path_identity(track.metadata.location)
+            ),
+            None,
+        )
+        if source is None:
+            return
+        dialog = MediaStreamsDialog(
+            source,
+            track.title,
+            profile,
+            self.selection.stream_selection(track_id),
+            self,
+            inspector=MediaInspector(find_tool=self._stream_tools.find),
+            save_selection=lambda choice: self.selection.set_stream_selection(
+                track_id, choice
+            ),
+        )
+        self._stream_dialog = dialog
+        try:
+            if (
+                dialog.exec() == QDialog.DialogCode.Accepted
+                and browser.library is library
+                and self._stream_profile is profile
+            ):
+                self.selection.set_stream_selection(track_id, dialog.selection)
+        finally:
+            self._stream_dialog = None
+            dialog.deleteLater()
 
     def _refresh_selection_summary(self) -> None:
         count = self.selection.selected_host_count
@@ -723,7 +821,20 @@ class SyncWorkspace(QWidget):
             self._refresh_storage_estimate()
 
     def _refresh_review_summary(self) -> None:
-        playlist_count = len(self._playlist_preview) if self.reconcile_playlists else 0
+        playlist_count = (
+            sum(row.actionable for row in self._playlist_preview)
+            if self.reconcile_playlists
+            else 0
+        )
+        playlist_changes = (
+            sum(
+                row.actionable and row.change is not None
+                for row in self._playlist_preview
+            )
+            if self.reconcile_playlists
+            else 0
+        )
+        playlist_matches = playlist_count - playlist_changes
         pending_duplicates = bool(self.selection.pending_duplicate_groups)
         selected_work = bool(
             self.selection.selected_plan.change_count
@@ -755,6 +866,7 @@ class SyncWorkspace(QWidget):
         )
         self._execute.setEnabled(
             self._execution_available
+            and not self.selection.preference_error
             and self._stage is SyncStage.REVIEW
             and (selected_work or self._library_refresh_available)
         )
@@ -766,8 +878,12 @@ class SyncWorkspace(QWidget):
         if self._playlist_preview:
             summary += english_count_fallback(
                 " · %Ln Playlist change(s)",
-                self.tr(" · %Ln Playlist change(s)", "", playlist_count),
-                playlist_count,
+                self.tr(" · %Ln Playlist change(s)", "", playlist_changes),
+                playlist_changes,
+            )
+        if playlist_matches:
+            summary += self.tr(" · Playlist matches to save: %1").replace(
+                "%1", f"{playlist_matches:,}"
             )
         if pending_duplicates:
             summary += " · " + self.tr("Selected duplicates need choices")
@@ -801,6 +917,7 @@ class SyncWorkspace(QWidget):
 
     def _reset_playlist_preview(self) -> None:
         self._playlist_preview = ()
+        self._playlist_changes.reset()
         self._artwork_repairs_pending = False
         self._photos_repairs_pending = False
         self._library_refresh_available = False
@@ -815,32 +932,17 @@ class SyncWorkspace(QWidget):
         self.playlistReconciliationChanged.emit()
 
     def _refresh_playlist_preview(self) -> None:
-        lines: list[str] = []
-        for change in self._playlist_preview:
-            action = (
-                self.tr("Create") if change.action == "create" else self.tr("Update")
-            )
-            detail = (
-                self.tr("%1 added, %2 removed")
-                .replace("%1", f"{change.added_count:,}")
-                .replace("%2", f"{change.removed_count:,}")
-            )
-            if change.order_changed:
-                detail += self.tr(", order changed")
-            lines.append(f"{action} {change.name}: {detail}")
-        text = "\n".join(lines)
-        if self._playlist_changes.toPlainText() != text:
-            self._playlist_changes.setPlainText(text)
-        self._playlist_changes.setVisible(bool(lines))
+        self._playlist_changes.setEnabled(self.reconcile_playlists)
         if not self.reconcile_playlists:
             detail = self.tr(
-                "Host Playlists will not be reconciled. References to removed Tracks "
-                "are still removed."
+                "Playlist Sync is off. References to Tracks you remove are still removed."
             )
-        elif lines:
-            detail = self.tr("Membership and order changes for the selected media:")
+        elif self._playlist_preview:
+            detail = self.tr(
+                "Choose which Playlists to update. Track selection stays separate."
+            )
         else:
-            detail = self.tr("No Playlist changes for the selected media.")
+            detail = self.tr("No Host Playlists to sync.")
         self._playlist_detail.setText(detail)
 
     @staticmethod

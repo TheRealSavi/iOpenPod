@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
     from types import TracebackType
 
+    from storage.media_processing import ToolOutput
     from storage.platform.base import PlatformAdapter
     from storage.transactions import (
         FileContent,
@@ -263,6 +264,51 @@ class FilesystemSession:
 
     def read(self, path: DevicePath, *, max_bytes: int | None = None) -> bytes:
         return self.read_snapshot(path, max_bytes=max_bytes).data
+
+    def read_with_tool(
+        self,
+        path: DevicePath,
+        executable: HostPath,
+        arguments: tuple[str, ...],
+        *,
+        checkpoint: Callable[[], None],
+        timeout_seconds: float = 60,
+        max_output_bytes: int = 4 * 1024 * 1024,
+        max_stderr_bytes: int | None = None,
+        low_priority: bool = False,
+        check: bool = True,
+    ) -> ToolOutput:
+        """Lend one pinned, seekable device file to a read-only tool without copying.
+
+        The runner retains its read handle until the child is reaped. Device Paths
+        stay inside Storage, and both connection identity and file facts are checked
+        before accepting output. This supplies analysis, never a content digest.
+        """
+        from storage.media_processing import run_media_tool
+
+        observation = self._revalidate()
+        target = resolve_device_path(
+            self._root, path, observation.volume.capabilities, require_leaf=True
+        )
+
+        def guarded_checkpoint() -> None:
+            self._assert_active()
+            checkpoint()
+
+        try:
+            return run_media_tool(
+                executable,
+                arguments,
+                input_file=HostPath(target),
+                checkpoint=guarded_checkpoint,
+                timeout_seconds=timeout_seconds,
+                max_output_bytes=max_output_bytes,
+                max_stderr_bytes=max_stderr_bytes,
+                low_priority=low_priority,
+                check=check,
+            )
+        finally:
+            self._revalidate()
 
     def read_range(
         self,

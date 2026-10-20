@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
@@ -55,7 +56,19 @@ class _PreparationRow(QFrame):
         known_duration = (
             duration is not None and math.isfinite(duration) and duration > 0
         )
-        if measured and known_duration:
+        if update.processed_bytes is not None and update.processed_bytes >= 0:
+            captured, total = update.processed_bytes, update.total_bytes
+            unit = workflow_text(source_text("bytes"))
+            if total is not None and total > 0:
+                fraction = min(captured / total, 1)
+                self._bar.setRange(0, 1000)
+                self._bar.setValue(int(fraction * 1000))
+                parts.append(f"{int(fraction * 100)}%")
+                parts.append(f"{captured:,} / {total:,} {unit}")
+            else:
+                self._bar.setRange(0, 0)
+                parts.append(f"{captured:,} {unit}")
+        elif measured and known_duration:
             assert processed is not None and duration is not None
             fraction = min(processed / duration, 1)
             self._bar.setRange(0, 1000)

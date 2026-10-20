@@ -36,6 +36,7 @@ from iOpenPod.app.models.library_filter_models import (
 )
 from iOpenPod.app.models.photo_list_model import PhotoListModel
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackTableModel
+from iOpenPod.app.playlist_sync import PlaylistSyncChoice
 from iOpenPod.app.podcasts.models import PodcastSnapshot
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 from iOpenPod.app.scrobbling.settings import LASTFM_USERNAME, SCROBBLE_DURING_SYNC
@@ -94,7 +95,8 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
     controller = SyncController(service, workspace, devices, settings)
     finished = QSignalSpy(controller.finished)
     try:
-        assert controller.start(*_inputs(), active)
+        choices = (PlaylistSyncChoice(1, included=False),)
+        assert controller.start(*_inputs(), active, playlist_choices=choices)
         wait_for(service.entered.is_set)
         assert workspace.locked and devices.busy
         settings.set_global(COMPUTE_SOUND_CHECK, False)
@@ -102,6 +104,7 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
         assert (
             service.request is not None and service.request.options.compute_sound_check
         )
+        assert service.request.playlist_choices == choices
         assert service.request.options.scrobble
         assert service.request.scrobble_accounts[0].username == "listener"
         assert not controller.start(*_inputs(), active)

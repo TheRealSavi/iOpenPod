@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING
 from iOpenPod.app.host_media_library import (
     HostMediaFileKind,
 )
+from iOpenPod.app.media.stream_selection_codec import selection_digest
 from iOpenPod.app.sync_track_details import track_tag_sha256, track_tag_values
-from iPodDB.library import PhotoRepresentationKind
+from iPodDB.library import MediaType, PhotoRepresentationKind
 
 if TYPE_CHECKING:
     from iOpenPod.app.host_media_library import HostMediaLibrary
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
         IPodTrackFingerprint,
         SyncDetails,
     )
+    from iOpenPod.app.media.stream_selection import MediaStreamSelection
     from iPodDB.library import LibrarySnapshot, Track
 
 
@@ -53,6 +55,7 @@ class SyncPlanBasis(StrEnum):
     HOST_FACTS_MATCH = "host_facts_match"
     TRACK_DETAILS_CHANGED = "track_details_changed"
     AUDIO_PAYLOAD_CHANGED = "audio_payload_changed"
+    MEDIA_SOURCE_CHANGED = "media_source_changed"
     TRACK_DETAILS_MATCH = "track_details_match"
     CONTENT_MATCH = "content_match"
     MISSING_IDENTITY = "missing_identity"
@@ -80,8 +83,23 @@ class SyncPlanItem:
     artwork_changed: bool = False
     audio_payload_changed: bool = False
     file_tags_changed: bool = False
+    stream_selection: MediaStreamSelection | None = None
+    applied_stream_selection_sha256: str | None = None
+    stream_selection_changed: bool = False
 
     def __post_init__(self) -> None:
+        if self.stream_selection is not None and (
+            self.media_kind is not SyncPlanMediaKind.TRACK
+            or self.action
+            not in {SyncPlanAction.ADD, SyncPlanAction.UPDATE, SyncPlanAction.UNCHANGED}
+        ):
+            raise ValueError("Stream choices require Track media preparation")
+        if self.stream_selection_changed and (
+            self.media_kind is not SyncPlanMediaKind.TRACK
+            or self.action is not SyncPlanAction.UPDATE
+            or not self.audio_payload_changed
+        ):
+            raise ValueError("Changed stream choices require media replacement")
         if not self.name.strip():
             raise ValueError("A Sync Plan item needs a display name")
         if self.action is SyncPlanAction.ADD and self.host_path is None:
@@ -169,6 +187,20 @@ class _Candidate:
     artwork_sha256: str | None = None
     track_details_refreshed: bool = False
     artwork_available: bool = True
+    has_video: bool | None = None
+
+    @property
+    def content_key(self) -> tuple[SyncPlanMediaKind, bool | None, str] | None:
+        """Compare source content, including Photos converted for the iPod."""
+        fingerprint = self.fingerprint
+        if self.media_kind is SyncPlanMediaKind.PHOTO and self.sync is not None:
+            # The original Host bytes still identify a moved Photo when its
+            # prepared iPod copy has different bytes. Older helpers fall back
+            # to the retained full-resolution file's digest.
+            fingerprint = self.sync.host_content_sha256 or fingerprint
+        if fingerprint is None:
+            return None
+        return self.media_kind, self.has_video, fingerprint
 
 
 @dataclass(frozen=True, slots=True)
@@ -461,6 +493,27 @@ def select_sync_plan(
     )
 
 
+def with_stream_selection(
+    item: SyncPlanItem, selection: MediaStreamSelection | None
+) -> SyncPlanItem:
+    """Request preparation of explicit streams without changing a correlation."""
+    if item.media_kind is not SyncPlanMediaKind.TRACK or item.action not in {
+        SyncPlanAction.ADD,
+        SyncPlanAction.UPDATE,
+        SyncPlanAction.UNCHANGED,
+    }:
+        raise ValueError("Stream choices require a safely selected Host Track")
+    changed = selection_digest(selection) != item.applied_stream_selection_sha256
+    replacement = changed and item.action is not SyncPlanAction.ADD
+    return replace(
+        item,
+        action=SyncPlanAction.UPDATE if replacement else item.action,
+        audio_payload_changed=item.audio_payload_changed or replacement,
+        stream_selection=selection,
+        stream_selection_changed=replacement,
+    )
+
+
 def host_path_identity(value: str) -> str:
     """Return the normalized identity used for Host-path correlation and selection."""
 
@@ -531,7 +584,7 @@ def resolve_sync_duplicates(
 
 def _can_pair_duplicate(host: _Candidate, ipod: _Candidate) -> bool:
     return host.media_kind is ipod.media_kind and (
-        (host.fingerprint is not None and host.fingerprint == ipod.fingerprint)
+        (host.content_key is not None and host.content_key == ipod.content_key)
         or (
             host.path is not None
             and ipod.sync is not None
@@ -558,6 +611,7 @@ def _explicit_paired_item(
         action=SyncPlanAction.UPDATE,
         basis=SyncPlanBasis.USER_MATCH,
         metadata_changed=metadata_changed,
+        audio_payload_changed=item.audio_payload_changed or host.has_video is True,
         artwork_changed=_artwork_changed(host, ipod, facts_changed=True),
         file_tags_changed=host.media_kind is SyncPlanMediaKind.TRACK
         and file_tag_policy is not None
@@ -586,11 +640,11 @@ def _duplicate_groups(
     def join(first: int, second: int) -> None:
         parents[root(second)] = root(first)
 
-    fingerprints: dict[tuple[SyncPlanMediaKind, str], int] = {}
+    fingerprints: dict[tuple[SyncPlanMediaKind, bool | None, str], int] = {}
     paths: dict[tuple[SyncPlanMediaKind, str], int] = {}
     for index, candidate in enumerate(candidates):
-        if candidate.fingerprint:
-            fingerprint_key = (candidate.media_kind, candidate.fingerprint)
+        fingerprint_key = candidate.content_key
+        if fingerprint_key is not None:
             if fingerprint_key in fingerprints:
                 join(fingerprints[fingerprint_key], index)
             else:
@@ -625,7 +679,15 @@ def _duplicate_groups(
     for component_id, indexes in components.items():
         host_indexes = {index for index in indexes if index < len(hosts)}
         ipod_indexes = {index - len(hosts) for index in indexes if index >= len(hosts)}
-        if len(host_indexes) < 2 and len(ipod_indexes) < 2:
+        if (
+            len(host_indexes) < 2
+            and len(ipod_indexes) < 2
+            and not any(
+                hosts[index].path is not None
+                and host_path_identity(hosts[index].path or "") in ambiguous_hosts
+                for index in host_indexes
+            )
+        ):
             continue
         group_hosts = tuple(
             sorted(
@@ -740,16 +802,20 @@ def _pair_by_content(
     pairs: list[tuple[int, int]],
     attention: list[SyncPlanItem],
 ) -> None:
-    host_groups: dict[tuple[SyncPlanMediaKind, str], list[int]] = defaultdict(list)
-    ipod_groups: dict[tuple[SyncPlanMediaKind, str], list[int]] = defaultdict(list)
+    host_groups: dict[tuple[SyncPlanMediaKind, bool | None, str], list[int]] = (
+        defaultdict(list)
+    )
+    ipod_groups: dict[tuple[SyncPlanMediaKind, bool | None, str], list[int]] = (
+        defaultdict(list)
+    )
     for index in host_remaining:
-        fingerprint = hosts[index].fingerprint
-        if fingerprint is not None:
-            host_groups[(hosts[index].media_kind, fingerprint)].append(index)
+        key = hosts[index].content_key
+        if key is not None:
+            host_groups[key].append(index)
     for index in ipod_remaining:
-        fingerprint = ipods[index].fingerprint
-        if fingerprint is not None:
-            ipod_groups[(ipods[index].media_kind, fingerprint)].append(index)
+        key = ipods[index].content_key
+        if key is not None:
+            ipod_groups[key].append(index)
     _pair_unique_groups(
         host_groups,
         ipod_groups,
@@ -759,25 +825,32 @@ def _pair_by_content(
         ipod_remaining,
         pairs,
         attention,
+        review_video=True,
     )
 
 
-def _pair_unique_groups(
-    host_groups: dict[tuple[SyncPlanMediaKind, str], list[int]],
-    ipod_groups: dict[tuple[SyncPlanMediaKind, str], list[int]],
+def _pair_unique_groups[Key](
+    host_groups: dict[Key, list[int]],
+    ipod_groups: dict[Key, list[int]],
     hosts: tuple[_Candidate, ...],
     ipods: tuple[_Candidate, ...],
     host_remaining: set[int],
     ipod_remaining: set[int],
     pairs: list[tuple[int, int]],
     attention: list[SyncPlanItem],
+    *,
+    review_video: bool = False,
 ) -> None:
     for key in host_groups.keys() & ipod_groups.keys():
         host_indexes = [index for index in host_groups[key] if index in host_remaining]
         ipod_indexes = [index for index in ipod_groups[key] if index in ipod_remaining]
         if not host_indexes or not ipod_indexes:
             continue
-        if len(host_indexes) == 1 and len(ipod_indexes) == 1:
+        if (
+            len(host_indexes) == 1
+            and len(ipod_indexes) == 1
+            and not (review_video and hosts[host_indexes[0]].has_video)
+        ):
             host_index = host_indexes[0]
             ipod_index = ipod_indexes[0]
             host_remaining.remove(host_index)
@@ -843,6 +916,13 @@ def _paired_item(
             if host.fingerprint is not None and ipod.fingerprint is not None
             else size_changed or modified_changed
         )
+        # A video or a non-default audio/subtitle selection can change while the
+        # bounded default-audio fingerprint stays identical. Changed file facts
+        # must prepare those sources again; unchanged sources keep the fast path.
+        selected_source_changed = (
+            host.has_video or sync.stream_selection_sha256 is not None
+        ) and (size_changed or modified_changed)
+        audio_payload_changed |= selected_source_changed
         metadata_changed = False
         if host.track is not None and ipod.track is not None:
             if sync.host_tag_sha256 is not None and sync.ipod_tag_sha256 is not None:
@@ -878,7 +958,9 @@ def _paired_item(
             return _item(
                 SyncPlanAction.UPDATE,
                 (
-                    SyncPlanBasis.AUDIO_PAYLOAD_CHANGED
+                    SyncPlanBasis.MEDIA_SOURCE_CHANGED
+                    if selected_source_changed
+                    else SyncPlanBasis.AUDIO_PAYLOAD_CHANGED
                     if audio_payload_changed
                     else SyncPlanBasis.TRACK_DETAILS_CHANGED
                 ),
@@ -919,11 +1001,23 @@ def _paired_item(
 def _artwork_changed(
     host: _Candidate, ipod: _Candidate, *, facts_changed: bool
 ) -> bool:
-    if not host.artwork_available:
-        return False
     host_artwork = host.track is not None and host.track.artwork_id != 0
     ipod_artwork_id = 0 if ipod.track is None else ipod.track.artwork_id
     sync = ipod.sync
+    if host.has_video and not host_artwork:
+        if not ipod_artwork_id:
+            # An unsupported embedded-art reader (for example Matroska) does
+            # not prevent deriving a frame for an otherwise uncovered video.
+            return True
+        # Keep generated or user-supplied iPod covers. Only a known, removed
+        # Host image requests a replacement frame; unreadable covers retain it.
+        return (
+            host.artwork_available
+            and sync is not None
+            and bool(sync.host_artwork_sha256)
+        )
+    if not host.artwork_available:
+        return False
     if not host_artwork:
         return ipod_artwork_id != 0 and (
             facts_changed
@@ -970,6 +1064,9 @@ def _item(
         artwork_changed=artwork_changed,
         audio_payload_changed=audio_payload_changed,
         file_tags_changed=file_tags_changed,
+        applied_stream_selection_sha256=(
+            ipod.sync.stream_selection_sha256 if ipod.sync is not None else None
+        ),
     )
 
 
@@ -1065,6 +1162,7 @@ def _host_candidates(library: HostMediaLibrary) -> tuple[_Candidate, ...]:
                     size_bytes=source.size_bytes,
                     modified_ns=source.modified_ns,
                     track=track,
+                    has_video=source.kind is HostMediaFileKind.VIDEO,
                     track_details_refreshed=host_path_identity(path) in rechecked_paths,
                     artwork_available=identity not in unavailable_artwork_paths,
                     artwork_sha256=(
@@ -1163,6 +1261,20 @@ def _ipod_track_candidate(
         modified_ns=record.modified_ns,
         sync=record.sync,
         track=track,
+        has_video=(
+            any(
+                kind in track.media_types
+                for kind in (
+                    MediaType.VIDEO,
+                    MediaType.AUDIO_VIDEO,
+                    MediaType.MUSIC_VIDEO,
+                    MediaType.TV_SHOW,
+                    MediaType.VIDEO_PODCAST,
+                )
+            )
+            if track is not None
+            else None
+        ),
     )
 
 

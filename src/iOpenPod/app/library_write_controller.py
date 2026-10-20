@@ -510,6 +510,8 @@ class LibraryWriteController(QObject):
                 "save.media_deletion_skipped",
                 "save.media_deletion_incomplete",
                 "save.media_deletion_flush_pending",
+                "save.sync_helper_warning",
+                "save.sync_helper_failed",
             )
             for issue in result.issues
         ):

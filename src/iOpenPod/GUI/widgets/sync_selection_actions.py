@@ -19,15 +19,24 @@ from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import Photo, Track
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from iOpenPod.app.models.sync_selection import SyncSelection
 
 
 class SyncSelectionActions(QObject):
     """Translate one highlighted selection into one batched membership change."""
 
-    def __init__(self, selection: SyncSelection, parent: QObject) -> None:
+    def __init__(
+        self,
+        selection: SyncSelection,
+        parent: QObject,
+        *,
+        choose_streams: Callable[[int], None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self._selection = selection
+        self._choose_streams = choose_streams
 
     def install(self, view: QAbstractItemView) -> None:
         view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -98,4 +107,14 @@ class SyncSelectionActions(QObject):
             action.triggered.connect(
                 lambda _checked=False, value=checked: set_checked(item_ids, value)
             )
+        choose_streams = self._choose_streams
+        if (
+            isinstance(view, TrackTable)
+            and len(item_ids) == 1
+            and choose_streams is not None
+        ):
+            menu.addSeparator()
+            action = menu.addAction(self.tr("Choose streams…"))
+            action.setObjectName("chooseMediaStreams")
+            action.triggered.connect(lambda _checked=False: choose_streams(item_ids[0]))
         return menu

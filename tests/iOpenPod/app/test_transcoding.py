@@ -128,7 +128,17 @@ def test_multiple_audio_editions_select_default_and_remux_compatible_audio(
     )
     assert compatible_audio(observed, profile) is None
     plan = resolve_transcode(observed, profile, TranscodeSettings(), frozenset())
-    assert plan.output_arguments == ("-map", "0:8", "-c:a", "copy", "-vn")
+    assert plan.output_arguments == (
+        "-map",
+        "0:8",
+        "-c:a",
+        "copy",
+        "-vn",
+        "-map_metadata:s:0",
+        "0:s:8",
+        "-disposition:a:0",
+        "default",
+    )
     assert "default" in plan.warnings[0]
 
 

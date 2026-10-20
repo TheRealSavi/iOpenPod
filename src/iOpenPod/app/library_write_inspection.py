@@ -393,6 +393,7 @@ def inspect_library_write(
         if resources is not None:
             report["supplied_resources"] = {
                 "media": encoder.value(resources.media),
+                "video_metadata": encoder.value(resources.video_metadata),
                 "lyrics": encoder.value(resources.lyrics),
                 "artwork_ids": encoder.value(
                     tuple(a.artwork_id for a in resources.artwork)

@@ -25,6 +25,7 @@ from iOpenPod.app.core.settings.definitions import (
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
 from iOpenPod.app.device_controller import DeviceController
+from iOpenPod.app.library_sync_helper import LIBRARY_SYNC_HELPER_PATH
 from iOpenPod.app.library_workspace import LibraryWorkspace, TrackUpdate
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
@@ -796,10 +797,15 @@ def test_workspace_track_deletion_is_reviewed_saved_and_cleared(
 
 
 @pytest.mark.parametrize("automatic", [False, True])
+@pytest.mark.parametrize("invalid_helper", [False, True])
 def test_workspace_track_deletion_permanently_removes_media(
-    tmp_path: Path, automatic: bool
+    tmp_path: Path, automatic: bool, invalid_helper: bool
 ) -> None:
     device = build_device(tmp_path)
+    if invalid_helper:
+        helper_path = device.root / str(LIBRARY_SYNC_HELPER_PATH)
+        helper_path.parent.mkdir(parents=True, exist_ok=True)
+        helper_path.write_bytes(b"invalid helper must be preserved")
     settings = (
         SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
         if automatic
@@ -814,6 +820,7 @@ def test_workspace_track_deletion_permanently_removes_media(
     controller = LibraryWriteController(
         device.coordinator, workspace, devices, settings
     )
+    warnings = QSignalSpy(controller.automaticSaveWarning)
     try:
         if not automatic:
             controller.prepare()
@@ -825,6 +832,14 @@ def test_workspace_track_deletion_permanently_removes_media(
         assert not media.exists()
         assert controller.save_result is not None
         assert controller.save_result.recovery_path == ""
+        assert warnings.count() == int(automatic and invalid_helper)
+        assert (
+            any(
+                issue.code == "save.sync_helper_failed"
+                for issue in controller.save_result.issues
+            )
+            == invalid_helper
+        )
     finally:
         controller.shutdown()
         devices.shutdown()

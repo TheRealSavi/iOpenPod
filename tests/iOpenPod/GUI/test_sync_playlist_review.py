@@ -5,15 +5,16 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QCheckBox, QLabel, QPlainTextEdit, QPushButton
+from PySide6.QtWidgets import QCheckBox, QLabel, QPushButton, QTableView
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from device_registry import DEFAULT_DEVICE_REGISTRY
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
 from iOpenPod.app.library_sync_helper import IPodMediaCacheStats, IPodMediaLibrary
+from iOpenPod.app.playlist_sync import PlaylistSyncChoice, PlaylistSyncReviewItem
 from iOpenPod.app.sync_execution import (
     PlaylistSyncChange,
     SyncExecutionResult,
@@ -28,7 +29,17 @@ from iOpenPod.app.sync_plan import (
 )
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.sync_workspace import SyncWorkspace
-from iPodDB.library import LibrarySnapshot
+from iOpenPod.GUI.widgets.playlist_sync_review import (
+    PlaylistMatchDialog,
+    PlaylistSyncReview,
+)
+from iPodDB.library import LibrarySnapshot, Playlist, PlaylistKind
+
+
+def _row(change: PlaylistSyncChange, identity: int = 1) -> PlaylistSyncReviewItem:
+    return PlaylistSyncReviewItem(
+        identity, change.name, PlaylistSyncChoice(identity), change=change
+    )
 
 
 @pytest.fixture
@@ -78,7 +89,7 @@ def test_playlist_only_changes_require_checked_option_and_executable_review(
     assert not execute.isEnabled()
 
     workspace.set_playlist_preview(
-        (PlaylistSyncChange("Favorites", "update", 0, 0, True),)
+        (_row(PlaylistSyncChange("Favorites", "update", 0, 0, True)),)
     )
     assert execute.isEnabled()
     assert summary.text() == "0 of 0 selected · 1 Playlist change"
@@ -250,17 +261,18 @@ def test_playlist_preview_is_readable_literal_text_with_bounded_scrolling(
             for i in range(1000)
         ),
     )
-    workspace.set_playlist_preview(changes)
-    APPLICATION.processEvents()
-    preview = workspace.findChild(QPlainTextEdit, "syncPlaylistReviewChanges")
-    assert preview is not None and preview.isVisible()
-    assert preview.isReadOnly()
-    assert preview.accessibleName() == "Playlist changes"
-    assert "Create <Favorites>: 3 added, 0 removed" in preview.toPlainText()
-    assert (
-        "Update Road Trip: 2 added, 1 removed, order changed" in preview.toPlainText()
+    workspace.set_playlist_preview(
+        tuple(_row(change, index) for index, change in enumerate(changes))
     )
-    assert preview.height() <= 150
+    APPLICATION.processEvents()
+    preview = workspace.findChild(QTableView, "syncPlaylistReviewChanges")
+    assert preview is not None and preview.isVisible()
+    assert preview.editTriggers() == QTableView.EditTrigger.NoEditTriggers
+    assert preview.accessibleName() == "Playlist Sync choices"
+    assert preview.model().index(0, 0).data() == "<Favorites>"
+    assert preview.model().index(0, 2).data() == "Create · 3 added, 0 removed"
+    assert preview.model().index(1, 2).data() == "2 added, 1 removed · Reorder"
+    assert preview.height() <= 220
     assert preview.verticalScrollBar().maximum() > 0
 
 
@@ -268,9 +280,11 @@ def test_playlist_preview_is_readable_literal_text_with_bounded_scrolling(
 def test_new_scan_and_exit_clear_preview_and_restore_checked_default(
     workspace: SyncWorkspace, reset: str
 ) -> None:
-    workspace.set_playlist_preview((PlaylistSyncChange("New", "create", 1, 0, False),))
+    workspace.set_playlist_preview(
+        (_row(PlaylistSyncChange("New", "create", 1, 0, False)),)
+    )
     checkbox = workspace.findChild(QCheckBox, "reconcileSyncPlaylists")
-    preview = workspace.findChild(QPlainTextEdit, "syncPlaylistReviewChanges")
+    preview = workspace.findChild(QTableView, "syncPlaylistReviewChanges")
     execute = workspace.findChild(QPushButton, "executeSync")
     assert checkbox is not None and preview is not None and execute is not None
     checkbox.click()
@@ -281,8 +295,104 @@ def test_new_scan_and_exit_clear_preview_and_restore_checked_default(
         workspace.show_scan("Scanning")
     assert workspace.reconcile_playlists
     assert changed.count() == 0
-    assert preview.toPlainText() == ""
-    assert preview.isHidden()
+    assert preview.model().rowCount() == 0
+    assert not preview.isVisible()
     assert not execute.isEnabled()
     workspace.show_review()
     assert not execute.isEnabled()
+
+
+def test_individual_playlist_choices_survive_preview_refresh_and_leave_media_alone(
+    workspace: SyncWorkspace,
+) -> None:
+    rows = (
+        _row(PlaylistSyncChange("A", "update", 0, 1, False), 1),
+        _row(PlaylistSyncChange("B", "create", 2, 0, False), 2),
+    )
+    workspace.set_playlist_preview(rows)
+    review = workspace.findChild(PlaylistSyncReview)
+    execute = workspace.findChild(QPushButton, "executeSync")
+    assert review is not None and execute is not None
+    original = workspace.selection.selected_plan
+    review.table.setCurrentIndex(review.model.index(0, 0))
+    review.table.setFocus()
+    from PySide6.QtTest import QTest
+
+    QTest.keyClick(review.table, Qt.Key.Key_Space)
+    assert workspace.playlist_choices == (PlaylistSyncChoice(1, included=False),)
+    assert execute.isEnabled()
+    assert workspace.selection.selected_plan == original
+    workspace.set_playlist_preview(
+        tuple(
+            replace(row, choice=workspace.playlist_choices[0])
+            if row.host_playlist_id == 1
+            else row
+            for row in rows
+        )
+    )
+    assert (
+        review.model.index(0, 0).data(Qt.ItemDataRole.CheckStateRole)
+        == Qt.CheckState.Unchecked
+    )
+    review.model.setData(
+        review.model.index(1, 0),
+        Qt.CheckState.Unchecked,
+        Qt.ItemDataRole.CheckStateRole,
+    )
+    assert not execute.isEnabled()
+    assert workspace.selection.selected_plan == original
+
+
+def test_skipped_reasons_are_visible_and_do_not_enable_sync(
+    workspace: SyncWorkspace,
+) -> None:
+    row = PlaylistSyncReviewItem(
+        1,
+        "Road trip",
+        PlaylistSyncChoice(1),
+        issue_code="sync.playlist_incomplete",
+        detail="Resolve missing source entries and rescan.",
+    )
+    workspace.set_playlist_preview((row,))
+    execute = workspace.findChild(QPushButton, "executeSync")
+    review = workspace.findChild(PlaylistSyncReview)
+    assert execute is not None and review is not None
+    assert not execute.isEnabled()
+    assert review.model.index(0, 2).data() == "Needs attention"
+    assert any(label.text() == row.detail for label in review.findChildren(QLabel))
+    button = workspace.findChild(QPushButton, "changePlaylistMatch")
+    assert button is not None and button.isEnabled()
+
+
+@pytest.mark.parametrize("accept", [False, True])
+def test_match_dialog_only_applies_the_accepted_target(
+    workspace: SyncWorkspace, accept: bool
+) -> None:
+    row = _row(PlaylistSyncChange("Host", "create", 0, 0, False))
+    library = LibrarySnapshot(
+        playlists=(
+            Playlist(10, "Existing"),
+            Playlist(20, "Managed", system_managed=True),
+            Playlist(30, "Folder", kind=PlaylistKind.FOLDER),
+        )
+    )
+    workspace.set_playlist_preview((row,), library)
+    button = workspace.findChild(QPushButton, "changePlaylistMatch")
+    assert button is not None
+
+    def choose() -> None:
+        dialog = APPLICATION.activeModalWidget()
+        assert isinstance(dialog, PlaylistMatchDialog)
+        assert dialog.targets.count() == 2  # Create new and the regular target.
+        dialog.targets.setCurrentRow(1)
+        assert dialog.target_id == 10
+        if accept:
+            dialog.accept()
+        else:
+            dialog.reject()
+
+    QTimer.singleShot(0, choose)
+    button.click()
+    assert workspace.playlist_choices == (
+        (PlaylistSyncChoice(1, automatic=False, target_id=10),) if accept else ()
+    )

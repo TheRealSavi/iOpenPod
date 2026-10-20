@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from iPodDB.library.photos import Photo, PhotoThumbnailFormat
     from iPodDB.library.signing import Hash72Material
     from iPodDB.library.sqlite import SQLiteDatabaseSet, SQLiteSource
+    from iPodDB.library.video import VideoPlaybackMetadata
 
 
 class IssueSeverity(StrEnum):
@@ -289,6 +290,15 @@ class PreparedLyrics:
 
 
 @dataclass(frozen=True, slots=True)
+class PreparedVideoMetadata:
+    """Observed descriptors bound to the exact final file, including retained media."""
+
+    track_id: int
+    file: FileDependency
+    playback: VideoPlaybackMetadata
+
+
+@dataclass(frozen=True, slots=True)
 class WriteResources:
     """Evidence and optional caller-owned buffers for complete prepared outputs.
 
@@ -317,6 +327,7 @@ class WriteResources:
     # Zero supplies no clock evidence; iPodDB never reads the Host clock.
     playlist_timestamp: int = field(default=0, kw_only=True)
     sqlite_sources: tuple[SQLiteSource, ...] = field(default=(), kw_only=True)
+    video_metadata: tuple[PreparedVideoMetadata, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

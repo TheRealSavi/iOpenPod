@@ -799,6 +799,17 @@
     </message>
 </context>
 <context>
+    <name>CheckableComboBox</name>
+    <message>
+        <source>None</source>
+        <translation>Ninguno</translation>
+    </message>
+    <message>
+        <source>%1 selected</source>
+        <translation>%1 seleccionados</translation>
+    </message>
+</context>
+<context>
     <name>CollectionDetailPage</name>
     <message>
         <source>Back to collections</source>
@@ -2233,6 +2244,117 @@
             <numerusform>%n carpeta seleccionada</numerusform>
             <numerusform>%n carpetas seleccionadas</numerusform>
         </translation>
+    </message>
+</context>
+<context>
+    <name>MediaStreamsDialog</name>
+    <message>
+        <source>Choose streams</source>
+        <translation>Elegir flujos</translation>
+    </message>
+    <message>
+        <source>Use automatic stream selection</source>
+        <translation>Seleccionar flujos automáticamente</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Vídeo</translation>
+    </message>
+    <message>
+        <source>Audio</source>
+        <translation>Audio</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>Subtítulos</translation>
+    </message>
+    <message>
+        <source>Captions</source>
+        <translation>Subtítulos de accesibilidad</translation>
+    </message>
+    <message>
+        <source>Choices apply to this Sync. Existing iPod copies will be replaced when selected for Sync. Text subtitle formatting may be simplified. Captions embedded inside video remain part of that video stream.</source>
+        <translation type="vanished">Las opciones se aplican a esta sincronización. Las copias existentes en el iPod se reemplazarán si se seleccionan para sincronizar. El formato de los subtítulos de texto puede simplificarse. Los subtítulos integrados en el vídeo siguen formando parte de ese flujo de vídeo.</translation>
+    </message>
+    <message>
+        <source>Choices are remembered for this Host file across scans and Syncs. Changed choices replace the iPod copy once. Text subtitle formatting may be simplified. Captions embedded inside video remain part of that video stream.</source>
+        <translation>Las opciones de este archivo se recuerdan entre análisis y sincronizaciones. Si cambias las opciones, la copia del iPod se reemplaza una vez. El formato de los subtítulos de texto puede simplificarse. Los subtítulos integrados en el vídeo siguen formando parte de ese flujo de vídeo.</translation>
+    </message>
+    <message>
+        <source>Apply choices</source>
+        <translation>Aplicar opciones</translation>
+    </message>
+    <message>
+        <source>Reading available streams…</source>
+        <translation>Leyendo los flujos disponibles…</translation>
+    </message>
+    <message>
+        <source>Choose the streams to include in the iPod copy.</source>
+        <translation>Elige los flujos que quieres incluir en la copia del iPod.</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Ninguno</translation>
+    </message>
+    <message>
+        <source>No separate streams found</source>
+        <translation>No se encontraron flujos independientes</translation>
+    </message>
+    <message>
+        <source> — unavailable on this iPod (no supported conversion)</source>
+        <translation> — no disponible en este iPod (sin conversión compatible)</translation>
+    </message>
+    <message>
+        <source> — convert to iPod text</source>
+        <translation> — convertir a texto para iPod</translation>
+    </message>
+    <message>
+        <source>Stream %1</source>
+        <translation>Flujo %1</translation>
+    </message>
+    <message>
+        <source>%1 channels</source>
+        <translation>%1 canales</translation>
+    </message>
+    <message>
+        <source>Language unspecified</source>
+        <translation>Idioma sin especificar</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>Predeterminado</translation>
+    </message>
+    <message>
+        <source>Forced</source>
+        <translation>Forzado</translation>
+    </message>
+    <message>
+        <source>Hearing impaired</source>
+        <translation>Para personas con discapacidad auditiva</translation>
+    </message>
+    <message>
+        <source>Visual impaired</source>
+        <translation>Para personas con discapacidad visual</translation>
+    </message>
+    <message>
+        <source>Commentary</source>
+        <translation>Comentarios</translation>
+    </message>
+    <message>
+        <source>Unavailable on this iPod — no supported conversion</source>
+        <translation>No disponible en este iPod — no hay una conversión compatible</translation>
+    </message>
+    <message>
+        <source>Convert to iPod text</source>
+        <translation>Convertir a texto para iPod</translation>
+    </message>
+    <message>
+        <source>Ready for iPod</source>
+        <translation>Listo para el iPod</translation>
+    </message>
+    <message>
+        <source>The stream choices could not be saved. Your previous choices are unchanged. %1</source>
+        <translation>No se pudieron guardar las opciones de los flujos. Tus opciones anteriores no han cambiado. %1</translation>
     </message>
 </context>
 <context>
@@ -4162,6 +4284,57 @@
     </message>
 </context>
 <context>
+    <name>PlaylistMatchDialog</name>
+    <message>
+        <source>Choose Playlist match</source>
+        <translation>Elegir coincidencia de lista</translation>
+    </message>
+    <message>
+        <source>Host Playlist source</source>
+        <translation>Origen de la lista del equipo</translation>
+    </message>
+    <message>
+        <source>Use an existing iPod Playlist or create a new one. Sync will use the name, entries and order from the Host Playlist.</source>
+        <translation>Usa una lista existente del iPod o crea una nueva. La sincronización usará el nombre, las entradas y el orden de la lista del equipo.</translation>
+    </message>
+    <message>
+        <source>Search iPod Playlists</source>
+        <translation>Buscar listas del iPod</translation>
+    </message>
+    <message>
+        <source>iPod Playlists</source>
+        <translation>Listas del iPod</translation>
+    </message>
+    <message>
+        <source>iPod Playlist matches</source>
+        <translation>Coincidencias de listas del iPod</translation>
+    </message>
+    <message>
+        <source>Create new Playlist</source>
+        <translation>Crear lista nueva</translation>
+    </message>
+    <message>
+        <source>%1 · %2 Tracks</source>
+        <translation>%1 · %2 pistas</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="vanished">Cancelar</translation>
+    </message>
+    <message>
+        <source>Use this match</source>
+        <translation>Usar esta coincidencia</translation>
+    </message>
+    <message>
+        <source>A new Playlist will be added to the iPod.</source>
+        <translation>Se añadirá una nueva lista al iPod.</translation>
+    </message>
+    <message>
+        <source>Empty Playlist</source>
+        <translation>Lista vacía</translation>
+    </message>
+</context>
+<context>
     <name>PlaylistPage</name>
     <message>
         <source>Every Playlist and folder inside this folder will also be removed.</source>
@@ -4252,6 +4425,80 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Add tracks to the top of the Queue</source>
         <translation>Añadir pistas al principio de la cola</translation>
+    </message>
+</context>
+<context>
+    <name>PlaylistSyncReview</name>
+    <message>
+        <source>Skipped this Sync. Track selection is unchanged.</source>
+        <translation>Se omitirá en esta sincronización. La selección de pistas no cambia.</translation>
+    </message>
+    <message>
+        <source>Playlist Sync choices</source>
+        <translation>Opciones de sincronización de listas</translation>
+    </message>
+    <message>
+        <source>Check a Playlist to sync it. Select a row and choose Change match to use another iPod Playlist.</source>
+        <translation>Marca una lista para sincronizarla. Selecciona una fila y elige Cambiar coincidencia para usar otra lista del iPod.</translation>
+    </message>
+    <message>
+        <source>Change match…</source>
+        <translation>Cambiar coincidencia…</translation>
+    </message>
+</context>
+<context>
+    <name>PlaylistSyncTableModel</name>
+    <message>
+        <source>Host Playlist</source>
+        <translation>Lista del equipo</translation>
+    </message>
+    <message>
+        <source>On iPod</source>
+        <translation>En el iPod</translation>
+    </message>
+    <message>
+        <source>Changes</source>
+        <translation>Cambios</translation>
+    </message>
+    <message>
+        <source>Choose a match…</source>
+        <translation>Elegir coincidencia…</translation>
+    </message>
+    <message>
+        <source>Create new Playlist</source>
+        <translation>Crear lista nueva</translation>
+    </message>
+    <message>
+        <source>Skipped</source>
+        <translation>Omitida</translation>
+    </message>
+    <message>
+        <source>Needs attention</source>
+        <translation>Requiere atención</translation>
+    </message>
+    <message>
+        <source>Save match</source>
+        <translation>Guardar coincidencia</translation>
+    </message>
+    <message>
+        <source>Up to date</source>
+        <translation>Actualizada</translation>
+    </message>
+    <message>
+        <source>Create</source>
+        <translation>Crear</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>Renombrar</translation>
+    </message>
+    <message>
+        <source>%1 added, %2 removed</source>
+        <translation>%1 añadidas, %2 eliminadas</translation>
+    </message>
+    <message>
+        <source>Reorder</source>
+        <translation>Reordenar</translation>
     </message>
 </context>
 <context>
@@ -6522,6 +6769,38 @@ Playlists: %3</translation>
         <translation>Foto</translation>
     </message>
     <message>
+        <source>Restore automatic stream selection</source>
+        <translation>Restaurar la selección automática de flujos</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Vídeo</translation>
+    </message>
+    <message>
+        <source>Audio</source>
+        <translation>Audio</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>Subtítulos</translation>
+    </message>
+    <message>
+        <source>Captions</source>
+        <translation>Subtítulos de accesibilidad</translation>
+    </message>
+    <message>
+        <source>Selected streams: %1</source>
+        <translation>Flujos seleccionados: %1</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Ninguno</translation>
+    </message>
+    <message>
+        <source>Video or selected-stream source changed</source>
+        <translation>Ha cambiado el archivo de origen del vídeo o de los flujos seleccionados</translation>
+    </message>
+    <message>
         <source>Audio payload fingerprint changed</source>
         <translation>Cambió la huella del contenido de audio</translation>
     </message>
@@ -6690,6 +6969,10 @@ Playlists: %3</translation>
     <message>
         <source>Deselect from Sync</source>
         <translation>Deseleccionar de la sincronización</translation>
+    </message>
+    <message>
+        <source>Choose streams…</source>
+        <translation>Elegir flujos…</translation>
     </message>
 </context>
 <context>
@@ -6888,7 +7171,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Reconcile Playlists</source>
-        <translation>Ajustar listas de reproducción</translation>
+        <translation type="vanished">Ajustar listas de reproducción</translation>
     </message>
     <message>
         <source>Create and update supported Host Playlists using the selected media. Review membership and order changes below. References to removed Tracks are removed from iPod Playlists even when this option is off.</source>
@@ -6896,11 +7179,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Playlist changes</source>
-        <translation>Cambios en las listas de reproducción</translation>
+        <translation type="vanished">Cambios en las listas de reproducción</translation>
     </message>
     <message>
         <source>Read-only preview of Playlist creation, membership, and order changes.</source>
-        <translation>Vista previa de solo lectura de los cambios de creación, contenido y orden de las listas.</translation>
+        <translation type="vanished">Vista previa de solo lectura de los cambios de creación, contenido y orden de las listas.</translation>
     </message>
     <message>
         <source>Validate and apply the selected changes using your transcoding and Sync settings. Independent items that fail preparation are skipped and reported.</source>
@@ -6912,6 +7195,14 @@ Playlists: %3</translation>
             <numerusform>%n elemento del equipo seleccionado para el iPod</numerusform>
             <numerusform>%n elementos del equipo seleccionados para el iPod</numerusform>
         </translation>
+    </message>
+    <message>
+        <source>Sync Playlists</source>
+        <translation>Sincronizar listas</translation>
+    </message>
+    <message>
+        <source>Saved stream choices could not be loaded. Sync is paused to preserve your choices. Restore the preferences file and scan again. %1</source>
+        <translation>No se pudieron cargar las opciones guardadas de los flujos. La sincronización está en pausa para conservar tus opciones. Restaura el archivo de preferencias y vuelve a analizar. %1</translation>
     </message>
     <message>
         <source>Result</source>
@@ -6944,6 +7235,10 @@ Playlists: %3</translation>
         </translation>
     </message>
     <message>
+        <source> · Playlist matches to save: %1</source>
+        <translation> · Coincidencias de listas por guardar: %1</translation>
+    </message>
+    <message>
         <source>Selected duplicates need choices</source>
         <translation>Debes elegir qué hacer con los duplicados seleccionados</translation>
     </message>
@@ -6967,32 +7262,44 @@ Playlists: %3</translation>
         <translation>Cambios de medios seleccionados en todos los grupos, incluidos los elementos ocultos por filtros, y cambios de listas seleccionados.</translation>
     </message>
     <message>
+        <source>Playlist Sync is off. References to Tracks you remove are still removed.</source>
+        <translation>La sincronización de listas está desactivada. Se seguirán eliminando las referencias a las pistas que elimines.</translation>
+    </message>
+    <message>
+        <source>Choose which Playlists to update. Track selection stays separate.</source>
+        <translation>Elige qué listas actualizar. La selección de pistas es independiente.</translation>
+    </message>
+    <message>
+        <source>No Host Playlists to sync.</source>
+        <translation>No hay listas del equipo para sincronizar.</translation>
+    </message>
+    <message>
         <source>Create</source>
-        <translation>Crear</translation>
+        <translation type="vanished">Crear</translation>
     </message>
     <message>
         <source>Update</source>
-        <translation>Actualizar</translation>
+        <translation type="vanished">Actualizar</translation>
     </message>
     <message>
         <source>%1 added, %2 removed</source>
-        <translation>%1 añadidos, %2 quitados</translation>
+        <translation type="vanished">%1 añadidos, %2 quitados</translation>
     </message>
     <message>
         <source>, order changed</source>
-        <translation>, orden modificado</translation>
+        <translation type="vanished">, orden modificado</translation>
     </message>
     <message>
         <source>Host Playlists will not be reconciled. References to removed Tracks are still removed.</source>
-        <translation>Las listas del equipo no se ajustarán. Las referencias a pistas eliminadas se quitarán igualmente.</translation>
+        <translation type="vanished">Las listas del equipo no se ajustarán. Las referencias a pistas eliminadas se quitarán igualmente.</translation>
     </message>
     <message>
         <source>Membership and order changes for the selected media:</source>
-        <translation>Cambios de contenido y orden para los medios seleccionados:</translation>
+        <translation type="vanished">Cambios de contenido y orden para los medios seleccionados:</translation>
     </message>
     <message>
         <source>No Playlist changes for the selected media.</source>
-        <translation>No hay cambios en las listas para los medios seleccionados.</translation>
+        <translation type="vanished">No hay cambios en las listas para los medios seleccionados.</translation>
     </message>
 </context>
 <context>
@@ -8163,7 +8470,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A Host Playlist or one of its retained sources changed or became unavailable after Review. Host Playlist reconciliation was skipped; rescan before retrying.</source>
-        <translation>Una lista del equipo o uno de sus archivos conservados cambió o dejó de estar disponible después de la revisión. Se omitió el ajuste de listas del equipo; vuelve a analizar antes de reintentarlo.</translation>
+        <translation type="vanished">Una lista del equipo o uno de sus archivos conservados cambió o dejó de estar disponible después de la revisión. Se omitió el ajuste de listas del equipo; vuelve a analizar antes de reintentarlo.</translation>
     </message>
     <message>
         <source>A Master Playlist does not contain the desired device name.</source>
@@ -8578,6 +8885,10 @@ Playlists: %3</translation>
         <translation>Elige si deben cumplirse todas las reglas o cualquiera de ellas.</translation>
     </message>
     <message>
+        <source>Chosen in Review</source>
+        <translation>Elegida en la revisión</translation>
+    </message>
+    <message>
         <source>Cleaning verified Library recovery files…</source>
         <translation>Limpiando archivos verificados de recuperación de la biblioteca…</translation>
     </message>
@@ -8648,6 +8959,10 @@ Playlists: %3</translation>
     <message>
         <source>Could not refresh {title}: {error}</source>
         <translation>No se pudo actualizar {title}: {error}</translation>
+    </message>
+    <message>
+        <source>Could not repair subtitle and caption metadata for &quot;{title}&quot;. The existing video is unchanged; Sync can retry the repair.</source>
+        <translation>No se pudieron reparar los metadatos de subtítulos y subtítulos ocultos de "{title}". El vídeo existente no ha cambiado; la sincronización puede volver a intentar la reparación.</translation>
     </message>
     <message>
         <source>Cover Flow devices are sensitive to Artist+Album differences and same-name albums.</source>
@@ -8998,6 +9313,10 @@ Playlists: %3</translation>
         <translation>Más de una lista lleva el marcador especial de pódcast.</translation>
     </message>
     <message>
+        <source>More than one Playlist has this name. Choose an iPod Playlist or create a new one.</source>
+        <translation>Hay varias listas con este nombre. Elige una lista del iPod o crea una nueva.</translation>
+    </message>
+    <message>
         <source>Multiple playlist datasets have the same type; their ownership is ambiguous.</source>
         <translation>Varios conjuntos de datos de listas tienen el mismo tipo; no está claro a cuál pertenecen.</translation>
     </message>
@@ -9012,6 +9331,10 @@ Playlists: %3</translation>
     <message>
         <source>New Photo Albums must follow the retained Photo Albums.</source>
         <translation>Los nuevos álbumes de fotos deben ir después de los álbumes conservados.</translation>
+    </message>
+    <message>
+        <source>New Playlist</source>
+        <translation>Lista nueva</translation>
     </message>
     <message>
         <source>New Playlists require an established counterpart dataset; the existing playlist datasets disagree.</source>
@@ -9195,19 +9518,19 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved because its name matches an ambiguous or managed Playlist. Rename the Host Playlist and retry.</source>
-        <translation>Se conservó la lista {name} porque su nombre coincide con una lista ambigua o gestionada por el dispositivo. Cambia el nombre de la lista del equipo y vuelve a intentarlo.</translation>
+        <translation type="vanished">Se conservó la lista {name} porque su nombre coincide con una lista ambigua o gestionada por el dispositivo. Cambia el nombre de la lista del equipo y vuelve a intentarlo.</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved because one of its selected Tracks failed. Retry those Tracks to update this Playlist.</source>
-        <translation>Se conservó la lista {name} porque una de sus pistas seleccionadas falló. Reintenta esas pistas para actualizar esta lista.</translation>
+        <translation type="vanished">Se conservó la lista {name} porque una de sus pistas seleccionadas falló. Reintenta esas pistas para actualizar esta lista.</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved because some of its Tracks have unresolved matches. Review those matches before updating this Playlist.</source>
-        <translation>Se ha conservado la lista de reproducción {name} porque algunas de sus pistas tienen coincidencias sin resolver. Revisa esas coincidencias antes de actualizar esta lista.</translation>
+        <translation type="vanished">Se ha conservado la lista de reproducción {name} porque algunas de sus pistas tienen coincidencias sin resolver. Revisa esas coincidencias antes de actualizar esta lista.</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved because some source entries were excluded or could not be read. Resolve its missing or declined references and rescan before updating this Playlist.</source>
-        <translation>Se conservó la lista {name} porque algunas entradas de origen se excluyeron o no se pudieron leer. Resuelve sus referencias ausentes o rechazadas y vuelve a analizar antes de actualizar esta lista.</translation>
+        <translation type="vanished">Se conservó la lista {name} porque algunas entradas de origen se excluyeron o no se pudieron leer. Resuelve sus referencias ausentes o rechazadas y vuelve a analizar antes de actualizar esta lista.</translation>
     </message>
     <message>
         <source>Podcast Episode could not be added. Refresh the Podcast and retry.</source>
@@ -9538,6 +9861,10 @@ Playlists: %3</translation>
         <translation>Solicita el reemplazo de medios una sola vez por pista.</translation>
     </message>
     <message>
+        <source>Resolve the unmatched Tracks in this Playlist before syncing it.</source>
+        <translation>Resuelve las pistas sin coincidencia de esta lista antes de sincronizarla.</translation>
+    </message>
+    <message>
         <source>Restore Recovery is still required.</source>
         <translation>Aún es necesario recuperar la restauración.</translation>
     </message>
@@ -9630,6 +9957,14 @@ Playlists: %3</translation>
         <translation>La regeneración de SQLite requiere fechas de pistas resueltas. Vuelve a cargar con una zona horaria conocida antes de guardar esta biblioteca.</translation>
     </message>
     <message>
+        <source>Same name</source>
+        <translation>Mismo nombre</translation>
+    </message>
+    <message>
+        <source>Saved match</source>
+        <translation>Coincidencia guardada</translation>
+    </message>
+    <message>
         <source>Saving Sync helper…</source>
         <translation>Guardando índice auxiliar de sincronización…</translation>
     </message>
@@ -9674,6 +10009,10 @@ Playlists: %3</translation>
         <translation>Selecciona fotos de la biblioteca actual.</translation>
     </message>
     <message>
+        <source>Select Tracks from this Playlist to add them to the iPod.</source>
+        <translation>Selecciona pistas de esta lista para añadirlas al iPod.</translation>
+    </message>
+    <message>
         <source>Select an Active iPod before exporting Photos.</source>
         <translation>Selecciona un iPod activo antes de exportar fotos.</translation>
     </message>
@@ -9696,6 +10035,14 @@ Playlists: %3</translation>
     <message>
         <source>Select at least one Track to export.</source>
         <translation>Selecciona al menos una pista para exportar.</translation>
+    </message>
+    <message>
+        <source>Select at least one playable stream</source>
+        <translation>Selecciona al menos un flujo reproducible</translation>
+    </message>
+    <message>
+        <source>Select one video stream for this video.</source>
+        <translation>Selecciona un flujo de vídeo para este vídeo.</translation>
     </message>
     <message>
         <source>Select the complete Album before converting its Tracks.</source>
@@ -9768,6 +10115,10 @@ Playlists: %3</translation>
     <message>
         <source>Some retained Track dates cannot be represented uniquely with the known timezone and missing-date marker. They are unavailable in the Library; unrelated edits preserve their native bytes.</source>
         <translation>Algunas fechas de pistas conservadas no se pueden representar de forma unívoca con la zona horaria conocida y el marcador de fecha ausente. No están disponibles en la biblioteca; las modificaciones de otros campos conservan sus bytes originales.</translation>
+    </message>
+    <message>
+        <source>Some source entries could not be read or were declined. Resolve them and rescan.</source>
+        <translation>Algunas entradas de origen no se pudieron leer o fueron rechazadas. Resuélvelas y vuelve a escanear.</translation>
     </message>
     <message>
         <source>Sort 36 has no retained source index.</source>
@@ -9920,6 +10271,14 @@ Playlists: %3</translation>
     <message>
         <source>The Host destination directory does not exist: {parent_path}</source>
         <translation>La carpeta de destino del equipo no existe: {parent_path}</translation>
+    </message>
+    <message>
+        <source>The Host file changed after scanning. Rescan before choosing streams.</source>
+        <translation>El archivo del equipo ha cambiado después del análisis. Vuelve a analizarlo antes de elegir los flujos.</translation>
+    </message>
+    <message>
+        <source>The Host file changed during inspection. Rescan before choosing streams.</source>
+        <translation>El archivo del equipo ha cambiado durante la inspección. Vuelve a analizarlo antes de elegir los flujos.</translation>
     </message>
     <message>
         <source>The Host source {name} changed after scanning. Rescan before Sync.</source>
@@ -10154,6 +10513,10 @@ Playlists: %3</translation>
         <translation>El álbum principal de la biblioteca de fotos es de solo lectura.</translation>
     </message>
     <message>
+        <source>The matched Playlist is missing or cannot be synced. Choose another iPod Playlist or create a new one.</source>
+        <translation>La lista coincidente no existe o no se puede sincronizar. Elige otra lista del iPod o crea una nueva.</translation>
+    </message>
+    <message>
         <source>The name cannot contain a null character.</source>
         <translation>El nombre no puede contener un carácter nulo.</translation>
     </message>
@@ -10310,6 +10673,10 @@ Playlists: %3</translation>
         <translation>No se pudo resolver la ruta seleccionada: {error}</translation>
     </message>
     <message>
+        <source>The selected streams changed. Rescan the source and choose its streams again.</source>
+        <translation>Los flujos seleccionados han cambiado. Vuelve a analizar el archivo de origen y a elegir sus flujos.</translation>
+    </message>
+    <message>
         <source>The selection contains a missing or repeated Photo.</source>
         <translation>La selección contiene una foto ausente o repetida.</translation>
     </message>
@@ -10328,6 +10695,10 @@ Playlists: %3</translation>
     <message>
         <source>The symbolic link could not be followed: {error}</source>
         <translation>No se pudo seguir el enlace simbólico: {error}</translation>
+    </message>
+    <message>
+        <source>This iPod cannot play video.</source>
+        <translation>Este iPod no puede reproducir vídeo.</translation>
     </message>
     <message>
         <source>This iPod&apos;s database format stores played state only through the play count.</source>
@@ -10352,6 +10723,10 @@ Playlists: %3</translation>
     <message>
         <source>Unsupported media file.</source>
         <translation>Archivo multimedia no compatible.</translation>
+    </message>
+    <message>
+        <source>Video playback metadata repeats a Track identity.</source>
+        <translation>Los metadatos de reproducción de vídeo repiten la identidad de una pista.</translation>
     </message>
     <message>
         <source>Windows package (sideloaded)</source>
@@ -10518,6 +10893,10 @@ Playlists: %3</translation>
         <translation>Esta escritura de la biblioteca requiere un inventario capturado sin archivos auxiliares de posiciones de reproducción pendientes. Consérvalos o ajústalos antes de preparar el resultado.</translation>
     </message>
     <message>
+        <source>A Host Playlist or one of its retained sources changed or became unavailable after Review. Affected Playlists were skipped; rescan before retrying.</source>
+        <translation>Una lista del equipo o una de sus fuentes conservadas cambió o dejó de estar disponible después de la revisión. Se omitieron las listas afectadas; vuelve a escanear antes de reintentarlo.</translation>
+    </message>
+    <message>
         <source>A Podcast show is missing unique persistent identity or group metadata.</source>
         <translation>A un programa de pódcast le falta una identidad persistente única o los metadatos del grupo.</translation>
     </message>
@@ -10534,6 +10913,22 @@ Playlists: %3</translation>
         <translation>Una lista de reproducción de pódcasts normalizada tiene una ordenación, indicadores o identidad de base de datos incoherentes.</translation>
     </message>
     <message>
+        <source>A selected Track failed. Retry it before syncing this Playlist.</source>
+        <translation>Una pista seleccionada falló. Reinténtala antes de sincronizar esta lista.</translation>
+    </message>
+    <message>
+        <source>A selected subtitle or caption cannot be prepared for this iPod. Choose another stream.</source>
+        <translation>No se puede preparar uno de los flujos de subtítulos seleccionados para este iPod. Elige otro flujo.</translation>
+    </message>
+    <message>
+        <source>A video frame for {name} could not be prepared. Media can still Sync; any existing iPod artwork was preserved.</source>
+        <translation>No se pudo preparar un fotograma de {name}. El contenido se puede sincronizar; se ha conservado cualquier carátula existente del iPod.</translation>
+    </message>
+    <message>
+        <source>A video frame for {name} could not be prepared. The Episode can still sync without artwork.</source>
+        <translation>No se pudo preparar un fotograma de {name}. El episodio se puede sincronizar sin carátula.</translation>
+    </message>
+    <message>
         <source>Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.</source>
         <translation>La reconstrucción del índice de álbumes requiere un único par de índice y tabla de saltos, además de entradas completas e inequívocas en la lista principal.</translation>
     </message>
@@ -10546,12 +10941,20 @@ Playlists: %3</translation>
         <translation>La reconstrucción de los índices de álbumes perdió o duplicó un índice de navegación conservado.</translation>
     </message>
     <message>
+        <source>Another selected Host Playlist uses this iPod Playlist. Choose a different target or uncheck one.</source>
+        <translation>Otra lista seleccionada del equipo usa esta lista del iPod. Elige otro destino o desmarca una de ellas.</translation>
+    </message>
+    <message>
         <source>Artwork for {title} could not be prepared. Episodes can still sync.</source>
         <translation>No se han podido preparar las imágenes de {title}. Los episodios se pueden sincronizar de todos modos.</translation>
     </message>
     <message>
         <source>Normalize Podcast album ownership, representative links, show identities and target-specific Playlist traversal.</source>
         <translation>Normalizar la asignación de álbumes de pódcast, los enlaces representativos, las identidades de los programas y el orden de las listas de reproducción según el dispositivo.</translation>
+    </message>
+    <message>
+        <source>Playlist {name} was preserved. {detail}</source>
+        <translation>Se conservó la lista {name}. {detail}</translation>
     </message>
     <message>
         <source>Podcast counterparts must use matching Episode positions.</source>

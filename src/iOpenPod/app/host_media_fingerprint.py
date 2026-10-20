@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import math
 from copy import copy
+from pathlib import PurePosixPath
 from threading import Lock
 from typing import TYPE_CHECKING
 
-from storage import HostPath, StorageError
+from storage import DevicePath, FilesystemSessionError, HostPath, StorageError
 from storage.media_processing import (
     MediaToolError,
     MediaToolFinder,
@@ -17,6 +18,8 @@ from storage.media_processing import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from storage import FilesystemSession
 
 
 _ALGORITHM = 2
@@ -57,6 +60,13 @@ class FpcalcError(RuntimeError):
 
 class FpcalcUnavailableError(FpcalcError):
     """The required ``fpcalc`` executable could not be found or started."""
+
+
+class FpcalcNoAudioError(FpcalcError):
+    """The decoder successfully inspected a file containing no audio stream."""
+
+    def __init__(self) -> None:
+        super().__init__("The media file contains no audio stream")
 
 
 class FpcalcFingerprinter:
@@ -128,6 +138,24 @@ class FpcalcFingerprinter:
         )
         return _parse_output(output)
 
+    def fingerprint_device(
+        self,
+        session: FilesystemSession,
+        source: DevicePath,
+        *,
+        checkpoint: Callable[[], None],
+    ) -> str:
+        """Analyze only the decoder's requested ranges through the live session."""
+        output = _run_fpcalc(
+            self._resolve_executable(),
+            source,
+            checkpoint,
+            timeout_seconds=self._timeout,
+            max_output_bytes=self._output_limit,
+            session=session,
+        )
+        return _parse_output(output)
+
     def _resolve_executable(self) -> HostPath:
         if self._executable is not None:
             return self._executable
@@ -156,15 +184,24 @@ class FpcalcFingerprinter:
 
 def _run_fpcalc(
     executable: HostPath,
-    source: HostPath,
+    source: HostPath | DevicePath,
     checkpoint: Callable[[], None],
     *,
     timeout_seconds: float,
     max_output_bytes: int,
     input_suffix: str | None = None,
+    session: FilesystemSession | None = None,
 ) -> bytes:
     checkpoint()
-    suffix = source.path.suffix if input_suffix is None else input_suffix
+    suffix = (
+        (
+            PurePosixPath(str(source)).suffix
+            if isinstance(source, DevicePath)
+            else source.path.suffix
+        )
+        if input_suffix is None
+        else input_suffix
+    )
     input_format = _INPUT_FORMATS.get(suffix.casefold())
     if input_format is None:
         raise FpcalcError(
@@ -181,17 +218,34 @@ def _run_fpcalc(
         input_format,
     )
     try:
-        result = run_media_tool(
-            executable,
-            arguments,
-            input_file=source,
-            checkpoint=checkpoint,
-            timeout_seconds=timeout_seconds,
-            max_output_bytes=max_output_bytes,
-            max_stderr_bytes=min(max_output_bytes, 65536),
-            low_priority=True,
-            check=False,
-        )
+        if isinstance(source, DevicePath):
+            if session is None:
+                raise ValueError("Device analysis requires a Filesystem Session")
+            result = session.read_with_tool(
+                source,
+                executable,
+                arguments,
+                checkpoint=checkpoint,
+                timeout_seconds=timeout_seconds,
+                max_output_bytes=max_output_bytes,
+                max_stderr_bytes=min(max_output_bytes, 65536),
+                low_priority=True,
+                check=False,
+            )
+        else:
+            result = run_media_tool(
+                executable,
+                arguments,
+                input_file=source,
+                checkpoint=checkpoint,
+                timeout_seconds=timeout_seconds,
+                max_output_bytes=max_output_bytes,
+                max_stderr_bytes=min(max_output_bytes, 65536),
+                low_priority=True,
+                check=False,
+            )
+    except FilesystemSessionError:
+        raise
     except MediaToolError as error:
         if error.code == "media.tool_unavailable":
             raise FpcalcUnavailableError(
@@ -207,6 +261,11 @@ def _run_fpcalc(
         raise FpcalcError(str(error)) from error
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()[:2000]
+        if (
+            detail
+            == "ERROR: Could not find any audio stream in the file (Stream not found)"
+        ):
+            raise FpcalcNoAudioError
         raise FpcalcError(detail or "fpcalc could not fingerprint the file")
     return result.stdout
 
@@ -253,6 +312,7 @@ def normalize_fpcalc_fingerprint(value: str) -> str:
 __all__ = [
     "FpcalcError",
     "FpcalcFingerprinter",
+    "FpcalcNoAudioError",
     "FpcalcUnavailableError",
     "normalize_fpcalc_fingerprint",
 ]

@@ -1,0 +1,82 @@
+# Choose streams for Sync
+
+In **Sync with Host → Select Media**, right-click one Track in a Track table and
+choose **Choose streams…**. For a movie or TV episode, open its Track list first
+if the browser is showing collection cards.
+
+Turn off **Use automatic stream selection**, then choose:
+
+- One **Video** stream, identified by its stream number, codec, and dimensions.
+- One **Audio** stream, with language, title, and channel details when available.
+  Videos also offer **None** for a silent copy.
+- The **Subtitles** and **Captions** to include. Uncheck all entries to omit separate
+  tracks of that type. Unavailable formats show an explanation.
+
+Each dropdown shows structured stream rows with the title, language, format,
+technical details, and any conversion or compatibility note. Subtitle and caption
+dropdowns stay open while you check multiple rows; press Escape or Enter to close.
+
+Use **Apply choices**, select the Track for Sync, and continue to **Review Sync**.
+The reason column shows the chosen streams. A changed choice makes an existing iPod
+copy an Update. After successful Sync, the same choice stays In sync on subsequent
+scans. Review exclusions still skip that action.
+Canceling the chooser preserves the previous choice. Re-enable automatic selection
+and apply to restore the normal preparation policy.
+
+Choices are saved on this computer for each Host file path. They survive rescans,
+restarts, cancelled Syncs, and changes of Active iPod. Missing folders do not erase
+them. Changing back to automatic selection replaces a previously customized copy
+once. A renamed or moved source needs its choices set at the new path.
+
+The source must remain unchanged between scanning, selection, and preparation.
+Changed or unsupported selected streams are reported instead of silently choosing
+another language or edition. Reopen the chooser to correct them. Your Host files
+are not edited. Save errors keep the chooser open; unreadable saved preferences
+block Sync until the file is restored and you scan again. Preferences live in
+`media-stream-selections.json` in the application's Host configuration directory,
+separately from disposable scan caches.
+
+Video matching does not treat the first 120 seconds of audio as proof of identical
+picture, subtitles, or alternate tracks. Previously synced files retain their
+established association; changed video file facts request preparation again.
+An unfamiliar iPod video with matching audio requires an explicit matching choice
+in Review. This avoids copying entire movies just to establish a stronger scan
+identity. Silent new videos can be selected for Add and then use Sync provenance
+on later scans. Same-size, same-timestamp edits remain outside the cheap cache gate.
+
+Automatic selection retains supported embedded text subtitles. To omit a subtitle
+stream, turn off automatic selection and uncheck it.
+
+On iPods that support text subtitles:
+
+- Compatible MOV/MP4 timed text (`tx3g`) is copied when video dimensions stay the
+  same. Resized video gets a matching subtitle display area.
+- SubRip/SRT, WebVTT, ASS/SSA, SAMI, SubViewer, MicroDVD, MPL2, and plain timed text
+  are converted to readable iPod text in a correctly positioned bottom subtitle
+  region. Both its display rectangle and its text/timing are verified.
+- ASS signs, karaoke, and effects retain their words where possible. Fonts,
+  positioning, animation, and drawings are simplified or removed. Overlapping
+  dialogue and signs are combined so neither cuts off the other.
+- Damaged text or timing is recovered where possible and reported. A stream with
+  no usable text produces an explanation instead of a silently empty subtitle
+  track. Uncheck that stream or choose another to continue.
+
+Saved choices that previously converted text with the old display layout or movie
+clock request one Update after the application is restarted and the Library is rescanned.
+Successful Sync replaces that copy and returns it to In sync.
+
+Supported CEA-608 caption tracks can be retained. Some output formats cannot retain
+forced-playback flags; preparation reports this while keeping the selectable text.
+Bitmap subtitles and external subtitle files are not converted here. Captions
+embedded inside video cannot be selected separately from that video stream.
+See ADR-0160 for the conversion and verification contract.
+
+On SQLite-capable iPods, including Nano 5, Sync also writes the subtitle and
+caption playback descriptors from the finished video. Existing videos with
+missing descriptors are repaired during normal Sync or **Refresh Library**, even
+when no media changes are selected. This repair reads the existing video and
+updates the Library databases without re-encoding or rewriting the video.
+Unrelated requested media updates still follow their usual preparation policy.
+If a retained video cannot be inspected, Sync reports it and can retry the repair
+later. Complete descriptors are retained on later Syncs. The Classic keeps its
+existing subtitle preparation. See ADR-0161 for the metadata repair contract.

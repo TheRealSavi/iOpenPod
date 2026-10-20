@@ -223,9 +223,10 @@ def test_long_results_scroll_without_hiding_the_return_action() -> None:
         APPLICATION.processEvents()
 
 
-def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_titles() -> (
-    None
-):
+@pytest.mark.parametrize("phase", ("sync.prepare", "sync.podcast_prepare"))
+def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_titles(
+    phase: str,
+) -> None:
     page = SyncExecutionPage()
     try:
         page.begin()
@@ -245,7 +246,7 @@ def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_t
         )
         page.update_progress(
             WriteProgress(
-                "sync.prepare",
+                phase,
                 "Preparing selected Tracks",
                 completed=1,
                 total=6,
@@ -277,7 +278,7 @@ def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_t
         )
         page.update_progress(
             WriteProgress(
-                "sync.prepare",
+                phase,
                 "Preparing selected Tracks",
                 completed=2,
                 total=6,
@@ -292,6 +293,53 @@ def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_t
             QFrame, "syncPreparationRow"
         )
         assert summary.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize("total", (None, 4 * 1024**3))
+def test_podcast_download_bytes_have_independent_progress(total: int | None) -> None:
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        page.update_progress(
+            WriteProgress(
+                "sync.podcast_prepare",
+                "Preparing Podcast media for the iPod…",
+                completed=1,
+                total=4,
+                unit="episodes",
+                active_items=(
+                    WriteItemProgress(
+                        "podcast:0",
+                        "Episode",
+                        MediaPreparationProgress(
+                            MediaPreparationPhase.READING,
+                            "Downloading Podcast Episode…",
+                            processed_bytes=1024**3,
+                            total_bytes=total,
+                        ),
+                    ),
+                ),
+            )
+        )
+        workers = page.findChild(SyncPreparationProgress, "syncPreparationProgressList")
+        summary = page.findChild(QLabel, "syncPreparationSummary")
+        assert workers is not None and not workers.isHidden()
+        assert (
+            summary is not None
+            and summary.text() == "1 active · 2 waiting · 1 processed"
+        )
+        bar = workers.findChild(QProgressBar, "syncPreparationProgress")
+        detail = workers.findChild(QLabel, "syncPreparationDetail")
+        assert bar is not None and detail is not None
+        assert "1,073,741,824" in detail.text()
+        if total is None:
+            assert bar.maximum() == 0 and "%" not in detail.text()
+        else:
+            assert bar.maximum() == 1000 and bar.value() == 250
+            assert "25%" in detail.text()
     finally:
         page.deleteLater()
         APPLICATION.processEvents()

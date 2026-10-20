@@ -18,6 +18,7 @@ from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.host_media_folders import create_host_media_folder
 from iOpenPod.app.host_media_library import HostMediaLibrary, HostMediaScanner
 from iOpenPod.app.library_sync_helper import IPodMediaCacheStats, IPodMediaLibrary
+from iOpenPod.app.media.inspection import MediaInspector
 from iOpenPod.app.media.lyrics import embedded_lyrics
 from iOpenPod.app.media.transcoding import MediaTranscoder
 from iOpenPod.app.sync_execution import (
@@ -27,13 +28,22 @@ from iOpenPod.app.sync_execution import (
     SyncOptions,
 )
 from iOpenPod.app.sync_plan import (
+    SyncDuplicatePair,
+    SyncDuplicateResolution,
     SyncPlanAction,
     host_path_identity,
     prepare_sync_plan,
+    resolve_sync_duplicates,
     select_sync_plan,
 )
-from iPodDB.library import Track, TrackMetadata
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
+    MhodChapterDataPayload,
+)
+from iPodDB.library import IPodLibrary, Track, TrackChapter, TrackMetadata
 from storage import AtomicHostFile, HostPath
+from storage.media_processing import run_media_tool
 
 pytestmark = pytest.mark.skipif(
     any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")),
@@ -64,6 +74,187 @@ class _MP3File(Protocol):
 class _NoMediaPreparation(MediaTranscoder):
     def preflight(self, *, checkpoint: Callable[[], None]) -> NoReturn:
         pytest.fail("Tag and artwork updates must not prepare replacement media")
+
+
+@pytest.mark.parametrize("video", [False, True], ids=["audio", "video"])
+@pytest.mark.parametrize("rename", [False, True], ids=["same-path", "new-path"])
+def test_sync_updates_preserve_chapters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, video: bool, rename: bool
+) -> None:
+    # Match short fixtures deterministically; scan, preparation and save stay real.
+    def fingerprint(*args: object, **kwargs: object) -> str:
+        return "1,2,3"
+
+    monkeypatch.setattr(
+        "iOpenPod.app.host_media_fingerprint.FpcalcFingerprinter.fingerprint",
+        fingerprint,
+    )
+    path = _chaptered_media(tmp_path, video=video)
+    scanner = HostMediaScanner(AtomicHostFile(tmp_path / "host-cache.json"))
+
+    def scan() -> HostMediaLibrary:
+        pending = scanner.scan((), files=(HostPath(path),), checkpoint=lambda: None)
+        return scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+
+    host = scan()
+    host_track = host.snapshot.tracks[0]
+    # Scanned tags have no chapter evidence; import gets it from captured inspection.
+    assert host_track.metadata.chapters == ()
+    device = bare_device(tmp_path, model_number="MB029")
+    try:
+        ipod = IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False)
+        selected = select_sync_plan(
+            prepare_sync_plan(host, ipod, device.active.library),
+            selected_host_paths=frozenset({host_path_identity(str(path))}),
+            selected_ipod_removals=frozenset(),
+        )
+        initial = SyncExecutor(device.coordinator).execute(
+            SyncExecutionRequest(selected, host, ipod, device.active, 1, 1),
+            lambda _: None,
+            Event(),
+        )
+        assert initial.status is SyncExecutionStatus.SUCCESS, initial.issues
+        assert initial.active is not None and initial.helper is not None
+        original = next(
+            t for t in initial.active.library.tracks if t.title == host_track.title
+        )
+        chapters = (TrackChapter("Opening", 0), TrackChapter("Closing", 100))
+        assert original.metadata.chapters == chapters
+        database = device.root / "iPod_Control/iTunes/iTunesDB"
+        chapter_body = _chapter_body(database.read_bytes(), original.track_id)
+        media_path = device.root / original.metadata.location
+        media_bytes = media_path.read_bytes()
+
+        if rename:
+            path = path.rename(path.with_name(f"Renamed{path.suffix}"))
+        ExportMediaTagger().prepare(
+            HostPath(path), replace(host_track, title="Updated title"), None
+        )
+        observed = MediaInspector().inspect(HostPath(path), checkpoint=lambda: None)
+        assert len(observed.chapters) == len(chapters)
+        assert bool(observed.video_streams) is video
+
+        def no_inspection(*args: object, **kwargs: object) -> NoReturn:
+            pytest.fail("Metadata-only Sync must not require captured inspection")
+
+        if not video:
+            monkeypatch.setattr(MediaInspector, "inspect", no_inspection)
+            monkeypatch.setattr(MediaInspector, "inspect_captured", no_inspection)
+        scanned = scan()
+        assert scanned.snapshot.tracks[0].metadata.chapters == ()
+        host = scan()
+        assert host.cache.reused == 1
+        assert host.snapshot.tracks[0].metadata.chapters == ()
+        comparison = prepare_sync_plan(host, initial.helper, initial.active.library)
+        if video and rename:
+            (group,) = comparison.duplicate_groups
+            assert group.requires_resolution
+            comparison = resolve_sync_duplicates(
+                comparison,
+                (
+                    SyncDuplicateResolution(
+                        group.group_id,
+                        pairs=(SyncDuplicatePair(str(path), original.track_id),),
+                    ),
+                ),
+            )
+        selected = select_sync_plan(
+            comparison,
+            selected_host_paths=frozenset({host_path_identity(str(path))}),
+            selected_ipod_removals=frozenset(),
+        )
+        assert selected.change_count == 1
+        item = next(i for i in selected.items if i.host_path == str(path))
+        assert item.action is SyncPlanAction.UPDATE
+        assert item.ipod_id == original.track_id
+        assert item.metadata_changed
+        assert item.audio_payload_changed is video
+        result = SyncExecutor(
+            device.coordinator,
+            transcoder=MediaTranscoder() if video else _NoMediaPreparation(),
+        ).execute(
+            SyncExecutionRequest(selected, host, initial.helper, initial.active, 1, 1),
+            lambda _: None,
+            Event(),
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None and result.helper is not None
+        saved_bytes = database.read_bytes()
+        reloaded = IPodLibrary(saved_bytes)
+        updated = next(
+            t for t in reloaded.snapshot.tracks if t.track_id == original.track_id
+        )
+        assert updated.title == "Updated title"
+        assert updated.metadata.chapters == chapters
+        assert _chapter_body(saved_bytes, original.track_id) == chapter_body
+        assert updated.ipod is not None and original.ipod is not None
+        assert updated.ipod.db_track_id == original.ipod.db_track_id
+        if video:
+            assert updated.metadata.location != original.metadata.location
+            assert not media_path.exists()
+        else:
+            assert updated.metadata.location == original.metadata.location
+            assert media_path.read_bytes() == media_bytes
+        repeated = prepare_sync_plan(host, result.helper, result.active.library)
+        assert (
+            next(i for i in repeated.items if i.host_path == str(path)).action
+            is SyncPlanAction.UNCHANGED
+        )
+    finally:
+        device.coordinator.close()
+
+
+def _chaptered_media(tmp_path: Path, *, video: bool) -> Path:
+    audio = tmp_path / "chapters.m4a"
+    audio.write_bytes(
+        base64.b64decode((FIXTURES / "chapters-cover.m4a.b64").read_bytes())
+    )
+    if not video:
+        return audio
+    silent = tmp_path / "silent.mp4"
+    silent.write_bytes(base64.b64decode((FIXTURES / "silent.mp4.b64").read_bytes()))
+    output = tmp_path / "chapters.mp4"
+    executable = shutil.which("ffmpeg")
+    assert executable is not None
+    run_media_tool(
+        HostPath(executable),
+        (
+            "-nostdin",
+            "-v",
+            "error",
+            "-i",
+            str(silent),
+            "-i",
+            str(audio),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-map_chapters",
+            "1",
+            "-c",
+            "copy",
+            str(output),
+        ),
+        checkpoint=lambda: None,
+        timeout_seconds=30,
+    )
+    return output
+
+
+def _chapter_body(data: bytes, track_id: int) -> bytes:
+    document = parse_iTunesDB(data)
+    track = next(
+        s.chunk
+        for s in document.find_chunks(MhitHeader)
+        if s.chunk.header.track_id == track_id
+    )
+    (chapter,) = tuple(
+        child
+        for child in track.children
+        if isinstance(child.payload, MhodChapterDataPayload)
+    )
+    return chapter.raw_body
 
 
 @pytest.mark.parametrize("model", ["M9802", "MB565"])

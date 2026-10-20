@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-10-06
 - Extends: ADR-0119, ADR-0066, and ADR-0076
+- Amended by: ADR-0158 for video and explicit stream selections; changed file facts
+  require preparation even when their bounded default-audio fingerprints match.
 
 ## Context
 
@@ -41,6 +43,14 @@ tag policy are independent Sync Plan intentions.
   pixels or a verified retained iTHMB range; clearing artwork removes its embedded
   copy. A preference change retires an uncommitted review. A tag preparation failure
   blocks the save instead of publishing database changes alone.
+- Ordinary retained-file tag edits preserve established Sync Details and acoustic
+  evidence, including the original Host and iPod baselines and applied stream
+  choices. After checking the old file facts and persistent Track identity, refresh
+  only the helper's device file facts in the same recoverable Storage Transaction,
+  publishing the revision-checked helper after the media. Missing helpers create no
+  history; invalid helpers remain untouched and block the retag save. This avoids
+  comparing a transcoded file's new acoustic fingerprint with its Host baseline
+  merely because iOpenPod embedded artwork or edited tags.
 - Non-native Rockbox covers are exactly 120x120 grayscale JPEG; native profiles use
   the captured cover. The embedded representation is independent of iTHMB.
 - Tag rewrites retain location, codec, duration, gapless facts, playback counters,

@@ -15,6 +15,7 @@ from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.library_write import LibraryFileChange
 from iOpenPod.app.media.lyrics import rewrite_lyrics_stream
 from iOpenPod.app.services import volume_presentation
+from iOpenPod.app.services.video_metadata import capture_video_metadata
 from iPodDB.library import (
     MAX_SIDECAR_BYTES,
     ArtworkAsset,
@@ -583,6 +584,20 @@ def capture(
         for w in lyric_writes
         if w.expected is not None
     )
+    video_metadata, video_files, video_issues = capture_video_metadata(
+        session, request, plan, tuple(media_writes), tuple(sqlite_sources), checkpoint
+    )
+    captured_paths = {str(item.path).casefold(): item for item in files}
+    for item in video_files:
+        key = str(item.path).casefold()
+        previous = captured_paths.get(key)
+        if previous is not None and previous.fingerprint != item.fingerprint:
+            raise FilePreconditionError(
+                f"Video metadata and other captured dependencies disagree: {item.path}"
+            )
+        if previous is None:
+            files.append(item)
+            captured_paths[key] = item
     retained = {
         t.metadata.location.casefold()
         for t in request.snapshot.tracks
@@ -716,6 +731,7 @@ def capture(
         reserved_artwork_paths=tuple(reserved_artwork),
         playlist_timestamp=int(time()),
         sqlite_sources=tuple(sqlite_sources),
+        video_metadata=video_metadata,
     )
     logger.debug(
         "Captured Library resources files=%d artwork_bytes=%d removals=%d",
@@ -729,7 +745,7 @@ def capture(
         tuple(removals),
         tuple(media_writes),
         presentation_writes,
-        (*lyric_issues, *artwork_issues, *photo_issues),
+        (*lyric_issues, *artwork_issues, *photo_issues, *video_issues),
         tuple(discarded_track_media),
     )
 

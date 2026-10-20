@@ -69,7 +69,7 @@ METADATA_TAG_FIELDS = (
 
 
 def track_tag_values(track: Track) -> tuple[object, ...]:
-    """The single projection for comparing and applying Host-authored fields."""
+    """The semantic projection for Sync comparison and committed tag digests."""
     return (
         *(getattr(track, name) for name in TRACK_TAG_FIELDS),
         *(getattr(track.metadata, name) for name in METADATA_TAG_FIELDS),
@@ -77,13 +77,20 @@ def track_tag_values(track: Track) -> tuple[object, ...]:
 
 
 def apply_track_tags(target: Track, source: Track) -> Track:
-    """Apply that projection while retaining identity, payload and playback state."""
+    """Apply Host tags while retaining identity, media facts and playback state."""
+    # Scanned chapters are not removal intent. Keep their existing comparison and
+    # digest representation, but only captured media preparation or explicit
+    # Library edits may replace the retained Track's chapter evidence.
     return replace(
         target,
         **{name: getattr(source, name) for name in TRACK_TAG_FIELDS},
         metadata=replace(
             target.metadata,
-            **{name: getattr(source.metadata, name) for name in METADATA_TAG_FIELDS},
+            **{
+                name: getattr(source.metadata, name)
+                for name in METADATA_TAG_FIELDS
+                if name != "chapters"
+            },
         ),
     )
 

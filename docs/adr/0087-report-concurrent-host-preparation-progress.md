@@ -40,3 +40,28 @@ before a Track finishes. These measurements do not promise a preparation-wide
 percentage or time estimate, and file capture and metadata work remain
 indeterminate. No dependency is added. Progress identities confer no filesystem
 authority, and lower-level Storage remains unaware of Tracks or iPods.
+
+## Amendment: concurrent Podcast preparation (2026-10-20)
+
+Podcast Sync runs up to four independent Episode preparations, further bounded by
+the Sync worker limit. Each job downloads, prepares, verifies, and fingerprints
+one Episode, allowing downloads to overlap other downloads and codec work. Jobs
+are admitted only as workers become available; there is no separate unbounded
+prefetch queue. The shared codec thread budget accounts for this smaller limit.
+The Original iOpenPod Podcast bridge remains the metadata and Sync baseline;
+this scheduling policy extends the shared Host preparation approach in 2.0.
+
+Workers only prepare Host resources. Destination allocation remains serial in
+plan order, reserving existing iPod paths and prepared Host Track destinations.
+Media and Library publication retain the common verified Storage Transaction.
+Independent failures remain skippable, and failed replacements retain their old
+Tracks. Cancellation or a progress-consumer failure stops admission, interrupts
+cooperative workers, and joins them before releasing their captures. Successful
+captures remain owned until publication and artwork preparation finish.
+
+Progress snapshots include every active Episode under a unique per-Sync identity,
+even when titles or publisher Episode IDs repeat. Download rows use measured bytes
+and a known transfer length when available; codec rows retain measured media time.
+The overall count records processed Episodes, including failures. Samples remain
+coalesced and only the owning Sync thread publishes progress. No dependency, saved
+setting, feed-selection policy, or automatic Sync schedule is added.

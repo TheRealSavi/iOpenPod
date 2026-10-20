@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Qt, Signal
 
+from iOpenPod.app.media_stream_preferences import MediaStreamPreferences
 from iOpenPod.app.sync_plan import (
     SyncDuplicateResolution,
     SyncPlan,
@@ -17,13 +18,16 @@ from iOpenPod.app.sync_plan import (
     host_path_identity,
     resolve_sync_duplicates,
     select_sync_plan,
+    with_stream_selection,
 )
 from iPodDB.library import PhotoRepresentationKind
+from storage import StorageError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from iOpenPod.app.host_media_library import HostMediaLibrary
+    from iOpenPod.app.media.stream_selection import MediaStreamSelection
     from iOpenPod.app.sync_plan import SyncDuplicateGroup
 
 
@@ -35,12 +39,20 @@ class SyncSelection(QObject):
     reviewSelectionChanged = Signal()
     changed = Signal()
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        parent: QObject | None = None,
+        *,
+        stream_preferences: MediaStreamPreferences | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._stream_preferences = stream_preferences or MediaStreamPreferences()
+        self.preference_error: str = ""
         self._comparison = SyncPlan(())
         self._duplicate_resolutions: tuple[SyncDuplicateResolution, ...] = ()
         self._resolved_comparison: SyncPlan | None = None
         self._track_paths: dict[int, str] = {}
+        self._stream_selections: dict[str, MediaStreamSelection] = {}
         self._photo_paths: dict[int, str] = {}
         self._selected_host_paths: set[str] = set()
         self._selected_ipod_removals: set[tuple[SyncPlanMediaKind, int]] = set()
@@ -133,7 +145,7 @@ class SyncSelection(QObject):
         )
         review_items = frozenset(
             (
-                *selected.items,
+                *(self._with_stream_selection(item) for item in selected.items),
                 *(item for item in resolved.items if _removal_key(item) is not None),
             )
         )
@@ -168,6 +180,28 @@ class SyncSelection(QObject):
     @property
     def selected_host_count(self) -> int:
         return len(self._selected_host_paths)
+
+    def stream_selection(self, track_id: int) -> MediaStreamSelection | None:
+        return self._stream_selections.get(self._track_paths.get(track_id, ""))
+
+    def set_stream_selection(
+        self, track_id: int, selection: MediaStreamSelection | None
+    ) -> None:
+        """Stage per-file choices; None restores automatic preparation."""
+        path = self._track_paths.get(track_id)
+        if path is None:
+            raise ValueError("Choose a Track from this Host Media Scan")
+        if self._stream_selections.get(path) == selection:
+            return
+        self._stream_preferences.set(path, selection)
+        if selection is None:
+            self._stream_selections.pop(path, None)
+        else:
+            self._stream_selections[path] = selection
+        self._review_plan = None
+        self._excluded_review_items.intersection_update(self.review_plan.items)
+        self.reviewSelectionChanged.emit()
+        self.changed.emit()
 
     @property
     def unresolved_selected_host_paths(self) -> frozenset[str]:
@@ -227,10 +261,25 @@ class SyncSelection(QObject):
             )
             self._review_plan = replace(
                 selected,
-                items=(*selected.items, *self.potential_removals),
+                items=(
+                    *(self._with_stream_selection(item) for item in selected.items),
+                    *self.potential_removals,
+                ),
             )
             self._review_items = frozenset(self._review_plan.items)
         return self._review_plan
+
+    def _with_stream_selection(self, item: SyncPlanItem) -> SyncPlanItem:
+        selection = self._stream_selections.get(
+            host_path_identity(item.host_path or "")
+        )
+        if item.media_kind is SyncPlanMediaKind.TRACK and item.action in {
+            SyncPlanAction.ADD,
+            SyncPlanAction.UPDATE,
+            SyncPlanAction.UNCHANGED,
+        }:
+            return with_stream_selection(item, selection)
+        return item
 
     def review_check_state(self, item: SyncPlanItem) -> Qt.CheckState | None:
         """Review includes actions independently of desired Host membership."""
@@ -284,7 +333,15 @@ class SyncSelection(QObject):
     def reset(self, library: HostMediaLibrary, comparison: SyncPlan) -> None:
         """Adopt a completed scan; only already-correlated Host media starts checked."""
 
+        try:
+            selections = self._stream_preferences.load()
+        except (OSError, StorageError, ValueError, RecursionError) as error:
+            selections = {}
+            self.preference_error = str(error)
+        else:
+            self.preference_error = ""
         self._comparison = comparison
+        self._stream_selections = selections
         self._duplicate_resolutions = ()
         self._resolved_comparison = None
         self._track_paths = {
@@ -324,6 +381,8 @@ class SyncSelection(QObject):
         self.changed.emit()
 
     def clear(self) -> None:
+        self.preference_error = ""
+        self._stream_selections.clear()
         self._comparison = SyncPlan(())
         self._duplicate_resolutions = ()
         self._resolved_comparison = None
