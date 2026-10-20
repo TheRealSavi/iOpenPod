@@ -1192,10 +1192,6 @@
         <translation>iPod auswählen</translation>
     </message>
     <message>
-        <source>Select a recognized iPod. Its identity and library are checked again before it becomes active.</source>
-        <translation>Wählen Sie einen erkannten iPod aus. Seine Identität und Mediathek werden vor dem Laden erneut geprüft.</translation>
-    </message>
-    <message>
         <source>Set Up Linux</source>
         <translation>Linux einrichten</translation>
     </message>

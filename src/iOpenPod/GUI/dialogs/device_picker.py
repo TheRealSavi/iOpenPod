@@ -58,9 +58,6 @@ class DevicePickerDialog(QDialog):
 
         self._title = QLabel(self)
         self._title.setObjectName("pageTitle")
-        self._description = QLabel(self)
-        self._description.setObjectName("pageDescription")
-        self._description.setWordWrap(True)
 
         self._search_status = QLabel(self)
         self._search_status.setObjectName("deviceSearchStatus")
@@ -110,7 +107,6 @@ class DevicePickerDialog(QDialog):
         )
         layout.setSpacing(LAYOUT.space_sm)
         layout.addWidget(self._title)
-        layout.addWidget(self._description)
         layout.addWidget(self._search_status)
         layout.addWidget(self._candidates, 1)
         layout.addWidget(self._detail)
@@ -159,12 +155,6 @@ class DevicePickerDialog(QDialog):
     def retranslate_ui(self) -> None:
         self.setWindowTitle(self.tr("Choose an iPod"))
         self._title.setText(self.tr("Choose an iPod"))
-        self._description.setText(
-            self.tr(
-                "Select a recognized iPod. Its identity and library are checked "
-                "again before it becomes active."
-            )
-        )
         self._refresh.setText(QCoreApplication.translate("CommonActions", "Refresh"))
         self._linux_setup.setText(self.tr("Set Up Linux"))
         self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
