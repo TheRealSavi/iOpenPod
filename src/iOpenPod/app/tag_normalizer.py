@@ -1,7 +1,7 @@
-"""Original iOpenPod tag normalization over immutable, identity-bound Tracks.
+"""Conservative tag normalization over immutable, identity-bound Tracks.
 
-The ordered passes intentionally match 1.0's ipodTagNormalizer.py. Suggestions
-contain explicit edits only; scanning never changes the workspace or device.
+Original iOpenPod supplies the baseline; ADR-0163 limits inference to supported
+credits and unambiguous evidence. Scanning never changes the workspace or device.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 from iOpenPod.app.display_text import source_text
 from iOpenPod.app.library_workspace import TrackUpdate
-from iPodDB.library import Track, TrackFieldEdit
+from iPodDB.library import MediaKind, Track, TrackFieldEdit
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,8 +94,11 @@ class _Tags:
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _SPACE = re.compile(r"\s+")
 _FEATURED = re.compile(
-    r"\s(?:\(|\[)?(?:feat\.?|ft\.?|featuring)\s+.+(?:\)|\])?\s*$", re.IGNORECASE
+    r"\s(?P<opener>\(|\[)?(?:feat\.?|ft\.?|featuring)\s+(?P<credit>.+?)\s*$",
+    re.IGNORECASE,
 )
+_CREDIT_MARKER = re.compile(r"^(?:feat\.?|ft\.?|featuring|with)\s+", re.IGNORECASE)
+_VARIOUS_ARTISTS = frozenset(("various artists", "various", "va"))
 _ARTICLE = re.compile(r"^(?P<article>a|an|the)\s+(?P<body>.+)$", re.IGNORECASE)
 _TOP_FIELDS = frozenset(("title", "artist", "album", "album_artist"))
 _SORT_FIELDS: tuple[
@@ -120,13 +123,51 @@ def _common(values: list[str]) -> str:
     return sorted(counts, key=lambda v: (-counts[v], v.casefold(), v))[0]
 
 
+def _featured_credit(artist: str, album_artist: str) -> str:
+    """Require a whole lead credit and a recognized collaboration separator."""
+    lead = re.match(re.escape(album_artist), artist, re.IGNORECASE)
+    if lead is None:
+        return ""
+    suffix = artist[lead.end() :]
+    separated = suffix.lstrip().startswith(("/", ",", ";", "+", "&"))
+    if separated:
+        suffix = suffix.lstrip()[1:].strip()
+    elif not suffix.startswith((" ", "(", "[")):
+        return ""
+    suffix = suffix.strip()
+    if suffix.startswith(("(", "[")):
+        closer = ")" if suffix[0] == "(" else "]"
+        if not suffix.endswith(closer):
+            return ""
+        suffix = suffix[1:-1].strip()
+    marker = _CREDIT_MARKER.match(suffix)
+    if marker is not None:
+        return suffix[marker.end() :].strip()
+    return suffix if separated else ""
+
+
+def _title_credit(title: str) -> str:
+    match = _FEATURED.search(title)
+    if match is None:
+        return ""
+    credit = match["credit"].strip()
+    closer = ")" if match["opener"] == "(" else "]" if match["opener"] == "[" else ""
+    # Remove only the wrapper; a guest name can itself contain brackets.
+    return credit[:-1].rstrip() if closer and credit.endswith(closer) else credit
+
+
+def _default_sort(display: str) -> str:
+    match = _ARTICLE.match(display)
+    return f"{match['body']}, {match['article']}" if match else display
+
+
 def normalize_tags(
     tracks: tuple[Track, ...],
     profile: TagProfile = _DEFAULT_PROFILE,
     *,
     checkpoint: Callable[[], None] | None = None,
 ) -> TagSuggestion:
-    """Analyze the whole library, preserving stable IDs and 1.0 pass ordering."""
+    """Analyze the whole Library without treating uncertain metadata as fact."""
     original = tuple(_Tags.from_track(t) for t in tracks)
     current = list(original)
 
@@ -137,7 +178,7 @@ def normalize_tags(
     def groups(*, by_title: bool = False) -> tuple[tuple[int, ...], ...]:
         grouped: dict[tuple[str, str], list[int]] = defaultdict(list)
         for i, t in enumerate(current):
-            if by_title and not t.album:
+            if not t.album or tracks[i].media_kind is not MediaKind.MUSIC:
                 continue
             grouped[
                 (
@@ -149,8 +190,13 @@ def normalize_tags(
 
     def compilation(group: tuple[int, ...]) -> None:
         for i in group:
+            t = current[i]
             current[i] = replace(
-                current[i], album_artist="Various Artists", compilation=True
+                t,
+                album_artist="Various Artists"
+                if not t.album_artist or t.album_artist.casefold() in _VARIOUS_ARTISTS
+                else t.album_artist,
+                compilation=True,
             )
 
     check()
@@ -172,24 +218,15 @@ def normalize_tags(
             sort_show=_clean(t.sort_show),
         )
 
-    if not profile.album_artist_aware:
-        for group in groups(by_title=True):
-            artists = {current[i].artist.casefold() for i in group if current[i].artist}
-            inferred_album_artists = {
-                current[i].album_artist.casefold()
-                for i in group
-                if current[i].album_artist
-            }
-            various = bool(
-                inferred_album_artists & {"various artists", "various", "va"}
-            )
-            if (len(artists) > 1 or various) and (
-                various or not inferred_album_artists
-            ):
-                compilation(group)
+    # A shared title alone cannot distinguish a compilation from separate albums.
     check()
     for group in groups():
-        if any(current[i].compilation for i in group):
+        check()
+        if any(
+            current[i].compilation
+            or current[i].album_artist.casefold() in _VARIOUS_ARTISTS
+            for i in group
+        ):
             compilation(group)
 
     if not profile.album_artist_aware:
@@ -202,88 +239,91 @@ def normalize_tags(
             ]
             if not album_artists:
                 continue
-            canonical = Counter(album_artists).most_common(1)[0][0]
+            canonical = _common(album_artists)
             for i in group:
                 t = current[i]
-                if (
-                    not t.artist
-                    or t.artist == canonical
-                    or not t.artist.casefold().startswith(canonical.casefold())
-                ):
-                    continue
-                remainder = t.artist[len(canonical) :].strip(" -_/,+;&")
-                featured = re.sub(
-                    r"^(?:feat\.?|ft\.?|featuring|with)\s+",
-                    "",
-                    _clean(remainder),
-                    flags=re.IGNORECASE,
-                ).strip(" ()[]")
-                if featured and not _FEATURED.search(t.title):
-                    current[i] = replace(
-                        t, artist=canonical, title=f"{t.title} (feat. {featured})"
-                    )
-        for group in groups():
-            if any(current[i].compilation for i in group):
-                continue
-            album_artists = [
-                current[i].album_artist for i in group if current[i].album_artist
-            ]
-            if not album_artists:
-                continue
-            canonical = Counter(album_artists).most_common(1)[0][0]
-            for i in group:
-                t = current[i]
+                artist, title = t.artist, t.title
+                if artist.casefold() == canonical.casefold():
+                    artist = canonical
+                elif title and (featured := _featured_credit(artist, canonical)):
+                    existing_credit = _title_credit(title)
+                    if not existing_credit:
+                        artist, title = canonical, f"{title} (feat. {featured})"
+                    elif existing_credit.casefold() == featured.casefold():
+                        artist = canonical
                 current[i] = replace(
-                    t, artist=canonical if t.artist else "", album_artist=canonical
+                    t, artist=artist, title=title, album_artist=canonical
                 )
 
         for group in groups(by_title=True):
             check()
-            artists = {
-                current[i].album_artist or current[i].artist or "Unknown Artist"
-                for i in group
-            }
-            if len(artists) <= 1 or not any(current[i].album_artist for i in group):
+            # Incomplete Album Artist tags can describe one album's collaborations.
+            if not all(current[i].album_artist for i in group):
+                continue
+            artists = {current[i].album_artist.casefold() for i in group}
+            if len(artists) <= 1:
                 continue
             for i in group:
                 t = current[i]
-                artist = t.album_artist or t.artist or "Unknown Artist"
-                if f"({artist})" not in t.album:
+                artist = t.album_artist
+                if not t.album.casefold().endswith(f"({artist})".casefold()):
                     current[i] = replace(t, album=f"{t.album} ({artist})")
 
     for display_key, sort_key in _SORT_FIELDS:
         check()
-        same_display: dict[str, list[int]] = defaultdict(list)
+        same_display: dict[tuple[MediaKind, str, str], list[int]] = defaultdict(list)
         for i, t in enumerate(current):
             display: str = getattr(t, display_key)
             if display:
-                same_display[display.casefold()].append(i)
+                owner = (
+                    (t.album_artist or t.artist).casefold()
+                    if display_key == "album"
+                    else ""
+                )
+                same_display[(tracks[i].media_kind, display.casefold(), owner)].append(
+                    i
+                )
         for members in same_display.values():
+            check()
             display = _common([getattr(current[i], display_key) for i in members])
+            # Existing sorts belong to their own Track. Only unambiguous custom
+            # evidence for an unchanged identity can fill a missing peer's sort.
             sorts = [
                 getattr(current[i], sort_key)
                 for i in members
                 if getattr(current[i], sort_key)
+                and _clean(getattr(original[i], display_key)).casefold()
+                == getattr(current[i], display_key).casefold()
+                and not (display_key == "artist" and _title_credit(current[i].title))
+                and getattr(current[i], sort_key)
+                not in (
+                    getattr(current[i], display_key),
+                    _default_sort(getattr(current[i], display_key)),
+                )
             ]
-            match = _ARTICLE.match(display)
             canonical_sort = (
-                f"{match['body']}, {match['article']}"
-                if match
-                else _common(sorts)
-                if sorts
-                else display
+                next(iter(sorts)) if len(set(sorts)) == 1 else _default_sort(display)
             )
             for i in members:
                 t = current[i]
+                existing: str = getattr(t, sort_key)
+                if existing:
+                    # A redundant sort may gain article handling; custom sorts
+                    # (including collaboration credits) are never outvoted.
+                    if existing != getattr(t, display_key):
+                        continue
+                    proposed = _default_sort(existing)
+                else:
+                    proposed = canonical_sort
                 match sort_key:
                     case "sort_artist":
-                        current[i] = replace(t, sort_artist=canonical_sort)
+                        current[i] = replace(t, sort_artist=proposed)
                     case "sort_album_artist":
-                        current[i] = replace(t, sort_album_artist=canonical_sort)
+                        current[i] = replace(t, sort_album_artist=proposed)
                     case "sort_album":
-                        current[i] = replace(t, sort_album=canonical_sort)
+                        current[i] = replace(t, sort_album=proposed)
                     case "sort_composer":
-                        current[i] = replace(t, sort_composer=canonical_sort)
+                        current[i] = replace(t, sort_composer=proposed)
 
     updates: list[TrackUpdate] = []
     for track, before, after in zip(tracks, original, current, strict=True):

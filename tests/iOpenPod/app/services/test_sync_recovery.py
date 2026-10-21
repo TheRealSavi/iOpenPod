@@ -18,10 +18,12 @@ from storage import (
 )
 
 
+@pytest.mark.parametrize("host_recovery", [False, True])
 def test_recovery_rediscovers_device_without_loading_interrupted_database(
     tmp_path: Path,
+    host_recovery: bool,
 ) -> None:
-    device = build_device(tmp_path)
+    device = build_device(tmp_path, host_recovery=host_recovery)
     database = DevicePath("iPod_Control/iTunes/iTunesDB")
     corrupt = b"interrupted Library publication"
     incoming = b"new media"
@@ -41,7 +43,8 @@ def test_recovery_rediscovers_device_without_loading_interrupted_database(
                     incoming,
                     FileContent(len(incoming), hashlib.sha256(incoming).hexdigest()),
                 ),
-            )
+            ),
+            host_recovery=host_recovery,
         )
 
         def disconnect(progress: TransactionProgress) -> None:
@@ -55,6 +58,9 @@ def test_recovery_rediscovers_device_without_loading_interrupted_database(
             session.execute_transaction(transaction, progress=disconnect)
 
     journal = failure.value.recovery_path
+    if host_recovery:
+        # Recovery discovery must survive losing the removable journal itself.
+        (device.root / journal).unlink()
     assert (device.root / str(database)).read_bytes() == corrupt
     device.coordinator.deactivate()
     device.platform.reconnect(device.root)

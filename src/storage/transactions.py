@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -88,7 +88,7 @@ class TransactionRecoveryMaterial:
 
 @dataclass(frozen=True, slots=True)
 class StorageTransaction:
-    """Writes publish in order; removals follow verification of all writes."""
+    """Ordered writes and removals with an explicit recovery policy."""
 
     writes: tuple[TransactionWrite, ...]
     removals: tuple[TransactionRemoval, ...] = ()
@@ -96,6 +96,12 @@ class StorageTransaction:
     reserve_bytes: int = 0
     recovery_material: TransactionRecoveryMaterial | None = None
     journal_identity: str | None = None
+    # Keep verified originals on the Volume, but stage replacements individually
+    # during publication. All source content is verified before publication.
+    stage_one_at_a_time: bool = field(default=False, kw_only=True)
+    # Originals survive on the configured Host recovery store. This supersedes
+    # device staging and allows reclaiming reviewed originals before publication.
+    host_recovery: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
         identity = self.journal_identity

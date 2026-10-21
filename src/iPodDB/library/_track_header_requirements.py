@@ -3,7 +3,7 @@
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
-from iPodDB.library._browse_groups import album_values, browse_groups
+from iPodDB.library._browse_groups import album_values, native_browse_groups
 from iPodDB.library._track_header_expansion import optional_field_available
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.shared.chunk import DatabaseDocument
@@ -56,8 +56,8 @@ def derived_header_requirements(
         if kind not in kinds:
             continue
         album = kind == 4
-        prior_groups = browse_groups(before.tracks, album=album)
-        for key, members in browse_groups(desired.tracks, album=album).items():
+        prior_groups = native_browse_groups(before.tracks, album=album)
+        for key, members in native_browse_groups(desired.tracks, album=album).items():
             prior = prior_groups.get(key, ())
             if {t.track_id for t in prior} != {t.track_id for t in members} or (
                 album and bool(prior) and album_values(prior) != album_values(members)

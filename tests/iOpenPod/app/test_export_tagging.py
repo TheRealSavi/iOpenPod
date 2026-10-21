@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 import pytest
+from mutagen import PaddingInfo
 from mutagen.id3 import ID3
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
@@ -224,3 +225,23 @@ def test_stream_retagging_replaces_id3_without_changing_payload(
             assert str(cast("_ID3TagView", tags)["TIT2"]) == _track().title
             stream.seek(tags.size)
             assert stream.read() == payload
+
+
+@pytest.mark.parametrize("name", ["tone.mp3", "tone.m4a"])
+def test_retagging_reuses_existing_padding_without_growing_file(
+    tmp_path: Path, name: str
+) -> None:
+    path = _fixture(tmp_path, name)
+    factory: Any = MP3 if name.endswith("mp3") else MP4
+    audio = factory(path)
+
+    def padding(_info: PaddingInfo) -> int:
+        return 16 * 1024
+
+    audio.save(padding=padding)
+    data = path.read_bytes()
+    output = ExportMediaTagger().prepare_bytes(data, name, _track())
+    assert len(output) == len(data)
+    # Repeated normalization keeps the same allocation instead of stripping the
+    # existing tag space and shifting the media payload on every edit.
+    assert len(ExportMediaTagger().prepare_bytes(output, name, _track())) == len(data)

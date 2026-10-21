@@ -1030,6 +1030,8 @@ def transaction(
         tuple(writes),
         captured.removals,
         tuple(f for f in captured.files if f.path not in changed),
+        stage_one_at_a_time=bool(captured.media_writes),
+        host_recovery=session.supports_host_transaction_recovery,
     )
     session.validate_transaction(plan)
     return plan

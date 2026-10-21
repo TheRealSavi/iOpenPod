@@ -299,6 +299,43 @@ def test_popup_shows_progress_and_can_request_a_status_action() -> None:
         context.shutdown()
 
 
+@mark.parametrize("with_progress", [False, True])
+def test_status_popup_preserves_safety_warning_and_wraps_long_translations(
+    with_progress: bool,
+) -> None:
+    context = build_context()
+    window = MainWindow(context, auto_discover=False)
+    try:
+        warning = "Trenne deinen iPod nicht vom Computer"
+        context.status.show(
+            "save",
+            "Writing changes…",
+            progress=StatusProgress(1, 4) if with_progress else None,
+            safety_warning=warning,
+        )
+        window.show()
+        APPLICATION.processEvents()
+        button = window.findChild(StatusListButton)
+        popup = window.findChild(QFrame, "activeStatusesPopup")
+        assert button is not None and popup is not None
+        button.click()
+        APPLICATION.processEvents()
+        _finish_popup_animation(popup)
+        controls = popup.findChild(StatusControls)
+        assert controls is not None
+        assert controls.warning.isVisible() and controls.warning.text() == warning
+        assert controls.warning.height() >= controls.warning.heightForWidth(
+            controls.warning.width()
+        )
+        assert controls.rect().contains(controls.warning.geometry())
+        if with_progress:
+            assert controls.rect().contains(controls.progress.geometry())
+            assert controls.progress.value() == 2_500
+    finally:
+        window.close()
+        context.shutdown()
+
+
 def test_status_popup_scrolls_long_messages_and_stays_within_the_screen() -> None:
     window = QMainWindow()
     status = ApplicationStatus(window)

@@ -113,6 +113,7 @@ from iOpenPod.GUI.presentation.i18n.text import (
     track_count_text,
 )
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
+from iOpenPod.GUI.presentation.library_write import library_write_status
 from iOpenPod.GUI.presentation.photo_provider import PhotoPixmapProvider
 from iOpenPod.GUI.presentation.podcast_artwork_provider import (
     PodcastArtworkPixmapProvider,
@@ -186,6 +187,7 @@ class MainWindow(QMainWindow):
             self,
         )
         self._export_progress: QProgressDialog | None = None
+        self._library_write_state: PreparationState | None = None
         self._chaptered_controller = ChapteredConversionController(
             context.library_workspace,
             context.device_controller,
@@ -660,6 +662,9 @@ class MainWindow(QMainWindow):
         status_bar.addPermanentWidget(StatusListButton(context.status, status_bar))
         context.status.messageChanged.connect(status_bar.showMessage)
         context.status.actionRequested.connect(self._status_action_requested)
+        context.library_write_controller.progressChanged.connect(
+            self._library_write_progress_changed
+        )
         status_bar.showMessage(context.status.current_message)
         context.backup_controller.progressChanged.connect(self._backup_progress_changed)
         context.backup_controller.busyChanged.connect(self._backup_busy_changed)
@@ -706,6 +711,7 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl(url))
 
     def retranslate_ui(self) -> None:
+        self._refresh_library_write_status()
         for status in self._context.status.active_messages:
             if status.source == _CHAPTERED_PROGRESS_STATUS_SOURCE:
                 self._context.status.show(
@@ -813,17 +819,41 @@ class MainWindow(QMainWindow):
         self._sidebar.set_review_available(
             controller.can_prepare or controller.review is not None
         )
-        messages = {
-            PreparationState.PREPARING: self.tr("Preparing Library changes…"),
-            PreparationState.SAVING: self.tr(
-                "Saving Library changes… Keep the iPod connected until verification finishes."
-            ),
-        }
-        message = messages.get(controller.state)
-        if message is not None:
-            self._context.status.show(_LIBRARY_WRITE_STATUS_SOURCE, message)
-        else:
+        self._refresh_library_write_status()
+
+    def _library_write_progress_changed(self, _value: object) -> None:
+        self._refresh_library_write_status()
+
+    def _refresh_library_write_status(self) -> None:
+        controller = self._context.library_write_controller
+        previous_state = self._library_write_state
+        self._library_write_state = controller.state
+        status = library_write_status(controller.state, controller.progress)
+        if status is not None:
+            self._context.status.show(
+                _LIBRARY_WRITE_STATUS_SOURCE,
+                status.message,
+                progress=status.progress,
+                safety_warning=status.safety_warning,
+            )
+        elif controller.state != previous_state:
             self._context.status.clear(_LIBRARY_WRITE_STATUS_SOURCE)
+            if controller.state is PreparationState.SAVED:
+                self._context.status.show(
+                    _LIBRARY_WRITE_STATUS_SOURCE,
+                    self.tr(
+                        "Library changes saved and verified. Eject your iPod before disconnecting."
+                    ),
+                    timeout_ms=8_000,
+                )
+            elif controller.state is PreparationState.SAVE_FAILED:
+                self._context.status.show(
+                    _LIBRARY_WRITE_STATUS_SOURCE,
+                    self.tr(
+                        "Changes could not be saved. See Review Changes for details."
+                    ),
+                    timeout_ms=8_000,
+                )
 
     def _show_library_review(self) -> None:
         self._library_review.show()

@@ -968,11 +968,15 @@ def test_interrupted_restoration_resumes_after_reconnection(
 
 
 @pytest.mark.parametrize("boundary", range(1, 14))
+@pytest.mark.parametrize("stage_one_at_a_time", [False, True])
 def test_disconnect_after_each_native_rename_recovers(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, boundary: int
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    boundary: int,
+    stage_one_at_a_time: bool,
 ) -> None:
     root, platform, session = _session(tmp_path)
-    plan = _plan(root, session)
+    plan = replace(_plan(root, session), stage_one_at_a_time=stage_one_at_a_time)
     native_replace = os.replace
     count = 0
 

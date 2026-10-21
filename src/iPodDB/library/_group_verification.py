@@ -16,9 +16,13 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
-from iPodDB.library._browse_groups import album_values, browse_groups
+from iPodDB.library._browse_groups import (
+    album_values,
+    native_browse_groups,
+    unchanged_podcast_album_fields,
+)
 from iPodDB.library._track_header_expansion import optional_field_available
-from iPodDB.library.models import LibrarySnapshot, MediaKind
+from iPodDB.library.models import LibrarySnapshot, MediaKind, Track
 from iPodDB.library.writing import IdentityMapping, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
@@ -101,8 +105,8 @@ def verify_browse_groups(
         album = kind == 4
         field = "ipod.album_id" if album else "ipod.artist_id_ref"
         source_rows, rows = _rows(original, kind), _rows(checked, kind)
-        prior_groups = browse_groups(before.tracks, album=album)
-        groups = browse_groups(desired.tracks, album=album)
+        prior_groups = native_browse_groups(before.tracks, album=album)
+        groups = native_browse_groups(desired.tracks, album=album)
         source_refs = {
             i: c.header.album_id if album else c.header.artist_id_ref
             for i, c in old_native.items()
@@ -112,8 +116,10 @@ def verify_browse_groups(
             for i, c in output.items()
         }
         prior_owners: dict[int, set[int]] = defaultdict(set)
+        prior_members: dict[int, list[Track]] = defaultdict(list)
         for identity, reference in source_refs.items():
             prior_owners[reference].add(identity)
+            prior_members[reference].append(old_tracks[identity])
         for key, members in groups.items():
             if (
                 album
@@ -216,12 +222,33 @@ def verify_browse_groups(
             expected: tuple[tuple[MhodType, str], ...]
             if album and isinstance(row.header, MhiaHeader):
                 values = album_values(members)
-                expected = (
-                    (MhodType.ALBUM_ITEM_ALBUM, values.title),
-                    (MhodType.ALBUM_ITEM_ARTIST, values.artist),
-                    (MhodType.ALBUM_ITEM_SORT_ARTIST, values.sort_artist),
-                    (MhodType.ALBUM_ITEM_PODCAST_URL, values.podcast_url),
-                    (MhodType.ALBUM_ITEM_SHOW, values.show),
+                source_row = retained[0] if len(retained) == 1 else None
+                preserved = unchanged_podcast_album_fields(
+                    prior_members.get(identity, ()),
+                    members,
+                )
+                expected = tuple(
+                    (
+                        mhod,
+                        group_text(source_row, mhod)
+                        if name in preserved and source_row is not None
+                        else value,
+                    )
+                    for name, mhod, value in (
+                        ("title", MhodType.ALBUM_ITEM_ALBUM, values.title),
+                        ("artist", MhodType.ALBUM_ITEM_ARTIST, values.artist),
+                        (
+                            "sort_artist",
+                            MhodType.ALBUM_ITEM_SORT_ARTIST,
+                            values.sort_artist,
+                        ),
+                        (
+                            "podcast_url",
+                            MhodType.ALBUM_ITEM_PODCAST_URL,
+                            values.podcast_url,
+                        ),
+                        ("show", MhodType.ALBUM_ITEM_SHOW, values.show),
+                    )
                 )
                 owners = {
                     output[i].header.db_track_id for i in member_ids if i in output
@@ -234,13 +261,23 @@ def verify_browse_groups(
                         f"Album {identity}: representative {row.header.album_track_db_id} is not one of {sorted(owners)}.",
                         row,
                     )
+                source_header = (
+                    source_row.header
+                    if source_row is not None
+                    and isinstance(source_row.header, MhiaHeader)
+                    else None
+                )
                 if (
                     row.header.album_compilation_flag,
                     row.header.season_number,
                     row.header.content_type_flag,
                 ) != (
-                    int(values.compilation),
-                    values.season,
+                    source_header.album_compilation_flag
+                    if "compilation" in preserved and source_header is not None
+                    else int(values.compilation),
+                    source_header.season_number
+                    if "season" in preserved and source_header is not None
+                    else values.season,
                     values.content_type,
                 ):
                     fail(

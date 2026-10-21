@@ -3,6 +3,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QProgressBar,
     QSizePolicy,
     QToolButton,
@@ -28,6 +29,11 @@ class StatusControls(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(LAYOUT.space_xs)
+        self.warning = QLabel(self)
+        self.warning.setObjectName("sharedStatusSafetyWarning")
+        self.warning.setTextFormat(Qt.TextFormat.PlainText)
+        self.warning.hide()
+        layout.addWidget(self.warning)
         self.progress = QProgressBar(self)
         self.progress.setObjectName("sharedStatusProgress")
         self.progress.setFormat("%p%")
@@ -46,11 +52,14 @@ class StatusControls(QWidget):
         self.setProperty("statusSource", self._source)
         progress = value.progress if value is not None else None
         action = value.action if value is not None else None
+        warning = value.safety_warning if value is not None else ""
+        self.warning.setText(warning)
+        self.warning.setVisible(bool(warning))
         if progress is None:
             self.progress.hide()
             self.progress.setToolTip("")
         else:
-            self._set_progress(progress)
+            set_status_progress(self.progress, progress)
             self.progress.setAccessibleName(value.message if value is not None else "")
             self.progress.show()
         if action is None:
@@ -61,22 +70,24 @@ class StatusControls(QWidget):
             self.action.setText(action.label)
             self.action.setAccessibleName(action.label)
             self.action.show()
-        self.setVisible(progress is not None or action is not None)
-
-    def _set_progress(self, value: StatusProgress) -> None:
-        if value.total:
-            self.progress.setRange(0, _PROGRESS_SCALE)
-            self.progress.setValue(
-                min(_PROGRESS_SCALE, value.current * _PROGRESS_SCALE // value.total)
-            )
-            self.progress.setTextVisible(True)
-        else:
-            self.progress.setRange(0, 0)
-            self.progress.setTextVisible(False)
-        self.progress.setToolTip(value.detail)
+        self.setVisible(progress is not None or action is not None or bool(warning))
 
     def _request_action(self) -> None:
         self._status.request_action(self._source, self._action_key)
+
+
+def set_status_progress(bar: QProgressBar, value: StatusProgress) -> None:
+    """Render stage progress, scaling large byte counts to Qt's integer range."""
+    if value.total:
+        bar.setRange(0, _PROGRESS_SCALE)
+        bar.setValue(
+            min(_PROGRESS_SCALE, value.current * _PROGRESS_SCALE // value.total)
+        )
+        bar.setTextVisible(True)
+    else:
+        bar.setRange(0, 0)
+        bar.setTextVisible(False)
+    bar.setToolTip(value.detail)
 
 
 class StatusBarControls(StatusControls):

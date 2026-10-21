@@ -191,6 +191,48 @@ def test_clearing_visible_message_advances_and_hidden_removal_preserves_position
     assert status.current_message == "Two"
 
 
+@pytest.mark.parametrize("clear", [False, True])
+def test_safety_warning_stays_visible_until_its_owner_releases_it(clear: bool) -> None:
+    status = ApplicationStatus()
+    status.show("save", "Preparing")
+    status.show("analysis", "Analyzing")
+    status.show("save", "Writing", safety_warning="Do not disconnect your iPod")
+    assert status.current_status is not None
+    assert status.current_status.source == "save"
+    assert status.current_status.safety_warning == "Do not disconnect your iPod"
+    status.show("update", "Update available")
+    for _ in range(3):
+        status._rotate()  # pyright: ignore[reportPrivateUsage]
+        assert status.current_message == "Writing"
+    assert len(status.active_messages) == 3
+    if clear:
+        status.clear("save")
+    else:
+        status.show("save", "Saved")
+    for _ in range(3):
+        if status.current_message == "Update available":
+            break
+        status._rotate()  # pyright: ignore[reportPrivateUsage]
+    assert status.current_message == "Update available"
+
+
+def test_multiple_safety_warnings_rotate_without_showing_ordinary_messages() -> None:
+    status = ApplicationStatus()
+    status.show("one", "Writing", safety_warning="Keep connected")
+    status.show("other", "Update available")
+    status.show("two", "Restoring", safety_warning="Keep connected")
+    status.show("notification", "Another update")
+    assert status.current_message == "Restoring"
+    status._rotate()  # pyright: ignore[reportPrivateUsage]
+    assert status.current_message == "Writing"
+    status._rotate()  # pyright: ignore[reportPrivateUsage]
+    assert status.current_message == "Restoring"
+    status.clear("two")
+    assert status.current_message == "Writing"
+    status.clear("one")
+    assert status.current_message == "Update available"
+
+
 def test_expiration_removes_only_the_timed_source_from_rotation() -> None:
     status = ApplicationStatus()
     status.show("backup", "Backup")

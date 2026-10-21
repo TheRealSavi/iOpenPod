@@ -25,14 +25,18 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._album_index import master_tracks
-from iPodDB.library._browse_groups import album_values, browse_groups, group_key
+from iPodDB.library._browse_groups import (
+    album_values,
+    native_browse_groups,
+    unchanged_podcast_album_fields,
+)
 from iPodDB.library._browse_index import BrowseIndex, resolve_indexes
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library._identities import IdentityAllocator
 from iPodDB.library._playlist_datasets import is_master, playlist_rows
 from iPodDB.library._track_header_expansion import field_fits
 from iPodDB.library._track_writing import edit_text
-from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.models import LibrarySnapshot, Track
 from iPodDB.library.writing import WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
@@ -216,19 +220,24 @@ def reconcile_hidden(
             for c in dataset.chunk.children[0].children
             if isinstance(c.header, MhiaHeader | MhiiHeader)
         )
-        prior_members = browse_groups(original.tracks, album=album)
+        prior_members = native_browse_groups(original.tracks, album=album)
 
         original_groups: dict[tuple[str, ...], set[int]] = defaultdict(set)
         original_members: dict[tuple[str, ...], set[int]] = defaultdict(set)
         native_members: dict[int, set[int]] = defaultdict(set)
-        for track in original.tracks:
-            original_members[group_key(track, album=album)].add(track.track_id)
-            if track.ipod:
-                reference = track.ipod.album_id if album else track.ipod.artist_id_ref
-                if reference:
-                    original_groups[group_key(track, album=album)].add(reference)
-                    native_members[reference].add(track.track_id)
-        groups = browse_groups(desired.tracks, album=album)
+        native_tracks: dict[int, list[Track]] = defaultdict(list)
+        for key, members in prior_members.items():
+            for track in members:
+                original_members[key].add(track.track_id)
+                if track.ipod:
+                    reference = (
+                        track.ipod.album_id if album else track.ipod.artist_id_ref
+                    )
+                    if reference:
+                        original_groups[key].add(reference)
+                        native_members[reference].add(track.track_id)
+                        native_tracks[reference].append(track)
+        groups = native_browse_groups(desired.tracks, album=album)
         assigned: dict[int, int] = {}
         updated_rows = dict(rows)
         for key, members in groups.items():
@@ -253,6 +262,18 @@ def reconcile_hidden(
                     dataset_kind,
                     len(members),
                     sorted(candidates),
+                )
+                continue
+            if any(
+                native_members[identity] - original_members.get(key, set())
+                for identity in original_groups.get(key, ())
+            ):
+                issues.append(
+                    WriteIssue(
+                        "library.ambiguous_group",
+                        "A changed native browse record is shared by incompatible groups.",
+                        field="album" if album else "artist",
+                    )
                 )
                 continue
             if len(candidates) > 1:
@@ -305,13 +326,27 @@ def reconcile_hidden(
             exemplar = members[0]
             if album:
                 values = album_values(members)
-                for kind, text_value in (
-                    (MhodType.ALBUM_ITEM_ALBUM, values.title),
-                    (MhodType.ALBUM_ITEM_ARTIST, values.artist),
-                    (MhodType.ALBUM_ITEM_SORT_ARTIST, values.sort_artist),
-                    (MhodType.ALBUM_ITEM_PODCAST_URL, values.podcast_url),
-                    (MhodType.ALBUM_ITEM_SHOW, values.show),
+                preserved = unchanged_podcast_album_fields(
+                    native_tracks.get(identity, ()),
+                    members,
+                )
+                for name, kind, text_value in (
+                    ("title", MhodType.ALBUM_ITEM_ALBUM, values.title),
+                    ("artist", MhodType.ALBUM_ITEM_ARTIST, values.artist),
+                    (
+                        "sort_artist",
+                        MhodType.ALBUM_ITEM_SORT_ARTIST,
+                        values.sort_artist,
+                    ),
+                    (
+                        "podcast_url",
+                        MhodType.ALBUM_ITEM_PODCAST_URL,
+                        values.podcast_url,
+                    ),
+                    ("show", MhodType.ALBUM_ITEM_SHOW, values.show),
                 ):
+                    if name in preserved:
+                        continue
                     # Preserve absent empty optional fields, but clear stale values.
                     if text_value or any(
                         isinstance(c.header, MhodHeader) and c.header.mhod_type == kind
@@ -327,8 +362,12 @@ def reconcile_hidden(
                         header=replace(
                             row.header,
                             content_type_flag=values.content_type,
-                            album_compilation_flag=int(exemplar.metadata.compilation),
-                            season_number=exemplar.season_number,
+                            album_compilation_flag=row.header.album_compilation_flag
+                            if "compilation" in preserved
+                            else int(values.compilation),
+                            season_number=row.header.season_number
+                            if "season" in preserved
+                            else values.season,
                             album_track_db_id=row.header.album_track_db_id
                             if row.header.album_track_db_id in representatives
                             else min(representatives, default=0),

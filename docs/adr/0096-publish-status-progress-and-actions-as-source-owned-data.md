@@ -3,6 +3,9 @@
 - Status: Accepted
 - Date: 2026-09-29
 
+ADR-0164 extends rotation with source-owned safety warnings that remain visible
+through running Library saves.
+
 ## Context
 
 `ApplicationStatus` originally carried text only. Backup progress and chaptered

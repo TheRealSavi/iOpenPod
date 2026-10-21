@@ -112,6 +112,7 @@ def build_device(
     artwork_size_multiplier: int = 1,
     model: str = "MB565",
     compressed_database: bool = False,
+    host_recovery: bool = False,
 ) -> Device:
     root = tmp_path / "ipod"
     source, thumbnail = with_shared_artwork(
@@ -205,7 +206,11 @@ def build_device(
             transport_serial="000A270012345678",
         ),
     )
-    storage = Storage(platform, writer_lock_directory=tmp_path / "locks")
+    storage = Storage(
+        platform,
+        writer_lock_directory=tmp_path / "locks",
+        transaction_recovery_directory=tmp_path / "recovery" if host_recovery else None,
+    )
     coordinator = DeviceCoordinator(storage)
     coordinator.select_device(coordinator.discover_devices().candidates[0].id)
     return Device(root, storage, platform, coordinator, files)

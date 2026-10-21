@@ -195,6 +195,7 @@ class _StatusRow(QWidget):
         self.label.setWordWrap(True)
         layout.addWidget(self.label)
         self.controls = StatusControls(status, self)
+        self.controls.warning.setWordWrap(True)
         layout.addWidget(self.controls)
 
     def set_status(self, value: StatusMessage) -> None:
@@ -218,6 +219,7 @@ class _StatusRow(QWidget):
         controls_height = max(
             self.controls.progress.sizeHint().height(),
             self.controls.action.sizeHint().height(),
+            self.controls.heightForWidth(text_width),
         )
         height = (
             2 * LAYOUT.space_xs
@@ -296,7 +298,11 @@ class StatusListButton(IconButton):
             item.setToolTip(text)
             item.setData(Qt.ItemDataRole.AccessibleTextRole, text)
             existing = self._list.itemWidget(item)
-            if message.progress is not None or message.action is not None:
+            if (
+                message.progress is not None
+                or message.action is not None
+                or message.safety_warning
+            ):
                 item.setText("")
                 if not isinstance(existing, _StatusRow):
                     existing = _StatusRow(self._status, self._list)

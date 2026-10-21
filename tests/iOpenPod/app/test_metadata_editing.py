@@ -39,6 +39,22 @@ class Case(TypedDict):
     warnings: list[str]
 
 
+class SafetyCorrection(TypedDict):
+    name: str
+    reason: str
+    changes: list[dict[str, str | int]]
+
+
+def _safety_corrections() -> dict[str, SafetyCorrection]:
+    content = json.loads(
+        (
+            Path(__file__).parents[2] / "fixtures/normalization/safety-corrections.json"
+        ).read_text(encoding="utf-8")
+    )
+    corrections = cast("list[SafetyCorrection]", content["cases"])
+    return {correction["name"]: correction for correction in corrections}
+
+
 def _cases() -> list[Case]:
     content = json.loads(
         (
@@ -70,7 +86,9 @@ _FIELDS = {
 
 
 @pytest.mark.parametrize("case", _cases(), ids=lambda case: case["name"])
-def test_normalization_matches_captured_original_results(case: Case) -> None:
+def test_normalization_matches_original_with_documented_safety_corrections(
+    case: Case,
+) -> None:
     tracks = tuple(
         Track(
             i,
@@ -98,7 +116,9 @@ def test_normalization_matches_captured_original_results(case: Case) -> None:
         u.track_id: {_FIELDS[e.field]: e.value for e in u.edits}
         for u in suggestion.updates
     }
-    assert [changes.get(t.track_id, {}) for t in tracks] == case["changes"]
+    correction = _safety_corrections().get(case["name"])
+    expected = correction["changes"] if correction else case["changes"]
+    assert [changes.get(t.track_id, {}) for t in tracks] == expected
     assert suggestion.warnings == tuple(case["warnings"])
     edits = {u.track_id: u.edits for u in suggestion.updates}
     resulting = tuple(edit_track_metadata(t, edits.get(t.track_id, ())) for t in tracks)

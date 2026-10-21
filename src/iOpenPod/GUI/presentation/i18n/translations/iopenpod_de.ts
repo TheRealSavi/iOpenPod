@@ -1673,7 +1673,7 @@
     </message>
     <message>
         <source>Preparing changes…</source>
-        <translation>Änderungen werden vorbereitet…</translation>
+        <translation type="vanished">Änderungen werden vorbereitet…</translation>
     </message>
     <message>
         <source>Prepared for review.</source>
@@ -1697,7 +1697,7 @@
     </message>
     <message>
         <source>Saving Library changes… Keep the iPod connected until verification finishes.</source>
-        <translation>Änderungen an der Mediathek werden gespeichert… Lassen Sie den iPod angeschlossen, bis die Prüfung abgeschlossen ist.</translation>
+        <translation type="vanished">Änderungen an der Mediathek werden gespeichert… Lassen Sie den iPod angeschlossen, bis die Prüfung abgeschlossen ist.</translation>
     </message>
     <message>
         <source>Library changes saved and verified on your iPod.</source>
@@ -1884,7 +1884,30 @@
     </message>
 </context>
 <context>
+    <name>LibraryWriteStatus</name>
+    <message>
+        <source>Saving Library changes…</source>
+        <translation>Änderungen an der Mediathek werden gespeichert…</translation>
+    </message>
+    <message>
+        <source>Preparing Library changes…</source>
+        <translation>Änderungen an der Mediathek werden vorbereitet…</translation>
+    </message>
+    <message>
+        <source>Do not disconnect your iPod</source>
+        <translation>Trennen Sie Ihren iPod nicht</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
+    <message>
+        <source>Library changes saved and verified. Eject your iPod before disconnecting.</source>
+        <translation>Änderungen an der Mediathek gespeichert und überprüft. Werfen Sie Ihren iPod aus, bevor Sie ihn trennen.</translation>
+    </message>
+    <message>
+        <source>Changes could not be saved. See Review Changes for details.</source>
+        <translation>Änderungen konnten nicht gespeichert werden. Einzelheiten finden Sie unter „Änderungen überprüfen“.</translation>
+    </message>
     <message>
         <source>Backup progress</source>
         <translation type="vanished">Backup-Fortschritt</translation>
@@ -1950,11 +1973,11 @@
     </message>
     <message>
         <source>Preparing Library changes…</source>
-        <translation>Änderungen an der Mediathek werden vorbereitet…</translation>
+        <translation type="vanished">Änderungen an der Mediathek werden vorbereitet…</translation>
     </message>
     <message>
         <source>Saving Library changes… Keep the iPod connected until verification finishes.</source>
-        <translation>Änderungen an der Mediathek werden gespeichert… Lassen Sie den iPod angeschlossen, bis die Prüfung abgeschlossen ist.</translation>
+        <translation type="vanished">Änderungen an der Mediathek werden gespeichert… Lassen Sie den iPod angeschlossen, bis die Prüfung abgeschlossen ist.</translation>
     </message>
     <message>
         <source>Library action unavailable</source>

@@ -260,8 +260,8 @@ membership changes; skipping a Playlist leaves Track selection unchanged.
 See ADR-0159.
 Interrupted Sync recovery is a choice for the selected iPod: restore the previous
 Library or explicitly keep current contents after a warning about incomplete
-changes. Recovery and cleanup are discovered from device journals, never persisted
-as Host settings. Declining restoration retains recovery copies and leaves media
+changes. Recovery and cleanup are discovered from device journals and identity-bound
+Host recovery journals (ADR-0167). Declining restoration retains recovery copies and leaves media
 and databases untouched; unrelated iPods remain usable. Successful Library saves
 automatically clean their committed recovery files; Sync does so after attempting
 its Library Sync Helper update. Selection also cleans matching completed
@@ -346,6 +346,10 @@ With Rockbox Metadata Support enabled, Sync and ordinary Library saves embed
 changed metadata and artwork in media files. Metadata-only edits preserve embedded
 covers; artwork removal clears them. Non-cover profiles use a 120x120 grayscale
 JPEG; this file-tag copy is separate from the iOpenPod-only ArtworkDB representation.
+Library transactions retain verified originals on the Host and reuse the allocation
+of reviewed replacements and removals. Nearly full iPods need room for net growth
+and a small journal reserve. Interrupted saves can be restored on the same computer
+after reconnecting, independently of Backup Snapshots. See ADR-0167.
 When preparing new cover artwork, conflicting retained MHIF image sizes are
 corrected automatically when the Device Profile, retained image metadata, and
 captured thumbnail ranges establish the correct size. Unverifiable conflicts
@@ -587,6 +591,10 @@ and partial-playback evidence are preserved across refreshes.
 It also recovers missing native covers from retained embedded media. Both supplied
 starting structures use this explicit policy; loading and ordinary no-op writes
 remain lossless. See ADR-0152 and ADR-0153.
+Ordinary metadata saves also retain shared native Podcast albums across optional
+Episode tag differences, preserving unrelated show metadata and validating the
+album once across all its members. Explicit title/feed changes can split shows;
+ordinary saves do not merge separate source albums. See ADR-0165.
 Episode slots are an automatic filling target;
 manual additions may exceed it. Episode count alone never authorizes removal.
 Both Newest and Next clear by listened state or time on the iPod. Newest replaces
@@ -606,8 +614,10 @@ The Library Workspace now holds Track metadata, the device name, Playlists, and
 Photos in one session draft. Sidebar naming, shared Track and collection context
 menus, and
 a manual metadata editor apply explicit changes to this draft. Normalize Tags scans
-the Library in the background using Original iOpenPod's grouping and sorting rules,
-previews the results, and applies them only on request. A shared, debounced background
+the Library in the background using Original iOpenPod's grouping and sorting
+baseline, with conservative corrections that preserve supplied credits and custom
+sorts and require evidence for album and compilation inference (ADR-0163). It
+previews the results and applies them only on request. A shared, debounced background
 scan keeps the Normalize Tags Sidebar badge current with the number of suggested
 tag-field edits. Opening or closing the preview reuses that scan; applying changes,
 editing, locking, or switching the Active iPod invalidates old results. Mixed metadata, stale

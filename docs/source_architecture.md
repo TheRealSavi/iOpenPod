@@ -565,8 +565,18 @@ writes, recoverable removals, and unchanged file dependencies. Read-only validat
 checks expected file fingerprints and staging/recovery capacity. Execution holds
 one Volume writer lease, streams Host files through bounded buffers, retains
 replaced originals, and verifies every staged file before publishing any target.
+Library transactions use persistent Host recovery, bound to Physical Device and
+Volume identities. All originals and replacement sources verify before publication.
+The complete Operation Journal is persisted on the Host before its device mirror.
+Storage reclaims reviewed replacements and removals, then publishes each verified
+replacement in order. Capacity validation requires net growth plus directory and
+journal reserves. Recovery is independent of Backup Snapshots and requires the
+computer retaining those originals. Read-only discovery also finds Host journals
+when the removable journal is lost. See ADR-0167. Other Storage callers retain the
+original policies, including device originals and one-at-a-time staging (ADR-0166).
 Writes are individually atomic; the whole transaction is not an instantaneous
-filesystem-wide swap. Removals follow verification of all writes.
+filesystem-wide swap. Device-retained transactions remove files after verifying all
+writes; Host recovery permits earlier removal only after verifying Host originals.
 
 Versioned Operation Journals retain intent and distinguish staging, prepared,
 publishing, committed, restoring, and restored states. `inspect_transaction` captures
@@ -1684,7 +1694,9 @@ determinate or indeterminate progress, and an optional named action. Action requ
 are emitted by source and key; callers handle them without passing callbacks or
 widgets through the status model. Immutable active-status snapshots retain arrival
 order. The visible status rotates every four seconds when several sources are active.
-New sources appear immediately; updates preserve the rotation position and cadence.
+Statuses may carry a safety warning, rendered prominently beside progress. While
+warnings exist, only those sources rotate; other statuses remain in the popup.
+New eligible sources appear immediately; updates preserve the rotation position and cadence.
 Clearing or expiring the visible source advances to the next, and the default returns
 when none remain. `MainWindow` adapts the current text to the shared `QStatusBar`.
 Shared status controls render its progress and action, while the corner button opens
@@ -1836,6 +1848,12 @@ of Qt in `iOpenPod.app.library_write`. Entered writer stages support progress an
 cooperative cancellation. Read-only inspection reports expose captured changes,
 resource evidence, output hashes, and diagnostics; they cannot replay a write or
 restore a saveable stale result. See ADR-0023 and `docs/library-writing.md`.
+
+Library preparation and save progress retain typed stage counts through the
+controller to the status bar and Review Changes. Known totals show stage progress;
+unknown totals show activity without an estimated percentage. During saving,
+“Do not disconnect your iPod” stays visible through verification and cleanup until
+the controller reports its terminal outcome. See ADR-0164.
 
 They should not perform arbitrary filesystem writes or contain widget logic.
 

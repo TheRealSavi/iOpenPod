@@ -3,11 +3,12 @@
 import pytest
 from PySide6.QtCore import QTranslator
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QLabel, QPlainTextEdit, QTreeWidget
+from PySide6.QtWidgets import QLabel, QPlainTextEdit, QProgressBar, QTreeWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.display_text import SourceText, source_text
 from iOpenPod.app.library_write import LibraryReview, WriteProgress
+from iOpenPod.app.library_write_controller import PreparationState
 from iOpenPod.GUI.dialogs.library_review import LibraryReviewDialog
 from iPodDB.library import LibraryChange, LibrarySnapshot, WriteEffect, WriteIssue
 from iPodDB.library.writing import (
@@ -32,6 +33,10 @@ class _ReviewTranslator(QTranslator):
         n: int = -1,
     ) -> str | None:
         del disambiguation, n
+        if context == "LibraryWriteStatus":
+            return {"Do not disconnect your iPod": "Trennen Sie Ihren iPod nicht"}.get(
+                source_text
+            )
         if context == "Workflow":
             return {
                 "Rebuild descendant membership and direct-child rules.": "Mitgliedschaften und Regeln neu erstellen.",
@@ -194,8 +199,14 @@ def test_controller_progress_preserves_template_until_the_dialog_translates_it()
     assert APPLICATION.installTranslator(translator)
     dialog = LibraryReviewDialog(controller)
     try:
+        controller.state = PreparationState.SAVING
+        controller.changed.emit()
         status = dialog.findChild(QLabel, "libraryReviewStatus")
+        warning = dialog.findChild(QLabel, "libraryReviewSafetyWarning")
+        bar = dialog.findChild(QProgressBar, "libraryReviewProgress")
         assert status is not None
+        assert warning is not None and warning.text() == "Trennen Sie Ihren iPod nicht"
+        assert bar is not None
         observed: list[object] = []
         controller.progressChanged.connect(observed.append)
         message = source_text(
@@ -203,10 +214,12 @@ def test_controller_progress_preserves_template_until_the_dialog_translates_it()
         )
         controller._progress(  # pyright: ignore[reportPrivateUsage]
             controller._token,  # pyright: ignore[reportPrivateUsage]
-            WriteProgress("save.storage.publishing", message),
+            WriteProgress("save.storage.publishing", message, completed=2, total=5),
         )
-        assert len(observed) == 1 and isinstance(observed[0], SourceText)
+        assert len(observed) == 1 and isinstance(observed[0], WriteProgress)
+        assert isinstance(observed[0].message, SourceText)
         assert status.text() == "Bibliotheksdateien: 2 von 5"
+        assert bar.value() == 4_000
         controller.progressChanged.emit(None)
         assert status.text() == "Bibliotheksdateien: 2 von 5"
     finally:

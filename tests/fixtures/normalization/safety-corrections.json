@@ -1,0 +1,37 @@
+{
+  "reference": "ADR-0163: Preserve tag evidence during normalization",
+  "cases": [
+    {
+      "name": "test_ipod_tag_suggestion_marks_true_compilation",
+      "reason": "A shared album title and different artists do not prove compilation membership.",
+      "changes": [
+        {"Sort Artist": "One", "Sort Album": "Sampler"},
+        {"Sort Artist": "Two", "Sort Album": "Sampler"}
+      ]
+    },
+    {
+      "name": "test_ipod_tag_suggestion_normalizes_explicit_compilation_across_album",
+      "reason": "Propagate the explicit compilation flag while preserving the named Album Artist.",
+      "changes": [
+        {"Sort Artist": "One", "Sort Album Artist": "Soundtrack", "Sort Album": "Sampler"},
+        {"compilation_flag": 1, "Sort Artist": "One", "Sort Album Artist": "Soundtrack", "Sort Album": "Sampler"}
+      ]
+    },
+    {
+      "name": "test_explicit_compilation_does_not_capture_same_name_album",
+      "reason": "An explicit compilation does not require replacing its named Album Artist.",
+      "changes": [
+        {"Sort Artist": "One", "Sort Album Artist": "Soundtrack", "Sort Album": "Sampler"},
+        {"Sort Artist": "Band", "Sort Album Artist": "Band", "Sort Album": "Sampler"}
+      ]
+    },
+    {
+      "name": "canonical_tie",
+      "reason": "Conflicting explicit sort values are retained instead of selecting a lexical winner.",
+      "changes": [
+        {"Sort Album": "Z"},
+        {"Sort Album": "Z"}
+      ]
+    }
+  ]
+}

@@ -2397,6 +2397,11 @@ QListWidget#activeStatusesList::item:focus {{
     border: 1px solid {tokens.focus};
 }}
 
+QLabel#sharedStatusSafetyWarning, QLabel#libraryReviewSafetyWarning {{
+    color: {tokens.warning};
+    font-weight: 600;
+}}
+
 QProgressBar#sharedStatusProgress {{
     min-width: 160px;
     max-width: 220px;

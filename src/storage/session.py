@@ -103,6 +103,9 @@ class FilesystemSession:
         platform: PlatformAdapter,
         on_invalidate: Callable[[str, ConnectionGeneration], None],
         writer_lock_directory: Path | None,
+        transaction_recovery_directory: Path | None = None,
+        check_recovery_location: Callable[[HostPath, MountedVolume], None]
+        | None = None,
     ) -> None:
         self._mounted_volume = mounted_volume
         self._current_observation = mounted_volume.observation
@@ -110,6 +113,8 @@ class FilesystemSession:
         self._platform = platform
         self._on_invalidate = on_invalidate
         self._writer_lock_directory = writer_lock_directory
+        self._transaction_recovery_directory = transaction_recovery_directory
+        self._check_recovery_location = check_recovery_location
         self._root = mounted_volume.mount_point.path.resolve(strict=True)
         self._state = _SessionState.ACTIVE
         self._invalid_reason = ""
@@ -391,46 +396,51 @@ class FilesystemSession:
 
     def delete_unrecoverably(self, path: DevicePath, *, expected: FileIdentity) -> None:
         """Delete one unchanged regular file without retaining a recovery copy."""
-
         with self._writer_lease():
-            observation = self._revalidate(write=True)
-            target = resolve_device_path(
-                self._root,
-                path,
-                observation.volume.capabilities,
-                require_leaf=True,
-            )
-            try:
-                with open_read_no_follow(target) as source:
-                    if _file_identity(os.fstat(source.fileno())) != expected:
-                        raise FilePreconditionError(
-                            f"Device file changed before deletion: {path}"
-                        )
-                # Check the named entry again after closing its handle (required
-                # for deletion on Windows).
-                metadata = os.lstat(target)
-                if is_link_or_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
-                    raise UnsafeFilesystemPathError(
-                        f"Device Path is not a regular file: {path}"
-                    )
-                if _file_identity(metadata) != expected:
+            self._delete_unrecoverably(path, expected=expected)
+
+    def _delete_unrecoverably(
+        self, path: DevicePath, *, expected: FileIdentity
+    ) -> None:
+        """Internal deletion while the caller holds the Volume writer lease."""
+        observation = self._revalidate(write=True)
+        target = resolve_device_path(
+            self._root,
+            path,
+            observation.volume.capabilities,
+            require_leaf=True,
+        )
+        try:
+            with open_read_no_follow(target) as source:
+                if _file_identity(os.fstat(source.fileno())) != expected:
                     raise FilePreconditionError(
                         f"Device file changed before deletion: {path}"
                     )
-                self._revalidate(write=True)
-                target.unlink()
-                if os.path.lexists(target):
-                    raise StorageOperationError(
-                        f"Deleted device file is still present: {path}"
-                    )
-                flush_parent_directory(target)
-                self._revalidate(write=True)
-            except StorageError:
-                raise
-            except OSError as error:
+            # Check the named entry again after closing its handle (required
+            # for deletion on Windows).
+            metadata = os.lstat(target)
+            if is_link_or_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
+                raise UnsafeFilesystemPathError(
+                    f"Device Path is not a regular file: {path}"
+                )
+            if _file_identity(metadata) != expected:
+                raise FilePreconditionError(
+                    f"Device file changed before deletion: {path}"
+                )
+            self._revalidate(write=True)
+            target.unlink()
+            if os.path.lexists(target):
                 raise StorageOperationError(
-                    f"Could not delete device file {path}: {error}"
-                ) from error
+                    f"Deleted device file is still present: {path}"
+                )
+            flush_parent_directory(target)
+            self._revalidate(write=True)
+        except StorageError:
+            raise
+        except OSError as error:
+            raise StorageOperationError(
+                f"Could not delete device file {path}: {error}"
+            ) from error
 
     def read_snapshot(
         self,
@@ -761,6 +771,43 @@ class FilesystemSession:
         from storage._transactions import validate
 
         return validate(self, plan)
+
+    @property
+    def supports_host_transaction_recovery(self) -> bool:
+        return self._transaction_recovery_directory is not None
+
+    def host_transaction_journals(self) -> tuple[DevicePath, ...]:
+        """Find identity-bound Host recovery, including a lost device journal."""
+        from storage._host_transactions import journals
+
+        return journals(self)
+
+    def transaction_journal_fingerprint(self, path: DevicePath) -> FileFingerprint:
+        """Observe the authoritative journal, whether retained on Host or device."""
+        from storage._host_transactions import read
+
+        retained = read(self, path)
+        return retained[1] if retained is not None else self.fingerprint(path)
+
+    def has_transaction(self, path: DevicePath) -> bool:
+        return self.exists(path) or path in self.host_transaction_journals()
+
+    def decline_transaction(
+        self, path: DevicePath, *, expected: FileFingerprint
+    ) -> None:
+        """Retire observed recovery intent while retaining diagnostic material."""
+        from storage._host_transactions import decline, read
+        from storage._transaction_journal import journal_root
+
+        if read(self, path) is None:
+            self.move(
+                path,
+                journal_root(path).joinpath("declined-transaction.json"),
+                expected_source=expected,
+            )
+            return
+        with self._writer_lease():
+            decline(self, path, expected)
 
     def execute_transaction(
         self,

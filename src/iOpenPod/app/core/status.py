@@ -17,6 +17,7 @@ class StatusMessage:
     message: str
     progress: StatusProgress | None = None
     action: StatusAction | None = None
+    safety_warning: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,7 @@ class _StatusEntry:
     revision: int
     progress: StatusProgress | None = None
     action: StatusAction | None = None
+    safety_warning: str = ""
 
 
 class ApplicationStatus(QObject):
@@ -75,7 +77,13 @@ class ApplicationStatus(QObject):
         """Return active messages in stable arrival order, excluding the default."""
 
         return tuple(
-            StatusMessage(source, entry.message, entry.progress, entry.action)
+            StatusMessage(
+                source,
+                entry.message,
+                entry.progress,
+                entry.action,
+                entry.safety_warning,
+            )
             for source, entry in self._entries.items()
         )
 
@@ -85,7 +93,9 @@ class ApplicationStatus(QObject):
         if source is None:
             return None
         entry = self._entries[source]
-        return StatusMessage(source, entry.message, entry.progress, entry.action)
+        return StatusMessage(
+            source, entry.message, entry.progress, entry.action, entry.safety_warning
+        )
 
     @property
     def current_message(self) -> str:
@@ -108,12 +118,14 @@ class ApplicationStatus(QObject):
         *,
         progress: StatusProgress | None = None,
         action: StatusAction | None = None,
+        safety_warning: str = "",
         timeout_ms: int = 0,
     ) -> None:
         """Add or update a source, optionally until its own timeout expires.
 
         New sources appear immediately. Updating an existing source preserves the
         rotation position and cadence so frequent progress cannot starve peers.
+        Sources with an active safety warning take precedence until cleared.
         """
 
         if not source.strip():
@@ -127,8 +139,10 @@ class ApplicationStatus(QObject):
         existing = self._entries.get(source)
         self._revision += 1
         revision = self._revision
-        self._entries[source] = _StatusEntry(message, revision, progress, action)
-        if existing is None:
+        self._entries[source] = _StatusEntry(
+            message, revision, progress, action, safety_warning
+        )
+        if existing is None and source in self._rotation_sources():
             self._current_source = source
         self._sync_rotation()
         self._emit_if_changed(previous, previous_status)
@@ -137,6 +151,7 @@ class ApplicationStatus(QObject):
             or existing.message != message
             or existing.progress != progress
             or existing.action != action
+            or existing.safety_warning != safety_warning
         ):
             self.activeMessagesChanged.emit()
         if timeout_ms:
@@ -172,13 +187,16 @@ class ApplicationStatus(QObject):
             self.actionRequested.emit(source, key)
 
     def _sync_rotation(self) -> None:
-        if len(self._entries) < 2:
+        sources = self._rotation_sources()
+        if self._current_source not in sources:
+            self._current_source = sources[0] if sources else None
+        if len(sources) < 2:
             self._rotation_timer.stop()
         elif not self._rotation_timer.isActive():
             self._rotation_timer.start()
 
     def _rotate(self) -> None:
-        sources = tuple(self._entries)
+        sources = self._rotation_sources()
         if len(sources) < 2 or self._current_source is None:
             return
         previous = self.current_message
@@ -186,6 +204,12 @@ class ApplicationStatus(QObject):
         index = sources.index(self._current_source)
         self._current_source = sources[(index + 1) % len(sources)]
         self._emit_if_changed(previous, previous_status)
+
+    def _rotation_sources(self) -> tuple[str, ...]:
+        warnings = tuple(
+            source for source, entry in self._entries.items() if entry.safety_warning
+        )
+        return warnings or tuple(self._entries)
 
     def _clear_revision(self, source: str, revision: int) -> None:
         entry = self._entries.get(source)

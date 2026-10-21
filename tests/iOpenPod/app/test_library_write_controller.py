@@ -11,7 +11,14 @@ from time import monotonic, sleep
 import pytest
 from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QDialog, QLabel, QPlainTextEdit, QPushButton, QTreeWidget
+from PySide6.QtWidgets import (
+    QDialog,
+    QLabel,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QTreeWidget,
+)
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
@@ -949,6 +956,73 @@ class DelayedSaveService:
         self.entered.set()
         self.release.wait(3)
         return self.coordinator.save_library(review, expected, progress, cancelled)
+
+
+def test_review_and_controller_retain_measured_progress_until_save_finishes(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+) -> None:
+    coordinator, devices, workspace, _ = session
+    service = DelayedSaveService(coordinator, after_save=True)
+    controller = LibraryWriteController(service, workspace, devices, manual_settings())
+    dialog = LibraryReviewDialog(controller)
+    updates: list[object] = []
+    controller.progressChanged.connect(updates.append)
+    try:
+        dialog.show()
+        controller.prepare()
+        bar = dialog.findChild(QProgressBar, "libraryReviewProgress")
+        warning = dialog.findChild(QLabel, "libraryReviewSafetyWarning")
+        label = dialog.findChild(QLabel, "libraryReviewStatus")
+        assert bar is not None and warning is not None and label is not None
+        assert bar.isVisible() and not warning.isVisible()
+        wait_for(lambda: controller.state is PreparationState.READY)
+        assert updates and all(isinstance(value, WriteProgress) for value in updates)
+        assert controller.progress is None and not bar.isVisible()
+
+        updates.clear()
+        controller.save()
+        assert controller.progress is None
+        assert bar.isVisible() and bar.maximum() == 0
+        assert warning.isVisible()
+        wait_for(service.entered.is_set)
+        APPLICATION.processEvents()
+        assert controller.state is PreparationState.SAVING
+        assert controller.progress is not None
+        assert any(
+            isinstance(value, WriteProgress)
+            and value.total
+            and value.completed is not None
+            for value in updates
+        )
+        assert warning.text() == "Do not disconnect your iPod"
+        assert warning.isVisible()
+
+        # A slow current stage remains visible on refresh or reopening the review.
+        measured = WriteProgress(
+            "save.storage.verifying_writes",
+            "Verifying files on the iPod…",
+            completed=2,
+            total=5,
+            current_item="iPod_Control/iTunes/iTunesDB",
+            unit="files",
+        )
+        controller._progress(controller._token, measured)  # pyright: ignore[reportPrivateUsage]
+        dialog.refresh()
+        assert label.text() == measured.message
+        assert bar.value() == 4_000 and bar.maximum() == 10_000
+        assert bar.toolTip() == measured.current_item
+        assert warning.isVisible()
+        controller._progress(controller._token - 1, WriteProgress("old", "Stale"))  # pyright: ignore[reportPrivateUsage]
+        assert controller.progress == measured
+        service.release.set()
+        wait_for(lambda: controller.state is PreparationState.SAVED)
+        assert controller.progress is None
+        assert not bar.isVisible() and not warning.isVisible()
+        assert "saved and verified" in label.text()
+    finally:
+        service.release.set()
+        dialog.close()
+        controller.shutdown()
 
 
 @pytest.mark.parametrize("after_save", (False, True))

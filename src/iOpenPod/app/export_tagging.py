@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, cast
 
 import mutagen.id3 as id3_frames
-from mutagen import MutagenError
+from mutagen import MutagenError, PaddingInfo
 from mutagen.aiff import AIFF
 from mutagen.id3 import ID3, ID3NoHeaderError
 from mutagen.mp3 import MP3
@@ -195,7 +195,9 @@ def _tag_id3_container(
     if not isinstance(path, Path):
         # Mutagen expects a file object at offset zero for every operation.
         path.seek(0)
-    audio.save(path, **({"padding": _no_padding} if not isinstance(path, Path) else {}))
+    audio.save(
+        path, **({"padding": _reuse_padding} if not isinstance(path, Path) else {})
+    )
     return _tag_signature(audio.tags)
 
 
@@ -214,7 +216,9 @@ def _tag_raw_aac(
     _apply_id3_tags(tags, track, cover, preserve_artwork=preserve_artwork)
     if not isinstance(path, Path):
         path.seek(0)
-    tags.save(path, **({"padding": _no_padding} if not isinstance(path, Path) else {}))
+    tags.save(
+        path, **({"padding": _reuse_padding} if not isinstance(path, Path) else {})
+    )
     return _tag_signature(tags)
 
 
@@ -365,7 +369,9 @@ def _tag_mp4(
             tags[key] = value
     if not isinstance(path, Path):
         path.seek(0)
-    audio.save(path, **({"padding": _no_padding} if not isinstance(path, Path) else {}))
+    audio.save(
+        path, **({"padding": _reuse_padding} if not isinstance(path, Path) else {})
+    )
     return _tag_signature(audio.tags)
 
 
@@ -385,8 +391,9 @@ def _tag_signature(tags: Any) -> tuple[tuple[str, str], ...]:
     )
 
 
-def _no_padding(_info: object) -> int:
-    return 0
+def _reuse_padding(info: PaddingInfo) -> int:
+    """Reuse existing tag allocation without reserving additional space."""
+    return max(0, info.padding)
 
 
 def _jpeg_cover(artwork: _Artwork) -> bytes:

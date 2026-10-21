@@ -17,6 +17,7 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import replace
 from datetime import UTC, datetime
+from os import PathLike
 from pathlib import Path
 from threading import Event
 from typing import Protocol, cast
@@ -592,12 +593,16 @@ class _Executor(SyncExecutor):
             return _PreparedTrack(item, song, provenance, lifetime.pop_all(), ())
 
 
-def _host(tmp_path: Path, *names: str, playlists: bool = False) -> HostMediaLibrary:
+def _host(
+    tmp_path: Path, *names: str, playlists: bool = False, payload: bytes | None = None
+) -> HostMediaLibrary:
     tracks: list[Track] = []
     sources: list[HostMediaSource] = []
     for index, name in enumerate(names, 100):
         path = tmp_path / f"{name}.m4a"
-        path.write_bytes(f"Prepared media for {name}".encode())
+        path.write_bytes(
+            payload if payload is not None else f"Prepared media for {name}".encode()
+        )
         observed = LocalHostFile.observe(HostPath(path))
         tracks.append(
             Track(
@@ -1078,6 +1083,49 @@ def test_update_keeps_track_identity_and_only_removes_unreferenced_old_media(
             ).action
             is SyncPlanAction.UNCHANGED
         )
+    finally:
+        device.coordinator.close()
+
+
+def test_sync_reuses_removed_media_space_on_a_nearly_full_ipod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    size = 1024 * 1024
+    device = build_device(tmp_path, media_payload=b"a" * size, host_recovery=True)
+    try:
+        host = _host(tmp_path, "Replacement", payload=b"b" * size)
+        request = _request(device, host, update=True)
+
+        def allocated() -> int:
+            return sum(
+                ((p.stat().st_size + 4095) // 4096) * 4096
+                for p in device.root.rglob("*")
+                if p.is_file()
+            )
+
+        baseline = allocated()
+        actual_usage = shutil.disk_usage
+        usage = actual_usage(device.root)
+
+        def limited_disk_usage(path: str | PathLike[str]) -> tuple[int, int, int]:
+            if Path(path).resolve() == device.root:
+                return usage._replace(free=256 * 1024 - (allocated() - baseline))
+            return actual_usage(path)
+
+        monkeypatch.setattr(shutil, "disk_usage", limited_disk_usage)
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        updated = next(
+            t for t in result.active.library.tracks if t.title == "Replacement"
+        )
+        assert (device.root / updated.metadata.location).read_bytes() == b"b" * size
+        assert not (
+            device.root / request.source.library.tracks[0].metadata.location
+        ).exists()
+        assert not tuple((tmp_path / "recovery").rglob("transaction.json"))
     finally:
         device.coordinator.close()
 

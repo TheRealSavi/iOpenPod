@@ -45,7 +45,9 @@ from iOpenPod.app.synesthesia.audio import FFmpegDecoder
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from storage import Storage
+from storage.host_files import application_config_file
 from storage.media_processing import MediaToolFinder
+from storage.platform.native import native_platform_adapter
 
 
 @dataclass(frozen=True, slots=True, weakref_slot=True)
@@ -89,7 +91,13 @@ class AppContext:
 
     @classmethod
     def create(cls, application: QApplication) -> "AppContext":
-        storage = Storage()
+        platform = native_platform_adapter()
+        storage = Storage(
+            platform,
+            transaction_recovery_directory=application_config_file(
+                "iOpenPod", "TransactionRecovery", platform_name=platform.name
+            ),
+        )
         settings = SettingsService(
             create_global_settings_store(storage),
             DeviceSettingsStore(),

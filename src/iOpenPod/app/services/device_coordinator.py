@@ -388,7 +388,9 @@ class DeviceCoordinator:
         except SyncRecoveryRequiredError as error:
             self._recovery_observations[error.recovery_path] = (
                 session.mounted_volume,
-                session.fingerprint(DevicePath(error.recovery_path)),
+                session.transaction_journal_fingerprint(
+                    DevicePath(error.recovery_path)
+                ),
             )
             raise
 
@@ -707,7 +709,7 @@ class DeviceCoordinator:
                 if not mounted.volume.capabilities.safe_for_writes:
                     continue
                 with self._storage.open_session(mounted) as session:
-                    if session.exists(path):
+                    if session.has_transaction(path):
                         session.read_transaction_state(path)
                         matches.append(mounted)
             if len(matches) != 1:
@@ -799,7 +801,6 @@ class DeviceCoordinator:
             raise DeviceAccessError("The Sync recovery journal path is invalid.")
         namespace = path.parent
         assert namespace is not None
-        retired = namespace.joinpath("declined-transaction.json")
         with self._lock:
             observed = self._recovery_observations.get(recovery_path)
             matches: list[tuple[MountedVolume, FileFingerprint | None]] = []
@@ -816,13 +817,18 @@ class DeviceCoordinator:
                         # A corrupt journal can be declined because its location
                         # and bytes were observed on this exact Physical Device.
                         matches.append(
-                            (mounted, observed[1] if session.exists(path) else None)
+                            (
+                                mounted,
+                                observed[1] if session.has_transaction(path) else None,
+                            )
                         )
-                    elif session.exists(path):
+                    elif session.has_transaction(path):
                         # Results from this run may precede discovery. Validate
                         # their journal identity before accepting a path alone.
                         session.read_transaction_state(path)
-                        matches.append((mounted, session.fingerprint(path)))
+                        matches.append(
+                            (mounted, session.transaction_journal_fingerprint(path))
+                        )
             if len(matches) != 1:
                 raise DeviceChangedError(
                     "Reconnect the same writable iPod before keeping its current contents."
@@ -834,7 +840,7 @@ class DeviceCoordinator:
                 mounted, access=AccessMode.READ_WRITE
             ) as session:
                 if expected is not None:
-                    session.move(path, retired, expected_source=expected)
+                    session.decline_transaction(path, expected=expected)
                 flushed = session.flush()
             self._recovery_observations.pop(recovery_path, None)
             self._deactivate_locked()
@@ -885,7 +891,7 @@ class DeviceCoordinator:
                 if not mounted.volume.capabilities.safe_for_writes:
                     continue
                 with self._storage.open_session(mounted) as session:
-                    if session.exists(path):
+                    if session.has_transaction(path):
                         state = session.read_transaction_state(path)
                         if state not in (
                             TransactionState.COMMITTED,
@@ -910,7 +916,7 @@ class DeviceCoordinator:
                 matches[0], access=AccessMode.READ_WRITE
             ) as session:
                 try:
-                    if not session.exists(path):
+                    if not session.has_transaction(path):
                         flushed = session.finalize_missing_transaction(path)
                     elif (
                         session.read_transaction_state(path)
@@ -4336,7 +4342,7 @@ def _raise_if_cleanup_completed(
     error: TransactionDurabilityPendingError,
 ) -> None:
     try:
-        removed = not session.exists(path)
+        removed = not session.has_transaction(path)
     except StorageError:
         return
     if removed:
@@ -4354,10 +4360,11 @@ def _terminal_transaction_journals(
 ) -> tuple[tuple[DevicePath, TransactionState], ...]:
     """Recognize crash recovery from durable device journals before any mutation."""
     recovery_root = DevicePath(".iopenpod-recovery")
-    if not session.exists(recovery_root):
-        return ()
+    journals = set(session.host_transaction_journals())
     cleanup: list[tuple[DevicePath, TransactionState]] = []
-    for entry in session.list_directory(recovery_root):
+    for entry in (
+        session.list_directory(recovery_root) if session.exists(recovery_root) else ()
+    ):
         if (
             entry.kind is not DeviceEntryKind.DIRECTORY
             or re.fullmatch(r"[0-9a-f]{32}", entry.path.name) is None
@@ -4366,6 +4373,8 @@ def _terminal_transaction_journals(
         journal = entry.path.joinpath("transaction.json")
         if not session.exists(journal):
             continue
+        journals.add(journal)
+    for journal in sorted(journals, key=str):
         try:
             status = session.read_transaction_status(journal)
         except (StorageError, ValueError) as error:

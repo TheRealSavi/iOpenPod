@@ -235,3 +235,8 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0160: Preserve readable text subtitles](0160-preserve-readable-text-subtitles.md)
 - [ADR-0161: Repair video playback metadata during Sync](0161-repair-video-playback-metadata-during-sync.md)
 - [ADR-0162: Bound Host reads to observed file size](0162-bound-host-reads-to-observed-file-size.md)
+- [ADR-0163: Preserve tag evidence during normalization](0163-preserve-tag-evidence-during-normalization.md)
+- [ADR-0164: Keep Library save progress and safety visible](0164-keep-library-save-progress-and-safety-visible.md)
+- [ADR-0165: Preserve shared Podcast albums during metadata edits](0165-preserve-shared-podcast-albums-during-metadata-edits.md)
+- [ADR-0166: Stage Library media replacements one at a time](0166-stage-library-media-replacements-one-at-a-time.md)
+- [ADR-0167: Recover Library transactions from the Host](0167-recover-library-transactions-from-the-host.md)

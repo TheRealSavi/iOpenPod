@@ -1,7 +1,9 @@
 """Bound device reads for ordinary Library preparation, independently of USB speed."""
 
+import shutil
 from collections import Counter
 from dataclasses import replace
+from os import PathLike
 from pathlib import Path
 from threading import Event
 
@@ -11,10 +13,93 @@ from tests.iOpenPod.app.services.test_library_resources import (
     cover_snapshot,
     without_first,
 )
-from tests.iOpenPod.app.test_media_lyrics import fixture
+from tests.iOpenPod.app.test_media_lyrics import fixture, media_payload
 
 from iOpenPod.app.library_write import LibraryPreparationRequest, WriteProgress
+from iOpenPod.app.tag_normalizer import TagProfile, normalize_tags
+from iPodDB.library import edit_track_metadata
 from storage import DevicePath, FileFingerprint, FilesystemSession
+
+
+@pytest.mark.parametrize("rockbox", [False, True])
+@pytest.mark.parametrize("host_recovery", [False, True])
+def test_normalize_tags_saves_with_space_for_one_media_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rockbox: bool, host_recovery: bool
+) -> None:
+    # A retained MP4 free atom supplies realistic file size without a large fixture.
+    padding = 1024 * 1024
+    media = (
+        fixture("tone.m4a") + padding.to_bytes(4, "big") + b"free" + bytes(padding - 8)
+    )
+    device = build_device(tmp_path, media_payload=media, host_recovery=host_recovery)
+    try:
+        source = device.active
+        draft = replace(
+            source.library,
+            tracks=tuple(
+                replace(t, artist="The Artist", album="The Album")
+                for t in source.library.tracks
+            ),
+        )
+        suggestion = normalize_tags(draft.tracks, TagProfile("test", True, True))
+        assert suggestion.field_count
+        edits = {u.track_id: u.edits for u in suggestion.updates}
+        desired = replace(
+            draft,
+            tracks=tuple(
+                edit_track_metadata(t, edits.get(t.track_id, ())) for t in draft.tracks
+            ),
+        )
+        unit = 4096
+
+        def allocated() -> int:
+            return sum(
+                ((p.stat().st_size + unit - 1) // unit) * unit
+                for p in device.root.rglob("*")
+                if p.is_file()
+            )
+
+        baseline = allocated()
+        usage = shutil.disk_usage(device.root)
+        actual_usage = shutil.disk_usage
+        # Two roughly 1 MiB replacements need over 5 MiB when staged together.
+        # Originals + one stage + restoration reserve fit within 4.5 MiB.
+        budget = 256 * 1024 if host_recovery else 9 * 512 * 1024
+
+        def limited_disk_usage(path: str | PathLike[str]) -> tuple[int, int, int]:
+            if Path(path).resolve() == device.root:
+                return usage._replace(free=budget - (allocated() - baseline))
+            return actual_usage(path)
+
+        monkeypatch.setattr(shutil, "disk_usage", limited_disk_usage)
+        review = device.coordinator.prepare_library(
+            LibraryPreparationRequest(desired, source, 1, 1, rockbox_metadata=rockbox),
+            lambda _: None,
+            Event(),
+        )
+        assert review.result.prepared is not None, review.result.issues
+        media_writes = [
+            f for f in review.file_changes if f.path.startswith("iPod_Control/Music/")
+        ]
+        assert len(media_writes) == (2 if rockbox else 0)
+        device.assert_original()
+        saved = device.save(review)
+        assert saved.active is not None, saved.issues
+        assert (
+            normalize_tags(
+                saved.active.library.tracks, TagProfile("test", True, True)
+            ).field_count
+            == 0
+        )
+        for track in saved.active.library.tracks:
+            data = (device.root / track.metadata.location).read_bytes()
+            assert media_payload(data, ".m4a") == media_payload(media, ".m4a")
+            if rockbox:
+                assert data != media
+            else:
+                assert data == media
+    finally:
+        device.coordinator.close()
 
 
 @pytest.mark.parametrize("change", ["rename", "rockbox", "lyrics", "cover", "remove"])

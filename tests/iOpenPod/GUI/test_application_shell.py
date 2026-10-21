@@ -47,6 +47,8 @@ from iOpenPod.app.core.settings.definitions import (
     PlayerPosition,
 )
 from iOpenPod.app.core.status import StatusAction, StatusProgress
+from iOpenPod.app.library_write import WriteProgress
+from iOpenPod.app.library_write_controller import PreparationState
 from iOpenPod.app.models.collection_list_model import (
     CollectionRole,
 )
@@ -209,6 +211,88 @@ def test_application_status_drives_the_shared_window_status_bar(
 
         assert "No Active iPod" in window.statusBar().currentMessage()
     finally:
+        window.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [PreparationState.SAVED, PreparationState.SAVE_FAILED, PreparationState.STALE],
+)
+def test_library_save_shows_progress_and_keeps_disconnect_warning_visible(
+    outcome: PreparationState,
+) -> None:
+    context = _context()
+    window = MainWindow(context, auto_discover=False)
+    controller = context.library_write_controller
+    try:
+        window.show()
+        APPLICATION.processEvents()
+        baseline_height = window.statusBar().height()
+        controls = window.findChild(StatusBarControls)
+        assert controls is not None
+
+        controller.state = PreparationState.PREPARING
+        controller.changed.emit()
+        assert controls.progress.isVisible()
+        assert controls.progress.maximum() == 0
+        controller.state = PreparationState.SAVING
+        controller.changed.emit()
+        assert controls.progress.isVisible()
+        assert controls.progress.maximum() == 0
+        warning = controls.findChild(QLabel, "sharedStatusSafetyWarning")
+        assert warning is not None and warning.isVisible()
+        assert warning.text() == "Do not disconnect your iPod"
+
+        controller._progress(  # pyright: ignore[reportPrivateUsage]
+            controller._token,  # pyright: ignore[reportPrivateUsage]
+            WriteProgress(
+                "save.storage.publishing",
+                "Publishing Library files: 1 of 4",
+                completed=1,
+                total=4,
+                current_item="iPod_Control/iTunes/iTunesDB",
+                unit="files",
+            ),
+        )
+        assert "Publishing Library files: 1 of 4" in window.statusBar().currentMessage()
+        assert controls.progress.value() == 2_500
+        assert controls.progress.toolTip() == "iPod_Control/iTunes/iTunesDB"
+        context.status.show("other", "An unrelated update")
+        context.status._rotate()  # pyright: ignore[reportPrivateUsage]
+        assert "Publishing" in window.statusBar().currentMessage()
+        assert warning.isVisible()
+        APPLICATION.processEvents()
+        assert window.statusBar().height() == baseline_height
+
+        controller._progress(  # pyright: ignore[reportPrivateUsage]
+            controller._token,  # pyright: ignore[reportPrivateUsage]
+            WriteProgress(
+                "save.storage.flushing", "Waiting for the iPod to finish writing data…"
+            ),
+        )
+        assert controls.progress.maximum() == 0
+        assert warning.isVisible()
+        controller.state = outcome
+        controller.changed.emit()
+        assert warning.isHidden()
+        assert controls.progress.isHidden()
+        if outcome is PreparationState.SAVED:
+            assert "saved and verified" in window.statusBar().currentMessage()
+            assert "Eject" in window.statusBar().currentMessage()
+        elif outcome is PreparationState.SAVE_FAILED:
+            assert "could not be saved" in window.statusBar().currentMessage()
+        previous_message = window.statusBar().currentMessage()
+        controller._progress(  # pyright: ignore[reportPrivateUsage]
+            controller._token,  # pyright: ignore[reportPrivateUsage]
+            WriteProgress(
+                "save.storage.publishing", "Late update", completed=4, total=4
+            ),
+        )
+        assert window.statusBar().currentMessage() == previous_message
+        assert warning.isHidden()
+    finally:
+        controller.state = PreparationState.IDLE
         window.close()
         context.shutdown()
 

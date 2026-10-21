@@ -138,6 +138,7 @@ class LibraryWriteController(QObject):
         self.review: LibraryReview | None = None
         self._inspection_review: LibraryReview | None = None
         self.save_result: LibrarySaveResult | None = None
+        self._current_progress: WriteProgress | None = None
         workspace.changed.connect(self._invalidate)
         devices.activeIPodChanged.connect(self._source_changed)
         devices.busyChanged.connect(self._device_availability_changed)
@@ -145,6 +146,13 @@ class LibraryWriteController(QObject):
         settings.settingChanged.connect(self._setting_changed)
         self.changed.connect(self._schedule_automatic_save)
         self._schedule_automatic_save()
+
+    @property
+    def progress(self) -> WriteProgress | None:
+        """The latest stage of this running attempt, including measured counts."""
+        if self.state in (PreparationState.PREPARING, PreparationState.SAVING):
+            return self._current_progress
+        return None
 
     @property
     def draft_all_changes(self) -> bool:
@@ -310,6 +318,7 @@ class LibraryWriteController(QObject):
         if not self._devices.begin_library_save():
             return
         self._token += 1
+        self._current_progress = None
         self.state = PreparationState.SAVING
         self._record(
             "application.saving", "Saving requested for the reviewed candidate"
@@ -380,6 +389,7 @@ class LibraryWriteController(QObject):
         self.review = None
         self._inspection_review = None
         self.save_result = None
+        self._current_progress = None
         self.state = PreparationState.PREPARING
         job = _Work(self._token, self._service, self._request)
         self._jobs[self._token] = job
@@ -522,10 +532,12 @@ class LibraryWriteController(QObject):
         if (
             token == self._token
             and not self._closed
+            and self.state in (PreparationState.PREPARING, PreparationState.SAVING)
             and isinstance(progress, WriteProgress)
         ):
             self._record(progress.phase, progress.message)
-            self.progressChanged.emit(progress.message)
+            self._current_progress = progress
+            self.progressChanged.emit(progress)
 
     @Slot(int, object)
     def _completed(self, token: int, value: object) -> None:
