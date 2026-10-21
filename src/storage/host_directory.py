@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import stat
 import sys
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -27,6 +28,8 @@ from storage.paths import HostPath
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
+
+logger = logging.getLogger(__name__)
 
 
 class HostEntryKind(StrEnum):
@@ -51,7 +54,8 @@ class LocalHostDirectory:
     """An observed directory; enumerating it does not follow child links."""
 
     path: HostPath
-    size_bytes: int
+    # Directory allocation/cache size is not evidence that entries changed.
+    size_bytes: int = field(compare=False)
     modified_ns: int
     device: int
     inode: int
@@ -171,6 +175,18 @@ class LocalHostDirectory:
                 or before.st_ctime_ns != after.st_ctime_ns
                 or current != self
             ):
+                logger.debug(
+                    "Host directory changed: path=%s "
+                    "mtime_ns(observed=%d, before=%d, after=%d, current=%d) "
+                    "ctime_ns(before=%d, after=%d)",
+                    self.path,
+                    self.modified_ns,
+                    before.st_mtime_ns,
+                    after.st_mtime_ns,
+                    current.modified_ns,
+                    before.st_ctime_ns,
+                    after.st_ctime_ns,
+                )
                 issue = ConcurrentModificationError(
                     "The Host directory changed while being listed"
                 )

@@ -120,7 +120,7 @@ def resolve_device_path(
     return current
 
 
-def open_read_no_follow(path: Path) -> BinaryIO:
+def open_read_no_follow(path: Path, *, buffering: int = -1) -> BinaryIO:
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
@@ -134,7 +134,7 @@ def open_read_no_follow(path: Path) -> BinaryIO:
             raise UnsafeFilesystemPathError(
                 f"Device Path does not name a regular file: {path.name}"
             )
-        file = os.fdopen(descriptor, "rb")
+        file = os.fdopen(descriptor, "rb", buffering=buffering)
         descriptor = -1
         return file
     finally:

@@ -4,6 +4,7 @@ import os
 import sys
 from collections.abc import Generator, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,37 @@ from storage import (
 )
 from storage.host_directory import HostEntryKind, LocalHostDirectory
 from storage.host_input import LocalHostFile
+
+
+@pytest.mark.parametrize("best_effort", [False, True])
+def test_directory_allocation_size_is_not_a_contents_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, best_effort: bool
+) -> None:
+    (tmp_path / "track.bin").write_bytes(b"track")
+    observed = LocalHostDirectory.observe(HostPath(tmp_path))
+    native_from_stat = LocalHostDirectory._from_stat  # pyright: ignore[reportPrivateUsage]
+    calls = 0
+
+    def from_stat(
+        cls: type[LocalHostDirectory], path: HostPath, value: os.stat_result
+    ) -> LocalHostDirectory:
+        nonlocal calls
+        result = native_from_stat(path, value)
+        if path == observed.path:
+            calls += 1
+            # The provider populates directory allocation information on access;
+            # entries, identity and modification time remain identical.
+            return replace(result, size_bytes=result.size_bytes + calls * 4096)
+        return result
+
+    monkeypatch.setattr(LocalHostDirectory, "_from_stat", classmethod(from_stat))
+    issues: list[OSError | StorageError] = []
+    entries = observed.list_entries(
+        checkpoint=lambda: None,
+        on_issue=(lambda path, error: issues.append(error)) if best_effort else None,
+    )
+    assert tuple(entry.path.path.name for entry in entries) == ("track.bin",)
+    assert not issues
 
 
 def test_listing_returns_typed_entries_with_reusable_identity_observations(

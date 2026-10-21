@@ -234,3 +234,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0159: Review and remember Playlist Sync matches](0159-review-and-remember-playlist-sync-matches.md)
 - [ADR-0160: Preserve readable text subtitles](0160-preserve-readable-text-subtitles.md)
 - [ADR-0161: Repair video playback metadata during Sync](0161-repair-video-playback-metadata-during-sync.md)
+- [ADR-0162: Bound Host reads to observed file size](0162-bound-host-reads-to-observed-file-size.md)

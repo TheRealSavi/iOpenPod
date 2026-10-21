@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, cast
 from urllib.parse import unquote, urlsplit
 
 from storage._filesystem import is_link_or_reparse
+from storage._host_read import bounded_host_reader
 from storage.errors import (
     ConcurrentModificationError,
     FileSizeLimitError,
@@ -273,12 +274,13 @@ class LocalHostFile:
     @contextmanager
     def _open(self) -> Generator[BinaryIO]:
         self.validate()
-        with open_local_file(Path(self.path)) as source:
+        with open_local_file(Path(self.path), buffering=0) as source:
             before = os.fstat(source.fileno())
             _require_regular(before)
             if self._from_stat(self.path, before) != self:
                 raise ConcurrentModificationError("The reviewed Host file was replaced")
-            yield source
+            with bounded_host_reader(source, self.size_bytes) as reader:
+                yield reader
             after = os.fstat(source.fileno())
             if (
                 self._from_stat(self.path, after) != self
@@ -436,10 +438,10 @@ def _check_host_drive(path: Path, *, allow_network: bool = False) -> None:
 
 
 @contextmanager
-def open_local_file(path: Path) -> Generator[BinaryIO]:
+def open_local_file(path: Path, *, buffering: int = -1) -> Generator[BinaryIO]:
     """Open a local path without following links while retaining its parent handles."""
     if os.name == "nt":
-        with _open_windows_file(path) as source:
+        with _open_windows_file(path, buffering=buffering) as source:
             yield source
         return
     # Pin every directory; O_NOFOLLOW applies to each component, not just the leaf.
@@ -457,12 +459,12 @@ def open_local_file(path: Path) -> Generator[BinaryIO]:
         descriptor = os.open(
             path.name, os.O_RDONLY | no_follow | nonblock, dir_fd=directory
         )
-        with os.fdopen(descriptor, "rb") as source:
+        with os.fdopen(descriptor, "rb", buffering=buffering) as source:
             yield source
 
 
 @contextmanager
-def _open_windows_file(path: Path) -> Generator[BinaryIO]:
+def _open_windows_file(path: Path, *, buffering: int = -1) -> Generator[BinaryIO]:
     if sys.platform != "win32":
         raise OSError("Windows file handles are unavailable on this Host")
     import ctypes
@@ -515,5 +517,5 @@ def _open_windows_file(path: Path) -> Generator[BinaryIO]:
         except BaseException:
             kernel.CloseHandle(handle)
             raise
-        with os.fdopen(descriptor, "rb") as source:
+        with os.fdopen(descriptor, "rb", buffering=buffering) as source:
             yield source
