@@ -70,6 +70,19 @@ def verify_locations_cbk(
 ) -> bool:
     """Verify an already-read Locations checksum book without doing I/O."""
 
+    if checksum is WriteChecksum.HASHAB:
+        from iPodDB.iTunesDB.writer.signature import verify_hashab_signature
+
+        final, blocks = _cbk_parts(databases.locations)
+        cbk = databases.locations_cbk
+        # The stored envelope carries its own random bytes; rebuilding with the
+        # writer's deterministic default would reject valid Apple checksum books.
+        if len(cbk) != 57 + 20 + len(blocks) or not hmac.compare_digest(
+            cbk[57:], final + blocks
+        ):
+            return False
+        return verify_hashab_signature(final, guid, cbk[:57])
+
     try:
         expected = build_locations_cbk(
             databases.locations,

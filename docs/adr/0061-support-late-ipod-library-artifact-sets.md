@@ -11,6 +11,7 @@
 - Partially superseded by: ADR-0115 (device-supplied postprocessing is optional)
 - Amended by: ADR-0141 (checked native CDB metadata supplements the Snapshot)
 - Amended by: ADR-0150 (retained SQLite metadata and dual HASH72/HASH58 publication)
+- Amended by: ADR-0169 (HASHAB signs the published scheme and verifies stored randomness)
 
 ## Context
 

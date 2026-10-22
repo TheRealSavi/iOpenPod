@@ -59,10 +59,19 @@ Read-only checks against physical Nano 5 and Nano 7 captures additionally establ
 that both CDBs parse and reproduce byte-for-byte, both semantic snapshots generate
 five SQLite databases that pass SQLite `quick_check`, and both generated checksum
 books verify with their device-generation algorithm. The Nano 7 capture also exposed
-two details now covered by tests: distinct artist names can reuse one native artist
-reference and therefore require deterministic collision-free projection IDs, and an
-iTunes-written HASHAB CDB publishes `hashing_scheme = 3` even though the HASHAB digest
-normalization uses discriminator 4.
+distinct artist names reusing one native artist reference, requiring deterministic
+collision-free projection IDs, and an iTunes-written HASHAB CDB publishing
+`hashing_scheme = 3`.
+
+The earlier claim here that HASHAB digest normalization substitutes discriminator
+4 was incorrect. Exact reconstruction of two Apple Nano 6 signatures on 2026-10-22
+establishes that the SHA1 input retains the published scheme 3. Both failing
+iOpenPod captures instead sign with 4 and subsequently publish 3. Verification
+must recover each stored envelope's own 23 random bytes; regenerating with the
+WASM wrapper's fixed random bytes rejects valid Apple signatures and, when paired
+with the same incorrect writer, accepts our wrong-scheme signatures. All four
+Locations Checksum Books validate independently. See the
+[Nano 6 signature evidence](nano6-hashab-signatures-2026-10-22.md) and ADR-0169.
 
 ## Album ordering without device postprocessing
 

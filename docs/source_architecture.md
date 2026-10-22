@@ -838,6 +838,12 @@ During preparation, iOpenPod may inspect a retained Locations Checksum Book and
 its Locations file as device-bound signing evidence when `HashInfo` is absent.
 Those reads do not project SQLite Library state. See ADR-0122.
 
+HASHAB CDB signing includes the published scheme 3 in its normalized digest.
+Verification recovers the stored envelope's random bytes rather than comparing
+against a new fixed-random signature. The same envelope verification supports
+Locations Checksum Books over their aggregate digest. It does not change ordinary
+no-op preservation or introduce device repair during reads. See ADR-0169.
+
 Each public parser returns a `DatabaseDocument[RootHeaderType]`, which is the parsed
 root `ParsedChunk` rather than a wrapper or a second writer model. A consumer finds a
 `ChunkSelection[RootHeaderType, SelectedHeaderType]`, applies an immutable typed

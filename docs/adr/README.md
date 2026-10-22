@@ -241,3 +241,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0166: Stage Library media replacements one at a time](0166-stage-library-media-replacements-one-at-a-time.md)
 - [ADR-0167: Recover Library transactions from the Host](0167-recover-library-transactions-from-the-host.md)
 - [ADR-0168: Recover optional scan work without losing evidence](0168-recover-optional-scan-work-without-losing-evidence.md)
+- [ADR-0169: Sign HASHAB with the published scheme](0169-sign-hashab-with-the-published-scheme.md)
