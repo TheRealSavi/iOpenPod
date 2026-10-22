@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from threading import Event
+from time import monotonic
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
@@ -12,6 +13,10 @@ from iOpenPod.app.library_sync_helper import LibrarySyncHelperCancelledError
 
 if TYPE_CHECKING:
     from iOpenPod.app.device_controller import DeviceController
+    from iOpenPod.app.library_sync_helper import (
+        IPodMediaScanProgress,
+        IPodMediaScanStage,
+    )
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 
@@ -38,10 +43,27 @@ class _IPodScan(QRunnable):
         self.signals = _Signals()
 
     def run(self) -> None:
+        last_stage: IPodMediaScanStage | None = None
+        last_progress = 0.0
+
+        def publish(value: IPodMediaScanProgress) -> None:
+            nonlocal last_stage, last_progress
+            now = monotonic()
+            if (
+                value.stage == last_stage
+                and value.completed != value.total
+                and now - last_progress < 0.1
+            ):
+                return
+            # Bound queued GUI work while retaining phase changes and exact totals.
+            last_stage = value.stage
+            last_progress = now
+            self.signals.progress.emit(self.token, value)
+
         try:
             result = self.coordinator.scan_ipod_media(
                 self.expected,
-                lambda value: self.signals.progress.emit(self.token, value),
+                publish,
                 self.cancelled,
             )
         except LibrarySyncHelperCancelledError:
@@ -122,20 +144,28 @@ class IPodMediaScanController(QObject):
 
     @Slot(int, object)
     def _progress(self, token: int, value: object) -> None:
-        if token == self._token and self.busy:
+        if (
+            token == self._token
+            and self.busy
+            and self._job is not None
+            and not self._job.cancelled.is_set()
+        ):
             self.progressChanged.emit(value)
 
     @Slot(int, object, str)
     def _completed(self, token: int, value: object, error: str) -> None:
         if token != self._token or not self.busy:
             return
+        cancelled = self._job is not None and self._job.cancelled.is_set()
         self._job = None
         self.busy = False
         self._device_controller.finish_exclusive_operation()
         self.changed.emit()
         if self._closed:
             return
-        if error:
+        if cancelled:
+            self.cancelled.emit()
+        elif error:
             self.failed.emit(error)
         elif value is None:
             self.cancelled.emit()

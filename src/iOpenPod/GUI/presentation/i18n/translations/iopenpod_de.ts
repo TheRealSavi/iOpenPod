@@ -8500,6 +8500,10 @@ Playlists: %3</translation>
 <context>
     <name>Workflow</name>
     <message>
+        <source>A changed native browse record is shared by incompatible groups.</source>
+        <translation>Ein geänderter nativer Browsing-Datensatz wird von inkompatiblen Gruppen gemeinsam verwendet.</translation>
+    </message>
+    <message>
         <source>{title}</source>
         <translation>{title}</translation>
     </message>
@@ -10502,8 +10506,12 @@ Playlists: %3</translation>
         <translation>Die vorhandene Podcast-Abonnementdatei ist ungültig. iOpenPod hat sie unverändert gelassen.</translation>
     </message>
     <message>
-        <source>The existing helper is invalid and was left unchanged; its Sync history must be recovered or explicitly replaced.</source>
-        <translation>Die vorhandene Datei mit Synchronisierungsinformationen ist ungültig und wurde unverändert gelassen. Ihr Synchronisierungsverlauf muss wiederhergestellt oder ausdrücklich ersetzt werden.</translation>
+        <source>The existing helper could not be safely read and was left unchanged; its Sync history must be recovered or explicitly replaced.</source>
+        <translation>Die vorhandene Datei mit Synchronisierungsinformationen konnte nicht sicher gelesen werden und wurde unverändert gelassen. Ihr Synchronisierungsverlauf muss wiederhergestellt oder ausdrücklich ersetzt werden.</translation>
+    </message>
+    <message>
+        <source>The existing helper could not be read and was left unchanged; media analysis will continue without its cached Sync history: {error}</source>
+        <translation>Die vorhandene Datei mit Synchronisierungsinformationen konnte nicht gelesen werden und wurde unverändert gelassen. Die Medienanalyse wird ohne ihren zwischengespeicherten Synchronisierungsverlauf fortgesetzt: {error}</translation>
     </message>
     <message>
         <source>The existing helper is invalid: {error}</source>

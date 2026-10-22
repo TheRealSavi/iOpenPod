@@ -33,6 +33,7 @@ from iOpenPod.app.playlist_sync import PlaylistAssociation, playlist_sync_target
 from iOpenPod.app.sync_track_details import track_tag_sha256
 from iPodDB.library import PhotoRepresentationKind
 from storage import (
+    ConcurrentModificationError,
     DeviceEntry,
     DeviceEntryKind,
     DevicePath,
@@ -41,6 +42,7 @@ from storage import (
     FilesystemSessionError,
     HostPath,
     StorageError,
+    StorageOperationError,
     TransactionWrite,
 )
 from storage.device_capture import capture_device_file
@@ -109,8 +111,8 @@ class SyncDetails:
     def __post_init__(self) -> None:
         if not self.last_synced_at.strip():
             raise ValueError("Sync Details require a last-synced timestamp")
-        if self.host_size_bytes < 0 or self.host_modified_ns < 0:
-            raise ValueError("Sync Details require non-negative Host file facts")
+        if self.host_size_bytes < 0:
+            raise ValueError("Sync Details require a non-negative Host file size")
         if self.host_content_sha256:
             _require_sha256(self.host_content_sha256, "Host content fingerprint")
         if self.host_artwork_sha256:
@@ -140,8 +142,8 @@ class IPodTrackFingerprint:
     def __post_init__(self) -> None:
         if self.database_track_id < 0 or self.track_id <= 0:
             raise ValueError("An iPod Track fingerprint needs valid Track identities")
-        if self.size_bytes < 0 or self.modified_ns < 0:
-            raise ValueError("An iPod Track fingerprint needs non-negative file facts")
+        if self.size_bytes < 0:
+            raise ValueError("An iPod Track fingerprint needs a non-negative file size")
         if self.acoustic_fingerprint:
             normalize_fpcalc_fingerprint(self.acoustic_fingerprint)
         elif self.sync is None:
@@ -162,8 +164,8 @@ class IPodImageFingerprint:
     def __post_init__(self) -> None:
         if self.image_id <= 0:
             raise ValueError("An iPod image fingerprint needs a positive image ID")
-        if self.size_bytes < 0 or self.modified_ns < 0:
-            raise ValueError("An iPod image fingerprint needs non-negative file facts")
+        if self.size_bytes < 0:
+            raise ValueError("An iPod image fingerprint needs a non-negative file size")
         _require_sha256(self.content_sha256, "image fingerprint")
 
 
@@ -692,7 +694,7 @@ class IPodMediaScanner:
         _require_sha256(library_sha256, "Library fingerprint")
         checkpoint()
         _emit(progress, IPodMediaScanStage.LOADING, 0, 0, "Reading Sync helper…")
-        loaded, load_issue = _load_helper(session)
+        loaded, load_issue = _load_helper_for_scan(session, checkpoint)
         issues = [load_issue] if load_issue is not None else []
         cached_tracks = {_track_key(item): item for item in loaded.tracks}
         cached_images = {item.image_id: item for item in loaded.images}
@@ -847,6 +849,8 @@ class IPodMediaScanner:
             except FilesystemSessionError:
                 raise
             except (OSError, StorageError, ValueError) as error:
+                if not session.is_active:
+                    raise
                 issues.append(IPodMediaScanIssue(f"Image {photo.photo_id}", str(error)))
                 label = source_text(
                     "Could not fingerprint iPod image {index} of {total}.",
@@ -900,7 +904,7 @@ class IPodMediaScanner:
             issues.append(
                 IPodMediaScanIssue(
                     "Sync helper",
-                    "The existing helper is invalid and was left unchanged; its "
+                    "The existing helper could not be safely read and was left unchanged; its "
                     "Sync history must be recovered or explicitly replaced.",
                 )
             )
@@ -990,6 +994,8 @@ class IPodMediaScanner:
             except FilesystemSessionError:
                 raise
             except (FpcalcError, OSError, StorageError, ValueError) as error:
+                if not session.is_active:
+                    raise
                 unavailable = unavailable or isinstance(error, FpcalcUnavailableError)
                 return _TrackOutcome(item.index, item.track, item.path, error=error)
             finally:
@@ -1037,11 +1043,12 @@ class IPodMediaScanner:
                             or acoustic is not None
                             or without_audio
                             or same_pending_file
+                            or isinstance(fingerprinter, FpcalcFingerprinter)
                         ):
                             item, pending = pending, None
                             yield finish(item)
                             # Waiting for the preceding decode may take minutes.
-                            # Reobserve this file before deciding it is still cached.
+                            # Reobserve before cache reuse or a native device read.
                             continue
                         break
                     if matches_committed:
@@ -1085,13 +1092,8 @@ class IPodMediaScanner:
                             fingerprinter = fingerprinter.for_scan()
                         prepared_fingerprinter = True
                     if isinstance(fingerprinter, FpcalcFingerprinter):
-                        # Native decoders seek within the device file. Finish the
-                        # previous read before starting another on the same device.
-                        if pending is not None:
-                            item, pending = pending, None
-                            yield finish(item)
-                        if unavailable:
-                            continue
+                        # The preceding native read completed before the current
+                        # observation, so only one decoder accesses this device.
                         future = executor.submit(
                             fingerprinter.fingerprint_device,
                             session,
@@ -1139,6 +1141,8 @@ class IPodMediaScanner:
                 except FilesystemSessionError:
                     raise
                 except (FpcalcError, OSError, StorageError, ValueError) as error:
+                    if not session.is_active:
+                        raise
                     if pending is not None:
                         item, pending = pending, None
                         yield finish(item)
@@ -1150,34 +1154,73 @@ class IPodMediaScanner:
                 item, pending = pending, None
                 yield finish(item)
         finally:
-            if pending is not None and pending.future.done():
-                # A cancellation during the next copy must retain the previous
-                # completed decode, provided its device file can still be checked.
-                item, pending = pending, None
-                try:
-                    outcome = finish(item)
-                    if (
-                        outcome.record is not None
-                        and outcome.record.acoustic_fingerprint
-                    ):
-                        record = outcome.record
-                        kind, identity = _track_key(record)
-                        remember(
-                            IPodAnalysisRecord(
-                                kind,
-                                identity,
-                                record.path,
-                                record.size_bytes,
-                                record.modified_ns,
-                                record.acoustic_fingerprint,
+            try:
+                if pending is not None and pending.future.done():
+                    # A cancellation during the next copy must retain the previous
+                    # completed decode, provided its device file can still be checked.
+                    item, pending = pending, None
+                    try:
+                        outcome = finish(item)
+                        if (
+                            outcome.record is not None
+                            and outcome.record.acoustic_fingerprint
+                        ):
+                            record = outcome.record
+                            kind, identity = _track_key(record)
+                            remember(
+                                IPodAnalysisRecord(
+                                    kind,
+                                    identity,
+                                    record.path,
+                                    record.size_bytes,
+                                    record.modified_ns,
+                                    record.acoustic_fingerprint,
+                                )
                             )
-                        )
-                except (FilesystemSessionError, LibrarySyncHelperCancelledError):
-                    pass
-            stopped.set()
-            executor.shutdown(wait=True, cancel_futures=True)
-            if pending is not None:
-                pending.capture.close()
+                    except (StorageError, LibrarySyncHelperCancelledError):
+                        # Optional retention cannot replace the interruption that
+                        # caused cleanup when the Volume is no longer available.
+                        pass
+            finally:
+                stopped.set()
+                try:
+                    executor.shutdown(wait=True, cancel_futures=True)
+                finally:
+                    if pending is not None:
+                        pending.capture.close()
+
+
+def _load_helper_for_scan(
+    session: FilesystemSession, checkpoint: CancellationCheck
+) -> tuple[_LoadedHelper, IPodMediaScanIssue | None]:
+    """Recover optional scan evidence without relaxing publication preconditions."""
+    for attempt in range(2):
+        checkpoint()
+        try:
+            return _load_helper(session)
+        except FilesystemSessionError:
+            raise
+        except (OSError, StorageError) as error:
+            if not session.is_active:
+                raise
+            if attempt == 0 and isinstance(
+                error, (OSError, StorageOperationError, ConcurrentModificationError)
+            ):
+                # Retry the complete observation: a previous existence/stat result
+                # may belong to a helper that was replaced during the read.
+                continue
+            return (
+                _LoadedHelper(writable=False),
+                IPodMediaScanIssue(
+                    "Sync helper",
+                    source_text(
+                        "The existing helper could not be read and was left unchanged; "
+                        "media analysis will continue without its cached Sync history: {error}",
+                        error=str(error),
+                    ),
+                ),
+            )
+    raise AssertionError("The bounded helper read must return or raise")
 
 
 def _load_helper(
@@ -1538,7 +1581,7 @@ def _track_from_document(value: object) -> IPodTrackFingerprint:
         track_id=_positive_integer(row["track_id"], "track_id"),
         path=DevicePath(_text(row["path"], "path")),
         size_bytes=_nonnegative_integer(row["size_bytes"], "size_bytes"),
-        modified_ns=_nonnegative_integer(row["modified_ns"], "modified_ns"),
+        modified_ns=_signed_integer(row["modified_ns"], "modified_ns"),
         acoustic_fingerprint=decode_fingerprint(acoustic),
         sync=_sync_from_document(row["sync"]),
     )
@@ -1561,7 +1604,7 @@ def _image_from_document(value: object) -> IPodImageFingerprint:
         image_id=_positive_integer(row["image_id"], "image_id"),
         path=DevicePath(_text(row["path"], "path")),
         size_bytes=_nonnegative_integer(row["size_bytes"], "size_bytes"),
-        modified_ns=_nonnegative_integer(row["modified_ns"], "modified_ns"),
+        modified_ns=_signed_integer(row["modified_ns"], "modified_ns"),
         content_sha256=_text(row["content_sha256"], "content_sha256"),
         sync=_sync_from_document(row["sync"]),
     )
@@ -1603,9 +1646,7 @@ def _sync_from_document(value: object) -> SyncDetails | None:
         last_synced_at=_text(row["last_synced_at"], "last_synced_at"),
         host_path_hint=_text(row["host_path_hint"], "host_path_hint"),
         host_size_bytes=_nonnegative_integer(row["host_size_bytes"], "host_size_bytes"),
-        host_modified_ns=_nonnegative_integer(
-            row["host_modified_ns"], "host_modified_ns"
-        ),
+        host_modified_ns=_signed_integer(row["host_modified_ns"], "host_modified_ns"),
         source_format=_text(row["source_format"], "source_format"),
         ipod_format=_text(row["ipod_format"], "ipod_format"),
         was_transcoded=was_transcoded,
@@ -1701,8 +1742,16 @@ def _text(value: object, label: str) -> str:
 
 
 def _nonnegative_integer(value: object, label: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+    integer = _signed_integer(value, label)
+    if integer < 0:
         raise ValueError(f"{label} must be a non-negative integer")
+    return integer
+
+
+def _signed_integer(value: object, label: str) -> int:
+    """Filesystem timestamps may predate the Unix epoch; preserve their facts."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{label} must be an integer")
     return value
 
 

@@ -342,3 +342,177 @@ def test_special_file_never_receives_read_observation(tmp_path: Path) -> None:
     )
     assert entry.kind is HostEntryKind.OTHER
     assert entry.file is None and entry.directory is None
+
+
+@pytest.mark.parametrize("failure_stage", ["open", "iterate"])
+@pytest.mark.parametrize("persistent", [False, True])
+def test_best_effort_listing_recovers_iterator_failures_without_duplicate_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+    persistent: bool,
+) -> None:
+    for name in ("first.bin", "second.bin"):
+        (tmp_path / name).write_bytes(b"media")
+    observed = LocalHostDirectory.observe(HostPath(tmp_path))
+    native_scandir = os.scandir
+    calls = 0
+    first_name = ""
+    failure = OSError("directory provider temporarily unavailable")
+
+    @contextmanager
+    def scandir(path: Path | int) -> Generator[Iterator[os.DirEntry[str]]]:
+        nonlocal calls, first_name
+        calls += 1
+        fail = persistent or calls == 1
+        if fail and failure_stage == "open":
+            raise failure
+        with native_scandir(path) as iterator:
+
+            def entries() -> Iterator[os.DirEntry[str]]:
+                nonlocal first_name
+                first = next(iterator)
+                first_name = first.name
+                yield first
+                if fail:
+                    raise failure
+                yield from iterator
+
+            yield entries()
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    issues: list[tuple[HostPath, OSError | StorageError]] = []
+    progress: list[HostPath] = []
+    entries = observed.list_entries(
+        checkpoint=lambda: None,
+        on_issue=lambda path, error: issues.append((path, error)),
+        on_entry=lambda entry: progress.append(entry.path),
+    )
+    expected: set[str] = (
+        ({first_name} if failure_stage == "iterate" else set())
+        if persistent
+        else {"first.bin", "second.bin"}
+    )
+    assert calls == 2
+    assert {entry.path.path.name for entry in entries} == expected
+    assert len(entries) == len(expected)
+    assert len(progress) == len(set(progress)) == len(expected)
+    assert issues == ([(observed.path, failure)] if persistent else [])
+    assert all(entry.file is not None for entry in entries)
+
+
+def test_strict_listing_does_not_retry_iterator_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "first.bin").write_bytes(b"media")
+    observed = LocalHostDirectory.observe(HostPath(tmp_path))
+    native_scandir = os.scandir
+    calls = 0
+    failure = OSError("directory provider unavailable")
+
+    @contextmanager
+    def scandir(path: Path | int) -> Generator[Iterator[os.DirEntry[str]]]:
+        nonlocal calls
+        calls += 1
+        with native_scandir(path) as iterator:
+
+            def entries() -> Iterator[os.DirEntry[str]]:
+                yield next(iterator)
+                raise failure
+
+            yield entries()
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    with pytest.raises(OSError) as caught:
+        observed.list_entries(checkpoint=lambda: None)
+    assert caught.value is failure
+    assert calls == 1
+
+
+def test_listing_cancellation_before_retry_preserves_exception_and_releases_pins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "selected"
+    root.mkdir()
+    observed = LocalHostDirectory.observe(HostPath(root))
+    calls = 0
+    cancellation = InterruptedError("cancelled before retry")
+    issues: list[OSError | StorageError] = []
+
+    def scandir(path: Path | int) -> Iterator[os.DirEntry[str]]:
+        nonlocal calls
+        calls += 1
+        raise OSError("temporary enumeration failure")
+
+    def checkpoint() -> None:
+        if calls:
+            raise cancellation
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    with pytest.raises(InterruptedError) as caught:
+        observed.list_entries(
+            checkpoint=checkpoint,
+            on_issue=lambda path, error: issues.append(error),
+        )
+    assert caught.value is cancellation
+    assert calls == 1
+    assert not issues
+    root.rename(tmp_path / "unpinned")
+
+
+def test_completed_listing_retry_replaces_the_incomplete_attempt_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "disappearing.bin").write_bytes(b"temporary")
+    (tmp_path / "retained.bin").write_bytes(b"media")
+    observed = LocalHostDirectory.observe(HostPath(tmp_path))
+    native_scandir = os.scandir
+    calls = 0
+
+    @contextmanager
+    def scandir(path: Path | int) -> Generator[Iterator[os.DirEntry[str]]]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            (tmp_path / "disappearing.bin").unlink()
+        with native_scandir(path) as iterator:
+            if calls == 2:
+                yield iterator
+            else:
+
+                def entries() -> Iterator[os.DirEntry[str]]:
+                    for entry in iterator:
+                        if entry.name == "disappearing.bin":
+                            yield entry
+                            break
+                    raise OSError("temporary enumeration failure")
+
+                yield entries()
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    entries = observed.list_entries(
+        checkpoint=lambda: None, on_issue=lambda path, error: None
+    )
+    assert calls == 2
+    assert tuple(entry.path.path.name for entry in entries) == ("retained.bin",)
+
+
+def test_filename_filter_cancellation_is_not_downgraded_to_a_scan_issue(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "media.bin").write_bytes(b"media")
+    observed = LocalHostDirectory.observe(HostPath(tmp_path))
+    cancellation = InterruptedError("selection cancelled")
+    issues: list[OSError | StorageError] = []
+
+    def include(name: str) -> bool:
+        raise cancellation
+
+    with pytest.raises(InterruptedError) as caught:
+        observed.list_entries(
+            checkpoint=lambda: None,
+            include_file=include,
+            on_issue=lambda path, error: issues.append(error),
+        )
+    assert caught.value is cancellation
+    assert not issues

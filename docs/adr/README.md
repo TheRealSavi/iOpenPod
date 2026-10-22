@@ -240,3 +240,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0165: Preserve shared Podcast albums during metadata edits](0165-preserve-shared-podcast-albums-during-metadata-edits.md)
 - [ADR-0166: Stage Library media replacements one at a time](0166-stage-library-media-replacements-one-at-a-time.md)
 - [ADR-0167: Recover Library transactions from the Host](0167-recover-library-transactions-from-the-host.md)
+- [ADR-0168: Recover optional scan work without losing evidence](0168-recover-optional-scan-work-without-losing-evidence.md)

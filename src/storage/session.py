@@ -66,6 +66,7 @@ from storage.paths import DevicePath, HostPath
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
+    from contextlib import AbstractContextManager
     from types import TracebackType
 
     from storage.media_processing import ToolOutput
@@ -1086,6 +1087,7 @@ class FilesystemSession:
                 reserve_bytes=reserve_bytes,
                 expected_sha256=content.sha256,
             )
+        stream: AbstractContextManager[BinaryIO]
         if isinstance(source, HostPath):
             stream = _open_host_source(Path(os.fspath(source)))
         else:
@@ -1098,21 +1100,21 @@ class FilesystemSession:
                     require_leaf=True,
                 )
             )
-        with stream:
-            before = os.fstat(stream.fileno())
+        with stream as opened:
+            before = os.fstat(opened.fileno())
 
             def chunks() -> Iterable[bytes]:
                 while True:
                     if checkpoint is not None:
                         checkpoint()
                     self._assert_active()
-                    data = stream.read(COPY_CHUNK_SIZE)
+                    data = opened.read(COPY_CHUNK_SIZE)
                     if not data:
                         return
                     yield data
 
             def verify_source() -> None:
-                if _stat_identity(before) != _stat_identity(os.fstat(stream.fileno())):
+                if _stat_identity(before) != _stat_identity(os.fstat(opened.fileno())):
                     raise ConcurrentModificationError(
                         "Transaction source changed during staging"
                     )
@@ -1155,6 +1157,7 @@ class FilesystemSession:
 
         descriptor = -1
         temp_path: Path | None = None
+        callback_failed = False
         try:
             descriptor, temp_name = tempfile.mkstemp(
                 prefix=".iop-",
@@ -1165,24 +1168,34 @@ class FilesystemSession:
             digest = hashlib.sha256()
             copied = 0
             with (
-                open_read_no_follow(source_path) as device_file,
+                open_read_no_follow(source_path, buffering=0) as device_file,
                 os.fdopen(descriptor, "wb") as host_file,
             ):
                 descriptor = -1
                 before = os.fstat(device_file.fileno())
-                while True:
+                remaining = before.st_size
+                while remaining:
                     self._assert_active()
-                    chunk = device_file.read(COPY_CHUNK_SIZE)
+                    chunk = device_file.read(min(COPY_CHUNK_SIZE, remaining))
                     if not chunk:
-                        break
+                        raise ConcurrentModificationError(
+                            f"Device file ended before its observed size: {source}"
+                        )
+                    remaining -= len(chunk)
                     host_file.write(chunk)
                     digest.update(chunk)
                     copied += len(chunk)
                     if progress is not None:
-                        progress(copied)
+                        try:
+                            progress(copied)
+                        except OSError:
+                            callback_failed = True
+                            raise
+                self._assert_active()
                 after = os.fstat(device_file.fileno())
                 if (
                     _stat_identity(before) != _stat_identity(after)
+                    or before.st_ctime_ns != after.st_ctime_ns
                     or copied != after.st_size
                 ):
                     raise ConcurrentModificationError(
@@ -1192,7 +1205,11 @@ class FilesystemSession:
             source_fingerprint = fingerprint_from_stat(after, digest.hexdigest())
             self._revalidate()
             if prepare_staged is not None:
-                prepare_staged(HostPath(temp_path))
+                try:
+                    prepare_staged(HostPath(temp_path))
+                except OSError:
+                    callback_failed = True
+                    raise
                 with _open_host_source(temp_path, writable=True) as prepared:
                     flush_written_file(prepared)
                     prepared.seek(0)
@@ -1223,6 +1240,8 @@ class FilesystemSession:
                 source_fingerprint=source_fingerprint,
             )
         except OSError as error:
+            if callback_failed:
+                raise
             raise StorageOperationError(
                 f"Could not export {source} to the Host: {error}"
             ) from error

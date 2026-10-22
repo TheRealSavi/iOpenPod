@@ -863,7 +863,12 @@ QLabel#syncResultSummary {{
 }}
 
 QLabel#syncResultMessageHeading {{ font-weight: 700; }}
+QLabel#syncResultMessage {{
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 700;
+}}
 QLabel#syncResultDescription,
+QLabel#syncResultMessageOverflow,
 QLabel#syncResultNoIssues {{ color: {tokens.text_secondary}; }}
 
 QPlainTextEdit#syncExecutionIssues {{

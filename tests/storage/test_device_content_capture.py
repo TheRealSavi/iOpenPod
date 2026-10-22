@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import BinaryIO
 
@@ -43,10 +44,12 @@ def test_capture_returns_source_fingerprint_without_a_second_device_read(
     device_opens: list[Path] = []
     open_original = filesystem_module.open_read_no_follow
 
-    def open_counted(path: Path) -> BinaryIO:
+    def open_counted(
+        path: Path, *, buffering: int = -1
+    ) -> AbstractContextManager[BinaryIO]:
         if path == source:
             device_opens.append(path)
-        return open_original(path)
+        return open_original(path, buffering=buffering)
 
     monkeypatch.setattr(session_module, "open_read_no_follow", open_counted)
     monkeypatch.setattr(filesystem_module, "open_read_no_follow", open_counted)
@@ -121,5 +124,32 @@ def test_capture_rejects_disconnect_and_removes_partial_host_copy(
             progress=lambda _copied: platform.disconnect(root),
         )
 
+    assert not destination.exists()
+    assert not tuple(tmp_path.glob(".iop-*"))
+
+
+@pytest.mark.parametrize("callback", ["progress", "prepare"])
+def test_capture_preserves_caller_cancellation_and_cleans_staging(
+    tmp_path: Path, callback: str
+) -> None:
+    root, _, session = _session(tmp_path)
+    (root / "source.bin").write_bytes(b"original")
+    destination = tmp_path / "copied.bin"
+    cancellation = InterruptedError("capture cancelled")
+
+    def stop_progress(copied: int) -> None:
+        raise cancellation
+
+    def stop_preparation(path: HostPath) -> None:
+        raise cancellation
+
+    with pytest.raises(InterruptedError) as caught:
+        session.copy_to_host(
+            DevicePath("source.bin"),
+            HostPath(destination),
+            progress=stop_progress if callback == "progress" else None,
+            prepare_staged=stop_preparation if callback == "prepare" else None,
+        )
+    assert caught.value is cancellation
     assert not destination.exists()
     assert not tuple(tmp_path.glob(".iop-*"))

@@ -582,17 +582,15 @@ class SyncExecutionPage(QWidget):
             }.get(severity, severity)
             user_message = f"{workflow_text(message)}{count}"
             line = f"{severity_label} [{code}] {user_message}"
+            user_details: list[str] = []
             if code == "sync.scrobble_pending":
-                user_message = (
-                    self.tr(
-                        "Some listening history was not shared with your connected music services."
-                    )
-                    + "\n"
-                    + user_message
+                user_details.append(user_message)
+                user_message = self.tr(
+                    "Some listening history was not shared with your connected music services."
                 )
             if diagnostic:
                 line += "\n" + workflow_text(diagnostic)
-                user_message += "\n" + workflow_text(diagnostic)
+                user_details.append(workflow_text(diagnostic))
             references = list(
                 dict.fromkeys(
                     reference
@@ -600,22 +598,30 @@ class SyncExecutionPage(QWidget):
                     if (reference := self._issue_reference(issue))
                 )
             )
+            shown = tuple(references[:3])
+            overflow_text = ""
             if references:
-                shown = references[:3]
                 line += "\n" + "\n".join(references)
-                user_message += "\n" + "\n".join(shown)
                 if len(references) > len(shown):
                     remaining = len(references) - len(shown)
-                    user_message += "\n" + english_count_fallback(
+                    overflow_text = english_count_fallback(
                         "…and %n more file(s)",
                         self.tr("…and %n more file(s)", "", remaining),
                         remaining,
                     )
-                    user_message += "\n" + self.tr(
+                    overflow_text += "\n" + self.tr(
                         "More affected items are listed in Technical details."
                     )
             lines.append(line)
-            messages.append(SyncResultMessage(IssueSeverity(severity), user_message))
+            messages.append(
+                SyncResultMessage(
+                    IssueSeverity(severity),
+                    user_message,
+                    detail="\n".join(user_details),
+                    references=shown,
+                    overflow_text=overflow_text,
+                )
+            )
             counts[IssueSeverity(severity)] += len(issues)
         if result.recovery_path:
             lines.append(

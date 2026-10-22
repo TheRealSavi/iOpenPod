@@ -145,6 +145,19 @@ def test_no_audio_result_round_trips_without_creating_a_fingerprint(
     assert restored.get(*record.key) == record
 
 
+def test_analysis_cache_retains_filesystem_timestamp_before_unix_epoch(
+    tmp_path: Path,
+) -> None:
+    file = AtomicHostFile(tmp_path / "cache.json")
+    record = replace(_record(1), modified_ns=-1_000_000_000)
+    cache = IPodAnalysisCache(file, "a" * 64)
+    cache.remember(record)
+    cache.save(force=True)
+    restored = IPodAnalysisCache(file, "a" * 64)
+    restored.load()
+    assert restored.get(*record.key) == record
+
+
 def test_v1_analysis_cache_retains_completed_fingerprints(tmp_path: Path) -> None:
     file = AtomicHostFile(tmp_path / "cache.json")
     cache = IPodAnalysisCache(file, "a" * 64)

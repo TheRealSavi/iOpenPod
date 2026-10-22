@@ -80,13 +80,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 15
+_CACHE_VERSION = 16
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
 _MAX_INSPECTION_WORKERS = 8
 _MAX_DIRECTORY_WORKERS = 4
 _DISCOVERY_PROGRESS_INTERVAL = 0.1
 _READING_PROGRESS_INTERVAL = 0.1
+_CACHE_CHECKPOINT_INTERVAL = 30.0
 _FINGERPRINT_WARNING = (
     "Acoustic fingerprint unavailable; this file can still be selected for Add: "
 )
@@ -175,7 +176,7 @@ _TRACK_METADATA_FIELDS = frozenset(
     }
 )
 _PHOTO_METADATA_FIELDS = frozenset({"content_sha256", "height", "width"})
-_PLAYLIST_METADATA_FIELDS = frozenset({"references", "title"})
+_PLAYLIST_METADATA_FIELDS = frozenset({"metadata_complete", "references", "title"})
 _FOLDER_ARTWORK_STEMS = (
     "cover",
     "front",
@@ -304,7 +305,7 @@ class HostMediaArtworkSource:
     def __post_init__(self) -> None:
         if self.artwork_id <= 0:
             raise ValueError("A Host artwork source requires a positive identity")
-        if self.size_bytes <= 0 or self.modified_ns < 0:
+        if self.size_bytes <= 0:
             raise ValueError("A Host artwork source requires observed file facts")
         if len(self.content_sha256) != 64 or any(
             character not in "0123456789abcdef" for character in self.content_sha256
@@ -523,7 +524,7 @@ class HostMediaPhotoLoader:
             (
                 f"{_path_identity(source.path.path)}\0{source.size_bytes}\0"
                 f"{source.modified_ns}\0{width}x{height}"
-            ).encode()
+            ).encode("utf-8", errors="surrogatepass")
         ).hexdigest()
         return PhotoImage(
             cache_key=f"host/{cache_identity}",
@@ -730,8 +731,18 @@ class _CachedPhotoRecord(_CachedFileRecord):
 
 @dataclass(frozen=True, slots=True)
 class _CachedPlaylistRecord(_CachedFileRecord):
+    metadata_complete: bool = False
     title: str = ""
     references: tuple[HostPath, ...] = ()
+
+    def matches(
+        self,
+        observation: _Observation,
+        folder_artwork: _ArtworkReference | None = None,
+    ) -> bool:
+        return self.metadata_complete and _CachedFileRecord.matches(
+            self, observation, folder_artwork
+        )
 
 
 type _CachedRecord = _CachedTrackRecord | _CachedPhotoRecord | _CachedPlaylistRecord
@@ -876,16 +887,56 @@ class HostMediaScanner:
         file_aliases = before_directories.file_aliases
         del before_directories
         issues = [*selection_issues, *enumeration_issues]
-        records, inspection_issues, reused, inspected = _inspect_selected_files(
-            before,
-            cached,
-            fingerprinter,
-            folder_artwork=before_artwork,
-            inspector=self._inspector,
-            max_workers=self._max_workers,
-            checkpoint=checkpoint,
-            progress=progress,
-        )
+        retained: dict[str, _CachedRecord] | None = None
+        retained_artwork: dict[str, _ArtworkReference] = {}
+        last_cache_save = perf_counter()
+        completed_records = 0
+
+        def retain(record: _CachedRecord) -> None:
+            nonlocal last_cache_save, completed_records, retained, retained_artwork
+            if self._cache_file is None:
+                return
+            if retained is None:
+                retained = dict(cached)
+                scanned_directories = {
+                    _path_identity(observation.path.path.parent)
+                    for observation in before
+                    if observation.kind
+                    in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO)
+                }
+                retained_artwork = {
+                    identity: artwork
+                    for identity, artwork in cached_artwork.items()
+                    if identity not in scanned_directories
+                }
+                retained_artwork.update(before_artwork)
+            retained[_path_identity(record.path.path)] = record
+            completed_records += 1
+            now = perf_counter()
+            if now - last_cache_save >= _CACHE_CHECKPOINT_INTERVAL:
+                self._store_cache(retained.values(), retained_artwork.values())
+                last_cache_save = now
+
+        try:
+            records, inspection_issues, reused, inspected = _inspect_selected_files(
+                before,
+                cached,
+                fingerprinter,
+                folder_artwork=before_artwork,
+                inspector=self._inspector,
+                max_workers=self._max_workers,
+                checkpoint=checkpoint,
+                progress=progress,
+                on_record=retain,
+            )
+        finally:
+            # Each returned record has completed its pinned reads. These are
+            # only cache hints: future scans enumerate again before reuse.
+            # Cancellation publishes no Library Snapshot and queued/running
+            # inspections never enter this catalog.
+            if completed_records:
+                assert retained is not None
+                self._store_cache(retained.values(), retained_artwork.values())
         issues.extend(inspection_issues)
 
         checkpoint()
@@ -1050,144 +1101,165 @@ class HostMediaScanner:
         total = len(accepted_by_identity)
         approved_external_files: list[LocalHostFile] = []
         fingerprinter = self._scan_fingerprinter()
-        for index, (identity, path) in enumerate(
-            sorted(accepted_by_identity.items()),
-            start=1,
-        ):
-            checkpoint()
-            reviewed = offered[identity].observation
-            if reviewed is None:
-                raise ValueError("Accepted files require a Storage observation")
-            path = reviewed.path
-            try:
-                reviewed.validate()
-            except (OSError, StorageError) as error:
-                issues.append(
-                    HostMediaScanIssue(
-                        path,
-                        source_text(
-                            "The accepted playlist file could not be read: {error}",
-                            error=str(error),
-                        ),
-                    )
-                )
-                continue
-            observation = _Observation(
-                path,
-                HostMediaFileKind.AUDIO
-                if path.path.suffix.casefold() in _AUDIO_EXTENSIONS
-                else HostMediaFileKind.VIDEO,
-                reviewed.size_bytes,
-                reviewed.modified_ns,
-            )
-            previous = cached.get(identity)
-            record: _CachedRecord
-            metadata_reusable = isinstance(
-                previous, _CachedTrackRecord
-            ) and previous.matches(observation, None)
-            if (
-                metadata_reusable
-                and isinstance(previous, _CachedTrackRecord)
-                and (previous.acoustic_fingerprint or previous.no_audio)
+        completed_external = 0
+        last_cache_save = perf_counter()
+        try:
+            for index, (identity, path) in enumerate(
+                sorted(accepted_by_identity.items()),
+                start=1,
             ):
-                record = _track_with_folder_artwork(previous, None)
-                reused += 1
-                label = source_text(
-                    "Reusing external file {index} of {total}…",
-                    index=f"{index:,}",
-                    total=f"{total:,}",
-                )
-            else:
+                checkpoint()
+                reviewed = offered[identity].observation
+                if reviewed is None:
+                    raise ValueError("Accepted files require a Storage observation")
+                path = reviewed.path
                 try:
-                    # Decoders receive a private Storage capture, never an untrusted
-                    # path that can be retargeted after the user's decision.
-                    with reviewed.capture(checkpoint=checkpoint) as snapshot:
-                        captured = replace(
-                            observation,
-                            path=snapshot,
-                            file=LocalHostFile.observe(snapshot),
-                        )
-                        record = (
-                            _fingerprint_track(
-                                captured,
-                                replace(
-                                    _track_with_folder_artwork(previous, None),
-                                    warning="",
-                                ),
-                                fingerprinter,
-                                checkpoint=checkpoint,
-                            )
-                            if metadata_reusable
-                            and isinstance(previous, _CachedTrackRecord)
-                            else _inspect_file(
-                                captured,
-                                fingerprinter,
-                                folder_artwork=None,
-                                inspector=self._inspector,
-                                checkpoint=checkpoint,
-                                cached_fingerprint=(
-                                    previous.acoustic_fingerprint
-                                    if isinstance(previous, _CachedTrackRecord)
-                                    and _CachedFileRecord.matches(previous, observation)
-                                    else ""
-                                ),
-                                cached_no_audio=isinstance(previous, _CachedTrackRecord)
-                                and _CachedFileRecord.matches(previous, observation)
-                                and previous.no_audio,
-                            )
-                        )
-                        assert isinstance(record, _CachedTrackRecord)
-                        record = replace(
-                            record,
-                            path=path,
-                            artwork_path=path
-                            if record.artwork_path is not None
-                            else None,
-                        )
+                    reviewed.validate()
                 except (OSError, StorageError) as error:
                     issues.append(
                         HostMediaScanIssue(
                             path,
                             source_text(
-                                "The accepted Playlist file could not be safely read: {error}",
+                                "The accepted playlist file could not be read: {error}",
                                 error=str(error),
                             ),
                         )
                     )
                     continue
-                inspected += 1
-                label = source_text(
-                    "Reading external file {index} of {total}…",
-                    index=f"{index:,}",
-                    total=f"{total:,}",
+                observation = _Observation(
+                    path,
+                    HostMediaFileKind.AUDIO
+                    if path.path.suffix.casefold() in _AUDIO_EXTENSIONS
+                    else HostMediaFileKind.VIDEO,
+                    reviewed.size_bytes,
+                    reviewed.modified_ns,
                 )
-            try:
-                reviewed.validate()
-            except (OSError, StorageError) as error:
-                issues.append(
-                    HostMediaScanIssue(
-                        path,
-                        source_text(
-                            "The accepted Playlist file changed while it was scanned and was omitted: {error}",
-                            error=str(error),
-                        ),
+                previous = cached.get(identity)
+                record: _CachedRecord
+                metadata_reusable = isinstance(
+                    previous, _CachedTrackRecord
+                ) and previous.matches(observation, None)
+                from_cache = (
+                    metadata_reusable
+                    and isinstance(previous, _CachedTrackRecord)
+                    and bool(previous.acoustic_fingerprint or previous.no_audio)
+                )
+                if from_cache:
+                    assert isinstance(previous, _CachedTrackRecord)
+                    record = _track_with_folder_artwork(previous, None)
+                    reused += 1
+                    label = source_text(
+                        "Reusing external file {index} of {total}…",
+                        index=f"{index:,}",
+                        total=f"{total:,}",
                     )
+                else:
+                    try:
+                        # Decoders receive a private Storage capture, never an untrusted
+                        # path that can be retargeted after the user's decision.
+                        with reviewed.capture(checkpoint=checkpoint) as snapshot:
+                            captured = replace(
+                                observation,
+                                path=snapshot,
+                                file=LocalHostFile.observe(snapshot),
+                            )
+                            record = (
+                                _fingerprint_track(
+                                    captured,
+                                    replace(
+                                        _track_with_folder_artwork(previous, None),
+                                        warning="",
+                                    ),
+                                    fingerprinter,
+                                    checkpoint=checkpoint,
+                                )
+                                if metadata_reusable
+                                and isinstance(previous, _CachedTrackRecord)
+                                else _inspect_file(
+                                    captured,
+                                    fingerprinter,
+                                    folder_artwork=None,
+                                    inspector=self._inspector,
+                                    checkpoint=checkpoint,
+                                    cached_fingerprint=(
+                                        previous.acoustic_fingerprint
+                                        if isinstance(previous, _CachedTrackRecord)
+                                        and _CachedFileRecord.matches(
+                                            previous, observation
+                                        )
+                                        else ""
+                                    ),
+                                    cached_no_audio=isinstance(
+                                        previous, _CachedTrackRecord
+                                    )
+                                    and _CachedFileRecord.matches(previous, observation)
+                                    and previous.no_audio,
+                                )
+                            )
+                            assert isinstance(record, _CachedTrackRecord)
+                            record = replace(
+                                record,
+                                path=path,
+                                artwork_path=path
+                                if record.artwork_path is not None
+                                else None,
+                            )
+                    except (OSError, StorageError) as error:
+                        issues.append(
+                            HostMediaScanIssue(
+                                path,
+                                source_text(
+                                    "The accepted Playlist file could not be safely read: {error}",
+                                    error=str(error),
+                                ),
+                            )
+                        )
+                        continue
+                    inspected += 1
+                    label = source_text(
+                        "Reading external file {index} of {total}…",
+                        index=f"{index:,}",
+                        total=f"{total:,}",
+                    )
+                try:
+                    reviewed.validate()
+                except (OSError, StorageError) as error:
+                    issues.append(
+                        HostMediaScanIssue(
+                            path,
+                            source_text(
+                                "The accepted Playlist file changed while it was scanned and was omitted: {error}",
+                                error=str(error),
+                            ),
+                        )
+                    )
+                    continue
+                records.append(record)
+                cached[identity] = record
+                if not from_cache and self._cache_file is not None:
+                    completed_external += 1
+                    now = perf_counter()
+                    if now - last_cache_save >= _CACHE_CHECKPOINT_INTERVAL:
+                        self._store_cache(cached.values(), pending.folder_artwork)
+                        last_cache_save = now
+                approved_external_files.append(reviewed)
+                if record.warning:
+                    issues.append(HostMediaScanIssue(record.path, record.warning))
+                _emit(
+                    progress,
+                    HostMediaScanStage.EXTERNAL,
+                    index,
+                    total,
+                    label,
+                    path=path,
+                    cache_hits=reused,
                 )
-                continue
-            records.append(record)
-            cached[identity] = record
-            approved_external_files.append(reviewed)
-            if record.warning:
-                issues.append(HostMediaScanIssue(record.path, record.warning))
-            _emit(
-                progress,
-                HostMediaScanStage.EXTERNAL,
-                index,
-                total,
-                label,
-                path=path,
-                cache_hits=reused,
-            )
+
+        finally:
+            # Retain only fully captured and revalidated analysis. Approval stays
+            # in this scan: every later scan reviews external targets again.
+            if completed_external:
+                self._store_cache(cached.values(), pending.folder_artwork)
 
         checkpoint()
         if pending.external_references:
@@ -1525,7 +1597,10 @@ def _resolve_scan_selection(
     selected_folders = tuple(
         replace(folder, path=path)
         for folder in folders
-        if folder.media_types and (path := resolve(folder.path)) is not None
+        if folder.media_types
+        and not _is_appledouble_directory(folder.path.path)
+        and (path := resolve(folder.path)) is not None
+        and not _is_appledouble_directory(path.path)
     )
     selected_files: dict[HostPath, None] = {}
     for original in files:
@@ -1619,6 +1694,7 @@ def _enumerate(
             explicit_paths,
             selected=lambda path, kinds: _classify(path, kinds) is not None,
             cover=_is_folder_cover,
+            skip_directory=_is_appledouble_directory,
             checkpoint=checkpoint,
             progress=linked_progress,
             max_workers=max_workers,
@@ -1961,6 +2037,8 @@ def _walk_folder(
         entries, key=lambda item: os.path.normcase(item.path.path.name)
     ):
         checkpoint()
+        if _is_appledouble_directory(entry.path.path):
+            continue
         if entry.kind is HostEntryKind.DIRECTORY:
             if folder.recurse and entry.directory is not None:
                 if descendants is not None:
@@ -2034,7 +2112,13 @@ def _is_folder_cover(path: PurePath) -> bool:
 
 def _is_appledouble_companion(path: PurePath) -> bool:
     """macOS metadata companions inherit media suffixes but contain no media."""
-    return path.name.startswith("._")
+    return path.name.startswith("._") or _is_appledouble_directory(path)
+
+
+def _is_appledouble_directory(path: PurePath) -> bool:
+    return os.path.normcase(".AppleDouble") in (
+        os.path.normcase(part) for part in path.parts
+    )
 
 
 def _classify(
@@ -2202,7 +2286,13 @@ def _folder_artwork_for(
                     source.seek(0)
                     with Image.open(source) as image:
                         image.verify()
-            except (StorageError, OSError, SyntaxError, ValueError) as error:
+            except (
+                StorageError,
+                OSError,
+                SyntaxError,
+                ValueError,
+                Image.DecompressionBombError,
+            ) as error:
                 failure = error
                 continue
             return _ArtworkReference(
@@ -2270,6 +2360,7 @@ def _inspect_selected_files(
     checkpoint: CancellationCheck,
     progress: ProgressCallback | None,
     inspector: MediaInspector | None = None,
+    on_record: Callable[[_CachedRecord], None] | None = None,
 ) -> tuple[
     list[_CachedRecord],
     list[HostMediaScanIssue],
@@ -2302,6 +2393,8 @@ def _inspect_selected_files(
         else:
             inspected += 1
         records.append(record)
+        if on_record is not None and not from_cache:
+            on_record(record)
         if record.warning:
             issues.append(HostMediaScanIssue(record.path, record.warning))
         if progress is None:
@@ -2474,9 +2567,11 @@ def _inspect_file(
     except (
         HostMediaTreeChangedError,
         OSError,
+        SyntaxError,
         ValueError,
         StorageError,
         mutagen.MutagenError,
+        Image.DecompressionBombError,
     ) as error:
         return _fallback_record(
             observation,
@@ -2821,7 +2916,7 @@ def _embedded_artwork_observation(parsed: Any) -> _EmbeddedArtworkObservation:
         try:
             with Image.open(BytesIO(payload)) as image:
                 image.verify()
-        except (OSError, SyntaxError, ValueError):
+        except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
             continue
         return _EmbeddedArtworkObservation(payload, True)
     return _EmbeddedArtworkObservation(None, not observed_picture)
@@ -2861,6 +2956,7 @@ def _inspect_playlist(
         kind=observation.kind,
         size_bytes=observation.size_bytes,
         modified_ns=observation.modified_ns,
+        metadata_complete=True,
         title=parsed.title,
         references=parsed.references,
         warning=parsed.warning,
@@ -3102,7 +3198,7 @@ def _decode_cache_contents(
     version = _integer(document.get("version"), "version")
     if version == 9:
         expected = {"version", "entries", "catalog_sha256"}
-    elif version in (10, 11, 12, 13, 14, _CACHE_VERSION):
+    elif version in (10, 11, 12, 13, 14, 15, _CACHE_VERSION):
         expected = {
             "version",
             "entries",
@@ -3158,8 +3254,8 @@ def _decode_cache_contents(
         if not path.is_absolute():
             raise ValueError("Host media folder artwork paths must be absolute")
         size_bytes = _integer(row["size_bytes"], "size_bytes")
-        modified_ns = _integer(row["modified_ns"], "modified_ns")
-        if not 0 < size_bytes <= _MAX_ARTWORK_BYTES or modified_ns < 0:
+        modified_ns = _signed_integer(row["modified_ns"], "modified_ns")
+        if not 0 < size_bytes <= _MAX_ARTWORK_BYTES:
             raise ValueError("Host media folder artwork file facts are invalid")
         artwork.append(
             _ArtworkReference(
@@ -3251,6 +3347,7 @@ def _record_document(record: _CachedRecord) -> dict[str, object]:
         if record.kind is not HostMediaFileKind.PLAYLIST:
             raise HostMediaScanError("A cached Playlist needs a playlist kind")
         metadata = {
+            "metadata_complete": record.metadata_complete,
             "title": record.title,
             "references": [os.fspath(path) for path in record.references],
         }
@@ -3274,7 +3371,7 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
     host_path = HostPath(path)
     kind = HostMediaFileKind(_text(row["kind"], "kind"))
     size_bytes = _integer(row["size_bytes"], "size_bytes")
-    modified_ns = _integer(row["modified_ns"], "modified_ns")
+    modified_ns = _signed_integer(row["modified_ns"], "modified_ns")
     warning = _text(row["warning"], "warning")
     metadata = _object(row["metadata"], "metadata")
     if kind in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO):
@@ -3340,6 +3437,20 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             if not artwork_digest_value
             else _sha256(artwork_digest_value, "artwork_content_sha256")
         )
+        artwork_size_bytes = _integer(
+            metadata["artwork_size_bytes"], "artwork_size_bytes"
+        )
+        artwork_modified_ns = _signed_integer(
+            metadata["artwork_modified_ns"], "artwork_modified_ns"
+        )
+        if artwork_path is not None and artwork_size_bytes <= 0:
+            raise ValueError("Cached Host artwork requires observed file facts")
+        if artwork_kind is HostArtworkKind.EMBEDDED and (
+            artwork_path != host_path
+            or artwork_size_bytes != size_bytes
+            or artwork_modified_ns != modified_ns
+        ):
+            raise ValueError("Cached embedded artwork must match its Track source")
         return _CachedTrackRecord(
             path=host_path,
             kind=kind,
@@ -3372,19 +3483,14 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             no_audio=no_audio,
             artwork_kind=artwork_kind,
             artwork_path=artwork_path,
-            artwork_size_bytes=_integer(
-                metadata["artwork_size_bytes"],
-                "artwork_size_bytes",
-            ),
-            artwork_modified_ns=_integer(
-                metadata["artwork_modified_ns"],
-                "artwork_modified_ns",
-            ),
+            artwork_size_bytes=artwork_size_bytes,
+            artwork_modified_ns=artwork_modified_ns,
             artwork_content_sha256=artwork_digest,
         )
     if kind is HostMediaFileKind.PHOTO:
         if frozenset(metadata) != _PHOTO_METADATA_FIELDS:
             raise ValueError("Cached Photo metadata fields are invalid")
+        content_sha256 = _text(metadata["content_sha256"], "content_sha256")
         return _CachedPhotoRecord(
             path=host_path,
             kind=kind,
@@ -3393,13 +3499,22 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             warning=warning,
             width=_integer(metadata["width"], "width"),
             height=_integer(metadata["height"], "height"),
-            content_sha256=_sha256(
-                metadata["content_sha256"],
-                "content_sha256",
-            ),
+            # Failed reads retain basic facts and must be retried; they must
+            # not invalidate successful analysis for the rest of the catalog.
+            content_sha256=_sha256(content_sha256, "content_sha256")
+            if content_sha256
+            else "",
         )
-    if frozenset(metadata) != _PLAYLIST_METADATA_FIELDS:
+    expected = _PLAYLIST_METADATA_FIELDS
+    if version < 16:
+        expected = expected - {"metadata_complete"}
+    if frozenset(metadata) != expected:
         raise ValueError("Cached Playlist metadata fields are invalid")
+    # Older caches conflate read failures and parser warnings. Reparse their
+    # warning-bearing Playlists once while keeping healthy media analysis.
+    metadata_complete = metadata.get("metadata_complete", not warning)
+    if not isinstance(metadata_complete, bool):
+        raise ValueError("Cached Playlist metadata status is invalid")
     raw_references = _array(metadata["references"], "references")
     references = tuple(
         HostPath(reference_path)
@@ -3414,19 +3529,22 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
         size_bytes=size_bytes,
         modified_ns=modified_ns,
         warning=warning,
+        metadata_complete=metadata_complete,
         title=_text(metadata["title"], "title"),
         references=references,
     )
 
 
 def _canonical_json(value: object) -> bytes:
+    # Escape native filename surrogates while retaining existing UTF-8 bytes
+    # (and therefore checksums) for all ordinarily encodable cache text.
     return json.dumps(
         value,
         ensure_ascii=False,
         allow_nan=False,
         sort_keys=True,
         separators=(",", ":"),
-    ).encode("utf-8")
+    ).encode("utf-8", errors="backslashreplace")
 
 
 def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -3469,8 +3587,16 @@ def _sha256(value: object, label: str) -> str:
 
 
 def _integer(value: object, label: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+    integer = _signed_integer(value, label)
+    if integer < 0:
         raise ValueError(f"Expected a non-negative integer for {label}")
+    return integer
+
+
+def _signed_integer(value: object, label: str) -> int:
+    """Filesystem timestamps may predate the Unix epoch; preserve observed facts."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"Expected an integer for {label}")
     return value
 
 
@@ -3505,7 +3631,9 @@ def _nonnegative_int(value: object) -> int:
 
 def _stable_identity(path: os.PathLike[str], namespace: str) -> int:
     digest = hashlib.blake2b(
-        f"iopenpod.host.{namespace}.v1\0{_path_identity(path)}".encode(),
+        f"iopenpod.host.{namespace}.v1\0{_path_identity(path)}".encode(
+            "utf-8", errors="surrogatepass"
+        ),
         digest_size=8,
     ).digest()
     return int.from_bytes(digest, "big") & ((1 << 63) - 1)
@@ -3524,7 +3652,9 @@ def _entry_identity(
     playlist: os.PathLike[str], index: int, target: os.PathLike[str]
 ) -> str:
     return hashlib.sha256(
-        f"iopenpod.host.playlist-entry.v1\0{_path_identity(playlist)}\0{index}\0{_path_identity(target)}".encode()
+        f"iopenpod.host.playlist-entry.v1\0{_path_identity(playlist)}\0{index}\0{_path_identity(target)}".encode(
+            "utf-8", errors="surrogatepass"
+        )
     ).hexdigest()
 
 

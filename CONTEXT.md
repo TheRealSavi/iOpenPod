@@ -270,7 +270,7 @@ read-only, and foreign or declined journals remain untouched. Only actual cleanu
 failures require a cleanup warning and retry. See ADR-0089 and ADR-0093.
 Host tag interpretation now shares native ID3, MP4, Vorbis/APE, ASF, and FFprobe
 aliases across scanning and import. Media classification, TV and Podcast fields,
-lyrics, sorting, advisory, and normalization metadata survive Scan Cache v15.
+lyrics, sorting, advisory, and normalization metadata survive Scan Cache v16.
 Embedded artwork availability is retained separately from absence; older cached
 no-cover records are reinspected once.
 Migrating cache versions 9 through 13 retains reusable Track and Photo records but
@@ -279,6 +279,15 @@ names become available without editing the files. Host scanning accepts trailing
 periods, trailing spaces, and Windows reserved names on POSIX Hosts; Windows keeps
 its spelling restrictions. See ADR-0083 and ADR-0136.
 Successful metadata and optional Acoustic Fingerprints are reused independently.
+Playlist completion is recorded separately from parser diagnostics so temporary
+read failures retry on later scans. Older warning-bearing Playlist records are
+reparsed once; unreadable Photo records no longer invalidate healthy cached media.
+Images exceeding Pillow's pixel limit remain individual scan issues, with readable
+alternative covers preferred. Existing iPod covers remain protected when no safe
+Host cover is available. See ADR-0168.
+Completed Host inspection is cached periodically and on inspection exit,
+including cancellation, so a later scan can reuse work after checking fresh file
+facts. macOS AppleDouble companion directories are omitted alongside `._` files.
 Compact fingerprints, unchanged-cache reuse, and bounded directory concurrency
 reduce scan overhead; both selected-tree passes retain fresh Storage observations.
 See [Host tag coverage](docs/host-media-tags.md) and ADR-0099 for precedence and limits.
@@ -915,6 +924,8 @@ device workflow; those operations retain their own Storage safety requirements.
 
 - `GLOSSARY.md` defines canonical terms.
 - `docs/source_architecture.md` describes the detailed target architecture.
+- `docs/how-media-scanning-works.md` explains first scans, cache reuse, recovery,
+  and the handoff into Sync Review.
 - `docs/ipoddb-editing.md` defines the sole typed parse/edit/write workflow.
 - `docs/adr/` records durable decisions.
 - `docs/agents/` configures agent-oriented engineering workflows.

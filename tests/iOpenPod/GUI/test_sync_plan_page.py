@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QTableView,
     QToolButton,
@@ -26,11 +27,13 @@ from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,
     HostMediaFileKind,
     HostMediaLibrary,
+    HostMediaScanIssue,
     HostMediaSource,
 )
 from iOpenPod.app.library_sync_helper import (
     IPodMediaCacheStats,
     IPodMediaLibrary,
+    IPodMediaScanIssue,
     IPodTrackFingerprint,
     SyncDetails,
 )
@@ -447,7 +450,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
                 acoustic_fingerprint="4,5,6",
             ),
         ),
-        (),
+        (HostMediaScanIssue(host_path, "Optional Host artwork unavailable"),),
         HostMediaCacheStats(inspected=2),
     )
     ipod_snapshot = LibrarySnapshot(
@@ -489,6 +492,10 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
     )
     context = build_context()
     window = MainWindow(context, auto_discover=False)
+    ipod = replace(
+        ipod,
+        issues=(IPodMediaScanIssue("Sync helper", "Helper unavailable; rescanned"),),
+    )
     profile = next(
         p for p in DEFAULT_DEVICE_REGISTRY.profiles if p.model_number == "MB565"
     )
@@ -558,6 +565,12 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert window.windowTitle() == "Sync with Host — iOpenPod"
         assert workspace.selection.track_check_state(1) is Qt.CheckState.Checked
         assert workspace.selection.track_check_state(2) is Qt.CheckState.Unchecked
+        scan_details = workspace.findChild(QPlainTextEdit, "hostScanIssueDetails")
+        assert scan_details is not None
+        assert "Optional Host artwork unavailable" in scan_details.toPlainText()
+        assert (
+            "Sync helper\nHelper unavailable; rescanned" in scan_details.toPlainText()
+        )
 
         playlists = workspace.findChild(PlaylistTree, "syncPlaylistSidebar")
         assert playlists is not None
@@ -692,8 +705,11 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
 
 
+@pytest.mark.parametrize("disconnect_before_refresh", [False, True])
 def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    disconnect_before_refresh: bool,
 ) -> None:
     host_path = HostPath(tmp_path / "song.mp3")
     host = HostMediaLibrary(
@@ -784,10 +800,11 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         "iTunesDB",
         FileFingerprint(size=100, modified_ns=0, device=0, inode=0, sha256="0" * 64),
     )
+    current_active: list[ActiveIPod | None] = [active]
     monkeypatch.setattr(
         type(context.device_controller),
         "active_ipod",
-        property(lambda _controller: active),
+        property(lambda _controller: current_active[0]),
     )
     refresh_calls: list[tuple[HostMediaLibrary, frozenset[HostPath]]] = []
     presented: list[tuple[HostMediaLibrary, IPodMediaLibrary | None]] = []
@@ -801,8 +818,13 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
     def finish_media_scan(library: HostMediaLibrary, media: IPodMediaLibrary) -> None:
         presented.append((library, media))
 
+    def start_host_scan(_folders: object) -> bool:
+        return True
+
     monkeypatch.setattr(window, "_finish_media_scan", finish_media_scan)
     try:
+        monkeypatch.setattr(context.host_media_controller, "start", start_host_scan)
+        window._start_host_sync(())  # pyright: ignore[reportPrivateUsage]
         window._pending_host_media_library = host  # pyright: ignore[reportPrivateUsage]
         ipod_media_scan_finished = cast(
             "Callable[[object], None]",
@@ -812,8 +834,12 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         assert refresh_calls == [(host, frozenset({host_path}))]
         assert not presented
 
+        if disconnect_before_refresh:
+            current_active[0] = None
+            context.device_controller.activeIPodChanged.emit(None)
+
         context.host_media_controller.refreshFinished.emit(host)
-        assert presented == [(host, ipod)]
+        assert presented == ([] if disconnect_before_refresh else [(host, ipod)])
     finally:
         window.close()
         context.shutdown()

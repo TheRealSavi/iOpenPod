@@ -184,7 +184,6 @@ def _decode(value: object, *, version: int) -> IPodAnalysisRecord:
         or size < 0
         or not isinstance(modified, int)
         or isinstance(modified, bool)
-        or modified < 0
     ):
         raise ValueError("The iPod analysis file facts are invalid")
     if kind == "image":

@@ -93,7 +93,9 @@ class LocalHostDirectory:
         Links and special files have no readable observation. A replaced or
         concurrently edited directory fails instead of publishing a partial list.
         Supplying on_issue permits best-effort enumeration of changing contents,
-        while directory identity and no-link checks remain mandatory.
+        including one restart after a directory iterator failure. If the restart
+        also fails, retain inspected entries and report the incomplete listing;
+        directory identity and no-link checks remain mandatory.
         An optional filename predicate skips unneeded non-directory entries before
         stat where the Host supplies directory-entry type information. Directories
         are retained independently when include_directories is true.
@@ -103,7 +105,21 @@ class LocalHostDirectory:
         listing has passed the final directory identity checks.
         """
         checkpoint()
-        entries: list[HostDirectoryEntry] = []
+        entries: dict[str, HostDirectoryEntry] = {}
+        previous_entries: dict[str, HostDirectoryEntry] = {}
+
+        def restart() -> None:
+            nonlocal entries, previous_entries
+            previous_entries, entries = entries, {}
+
+        def incomplete(path: HostPath, error: OSError | StorageError) -> None:
+            # Only an incomplete restart needs observations from both attempts.
+            # A complete restart publishes its own freshly inspected catalog.
+            for name, entry in previous_entries.items():
+                entries.setdefault(name, entry)
+            assert on_issue is not None
+            on_issue(path, error)
+
         with pin_host_directory(Path(self.path), allow_network=True) as pinned:
             before = _directory_stat(pinned)
             _require_directory(before)
@@ -111,55 +127,62 @@ class LocalHostDirectory:
                 on_issue is None and self._from_stat(self.path, before) != self
             ):
                 raise ConcurrentModificationError("The observed Host directory changed")
-            with os.scandir(pinned) as iterator:
-                for entry in iterator:
-                    checkpoint()
-                    path = HostPath(self.path.path / entry.name)
-                    # Windows DirEntry.stat() omits device/inode identity. Parent
-                    # handles are already pinned, so one leaf lstat supplies it
-                    # without rescanning the ancestor chain for each child.
-                    try:
-                        if (
-                            include_file is not None
-                            and not include_file(entry.name)
-                            and not (
-                                (include_links or include_directories)
-                                and entry.is_symlink()
-                            )
-                            and (
-                                not include_directories
-                                or not entry.is_dir(follow_symlinks=False)
-                            )
-                        ):
-                            continue
-                        metadata = (
-                            Path(path).lstat()
-                            if os.name == "nt"
-                            else entry.stat(follow_symlinks=False)
+            for entry in _directory_entries(
+                pinned,
+                self.path,
+                checkpoint=checkpoint,
+                on_issue=incomplete if on_issue is not None else None,
+                on_restart=restart,
+            ):
+                path = HostPath(self.path.path / entry.name)
+                # Windows DirEntry.stat() omits device/inode identity. Parent
+                # handles are already pinned, so one leaf lstat supplies it
+                # without rescanning the ancestor chain for each child.
+                included = include_file is None or include_file(entry.name)
+                try:
+                    if (
+                        not included
+                        and not (
+                            (include_links or include_directories)
+                            and entry.is_symlink()
                         )
-                    except OSError as error:
-                        if on_issue is None:
-                            raise
-                        on_issue(path, error)
+                        and (
+                            not include_directories
+                            or not entry.is_dir(follow_symlinks=False)
+                        )
+                    ):
                         continue
-                    kind = _entry_kind(metadata)
-                    if kind is HostEntryKind.DIRECTORY and not include_directories:
-                        continue
-                    observation = HostDirectoryEntry(
-                        path,
-                        kind,
-                        metadata.st_size,
-                        metadata.st_mtime_ns,
-                        LocalHostFile._from_stat(path, metadata)  # pyright: ignore[reportPrivateUsage]
-                        if kind is HostEntryKind.FILE
-                        else None,
-                        self._from_stat(path, metadata)
-                        if kind is HostEntryKind.DIRECTORY
-                        else None,
+                    metadata = (
+                        Path(path).lstat()
+                        if os.name == "nt"
+                        else entry.stat(follow_symlinks=False)
                     )
-                    entries.append(observation)
-                    if on_entry is not None:
-                        on_entry(observation)
+                except OSError as error:
+                    if on_issue is None:
+                        raise
+                    on_issue(path, error)
+                    continue
+                kind = _entry_kind(metadata)
+                if kind is HostEntryKind.DIRECTORY and not include_directories:
+                    continue
+                observation = HostDirectoryEntry(
+                    path,
+                    kind,
+                    metadata.st_size,
+                    metadata.st_mtime_ns,
+                    LocalHostFile._from_stat(path, metadata)  # pyright: ignore[reportPrivateUsage]
+                    if kind is HostEntryKind.FILE
+                    else None,
+                    self._from_stat(path, metadata)
+                    if kind is HostEntryKind.DIRECTORY
+                    else None,
+                )
+                first_observation = (
+                    entry.name not in entries and entry.name not in previous_entries
+                )
+                entries[entry.name] = observation
+                if on_entry is not None and first_observation:
+                    on_entry(observation)
             checkpoint()
             after = _directory_stat(pinned)
             current = self.observe(self.path)
@@ -193,7 +216,46 @@ class LocalHostDirectory:
                 if on_issue is None:
                     raise issue
                 on_issue(self.path, issue)
-        return tuple(sorted(entries, key=lambda item: str(item.path).casefold()))
+        return tuple(
+            sorted(entries.values(), key=lambda item: str(item.path).casefold())
+        )
+
+
+def _directory_entries(
+    pinned: Path | int,
+    path: HostPath,
+    *,
+    checkpoint: Callable[[], None],
+    on_issue: Callable[[HostPath, OSError | StorageError], None] | None,
+    on_restart: Callable[[], None],
+) -> Generator[os.DirEntry[str]]:
+    """Restart enumeration once without releasing the directory's identity pins."""
+    for attempt in range(2):
+        checkpoint()
+        with ExitStack() as stack:
+            try:
+                iterator = stack.enter_context(os.scandir(pinned))
+            except OSError as error:
+                failure = error
+            else:
+                while True:
+                    checkpoint()
+                    try:
+                        entry = next(iterator)
+                    except StopIteration:
+                        return
+                    except OSError as error:
+                        failure = error
+                        break
+                    yield entry
+        # Checkpoints and consumer callbacks deliberately stay outside the I/O
+        # exception handlers: cancellation must never become a retry or issue.
+        if on_issue is None:
+            raise failure
+        if attempt == 0:
+            on_restart()
+        else:
+            on_issue(path, failure)
 
 
 def _entry_kind(value: os.stat_result) -> HostEntryKind:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING, BinaryIO
 
 from storage.errors import (
@@ -17,7 +18,7 @@ from storage.errors import (
 from storage.models import FileFingerprint, StorageCapabilities
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Generator
     from pathlib import Path
 
     from storage.paths import DevicePath
@@ -120,26 +121,27 @@ def resolve_device_path(
     return current
 
 
-def open_read_no_follow(path: Path, *, buffering: int = -1) -> BinaryIO:
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
-    except OSError as error:
-        raise StorageOperationError(
-            f"Could not open device file {path.name}: {error}"
-        ) from error
-    try:
-        metadata = os.fstat(descriptor)
+@contextmanager
+def open_read_no_follow(path: Path, *, buffering: int = -1) -> Generator[BinaryIO]:
+    """Keep every ancestor pinned until the regular-file reader is closed."""
+    # Host observations also use the shared containment helpers in this module.
+    from storage.host_input import open_local_file
+
+    with ExitStack() as handles:
+        try:
+            source = handles.enter_context(open_local_file(path, buffering=buffering))
+            metadata = os.fstat(source.fileno())
+        except OSError as error:
+            raise StorageOperationError(
+                f"Could not open device file {path.name}: {error}"
+            ) from error
         if is_link_or_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
             raise UnsafeFilesystemPathError(
                 f"Device Path does not name a regular file: {path.name}"
             )
-        file = os.fdopen(descriptor, "rb", buffering=buffering)
-        descriptor = -1
-        return file
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
+        # Consumer errors, including cancellation expressed as OSError, are not
+        # translated into an open failure. ExitStack still releases every pin.
+        yield source
 
 
 def read_and_fingerprint(
@@ -151,22 +153,41 @@ def read_and_fingerprint(
 ) -> tuple[bytes, FileFingerprint]:
     digest = hashlib.sha256()
     chunks: list[bytes] = []
-    with open_read_no_follow(path) as source:
+    # Bound physical reads, including otherwise invisible buffered read-ahead.
+    # A concurrent appender must not extend this operation indefinitely.
+    with open_read_no_follow(path, buffering=0) as source:
         before = os.fstat(source.fileno())
-        while True:
+        if max_bytes is not None and before.st_size > max_bytes:
+            raise StorageOperationError(
+                f"Device file exceeds the allowed read size of {max_bytes} bytes"
+            )
+        remaining = before.st_size
+        while remaining:
             assert_active()
-            chunk = source.read(COPY_CHUNK_SIZE)
+            chunk = source.read(min(COPY_CHUNK_SIZE, remaining))
             if not chunk:
-                break
+                raise ConcurrentModificationError(
+                    f"Device file ended before its observed size: {path.name}"
+                )
+            remaining -= len(chunk)
             digest.update(chunk)
             if collect_data:
                 chunks.append(chunk)
-            if max_bytes is not None and source.tell() > max_bytes:
-                raise StorageOperationError(
-                    f"Device file exceeds the allowed read size of {max_bytes} bytes"
-                )
+        assert_active()
         after = os.fstat(source.fileno())
-    if _stat_identity(before) != _stat_identity(after):
+    try:
+        current = os.lstat(path)
+    except OSError as error:
+        raise ConcurrentModificationError(
+            f"Device file changed while it was being read: {path.name}"
+        ) from error
+    if (
+        _stat_identity(before) != _stat_identity(after)
+        or before.st_ctime_ns != after.st_ctime_ns
+        or _stat_identity(after) != _stat_identity(current)
+        or is_link_or_reparse(current)
+        or not stat.S_ISREG(current.st_mode)
+    ):
         raise ConcurrentModificationError(
             f"Device file changed while it was being read: {path.name}"
         )

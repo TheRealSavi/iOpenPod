@@ -8500,6 +8500,10 @@ Playlists: %3</translation>
 <context>
     <name>Workflow</name>
     <message>
+        <source>A changed native browse record is shared by incompatible groups.</source>
+        <translation>Un registro nativo de navegación modificado está compartido por grupos incompatibles.</translation>
+    </message>
+    <message>
         <source>{title}</source>
         <translation>{title}</translation>
     </message>
@@ -10502,8 +10506,12 @@ Playlists: %3</translation>
         <translation>El archivo existente de suscripciones de pódcast no es válido. iOpenPod lo dejó sin cambios.</translation>
     </message>
     <message>
-        <source>The existing helper is invalid and was left unchanged; its Sync history must be recovered or explicitly replaced.</source>
-        <translation>El índice auxiliar existente no es válido y se dejó sin cambios; su historial de sincronización debe recuperarse o reemplazarse de forma explícita.</translation>
+        <source>The existing helper could not be safely read and was left unchanged; its Sync history must be recovered or explicitly replaced.</source>
+        <translation>No se pudo leer el índice auxiliar existente de forma segura y se dejó sin cambios; su historial de sincronización debe recuperarse o reemplazarse de forma explícita.</translation>
+    </message>
+    <message>
+        <source>The existing helper could not be read and was left unchanged; media analysis will continue without its cached Sync history: {error}</source>
+        <translation>No se pudo leer el índice auxiliar existente y se dejó sin cambios; el análisis multimedia continuará sin su historial de sincronización almacenado en caché: {error}</translation>
     </message>
     <message>
         <source>The existing helper is invalid: {error}</source>

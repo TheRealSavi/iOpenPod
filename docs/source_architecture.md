@@ -1188,9 +1188,10 @@ The implemented pre-Sync entry point begins with Host Media Scan. Sync with Host
 first opens a modal media-folder dialog. Accepting it persists the staged choices,
 starts one background scan of the selected folders, and opens the full-window Sync
 Workspace for progress, selection, and Review. The scanner covers the enabled audio,
-video, Photo, and Playlist types. macOS AppleDouble `._` metadata companions are
-excluded before inspection or cache reuse, including explicit file selections;
-Playlist references cannot add them. Other dot-prefixed media files and folders
+video, Photo, and Playlist types. macOS AppleDouble `._` metadata companions and
+`.AppleDouble` directory contents are excluded before inspection or cache reuse,
+including explicit selections; Playlist references cannot add them. Both ordinary
+and linked-folder traversal skip those metadata directories. Other dot-prefixed media files and folders
 remain eligible. The scanner enumerates a
 canonical file catalog before reading metadata, reuses a checksummed application
 cache entry only when path, media kind, size, and modification time still match, and
@@ -1207,7 +1208,9 @@ later Sync matching. A changed catalog becomes a scan diagnostic and the best-ef
 snapshot remains available for Review; Sync execution revalidates current source
 facts before any device write. This preserves the metadata-first reuse pattern
 without making cloud-backed folders fail on ordinary source churn. The cache is not
-source authority. See ADR-0082.
+source authority. Completed inspections checkpoint at least 30 seconds apart and on inspection
+exit, including cancellation. The next scan enumerates fresh file facts before reusing
+those hints; cancellation never publishes a Library Snapshot. See ADR-0082 and ADR-0168.
 
 Within each enumeration pass, folder-artwork discovery reuses Storage's directory
 entry observations from media discovery. Artwork lookup retains only plausible cover entries;
@@ -1315,7 +1318,7 @@ media file or loading it entirely into memory. Storage also launches fingerprint
 processes against validated inputs and owns temporary device-scan captures.
 
 Host scanning, music import, and Sync enrichment share `app/media/tags.py` for native
-tag interpretation and common Track projection. Cache v15 retains recognized tag
+tag interpretation and common Track projection. Cache v16 retains recognized tag
 values, including classification, TV/Podcast details, sorting, and lyrics. Videos
 without useful native tags or timing can use bounded FFprobe metadata inspection
 through a pinned, seekable Storage input without a whole-file capture. Successful
@@ -1393,16 +1396,23 @@ recovery. A separate iPod Analysis Cache in Host storage retains completed analy
 for repeated pre-Review scans, including on read-only devices. It is bound to device
 and Volume identities, validates current file facts, checkpoints on cancellation,
 and contains no Sync Details. Host Photo records carry matching SHA-256 evidence in
-Host Media Scan Cache v15. Versions 9 through 14 migrate while retaining reusable
+Host Media Scan Cache v16. Versions 9 through 15 migrate while retaining reusable
 Track and Photo records. Pre-v14 Playlist interpretations are discarded so even
 unchanged Playlists are reparsed once and previously excluded network references
 and valid POSIX names become available without editing the source. See ADR-0083 and
 ADR-0136. Older no-cover records
 are reinspected once to distinguish absent artwork from previously unrecorded
 decoding failures. Long Acoustic Fingerprints use a lossless bounded binary
-encoding in Host cache v15 and helper v7; readers retain prior decimal support.
-Host cache v15 and iPod Analysis Cache v2 also retain confirmed no-audio results,
+encoding in Host cache v16 and helper v7; readers retain prior decimal support.
+Host cache v16 and iPod Analysis Cache v2 also retain confirmed no-audio results,
 independent of metadata completion and without inventing matching evidence.
+Host cache v16 records Playlist metadata completion explicitly. Failed reads are
+retried; successful parsing with rejected references remains reusable. Older
+warning-bearing Playlist entries are reparsed once because they do not distinguish
+read failures from parser diagnostics. An absent Photo digest represents incomplete
+analysis to retry without invalidating other cached media. Photo and cover images
+over Pillow's pixel limit become individual scan issues; cover selection tries
+readable alternatives and preserves unavailable-artwork evidence. See ADR-0168.
 The Host Media Scan Cache, iPod Analysis Cache, and Library Sync Helper have no
 aggregate encoded-byte or decoded-fingerprint-byte ceiling. Their checksums,
 record-count limits, and individual fingerprint validation remain enforced. These

@@ -182,6 +182,8 @@ def test_v12_cache_reparses_network_playlist_without_rereading_tracks_or_photos(
     document["version"] = 12
     for row in document["entries"]:
         row["metadata"].pop("no_audio", None)
+        if row["kind"] == "playlist":
+            row["metadata"].pop("metadata_complete")
     entry = next(row for row in document["entries"] if row["kind"] == "playlist")
     entry["metadata"]["references"] = [os.fspath(song)]
     entry["warning"] = "Skipped 1 unsafe or non-local Playlist references."
@@ -217,7 +219,7 @@ def test_v12_cache_reparses_network_playlist_without_rereading_tracks_or_photos(
     assert not pending.issues
     assert pending.cache == HostMediaCacheStats(reused=2, inspected=1)
     stored = json.loads(cache.path.read_bytes())
-    assert stored["version"] == 15
+    assert stored["version"] == 16
     playlist_entry = next(row for row in stored["entries"] if row["kind"] == "playlist")
     assert playlist_entry["metadata"]["references"] == [
         os.fspath(song),

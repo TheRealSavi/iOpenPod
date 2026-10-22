@@ -141,7 +141,10 @@ def test_messages_are_grouped_by_severity_with_complete_expandable_details() -> 
             label.text() for label in page.findChildren(QLabel, "syncResultMessage")
         )
         assert "A useful note." in messages and "Check this warning." in messages
-        assert "Track <one>" in messages and "sync.failed" not in messages
+        assert "sync.failed" not in messages
+        references = page.findChildren(QLabel, "syncResultReference")
+        assert [label.text() for label in references] == ["Track <one>"]
+        assert references[0].textFormat() == Qt.TextFormat.PlainText
         details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
         toggle = page.findChild(QPushButton, "syncResultTechnicalToggle")
         assert details is not None and details.isHidden() and toggle is not None
@@ -475,7 +478,10 @@ def test_progress_exposes_stage_counts_and_the_last_completed_item() -> None:
         APPLICATION.processEvents()
 
 
-def test_other_conversion_notices_are_grouped_in_the_result() -> None:
+@pytest.mark.parametrize("severity", tuple(IssueSeverity))
+def test_other_conversion_notices_are_grouped_in_the_result(
+    severity: IssueSeverity,
+) -> None:
     page = SyncExecutionPage()
     try:
         page.begin()
@@ -486,7 +492,7 @@ def test_other_conversion_notices_are_grouped_in_the_result() -> None:
                     WriteIssue(
                         "sync.media_warning",
                         "This iPod does not support ALAC. Preserved lossless audio as 16-bit WAV.",
-                        severity=IssueSeverity.INFO,
+                        severity=severity,
                         artifact=f"book-{i}.m4b",
                     )
                     for i in range(5)
@@ -497,12 +503,23 @@ def test_other_conversion_notices_are_grouped_in_the_result() -> None:
         assert details is not None
         assert details.toPlainText().count("Preserved lossless audio") == 1
         assert "5 items" in details.toPlainText()
-        assert "INFO" in details.toPlainText()
+        assert severity.value.upper() in details.toPlainText()
         assert "book-2.m4b" in details.toPlainText()
         assert "book-4.m4b" in details.toPlainText()
         message = page.findChild(QLabel, "syncResultMessage")
-        assert message is not None and "book-3.m4b" not in message.text()
-        assert "Technical details" in message.text()
+        assert message is not None and "5 items" in message.text()
+        references = page.findChildren(QLabel, "syncResultReference")
+        assert [label.text() for label in references] == [
+            "book-0.m4b",
+            "book-1.m4b",
+            "book-2.m4b",
+        ]
+        assert all(label.parent() is message.parent() for label in references)
+        bullets = page.findChildren(QLabel, "syncResultReferenceBullet")
+        assert [label.text() for label in bullets] == ["•"] * 3
+        overflow = page.findChild(QLabel, "syncResultMessageOverflow")
+        assert overflow is not None and "…and 2 more files" in overflow.text()
+        assert "Technical details" in overflow.text()
     finally:
         page.deleteLater()
         APPLICATION.processEvents()

@@ -515,6 +515,46 @@ def test_changed_file_facts_update_when_tags_differ(tmp_path: Path) -> None:
     assert plan.items[0].audio_payload_changed is False
 
 
+def test_repeated_host_tag_edits_after_transcode_keep_payload_in_selected_plan(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "source.flac"
+    host_track, source = _host_track(path, track_id=10, fingerprint="1,2,3")
+    snapshot = _ipod_snapshot(10)
+    sync = replace(
+        _sync(path),
+        source_format="flac",
+        was_transcoded=True,
+        host_tag_sha256=track_tag_sha256(host_track),
+        ipod_tag_sha256=track_tag_sha256(snapshot.tracks[0]),
+    )
+    retained = _ipod_track(track_id=10, fingerprint="1,2,3", sync=sync)
+    selection = SyncSelection()
+    for title in ("First correction", "Second correction"):
+        host_track = replace(host_track, title=title)
+        source = replace(
+            source, size_bytes=source.size_bytes + 1, modified_ns=source.modified_ns + 1
+        )
+        host = _host_library((host_track,), (), (source,))
+        comparison = prepare_sync_plan(host, _ipod_library((retained,)), snapshot)
+        selection.reset(host, comparison)
+        (item,) = selection.selected_plan.items
+        assert item.action is SyncPlanAction.UPDATE
+        assert item.metadata_changed
+        assert not item.audio_payload_changed
+        assert not item.stream_selection_changed
+        # Model the committed metadata result before the next independent edit.
+        snapshot = replace(snapshot, tracks=(replace(snapshot.tracks[0], title=title),))
+        sync = replace(
+            sync,
+            host_size_bytes=source.size_bytes,
+            host_modified_ns=source.modified_ns,
+            host_tag_sha256=track_tag_sha256(host_track),
+            ipod_tag_sha256=track_tag_sha256(snapshot.tracks[0]),
+        )
+        retained = replace(retained, sync=sync)
+
+
 @pytest.mark.parametrize("changed", [False, True])
 @pytest.mark.parametrize(
     "host_fingerprint,ipod_fingerprint", [(None, "1,2,3"), ("1,2,3", ""), (None, "")]

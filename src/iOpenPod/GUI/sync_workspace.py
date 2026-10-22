@@ -532,7 +532,7 @@ class SyncWorkspace(QWidget):
             active_ipod.profile.capabilities.database.uses_sqlite_database
             or bool(active_ipod.library.tracks)
         )
-        self._scan_issues.load(library.issues)
+        self._scan_issues.load((*library.issues, *ipod_media.issues))
         self._storage_projection = SyncStorageProjection(
             library, ipod_media, active_ipod.candidate, active_ipod.profile
         )

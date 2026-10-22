@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 from collections.abc import Callable
+from concurrent.futures import Future
 from dataclasses import replace
 from pathlib import Path
 from threading import Event
@@ -11,6 +12,7 @@ import pytest
 from iOpenPod.app import library_sync_helper as helper_module
 from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.host_media_fingerprint import (
+    FpcalcFingerprinter,
     FpcalcNoAudioError,
     FpcalcUnavailableError,
 )
@@ -23,9 +25,11 @@ from iOpenPod.app.host_media_library import (
 from iOpenPod.app.ipod_analysis_cache import IPodAnalysisCache, IPodAnalysisRecord
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
+    IPodImageFingerprint,
     IPodMediaScanner,
     IPodMediaScanProgress,
     IPodMediaScanStage,
+    IPodTrackFingerprint,
     LibrarySyncHelperCancelledError,
     LibrarySyncHelperError,
     SyncDetails,
@@ -50,12 +54,15 @@ from iPodDB.library import (
 from storage import (
     AccessMode,
     AtomicHostFile,
+    ConcurrentModificationError,
     CopyResult,
     DeviceEntry,
     DevicePath,
     DevicePathNotFoundError,
+    FileSnapshot,
     FilesystemSession,
     HostPath,
+    MountInspectionError,
     Storage,
     StorageOperationError,
     VolumeDisconnectedError,
@@ -219,6 +226,187 @@ def test_scan_fingerprints_uncached_media_and_persists_helper(tmp_path: Path) ->
     assert isinstance(fingerprinted, SourceText)
     assert fingerprinted.source == "Fingerprinting iPod Track {index} of {total}…"
     assert dict(fingerprinted.parameters) == {"index": "1", "total": "1"}
+
+
+def test_helper_round_trips_filesystem_timestamps_before_unix_epoch() -> None:
+    sync = SyncDetails(
+        last_synced_at="2026-10-22T10:00:00+00:00",
+        host_path_hint="Music/Archived Song.mp3",
+        host_size_bytes=9,
+        host_modified_ns=-1_000_000_000,
+        source_format="mp3",
+        ipod_format="mp3",
+        was_transcoded=False,
+    )
+    track = IPodTrackFingerprint(
+        1,
+        7,
+        DevicePath("iPod_Control/Music/F00/SONG.MP3"),
+        9,
+        -2_000_000_000,
+        "1,2,3",
+        sync,
+    )
+    image = IPodImageFingerprint(
+        91,
+        DevicePath("Photos/image.jpg"),
+        11,
+        -3_000_000_000,
+        "b" * 64,
+        sync,
+    )
+    payload = helper_module._encode_helper(  # pyright: ignore[reportPrivateUsage]
+        (track,), (image,), "a" * 64, updated_at=sync.last_synced_at
+    )
+    restored = helper_module._decode_helper(payload)  # pyright: ignore[reportPrivateUsage]
+    assert restored.tracks == (track,)
+    assert restored.images == (image,)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        PermissionError("Helper temporarily locked"),
+        StorageOperationError("Helper temporarily unreadable"),
+        ConcurrentModificationError("Helper changed during read"),
+        DevicePathNotFoundError("Helper moved during read"),
+    ],
+)
+@pytest.mark.parametrize("recovers", [True, False])
+def test_scan_recovers_optional_helper_read_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    recovers: bool,
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    fingerprinter = _Fingerprinter()
+    scanner = IPodMediaScanner(fingerprinter)
+    read_snapshot = FilesystemSession.read_snapshot
+    attempts = 0
+
+    def interrupted_read(
+        self: FilesystemSession, path: DevicePath, *, max_bytes: int | None = None
+    ) -> FileSnapshot:
+        nonlocal attempts
+        if path == LIBRARY_SYNC_HELPER_PATH:
+            attempts += 1
+            if not recovers or attempts == 1:
+                raise failure
+        return read_snapshot(self, path, max_bytes=max_bytes)
+
+    with session:
+        scanner.scan(
+            session,
+            _library(),
+            library_sha256="a" * 64,
+            persist=True,
+            checkpoint=lambda: None,
+        )
+        helper = root / str(LIBRARY_SYNC_HELPER_PATH)
+        before = helper.read_bytes()
+        fingerprinter.values = ["1,2,3"]
+        monkeypatch.setattr(FilesystemSession, "read_snapshot", interrupted_read)
+        result = scanner.scan(
+            session,
+            _library(),
+            library_sha256="a" * 64,
+            persist=not recovers,
+            checkpoint=lambda: None,
+            report_read_only=False,
+        )
+        assert helper.read_bytes() == before
+
+    assert attempts == 2
+    assert len(result.tracks) == len(result.images) == 1
+    assert not result.persisted
+    assert result.cache.reused == (2 if recovers else 0)
+    assert result.cache.fingerprinted == (0 if recovers else 2)
+    assert len(fingerprinter.calls) == (1 if recovers else 2)
+    assert bool(result.issues) is not recovers
+    if not recovers:
+        assert all(record.sync is None for record in (*result.tracks, *result.images))
+
+
+def test_helper_read_disconnect_is_not_retried_or_hidden(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    fingerprinter = _Fingerprinter()
+    attempts = 0
+
+    def disconnected(self: FilesystemSession, path: DevicePath) -> bool:
+        nonlocal attempts
+        attempts += 1
+        raise VolumeDisconnectedError("iPod disconnected")
+
+    monkeypatch.setattr(FilesystemSession, "exists", disconnected)
+    with session, pytest.raises(VolumeDisconnectedError):
+        IPodMediaScanner(fingerprinter).scan(
+            session,
+            _library(),
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+        )
+    assert attempts == 1
+    assert fingerprinter.calls == []
+
+
+def test_helper_read_volume_becoming_unreadable_does_not_complete_empty_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _root, session = _session(tmp_path)
+    attempts = 0
+
+    def unreadable(self: FilesystemSession, path: DevicePath) -> bool:
+        nonlocal attempts
+        attempts += 1
+        self.invalidate("Volume no longer readable")
+        raise MountInspectionError("Volume no longer readable")
+
+    monkeypatch.setattr(FilesystemSession, "exists", unreadable)
+    with session, pytest.raises(MountInspectionError):
+        IPodMediaScanner(_Fingerprinter()).scan(
+            session,
+            LibrarySnapshot(),
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+        )
+    assert attempts == 1
+
+
+def test_optional_helper_retry_obeys_cancellation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    fingerprinter = _Fingerprinter()
+    attempts = 0
+
+    def unavailable(self: FilesystemSession, path: DevicePath) -> bool:
+        nonlocal attempts
+        attempts += 1
+        raise StorageOperationError("Helper temporarily unavailable")
+
+    def checkpoint() -> None:
+        if attempts:
+            raise LibrarySyncHelperCancelledError
+
+    monkeypatch.setattr(FilesystemSession, "exists", unavailable)
+    with session, pytest.raises(LibrarySyncHelperCancelledError):
+        IPodMediaScanner(fingerprinter).scan(
+            session,
+            _library(),
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=checkpoint,
+        )
+    assert attempts == 1
+    assert fingerprinter.calls == []
 
 
 def test_scan_releases_each_device_capture_before_copying_the_next(
@@ -1137,6 +1325,68 @@ def test_scan_cancellation_checkpoints_completed_analysis_and_cleans_captures(
     assert not (root / str(LIBRARY_SYNC_HELPER_PATH)).exists()
 
 
+def test_cancelled_scan_finishes_cleanup_when_pending_validation_invalidates_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    library = _two_tracks(root)
+    decoded = Event()
+    shutdown: list[bool] = []
+    cancellation = LibrarySyncHelperCancelledError()
+    stat = FilesystemSession.stat
+
+    class CompletedExecutor:
+        def __init__(self, *, max_workers: int, thread_name_prefix: str) -> None:
+            pass
+
+        def submit(
+            self, function: Callable[..., str], *args: object, **kwargs: object
+        ) -> Future[str]:
+            future: Future[str] = Future()
+            future.set_result(function(*args, **kwargs))
+            decoded.set()
+            return future
+
+        def shutdown(self, *, wait: bool, cancel_futures: bool) -> None:
+            shutdown.append(wait and cancel_futures)
+
+    class NativeFingerprinter(FpcalcFingerprinter):
+        def fingerprint_device(
+            self,
+            session: FilesystemSession,
+            source: DevicePath,
+            *,
+            checkpoint: Callable[[], None],
+        ) -> str:
+            checkpoint()
+            return "1,2,3"
+
+    def checkpoint() -> None:
+        if decoded.is_set():
+            raise cancellation
+
+    def unreadable(self: FilesystemSession, path: DevicePath) -> DeviceEntry:
+        if decoded.is_set():
+            self.invalidate("Volume no longer readable")
+            raise MountInspectionError("Volume no longer readable")
+        return stat(self, path)
+
+    monkeypatch.setattr(helper_module, "ThreadPoolExecutor", CompletedExecutor)
+    monkeypatch.setattr(FilesystemSession, "stat", unreadable)
+    with session, pytest.raises(LibrarySyncHelperCancelledError) as caught:
+        IPodMediaScanner(NativeFingerprinter()).scan(
+            session,
+            library,
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=checkpoint,
+        )
+    assert caught.value is cancellation
+    assert shutdown == [True]
+    assert not (root / str(LIBRARY_SYNC_HELPER_PATH)).exists()
+
+
 def test_device_copy_overlaps_previous_decode_with_two_capture_bound(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1272,6 +1522,58 @@ def test_changed_during_decode_is_not_remembered_in_host_cache(
         )
     assert next_result.cache.fingerprinted == 1
     assert len(fingerprinter.calls) == 1
+
+
+@pytest.mark.parametrize("stage", ["track_observation", "track_decode", "image"])
+def test_media_scan_does_not_publish_success_after_volume_becomes_unreadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    library = _library()
+    library = (
+        replace(library, tracks=())
+        if stage == "image"
+        else replace(library, photos=None)
+    )
+    stat = FilesystemSession.stat
+
+    def unreadable(self: FilesystemSession, path: DevicePath) -> DeviceEntry:
+        if path != LIBRARY_SYNC_HELPER_PATH:
+            self.invalidate("Volume no longer readable")
+            raise MountInspectionError("Volume no longer readable")
+        return stat(self, path)
+
+    class UnreadableFingerprinter(FpcalcFingerprinter):
+        def fingerprint_device(
+            self,
+            session: FilesystemSession,
+            source: DevicePath,
+            *,
+            checkpoint: Callable[[], None],
+        ) -> str:
+            session.invalidate("Volume no longer readable")
+            raise MountInspectionError("Volume no longer readable")
+
+    if stage != "track_decode":
+        monkeypatch.setattr(FilesystemSession, "stat", unreadable)
+    cache_file = _cache_factory(tmp_path / "cache")
+    progress: list[IPodMediaScanProgress] = []
+    with session, pytest.raises(MountInspectionError, match="no longer readable"):
+        IPodMediaScanner(
+            UnreadableFingerprinter(), analysis_cache_file=cache_file
+        ).scan(
+            session,
+            library,
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+            progress=progress.append,
+            report_read_only=False,
+        )
+    assert all(event.stage is not IPodMediaScanStage.COMPLETE for event in progress)
+    assert not (root / str(LIBRARY_SYNC_HELPER_PATH)).exists()
+    assert not list((tmp_path / "cache").glob("*.json"))
 
 
 def test_helper_writer_enforces_record_count_before_replacing_previous_helper(
@@ -1603,6 +1905,76 @@ def test_cached_track_is_revalidated_after_waiting_for_previous_decode(
         assert result.tracks[1].modified_ns == disk_path.stat().st_mtime_ns
         assert result.tracks[1].modified_ns != seeded.tracks[0].modified_ns
     assert result.issues == ()
+
+
+@pytest.mark.parametrize("change", ["size", "mtime"])
+def test_native_uncached_track_is_observed_again_after_previous_decode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    root, session = _session(tmp_path)
+    _write_media(root)
+    library = _two_tracks(root)
+    second_path = DevicePath(library.tracks[1].metadata.location)
+    disk_path = root / str(second_path)
+    second_observed = Event()
+    native_stat = FilesystemSession.stat
+    calls: list[DevicePath] = []
+
+    def stat(self: FilesystemSession, path: DevicePath) -> DeviceEntry:
+        observed = native_stat(self, path)
+        if path == second_path:
+            second_observed.set()
+        return observed
+
+    class NativeFingerprinter(FpcalcFingerprinter):
+        def fingerprint_device(
+            self,
+            session: FilesystemSession,
+            source: DevicePath,
+            *,
+            checkpoint: Callable[[], None],
+        ) -> str:
+            checkpoint()
+            calls.append(source)
+            if len(calls) == 1:
+                assert second_observed.wait(5)
+                if change == "size":
+                    disk_path.write_bytes(b"audio-changed-before-its-decode-started")
+                else:
+                    modified = disk_path.stat().st_mtime_ns + 10_000_000_000
+                    os.utime(disk_path, ns=(modified, modified))
+                return "1,2,3"
+            return "4,5,6"
+
+    monkeypatch.setattr(FilesystemSession, "stat", stat)
+    scanner = IPodMediaScanner(
+        NativeFingerprinter(), analysis_cache_file=_cache_factory(tmp_path / "cache")
+    )
+    with session:
+        result = scanner.scan(
+            session,
+            library,
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+            report_read_only=False,
+        )
+        assert result.issues == ()
+        assert len(result.tracks) == 2
+        assert result.tracks[1].size_bytes == disk_path.stat().st_size
+        assert result.tracks[1].modified_ns == disk_path.stat().st_mtime_ns
+        assert result.tracks[1].acoustic_fingerprint == "4,5,6"
+        repeated = scanner.scan(
+            session,
+            library,
+            library_sha256="a" * 64,
+            persist=False,
+            checkpoint=lambda: None,
+            report_read_only=False,
+        )
+    assert len(calls) == 2
+    assert repeated.cache.reused == 2
+    assert not repeated.issues
 
 
 @pytest.mark.parametrize(
