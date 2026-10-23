@@ -42,6 +42,10 @@ def _row(change: PlaylistSyncChange, identity: int = 1) -> PlaylistSyncReviewIte
     )
 
 
+def _match_target_id(dialog: PlaylistMatchDialog) -> int | None:
+    return dialog.target_id
+
+
 @pytest.fixture
 def workspace() -> Iterator[SyncWorkspace]:
     context = build_context()
@@ -364,14 +368,44 @@ def test_skipped_reasons_are_visible_and_do_not_enable_sync(
     assert button is not None and button.isEnabled()
 
 
+@pytest.mark.parametrize("target_id", [10, 11919153248416957672, (1 << 64) - 1])
+def test_match_dialog_preserves_initial_target_and_create_new_choice(
+    workspace: SyncWorkspace, target_id: int
+) -> None:
+    row = replace(
+        _row(PlaylistSyncChange("Host", "update", 0, 0, False)),
+        target_id=target_id,
+    )
+    dialog = PlaylistMatchDialog(
+        row, LibrarySnapshot(playlists=(Playlist(target_id, "Existing"),)), workspace
+    )
+    try:
+        assert dialog.targets.currentRow() == 1
+        assert _match_target_id(dialog) == target_id
+        assert any(
+            label.text() == "Empty Playlist" for label in dialog.findChildren(QLabel)
+        )
+        dialog.targets.setCurrentRow(0)
+        assert _match_target_id(dialog) is None
+        assert any(
+            label.text() == "A new Playlist will be added to the iPod."
+            for label in dialog.findChildren(QLabel)
+        )
+        dialog.targets.setCurrentRow(1)
+        assert _match_target_id(dialog) == target_id
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("target_id", [10, 11919153248416957672, (1 << 64) - 1])
 @pytest.mark.parametrize("accept", [False, True])
 def test_match_dialog_only_applies_the_accepted_target(
-    workspace: SyncWorkspace, accept: bool
+    workspace: SyncWorkspace, accept: bool, target_id: int
 ) -> None:
     row = _row(PlaylistSyncChange("Host", "create", 0, 0, False))
     library = LibrarySnapshot(
         playlists=(
-            Playlist(10, "Existing"),
+            Playlist(target_id, "Existing"),
             Playlist(20, "Managed", system_managed=True),
             Playlist(30, "Folder", kind=PlaylistKind.FOLDER),
         )
@@ -385,7 +419,7 @@ def test_match_dialog_only_applies_the_accepted_target(
         assert isinstance(dialog, PlaylistMatchDialog)
         assert dialog.targets.count() == 2  # Create new and the regular target.
         dialog.targets.setCurrentRow(1)
-        assert dialog.target_id == 10
+        assert dialog.target_id == target_id
         if accept:
             dialog.accept()
         else:
@@ -394,5 +428,5 @@ def test_match_dialog_only_applies_the_accepted_target(
     QTimer.singleShot(0, choose)
     button.click()
     assert workspace.playlist_choices == (
-        (PlaylistSyncChoice(1, automatic=False, target_id=10),) if accept else ()
+        (PlaylistSyncChoice(1, automatic=False, target_id=target_id),) if accept else ()
     )

@@ -633,10 +633,11 @@ class _RuleRow(QWidget):
                 self.choice.addItem(_location_label(location), location.value)
             data = selected.value if isinstance(selected, SmartLocation) else None
         elif field is SmartField.PLAYLIST:
+            # Native Playlist IDs can exceed Qt's signed 64-bit integer range.
             for playlist_id, name in self._playlist_options:
-                self.choice.addItem(name, playlist_id)
+                self.choice.addItem(name, str(playlist_id))
             data = (
-                selected.playlist_id
+                str(selected.playlist_id)
                 if isinstance(selected, SmartPlaylistReference)
                 else None
             )
@@ -691,9 +692,9 @@ class _RuleRow(QWidget):
             )
         elif kind is SmartValueKind.PLAYLIST:
             playlist_id = self.choice.currentData()
-            if not isinstance(playlist_id, int):
+            if not isinstance(playlist_id, str):
                 raise ValueError(self.tr("Choose a Playlist for this rule."))
-            value = SmartPlaylistReference(playlist_id)
+            value = SmartPlaylistReference(int(playlist_id))
         elif kind is not SmartValueKind.TEXT:
 
             def number(text: str | int) -> int:

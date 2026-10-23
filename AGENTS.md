@@ -43,8 +43,8 @@ one conform to the other.
 - Use `uv add` and `uv remove` for dependency changes; do not use `pip`, Poetry,
   Pipenv, or Conda for this repository.
 - Ruff is the formatter and linter.
-- Mypy is the authoritative static type checker; Pylance is for editor navigation
-  and completion.
+- Mypy is the command-line static type checker; Pylance also provides strict editor
+  type checking, navigation, and completion. Keep both enabled (ADR-0170).
 - Pytest is the test runner.
 - Rumdl is the Markdown linter and formatter.
 - `pyproject.toml` is the authoritative configuration for all four tools. VS Code
@@ -56,6 +56,7 @@ Set up the environment:
 
 ```shell
 uv sync --locked
+uv run python scripts/prepare_qt_typing.py
 ```
 
 Run the checks:

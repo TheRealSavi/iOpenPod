@@ -1,8 +1,10 @@
 """Real filesystem tests of exact-file updater operations and ownership."""
 
+import ctypes
 import os
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -12,6 +14,34 @@ from storage.host_installation import (
     private_directory,
     remove_owned_file,
 )
+from storage.platform import host_install_windows
+
+
+def test_private_directory_retries_collisions_and_preserves_native_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    advapi = Mock()
+    kernel = Mock()
+    kernel.CreateDirectoryW.return_value = 0
+    loader = Mock(return_value=advapi)
+    error = OSError(5, "Access is denied")
+    win_error = Mock(return_value=error)
+    last_error = Mock(side_effect=[183, 5])  # Already exists, then access denied.
+    monkeypatch.setattr(ctypes, "WinDLL", loader, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", last_error, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", win_error, raising=False)
+    monkeypatch.setattr(
+        host_install_windows, "installation_kernel", Mock(return_value=kernel)
+    )
+
+    with pytest.raises(OSError) as raised:
+        host_install_windows.create_private_directory(tmp_path, ".test-update-")
+    assert raised.value is error
+    loader.assert_called_once_with("advapi32", use_last_error=True)
+    assert kernel.CreateDirectoryW.call_count == 2
+    assert last_error.call_count == 2
+    win_error.assert_called_once_with(5)
+    kernel.LocalFree.assert_called_once()
 
 
 def test_private_staging_is_new_and_does_not_claim_adjacent_files(

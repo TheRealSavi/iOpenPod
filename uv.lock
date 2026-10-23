@@ -587,6 +587,7 @@ synesthesia-gpu = [
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
+    { name = "pyinstaller" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "rumdl" },
@@ -639,6 +640,7 @@ provides-extras = ["synesthesia-gpu"]
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = ">=2.3.1,<3" },
+    { name = "pyinstaller", specifier = ">=6.16,<7" },
     { name = "pytest", specifier = ">=9.1.1,<10" },
     { name = "ruff", specifier = ">=0.16.3,<0.17" },
     { name = "rumdl", specifier = ">=0.2.58,<0.3" },

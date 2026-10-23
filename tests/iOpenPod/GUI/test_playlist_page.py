@@ -648,15 +648,19 @@ def test_rating_editor_uses_stars_and_converts_to_exact_shared_rating() -> None:
         dialog.deleteLater()
 
 
-def test_playlist_rule_editor_uses_named_playlist_choices() -> None:
-    source = Playlist(10, "Road trip", entries=playlist_entries((1, 3)))
+@pytest.mark.parametrize("playlist_id", [10, 11919153248416957672, (1 << 64) - 1])
+@pytest.mark.parametrize("missing", [False, True])
+def test_playlist_rule_editor_preserves_playlist_references(
+    playlist_id: int, missing: bool
+) -> None:
+    source = Playlist(playlist_id, "Road trip", entries=playlist_entries((1, 3)))
     smart = SmartPlaylist(
         rules=SmartRuleGroup(
             rules=(
                 SmartRule(
                     SmartField.PLAYLIST,
                     SmartOperator.IS,
-                    SmartPlaylistReference(10),
+                    SmartPlaylistReference(playlist_id),
                 ),
             )
         )
@@ -665,7 +669,7 @@ def test_playlist_rule_editor_uses_named_playlist_choices() -> None:
     dialog = PlaylistEditorDialog(
         PlaylistKind.SMART,
         original,
-        playlists=(source, original),
+        playlists=(original,) if missing else (source, original),
     )
     try:
         choice = next(
@@ -674,8 +678,10 @@ def test_playlist_rule_editor_uses_named_playlist_choices() -> None:
             if combo.accessibleName() == "Rule choice"
         )
 
-        assert choice.currentText() == "Road trip"
-        assert choice.currentData() == 10
+        assert choice.currentText() == (
+            f"Missing Playlist ({playlist_id})" if missing else "Road trip"
+        )
+        assert int(choice.currentData()) == playlist_id
         dialog.accept()
         assert dialog.result() == QDialog.DialogCode.Accepted
         assert dialog.smart is smart

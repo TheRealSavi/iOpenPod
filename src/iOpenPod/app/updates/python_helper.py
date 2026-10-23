@@ -57,6 +57,9 @@ def _matches(directory: Path, name: str, nonce: str) -> bool:
 
 
 def _spawn(arguments: list[str], log: Path) -> subprocess.Popen[bytes]:
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NO_WINDOW
     with log.open("ab") as output:
         return subprocess.Popen(
             arguments,
@@ -65,7 +68,7 @@ def _spawn(arguments: list[str], log: Path) -> subprocess.Popen[bytes]:
             stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=output,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            creationflags=creationflags,
             start_new_session=sys.platform != "win32",
         )
 

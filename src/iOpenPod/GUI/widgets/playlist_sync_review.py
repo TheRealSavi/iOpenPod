@@ -239,7 +239,8 @@ class PlaylistMatchDialog(QDialog):
                 .replace("%2", str(len(playlist.entries))),
                 self.targets,
             )
-            item.setData(Qt.ItemDataRole.UserRole, playlist.playlist_id)
+            # Native Playlist IDs can exceed Qt's signed 64-bit integer range.
+            item.setData(Qt.ItemDataRole.UserRole, str(playlist.playlist_id))
             if playlist.playlist_id == row.target_id:
                 selected = item
         layout.addWidget(self.targets, 1)
@@ -266,8 +267,10 @@ class PlaylistMatchDialog(QDialog):
             item = self.targets.item(current) if current >= 0 else None
             use.setEnabled(item is not None and not item.isHidden())
             identity = None if item is None else item.data(Qt.ItemDataRole.UserRole)
-            self.target_id = identity if isinstance(identity, int) else None
-            playlist = playlists.get(identity) if isinstance(identity, int) else None
+            self.target_id = int(identity) if isinstance(identity, str) else None
+            playlist = (
+                playlists.get(self.target_id) if self.target_id is not None else None
+            )
             titles = (
                 []
                 if playlist is None

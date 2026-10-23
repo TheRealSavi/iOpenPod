@@ -8,6 +8,7 @@ import sys
 import wave
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
@@ -28,7 +29,9 @@ def remote_drive(monkeypatch: pytest.MonkeyPatch) -> None:
     # drive classification is remote. This does not simulate SMB server behavior.
     if sys.platform != "win32":
         pytest.skip("Windows drive classification")
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel = cast("type[ctypes.CDLL]", vars(ctypes)["WinDLL"])(
+        "kernel32", use_last_error=True
+    )
     monkeypatch.setattr(kernel, "GetDriveTypeW", Mock(return_value=4))  # DRIVE_REMOTE
 
     def load_kernel(*args: object, **kwargs: object) -> ctypes.CDLL:

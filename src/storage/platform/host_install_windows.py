@@ -10,15 +10,26 @@ import sys
 import uuid
 from contextlib import contextmanager
 from ctypes import wintypes
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from storage._filesystem import is_link_or_reparse
 from storage.host_directory import pin_host_directory
 from storage.host_installation import HostFileIdentity, require_plain_path
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
     from pathlib import Path
+
+
+def _last_error() -> int:
+    """Resolve platform-only exports when called, with portable signatures."""
+    function = cast("Callable[[], int]", vars(ctypes)["get_last_error"])
+    return function()
+
+
+def _windows_error(code: int | None = None) -> OSError:
+    function = cast("Callable[[int], OSError]", vars(ctypes)["WinError"])
+    return function(_last_error() if code is None else code)
 
 
 def installation_kernel() -> Any:
@@ -69,14 +80,15 @@ def require_fixed_ntfs(path: Path) -> None:
     if not kernel.GetVolumeInformationW(
         path.anchor, None, 0, None, None, None, filesystem, 32
     ):
-        raise ctypes.WinError(ctypes.get_last_error())
+        raise _windows_error()
     if filesystem.value != "NTFS":
         raise ValueError("Automatic installation currently requires NTFS")
 
 
 def create_private_directory(parent: Path, prefix: str) -> Path:
     """Create with an owner-only DACL atomically, before any data can be written."""
-    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    win_dll = cast("type[ctypes.CDLL]", vars(ctypes)["WinDLL"])
+    advapi = win_dll("advapi32", use_last_error=True)
     kernel = installation_kernel()
     advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
         wintypes.LPCWSTR,
@@ -97,7 +109,7 @@ def create_private_directory(parent: Path, prefix: str) -> Path:
     if not advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
         "D:P(A;OICI;FA;;;OW)", 1, ctypes.byref(descriptor), None
     ):
-        raise ctypes.WinError(ctypes.get_last_error())
+        raise _windows_error()
     try:
 
         class SecurityAttributes(ctypes.Structure):
@@ -114,9 +126,9 @@ def create_private_directory(parent: Path, prefix: str) -> Path:
             directory = parent / (prefix + uuid.uuid4().hex)
             if kernel.CreateDirectoryW(os.fspath(directory), ctypes.byref(attributes)):
                 return directory
-            code = ctypes.get_last_error()
+            code = _last_error()
             if code != 183:
-                raise ctypes.WinError(code)
+                raise _windows_error(code)
         raise FileExistsError("Could not allocate a new private update directory")
     finally:
         kernel.LocalFree(descriptor)
@@ -133,9 +145,13 @@ def _owned_handle(path: Path, expected: HostFileIdentity) -> Generator[int]:
             os.fspath(path), 0x80010000, 0, None, 3, 0x00200000, None
         )
         if handle == ctypes.c_void_p(-1).value:
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _windows_error()
         try:
-            descriptor = msvcrt.open_osfhandle(int(handle), os.O_RDONLY | os.O_BINARY)
+            open_osfhandle = cast(
+                "Callable[[int, int], int]", vars(msvcrt)["open_osfhandle"]
+            )
+            binary = cast("int", vars(os)["O_BINARY"])
+            descriptor = open_osfhandle(int(handle), os.O_RDONLY | binary)
         except BaseException:
             kernel.CloseHandle(handle)
             raise
@@ -188,7 +204,7 @@ def rename_file(source: Path, destination: Path, expected: HostFileIdentity) -> 
         if not kernel.SetFileInformationByHandle(
             handle, 3, ctypes.byref(request), ctypes.sizeof(request)
         ):
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _windows_error()
 
 
 def remove_file(path: Path, expected: HostFileIdentity) -> None:
@@ -198,4 +214,4 @@ def remove_file(path: Path, expected: HostFileIdentity) -> None:
         if not kernel.SetFileInformationByHandle(
             handle, 4, ctypes.byref(delete), ctypes.sizeof(delete)
         ):
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _windows_error()

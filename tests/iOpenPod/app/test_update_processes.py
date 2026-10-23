@@ -1,12 +1,44 @@
 """Native helper process ownership includes frozen bootloader descendants."""
 
+import ctypes
 import sys
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 from iOpenPod.app.updates.processes import ParentProcess, candidate_process
+from iOpenPod.app.updates.processes_windows import WindowsCandidateProcess
+
+
+@pytest.mark.parametrize("failure", ["SetInformationJobObject", "CreateProcessW"])
+def test_candidate_start_failure_preserves_native_error_and_closes_job(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    kernel = Mock()
+    kernel.CreateJobObjectW.return_value = 42
+    getattr(kernel, failure).return_value = 0
+    loader = Mock(return_value=kernel)
+    error = OSError(5, "Access is denied")
+    last_error = Mock(return_value=5)
+    win_error = Mock(return_value=error)
+    monkeypatch.setattr(ctypes, "WinDLL", loader, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", last_error, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", win_error, raising=False)
+
+    # Cleanup must not replace the error captured at the failing native call.
+    def close_handle(_handle: int) -> None:
+        last_error.return_value = 0
+
+    kernel.CloseHandle.side_effect = close_handle
+    with pytest.raises(OSError) as raised:
+        WindowsCandidateProcess([sys.executable], {})
+    assert raised.value is error
+    loader.assert_called_once_with("kernel32", use_last_error=True)
+    win_error.assert_called_once_with(5)
+    kernel.CloseHandle.assert_called_once_with(42)
+    kernel.ResumeThread.assert_not_called()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows native job ownership")

@@ -30,7 +30,6 @@
   "mypy-type-checker.reportingScope": "custom",
   "mypy-type-checker.preferDaemon": false,
 
-  "ruff.nativeServer": "on",
   "ruff.importStrategy": "fromEnvironment",
   "ruff.configurationPreference": "filesystemFirst",
   "ruff.format.backend": "internal",
@@ -86,5 +85,5 @@
   "[css][html][javascript][json][jsonc][yaml]": {
     "editor.tabSize": 2
   },
-  "python.defaultInterpreterPath": "c:\\Users\\JohnG\\Coding\\iOpenPod\\.venv\\Scripts\\python.exe"
+  "python.defaultInterpreterPath": "/Users/johng/Projects/iopenpod/.venv/bin/python"
 }

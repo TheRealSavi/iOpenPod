@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Environment: Sync",
+      "label": "Environment: Sync dependencies",
       "type": "shell",
       "command": "uv",
       "args": [
@@ -12,6 +12,22 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
+      "problemMatcher": []
+    },
+    {
+      "label": "Typing: Prepare Qt",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "--locked", "python", "scripts/prepare_qt_typing.py"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Environment: Sync",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Environment: Sync dependencies", "Typing: Prepare Qt"],
       "problemMatcher": []
     },
     {
@@ -121,6 +137,7 @@
     },
     {
       "label": "Typecheck: Mypy",
+      "dependsOn": ["Typing: Prepare Qt"],
       "type": "shell",
       "command": "uv",
       "args": [
