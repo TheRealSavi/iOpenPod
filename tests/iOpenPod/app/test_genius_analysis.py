@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import shutil
 import wave
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from threading import Event, Lock, current_thread
 from typing import TYPE_CHECKING
 
 import pytest
@@ -14,6 +16,8 @@ import pytest
 from iOpenPod.app import genius_analysis_cache
 from iOpenPod.app.genius_analysis import (
     FFmpegGeniusPCMDecoder,
+    GeniusAnalysisActivity,
+    GeniusAnalysisProgress,
     GeniusAnalysisService,
     GeniusAudioDecodeError,
 )
@@ -287,6 +291,140 @@ def test_only_final_eligible_music_is_analyzed(tmp_path: Path) -> None:
     assert tuple(result.profiles) == (1,)
     assert len(decoder.sources) == 1
     assert result.issues[0].track_id == 5
+
+
+def test_analysis_runs_two_tracks_at_once_with_bounded_progress(tmp_path: Path) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    tracks = [snapshot.tracks[0]]
+    for track_id in (2, 3):
+        name = f"song-{track_id}.mp3"
+        (root / name).write_bytes(b"audio")
+        tracks.append(
+            replace(
+                tracks[0],
+                track_id=track_id,
+                metadata=TrackMetadata(location=name),
+                ipod=IPodTrackDetails(db_track_id=100 + track_id),
+            )
+        )
+    snapshot = replace(snapshot, tracks=tuple(tracks))
+    started = Event()
+    release = Event()
+    lock = Lock()
+    active = 0
+    peak = 0
+    calls: list[DevicePath] = []
+
+    class BlockingDecoder:
+        def decode(
+            self,
+            source: HostPath | DevicePath,
+            *,
+            input_suffix: str,
+            session: FilesystemSession,
+            checkpoint: Callable[[], None],
+        ) -> bytes:
+            nonlocal active, peak
+            assert isinstance(source, DevicePath)
+            assert input_suffix == ".mp3"
+            assert session.is_active
+            with lock:
+                calls.append(source)
+                active += 1
+                peak = max(peak, active)
+                if active == 2:
+                    started.set()
+            try:
+                assert release.wait(5)
+                checkpoint()
+                return b"\x01\x00\x00\x00"
+            finally:
+                with lock:
+                    active -= 1
+
+    progress: list[tuple[int, int]] = []
+    active_snapshots: list[tuple[GeniusAnalysisActivity, ...]] = []
+    progress_threads: set[object] = set()
+
+    def on_progress(value: GeniusAnalysisProgress) -> None:
+        progress_threads.add(current_thread())
+        progress.append((value.completed, value.total))
+        active_snapshots.append(value.active)
+
+    service = GeniusAnalysisService(decoder=BlockingDecoder(), profiler=_profile)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            service.analyze,
+            snapshot,
+            session,
+            checkpoint=_checkpoint,
+            progress=on_progress,
+        )
+        try:
+            assert started.wait(5)
+            assert len(calls) == 2
+            assert active_snapshots[0] == (
+                GeniusAnalysisActivity(1, "Song"),
+                GeniusAnalysisActivity(2, "Song"),
+            )
+        finally:
+            release.set()
+        result = future.result(timeout=10)
+    assert peak == 2
+    assert len(calls) == 3
+    assert tuple(result.profiles) == (1, 2, 3)
+    assert progress == [(0, 3), (1, 3), (2, 3), (2, 3), (3, 3)]
+    assert active_snapshots[-1] == ()
+    assert len(progress_threads) == 1
+
+
+def test_concurrent_source_change_stops_peer_and_rejects_profiles(
+    tmp_path: Path,
+) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    (root / "second.mp3").write_bytes(b"second")
+    snapshot = replace(
+        snapshot,
+        tracks=(
+            *snapshot.tracks,
+            replace(
+                snapshot.tracks[0],
+                track_id=2,
+                metadata=TrackMetadata(location="second.mp3"),
+                ipod=IPodTrackDetails(db_track_id=102),
+            ),
+        ),
+    )
+    peer_started = Event()
+    peer_stopped = Event()
+
+    class ChangingDecoder:
+        def decode(
+            self,
+            source: HostPath | DevicePath,
+            *,
+            input_suffix: str,
+            session: FilesystemSession,
+            checkpoint: Callable[[], None],
+        ) -> bytes:
+            assert input_suffix == ".mp3"
+            if source == DevicePath("song.mp3"):
+                assert peer_started.wait(5)
+                (root / "song.mp3").write_bytes(b"changed")
+                return b"\x01\x00\x00\x00"
+            peer_started.set()
+            try:
+                while True:
+                    checkpoint()
+                    if peer_stopped.wait(0.01):
+                        raise AssertionError("Peer ran after analysis returned")
+            finally:
+                peer_stopped.set()
+
+    service = GeniusAnalysisService(decoder=ChangingDecoder(), profiler=_profile)
+    with pytest.raises(ConcurrentModificationError):
+        service.analyze(snapshot, session, checkpoint=_checkpoint)
+    assert peer_stopped.is_set()
 
 
 @pytest.mark.parametrize(

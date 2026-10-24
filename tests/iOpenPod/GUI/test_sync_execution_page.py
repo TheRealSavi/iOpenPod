@@ -301,6 +301,53 @@ def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_t
         APPLICATION.processEvents()
 
 
+def test_genius_analysis_shows_a_bar_for_each_active_track() -> None:
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        page.update_progress(
+            WriteProgress(
+                "draft.genius.audio",
+                "Analyzing music for Genius",
+                completed=0,
+                total=3,
+                unit="tracks",
+                active_items=(
+                    WriteItemProgress(
+                        "genius:1",
+                        "Same title",
+                        MediaPreparationProgress(
+                            MediaPreparationPhase.ANALYZING,
+                            "Analyzing audio for Genius",
+                        ),
+                    ),
+                    WriteItemProgress(
+                        "genius:2",
+                        "Same title",
+                        MediaPreparationProgress(
+                            MediaPreparationPhase.ANALYZING,
+                            "Analyzing audio for Genius",
+                        ),
+                    ),
+                ),
+            )
+        )
+        workers = page.findChild(SyncPreparationProgress, "syncPreparationProgressList")
+        summary = page.findChild(QLabel, "syncPreparationSummary")
+        assert workers is not None and summary is not None
+        rows = workers.findChildren(QFrame, "syncPreparationRow")
+        bars = workers.findChildren(QProgressBar, "syncPreparationProgress")
+        assert len(rows) == len(bars) == 2
+        assert {row.toolTip() for row in rows} == {"genius:1", "genius:2"}
+        assert all(bar.maximum() == 0 for bar in bars)
+        assert summary.text() == "2 active · 1 waiting · 0 processed"
+        page.update_progress(WriteProgress("draft.genius.rank", "Ranking candidates"))
+        assert workers.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
 @pytest.mark.parametrize("total", (None, 4 * 1024**3))
 def test_podcast_download_bytes_have_independent_progress(total: int | None) -> None:
     page = SyncExecutionPage()

@@ -52,8 +52,9 @@ from iOpenPod.app.library_sync_helper import (
     publish_sync_helper,
     retain_retagged_sync_details,
 )
-from iOpenPod.app.library_write import WriteProgress
+from iOpenPod.app.library_write import WriteItemProgress, WriteProgress
 from iOpenPod.app.media.photo_image import photo_viewing_image
+from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -131,6 +132,7 @@ if TYPE_CHECKING:
 
     from iOpenPod.app.backups.models import BackupDeviceContext
     from iOpenPod.app.genius_analysis import (
+        GeniusAnalysisIssue,
         GeniusAnalysisProgress,
         GeniusAnalysisResult,
     )
@@ -1201,6 +1203,7 @@ class DeviceCoordinator:
             total: int | None = None,
             current_item: str = "",
             unit: str = "",
+            active_items: tuple[WriteItemProgress, ...] = (),
         ) -> None:
             cancellation_checkpoint()
             progress(
@@ -1211,6 +1214,7 @@ class DeviceCoordinator:
                     total=total,
                     current_item=current_item,
                     unit=unit,
+                    active_items=active_items,
                 )
             )
 
@@ -1386,6 +1390,17 @@ class DeviceCoordinator:
                         total=value.total,
                         current_item=value.title,
                         unit="tracks",
+                        active_items=tuple(
+                            WriteItemProgress(
+                                f"genius:{item.track_id}",
+                                item.title,
+                                MediaPreparationProgress(
+                                    MediaPreparationPhase.ANALYZING,
+                                    source_text("Analyzing audio for Genius"),
+                                ),
+                            )
+                            for item in value.active
+                        ),
                     )
 
                 genius_analysis = self._genius_analysis.analyze(
@@ -1467,6 +1482,21 @@ class DeviceCoordinator:
                     checkpoint=cancellation_checkpoint,
                 )
                 if genius_analysis.issues:
+                    track_by_id = {track.track_id: track for track in snapshot.tracks}
+
+                    def issue_detail(issue: GeniusAnalysisIssue) -> str:
+                        track = (
+                            track_by_id.get(issue.track_id)
+                            if issue.track_id is not None
+                            else None
+                        )
+                        if track is None:
+                            return issue.detail
+                        return (
+                            f"{track.title} (Track {track.track_id}, "
+                            f"{track.metadata.location}): {issue.detail}"
+                        )
+
                     genius_issues = (
                         WriteIssue(
                             "genius.analysis_warning",
@@ -1475,7 +1505,8 @@ class DeviceCoordinator:
                             severity=IssueSeverity.WARNING,
                             phase="resources",
                             detail="\n".join(
-                                issue.detail for issue in genius_analysis.issues[:10]
+                                issue_detail(issue)
+                                for issue in genius_analysis.issues[:10]
                             ),
                         ),
                     )
@@ -1511,10 +1542,6 @@ class DeviceCoordinator:
                     ),
                     allow_unchanged=allow_unchanged,
                 )
-                if write is None:
-                    # Changed reviews validate all captured files through their
-                    # transaction. Association-only Sync has no transaction.
-                    library_resources.recheck(active.session, captured.files)
                 if podcast_state is not None:
                     history = self._podcast_store.state_transaction(
                         podcast_state, include_subscriptions=podcast_subscriptions
@@ -1531,6 +1558,12 @@ class DeviceCoordinator:
                             dependencies=(*write.dependencies, *history.dependencies),
                         )
                     )
+                if write is None:
+                    # Association-only Sync has no transaction to validate.
+                    library_resources.recheck(active.session, captured.files)
+                else:
+                    # Validate the complete plan once, after adding Podcast
+                    # state, instead of rereading the Library files for each part.
                     active.session.validate_transaction(write)
             review = LibraryReview(
                 plan,

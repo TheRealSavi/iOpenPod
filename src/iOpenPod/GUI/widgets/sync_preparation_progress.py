@@ -1,4 +1,4 @@
-"""Show every active Host preparation with independent phase progress."""
+"""Show every active preparation with independent phase progress."""
 
 from __future__ import annotations
 

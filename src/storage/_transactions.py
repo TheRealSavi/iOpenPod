@@ -345,6 +345,18 @@ def validate(
     *,
     checkpoint: Callable[[], None] | None = None,
 ) -> TransactionValidation:
+    result = _validate_resources(session, plan, checkpoint=checkpoint)
+    _check_preconditions(session, _preconditions(plan))
+    return result
+
+
+def _validate_resources(
+    session: FilesystemSession,
+    plan: StorageTransaction,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> TransactionValidation:
+    """Validate plan shape and capacity without streaming device preconditions."""
     observation = session._revalidate()  # pyright: ignore[reportPrivateUsage]
     capabilities = observation.volume.capabilities
     if not capabilities.safe_for_writes:
@@ -359,7 +371,6 @@ def validate(
     validate_paths(
         tuple(f.path for f in files), case_sensitive=capabilities.case_sensitive is True
     )
-    _check_preconditions(session, files)
     for write in plan.writes:
         if isinstance(write.source, bytes) and (
             len(write.source) != write.content.size
@@ -975,9 +986,12 @@ def _finalize_terminal(
         raise FilePreconditionError(
             f"Only a verified {state.value} transaction can be cleaned up"
         )
-    if journal.recovery_material_identity == "storage-host-v1":
-        return finalize(session, inspect(session, path))
-    if journal.content_durability_confirmed:
+    # Terminal cleanup needs the journal observation, not restoration's two
+    # complete content scans. Host recovery owns its pre-cleanup flush below.
+    if (
+        journal.content_durability_confirmed
+        and journal.recovery_material_identity != "storage-host-v1"
+    ):
         _require_complete_flush(
             session.flush(),
             path,

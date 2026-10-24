@@ -95,9 +95,9 @@ class WriteProgress:
     most recently started or completed by the stage; it is deliberately not a
     permission-bearing path.
 
-    ``active_items`` is the complete immutable snapshot of currently running Host
-    preparations. It excludes waiting and finished items; measurements describe
-    each item's current phase rather than readiness for publication.
+    ``active_items`` is the complete immutable snapshot of currently admitted
+    per-item preparations. It excludes waiting and finished items; measurements
+    describe each item's current phase rather than readiness for publication.
     """
 
     phase: str

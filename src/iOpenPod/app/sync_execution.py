@@ -127,7 +127,7 @@ from iPodDB.library import (
 )
 from storage import DeviceEntry, DeviceEntryKind, DevicePath, StorageError
 from storage.content_workspace import content_workspace
-from storage.device_capture import capture_device_file
+from storage.device_capture import capture_device_file_with_fingerprint
 from storage.host_input import LocalHostFile
 from storage.media_processing import MediaToolFinder, available_compute_threads
 
@@ -3316,17 +3316,15 @@ def _capture_retained_podcast_artwork(
             )
             try:
                 path = DevicePath(track.metadata.location)
-                before = session.fingerprint(path)
-                with capture_device_file(
+                with capture_device_file_with_fingerprint(
                     session, path, checkpoint=checkpoint
                 ) as captured:
+                    before = captured.source_fingerprint
                     pixels = capture_embedded_artwork(
-                        captured, target_px, checkpoint=checkpoint
+                        captured.host_path, target_px, checkpoint=checkpoint
                     )
-                if session.fingerprint(path) != before:
-                    raise ValueError(
-                        "The retained Podcast media changed during cover capture."
-                    )
+                # Capture validates the source while copying. The retained-file
+                # dependency below is rechecked at the Library review boundary.
                 if pixels is None:
                     continue
                 if used + len(pixels.rgb888) > MAX_PODCAST_COVER_BYTES:

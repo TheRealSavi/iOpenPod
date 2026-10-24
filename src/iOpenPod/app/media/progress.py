@@ -10,6 +10,7 @@ class MediaPreparationPhase(StrEnum):
     CONVERTING = "converting"
     METADATA = "metadata"
     VERIFYING = "verifying"
+    ANALYZING = "analyzing"
 
 
 @dataclass(frozen=True, slots=True)

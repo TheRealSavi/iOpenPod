@@ -14,7 +14,7 @@ import uuid
 from contextlib import suppress
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, cast
+from typing import TYPE_CHECKING, BinaryIO, Literal, cast, overload
 
 from storage._filesystem import (
     COPY_CHUNK_SIZE,
@@ -1069,6 +1069,7 @@ class FilesystemSession:
             ) from error
         self._revalidate(write=True)
 
+    @overload
     def _copy_transaction_file(
         self,
         source: bytes | HostPath | DevicePath,
@@ -1078,7 +1079,50 @@ class FilesystemSession:
         expected: FileFingerprint | None = None,
         reserve_bytes: int = 0,
         checkpoint: Callable[[], None] | None = None,
-    ) -> WriteResult:
+        modified_ns: int | None = None,
+        defer_readback: Literal[False] = False,
+    ) -> WriteResult: ...
+
+    @overload
+    def _copy_transaction_file(
+        self,
+        source: bytes | HostPath | DevicePath,
+        destination: DevicePath,
+        content: FileContent,
+        *,
+        expected: FileFingerprint | None = None,
+        reserve_bytes: int = 0,
+        checkpoint: Callable[[], None] | None = None,
+        modified_ns: int | None = None,
+        defer_readback: Literal[True],
+    ) -> None: ...
+
+    @overload
+    def _copy_transaction_file(
+        self,
+        source: bytes | HostPath | DevicePath,
+        destination: DevicePath,
+        content: FileContent,
+        *,
+        expected: FileFingerprint | None = None,
+        reserve_bytes: int = 0,
+        checkpoint: Callable[[], None] | None = None,
+        modified_ns: int | None = None,
+        defer_readback: bool,
+    ) -> WriteResult | None: ...
+
+    def _copy_transaction_file(
+        self,
+        source: bytes | HostPath | DevicePath,
+        destination: DevicePath,
+        content: FileContent,
+        *,
+        expected: FileFingerprint | None = None,
+        reserve_bytes: int = 0,
+        checkpoint: Callable[[], None] | None = None,
+        modified_ns: int | None = None,
+        defer_readback: bool = False,
+    ) -> WriteResult | None:
         if isinstance(source, bytes):
             return self._atomic_publish(
                 destination,
@@ -1088,6 +1132,8 @@ class FilesystemSession:
                 create_parents=True,
                 reserve_bytes=reserve_bytes,
                 expected_sha256=content.sha256,
+                modified_ns=modified_ns,
+                defer_readback=defer_readback,
             )
         stream: AbstractContextManager[BinaryIO]
         if isinstance(source, HostPath):
@@ -1130,6 +1176,8 @@ class FilesystemSession:
                 reserve_bytes=reserve_bytes,
                 validate_staged=verify_source,
                 expected_sha256=content.sha256,
+                modified_ns=modified_ns,
+                defer_readback=defer_readback,
             )
 
     def copy_to_host(
@@ -1386,6 +1434,7 @@ class FilesystemSession:
                 ) from error
             self._revalidate(write=True)
 
+    @overload
     def _atomic_publish(
         self,
         path: DevicePath,
@@ -1397,7 +1446,56 @@ class FilesystemSession:
         reserve_bytes: int,
         validate_staged: Callable[[], None] | None = None,
         expected_sha256: str | None = None,
-    ) -> WriteResult:
+        modified_ns: int | None = None,
+        defer_readback: Literal[False] = False,
+    ) -> WriteResult: ...
+
+    @overload
+    def _atomic_publish(
+        self,
+        path: DevicePath,
+        *,
+        source_size: int,
+        chunks: Iterable[bytes],
+        expected: FileFingerprint | None,
+        create_parents: bool,
+        reserve_bytes: int,
+        validate_staged: Callable[[], None] | None = None,
+        expected_sha256: str | None = None,
+        modified_ns: int | None = None,
+        defer_readback: Literal[True],
+    ) -> None: ...
+
+    @overload
+    def _atomic_publish(
+        self,
+        path: DevicePath,
+        *,
+        source_size: int,
+        chunks: Iterable[bytes],
+        expected: FileFingerprint | None,
+        create_parents: bool,
+        reserve_bytes: int,
+        validate_staged: Callable[[], None] | None = None,
+        expected_sha256: str | None = None,
+        modified_ns: int | None = None,
+        defer_readback: bool,
+    ) -> WriteResult | None: ...
+
+    def _atomic_publish(
+        self,
+        path: DevicePath,
+        *,
+        source_size: int,
+        chunks: Iterable[bytes],
+        expected: FileFingerprint | None,
+        create_parents: bool,
+        reserve_bytes: int,
+        validate_staged: Callable[[], None] | None = None,
+        expected_sha256: str | None = None,
+        modified_ns: int | None = None,
+        defer_readback: bool = False,
+    ) -> WriteResult | None:
         observation = self._revalidate(write=True)
         if create_parents and path.parent is not None:
             self._ensure_directories(path.parent, observation)
@@ -1451,6 +1549,13 @@ class FilesystemSession:
                 raise ConcurrentModificationError(
                     "Staged content does not match its captured SHA-256"
                 )
+            if modified_ns is not None:
+                # Set metadata on the private stage. The existing output read
+                # then verifies both content and timestamp in a single pass.
+                os.utime(
+                    temp_path,
+                    ns=(os.lstat(temp_path).st_atime_ns, modified_ns),
+                )
 
             observation = self._revalidate(write=True)
             target = resolve_device_path(
@@ -1463,10 +1568,21 @@ class FilesystemSession:
             temp_path = None
             flush_parent_directory(target)
             self._revalidate(write=True)
+            if defer_readback:
+                # Host transactions verify the entire published batch in _finish
+                # before recording COMMITTED/RESTORED. Do not manufacture a
+                # verified fingerprint from the outgoing stream's hash.
+                return None
             committed = self._fingerprint_path(target)
             if committed.size != written or committed.sha256 != digest.hexdigest():
                 raise ConcurrentModificationError(
                     f"Committed device file did not verify: {path}"
+                )
+            if modified_ns is not None and not self.modified_time_matches(
+                committed.modified_ns, modified_ns
+            ):
+                raise StorageOperationError(
+                    f"Transaction modification time could not be represented: {path}"
                 )
             return WriteResult(
                 path=path,

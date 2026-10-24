@@ -252,3 +252,7 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0177: Browse native Genius collections](0177-browse-native-genius-collections.md)
 - [ADR-0178: Generate basic Genius during Sync](0178-generate-basic-genius-during-sync.md)
 - [ADR-0179: Rank Genius with Elephant-Ear audio profiles](0179-rank-genius-with-elephant-ear-audio-profiles.md)
+- [ADR-0180: Reuse confirmed durability during Host recovery cleanup](0180-reuse-confirmed-durability-during-host-recovery-cleanup.md)
+- [ADR-0181: Bound Sync reads to workflow boundaries](0181-bound-sync-reads-to-workflow-boundaries.md)
+- [ADR-0182: Verify Host transaction outputs once before commit](0182-verify-host-transaction-outputs-once-before-commit.md)
+- [ADR-0183: Bound concurrent Genius audio analysis](0183-bound-concurrent-genius-audio-analysis.md)

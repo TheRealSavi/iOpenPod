@@ -17,7 +17,7 @@ from tests.iOpenPod.app.test_sync_genius import (
     _refresh_request,  # pyright: ignore[reportPrivateUsage]
 )
 
-from iOpenPod.app.genius_analysis import GeniusAnalysisService
+from iOpenPod.app.genius_analysis import GeniusAnalysisService, GeniusAudioDecodeError
 from iOpenPod.app.genius_audio import GeniusAudioProfile
 from iOpenPod.app.library_write import LibraryPreparationRequest, WriteProgress
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
@@ -85,13 +85,23 @@ def test_sync_profiles_retained_audio_and_reuses_persistent_cache(
         decoder,
     )
     try:
+        progress: list[WriteProgress] = []
         result = SyncExecutor(device.coordinator).execute(
-            _refresh_request(device.active), lambda _: None, Event()
+            _refresh_request(device.active), progress.append, Event()
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert not any(issue.code.startswith("genius.") for issue in result.issues)
         assert len(decoder.calls) == 2
         assert all(isinstance(source, DevicePath) for source in decoder.calls)
+        active = [
+            event.active_items
+            for event in progress
+            if event.phase == "draft.genius.audio" and event.active_items
+        ]
+        assert active and len(active[0]) == 2
+        assert {item.item_id for item in active[0]} == {
+            f"genius:{track.track_id}" for track in device.active.library.tracks
+        }
         path = device.root / (
             "iPod_Control/iTunes/iTunes Library.itlp/Genius.itdb"
             if model == "MD479"
@@ -128,6 +138,31 @@ def test_sync_analyzes_prepared_new_media_on_host(tmp_path: Path) -> None:
         assert len(decoder.calls) == 3
         assert sum(isinstance(source, HostPath) for source in decoder.calls) == 1
         assert not any(issue.code.startswith("genius.") for issue in result.issues)
+    finally:
+        device.coordinator.close()
+
+
+def test_sync_warning_identifies_unreadable_track_and_device_path(
+    tmp_path: Path,
+) -> None:
+    def unreadable() -> None:
+        raise GeniusAudioDecodeError("Invalid audio container")
+
+    device = _with_analysis(
+        build_device(tmp_path), tmp_path / "profiles.json", _Decoder(unreadable)
+    )
+    try:
+        track = device.active.library.tracks[0]
+        result = SyncExecutor(device.coordinator).execute(
+            _refresh_request(device.active), lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        warning = next(
+            issue for issue in result.issues if issue.code == "genius.analysis_warning"
+        )
+        assert track.title in warning.detail
+        assert track.metadata.location in warning.detail
+        assert "Invalid audio container" in warning.detail
     finally:
         device.coordinator.close()
 

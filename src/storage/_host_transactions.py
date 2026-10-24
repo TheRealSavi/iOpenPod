@@ -41,7 +41,6 @@ from storage.host_files import (
 from storage.models import FileFingerprint, FileIdentity
 from storage.paths import DevicePath, HostPath
 from storage.transactions import (
-    FileContent,
     FilePrecondition,
     TransactionActivityPhase,
     TransactionRecoveryFile,
@@ -285,7 +284,10 @@ def execute(
 ) -> TransactionResult:
     from storage.transactions import TransactionProgress
 
-    tx.validate(session, plan, checkpoint=checkpoint)
+    # Capturing each original also validates its complete initial fingerprint.
+    # Validate the whole device set after preparation, before any device mutation.
+    tx._validate_resources(session, plan, checkpoint=checkpoint)  # pyright: ignore[reportPrivateUsage]
+    preconditions = tx._preconditions(plan)  # pyright: ignore[reportPrivateUsage]
     path = tx._journal_path(plan)  # pyright: ignore[reportPrivateUsage]
     directory = _directory(session, path)
     directory.mkdir(parents=True, exist_ok=False)
@@ -313,33 +315,28 @@ def execute(
                     if checkpoint is not None
                     else None,
                 )
-                if (
-                    FileContent.from_fingerprint(copied.source_fingerprint)
-                    != entry.before
-                ):
+                if copied.source_fingerprint != preconditions[index].fingerprint:
                     raise FilePreconditionError(
                         f"Recovery source changed: {entry.path}"
                     )
-        _material(session, path, journal, checkpoint)
-        for write in plan.writes:
-            tx._verify_host_content(write, checkpoint=checkpoint)  # pyright: ignore[reportPrivateUsage]
-        tx._check_preconditions(session, tx._preconditions(plan), activity=activity)  # pyright: ignore[reportPrivateUsage]
         fingerprint = _persist(session, path, journal, None)
         journal = replace(journal, state=TransactionState.PREPARED)
         fingerprint = _persist(session, path, journal, fingerprint)
         notify(TransactionState.PREPARED, 0)
         if checkpoint is not None:
             checkpoint()
-        _material(session, path, journal, None)
+        # The PREPARED callback can cancel or expose concurrent edits. Verify
+        # recovery copies, inputs, and destinations once after that callback.
+        _material(session, path, journal, checkpoint)
         for write in plan.writes:
-            tx._verify_host_content(write, checkpoint=None)  # pyright: ignore[reportPrivateUsage]
-        tx._check_preconditions(session, tx._preconditions(plan), activity=activity)  # pyright: ignore[reportPrivateUsage]
+            tx._verify_host_content(write, checkpoint=checkpoint)  # pyright: ignore[reportPrivateUsage]
+        tx._check_preconditions(session, preconditions, activity=activity)  # pyright: ignore[reportPrivateUsage]
         journal = replace(journal, state=TransactionState.PUBLISHING)
         fingerprint = _persist(session, path, journal, fingerprint)
         started = True
         notify(TransactionState.PUBLISHING, 0, journal.entries[0].path)
         # Reclaim all reviewed originals so Adds can use space from Removes.
-        for precondition in tx._preconditions(plan)[: len(journal.entries)]:  # pyright: ignore[reportPrivateUsage]
+        for precondition in preconditions[: len(journal.entries)]:
             if precondition.fingerprint is not None:
                 _delete(session, precondition.path, precondition.fingerprint)
         reserve = (
@@ -350,13 +347,14 @@ def execute(
             )
         )
         for index, write in enumerate(plan.writes):
-            written = session._copy_transaction_file(  # pyright: ignore[reportPrivateUsage]
+            session._copy_transaction_file(  # pyright: ignore[reportPrivateUsage]
                 write.source,
                 write.path,
                 write.content,
                 reserve_bytes=reserve,
-            ).fingerprint
-            tx._apply_modified_time(session, write.path, written, write.modified_ns)  # pyright: ignore[reportPrivateUsage]
+                modified_ns=write.modified_ns,
+                defer_readback=True,
+            )
             notify(TransactionState.PUBLISHING, index + 1, write.path)
         return _finish(
             session,
@@ -509,15 +507,14 @@ def restore(
                 _delete(session, entry.path, observed)
         for index, entry in enumerate(reversed(changed)):
             if entry.before is not None:
-                written = session._copy_transaction_file(  # pyright: ignore[reportPrivateUsage]
+                session._copy_transaction_file(  # pyright: ignore[reportPrivateUsage]
                     material[entry.path].source,
                     entry.path,
                     entry.before,
                     reserve_bytes=_reserve(session, journal)
                     - tx._journal_allocation(journal, unit),  # pyright: ignore[reportPrivateUsage]
-                ).fingerprint
-                tx._apply_modified_time(  # pyright: ignore[reportPrivateUsage]
-                    session, entry.path, written, entry.before_modified_ns
+                    modified_ns=entry.before_modified_ns,
+                    defer_readback=True,
                 )
             if progress is not None:
                 progress(
@@ -553,30 +550,36 @@ def finalize(session: FilesystemSession, recovery: TransactionRecovery) -> Flush
     journal, fingerprint = tx._read(session, path)  # pyright: ignore[reportPrivateUsage]
     if fingerprint != recovery.journal_fingerprint or journal.state != recovery.state:
         raise FilePreconditionError("Transaction journal changed since inspection")
-    restoring = journal.state is TransactionState.RESTORED
-    for entry in journal.entries:
-        tx._expected_file(  # pyright: ignore[reportPrivateUsage]
-            session,
-            entry.path,
-            entry.before if restoring else entry.after,
-            entry.before_modified_ns if restoring else entry.after_modified_ns,
-        )
-    for dependency in journal.dependencies:
-        tx._expected_content(session, dependency.path, dependency.content)  # pyright: ignore[reportPrivateUsage]
     tx._require_complete_flush(  # pyright: ignore[reportPrivateUsage]
         session.flush(), path, journal, publication_started=True, content_verified=True
     )
+    if not journal.content_durability_confirmed:
+        # Publication/restoration already verified every result before recording
+        # confirmed durability. Only an unconfirmed result needs a fresh pass,
+        # after a successful barrier, before its originals can be discarded.
+        restoring = journal.state is TransactionState.RESTORED
+        for entry in journal.entries:
+            tx._expected_file(  # pyright: ignore[reportPrivateUsage]
+                session,
+                entry.path,
+                entry.before if restoring else entry.after,
+                entry.before_modified_ns if restoring else entry.after_modified_ns,
+            )
+        for dependency in journal.dependencies:
+            tx._expected_content(session, dependency.path, dependency.content)  # pyright: ignore[reportPrivateUsage]
     if session.exists(path):
         session._remove_transaction_namespace(  # pyright: ignore[reportPrivateUsage]
             journal_root(path), path, expected_journal=session.fingerprint(path)
         )
     elif session.exists(journal_root(path)):
         session._remove_empty_transaction_namespace(journal_root(path))  # pyright: ignore[reportPrivateUsage]
+    flushed = session.flush()
     tx._require_complete_flush(  # pyright: ignore[reportPrivateUsage]
-        session.flush(), path, journal, publication_started=True, content_verified=True
+        flushed, path, journal, publication_started=True, content_verified=True
     )
     _cleanup_host(_directory(session, path), journal)
-    return session.flush()
+    # Host cleanup flushes its own directory and makes no further device writes.
+    return flushed
 
 
 def decline(

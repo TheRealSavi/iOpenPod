@@ -962,6 +962,7 @@ def transaction(
     primary_database: DevicePath = ITUNESDB,
     allow_unchanged: bool = False,
 ) -> StorageTransaction | None:
+    """Compose Library changes; the caller validates the complete transaction."""
     before = {f.path: f.fingerprint for f in captured.files}
     writes: list[TransactionWrite] = list(captured.media_writes)
     for file in prepared.artwork_files:
@@ -1069,15 +1070,13 @@ def transaction(
         # Sync may establish an association without changing Library bytes. Keep
         # dependency verification, but never invent an empty Storage transaction.
         return None
-    plan = StorageTransaction(
+    return StorageTransaction(
         tuple(writes),
         captured.removals,
         tuple(f for f in captured.files if f.path not in changed),
         stage_one_at_a_time=bool(captured.media_writes),
         host_recovery=session.supports_host_transaction_recovery,
     )
-    session.validate_transaction(plan)
-    return plan
 
 
 def preparation_issues(

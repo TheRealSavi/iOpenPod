@@ -296,7 +296,11 @@ class SyncExecutionPage(QWidget):
                 self.tr("This stage is working; its total is not item-counted.")
             )
             self._eta.reset()
-        preparing = progress.phase in ("sync.prepare", "sync.podcast_prepare")
+        preparing = progress.phase in (
+            "sync.prepare",
+            "sync.podcast_prepare",
+            "draft.genius.audio",
+        )
         self._activity.setVisible(not preparing and self._result is None)
         self._preparation.set_items(progress.active_items if preparing else ())
         self._preparation_summary.setVisible(preparing)

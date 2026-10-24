@@ -411,6 +411,17 @@ Library transactions retain verified originals on the Host and reuse the allocat
 of reviewed replacements and removals. Nearly full iPods need room for net growth
 and a small journal reserve. Interrupted saves can be restored on the same computer
 after reconnecting, independently of Backup Snapshots. See ADR-0167.
+Terminal cleanup reuses confirmed durability without rereading media. Only
+unconfirmed results need one fresh verification pass after a successful flush;
+recovery inspection remains required for restoration. See ADR-0180.
+Host publication also reuses capture fingerprints for its initial original checks
+and verifies the complete staged inputs once after the final preparation callback.
+Podcast state is included before the single Library review validation; retained
+Podcast covers reuse their capture fingerprint. Timestamp-preserving writes set
+metadata on the private stage before output verification. See ADR-0181 for read
+budgets and the checks retained at publication and commit. ADR-0182 further reduces
+Host transaction output verification to one destination read before commit: the copy
+hashes outgoing bytes and defers its immediate readback to the final batch check.
 When preparing new cover artwork, conflicting retained MHIF image sizes are
 corrected automatically when the Device Profile, retained image metadata, and
 captured thumbnail ranges establish the correct size. Unverifiable conflicts
@@ -898,8 +909,9 @@ them through narrow interfaces.
   directory.
 - Global settings remember the previously selected iPod by stable Volume Identity.
   This behavior has no separate visible preference.
-- Sync recovery records and retained originals stay on the iPod. They are
-  operational data and do not belong in global settings.
+- Library and Sync recovery retain originals and an authoritative Operation Journal
+  on the Host, with a journal mirror on the iPod (ADR-0167). They are operational
+  data and do not belong in global settings or depend on Backup Snapshots.
 - Backup Snapshots use the configured backup location, with a platform-appropriate
   application data location as the default.
 - Device-specific settings intended to travel with an iPod are associated with its

@@ -890,7 +890,17 @@ fabricated review.
 
 Saving revalidates all retained database fingerprints, signing identity, captured file
 preconditions, and any required positional sidecar inventory before publication.
-Storage recovery copies are retained beneath `.iopenpod-recovery` through commit,
+The complete Library and optional Podcast transaction is validated once at review.
+Host publication reuses original-copy fingerprints, performs its final staged-input
+checks after the preparation callback, and retains immediate deletion and final
+commit checks. Timestamp overrides are applied to private stages before output
+verification. See [ADR-0181](adr/0181-bound-sync-reads-to-workflow-boundaries.md).
+Host transaction copies hash the outgoing stream and defer individual destination
+readbacks to the final batch verification. Each published output is read once
+before commit, including timestamp-preserving writes and restoration. See
+[ADR-0182](adr/0182-verify-host-transaction-outputs-once-before-commit.md).
+Storage retains Library recovery copies on the Host through commit, with an
+authoritative Host journal and a device mirror beneath `.iopenpod-recovery`,
 independently of Backup Snapshots. `inspect_transaction` and `restore_transaction` verify the entire
 observation and original files before restoration; unrelated later edits block it.
 Terminal cleanup follows verified saves; Sync defers it until its Library Sync
@@ -898,6 +908,9 @@ Helper update has been attempted. Selection automatically cleans matching comple
 transactions only after all active journals have been checked for unfinished
 recovery. Interrupted publication requires the existing restore-or-keep choice,
 while an actual cleanup failure preserves its reason and journal location.
+Confirmed terminal cleanup reuses the recorded verification and durability without
+rereading media; unconfirmed results need one fresh verification pass after a
+successful flush. See [ADR-0180](adr/0180-reuse-confirmed-durability-during-host-recovery-cleanup.md).
 Automatic Library saves open warning diagnostics while retaining the saved Library
 and clean draft; reloading automatically retries cleanup. Sync and selection
 failures expose Retry Cleanup for remaining recovery files. The Track metadata

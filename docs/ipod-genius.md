@@ -38,12 +38,15 @@ minimum. Libraries below that minimum still receive valid relationships, but nat
 playback is not guaranteed. The new spacing settings require hardware acceptance;
 the earlier no-rule experiments do not validate them.
 
-Cold Sync analyzes prepared Host sources and retained iPod music sequentially
-through Storage. The normal application keeps a versioned, checksummed, bounded
-Host cache of successful compact profiles. Unchanged sources reuse profiles;
-changed sources invalidate them. PCM is transient. Decode or cache failure is
-reported with metadata fallback, while cancellation, device disconnect, and source
-mutation stop preparation. Device identities are checked again before publication.
+Cold Sync analyzes up to two prepared Host sources or retained iPod music Tracks
+concurrently through Storage. The normal application keeps a versioned,
+checksummed, bounded Host cache of successful compact profiles. Unchanged
+sources reuse profiles; changed sources invalidate them. PCM is transient. Each
+active Track has its own indeterminate progress bar during analysis; the overall
+bar counts completed Tracks. Decoder and profiler phases do not provide reliable
+percentages. Decode or cache failure is reported with metadata fallback, while
+cancellation, device disconnect, and source mutation stop preparation. Device
+identities are checked again before publication.
 Synesthesia Track Analysis and Chromaprint matching evidence remain separate.
 The current decoder accepts up to 15 minutes of audio and 300 seconds of decoding
 time per Track; longer or undecodable Tracks retain metadata candidates. Spectral

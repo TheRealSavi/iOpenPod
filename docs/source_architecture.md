@@ -600,12 +600,31 @@ terminal transaction namespace after verifying either the selected target or the
 Host safety snapshot. Rolling an interrupted publication forward is not implemented.
 See ADR-0029, ADR-0039, and ADR-0093.
 
+Host recovery terminal cleanup reuses recorded content durability, with no media
+or dependency rereads for confirmed committed or restored transactions. It captures
+the journal observation directly rather than performing restoration inspection.
+Unconfirmed results receive one fresh verification pass after a successful flush.
+Device namespace deletion is flushed before Host originals are removed; Host
+cleanup flushes its own directory. Identity, journal, lease, path, and restoration
+checks remain required. See ADR-0134 and ADR-0180.
+
 Library preparation and Storage each validate at their workflow boundaries rather
 than repeating the same scan across adjacent layers. Capturing a Device file also
 returns its source fingerprint. A committed transaction returns its final verified
 observations without an additional recovery inspection; independent restoration
 continues to recheck complete content. Sync execution scopes media validation to
 selected changes and explicit associations. See ADR-0129.
+Host publication uses the original-copy fingerprint as its initial source check,
+then verifies Host recovery material, incoming content, and the complete device
+preconditions after the final preparation callback. Immediate deletion checks and
+final transaction verification remain. Requested timestamps are applied to the
+private stage and verified by the existing output read. Podcast state is composed
+before the single review validation, and retained Podcast covers reuse the source
+fingerprint computed by capture. See ADR-0181 for measured read budgets. ADR-0182
+reduces Host transaction output verification to one destination read before commit.
+Copying checks the outgoing stream's hash; individual readbacks are deferred to the
+final transaction verification, which supplies the verified fingerprints. A failed
+check leaves the transaction nonterminal and its Host originals available.
 
 The application captures artwork inventories/prefixes and privately binds the
 Storage Transaction to the exact issued Library Review. It publishes thumbnail
@@ -800,6 +819,9 @@ The Application Layer analyzes prepared Host media or retained device media thro
 Storage's pinned read-only inputs. A bounded, disposable Host cache retains compact
 successful profiles with analysis version and source facts. Audio vectors stay
 outside iPodDB and outside Synesthesia's runtime-only Track Analysis contract.
+At most two Tracks are decoded and profiled concurrently; result collection,
+progress, and cache writes stay on the preparation thread. Per-Track source
+validation and cancellation still apply before any profile is accepted.
 The pure generator compares body features and outro-to-intro transitions, retains
 metadata fallback, and supplies stable artist/album keys with native spacing rules.
 Device analysis identities are rechecked before staging and publication; cache

@@ -16,9 +16,78 @@ from tests.iOpenPod.app.services.test_library_resources import (
 from tests.iOpenPod.app.test_media_lyrics import fixture, media_payload
 
 from iOpenPod.app.library_write import LibraryPreparationRequest, WriteProgress
+from iOpenPod.app.podcasts.store import HISTORY_PATH
 from iOpenPod.app.tag_normalizer import TagProfile, normalize_tags
 from iPodDB.library import edit_track_metadata
 from storage import DevicePath, FileFingerprint, FilesystemSession
+
+
+@pytest.mark.parametrize("library_changed", [False, True])
+def test_podcast_state_is_included_before_the_single_review_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, library_changed: bool
+) -> None:
+    device = build_device(tmp_path, host_recovery=True)
+    try:
+        state = device.coordinator.load_podcast_state(device.active)
+        desired = device.active.library
+        if library_changed:
+            desired = replace(
+                desired,
+                tracks=(
+                    replace(desired.tracks[0], title="Renamed"),
+                    *desired.tracks[1:],
+                ),
+            )
+        hashes: Counter[str] = Counter()
+        original = FilesystemSession.fingerprint
+
+        def fingerprint(
+            session: FilesystemSession, path: DevicePath
+        ) -> FileFingerprint:
+            hashes[str(path)] += 1
+            return original(session, path)
+
+        monkeypatch.setattr(FilesystemSession, "fingerprint", fingerprint)
+        review = device.coordinator.prepare_library(
+            LibraryPreparationRequest(desired, device.active, 1, 1),
+            lambda _: None,
+            Event(),
+            podcast_state=state,
+            allow_unchanged=True,
+        )
+        assert review.result.prepared is not None, review.result.issues
+        assert hashes["iPod_Control/iTunes/iTunesDB"] == 2, hashes
+        assert hashes["iPod_Control/Artwork/ArtworkDB"] == 2, hashes
+        saved = device.save(review)
+        assert saved.active is not None, saved.issues
+        assert (device.root / str(HISTORY_PATH)).is_file()
+    finally:
+        device.coordinator.close()
+
+
+def test_combined_review_still_rejects_changed_podcast_state(tmp_path: Path) -> None:
+    device = build_device(tmp_path, host_recovery=True)
+    try:
+        state = device.coordinator.load_podcast_state(device.active)
+        history = device.root / str(HISTORY_PATH)
+
+        def progress(event: WriteProgress) -> None:
+            if event.phase == "source.recheck":
+                history.parent.mkdir(parents=True, exist_ok=True)
+                history.write_bytes(b"external change")
+
+        review = device.coordinator.prepare_library(
+            LibraryPreparationRequest(device.active.library, device.active, 1, 1),
+            progress,
+            Event(),
+            podcast_state=state,
+            allow_unchanged=True,
+        )
+        assert review.result.prepared is None
+        assert history.read_bytes() == b"external change"
+        device.assert_original()
+    finally:
+        device.coordinator.close()
 
 
 @pytest.mark.parametrize("rockbox", [False, True])
