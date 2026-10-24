@@ -14,6 +14,14 @@ then beyond it.
 
 ## Current stage
 
+Selecting an exactly identified, writable iPod whose Library database is absent
+now initializes its base directories and a device-compatible empty Library. This
+restores Original iOpenPod behavior for Apple restores that omit iTunesDB, including
+the reported iPod 4 mono case. Discovery stays read-only. Existing databases are
+preserved; required signatures and complete CDB/SQLite artifact sets use normal
+iPodDB preparation and a verified, recoverable Storage Transaction. See ADR-0173
+for qualification, conflicting artifacts, and hardware-validation limits.
+
 The Metadata Editor supports artwork images at explicit Artwork Display Times.
 Drafts retain references to untouched images; preparation writes ordered time
 groups and preserves later images during ordinary cover replacement. Explicit
@@ -875,7 +883,9 @@ them through narrow interfaces.
    previous selection when exactly one ready candidate has the remembered Volume
    Identity.
 7. On a write-safe Volume, iOpenPod analyzes, atomically repairs, and verifies stale
-   or missing identity metadata; read-only Volumes remain loadable with an issue.
+   or missing identity metadata; read-only Volumes with an existing Library remain
+   loadable with an issue. Before metadata repair, an absent Library can be
+   initialized through the selected-device workflow in ADR-0173.
 8. iOpenPod opens a read-only Filesystem Session through Storage.
 9. iOpenPod reads database bytes through Storage and gives them to iPodDB.
 10. iPodDB parses and retains lossless Database Documents in the iPod Library Source,

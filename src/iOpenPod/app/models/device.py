@@ -30,6 +30,7 @@ class DeviceReadiness(StrEnum):
     CONFLICTING = "conflicting"
     RECOVERY_MODE = "recovery_mode"
     DATABASE_MISSING = "database_missing"
+    DATABASE_INITIALIZABLE = "database_initializable"
     DATABASE_UNSUPPORTED = "database_unsupported"
     INSPECTION_FAILED = "inspection_failed"
     SYNC_RECOVERY_REQUIRED = "sync_recovery_required"
@@ -80,6 +81,7 @@ class DeviceCandidate:
     def selectable(self) -> bool:
         return self.readiness in (
             DeviceReadiness.READY,
+            DeviceReadiness.DATABASE_INITIALIZABLE,
             DeviceReadiness.SYNC_RECOVERY_REQUIRED,
         )
 

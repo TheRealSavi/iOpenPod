@@ -1303,6 +1303,10 @@
         <source>The device filesystem could not be inspected.</source>
         <translation>No se pudo revisar el sistema de archivos del dispositivo.</translation>
     </message>
+    <message>
+        <source>Select to create the missing iPod Library</source>
+        <translation>Selecciona para crear la biblioteca del iPod que falta</translation>
+    </message>
 </context>
 <context>
     <name>EditorLabels</name>
@@ -11356,6 +11360,10 @@ Playlists: %3</translation>
     <message>
         <source>Finding media… Folders visited: {folders}; media files found: {files}.</source>
         <translation>Buscando contenido multimedia… Carpetas visitadas: {folders}; archivos multimedia encontrados: {files}.</translation>
+    </message>
+    <message>
+        <source>The missing iPod Library could not be created safely. {detail}</source>
+        <translation>No se pudo crear de forma segura la biblioteca del iPod que falta. {detail}</translation>
     </message>
 </context>
 <context>

@@ -10,6 +10,7 @@ from iPodDB.library.artwork import (
     CoverFormat,
     CoverPixelFormat,
 )
+from iPodDB.library.creation import create_empty_library
 from iPodDB.library.database import IPodLibrary, LibraryDatabaseBytes
 from iPodDB.library.editing import (
     MetadataValue,
@@ -230,6 +231,7 @@ __all__ = [
     "WriteTarget",
     "content_chunks",
     "content_sha256",
+    "create_empty_library",
     "edit_track_metadata",
     "editable_track_fields",
     "encode_photo_thumbnail",

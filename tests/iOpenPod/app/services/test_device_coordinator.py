@@ -265,7 +265,7 @@ def test_poll_retries_a_candidate_whose_database_is_not_ready(tmp_path: Path) ->
     coordinator = DeviceCoordinator(Storage(platform))
     try:
         candidate = coordinator.discover_devices(refresh_known=False).candidates[0]
-        assert candidate.readiness is DeviceReadiness.DATABASE_MISSING
+        assert candidate.readiness is DeviceReadiness.DATABASE_INITIALIZABLE
         database.write_bytes(original)
         ready = coordinator.discover_devices(refresh_known=False).candidates[0]
         assert ready.id == candidate.id

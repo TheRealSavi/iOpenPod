@@ -319,6 +319,9 @@ def _readiness_text(
         DeviceReadiness.DATABASE_MISSING: QCoreApplication.translate(
             "DevicePickerDialog", "No iTunesDB was found"
         ),
+        DeviceReadiness.DATABASE_INITIALIZABLE: QCoreApplication.translate(
+            "DevicePickerDialog", "Select to create the missing iPod Library"
+        ),
         DeviceReadiness.DATABASE_UNSUPPORTED: QCoreApplication.translate(
             "DevicePickerDialog", "This iPod database format is not supported yet"
         ),

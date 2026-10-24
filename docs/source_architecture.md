@@ -783,6 +783,14 @@ database baseline `0x30`, following maintainer-supplied compatibility evidence
 
 ### Lossless round-trip requirement
 
+When a selected, exactly identified iPod has no Library database, the Application
+Layer can request `iPodDB.library.create_empty_library` with explicit Device
+Capabilities. It builds through the shared definitions and ordinary Library
+preparation, including signatures and any CDB/SQLite artifacts. Storage publishes
+the complete set with create-only preconditions and retained transaction recovery,
+before activation. Discovery never writes; existing databases are not inputs to
+initialization or replaced by it. See ADR-0173 for directory creation and recovery.
+
 Unknown Data is expected in real iPod databases. If a database is parsed and then
 serialized without an application edit, the output must reproduce the original
 bytes exactly. This includes unknown fields, unknown Chunks, flags, ordering,

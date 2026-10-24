@@ -74,6 +74,7 @@ from iOpenPod.app.podcasts.models import (
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastDeviceStore
 from iOpenPod.app.services import (
+    library_initialization,
     library_resources,
     photo_shard_resources,
     volume_presentation,
@@ -771,7 +772,9 @@ class DeviceCoordinator:
                 candidate = self.candidate_id_for_volume(mounted.volume.id)
                 if candidate is None:
                     raise DeviceChangedError("The restored iPod is not ready to load.")
-                return self.select_device(candidate, reconcile_sidecars=False)
+                return self.select_device(
+                    candidate, reconcile_sidecars=False, initialize_missing=False
+                )
             except SyncRecoveryRequiredError:
                 # A different pending transaction remains actionable on its own.
                 raise
@@ -2119,6 +2122,7 @@ class DeviceCoordinator:
         *,
         reconcile_metadata: bool = True,
         reconcile_sidecars: bool = True,
+        initialize_missing: bool = True,
     ) -> ActiveIPod:
         """Commit captured sidecars before exposing the selected Library.
 
@@ -2171,6 +2175,12 @@ class DeviceCoordinator:
                 cleanup_issues = self._cleanup_selected_transactions(record)
                 for issue in cleanup_issues:
                     record = _with_persistent_issue(record, issue)
+                if (
+                    initialize_missing
+                    and record.candidate.readiness
+                    is DeviceReadiness.DATABASE_INITIALIZABLE
+                ):
+                    record = self._initialize_missing_database(record)
                 record = self._reconcile_device_metadata(record)
             self._records[candidate_id] = record
 
@@ -3299,6 +3309,14 @@ class DeviceCoordinator:
             )
             readiness = database_readiness
             issues = (*issues, *database_issues)
+            if (
+                readiness is DeviceReadiness.DATABASE_MISSING
+                and mounted.volume.capabilities.safe_for_writes
+                and library_initialization.available(
+                    session, compressed=database.supports_compressed_database
+                )
+            ):
+                readiness = DeviceReadiness.DATABASE_INITIALIZABLE
 
         candidate = _candidate_from(
             mounted,
@@ -3315,6 +3333,110 @@ class DeviceCoordinator:
             live_sysinfo_extended,
             persistent_issues,
         )
+
+    def _initialize_missing_database(
+        self, record: _CandidateRecord
+    ) -> _CandidateRecord:
+        """Initialize only the selected, reidentified connection, before activation."""
+        from iPodDB.library import WriteChecksum, WriteTarget
+
+        try:
+            with self._storage.open_session(
+                record.mounted_volume, access=AccessMode.READ_WRITE
+            ) as session:
+                self._check_sync_recovery(session)
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (_SYSINFO_PATH, _SYSINFO_EXTENDED_PATH, _HASHINFO_PATH)
+                )
+                current = self._inspect_open_session(
+                    session,
+                    record.hardware_evidence,
+                    live_sysinfo_extended=record.live_sysinfo_extended,
+                    persistent_issues=record.persistent_issues,
+                )
+                _require_same_profile(record, current)
+                # An external writer may have supplied the database since discovery.
+                if current.database_path is not None:
+                    return current
+                profile = current.candidate.profile
+                if (
+                    profile is None
+                    or current.candidate.readiness
+                    is not DeviceReadiness.DATABASE_INITIALIZABLE
+                ):
+                    raise DeviceChangedError(
+                        "The selected iPod can no longer be initialized."
+                    )
+                database = profile.capabilities.database
+                checksum = WriteChecksum(database.checksum.value)
+                sqlite_checksum = WriteChecksum(database.sqlite_checksum.value)
+                guid = _read_device_guid(session, current.hardware_evidence)
+                material = None
+                if WriteChecksum.HASH72 in (checksum, sqlite_checksum):
+                    material = _read_hash72_material(
+                        session, b"", guid, max_database_bytes=_DATABASE_READ_LIMIT
+                    )
+                commands: tuple[str, ...] = ()
+                if database.uses_sqlite_database:
+                    commands, _ = _read_sqlite_postprocess_commands(session)
+                target = WriteTarget(
+                    checksum=checksum,
+                    database_version=database.binary_version,
+                    firewire_guid=guid,
+                    max_database_bytes=database.max_database_bytes,
+                    compressed_database=database.supports_compressed_database,
+                    sqlite_database=database.uses_sqlite_database,
+                    sqlite_checksum=sqlite_checksum,
+                    hash72_material=material,
+                    sqlite_postprocess_commands=commands,
+                )
+                plan = library_initialization.prepare(
+                    session,
+                    profile,
+                    target,
+                    current.candidate.display_name,
+                    dependencies,
+                )
+                # Check captured identity/signing files before any directory creation;
+                # Storage checks the same dependencies under its publication lease.
+                library_resources.recheck(session, dependencies)
+                self._check_sync_recovery(session)
+                for directory in library_initialization.DIRECTORIES:
+                    library_initialization.recheck(session)
+                    session.create_directory(directory)
+                committed = session.execute_transaction(
+                    plan, checkpoint=lambda: library_initialization.recheck(session)
+                )
+                if not committed.flush.complete:
+                    raise SyncRecoveryRequiredError(
+                        str(committed.recovery.journal_path)
+                    )
+                _finalize_committed_transaction(
+                    session, committed.recovery.journal_path
+                )
+                verified = self._inspect_open_session(
+                    session,
+                    current.hardware_evidence,
+                    live_sysinfo_extended=current.live_sysinfo_extended,
+                    persistent_issues=current.persistent_issues,
+                )
+                _require_same_profile(current, verified)
+                return verified
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except StorageError as error:
+            raise DeviceAccessError(str(error)) from error
+        except ValueError as error:
+            raise DeviceLibraryLoadError(
+                source_text(
+                    "The missing iPod Library could not be created safely. {detail}",
+                    detail=str(error),
+                )
+            ) from error
 
     def _reconcile_device_metadata(
         self,

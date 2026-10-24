@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from device_registry import IdentificationStatus
 from iOpenPod.app.models.device import (
@@ -68,5 +68,36 @@ def test_picker_shows_every_appearance_failure_and_clears_resolved_details(
             DeviceDiscovery(candidates=(replace(candidate, issues=()),))
         )
         assert all(reason not in detail.text() for reason in reasons)
+    finally:
+        picker.close()
+
+
+def test_picker_offers_missing_library_initialization() -> None:
+    application = QApplication.instance()
+    if application is None:
+        application = QApplication([])
+    candidate = DeviceCandidate(
+        id=DeviceCandidateId("restored-ipod"),
+        display_name="Restored iPod",
+        host_description="Test iPod",
+        bus="virtual",
+        identification_status=IdentificationStatus.EXACT,
+        readiness=DeviceReadiness.DATABASE_INITIALIZABLE,
+        profile=None,
+        total_bytes=1024,
+        available_bytes=1024,
+    )
+    picker = DevicePickerDialog()
+    try:
+        picker.set_discovery(DeviceDiscovery(candidates=(candidate,)))
+        detail = picker.findChild(QLabel, "deviceCandidateDetail")
+        assert detail is not None
+        assert "Select to create the missing iPod Library" in detail.text()
+        select = next(
+            button
+            for button in picker.findChildren(QPushButton)
+            if button.text() == "Use This iPod"
+        )
+        assert select.isEnabled()
     finally:
         picker.close()
