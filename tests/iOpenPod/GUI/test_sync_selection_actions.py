@@ -9,9 +9,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
     QStackedWidget,
-    QStyle,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
@@ -35,6 +32,7 @@ from iOpenPod.app.sync_plan import (
     SyncPlanItem,
     SyncPlanMediaKind,
 )
+from iOpenPod.GUI.delegates.sync_track_delegate import SyncTrackDelegate
 from iOpenPod.GUI.host_library_browser import HostLibraryBrowser
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
@@ -444,15 +442,7 @@ def test_sync_track_checkbox_toggles_the_sorted_filtered_track(
     assert index.data(TrackRole.TRACK_ID) == 3
     table.scrollTo(index)
     APPLICATION.processEvents()
-    option = QStyleOptionViewItem()
-    option.initFrom(table)
-    delegate = table.itemDelegateForIndex(index)
-    assert isinstance(delegate, QStyledItemDelegate)
-    delegate.initStyleOption(option, index)
-    option.rect = table.visualRect(index)
-    indicator = table.style().subElementRect(
-        QStyle.SubElement.SE_ItemViewItemCheckIndicator, option, table
-    )
+    indicator = SyncTrackDelegate.checkbox_rect(table.visualRect(index))
     assert not indicator.isEmpty()
     changes = QSignalSpy(selection.hostSelectionChanged)
     for state in (Qt.CheckState.Checked, Qt.CheckState.Unchecked):

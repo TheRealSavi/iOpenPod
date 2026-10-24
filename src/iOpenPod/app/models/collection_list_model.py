@@ -98,6 +98,7 @@ class CollectionRole(IntEnum):
     ARTWORK_IDS = Qt.ItemDataRole.UserRole.value + 8
     ARTWORK_SEED = Qt.ItemDataRole.UserRole.value + 9
     SEARCH_TEXT = Qt.ItemDataRole.UserRole.value + 10
+    ON_IPOD = Qt.ItemDataRole.UserRole.value + 11
 
 
 class CollectionListModel(QAbstractListModel):
@@ -166,6 +167,8 @@ class CollectionListModel(QAbstractListModel):
         summary = self._collections[index.row()]
         if role == Qt.ItemDataRole.CheckStateRole and self._sync_selection is not None:
             return self._sync_selection.track_group_check_state(summary.track_ids)
+        if role == CollectionRole.ON_IPOD and self._sync_selection is not None:
+            return self._sync_selection.track_group_on_ipod(summary.track_ids)
         if role == Qt.ItemDataRole.DisplayRole:
             return summary.title or _unknown_title(summary.kind)
         if role == CollectionRole.SUMMARY:
@@ -275,7 +278,7 @@ class CollectionListModel(QAbstractListModel):
         self.dataChanged.emit(
             self.index(0, 0),
             self.index(len(self._collections) - 1, 0),
-            [Qt.ItemDataRole.CheckStateRole.value],
+            [Qt.ItemDataRole.CheckStateRole.value, CollectionRole.ON_IPOD],
         )
 
 

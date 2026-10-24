@@ -78,6 +78,7 @@ class AlbumRole(IntEnum):
     ARTWORK_ID = Qt.ItemDataRole.UserRole.value + 10
     ARTIST_KEY = Qt.ItemDataRole.UserRole.value + 11
     GENRE_KEYS = Qt.ItemDataRole.UserRole.value + 12
+    ON_IPOD = Qt.ItemDataRole.UserRole.value + 13
 
 
 class AlbumListModel(QAbstractListModel):
@@ -145,6 +146,8 @@ class AlbumListModel(QAbstractListModel):
         album = self._albums[index.row()]
         if role == Qt.ItemDataRole.CheckStateRole and self._sync_selection is not None:
             return self._sync_selection.track_group_check_state(album.track_ids)
+        if role == AlbumRole.ON_IPOD and self._sync_selection is not None:
+            return self._sync_selection.track_group_on_ipod(album.track_ids)
         if role == Qt.ItemDataRole.DisplayRole:
             return album.title or _translate(_UNKNOWN_ALBUM_SOURCE)
         if role == AlbumRole.SUMMARY:
@@ -277,7 +280,7 @@ class AlbumListModel(QAbstractListModel):
         self.dataChanged.emit(
             self.index(0, 0),
             self.index(len(self._albums) - 1, 0),
-            [Qt.ItemDataRole.CheckStateRole.value],
+            [Qt.ItemDataRole.CheckStateRole.value, AlbumRole.ON_IPOD],
         )
 
 

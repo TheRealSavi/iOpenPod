@@ -326,6 +326,29 @@ group state immediately, and releases the snapshots when the animation finishes.
 Scrolling, resizing, or changing the model interrupts the transition and reveals
 the live grid; scroll clamping that moves the header uses the immediate layout.
 
+Select Media keeps one button below the scrolling Host sidebar navigation. It
+selects all scanned Tracks and Photos, including items hidden by the current page
+or search. Its label changes from **Select all media** to **Deselect all media**
+only when every selectable Host item is selected. With no selectable media, the
+button is disabled.
+The left side of the selection footer offers **Revert selections**, restoring the
+initial checked state for Tracks and Photos from the completed scan: correlated
+Host items checked and Host-only items unchecked. The button is disabled when that
+selection is unchanged. The current selection count appears in the status bar.
+
+Sync Album and collection cards show an iPod glyph at the top left of their artwork
+when any contained Track is matched to the iPod. Track rows show the same glyph to
+the left of the Sync checkbox. Photo cards show it at the top left when the Photo
+is matched to the iPod, both in All Photos and within a Photo Album.
+Matching evidence owns this marker independently of selection, so deselecting
+existing media leaves the marker visible. For these
+cards and rows, checked existing media uses the current accent blue and unchecked
+existing media uses danger red; checked new media uses success green and unchecked
+new media retains the neutral gray appearance. Partially checked cards retain the
+blue mixed state. These colors use theme tokens, and green checkmarks choose a
+contrasting theme foreground. Ordinary Library and Photo Album membership controls
+retain their existing appearance.
+
 Use native `QHeaderView` movement, resizing, selection, accessibility, and sorting
 behavior before introducing a custom header. Avoid initial sorts that are not
 required to communicate the source data: a large Library should reach its first

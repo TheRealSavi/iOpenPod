@@ -571,6 +571,8 @@ class MainWindow(QMainWindow):
             context.podcast_controller.reload
         )
         self._sync_workspace.selection.changed.connect(self._refresh_playlist_preview)
+        self._sync_workspace.selection.changed.connect(self._refresh_default_status)
+        self._sync_workspace.stageChanged.connect(self._refresh_default_status)
         self._sync_workspace.playlistReconciliationChanged.connect(
             self._refresh_playlist_preview
         )
@@ -723,7 +725,7 @@ class MainWindow(QMainWindow):
                 break
         if self._workspaces.currentWidget() is self._sync_workspace:
             self.setWindowTitle(self.tr("Sync with Host — iOpenPod"))
-            self._context.status.set_default(self._default_status_message())
+            self._refresh_default_status()
             return
         active_ipod = self._context.device_controller.active_ipod
         if active_ipod is not None:
@@ -738,15 +740,17 @@ class MainWindow(QMainWindow):
             )
         else:
             self.setWindowTitle(self.tr("iOpenPod"))
+        self._refresh_default_status()
+
+    def _refresh_default_status(self) -> None:
         self._context.status.set_default(self._default_status_message())
 
     def _default_status_message(self) -> str:
-        plan = self._sync_workspace.plan
         if (
             self._workspaces.currentWidget() is self._sync_workspace
             and self._sync_workspace.stage is SyncStage.REVIEW
-            and plan is not None
         ):
+            plan = self._sync_workspace.selection.selected_plan
             changes = planned_change_count_text(plan.change_count)
             if plan.attention_count:
                 attention = (

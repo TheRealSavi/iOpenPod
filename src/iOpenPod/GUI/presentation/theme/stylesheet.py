@@ -382,8 +382,7 @@ QLabel#syncScanTitle {{
     font-weight: 700;
 }}
 
-QLabel#syncScanDetail,
-QLabel#syncSelectionSummary {{
+QLabel#syncScanDetail {{
     color: {tokens.text_secondary};
 }}
 

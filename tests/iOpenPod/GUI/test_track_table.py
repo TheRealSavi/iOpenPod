@@ -10,9 +10,6 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QMenu,
-    QStyle,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
 )
 from pytest import MonkeyPatch
 
@@ -441,16 +438,12 @@ def test_sync_checkbox_click_selects_and_deselects_track() -> None:
         assert title.data(Qt.ItemDataRole.CheckStateRole) is None
         assert not title.flags() & Qt.ItemFlag.ItemIsUserCheckable
         index = table.model().index(0, TrackColumn.SYNC_SELECTION)
-        option = QStyleOptionViewItem()
-        option.initFrom(table)
-        delegate = table.itemDelegateForIndex(index)
-        assert isinstance(delegate, QStyledItemDelegate)
-        delegate.initStyleOption(option, index)
-        option.rect = table.visualRect(index)
-        indicator = table.style().subElementRect(
-            QStyle.SubElement.SE_ItemViewItemCheckIndicator, option, table
-        )
+        indicator = SyncTrackDelegate.checkbox_rect(table.visualRect(index))
         assert not indicator.isEmpty()
+        ipod = SyncTrackDelegate.ipod_rect(table.visualRect(index))
+        assert ipod.right() < indicator.left()
+        QTest.mouseClick(table.viewport(), Qt.MouseButton.LeftButton, pos=ipod.center())
+        assert selection.track_check_state(1) == Qt.CheckState.Unchecked
         assert not indicator.intersects(
             SyncTrackDelegate.button_rect(table.visualRect(index))
         )

@@ -19,6 +19,10 @@ from iOpenPod.GUI.presentation.library_card import (
     library_card_artwork_rect,
     library_card_rect,
 )
+from iOpenPod.GUI.presentation.sync_media import (
+    paint_library_card_ipod_marker,
+    sync_checkbox_tokens,
+)
 from iOpenPod.GUI.presentation.theme.tokens import ThemeTokens, TypographyTokens
 
 _CHECKBOX_EXTENT = 36.0
@@ -45,7 +49,13 @@ def paint_library_card_checkbox(
     state: Qt.CheckState,
     tokens: ThemeTokens,
     typography: TypographyTokens,
+    *,
+    on_ipod: bool | None = None,
 ) -> None:
+    if on_ipod is not None:
+        if on_ipod:
+            paint_library_card_ipod_marker(painter, option, tokens, typography)
+        tokens = sync_checkbox_tokens(tokens, state, on_ipod)
     checked = state is Qt.CheckState.Checked
     partial = state is Qt.CheckState.PartiallyChecked
     active = checked or partial

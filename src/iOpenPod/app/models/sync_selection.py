@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from itertools import chain
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Qt, Signal
@@ -54,6 +55,8 @@ class SyncSelection(QObject):
         self._track_paths: dict[int, str] = {}
         self._stream_selections: dict[str, MediaStreamSelection] = {}
         self._photo_paths: dict[int, str] = {}
+        self._initial_selected_host_paths: frozenset[str] = frozenset()
+        self._on_ipod_host_paths: frozenset[str] = frozenset()
         self._selected_host_paths: set[str] = set()
         self._selected_ipod_removals: set[tuple[SyncPlanMediaKind, int]] = set()
         self._excluded_review_items: set[SyncPlanItem] = set()
@@ -169,6 +172,7 @@ class SyncSelection(QObject):
         self._selected_ipod_removals = selected_removals
         self._duplicate_resolutions = resolutions
         self._resolved_comparison = resolved
+        self._on_ipod_host_paths = _matched_host_paths(resolved)
         self._review_plan = None
         self._excluded_review_items = exclusions
         self.hostSelectionChanged.emit()
@@ -180,6 +184,23 @@ class SyncSelection(QObject):
     @property
     def selected_host_count(self) -> int:
         return len(self._selected_host_paths)
+
+    @property
+    def has_host_media(self) -> bool:
+        return bool(self._track_paths or self._photo_paths)
+
+    @property
+    def all_host_media_selected(self) -> bool:
+        return self.has_host_media and all(
+            path in self._selected_host_paths
+            for path in chain(self._track_paths.values(), self._photo_paths.values())
+        )
+
+    @property
+    def can_revert_host_media_selection(self) -> bool:
+        return len(self._selected_host_paths) != len(
+            self._initial_selected_host_paths
+        ) or not self._selected_host_paths.issubset(self._initial_selected_host_paths)
 
     def stream_selection(self, track_id: int) -> MediaStreamSelection | None:
         return self._stream_selections.get(self._track_paths.get(track_id, ""))
@@ -366,11 +387,9 @@ class SyncSelection(QObject):
                 if path:
                     self._photo_paths[photo.photo_id] = host_path_identity(path)
 
-        self._selected_host_paths = {
-            host_path_identity(item.host_path)
-            for item in comparison.items
-            if item.host_path is not None and item.ipod_id is not None
-        }
+        self._initial_selected_host_paths = _matched_host_paths(comparison)
+        self._on_ipod_host_paths = self._initial_selected_host_paths
+        self._selected_host_paths = set(self._initial_selected_host_paths)
         self._selected_ipod_removals.clear()
         self._excluded_review_items.clear()
         self._review_plan = None
@@ -388,6 +407,8 @@ class SyncSelection(QObject):
         self._resolved_comparison = None
         self._track_paths.clear()
         self._photo_paths.clear()
+        self._initial_selected_host_paths = frozenset()
+        self._on_ipod_host_paths = frozenset()
         self._selected_host_paths.clear()
         self._selected_ipod_removals.clear()
         self._excluded_review_items.clear()
@@ -401,8 +422,21 @@ class SyncSelection(QObject):
     def track_check_state(self, track_id: int) -> Qt.CheckState:
         return self._path_check_state(self._track_paths.get(track_id))
 
+    def track_on_ipod(self, track_id: int) -> bool:
+        """Current matching evidence, independent of desired Sync membership."""
+
+        return self._track_paths.get(track_id) in self._on_ipod_host_paths
+
+    def track_group_on_ipod(self, track_ids: Iterable[int]) -> bool:
+        return any(self.track_on_ipod(track_id) for track_id in track_ids)
+
     def photo_check_state(self, photo_id: int) -> Qt.CheckState:
         return self._path_check_state(self._photo_paths.get(photo_id))
+
+    def photo_on_ipod(self, photo_id: int) -> bool:
+        """Current Photo matching evidence, independent of desired Sync membership."""
+
+        return self._photo_paths.get(photo_id) in self._on_ipod_host_paths
 
     def track_group_check_state(self, track_ids: Iterable[int]) -> Qt.CheckState:
         return self._aggregate_paths(
@@ -420,6 +454,25 @@ class SyncSelection(QObject):
             (self._photo_paths.get(photo_id) for photo_id in photo_ids),
             checked,
         )
+
+    def set_all_host_media_checked(self, checked: bool) -> bool:
+        """Change all scanned Track and Photo membership in one update."""
+
+        return self._set_paths(
+            chain(self._track_paths.values(), self._photo_paths.values()), checked
+        )
+
+    def revert_host_media_selection(self) -> bool:
+        """Restore the scan's initial Host membership without resetting other choices."""
+
+        if not self.can_revert_host_media_selection:
+            return False
+        self._selected_host_paths = set(self._initial_selected_host_paths)
+        self._review_plan = None
+        self._excluded_review_items.intersection_update(self.review_plan.items)
+        self.hostSelectionChanged.emit()
+        self.changed.emit()
+        return True
 
     def removal_check_state(self, item: SyncPlanItem) -> Qt.CheckState | None:
         key = _removal_key(item)
@@ -466,6 +519,14 @@ class SyncSelection(QObject):
         self.hostSelectionChanged.emit()
         self.changed.emit()
         return True
+
+
+def _matched_host_paths(plan: SyncPlan) -> frozenset[str]:
+    return frozenset(
+        host_path_identity(item.host_path)
+        for item in plan.items
+        if item.host_path is not None and item.ipod_id is not None
+    )
 
 
 def _removal_key(

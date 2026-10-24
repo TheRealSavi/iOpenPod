@@ -103,6 +103,7 @@ class CollectionCardDelegate(QStyledItemDelegate):
                 state,
                 self._theme_manager.tokens,
                 self._theme_manager.typography,
+                on_ipod=index.data(CollectionRole.ON_IPOD),
             )
 
     def editorEvent(

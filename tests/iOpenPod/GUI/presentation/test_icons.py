@@ -19,7 +19,7 @@ APPLICATION = _application()
 
 
 @pytest.mark.parametrize(
-    "name", ("music", "all-media", "play-next", "play-last", "bell")
+    "name", ("music", "all-media", "play-next", "play-last", "bell", "ipod")
 )
 def test_glyph_icon_renders_visible_pixels(name: str) -> None:
     icon = glyph_icon(name, 18, QColor("#176FD1"), 2.0)

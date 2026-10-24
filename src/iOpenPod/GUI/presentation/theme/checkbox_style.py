@@ -50,6 +50,13 @@ class CheckboxStyle(QProxyStyle):
         if element != QStyle.PrimitiveElement.PE_IndicatorCheckBox:
             super().drawPrimitive(element, option, painter, widget)
             return
+        self.paint_indicator(painter, option, self._tokens)
+
+    @staticmethod
+    def paint_indicator(
+        painter: QPainter, option: QStyleOption, tokens: ThemeTokens
+    ) -> None:
+        """Paint the shared indicator with default or workflow-specific tokens."""
 
         state = option.state
         enabled = bool(state & QStyle.StateFlag.State_Enabled)
@@ -67,7 +74,8 @@ class CheckboxStyle(QProxyStyle):
             -_BOX_INSET,
             -_BOX_INSET,
         )
-        fill, border, mark = self._indicator_colors(
+        fill, border, mark = CheckboxStyle._indicator_colors(
+            tokens,
             enabled=enabled,
             selected=selected,
             hovered=hovered,
@@ -78,7 +86,7 @@ class CheckboxStyle(QProxyStyle):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         if focused:
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(self._tokens.focus), _FOCUS_RING_WIDTH))
+            painter.setPen(QPen(QColor(tokens.focus), _FOCUS_RING_WIDTH))
             painter.drawRoundedRect(outer_rect, 5.0, 5.0)
 
         painter.setBrush(QColor(fill))
@@ -86,20 +94,20 @@ class CheckboxStyle(QProxyStyle):
         painter.drawRoundedRect(box_rect, 3.0, 3.0)
 
         if checked:
-            self._draw_checkmark(painter, box_rect, QColor(mark))
+            CheckboxStyle._draw_checkmark(painter, box_rect, QColor(mark))
         elif indeterminate:
-            self._draw_indeterminate_mark(painter, box_rect, QColor(mark))
+            CheckboxStyle._draw_indeterminate_mark(painter, box_rect, QColor(mark))
         painter.restore()
 
+    @staticmethod
     def _indicator_colors(
-        self,
+        tokens: ThemeTokens,
         *,
         enabled: bool,
         selected: bool,
         hovered: bool,
         pressed: bool,
     ) -> tuple[str, str, str]:
-        tokens = self._tokens
         if not enabled:
             return tokens.surface_alt, tokens.border, tokens.text_disabled
         if selected:

@@ -44,6 +44,7 @@ class TrackRole(IntEnum):
     ARTWORK_SEED = Qt.ItemDataRole.UserRole.value + 6
     ARTWORK_ID = Qt.ItemDataRole.UserRole.value + 7
     STREAM_MANUAL = Qt.ItemDataRole.UserRole.value + 8
+    ON_IPOD = Qt.ItemDataRole.UserRole.value + 9
 
 
 class TrackTableModel(QAbstractTableModel):
@@ -199,6 +200,8 @@ class TrackTableModel(QAbstractTableModel):
         track = self._tracks[index.row()]
         position = self._playlist_positions[index.row()]
         if self._sync_selection is not None:
+            if role == TrackRole.ON_IPOD:
+                return self._sync_selection.track_on_ipod(track.track_id)
             manual = self._sync_selection.stream_selection(track.track_id) is not None
             if role == TrackRole.STREAM_MANUAL:
                 return manual
@@ -332,6 +335,7 @@ class TrackTableModel(QAbstractTableModel):
                 Qt.ItemDataRole.AccessibleTextRole.value,
                 TrackRole.SORT_VALUE,
                 TrackRole.STREAM_MANUAL,
+                TrackRole.ON_IPOD,
             ],
         )
 

@@ -55,6 +55,7 @@ class PhotoRole(IntEnum):
     FORMAT_COUNT = Qt.ItemDataRole.UserRole.value + 6
     SOURCE_SIZE = Qt.ItemDataRole.UserRole.value + 7
     SEARCH_TEXT = Qt.ItemDataRole.UserRole.value + 8
+    ON_IPOD = Qt.ItemDataRole.UserRole.value + 9
 
 
 class PhotoSortMode(StrEnum):
@@ -310,6 +311,8 @@ class PhotoListModel(QAbstractListModel):
         photo = self._photos[index.row()]
         if role == Qt.ItemDataRole.CheckStateRole and self._sync_selection is not None:
             return self._sync_selection.photo_check_state(photo.photo_id)
+        if role == PhotoRole.ON_IPOD and self._sync_selection is not None:
+            return self._sync_selection.photo_on_ipod(photo.photo_id)
         if role == Qt.ItemDataRole.DisplayRole:
             return QCoreApplication.translate("LibraryLabels", "Photo %1").replace(
                 "%1", str(photo.photo_id)
@@ -410,7 +413,7 @@ class PhotoListModel(QAbstractListModel):
         self.dataChanged.emit(
             self.index(0, 0),
             self.index(len(self._photos) - 1, 0),
-            [Qt.ItemDataRole.CheckStateRole.value],
+            [Qt.ItemDataRole.CheckStateRole.value, PhotoRole.ON_IPOD],
         )
 
     def _search_text(self, photo: Photo) -> str:

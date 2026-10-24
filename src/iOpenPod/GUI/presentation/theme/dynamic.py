@@ -113,6 +113,16 @@ def round_header_colors(color: RGBColor, tokens: ThemeTokens) -> RoundHeaderColo
     )
 
 
+def contrasting_ink(fill: str, tokens: ThemeTokens) -> str:
+    """Choose the more readable theme foreground for a semantic solid fill."""
+
+    background = _rgb(fill)
+    return max(
+        (tokens.text, tokens.accent_ink),
+        key=lambda color: _contrast_ratio(_rgb(color), background),
+    )
+
+
 def _readable_header_shade(
     base: RGBColor,
     light: RGBColor,
@@ -183,5 +193,6 @@ __all__ = [
     "RoundHeaderColors",
     "colorful_card_fill",
     "colorful_header_colors",
+    "contrasting_ink",
     "round_header_colors",
 ]

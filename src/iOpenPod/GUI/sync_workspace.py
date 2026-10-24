@@ -184,11 +184,13 @@ class _SyncLibraryNavigation(QFrame):
     def __init__(
         self,
         playlists: LibraryWorkspace,
+        selection: SyncSelection,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("syncLibraryNavigation")
         self.setFixedWidth(LAYOUT.sidebar_width)
+        self._selection = selection
         self._buttons: dict[PageId, NavigationButton] = {}
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
@@ -231,9 +233,25 @@ class _SyncLibraryNavigation(QFrame):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(contents)
+        self._toggle_all_media = ActionButton(
+            parent=self, kind=ActionButtonKind.SECONDARY
+        )
+        self._toggle_all_media.setObjectName("toggleAllSyncMedia")
+        self._toggle_all_media.clicked.connect(self._toggle_media_selection)
+        footer = QHBoxLayout()
+        footer.setContentsMargins(
+            LAYOUT.space_xs,
+            LAYOUT.space_xs,
+            LAYOUT.space_xs,
+            LAYOUT.space_xs,
+        )
+        footer.addWidget(self._toggle_all_media)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(scroll)
+        layout.setSpacing(0)
+        layout.addWidget(scroll, 1)
+        layout.addLayout(footer)
+        selection.hostSelectionChanged.connect(self._refresh_media_selection)
         self.retranslate_ui()
 
     def set_available_pages(self, pages: frozenset[PageId]) -> None:
@@ -252,6 +270,20 @@ class _SyncLibraryNavigation(QFrame):
         self._heading.setText(self.tr("HOST MEDIA"))
         for page_id, button in self._buttons.items():
             button.setText(page_label(page_id))
+        self._refresh_media_selection()
+
+    def _refresh_media_selection(self) -> None:
+        self._toggle_all_media.setText(
+            self.tr("Deselect all media")
+            if self._selection.all_host_media_selected
+            else self.tr("Select all media")
+        )
+        self._toggle_all_media.setEnabled(self._selection.has_host_media)
+
+    def _toggle_media_selection(self) -> None:
+        self._selection.set_all_host_media_checked(
+            not self._selection.all_host_media_selected
+        )
 
 
 class SyncWorkspace(QWidget):
@@ -261,6 +293,7 @@ class SyncWorkspace(QWidget):
     executeRequested = Signal()
     executionCancelRequested = Signal()
     playlistReconciliationChanged = Signal()
+    stageChanged = Signal()
     exitRequested = Signal()
 
     def __init__(
@@ -323,6 +356,7 @@ class SyncWorkspace(QWidget):
 
         self._library_navigation = _SyncLibraryNavigation(
             self._host_workspace,
+            self.selection,
             self,
         )
         selection_body = QFrame(self)
@@ -333,8 +367,10 @@ class SyncWorkspace(QWidget):
         selection_layout.addWidget(self._library_navigation)
         selection_layout.addWidget(self._library_stack, 1)
 
-        self._selection_summary = QLabel(self)
-        self._selection_summary.setObjectName("syncSelectionSummary")
+        self._revert_selection = ActionButton(
+            parent=self, kind=ActionButtonKind.SECONDARY
+        )
+        self._revert_selection.setObjectName("revertSyncSelections")
         self._selection_exit = ActionButton(
             parent=self,
             kind=ActionButtonKind.SECONDARY,
@@ -346,7 +382,7 @@ class SyncWorkspace(QWidget):
         )
         self._review_button.setObjectName("reviewSyncSelection")
         selection_footer = self._footer(
-            self._selection_summary,
+            self._revert_selection,
             self._selection_exit,
             self._review_button,
         )
@@ -454,6 +490,9 @@ class SyncWorkspace(QWidget):
         layout.addWidget(self._content, 1)
 
         self._scan.cancelRequested.connect(self.scanCancelRequested.emit)
+        self._revert_selection.clicked.connect(
+            self.selection.revert_host_media_selection
+        )
         self._selection_exit.clicked.connect(self.exitRequested.emit)
         self._review_button.clicked.connect(self.show_review)
         self._back.clicked.connect(self.show_selection)
@@ -465,7 +504,7 @@ class SyncWorkspace(QWidget):
         self.execution.resultVisibilityChanged.connect(self._refresh_stage_labels)
         self._library_navigation.pageRequested.connect(self._show_library_page)
         self._library_navigation.playlist_tree.selected.connect(self._playlist_selected)
-        self.selection.changed.connect(self._refresh_selection_summary)
+        self.selection.hostSelectionChanged.connect(self._refresh_selection_actions)
         self.selection.changed.connect(self._refresh_storage_estimate)
         self._settings.settingChanged.connect(self._storage_settings_changed)
         self.selection.changed.connect(self._refresh_review_summary)
@@ -550,7 +589,7 @@ class SyncWorkspace(QWidget):
 
     def show_selection(self) -> None:
         self._set_stage(SyncStage.SELECT)
-        self._refresh_selection_summary()
+        self._refresh_selection_actions()
 
     def show_review(self) -> None:
         self._review.load_review(self.selection)
@@ -637,6 +676,7 @@ class SyncWorkspace(QWidget):
         if self.browser is not None:
             self.browser.retranslate()
         self._review_button.setText(self.tr("Review Sync"))
+        self._revert_selection.setText(self.tr("Revert selections"))
         self._selection_exit.setText(self.tr("Exit Sync"))
         self._back.setText(self.tr("Edit Selection"))
         self._review_cancel.setText(
@@ -651,7 +691,7 @@ class SyncWorkspace(QWidget):
             )
         )
         self._playlist_changes.retranslate()
-        self._refresh_selection_summary()
+        self._refresh_selection_actions()
         self._refresh_playlist_preview()
         self._refresh_review_summary()
 
@@ -685,6 +725,7 @@ class SyncWorkspace(QWidget):
         super().changeEvent(event)
 
     def _set_stage(self, stage: SyncStage) -> None:
+        stage_changed = self._stage is not stage
         if stage is not SyncStage.SCANNING:
             self.stop_scan()
         self._stage = stage
@@ -705,6 +746,8 @@ class SyncWorkspace(QWidget):
             style = label.style()
             style.unpolish(label)
             style.polish(label)
+        if stage_changed:
+            self.stageChanged.emit()
 
     def _show_library_page(self, value: str) -> None:
         browser = self.browser
@@ -797,12 +840,9 @@ class SyncWorkspace(QWidget):
             self._stream_dialog = None
             dialog.deleteLater()
 
-    def _refresh_selection_summary(self) -> None:
-        count = self.selection.selected_host_count
-        self._selection_summary.setText(
-            self.tr("%n Host item selected for the iPod", None, count)
-            if count == 1
-            else self.tr("%n Host items selected for the iPod", None, count)
+    def _refresh_selection_actions(self) -> None:
+        self._revert_selection.setEnabled(
+            self.selection.can_revert_host_media_selection
         )
 
     def _refresh_storage_estimate(self) -> None:
@@ -958,7 +998,8 @@ class SyncWorkspace(QWidget):
         )
         layout.setSpacing(LAYOUT.space_xs)
         if widgets:
-            layout.addWidget(widgets[0], 1)
+            layout.addWidget(widgets[0])
+            layout.addStretch(1)
             for widget in widgets[1:]:
                 layout.addWidget(widget)
         return footer

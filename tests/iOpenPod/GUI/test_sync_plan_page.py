@@ -563,8 +563,30 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert workspace is not None
         assert workspace.stage is SyncStage.SELECT
         assert window.windowTitle() == "Sync with Host — iOpenPod"
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
         assert workspace.selection.track_check_state(1) is Qt.CheckState.Checked
         assert workspace.selection.track_check_state(2) is Qt.CheckState.Unchecked
+        toggle = workspace.findChild(QPushButton, "toggleAllSyncMedia")
+        assert toggle is not None
+        revert = workspace.findChild(QPushButton, "revertSyncSelections")
+        assert revert is not None and not revert.isEnabled()
+        toggle.click()
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 2"
+        assert revert.isEnabled()
+        revert.click()
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
+        assert workspace.selection.track_check_state(1) is Qt.CheckState.Checked
+        assert workspace.selection.track_check_state(2) is Qt.CheckState.Unchecked
+        assert not revert.isEnabled()
+        toggle.click()
+        toggle.click()
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 0"
+
+        context.status.show("test", "Another operation is running")
+        workspace.selection.set_tracks_checked((1,), True)
+        assert window.statusBar().currentMessage() == "Another operation is running"
+        context.status.clear("test")
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
         scan_details = workspace.findChild(QPlainTextEdit, "hostScanIssueDetails")
         assert scan_details is not None
         assert "Optional Host artwork unavailable" in scan_details.toPlainText()
@@ -636,14 +658,17 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert bar.estimate.projected_used_bytes == 600
         workspace.selection.set_tracks_checked((2,), True)
         assert bar.estimate.projected_used_bytes == 701
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 2"
         context.settings.set_global(RETRANSCODE_LOSSY, True)
         assert bar.estimate.projected_used_bytes > 701
         context.settings.reset_global(RETRANSCODE_LOSSY)
         assert bar.estimate.projected_used_bytes == 701
         workspace.selection.set_tracks_checked((1,), False)
         assert bar.estimate.projected_used_bytes == 611
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
 
         workspace.show_review()
+        assert window.statusBar().currentMessage() == "2 planned changes"
         assert not bar.isHidden()
         assert bar.estimate.projected_used_bytes == 611
         review = workspace.findChild(SyncPlanPage)
@@ -662,12 +687,15 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
             Qt.ItemDataRole.CheckStateRole,
         )
         assert bar.estimate.projected_used_bytes == 561
+        assert window.statusBar().currentMessage() == "3 planned changes"
         add_group = _group(review, SyncPlanAction.ADD)
         add_group.checkbox.click()
         assert bar.estimate.projected_used_bytes == 460
+        assert window.statusBar().currentMessage() == "2 planned changes"
         assert workspace.selection.track_check_state(2) is Qt.CheckState.Checked
         add_group.checkbox.click()
         assert bar.estimate.projected_used_bytes == 561
+        assert window.statusBar().currentMessage() == "3 planned changes"
         summary = workspace.findChild(QLabel, "syncReviewSummary")
         assert summary is not None
         assert summary.text() == "3 of 3 selected · 1 Playlist change"
@@ -688,6 +716,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert back is not None and back.text() == "Edit Selection"
         back.click()
         assert workspace.stage is SyncStage.SELECT
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
         assert bar.estimate.projected_used_bytes == 561
         assert not bar.isHidden()
         execute = workspace.findChild(QPushButton, "executeSync")

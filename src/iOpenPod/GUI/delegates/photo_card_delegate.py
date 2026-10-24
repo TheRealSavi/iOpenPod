@@ -92,6 +92,7 @@ class PhotoCardDelegate(QStyledItemDelegate):
                 state,
                 self._theme_manager.tokens,
                 self._theme_manager.typography,
+                on_ipod=index.data(PhotoRole.ON_IPOD),
             )
 
     def editorEvent(
