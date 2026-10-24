@@ -41,6 +41,7 @@ from iPodDB.library._playlist_datasets import (
     is_master,
     is_podcasts,
     is_visible,
+    missing_podcast_companion,
     playlist_rows,
     structure_issues,
 )
@@ -152,6 +153,18 @@ def verify_playlists(
         )
 
     kinds = [s.chunk.header.dataset_type for s in checked.find_chunks(MhsdHeader)]
+    missing_podcasts = missing_podcast_companion(original)
+    if (
+        affected_datasets(before, desired).intersection((2, 3))
+        and missing_podcasts is not None
+        and missing_podcasts.chunk.header.playlist_id in wanted
+        and (2, missing_podcasts.chunk.header.playlist_id) not in output
+    ):
+        fail(
+            "playlist_missing_mirror",
+            "A required flat Podcasts counterpart was not created.",
+            2,
+        )
     if not deleted:
         original_firmware = tuple(
             _bytes(s.chunk, original_bytes)
@@ -567,7 +580,7 @@ def verify_playlists(
                     chunk,
                 )
         membership_changed = previous is None or previous.entries != playlist.entries
-        if is_podcasts(kind, chunk.header) and (
+        podcast_changed = is_podcasts(kind, chunk.header) and (
             membership_changed
             or playlist.playlist_id in podcast_playlists
             or any(
@@ -575,7 +588,8 @@ def verify_playlists(
                 != albums.get(tracks.get(e.track_id, e.track_id))
                 for e in playlist.entries
             )
-        ):
+        )
+        if podcast_changed:
             groups: dict[int, str] = {}
             native_ids: set[int] = set()
             active_group = 0
@@ -641,6 +655,9 @@ def verify_playlists(
                             detail=f"Track {h.track_id}, row ID {h.group_id}, actual positions {positions}.",
                             item=item,
                         )
+        if is_podcasts(kind, chunk.header) and (
+            podcast_changed or ((2, identity) not in old and (2, identity) in output)
+        ):
             counterpart = output.get((2, identity))
             if counterpart is not None:
                 grouped_ids = Counter(
@@ -687,7 +704,11 @@ def verify_playlists(
                             detail=f"Track {item.header.track_id}, row ID {item.header.group_id}, expected positions {expected_positions}, actual positions {flat_positions}.",
                             item=item,
                         )
-        elif membership_changed or playlist.playlist_id in changed_folders:
+        elif (
+            membership_changed
+            or playlist.playlist_id in changed_folders
+            or (kind == 2 and baseline is None)
+        ):
             grouped = output.get((3, identity))
             podcast_counterpart = (
                 kind == 2

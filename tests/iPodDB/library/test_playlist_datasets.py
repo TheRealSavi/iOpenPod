@@ -16,7 +16,11 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhlp import DEFINITION as MHLP
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
+    MhodPlaylistPositionPrefix,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.opaque_mhod import (
     MhodOpaquePayload,
 )
@@ -31,6 +35,11 @@ from iPodDB.library import (
     Playlist,
     PlaylistEntry,
     PlaylistKind,
+    SmartField,
+    SmartOperator,
+    SmartPlaylist,
+    SmartRule,
+    SmartRuleGroup,
     _write_preparation,
 )
 from iPodDB.library._reconcile import reconcile
@@ -190,6 +199,364 @@ def test_special_podcasts_marker_projects_as_system_managed_independent_of_name(
 
     assert playlist.name == "Not named Podcasts"
     assert playlist.system_managed
+
+
+def populated_podcasts(
+    *, with_user_playlist: bool = True, with_flat_counterpart: bool = False
+) -> IPodLibrary:
+    source = podcast_source()
+    desired = replace(
+        source.snapshot,
+        playlists=(
+            replace(
+                source.snapshot.playlists[0],
+                entries=(
+                    PlaylistEntry("a", 1),
+                    PlaylistEntry("b", 2),
+                    PlaylistEntry("c", 1),
+                ),
+            ),
+        ),
+    )
+    _, document = prepare(parse_iTunesDB(source.serialize().itunes), desired)
+    for kind in (2, 3):
+        podcast = rows(document, kind)[1]
+        document = document.replace_chunk(
+            podcast,
+            replace(
+                podcast.chunk,
+                header=replace(
+                    podcast.chunk.header, unk_mhyp_0x54=bytes([kind, 1, 2, 3])
+                ),
+                children=(
+                    new_itunes_chunk(
+                        MHOD,
+                        MhodHeader(mhod_type=999),
+                        payload=MhodOpaquePayload(b"private podcast metadata"),
+                    ),
+                    *podcast.chunk.children,
+                ),
+            ),
+        )
+    user = rows(parse_iTunesDB(library().serialize().itunes), 3)[1].chunk
+    user = replace(user, header=replace(user.header, playlist_id=20))
+    for kind in (2, 3):
+        dataset = next(
+            s
+            for s in document.find_chunks(MhsdHeader)
+            if s.chunk.header.dataset_type == kind
+        )
+        container = dataset.chunk.children[0]
+        retained = (
+            container.children[:1]
+            if kind == 2 and not with_flat_counterpart
+            else container.children
+        )
+        document = document.replace_chunk(
+            dataset,
+            replace(
+                dataset.chunk,
+                children=(
+                    replace(
+                        container,
+                        children=(*retained, user) if with_user_playlist else retained,
+                    ),
+                ),
+            ),
+        )
+    return IPodLibrary(write_iTunesDB(document))
+
+
+@pytest.mark.parametrize("kind", [PlaylistKind.PLAYLIST, PlaylistKind.SMART])
+@pytest.mark.parametrize("with_user_playlist", [False, True])
+@pytest.mark.parametrize("with_flat_counterpart", [False, True])
+def test_new_playlist_completes_podcast_counterparts_and_preserves_existing_rows(
+    kind: PlaylistKind, with_user_playlist: bool, with_flat_counterpart: bool
+) -> None:
+    source = populated_podcasts(
+        with_user_playlist=with_user_playlist,
+        with_flat_counterpart=with_flat_counterpart,
+    )
+    original_bytes = source.serialize().itunes
+    original = parse_iTunesDB(original_bytes)
+    noop = source.prepare(source.analyze(source.begin_draft()))
+    assert noop.prepared is not None, noop.issues
+    assert noop.prepared.itunes == original_bytes
+    smart = (
+        SmartPlaylist(
+            rules=SmartRuleGroup(
+                rules=(
+                    SmartRule(SmartField.DATE_ADDED, SmartOperator.IN_LAST, 1209600),
+                    SmartRule(SmartField.GENRE, SmartOperator.CONTAINS, "House"),
+                )
+            )
+        )
+        if kind is PlaylistKind.SMART
+        else None
+    )
+    desired = replace(
+        source.snapshot,
+        playlists=(
+            *source.snapshot.playlists,
+            Playlist(
+                -1,
+                "New",
+                kind,
+                entries=(PlaylistEntry("new-a", 1), PlaylistEntry("new-b", 2)),
+                smart=smart,
+            ),
+        ),
+    )
+    plan = source.analyze(source.begin_draft(desired))
+    result = source.prepare(plan)
+    assert result.prepared is not None, result.issues
+    output_bytes = result.prepared.itunes
+    checked = parse_iTunesDB(output_bytes)
+    added = result.prepared.snapshot.playlists[-1]
+    assert added.track_ids == (1, 2)
+    assert added.smart == smart
+    for dataset in (2, 3):
+        output_rows = {s.chunk.header.playlist_id: s for s in rows(checked, dataset)}
+        assert added.playlist_id in output_rows
+        assert 10 in output_rows
+        assert tuple(
+            s.chunk.header.track_id
+            for s in output_rows[added.playlist_id].find_chunks(MhipHeader)
+        ) == (1, 2)
+        for row in rows(original, dataset):
+            before = row.chunk
+            after = output_rows[before.header.playlist_id].chunk
+            assert (
+                original_bytes[
+                    before.offset : before.offset
+                    + before.generic_header.length_or_child_count
+                ]
+                == output_bytes[
+                    after.offset : after.offset
+                    + after.generic_header.length_or_child_count
+                ]
+            )
+    flat = next(s for s in rows(checked, 2) if s.chunk.header.playlist_id == 10)
+    grouped = next(s for s in rows(original, 3) if s.chunk.header.playlist_id == 10)
+    flat_episodes = [s.chunk for s in flat.find_chunks(MhipHeader)]
+    grouped_episodes = [
+        s.chunk
+        for s in grouped.find_chunks(MhipHeader)
+        if not s.chunk.header.podcast_group_flag & 0x100
+    ]
+    assert tuple(c.header.track_id for c in flat_episodes) == (1, 1, 2)
+    assert all(
+        not c.header.podcast_group_flag & 0x100 and not c.header.group_id_ref
+        for c in flat_episodes
+    )
+    if not with_flat_counterpart:
+        assert flat.chunk.header == replace(
+            grouped.chunk.header, mhip_child_count=len(flat_episodes)
+        )
+        for episode, original_episode in zip(
+            flat_episodes, grouped_episodes, strict=True
+        ):
+            assert episode.header == replace(
+                original_episode.header,
+                group_id_ref=0,
+                mhip_persistent_id=episode.header.mhip_persistent_id,
+            )
+            assert [c.prefix for c in episode.children] == [
+                c.prefix for c in original_episode.children
+            ]
+        assert [
+            output_bytes[c.offset : c.offset + c.generic_header.length_or_child_count]
+            for c in flat.chunk.children
+            if not isinstance(c.header, MhipHeader)
+        ] == [
+            original_bytes[c.offset : c.offset + c.generic_header.length_or_child_count]
+            for c in grouped.chunk.children
+            if not isinstance(c.header, MhipHeader)
+        ]
+        fresh_ids = {c.header.mhip_persistent_id for c in flat_episodes}
+        assert len(fresh_ids) == len(flat_episodes)
+        assert 0 not in fresh_ids
+        assert fresh_ids.isdisjoint(
+            s.chunk.header.mhip_persistent_id for s in original.find_chunks(MhipHeader)
+        )
+    assert plan.resolution is not None
+    companion_effects = [
+        e for e in plan.resolution.effects if e.code == "playlist.companion"
+    ]
+    assert len(companion_effects) == (0 if with_flat_counterpart else 1)
+    if companion_effects:
+        assert companion_effects[0].record_id == 10
+        assert companion_effects[0].dataset == 2
+        assert companion_effects[0].causes
+    assert source.serialize().itunes == original_bytes
+
+
+@pytest.mark.parametrize("mismatch", ["missing", "conflicting"])
+def test_dataset3_only_podcasts_does_not_exempt_ordinary_playlist_mirrors(
+    mismatch: str,
+) -> None:
+    source = populated_podcasts()
+    document = parse_iTunesDB(source.serialize().itunes)
+    dataset = next(
+        s for s in document.find_chunks(MhsdHeader) if s.chunk.header.dataset_type == 2
+    )
+    container = dataset.chunk.children[0]
+    master, user = container.children
+    children: tuple[ParsedChunk[ChunkHeader], ...]
+    if mismatch == "missing":
+        children = (master,)
+    else:
+        children = (
+            master,
+            replace(
+                user,
+                children=(
+                    new_string_mhod(MhodType.TITLE, "Conflict"),
+                    *user.children[1:],
+                ),
+            ),
+        )
+    document = document.replace_chunk(
+        dataset,
+        replace(dataset.chunk, children=(replace(container, children=children),)),
+    )
+    source = IPodLibrary(write_iTunesDB(document))
+    desired = replace(
+        source.snapshot,
+        playlists=(
+            *source.snapshot.playlists,
+            Playlist(-1, "New", PlaylistKind.PLAYLIST),
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is None
+    assert any(issue.code == "playlist.ambiguous_mirror" for issue in result.issues)
+
+
+@pytest.mark.parametrize("missing_dataset", [False, True])
+def test_new_podcast_counterpart_receives_edits_in_the_same_write(
+    missing_dataset: bool,
+) -> None:
+    source = populated_podcasts()
+    if missing_dataset:
+        document = parse_iTunesDB(source.serialize().itunes)
+        document = replace(
+            document,
+            children=tuple(
+                c
+                for c in document.children
+                if not isinstance(c.header, MhsdHeader) or c.header.dataset_type != 2
+            ),
+        )
+        source = IPodLibrary(write_iTunesDB(document))
+    desired = replace(
+        source.snapshot,
+        playlists=tuple(
+            replace(
+                p,
+                name="Renamed Podcasts",
+                entries=(PlaylistEntry("edited", 2),),
+            )
+            if p.playlist_id == 10
+            else p
+            for p in source.snapshot.playlists
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    checked = parse_iTunesDB(result.prepared.itunes)
+    for kind in (2, 3):
+        podcast = next(
+            s for s in rows(checked, kind) if s.chunk.header.playlist_id == 10
+        )
+        episodes = [
+            s.chunk
+            for s in podcast.find_chunks(MhipHeader)
+            if not s.chunk.header.podcast_group_flag & 0x100
+        ]
+        assert [c.header.track_id for c in episodes] == [2]
+    assert (
+        next(p.name for p in result.prepared.snapshot.playlists if p.playlist_id == 10)
+        == "Renamed Podcasts"
+    )
+
+
+@pytest.mark.parametrize(
+    ("corruption", "code"),
+    [
+        ("missing", "playlist_missing_mirror"),
+        ("group", "podcast_dataset"),
+        ("row_id", "podcast_row_mirror"),
+        ("position", "podcast_position_mirror"),
+    ],
+)
+def test_verification_rejects_a_missing_or_invalid_new_podcast_counterpart(
+    monkeypatch: pytest.MonkeyPatch, corruption: str, code: str
+) -> None:
+    source = populated_podcasts()
+    original_bytes = source.serialize().itunes
+    desired = replace(
+        source.snapshot,
+        playlists=(
+            *source.snapshot.playlists,
+            Playlist(-1, "New", PlaylistKind.PLAYLIST),
+        ),
+    )
+
+    def corrupt(document: DatabaseDocument[MhbdHeader]) -> bytes:
+        podcast = next(
+            (s for s in rows(document, 2) if s.chunk.header.playlist_id == 10), None
+        )
+        if podcast is None:
+            return write_iTunesDB(document)
+        if corruption == "missing":
+            dataset = next(
+                s
+                for s in document.find_chunks(MhsdHeader)
+                if s.chunk.header.dataset_type == 2
+            )
+            container = dataset.chunk.children[0]
+            document = document.replace_chunk(
+                dataset,
+                replace(
+                    dataset.chunk,
+                    children=(
+                        replace(
+                            container,
+                            children=tuple(
+                                c for c in container.children if c is not podcast.chunk
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        else:
+            episode = podcast.find_chunks(MhipHeader)[0]
+            if corruption == "position":
+                replacement = replace(
+                    episode.chunk,
+                    children=tuple(
+                        replace(c, prefix=replace(c.prefix, position=999))
+                        if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+                        else c
+                        for c in episode.chunk.children
+                    ),
+                )
+            else:
+                replacement = replace(
+                    episode.chunk,
+                    header=replace(episode.chunk.header, group_id_ref=999)
+                    if corruption == "group"
+                    else replace(episode.chunk.header, group_id=999),
+                )
+            document = document.replace_chunk(episode, replacement)
+        return write_iTunesDB(document)
+
+    monkeypatch.setattr(_write_preparation, "write_iTunesDB", corrupt)
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is None
+    assert any(i.code == f"verification.{code}" for i in result.issues)
+    assert source.serialize().itunes == original_bytes
 
 
 @pytest.mark.parametrize("track_ids", [(1,), (1, 2, 1)])

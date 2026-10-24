@@ -734,7 +734,12 @@ silently overwrite uncaptured source thumbnail files.
 Affected existing dataset mirrors keep their own metadata and occurrences, including
 duplicate Tracks. Empty Master-only mirrors accept the first Playlist. A source
 with only dataset 3 gains a flat dataset 2 companion for affected edits; conflicting
-existing counterparts block additions. New Playlists carry native identity mirrors
+existing counterparts block additions. When dataset 2 exists but lacks the special
+Podcasts Playlist, affected writes create its flat counterpart from retained
+dataset-3 metadata before checking completeness. Existing counterparts remain
+intact, and ordinary Playlists still require established counterparts; see
+[ADR-0174](adr/0174-create-missing-flat-podcasts-counterparts.md).
+New Playlists carry native identity mirrors
 and the Original writer's display preferences. Master membership, known browse
 indexes, album/artist/composer links, folder child rules and aggregates, and podcast
 groups are reconciled and checked independently after reparse.

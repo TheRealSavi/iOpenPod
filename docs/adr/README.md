@@ -246,3 +246,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0171: Use standard Track headers on Mini 2 and iPod video](0171-use-standard-track-headers-on-mini-2-and-ipod-video.md)
 - [ADR-0172: Keep artist capitalization significant](0172-keep-artist-capitalization-significant.md)
 - [ADR-0173: Initialize missing Libraries on selected iPods](0173-initialize-missing-libraries-on-selected-ipods.md)
+- [ADR-0174: Create missing flat Podcasts counterparts](0174-create-missing-flat-podcasts-counterparts.md)

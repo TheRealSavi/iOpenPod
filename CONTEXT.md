@@ -14,6 +14,10 @@ then beyond it.
 
 ## Current stage
 
+Affected Playlist writes create a missing flat dataset-2 counterpart for a retained
+special Podcasts Playlist in dataset 3. Existing counterparts keep their own
+metadata, and ordinary counterpart consistency checks remain required. See ADR-0174.
+
 Selecting an exactly identified, writable iPod whose Library database is absent
 now initializes its base directories and a device-compatible empty Library. This
 restores Original iOpenPod behavior for Apple restores that omit iTunesDB, including

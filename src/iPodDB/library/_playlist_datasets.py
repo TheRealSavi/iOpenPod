@@ -181,6 +181,83 @@ def structure_issues(
     return tuple(issues)
 
 
+def missing_podcast_companion(
+    document: DatabaseDocument[MhbdHeader],
+) -> ChunkSelection[MhbdHeader, MhypHeader] | None:
+    """Identify one missing flat Podcasts row without guessing over collisions."""
+    datasets = document.find_chunks(MhsdHeader)
+    standard = [s for s in datasets if s.chunk.header.dataset_type == 2]
+    grouped = [s for s in datasets if s.chunk.header.dataset_type == 3]
+    if len(standard) != 1 or len(grouped) != 1:
+        return None
+    podcasts = [
+        s for s in grouped[0].find_chunks(MhypHeader) if is_podcasts(3, s.chunk.header)
+    ]
+    if len(podcasts) != 1:
+        return None
+    source = podcasts[0]
+    for row in standard[0].find_chunks(MhypHeader):
+        if row.chunk.header.playlist_id == source.chunk.header.playlist_id or (
+            is_visible(2, row.chunk.header) and row.chunk.header.playlist_kind_flags & 1
+        ):
+            return None
+    return source
+
+
+def _flat_playlist(
+    document: DatabaseDocument[MhbdHeader],
+    playlist: ParsedChunk[MhypHeader],
+    allocator: IdentityAllocator,
+) -> ParsedChunk[MhypHeader]:
+    items = [c for c in playlist.children if not isinstance(c.header, MhipHeader)]
+    members = [
+        chunk_as(c, MhipHeader)
+        for c in playlist.children
+        if isinstance(c.header, MhipHeader) and not c.header.podcast_group_flag & 0x100
+    ]
+    if is_master(3, playlist.header):
+        by_track = {c.header.track_id: c for c in members}
+        if len(by_track) != len(members) or any(
+            isinstance(c.header, MhipHeader) and c.header.podcast_group_flag & 0x100
+            for c in playlist.children
+        ):
+            raise ValueError(
+                "Cannot create a standard companion from an ambiguous Master Playlist."
+            )
+        members = [
+            by_track.get(s.chunk.header.track_id)
+            or new_itunes_chunk(
+                MHIP,
+                MhipHeader(
+                    track_id=s.chunk.header.track_id,
+                    track_persistent_id=s.chunk.header.db_track_id,
+                ),
+            )
+            for s in document.find_chunks(MhitHeader)
+        ]
+    podcasts = is_podcasts(3, playlist.header)
+    for position, item in enumerate(members):
+        item = replace(
+            item,
+            header=replace(
+                item.header,
+                group_id=item.header.group_id if podcasts else 0,
+                group_id_ref=0,
+                mhip_persistent_id=allocator.take(),
+            ),
+        )
+        retained_position = next(
+            (
+                c.prefix.position
+                for c in item.children
+                if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+            ),
+            position,
+        )
+        items.append(position_item(item, retained_position if podcasts else position))
+    return replace(playlist, children=tuple(items))
+
+
 def ensure_companion(
     document: DatabaseDocument[MhbdHeader],
     allocator: IdentityAllocator,
@@ -188,10 +265,20 @@ def ensure_companion(
     """Original iOpenPod supplies a standard companion for a type-3-only source.
 
     Copy retained metadata, but flatten podcast MHIPs for the newly created type 2.
-    Existing type 2 rows are never overwritten or inferred from type 3.
+    Fill a missing special Podcasts row in an existing type 2 from retained type 3
+    metadata. Existing type 2 rows are never overwritten.
     """
     datasets = document.find_chunks(MhsdHeader)
     if any(s.chunk.header.dataset_type == 2 for s in datasets):
+        podcast = missing_podcast_companion(document)
+        if podcast is not None:
+            target = next(s for s in datasets if s.chunk.header.dataset_type == 2)
+            container = target.chunk.children[0].append_child(
+                _flat_playlist(document, podcast.chunk, allocator)
+            )
+            document = document.replace_chunk(
+                target, replace(target.chunk, children=(container,))
+            )
         children = list(document.children)
         slots = [
             i
@@ -215,60 +302,7 @@ def ensure_companion(
             continue
         if not is_visible(3, child.header) and not is_master(3, child.header):
             continue
-        items = [
-            item for item in child.children if not isinstance(item.header, MhipHeader)
-        ]
-        members = [
-            chunk_as(c, MhipHeader)
-            for c in child.children
-            if isinstance(c.header, MhipHeader)
-            and not c.header.podcast_group_flag & 0x100
-        ]
-        if is_master(3, child.header):
-            by_track = {c.header.track_id: c for c in members}
-            if len(by_track) != len(members) or any(
-                isinstance(c.header, MhipHeader) and c.header.podcast_group_flag & 0x100
-                for c in child.children
-            ):
-                raise ValueError(
-                    "Cannot create a standard companion from an ambiguous Master Playlist."
-                )
-            members = [
-                by_track.get(s.chunk.header.track_id)
-                or new_itunes_chunk(
-                    MHIP,
-                    MhipHeader(
-                        track_id=s.chunk.header.track_id,
-                        track_persistent_id=s.chunk.header.db_track_id,
-                    ),
-                )
-                for s in document.find_chunks(MhitHeader)
-            ]
-        for position, typed in enumerate(members):
-            typed = replace(
-                typed,
-                header=replace(
-                    typed.header,
-                    group_id=0,
-                    group_id_ref=0,
-                    mhip_persistent_id=allocator.take(),
-                ),
-            )
-            retained_position = next(
-                (
-                    c.prefix.position
-                    for c in typed.children
-                    if isinstance(c.prefix, MhodPlaylistPositionPrefix)
-                ),
-                position,
-            )
-            items.append(
-                position_item(
-                    typed,
-                    retained_position if is_podcasts(3, child.header) else position,
-                )
-            )
-        rows.append(replace(child, children=tuple(items)))
+        rows.append(_flat_playlist(document, chunk_as(child, MhypHeader), allocator))
     companion = new_itunes_chunk(
         MHSD,
         MhsdHeader(dataset_type=2),

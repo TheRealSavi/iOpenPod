@@ -8638,6 +8638,10 @@ Playlists: %3</translation>
         <translation>Un archivo necesario cambió durante la operación.</translation>
     </message>
     <message>
+        <source>A required flat Podcasts counterpart was not created.</source>
+        <translation>No se creó la copia plana correspondiente obligatoria de la lista de pódcasts.</translation>
+    </message>
+    <message>
         <source>A retained Playlist disappeared from its counterpart dataset.</source>
         <translation>Una lista conservada desapareció de su conjunto de datos correspondiente.</translation>
     </message>
