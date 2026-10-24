@@ -795,6 +795,17 @@ Track removals and replacements capture this companion for pruning as well.
 Default no-op serialization and ordinary metadata edits retain their existing
 preservation behavior. The generator creates no Mixes or saved Genius Playlists.
 
+ADR-0179 extends candidate generation with Elephant-Ear-style Genius Audio Profiles.
+The Application Layer analyzes prepared Host media or retained device media through
+Storage's pinned read-only inputs. A bounded, disposable Host cache retains compact
+successful profiles with analysis version and source facts. Audio vectors stay
+outside iPodDB and outside Synesthesia's runtime-only Track Analysis contract.
+The pure generator compares body features and outro-to-intro transitions, retains
+metadata fallback, and supplies stable artist/album keys with native spacing rules.
+Device analysis identities are rechecked before staging and publication; cache
+evidence never authorizes mutation. The application composition owns decoder and
+cache dependencies. No new dependency or runtime Elephant-Ear package is required.
+
 The Application supplies the selected Device Profile's binary database version to
 `WriteTarget`. Library reconciliation may expand a short Track header only to
 represent requested fields within that capability. The shared MHIT definition owns

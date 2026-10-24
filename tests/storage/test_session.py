@@ -101,6 +101,23 @@ def test_read_only_tool_can_seek_without_capturing_the_device_file(
     assert output.returncode == 0
 
 
+def test_device_tool_keeps_output_arguments_after_pinned_input(tmp_path: Path) -> None:
+    root, _, session = _session(tmp_path, writable=False)
+    (root / "audio.bin").write_bytes(b"audio")
+    output = session.read_with_tool(
+        DevicePath("audio.bin"),
+        HostPath(sys.executable),
+        (
+            "-c",
+            "import sys; assert sys.argv[2:] == ['--output', 'stdout']; "
+            "sys.stdout.buffer.write(open(sys.argv[1], 'rb').read())",
+        ),
+        arguments_after_input=("--output", "stdout"),
+        checkpoint=lambda: None,
+    )
+    assert output.stdout == b"audio"
+
+
 def test_device_tool_is_cancelled_when_its_session_is_invalidated(
     tmp_path: Path,
 ) -> None:

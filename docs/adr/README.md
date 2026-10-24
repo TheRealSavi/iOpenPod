@@ -251,3 +251,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0176: Preserve and author native Genius data](0176-preserve-and-author-native-genius-data.md)
 - [ADR-0177: Browse native Genius collections](0177-browse-native-genius-collections.md)
 - [ADR-0178: Generate basic Genius during Sync](0178-generate-basic-genius-during-sync.md)
+- [ADR-0179: Rank Genius with Elephant-Ear audio profiles](0179-rank-genius-with-elephant-ear-audio-profiles.md)

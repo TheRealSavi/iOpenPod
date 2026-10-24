@@ -14,13 +14,17 @@ then beyond it.
 
 ## Current stage
 
-Sync now prepares basic native Genius relationships for all music Tracks on
-Genius-capable iPods. It uses the final Library, stable Genius identities, bounded
-metadata-ranked candidates, and the tested compact configuration. Existing Mixes
-remain retained; Sync creates no Genius collections or Host playback controls.
+Sync now prepares native Genius relationships for all music Tracks on
+Genius-capable iPods. Elephant-Ear-style audio profiles rank bounded candidates
+using body similarity and outro-to-intro compatibility, with metadata fallback.
+Profiles are cached on the Host; short Tracks use body-only analysis. Stable Genius
+identities, real artist and album keys, and native spacing rules accompany the
+final Library. The new spacing policy still needs hardware listening validation.
+Existing Mixes remain retained; Sync creates no Genius collections or Host playback
+controls.
 Classic `Extras.itdb` participates in the same captured and verified transaction as
-iTunesDB, including pruning during ordinary affected Library saves. See ADR-0178
-and the [Genius data contract](docs/ipod-genius.md).
+iTunesDB, including pruning during ordinary affected Library saves. See ADR-0178,
+ADR-0179, and the [Genius data contract](docs/ipod-genius.md).
 
 iOpenPod now exposes native Genius Playlists and Mixes in a dedicated read-only
 Genius browser. Classic MHOD 54 seed records identify Genius Playlists before

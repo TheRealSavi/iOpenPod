@@ -38,6 +38,7 @@ from iOpenPod.app.core.settings.device import (
     save_device_settings,
 )
 from iOpenPod.app.display_text import exception_text, source_text
+from iOpenPod.app.genius_analysis import GeniusAnalysisService
 from iOpenPod.app.genius_generation import generate_genius_update
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
@@ -129,6 +130,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from iOpenPod.app.backups.models import BackupDeviceContext
+    from iOpenPod.app.genius_analysis import (
+        GeniusAnalysisProgress,
+        GeniusAnalysisResult,
+    )
     from iOpenPod.app.library_write import (
         LibraryPreparationRequest,
         LibraryReview,
@@ -288,6 +293,7 @@ class _PreparedLibraryWrite:
     temporary_files: contextlib.ExitStack
     files: tuple[FilePrecondition, ...]
     discarded_track_media: tuple[library_resources.DiscardedTrackMedia, ...] = ()
+    genius_analysis: GeniusAnalysisResult | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,6 +338,7 @@ class DeviceCoordinator:
         *,
         ithmb_cache_byte_limit: int = 16 * 1024 * 1024,
         ipod_media_scanner: IPodMediaScanner | None = None,
+        genius_analysis: GeniusAnalysisService | None = None,
         volume_presentation_enabled: bool = True,
     ) -> None:
         if ithmb_cache_byte_limit <= 0:
@@ -355,6 +362,7 @@ class DeviceCoordinator:
         self._ithmb_bytes: OrderedDict[_IthmbByteCacheKey, bytes] = OrderedDict()
         self._podcast_store = PodcastDeviceStore()
         self._ipod_media_scanner = ipod_media_scanner or IPodMediaScanner()
+        self._genius_analysis = genius_analysis or GeniusAnalysisService()
         self._recovery_observations: dict[
             str, tuple[MountedVolume, FileFingerprint]
         ] = {}
@@ -1170,6 +1178,7 @@ class DeviceCoordinator:
             WriteProgress,
         )
         from iPodDB.library import (
+            IssueSeverity,
             LibraryWriteResult,
             WriteChecksum,
             WriteIssue,
@@ -1180,6 +1189,10 @@ class DeviceCoordinator:
 
         expected, snapshot = request.source, request.snapshot
 
+        def cancellation_checkpoint() -> None:
+            if cancelled.is_set():
+                raise PreparationCancelledError
+
         def checkpoint(
             phase: str,
             message: str,
@@ -1189,8 +1202,7 @@ class DeviceCoordinator:
             current_item: str = "",
             unit: str = "",
         ) -> None:
-            if cancelled.is_set():
-                raise PreparationCancelledError
+            cancellation_checkpoint()
             progress(
                 WriteProgress(
                     phase,
@@ -1249,6 +1261,7 @@ class DeviceCoordinator:
         plan: LibraryWritePlan | None = None
         resources: WriteResources | None = None
         result: LibraryWriteResult | None = None
+        genius_analysis: GeniusAnalysisResult | None = None
         checkpoint("source.check", "Checking source")
         temporary_files = contextlib.ExitStack()
         try:
@@ -1365,8 +1378,29 @@ class DeviceCoordinator:
                     if cancelled.is_set():
                         raise PreparationCancelledError
 
+                def genius_progress(value: GeniusAnalysisProgress) -> None:
+                    checkpoint(
+                        "draft.genius.audio",
+                        source_text("Analyzing music for Genius"),
+                        completed=value.completed,
+                        total=value.total,
+                        current_item=value.title,
+                        unit="tracks",
+                    )
+
+                genius_analysis = self._genius_analysis.analyze(
+                    snapshot,
+                    active.session,
+                    media=request.media,
+                    checkpoint=genius_checkpoint,
+                    progress=genius_progress,
+                )
+                checkpoint(
+                    "draft.genius.rank", source_text("Ranking Genius candidates")
+                )
                 genius_update = generate_genius_update(
                     snapshot,
+                    profiles=genius_analysis.profiles,
                     checkpoint=genius_checkpoint,
                 )
             checkpoint("draft.analysis", "Analyzing changes")
@@ -1423,10 +1457,33 @@ class DeviceCoordinator:
             )
             resources = captured.resources
             result = source.prepare(plan, resources, progress=database_progress)
+            genius_issues: tuple[WriteIssue, ...] = ()
+            if genius_analysis is not None:
+                checkpoint(
+                    "draft.genius.verify", source_text("Verifying Genius sources")
+                )
+                genius_analysis.validate_sources(
+                    active.session,
+                    checkpoint=cancellation_checkpoint,
+                )
+                if genius_analysis.issues:
+                    genius_issues = (
+                        WriteIssue(
+                            "genius.analysis_warning",
+                            "Some Genius audio analysis or cache work was unavailable. "
+                            "Tracks without an audio profile use metadata candidates.",
+                            severity=IssueSeverity.WARNING,
+                            phase="resources",
+                            detail="\n".join(
+                                issue.detail for issue in genius_analysis.issues[:10]
+                            ),
+                        ),
+                    )
             result = replace(
                 result,
                 issues=(
                     *result.issues,
+                    *genius_issues,
                     *library_resources.preparation_issues(captured, result.prepared),
                 ),
             )
@@ -1500,6 +1557,7 @@ class DeviceCoordinator:
                         temporary_files.pop_all(),
                         captured.files,
                         captured.discarded_track_media,
+                        genius_analysis,
                     )
             return review
         except (StorageError, DeviceChangedError, ValueError, OSError) as error:
@@ -1628,6 +1686,14 @@ class DeviceCoordinator:
                     active.record.mounted_volume, access=AccessMode.READ_WRITE
                 ) as session:
 
+                    def cancel_checkpoint() -> None:
+                        if cancelled.is_set():
+                            raise PreparationCancelledError
+                        if self._active is not active or not active.session.is_active:
+                            raise DeviceChangedError(
+                                "The Active iPod changed during staging"
+                            )
+
                     def checkpoint() -> None:
                         if cancelled.is_set():
                             raise PreparationCancelledError
@@ -1686,6 +1752,11 @@ class DeviceCoordinator:
                                 )
                         if validate_sources is not None:
                             validate_sources(session)
+                        if issued.genius_analysis is not None:
+                            issued.genius_analysis.validate_sources(
+                                session,
+                                checkpoint=cancel_checkpoint,
+                            )
 
                     progress(
                         WriteProgress(
@@ -1712,14 +1783,6 @@ class DeviceCoordinator:
                             "Staging and verifying Library files…",
                         )
                     )
-
-                    def cancel_checkpoint() -> None:
-                        if cancelled.is_set():
-                            raise PreparationCancelledError
-                        if self._active is not active or not active.session.is_active:
-                            raise DeviceChangedError(
-                                "The Active iPod changed during staging"
-                            )
 
                     def transaction_progress(event: TransactionProgress) -> None:
                         progress(

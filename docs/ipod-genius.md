@@ -12,13 +12,43 @@ native Genius Playlists. The generator uses every music Track in the completed
 desired Library, including retained songs and successful additions. Podcasts,
 audiobooks, and videos are excluded. Ordinary metadata saves preserve the graph.
 
-The first algorithm prefers bounded same-artist, album, and genre neighborhoods,
-with a Library-wide ring fallback. Each Track has at most 256 candidates. Retained
-unique Genius IDs are reused; others are allocated deterministically with collision
-checks. A compact configuration without filtering rules requests 25 results with
-a minimum of 10. Libraries below that minimum still receive valid relationships,
-but native playback is not guaranteed. This is a basic recommendation policy with
-no audio analysis or network dependency.
+Candidate ranking now adapts Elephant-Ear's two-stage selection: compare the body
+of each Track, then prefer an intro compatible with the seed's outro among the next
+three nearest bodies. Both comparisons remain anchored to that seed; the firmware
+still constructs playback. Each present segment has tempo, spectral-centroid mean
+and variance, and 13 MFCC means and variances. Ends use 20 seconds each; Tracks of
+40 seconds or less use their complete body and have absent ends. An absent end
+falls back to body comparison, rather than matching a fabricated silent vector.
+
+Libraries with more than 512 profiles use bounded deterministic projection
+neighborhoods; smaller ones use exact body comparisons. Missing profiles use artist, album, and genre
+neighborhoods. A Library-wide ring fallback keeps the graph connected. Each Track
+has at most 256 candidates, an application cap rather than a firmware limit.
+Retained unique Genius IDs are reused; others are allocated deterministically with
+collision checks. See [ADR-0179](adr/0179-rank-genius-with-elephant-ear-audio-profiles.md).
+
+Metadata slots are `[1, artist_key, album_key, genius_id]`. Artist identity and
+effective Album Artist retain exact spelling and capitalization; album titles use
+the existing case-insensitive equivalence. Missing artist or album identity gets a
+Track-specific key. Two opcode-3 rules use `(field, floor, distance, jitter)`:
+artist `(1, 1, 6, 2)` and album `(2, 1, 10, 2)`. These are firmware spacing-counter
+settings, not exact guaranteed gaps. The compact control suffix is retained and no
+skip or category filtering is enabled. Result counts remain 25 desired and 10
+minimum. Libraries below that minimum still receive valid relationships, but native
+playback is not guaranteed. The new spacing settings require hardware acceptance;
+the earlier no-rule experiments do not validate them.
+
+Cold Sync analyzes prepared Host sources and retained iPod music sequentially
+through Storage. The normal application keeps a versioned, checksummed, bounded
+Host cache of successful compact profiles. Unchanged sources reuse profiles;
+changed sources invalidate them. PCM is transient. Decode or cache failure is
+reported with metadata fallback, while cancellation, device disconnect, and source
+mutation stop preparation. Device identities are checked again before publication.
+Synesthesia Track Analysis and Chromaprint matching evidence remain separate.
+The current decoder accepts up to 15 minutes of audio and 300 seconds of decoding
+time per Track; longer or undecodable Tracks retain metadata candidates. Spectral
+and tempo analysis use bounded blocks. The disposable cache is capped at 50,000
+records and 64 MiB.
 
 The graph is published with the Library through the existing reviewed Storage
 transaction. Classic root `Extras.itdb` is captured, checked, and published with

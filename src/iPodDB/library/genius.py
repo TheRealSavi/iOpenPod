@@ -8,8 +8,10 @@ Genius state.
 """
 
 from iPodDB.genius import (
+    GeniusConfig,
     GeniusMetadata,
     GeniusSimilarities,
+    GeniusSpacingRule,
     make_no_rule_genius_config,
 )
 from iPodDB.library.genius_browse import (
@@ -44,6 +46,7 @@ __all__ = [
     "GeniusBrowseIssue",
     "GeniusCollection",
     "GeniusCollectionKind",
+    "GeniusConfig",
     "GeniusConfigRow",
     "GeniusData",
     "GeniusDatabase",
@@ -52,6 +55,7 @@ __all__ = [
     "GeniusMix",
     "GeniusSimilarities",
     "GeniusSimilaritiesRow",
+    "GeniusSpacingRule",
     "GeniusTrack",
     "GeniusUpdate",
     "make_no_rule_genius_config",

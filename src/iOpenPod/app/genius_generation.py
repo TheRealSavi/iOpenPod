@@ -1,19 +1,19 @@
-"""A basic local candidate graph for native, Track-seeded Genius Playlists.
+"""Local candidates and native spacing for Track-seeded Genius Playlists.
 
 The firmware owns Playlist selection and playback. This policy supplies bounded
-metadata neighborhoods and a connected fallback graph; it is not an acoustic
-similarity model. Its compact configuration and four-key metadata follow the
-Classic 6.5G and nano 7G experiments in the native Genius research record.
+audio-ranked candidates, metadata neighborhoods, and a connected fallback graph.
+Artist and album keys support native spacing; acoustic vectors stay on the Host.
 """
 
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from hashlib import blake2b
 from itertools import zip_longest
 from typing import TYPE_CHECKING
 
+from iOpenPod.app.genius_audio import rank_genius_candidates
 from iPodDB.library import MediaKind, is_video_track
 from iPodDB.library.genius import (
     GeniusConfigRow,
@@ -22,14 +22,16 @@ from iPodDB.library.genius import (
     GeniusMetadataRow,
     GeniusSimilarities,
     GeniusSimilaritiesRow,
+    GeniusSpacingRule,
     GeniusTrack,
     GeniusUpdate,
     make_no_rule_genius_config,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Mapping
 
+    from iOpenPod.app.genius_audio import GeniusAudioProfile
     from iPodDB.library import LibrarySnapshot, Track
 
 
@@ -38,18 +40,21 @@ _MAX_ID = (1 << 64) - 1
 _ARTIST_CANDIDATES = 16
 _ALBUM_CANDIDATES = 8
 _GENRE_CANDIDATES = 128
+type _GroupKey = str | tuple[str, str]
 
 
 @dataclass(slots=True)
 class _GroupIndex:
     """Shared membership and positions avoid rescanning large metadata groups."""
 
-    members: dict[str, list[int]] = field(default_factory=dict[str, list[int]])
-    positions: dict[int, tuple[str, int]] = field(
-        default_factory=dict[int, tuple[str, int]]
+    members: dict[_GroupKey, list[int]] = field(
+        default_factory=dict[_GroupKey, list[int]]
+    )
+    positions: dict[int, tuple[_GroupKey, int]] = field(
+        default_factory=dict[int, tuple[_GroupKey, int]]
     )
 
-    def add(self, track_id: int, key: str) -> None:
+    def add(self, track_id: int, key: _GroupKey) -> None:
         if key:
             group = self.members.setdefault(key, [])
             self.positions[track_id] = (key, len(group))
@@ -67,6 +72,28 @@ class _GroupIndex:
 
 def _valid_id(value: int) -> bool:
     return type(value) is int and 0 < value <= _MAX_ID
+
+
+def _album_labels(track: Track) -> tuple[str, str] | None:
+    artist = track.effective_album_artist
+    album = track.album.casefold()
+    return (artist, album) if artist.strip() and album.strip() else None
+
+
+def _metadata_key(kind: str, labels: tuple[str, ...], genius_id: int) -> int:
+    """Hash semantic labels independently of Track order and Python hash seeds.
+
+    Missing labels use the stable Genius identity, so unrelated unknown artists
+    or albums do not become one spacing group. Length framing distinguishes
+    arbitrary label contents, including separators embedded in tags.
+    """
+    digest = blake2b(digest_size=8, person=b"iOpenPodGKeys")
+    values = (kind, "known", *labels) if labels else (kind, "missing", str(genius_id))
+    for value in values:
+        encoded = value.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    return int.from_bytes(digest.digest(), "big") or 1
 
 
 def _track_order(track: Track) -> tuple[int, int, int]:
@@ -116,6 +143,7 @@ def _candidates(
     artist: _GroupIndex,
     album: _GroupIndex,
     genre: _GroupIndex,
+    ranked: tuple[int, ...],
 ) -> tuple[int, ...]:
     size = len(track_ids)
     if size < 2:
@@ -127,6 +155,11 @@ def _candidates(
     seen = {track_id}
     # Reserve one place for the global successor. Every Track can therefore
     # reach the whole music Library even when its metadata group is enormous.
+    for candidate in ranked:
+        capacity = limit if successor in seen or candidate == successor else limit - 1
+        if candidate not in seen and len(chosen) < capacity:
+            chosen.append(candidate)
+            seen.add(candidate)
     for group in zip_longest(
         artist.neighbors(track_id, _ARTIST_CANDIDATES),
         genre.neighbors(track_id, _GENRE_CANDIDATES),
@@ -158,6 +191,7 @@ def _candidates(
 def generate_genius_update(
     snapshot: LibrarySnapshot,
     *,
+    profiles: Mapping[int, GeniusAudioProfile] | None = None,
     checkpoint: Callable[[], None] | None = None,
 ) -> GeniusUpdate:
     """Prepare every music Track for native Genius without creating any Mixes.
@@ -167,14 +201,22 @@ def generate_genius_update(
     (including temporary negative IDs), with deterministic collision handling.
     The write preparation persists these assignments for the next Sync.
 
-    Candidate construction takes O(N log N + N * K) work and O(N * K) space,
-    where K is the fixed candidate cap. Metadata groups share indexed membership;
-    no Track scans an entire large group. Ordering is independent of Snapshot
-    order, Python hash randomization, and the current time.
+    Optional Host audio profiles rank candidates first. Missing profiles fall
+    back to metadata neighborhoods and the Library-wide ring. Both paths use
+    bounded candidate pools; metadata groups share indexed membership instead of
+    scanning whole groups. Ordering is independent of Snapshot order, Python
+    hash randomization, and the current time.
 
-    The proven configuration requests 25 results with a minimum of 10. Smaller
-    Libraries still receive complete valid graphs, but firmware may decline to
-    create a Playlist. This function does not lower those untested thresholds.
+    Metadata slots 1 and 2 carry stable artist and album labels for two opcode-3
+    spacing rules. Their distance/jitter parameters are firmware counters, not
+    guaranteed song gaps. A floor of 1 allows the first-used key's documented
+    counter of 1 to pass after relaxation, including single-group Libraries;
+    this does not establish native playability. Acoustic vectors are never
+    encoded as native metadata keys.
+
+    The previously tested result thresholds remain 25 desired and 10 minimum.
+    Smaller Libraries still receive complete valid graphs, but firmware may
+    decline to create a Playlist. This function does not lower those thresholds.
     """
     check = checkpoint if checkpoint is not None else lambda: None
     check()
@@ -190,28 +232,53 @@ def generate_genius_update(
     tracks.sort(key=_track_order)
     assignments = _assign_ids(tracks, check)
     artists, albums, genres = _GroupIndex(), _GroupIndex(), _GroupIndex()
+    metadata: list[GeniusMetadataRow] = []
+    eligible_profiles: dict[int, GeniusAudioProfile] = {}
     for track in tracks:
         check()
-        artists.add(track.track_id, track.artist.strip().casefold())
-        album = track.album.strip().casefold()
-        if album:
-            albums.add(
-                track.track_id,
-                "\x1f".join((track.effective_album_artist.strip().casefold(), album)),
-            )
+        genius_id = assignments[track.track_id]
+        # Match native/Common Library identity (ADR-0172). Case and whitespace
+        # remain significant for artists; only blank labels count as missing.
+        artist = track.artist if track.artist.strip() else ""
+        album = _album_labels(track)
+        artists.add(track.track_id, artist)
+        if album is not None:
+            albums.add(track.track_id, album)
         genres.add(track.track_id, track.genre.strip().casefold())
+        metadata.append(
+            GeniusMetadataRow(
+                genius_id,
+                2,
+                GeniusMetadata(
+                    (
+                        1,
+                        _metadata_key("artist", (artist,) if artist else (), genius_id),
+                        _metadata_key("album", album or (), genius_id),
+                        genius_id,
+                    )
+                ),
+            )
+        )
+        if (
+            profiles is not None
+            and (profile := profiles.get(track.track_id)) is not None
+        ):
+            eligible_profiles[track.track_id] = profile
+    ranked = (
+        rank_genius_candidates(
+            eligible_profiles, limit=MAX_GENIUS_CANDIDATES, checkpoint=check
+        )
+        if eligible_profiles
+        else {}
+    )
     track_ids = tuple(track.track_id for track in tracks)
-    metadata: list[GeniusMetadataRow] = []
     similarities: list[GeniusSimilaritiesRow] = []
     for position, track_id in enumerate(track_ids):
         check()
         genius_id = assignments[track_id]
-        metadata.append(
-            GeniusMetadataRow(
-                genius_id, 2, GeniusMetadata((1, genius_id, genius_id, genius_id))
-            )
+        candidates = _candidates(
+            position, track_ids, artists, albums, genres, ranked.get(track_id, ())
         )
-        candidates = _candidates(position, track_ids, artists, albums, genres)
         similarities.append(
             GeniusSimilaritiesRow(
                 genius_id,
@@ -222,7 +289,21 @@ def generate_genius_update(
     check()
     return GeniusUpdate(
         GeniusData(
-            (GeniusConfigRow(1, 2, 25, 10, make_no_rule_genius_config()),),
+            (
+                GeniusConfigRow(
+                    1,
+                    2,
+                    25,
+                    10,
+                    replace(
+                        make_no_rule_genius_config(),
+                        entries=(
+                            GeniusSpacingRule(1, 1, 6, 2),
+                            GeniusSpacingRule(2, 1, 10, 2),
+                        ),
+                    ),
+                ),
+            ),
             tuple(metadata),
             tuple(similarities),
         ),

@@ -15,6 +15,7 @@ from iOpenPod.app.core.settings.stores import (
 )
 from iOpenPod.app.core.status import ApplicationStatus
 from iOpenPod.app.device_controller import DeviceController
+from iOpenPod.app.genius_analysis import FFmpegGeniusPCMDecoder, GeniusAnalysisService
 from iOpenPod.app.host_media_controller import HostMediaScanController
 from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaScanner
@@ -130,6 +131,12 @@ class AppContext:
         )
         device_coordinator = DeviceCoordinator(
             storage,
+            genius_analysis=GeniusAnalysisService(
+                cache_file=storage.host_cache_file(
+                    "iOpenPod", "genius-acoustic-v1.json"
+                ),
+                decoder=FFmpegGeniusPCMDecoder(find_tool=media_tools.find),
+            ),
             ipod_media_scanner=IPodMediaScanner(
                 fingerprinter=FpcalcFingerprinter(find_tool=media_tools.find),
                 analysis_cache_file=lambda identity: storage.host_cache_file(

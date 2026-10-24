@@ -4,6 +4,10 @@
 - Date: 2026-10-24
 - Extends: ADR-0076, ADR-0176, and ADR-0177
 
+ADR-0179 extends this generation policy with cached Elephant-Ear audio profiles,
+real artist and album keys, and native spacing rules. The transaction, identity,
+capability, and collection-preservation decisions here remain in effect.
+
 ## Context
 
 The native Genius codecs and browser support experiments and retention, but normal
