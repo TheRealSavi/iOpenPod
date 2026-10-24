@@ -311,6 +311,10 @@ positional data retains the conservative preservation/remapping policy. See
 Short Track headers expand only when an edit requires it and the selected Device
 Profile supports the larger format. Skip evidence is never discarded to fit a
 retained header; no-op byte preservation remains mandatory. See ADR-0144.
+Mini 2G and full-size iPod 5G/5.5G now use the standard 624-byte layout for new
+Tracks and required expansion, allowing Podcast Sync to preserve retained artist
+relationships. Their database baseline is `0x30`; other capabilities and unchanged
+database bytes retain their existing behavior. See ADR-0171.
 Oversized Photo containers become bounded PNG stills, with separate Host and iPod
 content digests. Photo sources now use Pillow's existing pixel limits; ordinary
 6K and 16K widescreen originals retain their encoded bytes. Preparation and previews

@@ -236,6 +236,11 @@ _MINI_CAPABILITIES = _capabilities(
     display=(138, 110, False),
     music_directories=6,
 )
+_MINI_2G_CAPABILITIES = replace(
+    _MINI_CAPABILITIES,
+    # ADR-0171: the standard Track layout retains native artist references.
+    database=replace(_MINI_CAPABILITIES.database, binary_version=0x30),
+)
 
 _EARLY_IPOD_CAPABILITIES = _capabilities(
     display=(160, 128, False),
@@ -259,7 +264,7 @@ _IPOD_5G_CAPABILITIES = _capabilities(
     # Firmware-independent Baseline output; the 640x480 mode additionally needs
     # Apple's low-complexity restrictions and firmware evidence (see media policy).
     video=(320, 240, 768, "1.3"),
-    database_version=0x19,
+    database_version=0x30,
     music_directories=20,
 )
 _IPOD_5_5G_CAPABILITIES = replace(
@@ -283,7 +288,7 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
     ("iPod Classic", "6.5th Gen"): _CLASSIC_CAPABILITIES,
     ("iPod Classic", "7th Gen"): _CLASSIC_CAPABILITIES,
     ("iPod Mini", "1st Gen"): _MINI_CAPABILITIES,
-    ("iPod Mini", "2nd Gen"): _MINI_CAPABILITIES,
+    ("iPod Mini", "2nd Gen"): _MINI_2G_CAPABILITIES,
     ("iPod Nano", "1st Gen"): _capabilities(
         display=(176, 132, True),
         cover_formats=_artwork_formats(1031, 1027),

@@ -115,7 +115,11 @@ into the shared field-specific writer.
 
 ## Model-dependent layout and publication
 
-These are the current Device Registry authoring policies, not claims about maximum
+ADR-0171 subsequently changes Mini 2G and full-size iPod 5G/5.5G to baseline `0x30`
+and 624-byte headers, resolving the artist-reference conflict described below.
+The following table records the policies at the time of this investigation.
+
+These are Device Registry authoring policies, not claims about maximum
 firmware support. Source: [capability definitions](../../src/device_registry/data/catalog.py#L136)
 and [model assignments](../../src/device_registry/data/catalog.py#L212).
 

@@ -5,6 +5,8 @@
 - Extends: [ADR-0100](0100-reconcile-firmware-playback-sidecars-on-device-selection.md)
 - Extended by: [ADR-0145](0145-select-track-layouts-for-all-library-writes.md),
   including device-aware new Track creation and later derived fields.
+- Amended by: [ADR-0171](0171-use-standard-track-headers-on-mini-2-and-ipod-video.md),
+  selecting 624-byte headers for Mini 2G and full-size iPod 5G/5.5G.
 
 ## Context
 

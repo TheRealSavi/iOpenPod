@@ -154,6 +154,34 @@ def test_full_size_ipod_capabilities_preserve_generation_differences() -> None:
     assert video_80.capabilities.database.max_database_bytes == 64 * 1024 * 1024
 
 
+@pytest.mark.parametrize(
+    "family,generation,version",
+    [
+        ("iPod Mini", "1st Gen", 0x13),
+        ("iPod Mini", "2nd Gen", 0x30),
+        ("iPod", "5th Gen", 0x30),
+        ("iPod", "5.5th Gen", 0x30),
+        ("iPod Nano", "1st Gen", 0x13),
+        ("iPod Nano", "2nd Gen", 0x13),
+    ],
+)
+def test_older_device_database_baselines(
+    family: str, generation: str, version: int
+) -> None:
+    profiles = tuple(
+        profile
+        for profile in DEFAULT_DEVICE_REGISTRY.profiles
+        if profile.family == family and profile.generation == generation
+    )
+    assert profiles
+    for profile in profiles:
+        database = profile.capabilities.database
+        assert database.binary_version == version
+        assert database.checksum is DatabaseChecksum.NONE
+        assert not database.supports_compressed_database
+        assert not database.uses_sqlite_database
+
+
 def test_sysinfo_style_model_number_produces_an_exact_profile() -> None:
     result = DEFAULT_DEVICE_REGISTRY.identify(
         DeviceEvidence(

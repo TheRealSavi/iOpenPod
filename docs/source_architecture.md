@@ -777,6 +777,9 @@ values and existing dataset relationships cannot be silently omitted.
 Unknown bytes and unchanged records remain intact, and missing capabilities block
 unrepresentable edits instead of dropping playback evidence. See ADR-0144 and
 ADR-0145. These sizes are authoring policy, not universal firmware limits.
+Mini 2G and full-size iPod 5G/5.5G select the standard 624-byte layout through
+database baseline `0x30`, following maintainer-supplied compatibility evidence
+(ADR-0171). Mini 1G and other older profiles retain their existing baselines.
 
 ### Lossless round-trip requirement
 
