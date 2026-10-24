@@ -137,10 +137,11 @@ class TrackActions(QObject):
         self._lyrics_provider = lyrics_provider
         self._double_click_selection: _DoubleClickSelection | None = None
 
-    def install(self, view: QAbstractItemView) -> None:
+    def install(self, view: QAbstractItemView, *, double_click: bool = True) -> None:
         view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         view.customContextMenuRequested.connect(self._menu_requested)
-        view.doubleClicked.connect(self._double_clicked)
+        if double_click:
+            view.doubleClicked.connect(self._double_clicked)
         view.viewport().installEventFilter(self)
         view.installEventFilter(self)
         for sequence, action in (

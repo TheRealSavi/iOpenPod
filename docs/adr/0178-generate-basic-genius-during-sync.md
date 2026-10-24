@@ -10,6 +10,10 @@ capability, and collection-preservation decisions here remain in effect.
 
 ## Context
 
+ADR-0184 subsequently extends the preservation-only collection policy with
+explicit manual additions and opt-in automatic Mix rotation. Unmentioned native
+Mixes and saved Genius Playlists retain this ADR's preservation guarantees.
+
 The native Genius codecs and browser support experiments and retention, but normal
 Sync does not generate relationship data. Classic preparation also requires root
 `Extras.itdb` bytes that the application has not captured or published. The user

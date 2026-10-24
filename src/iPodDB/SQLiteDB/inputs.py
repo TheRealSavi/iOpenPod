@@ -38,11 +38,16 @@ class SQLiteGeniusUpdate:
 
     ``mixes=None`` retains existing containers and their surviving assigned
     starting Tracks. An explicit tuple replaces the Mix set; ``()`` clears it.
+    With ``mixes=None``, selective additions and removals preserve unmentioned
+    native Mix records. Additions cannot overwrite retained container identities.
     """
 
     data: GeniusData
     tracks: tuple[SQLiteGeniusTrack, ...] = ()
     mixes: tuple[SQLiteGeniusMix, ...] | None = None
+    # Selective collection management preserves every unmentioned native row.
+    mix_additions: tuple[SQLiteGeniusMix, ...] = ()
+    mix_removals: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -56,8 +56,45 @@ records and 64 MiB.
 The graph is published with the Library through the existing reviewed Storage
 transaction. Classic root `Extras.itdb` is captured, checked, and published with
 iTunesDB; late devices use the complete SQLite set. Existing native Mixes and saved
-Playlists remain retained. No Mixes, Genius Playlists, or Host playback controls are
-created by this workflow. See [ADR-0178](adr/0178-generate-basic-genius-during-sync.md).
+Playlists remain retained. The graph generator itself creates no collections.
+The separate Mix policy below adds explicit manual and automatic collections;
+saved Genius Playlist creation and Host Mix playback remain separate. See
+[ADR-0178](adr/0178-generate-basic-genius-during-sync.md).
+
+## Adding and rotating Mixes
+
+The Genius Mixes header has Settings and Add glyph buttons. Add opens a grid of
+fixed genre and mood proposals, allowing multiple selections. At least ten matching
+music Tracks are required for each proposal. Focus, Energy, and Relax use the
+existing librosa-derived Genius Audio Profiles to suggest seeds from tempo and
+spectral texture. Love also needs a title or album cue; audio cannot determine a
+song's subject. Mood counts are checked after audio analysis during save, and a
+Mix with too few matching Tracks is rejected without changing the Library.
+Add uses the existing Library save
+workflow, which saves automatically unless **Draft all changes** is enabled.
+
+Settings stores **Count** (default 0/off) and **Expiry (days)** (default 30) for
+the selected iPod. During Sync or Refresh Library, automatic Mixes fill available
+slots. A Mix older than Expiry is replaced by a different randomly selected
+eligible definition. If no alternative is available, it stays with its original
+age. Lowering Count removes excess automatic Mixes at the next Sync; zero removes
+all automatic Mixes. Manual Mixes never expire and do not count toward Count.
+Selecting an automatic Mix through Add makes it permanent.
+
+The catalog currently covers Rock, Alternative, Pop, Hard Rock, Metal, Punk,
+Electronic, Dance, Hip-Hop, R&B and Soul, Jazz, Blues, Country, Folk and Acoustic,
+Classical, Reggae, Latin, and Soundtracks, plus Focus, Love, Energy, and Relax.
+Genre proposals use genre-tag aliases. Mood proposals require usable audio evidence;
+missing profiles do not become matches. These rules do not claim to reproduce
+Apple's recommendations. Native relationship traversal can play beyond the
+proposed starting Tracks.
+
+Creation requires confirmed native Mix support and a supported SQLite writer.
+Other devices continue to browse existing Genius collections. Automatic ownership
+is explicit and stored with the Mix publication in
+`iPod_Control/iOpenPod/genius-mixes-v1.json`; preexisting unowned collections never
+expire. Missing or invalid ownership cannot authorize deletion. See
+[ADR-0184](adr/0184-manage-manual-and-automatic-genius-mixes.md).
 
 ## Browsing in iOpenPod
 
@@ -65,6 +102,13 @@ Select an iPod and open **Genius** in the sidebar. The page groups **Genius
 Playlists** and **Genius Mixes** and displays their saved Tracks or possible Mix
 starting Tracks. Playback controls play only the Tracks explicitly selected;
 the iPod's native Mix engine still generates its own playback queue.
+
+Select a Genius Playlist or Mix and choose **Remove** to delete that native
+collection through the Library save workflow. Removing a Playlist also removes
+its matching saved sidecar when present. Removing a Mix clears its iOpenPod
+ownership entry, including an automatic Mix. Tracks remain in the Library. An
+automatic Mix removed this way may be replaced at the next Sync if Count still
+calls for it. Mix removal requires the supported SQLite writer.
 
 `project_genius_browse` combines canonical Genius Playlists, saved plist sidecars,
 and optional SQLite Mix records into immutable `GeniusBrowse` collections and
@@ -120,6 +164,11 @@ missing Tracks, dangling candidates, incomplete graphs, and incompatible Mix
 targets block preparation. Recommendation policy and capability decisions remain
 the caller's responsibility.
 
+For selective management, leave `mixes=None` and supply `mix_additions` and/or
+`mix_removals`. Additions must have new container identities; removals identify
+native Mix containers. All unmentioned native Mix rows retain their original
+metadata and Unknown Data. Full replacement and selective edits cannot be combined.
+
 For Classic, supply captured root `Extras.itdb` in `WriteResources.genius_source`
 and publish `PreparedLibrary.genius` together with `itunes`. Captured bytes are
 required when changing existing Genius identities, preserving unrelated Extras
@@ -133,10 +182,14 @@ references and Mix seeds; opaque candidate data blocks dependent pruning. Unknow
 tables remain opaque. Existing saved-Playlist markers and seeds in SQLite survive;
 no unproven MHYP marker or seed field is invented.
 
-Retained canonical Genius Playlists preserve their native Smart and seed records
-byte-for-byte. Removing their known seed Track while keeping the Playlist is
-currently unsupported and blocks analysis. Nonseed Track removal can prune
-membership. Ordinary application Playlist controls do not edit these collections.
+Retained canonical Genius Playlists preserve native Smart data and seed records
+except for the known seed field when its Track is deleted. Surviving occurrences
+keep their order and duplicates; the first remaining member replaces a deleted
+known seed. A collection emptied by Track deletion is removed, including its
+matching sidecar or Mix ownership. Unaffected empty collections remain retained.
+Metadata edits do not reclassify collection membership by genre. Ordinary Playlist
+controls still cannot edit native Genius membership or choose arbitrary seeds.
+See [ADR-0186](adr/0186-reconcile-genius-collections-after-track-removal.md).
 
 ## Saved Playlists and limits
 
@@ -146,9 +199,12 @@ IDs and MHIT order; nano identity-only records do not acquire invented indexes.
 Raw database timestamps remain unchanged because cross-device epoch semantics are
 unestablished. Backup filenames are excluded from capture.
 
-These files are captured for preservation, not imported or consumed. The current
-application conservatively allows unchanged/append-only order; removal/reordering
-blocks until that workflow supplies persistent IDs to the explicit remapper.
+These files are captured without import or consumption. The application remaps
+supported documents using the prepared Library's final persistent identities and
+Track order. It prunes deleted occurrences and repairs a deleted seed, preserving
+the remaining selection and unknown values. Changed sidecars and removals publish
+with the Library in one recoverable transaction. Unsupported affected formats
+still block removal/reordering; unchanged or append-only order preserves them.
 Dataset-9 CUID remains opaque. Compressed candidate lists and unknown configuration
 operations can be preserved, but cannot be authored as understood data.
 Explicit nonempty Classic generation initializes a missing dataset-9 CUID using

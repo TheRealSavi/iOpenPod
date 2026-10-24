@@ -17,6 +17,7 @@ from iPodDB.library import (
     TrackFieldEdit,
     playlist_entries,
 )
+from iPodDB.library.genius import GeniusCollection, GeniusCollectionKind
 
 
 def _workspace() -> LibraryWorkspace:
@@ -81,3 +82,26 @@ def test_refresh_and_unrelated_track_edit_do_not_reorder_genius() -> None:
         workspace.edit_revision,
     )
     assert workspace.playlist(10) == source.playlists[0]
+
+
+def test_explicit_genius_removal_stages_canonical_omission_and_can_be_discarded() -> (
+    None
+):
+    workspace = _workspace()
+    collection = GeniusCollection(
+        "genius-playlist:000000000000000a",
+        "Genius",
+        GeniusCollectionKind.PLAYLIST,
+        (1, 2, 1),
+        1,
+        10,
+    )
+    workspace.remove_genius_collection(collection, workspace.edit_revision)
+    assert workspace.playlist(10) is None
+    assert workspace.genius_collection_removals == (collection.collection_id,)
+    assert workspace.delete_omissions
+    assert workspace.dirty
+    workspace.reset_changes()
+    assert workspace.playlist(10) is not None
+    assert not workspace.genius_collection_removals
+    assert not workspace.dirty

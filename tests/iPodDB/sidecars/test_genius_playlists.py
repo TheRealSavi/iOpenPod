@@ -172,12 +172,20 @@ def test_remapping_removes_members_keeps_duplicates_and_never_invents_a_timestam
     data = create_genius_playlist(playlist()).source_bytes
     assert remap_genius_playlist(data, (11, 22, 33), (11, 22, 33, 44)) == data
     output = remap_genius_playlist(data, (11, 22, 33), (44, 22, 11))
+    assert output is not None
     result = parse_genius_playlist(output).playlist
     assert result == replace(
         playlist(), track_master_indexes=(2, 2), track_persistent_ids=(11, 11)
     )
-    with pytest.raises(ValueError, match="seed Track cannot be removed"):
-        remap_genius_playlist(data, (11, 22, 33), (22, 33))
+    reseeded = remap_genius_playlist(data, (11, 22, 33), (22, 33))
+    assert reseeded is not None
+    assert parse_genius_playlist(reseeded).playlist == replace(
+        playlist(),
+        seed_track_persistent_id=33,
+        track_master_indexes=(1,),
+        track_persistent_ids=(33,),
+    )
+    assert remap_genius_playlist(data, (11, 22, 33), (22,)) is None
 
 
 @pytest.mark.parametrize(
@@ -216,6 +224,7 @@ def test_identity_only_nano_variant_keeps_absent_indexes_and_playlist_identity(
     validate_genius_playlist_tracks(expected, (33, 22, 11))
     assert remap_genius_playlist(data, (11, 22, 33), (33, 22, 11)) == data
     output = remap_genius_playlist(data, (11, 22, 33), (22, 11))
+    assert output is not None
     assert parse_genius_playlist(output).playlist == replace(
         expected, track_persistent_ids=(11, 11)
     )

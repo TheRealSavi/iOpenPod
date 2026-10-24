@@ -16,6 +16,7 @@ from iPodDB.ArtworkDB.shared.artwork_index import (
 from iPodDB.device_time import DeviceTimeContext
 from iPodDB.iTunesDB.cdb import decompress_iTunesCDB, is_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.library._genius_reconciliation import reconcile_genius_playlists
 from iPodDB.library._photo_projection import project_photos
 from iPodDB.library._playlist_projection import project_playlists
 from iPodDB.library._projection import link_artwork, project_tracks
@@ -308,9 +309,12 @@ class IPodLibrary:
         Extras bytes when changing existing Genius identities; callers publish
         the resulting companion together with iTunesDB (ADR-0176).
         """
+        desired = self.snapshot if snapshot is None else snapshot
+        if delete_omissions:
+            desired = reconcile_genius_playlists(self.snapshot, desired)
         return LibraryDraft(
             self._source_revision,
-            self.snapshot if snapshot is None else snapshot,
+            desired,
             delete_omissions=delete_omissions,
             replace_media=tuple(replace_media),
             replace_photos=tuple(replace_photos),
@@ -370,7 +374,11 @@ class IPodLibrary:
                     ),
                 ),
             )
-            if draft.genius_update.mixes and not target.sqlite_database:
+            if (
+                draft.genius_update.mixes
+                or draft.genius_update.mix_additions
+                or draft.genius_update.mix_removals
+            ) and not target.sqlite_database:
                 additional_issues += (
                     WriteIssue(
                         "genius.mix_requires_sqlite",

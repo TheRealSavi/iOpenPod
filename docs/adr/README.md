@@ -256,3 +256,7 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0181: Bound Sync reads to workflow boundaries](0181-bound-sync-reads-to-workflow-boundaries.md)
 - [ADR-0182: Verify Host transaction outputs once before commit](0182-verify-host-transaction-outputs-once-before-commit.md)
 - [ADR-0183: Bound concurrent Genius audio analysis](0183-bound-concurrent-genius-audio-analysis.md)
+- [ADR-0184: Manage manual and automatic Genius Mixes](0184-manage-manual-and-automatic-genius-mixes.md)
+- [ADR-0185: Remove native Genius collections explicitly](0185-remove-native-genius-collections-explicitly.md)
+- [ADR-0186: Reconcile Genius collections after Track removal](0186-reconcile-genius-collections-after-track-removal.md)
+- [ADR-0187: Propose audio-informed Genius Mixes](0187-propose-audio-informed-genius-mixes.md)

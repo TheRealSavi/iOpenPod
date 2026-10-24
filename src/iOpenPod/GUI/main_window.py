@@ -596,8 +596,7 @@ class MainWindow(QMainWindow):
         from iOpenPod.GUI.widgets.track_table import TrackTable
 
         for table in self._library_browser.findChildren(TrackTable):
-            if table not in self._genius_page.read_only_tables:
-                table.set_library_workspace(context.library_workspace)
+            table.set_library_workspace(context.library_workspace)
         self._track_actions.playlistCreated.connect(self._playlist_selected)
         self._track_actions.trackExportRequested.connect(self._track_export_requested)
         self._track_actions.chapteredConversionRequested.connect(
@@ -608,8 +607,9 @@ class MainWindow(QMainWindow):
             self._track_actions.show_track
         )
         for table in self._library_browser.findChildren(TrackTable):
-            if table not in self._genius_page.read_only_tables:
-                self._track_actions.install(table)
+            self._track_actions.install(
+                table, double_click=table is not self._genius_page.track_table
+            )
         for grid in (
             *self._library_browser.findChildren(AlbumGridView),
             *self._library_browser.findChildren(CollectionGridView),

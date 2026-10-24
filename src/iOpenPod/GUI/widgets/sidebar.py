@@ -53,7 +53,7 @@ _LIBRARY = (
     _NavigationDefinition(PageId.ARTISTS, "user"),
     _NavigationDefinition(PageId.GENRES, "grid"),
     _NavigationDefinition(PageId.TRACKS, "music"),
-    _NavigationDefinition(PageId.GENIUS, "smart-playlist"),
+    _NavigationDefinition(PageId.GENIUS, "atom"),
     _NavigationDefinition(PageId.PHOTOS, "photo"),
     _NavigationDefinition(PageId.PODCASTS, "broadcast"),
     _NavigationDefinition(PageId.AUDIOBOOKS, "book"),

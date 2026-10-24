@@ -21,6 +21,7 @@ from iOpenPod.app.artwork_policy import (
     rockbox_tag_policy,
 )
 from iOpenPod.app.display_text import exception_text, source_text
+from iOpenPod.app.genius_mixes import supports_mix_creation
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaFileKind
 from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTrack
@@ -2630,6 +2631,7 @@ def _draft(
             request.source.profile.capabilities.genius.playlists
             is FeatureSupport.SUPPORTED
         ),
+        rotate_genius_mixes=supports_mix_creation(request.source.profile),
         repair_podcast_links=True,
         normalize_podcasts=any(
             t.media_kind is MediaKind.PODCAST or t.metadata.podcast

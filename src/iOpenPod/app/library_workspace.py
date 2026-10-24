@@ -40,6 +40,11 @@ from iPodDB.library import (
     smart_playlist_references,
     validate_smart_playlist,
 )
+from iPodDB.library.genius import (
+    GeniusCollection,
+    GeniusCollectionKind,
+    reconcile_genius_playlists,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +111,8 @@ class LibraryWorkspace(QObject):
         self._tracks: dict[int, Track] = {}
         self._artwork_assets: dict[int, ArtworkAsset | TimedArtworkAsset] = {}
         self._media_sources: dict[int, LibraryMediaSource] = {}
+        self._genius_mix_additions: tuple[str, ...] = ()
+        self._genius_collection_removals: tuple[str, ...] = ()
         self._photos: PhotoLibrary | None = None
         self._photo_album_creation_type: int | None = None
         self._delete_omissions = False
@@ -549,6 +556,7 @@ class LibraryWorkspace(QObject):
         selected = self._selected_tracks(track_ids)
         if not selected:
             return
+        before = self.desired_snapshot()
         removed = {t.track_id for t in selected}
         self._tracks = {i: t for i, t in self._tracks.items() if i not in removed}
         self._media_sources = {
@@ -560,6 +568,8 @@ class LibraryWorkspace(QObject):
             )
             for i, p in self._playlists.items()
         }
+        reconciled = reconcile_genius_playlists(before, self.desired_snapshot())
+        self._playlists = {p.playlist_id: p for p in reconciled.playlists}
         self._delete_omissions = True
         self._retain_artwork_assets()
         self._publish()
@@ -871,7 +881,50 @@ class LibraryWorkspace(QObject):
             or self.tracks != snapshot.tracks
             or self._device_name != snapshot.device_name
             or self._photos != snapshot.photos
+            or bool(self._genius_mix_additions)
+            or bool(self._genius_collection_removals)
         )
+
+    @property
+    def genius_mix_additions(self) -> tuple[str, ...]:
+        return self._genius_mix_additions
+
+    @property
+    def genius_collection_removals(self) -> tuple[str, ...]:
+        return self._genius_collection_removals
+
+    def add_genius_mixes(self, keys: tuple[str, ...], expected: EditRevision) -> None:
+        """Stage explicit manual Mix intent through the existing save workflow."""
+        self.require_revision(expected)
+        desired = tuple(dict.fromkeys((*self._genius_mix_additions, *keys)))
+        if desired != self._genius_mix_additions:
+            self._genius_mix_additions = desired
+            self._publish()
+
+    def remove_genius_collection(
+        self, collection: GeniusCollection, expected: EditRevision
+    ) -> None:
+        """Stage an explicit native collection removal without touching its Tracks."""
+        self.require_revision(expected)
+        if collection.collection_id in self._genius_collection_removals:
+            return
+        if collection.kind is GeniusCollectionKind.PLAYLIST:
+            native_id = collection.native_playlist_id
+            playlist = self._playlists.get(native_id) if native_id is not None else None
+            if playlist is not None and native_id is not None:
+                if playlist.kind is not PlaylistKind.GENIUS:
+                    raise ValueError(
+                        "The selected native Playlist is not a Genius Playlist."
+                    )
+                del self._playlists[native_id]
+                self._delete_omissions = True
+        elif collection.kind is not GeniusCollectionKind.MIX:
+            raise ValueError("Unsupported Genius collection kind.")
+        self._genius_collection_removals = (
+            *self._genius_collection_removals,
+            collection.collection_id,
+        )
+        self._publish()
 
     def load(
         self,
@@ -895,6 +948,8 @@ class LibraryWorkspace(QObject):
         self._snapshot = snapshot
         self._artwork_assets.clear()
         self._media_sources.clear()
+        self._genius_mix_additions = ()
+        self._genius_collection_removals = ()
         self._delete_omissions = False
         self._device_name = "" if snapshot is None else snapshot.device_name
         self._photos = None if snapshot is None else snapshot.photos
@@ -1272,6 +1327,8 @@ class LibraryWorkspace(QObject):
         self._tracks = {track.track_id: track for track in snapshot.tracks}
         self._artwork_assets.clear()
         self._media_sources.clear()
+        self._genius_mix_additions = ()
+        self._genius_collection_removals = ()
         self._delete_omissions = False
         self._device_name = snapshot.device_name
         self._photos = snapshot.photos

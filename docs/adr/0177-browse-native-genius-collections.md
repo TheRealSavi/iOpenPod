@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-24
 - Extends: ADR-0020 and ADR-0176
+- Extended by: ADR-0186 permits structural membership and seed repair after Track deletion.
 
 ## Context
 

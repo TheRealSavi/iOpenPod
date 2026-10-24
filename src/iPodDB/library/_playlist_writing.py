@@ -13,6 +13,9 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import 
     MhodPlaylistPositionPayload,
     MhodPlaylistPositionPrefix,
 )
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.genius_seed_mhod import (
+    MhodGeniusSeedPayload,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.opaque_mhod import (
     MhodOpaquePayload,
 )
@@ -138,6 +141,29 @@ def edit_playlist(
     if old is None or old.sort_order != new.sort_order:
         header = replace(header, sort_order=playlist_sort_value(new.sort_order))
     chunk = replace(chunk, header=header)
+    if (
+        old is not None
+        and old.genius_seed_persistent_id != new.genius_seed_persistent_id
+    ):
+        seed = new.genius_seed_persistent_id
+        if seed is None:
+            raise ValueError("A retained Genius seed cannot be cleared.")
+        chunk = replace(
+            chunk,
+            children=tuple(
+                replace(
+                    child,
+                    payload=replace(
+                        child.payload,
+                        seed=replace(child.payload.seed, seed_track_persistent_id=seed),
+                    ),
+                )
+                if isinstance(child.payload, MhodGeniusSeedPayload)
+                and child.payload.seed is not None
+                else child
+                for child in chunk.children
+            ),
+        )
     if old is None or old.smart != new.smart:
         if old and old.smart and not old.smart.editable:
             raise ValueError("Unsupported Smart Playlist rules must remain unchanged.")

@@ -328,14 +328,18 @@ def remap_genius_playlist(
     data: bytes,
     original_persistent_ids: tuple[int, ...],
     desired_persistent_ids: tuple[int, ...],
-) -> bytes:
+    *,
+    replacement_seed: int | None = None,
+) -> bytes | None:
     """Retain surviving ordered occurrences and update both reference arrays.
 
-    The seed must survive. Unknown versions are preserved for unchanged or
-    append-only Track order, and cannot authorize destructive positional changes.
+    A deleted seed becomes the first surviving member, or a caller-supplied
+    canonical seed. Return None when deletion empties this collection. Unknown
+    versions are preserved for unchanged or append-only Track order, and cannot
+    authorize destructive positional changes.
     The database timestamp is retained; its invalidation semantics are unknown.
     Identity-only variants keep their absent master-index array. This pure helper
-    requires persistent IDs; application Sync does not invoke it automatically.
+    requires the final prepared Library's persistent IDs and Track order.
     """
     document = parse_genius_playlist(data)
     _track_ids(original_persistent_ids)
@@ -349,19 +353,26 @@ def remap_genius_playlist(
             return data
         raise ValueError("Unsupported Genius Playlist version cannot be remapped.")
     validate_genius_playlist_tracks(playlist, original_persistent_ids)
-    if playlist.seed_track_persistent_id not in desired_persistent_ids:
-        raise ValueError("A saved Genius Playlist seed Track cannot be removed.")
     positions = {
         identity: index for index, identity in enumerate(desired_persistent_ids)
     }
     surviving = tuple(
         identity for identity in playlist.track_persistent_ids if identity in positions
     )
+    lost_seed = playlist.seed_track_persistent_id not in positions
+    if not surviving and (playlist.track_persistent_ids or lost_seed):
+        return None
+    seed = playlist.seed_track_persistent_id
+    if lost_seed:
+        seed = replacement_seed if replacement_seed is not None else surviving[0]
+        if seed not in positions:
+            raise ValueError("Replacement Genius seed is absent from the Library.")
     return write_genius_playlist(
         replace(
             document,
             playlist=replace(
                 playlist,
+                seed_track_persistent_id=seed,
                 track_master_indexes=(
                     tuple(positions[identity] for identity in surviving)
                     if playlist.track_master_indexes is not None

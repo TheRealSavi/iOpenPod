@@ -249,6 +249,13 @@ class PlaylistPage(QWidget):
         self._table.sortByColumn(-1, Qt.SortOrder.AscendingOrder)
         self._refresh()
 
+    def update_genius_tracks(self, tracks: tuple[Track, ...]) -> None:
+        """Refresh Track facts while preserving the selected collection and search."""
+        if not self._genius_browse:
+            raise ValueError("This Playlist view does not browse Genius collections.")
+        self._genius_tracks = tracks
+        self._refresh_genius_collection()
+
     def create_playlist(self, kind: object) -> None:
         if self._workspace.locked:
             return
@@ -529,7 +536,7 @@ class PlaylistPage(QWidget):
         self._banner.set_tracks(tracks, playlist_id=None)
         self._edit.hide()
         self._evaluate.hide()
-        self._remove.hide()
+        self._remove.setVisible(collection is not None and self._source_actions)
         is_mix = collection is not None and collection.kind is GeniusCollectionKind.MIX
         self._export.setVisible(collection is not None and not is_mix)
         self._export.setEnabled(collection is not None and not is_mix)

@@ -10,6 +10,9 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
     MhodPlaylistPositionPrefix,
 )
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.genius_seed_mhod import (
+    MhodGeniusSeedPayload,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
     MhodLibraryIndexPayload,
     MhodLibraryIndexPrefix,
@@ -60,7 +63,7 @@ def _bytes(chunk: ParsedChunk[ChunkHeader], data: bytes) -> bytes:
 
 
 def _genius_payload_bytes(
-    chunk: ParsedChunk[MhypHeader], data: bytes
+    chunk: ParsedChunk[MhypHeader], data: bytes, *, reseeded: bool = False
 ) -> tuple[bytes, ...]:
     """Native Genius seed and Smart bodies are retained as complete MHODs.
 
@@ -69,7 +72,13 @@ def _genius_payload_bytes(
     """
 
     return tuple(
-        _bytes(child, data)
+        # A reseeded known MHOD may change only its defined payload. Preserve
+        # its complete header; semantic verification checks the new seed below.
+        data[child.offset : child.offset + child.generic_header.header_length]
+        if reseeded
+        and isinstance(child.payload, MhodGeniusSeedPayload)
+        and child.payload.seed is not None
+        else _bytes(child, data)
         for child in chunk.children
         if isinstance(child.header, MhodHeader)
         and child.header.mhod_type
@@ -480,12 +489,28 @@ def verify_playlists(
         previous = prior.get(playlist.playlist_id)
         if previous is not None and previous.kind is PlaylistKind.GENIUS:
             source_row = baseline or old.get((3, identity)) or old.get((2, identity))
+            reseeded = (
+                previous.genius_seed_persistent_id != playlist.genius_seed_persistent_id
+            )
             if source_row is None or _genius_payload_bytes(
-                source_row.chunk, original_bytes
-            ) != _genius_payload_bytes(chunk, output_bytes):
+                source_row.chunk, original_bytes, reseeded=reseeded
+            ) != _genius_payload_bytes(chunk, output_bytes, reseeded=reseeded):
                 fail(
                     "playlist_genius_payloads",
                     "A native Genius Playlist's seed or retained Smart data changed.",
+                    kind,
+                    chunk,
+                )
+            if reseeded and any(
+                isinstance(child.payload, MhodGeniusSeedPayload)
+                and child.payload.seed is not None
+                and child.payload.seed.seed_track_persistent_id
+                != playlist.genius_seed_persistent_id
+                for child in chunk.children
+            ):
+                fail(
+                    "playlist_genius_seed",
+                    "The replacement Genius seed differs from the reviewed Playlist.",
                     kind,
                     chunk,
                 )

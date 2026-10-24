@@ -2,6 +2,45 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="de" sourcelanguage="en">
 <context>
+    <name>AddGeniusMixesDialog</name>
+    <message>
+        <source>Add Genius Mixes</source>
+        <translation>Genius-Mixe hinzufügen</translation>
+    </message>
+    <message>
+        <source>Choose mixes to keep on your iPod. Manually added mixes never expire.</source>
+        <translation>Wählen Sie Mixe aus, die auf Ihrem iPod bleiben sollen. Manuell hinzugefügte Mixe laufen nie ab.</translation>
+    </message>
+    <message>
+        <source>Mood mixes are checked when you save.</source>
+        <translation>Stimmungs-Mixe werden beim Speichern geprüft.</translation>
+    </message>
+    <message>
+        <source>Proposed Genius Mixes</source>
+        <translation>Vorgeschlagene Genius-Mixe</translation>
+    </message>
+    <message>
+        <source>Analyze when saving</source>
+        <translation>Analyse beim Speichern</translation>
+    </message>
+    <message>
+        <source>Select to add this mix</source>
+        <translation>Auswählen, um diesen Mix hinzuzufügen</translation>
+    </message>
+    <message>
+        <source>No Genius Mixes are available to add.</source>
+        <translation>Es sind keine Genius-Mixe zum Hinzufügen verfügbar.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Abbrechen</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>Hinzufügen</translation>
+    </message>
+</context>
+<context>
     <name>AlbumGridView</name>
     <message>
         <source>Albums</source>
@@ -1510,6 +1549,215 @@
     <message>
         <source>This field cannot be edited.</source>
         <translation>Dieses Feld kann nicht bearbeitet werden.</translation>
+    </message>
+</context>
+<context>
+    <name>GeniusMixNames</name>
+    <message>
+        <source>Rock Mix</source>
+        <translation>Rock-Mix</translation>
+    </message>
+    <message>
+        <source>Alternative Mix</source>
+        <translation>Alternative-Mix</translation>
+    </message>
+    <message>
+        <source>Pop Mix</source>
+        <translation>Pop-Mix</translation>
+    </message>
+    <message>
+        <source>Hard Rock Mix</source>
+        <translation>Hard-Rock-Mix</translation>
+    </message>
+    <message>
+        <source>Metal Mix</source>
+        <translation>Metal-Mix</translation>
+    </message>
+    <message>
+        <source>Punk Mix</source>
+        <translation>Punk-Mix</translation>
+    </message>
+    <message>
+        <source>Electronic Mix</source>
+        <translation>Elektronik-Mix</translation>
+    </message>
+    <message>
+        <source>Dance Mix</source>
+        <translation>Dance-Mix</translation>
+    </message>
+    <message>
+        <source>Hip-Hop Mix</source>
+        <translation>Hip-Hop-Mix</translation>
+    </message>
+    <message>
+        <source>R&amp;B and Soul Mix</source>
+        <translation>R&amp;B und Soul-Mix</translation>
+    </message>
+    <message>
+        <source>Jazz Mix</source>
+        <translation>Jazz-Mix</translation>
+    </message>
+    <message>
+        <source>Blues Mix</source>
+        <translation>Blues-Mix</translation>
+    </message>
+    <message>
+        <source>Country Mix</source>
+        <translation>Country-Mix</translation>
+    </message>
+    <message>
+        <source>Folk and Acoustic Mix</source>
+        <translation>Folk und Akustik-Mix</translation>
+    </message>
+    <message>
+        <source>Classical Mix</source>
+        <translation>Klassik-Mix</translation>
+    </message>
+    <message>
+        <source>Reggae Mix</source>
+        <translation>Reggae-Mix</translation>
+    </message>
+    <message>
+        <source>Latin Mix</source>
+        <translation>Latin-Mix</translation>
+    </message>
+    <message>
+        <source>Soundtrack Mix</source>
+        <translation>Soundtrack-Mix</translation>
+    </message>
+    <message>
+        <source>Focus Mix</source>
+        <translation>Fokus-Mix</translation>
+    </message>
+    <message>
+        <source>Love Mix</source>
+        <translation>Liebes-Mix</translation>
+    </message>
+    <message>
+        <source>Energy Mix</source>
+        <translation>Energie-Mix</translation>
+    </message>
+    <message>
+        <source>Relax Mix</source>
+        <translation>Entspannungs-Mix</translation>
+    </message>
+</context>
+<context>
+    <name>GeniusMixSettingsDialog</name>
+    <message>
+        <source>Genius Mix Settings</source>
+        <translation>Einstellungen für Genius-Mixe</translation>
+    </message>
+    <message>
+        <source>Automatically keep a selection of mixes on this iPod during Sync.</source>
+        <translation>Halten Sie beim Synchronisieren automatisch eine Auswahl an Mixen auf diesem iPod bereit.</translation>
+    </message>
+    <message>
+        <source>Count</source>
+        <translation>Anzahl</translation>
+    </message>
+    <message>
+        <source>Automatic mix count</source>
+        <translation>Anzahl automatischer Mixe</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Aus</translation>
+    </message>
+    <message>
+        <source>Expiry (days)</source>
+        <translation>Ablauf (Tage)</translation>
+    </message>
+    <message>
+        <source>Mix expiry in days</source>
+        <translation>Ablaufzeit der Mixe in Tagen</translation>
+    </message>
+    <message>
+        <source>Expired mixes are replaced with a different random mix at the next Sync. If none is available, the current mix stays. Manual mixes never expire and do not count toward Count. Reducing Count removes excess automatic mixes at the next Sync.</source>
+        <translation>Abgelaufene Mixe werden bei der nächsten Synchronisierung durch einen anderen, zufällig ausgewählten Mix ersetzt. Ist keiner verfügbar, bleibt der aktuelle Mix erhalten. Manuelle Mixe laufen nie ab und werden nicht mitgezählt. Wenn Sie die Anzahl verringern, werden überzählige automatische Mixe bei der nächsten Synchronisierung entfernt.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Abbrechen</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Speichern</translation>
+    </message>
+</context>
+<context>
+    <name>GeniusPage</name>
+    <message>
+        <source>Genius</source>
+        <translation>Genius</translation>
+    </message>
+    <message>
+        <source>Genius collections</source>
+        <translation>Genius-Sammlungen</translation>
+    </message>
+    <message>
+        <source>Genius Playlists</source>
+        <translation>Genius-Wiedergabelisten</translation>
+    </message>
+    <message>
+        <source>Genius Mixes</source>
+        <translation>Genius-Mixe</translation>
+    </message>
+    <message>
+        <source>Genius Mix settings</source>
+        <translation>Einstellungen für Genius-Mixe</translation>
+    </message>
+    <message>
+        <source>Add Genius Mixes</source>
+        <translation>Genius-Mixe hinzufügen</translation>
+    </message>
+    <message>
+        <source>Could not add Genius Mixes</source>
+        <translation>Genius-Mixe konnten nicht hinzugefügt werden</translation>
+    </message>
+    <message>
+        <source>Could not save Genius Mix settings</source>
+        <translation>Die Einstellungen für Genius-Mixe konnten nicht gespeichert werden</translation>
+    </message>
+    <message>
+        <source>Connect and choose an iPod to browse its Genius collections.</source>
+        <translation>Verbinden Sie einen iPod und wählen Sie ihn aus, um seine Genius-Sammlungen anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>No Genius collections were found on this iPod.</source>
+        <translation>Auf diesem iPod wurden keine Genius-Sammlungen gefunden.</translation>
+    </message>
+    <message>
+        <source>Choose a Genius Playlist or Mix.</source>
+        <translation>Wählen Sie eine Genius-Wiedergabeliste oder einen Genius-Mix aus.</translation>
+    </message>
+    <message>
+        <source>Choose a supported iPod that is available for writing.</source>
+        <translation>Wählen Sie einen unterstützten iPod aus, der zum Schreiben verfügbar ist.</translation>
+    </message>
+    <message>
+        <source>Remove Mix…</source>
+        <translation>Mix entfernen…</translation>
+    </message>
+    <message>
+        <source>Remove Playlist…</source>
+        <translation>Wiedergabeliste entfernen…</translation>
+    </message>
+    <message>
+        <source>Remove Genius Mix</source>
+        <translation>Genius-Mix entfernen</translation>
+    </message>
+    <message>
+        <source>Remove Genius Playlist</source>
+        <translation>Genius-Wiedergabeliste entfernen</translation>
+    </message>
+    <message>
+        <source>Remove &apos;%1&apos;?</source>
+        <translation>&apos;%1&apos; entfernen?</translation>
+    </message>
+    <message>
+        <source>Could not remove Genius collection</source>
+        <translation>Genius-Sammlung konnte nicht entfernt werden</translation>
     </message>
 </context>
 <context>
@@ -3107,6 +3355,10 @@
         <source>Settings</source>
         <translation>Einstellungen</translation>
     </message>
+    <message>
+        <source>Genius</source>
+        <translation>Genius</translation>
+    </message>
 </context>
 <context>
     <name>PhotoAlbumEditorDialog</name>
@@ -4259,6 +4511,10 @@
         <source>Give this playlist or folder a name.</source>
         <translation>Geben Sie dieser Wiedergabeliste oder diesem Ordner einen Namen.</translation>
     </message>
+    <message>
+        <source>Genius Playlist</source>
+        <translation>Genius-Wiedergabeliste</translation>
+    </message>
 </context>
 <context>
     <name>PlaylistExportDialog</name>
@@ -4448,6 +4704,38 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Add tracks to the top of the Queue</source>
         <translation>Titel am Anfang der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Genius</source>
+        <translation>Genius</translation>
+    </message>
+    <message>
+        <source>Mix tracks are possible starting songs; the iPod generates the mix when you play it.</source>
+        <translation>Die Titel des Mixes sind mögliche Starttitel. Der iPod erstellt den Mix beim Abspielen.</translation>
+    </message>
+    <message>
+        <source>Tracks saved in this Genius Playlist.</source>
+        <translation>In dieser Genius-Wiedergabeliste gespeicherte Titel.</translation>
+    </message>
+    <message>
+        <source>Genius Mix</source>
+        <translation>Genius-Mix</translation>
+    </message>
+    <message>
+        <source>No available Tracks in this Genius Mix.</source>
+        <translation>In diesem Genius-Mix sind keine Titel verfügbar.</translation>
+    </message>
+    <message>
+        <source>No available Tracks in this Genius Playlist.</source>
+        <translation>In dieser Genius-Wiedergabeliste sind keine Titel verfügbar.</translation>
+    </message>
+    <message>
+        <source>Search Genius Tracks</source>
+        <translation>Genius-Titel suchen</translation>
+    </message>
+    <message>
+        <source>Play selected</source>
+        <translation>Auswahl abspielen</translation>
     </message>
 </context>
 <context>
@@ -7225,7 +7513,7 @@ Playlists: %3</translation>
     </message>
     <message numerus="yes">
         <source>%n Host item selected for the iPod</source>
-        <translation>
+        <translation type="vanished">
             <numerusform>%n Element vom Computer für den iPod ausgewählt</numerusform>
             <numerusform>%n Elemente vom Computer für den iPod ausgewählt</numerusform>
         </translation>
@@ -7244,7 +7532,7 @@ Playlists: %3</translation>
     </message>
     <message numerus="yes">
         <source>%n Host items selected for the iPod</source>
-        <translation>
+        <translation type="vanished">
             <numerusform>%n Element vom Computer für den iPod ausgewählt</numerusform>
             <numerusform>%n Elemente vom Computer für den iPod ausgewählt</numerusform>
         </translation>
@@ -7334,6 +7622,10 @@ Playlists: %3</translation>
     <message>
         <source>No Playlist changes for the selected media.</source>
         <translation type="vanished">Keine Wiedergabelistenänderungen für die ausgewählten Medien.</translation>
+    </message>
+    <message>
+        <source>Revert selections</source>
+        <translation>Auswahl zurücksetzen</translation>
     </message>
 </context>
 <context>
@@ -9035,7 +9327,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Could not repair subtitle and caption metadata for &quot;{title}&quot;. The existing video is unchanged; Sync can retry the repair.</source>
-        <translation>Die Metadaten für Untertitel und geschlossene Untertitel von "{title}" konnten nicht repariert werden. Das vorhandene Video bleibt unverändert; bei der Synchronisierung kann die Reparatur erneut versucht werden.</translation>
+        <translation>Die Metadaten für Untertitel und geschlossene Untertitel von &quot;{title}&quot; konnten nicht repariert werden. Das vorhandene Video bleibt unverändert; bei der Synchronisierung kann die Reparatur erneut versucht werden.</translation>
     </message>
     <message>
         <source>Cover Flow devices are sensitive to Artist+Album differences and same-name albums.</source>
@@ -11369,6 +11661,70 @@ Playlists: %3</translation>
         <source>The missing iPod Library could not be created safely. {detail}</source>
         <translation>Die fehlende iPod-Mediathek konnte nicht sicher erstellt werden. {detail}</translation>
     </message>
+    <message>
+        <source>A folder containing a native Genius Playlist cannot be removed.</source>
+        <translation>Ein Ordner mit einer nativen Genius-Wiedergabeliste kann nicht entfernt werden.</translation>
+    </message>
+    <message>
+        <source>A native Genius Playlist cannot be converted to or from another Playlist kind.</source>
+        <translation>Eine native Genius-Wiedergabeliste kann nicht in einen anderen Wiedergabelistentyp umgewandelt werden oder aus einem solchen entstehen.</translation>
+    </message>
+    <message>
+        <source>A native Genius Playlist&apos;s seed or retained Smart data changed.</source>
+        <translation>Der Starttitel oder die beibehaltenen intelligenten Daten einer nativen Genius-Wiedergabeliste wurden geändert.</translation>
+    </message>
+    <message>
+        <source>Analyzing audio for Genius</source>
+        <translation>Audio für Genius wird analysiert</translation>
+    </message>
+    <message>
+        <source>Analyzing music for Genius</source>
+        <translation>Musik für Genius wird analysiert</translation>
+    </message>
+    <message>
+        <source>Keep the native Genius seed Track or explicitly remove its Genius Playlist together with the Track.</source>
+        <translation>Behalten Sie den nativen Genius-Starttitel bei oder entfernen Sie seine Genius-Wiedergabeliste ausdrücklich zusammen mit dem Titel.</translation>
+    </message>
+    <message>
+        <source>Native Genius Mix authoring requires a SQLite artifact target.</source>
+        <translation>Zum Erstellen nativer Genius-Mixe ist ein Ziel mit SQLite-Datenbanken erforderlich.</translation>
+    </message>
+    <message>
+        <source>Native Genius Playlists are read-only.</source>
+        <translation>Native Genius-Wiedergabelisten sind schreibgeschützt.</translation>
+    </message>
+    <message>
+        <source>Native Genius Playlists cannot be created through ordinary Playlist editing.</source>
+        <translation>Native Genius-Wiedergabelisten können nicht mit der normalen Wiedergabelistenbearbeitung erstellt werden.</translation>
+    </message>
+    <message>
+        <source>Native Genius membership can only change when removing deleted Tracks.</source>
+        <translation>Die Titelzuordnung von nativem Genius kann nur beim Entfernen gelöschter Titel geändert werden.</translation>
+    </message>
+    <message>
+        <source>Preparing Genius for music Tracks</source>
+        <translation>Genius wird für Musiktitel vorbereitet</translation>
+    </message>
+    <message>
+        <source>Ranking Genius candidates</source>
+        <translation>Genius-Kandidaten werden bewertet</translation>
+    </message>
+    <message>
+        <source>Some Genius audio analysis or cache work was unavailable. Tracks without an audio profile use metadata candidates.</source>
+        <translation>Ein Teil der Audioanalyse oder Cache-Verarbeitung für Genius war nicht verfügbar. Für Titel ohne Audioprofil werden Kandidaten anhand von Metadaten verwendet.</translation>
+    </message>
+    <message>
+        <source>The retained native Genius seed cannot be edited.</source>
+        <translation>Der beibehaltene native Genius-Starttitel kann nicht bearbeitet werden.</translation>
+    </message>
+    <message>
+        <source>Verifying Genius sources</source>
+        <translation>Genius-Quellen werden überprüft</translation>
+    </message>
+    <message>
+        <source>tracks</source>
+        <translation>Titel</translation>
+    </message>
 </context>
 <context>
     <name>_ExternalPlaylistFilesModel</name>
@@ -11689,6 +12045,14 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     <message>
         <source>HOST MEDIA</source>
         <translation>MEDIEN AUF DEM COMPUTER</translation>
+    </message>
+    <message>
+        <source>Deselect all media</source>
+        <translation>Alle Medien abwählen</translation>
+    </message>
+    <message>
+        <source>Select all media</source>
+        <translation>Alle Medien auswählen</translation>
     </message>
 </context>
 </TS>

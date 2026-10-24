@@ -14,20 +14,42 @@ then beyond it.
 
 ## Current stage
 
+Track deletion now reconciles Genius collections through the same Library save.
+Surviving occurrences retain their order and duplicates; a deleted known Playlist
+seed becomes the first surviving member. Saved sidecars are remapped against final
+persistent identities and Track positions. Collections emptied by deletion and
+matching Mix ownership are removed recoverably. Metadata edits preserve collection
+membership. See ADR-0186; firmware acceptance of replacement seeds remains open.
+
+Genius now offers manual genre Mix additions and per-iPod Count/Expiry settings.
+Focus, Love, Energy, and Relax Mixes now use the existing librosa-derived Genius
+Audio Profiles during Library preparation; Love also requires an explicit title or
+album cue. The Add dialog defers their eligibility check until save. These are
+candidate seeds, so native playback may extend beyond the mood selection.
+Supported SQLite iPods can select multiple proposals in a grid; automatic Mixes
+rotate during Sync while manual Mixes remain permanent and outside the automatic
+count. Ownership and ages publish with native Mix changes through the same Storage
+transaction. Existing unowned Mixes remain preserved. See ADR-0184; this workflow
+has virtual-device coverage and still needs physical acceptance.
+The Genius page now stages explicit removal of selected Playlists and Mixes.
+Canonical Playlists, matching saved sidecars, Mix containers, and Mix ownership
+are updated through the reviewed Library save. See ADR-0185.
+
 Sync now prepares native Genius relationships for all music Tracks on
 Genius-capable iPods. Elephant-Ear-style audio profiles rank bounded candidates
 using body similarity and outro-to-intro compatibility, with metadata fallback.
 Profiles are cached on the Host; short Tracks use body-only analysis. Stable Genius
 identities, real artist and album keys, and native spacing rules accompany the
 final Library. The new spacing policy still needs hardware listening validation.
-Existing Mixes remain retained; Sync creates no Genius collections or Host playback
-controls.
+Existing unowned Mixes remain retained; ADR-0184 adds explicit Mix management.
+Sync creates no saved Genius Playlists or Host playback controls.
 Classic `Extras.itdb` participates in the same captured and verified transaction as
 iTunesDB, including pruning during ordinary affected Library saves. See ADR-0178,
 ADR-0179, and the [Genius data contract](docs/ipod-genius.md).
 
-iOpenPod now exposes native Genius Playlists and Mixes in a dedicated read-only
-Genius browser. Classic MHOD 54 seed records identify Genius Playlists before
+iOpenPod now exposes native Genius Playlists and Mixes in a dedicated Genius
+browser with explicit collection removal. Classic MHOD 54 seed records identify
+Genius Playlists before
 ordinary Smart classification; these records retain their bytes and do not enter
 Smart refresh or ordinary Playlist editing. Saved nano sidecars and SQLite Mixes
 are captured as separate browse state, without changing Library authority or

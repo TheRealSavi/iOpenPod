@@ -812,7 +812,28 @@ The application captures Classic root Extras with source preconditions and inclu
 its prepared output in the same Storage Transaction as iTunesDB. Ordinary affected
 Track removals and replacements capture this companion for pruning as well.
 Default no-op serialization and ordinary metadata edits retain their existing
-preservation behavior. The generator creates no Mixes or saved Genius Playlists.
+preservation behavior. The graph generator creates no collections itself.
+ADR-0184 adds Application Layer genre Mix proposals and explicit manual/automatic
+ownership. Manual additions use Library Workspace intent; Sync applies Count and
+Expiry to automatic Mixes. Selective iPodDB Mix edits preserve unmentioned native
+records. Ownership and age records publish with the Library through Storage.
+Creation requires confirmed native Mix support and a supported SQLite target;
+saved Genius Playlist creation remains separate.
+ADR-0187 adds fixed Focus, Love, Energy, and Relax Mix proposals. Library preparation
+reuses the source-bound Genius Audio Profiles already computed for candidate ranking;
+unavailable profiles supply no mood seeds. The GUI marks mood availability as
+pending analysis, and final preparation enforces the ten-seed minimum. Love also
+requires an explicit title or album cue. Native playback may leave the seed set.
+ADR-0185 adds explicit collection removal intent to the Library Workspace. A
+canonical Genius Playlist is omitted from the reviewed Library draft; a matching
+saved sidecar is recoverably removed through Storage. Selected SQLite Mixes use
+selective native removal, with matching ownership removed in the same transaction.
+ADR-0186 reconciles Track deletion across these representations. iPodDB performs
+bounded canonical membership and seed repair; saved sidecars are transformed from
+captured bytes against the prepared Library's final persistent identities and
+Track order. Storage publishes those changes with the database and any ownership
+cleanup. Collections emptied by deletion are removed; surviving order, duplicates,
+native identities, and Unknown Data remain retained.
 
 ADR-0179 extends candidate generation with Elephant-Ear-style Genius Audio Profiles.
 The Application Layer analyzes prepared Host media or retained device media through

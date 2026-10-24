@@ -4,7 +4,8 @@ Track references use Library Track IDs; preparation assigns persistent identitie
 Updates replace the complete known graph. ``mixes=None`` preserves retained native
 Mixes; an explicit tuple replaces them, including an empty tuple to clear them.
 Recommendation policy belongs to the caller. Omitting an update preserves retained
-Genius state.
+Genius state. With ``mixes=None``, ``mix_additions`` and ``mix_removals`` provide
+selective collection edits while preserving every unmentioned native Mix.
 """
 
 from iPodDB.genius import (
@@ -14,6 +15,7 @@ from iPodDB.genius import (
     GeniusSpacingRule,
     make_no_rule_genius_config,
 )
+from iPodDB.library._genius_reconciliation import reconcile_genius_playlists
 from iPodDB.library.genius_browse import (
     GeniusBrowse,
     GeniusBrowseIssue,
@@ -62,5 +64,6 @@ __all__ = [
     "parse_genius_database",
     "project_genius_browse",
     "read_sqlite_genius_state",
+    "reconcile_genius_playlists",
     "serialize_genius_database",
 ]

@@ -5,6 +5,7 @@ from enum import StrEnum
 
 from device_registry import DeviceProfile, IdentificationStatus
 from iOpenPod.app.core.settings.device import DeviceSettings
+from iOpenPod.app.genius_mixes import MixState
 from iOpenPod.app.models.ipod_preferences import IPodPreferenceSection
 from iPodDB.library import LibrarySnapshot
 from iPodDB.library.genius import GeniusBrowse
@@ -140,6 +141,7 @@ class ActiveIPod:
     artwork_repairs_pending: bool = False
     photos_repairs_pending: bool = False
     genius: GeniusBrowse = field(default_factory=GeniusBrowse)
+    genius_mix_state: MixState = field(default_factory=MixState)
 
     @property
     def display_name(self) -> str:

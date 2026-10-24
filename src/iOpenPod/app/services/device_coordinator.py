@@ -40,6 +40,7 @@ from iOpenPod.app.core.settings.device import (
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.genius_analysis import GeniusAnalysisService
 from iOpenPod.app.genius_generation import generate_genius_update
+from iOpenPod.app.genius_mixes import MixState, supports_mix_creation
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
     IPodMediaLibrary,
@@ -84,6 +85,11 @@ from iOpenPod.app.services import (
     volume_presentation,
 )
 from iOpenPod.app.services.genius_browse import capture_genius_browse
+from iOpenPod.app.services.genius_mixes import (
+    load_mix_state,
+    prepare_mix_changes,
+    prune_mix_ownership,
+)
 from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
 from iOpenPod.app.smart_playlist_preview import refresh_smart_playlists
@@ -92,7 +98,9 @@ from iPodDB.library import (
     PhotoPixelFormat,
     PhotoRepresentationKind,
     PhotoThumbnailFormat,
+    PlaylistKind,
 )
+from iPodDB.library.genius import GeniusCollectionKind, project_genius_browse
 from storage import (
     AccessMode,
     ConnectionGeneration,
@@ -296,6 +304,7 @@ class _PreparedLibraryWrite:
     files: tuple[FilePrecondition, ...]
     discarded_track_media: tuple[library_resources.DiscardedTrackMedia, ...] = ()
     genius_analysis: GeniusAnalysisResult | None = None
+    genius_mix_state: MixState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1367,6 +1376,64 @@ class DeviceCoordinator:
             request = replace(request, snapshot=snapshot)
             request = with_rockbox_edits(request, source)
             genius_update = None
+            genius_mix_state = None
+            mix_preconditions: tuple[FilePrecondition, ...] = ()
+            mix_write = None
+            known_collections = {
+                collection.collection_id: collection
+                for collection in expected.genius.collections
+            }
+            if (
+                len(set(request.remove_genius_collections))
+                != len(request.remove_genius_collections)
+                or not set(request.remove_genius_collections)
+                <= known_collections.keys()
+            ):
+                raise ValueError(
+                    "A selected Genius collection changed. Reload the iPod."
+                )
+            removed = tuple(
+                known_collections[identity]
+                for identity in request.remove_genius_collections
+            )
+            mix_removals = tuple(
+                collection.native_playlist_id
+                for collection in removed
+                if collection.kind is GeniusCollectionKind.MIX
+                and collection.native_playlist_id is not None
+            )
+            if any(
+                collection.kind is GeniusCollectionKind.MIX
+                and collection.native_playlist_id is None
+                for collection in removed
+            ):
+                raise ValueError("The selected Genius Mix has no native identity.")
+            for collection in removed:
+                if collection.kind is not GeniusCollectionKind.PLAYLIST:
+                    continue
+                if any(
+                    playlist.playlist_id == collection.native_playlist_id
+                    and playlist.kind is PlaylistKind.GENIUS
+                    for playlist in expected.library.playlists
+                ) and (
+                    any(
+                        playlist.playlist_id == collection.native_playlist_id
+                        for playlist in request.snapshot.playlists
+                    )
+                    or not request.delete_omissions
+                ):
+                    raise ValueError(
+                        "The selected Genius Playlist was not removed from the draft."
+                    )
+            if (
+                request.add_genius_mixes or request.rotate_genius_mixes or mix_removals
+            ) and (
+                not supports_mix_creation(expected.profile)
+                or not request.regenerate_genius
+            ):
+                raise ValueError(
+                    "Native Genius Mix creation is unavailable for this iPod."
+                )
             if request.regenerate_genius:
                 if capabilities.genius.playlists is not FeatureSupport.SUPPORTED:
                     raise ValueError(
@@ -1418,6 +1485,20 @@ class DeviceCoordinator:
                     profiles=genius_analysis.profiles,
                     checkpoint=genius_checkpoint,
                 )
+                if (
+                    request.add_genius_mixes
+                    or request.rotate_genius_mixes
+                    or mix_removals
+                ):
+                    genius_update, genius_mix_state, mix_preconditions, mix_write = (
+                        prepare_mix_changes(
+                            active.session,
+                            request,
+                            genius_update,
+                            profiles=genius_analysis.profiles,
+                            remove_ids=mix_removals,
+                        )
+                    )
             checkpoint("draft.analysis", "Analyzing changes")
             plan = source.analyze(
                 source.begin_draft(
@@ -1438,6 +1519,7 @@ class DeviceCoordinator:
                 target,
             )
             checkpoint("resources.capture", "Capturing required resources")
+            request = replace(request, snapshot=plan.draft.snapshot)
 
             def source_artwork_paths(
                 reference: ArtworkGroupReference,
@@ -1465,13 +1547,62 @@ class DeviceCoordinator:
                 additional_preconditions=(
                     *sqlite_postprocess_preconditions,
                     active.time_precondition,
+                    *mix_preconditions,
                 ),
                 volume_presentation_enabled=presentation_policy.enabled,
                 consumed_sidecars=source.consumed_sidecars,
                 loaded_sidecars=active.sidecar_preconditions,
             )
+            if mix_write is not None:
+                captured = replace(
+                    captured,
+                    genius_mix_write=mix_write,
+                )
             resources = captured.resources
             result = source.prepare(plan, resources, progress=database_progress)
+            if result.prepared is not None and result.prepared.sqlite is not None:
+                planned_state = genius_mix_state or expected.genius_mix_state
+                live_tracks = {t.track_id for t in result.prepared.snapshot.tracks}
+                depleted = frozenset(
+                    collection.native_playlist_id
+                    for collection in expected.genius.collections
+                    if collection.kind is GeniusCollectionKind.MIX
+                    and collection.track_ids
+                    and not live_tracks.intersection(collection.track_ids)
+                    and collection.native_playlist_id is not None
+                )
+                if any(e.container_id in depleted for e in planned_state.entries):
+                    final_browse = project_genius_browse(
+                        replace(result.prepared.snapshot, playlists=()),
+                        sqlite_library=result.prepared.sqlite.library,
+                    )
+                    if final_browse.issues:
+                        raise ValueError("Prepared Genius Mixes could not be verified.")
+                    removed_mix_ids = depleted - {
+                        collection.native_playlist_id
+                        for collection in final_browse.collections
+                    }
+                    if removed_mix_ids:
+                        genius_mix_state, state_before, ownership_write = (
+                            prune_mix_ownership(
+                                active.session,
+                                expected.genius_mix_state,
+                                planned_state,
+                                removed_mix_ids,
+                            )
+                        )
+                        captured = replace(
+                            captured,
+                            genius_mix_write=ownership_write,
+                            files=(
+                                *tuple(
+                                    f
+                                    for f in captured.files
+                                    if f.path != state_before.path
+                                ),
+                                state_before,
+                            ),
+                        )
             genius_issues: tuple[WriteIssue, ...] = ()
             if genius_analysis is not None:
                 checkpoint(
@@ -1591,6 +1722,7 @@ class DeviceCoordinator:
                         captured.files,
                         captured.discarded_track_media,
                         genius_analysis,
+                        genius_mix_state,
                     )
             return review
         except (StorageError, DeviceChangedError, ValueError, OSError) as error:
@@ -1871,6 +2003,13 @@ class DeviceCoordinator:
                         session,
                         updated_source.snapshot,
                         sqlite=expected.profile.capabilities.database.uses_sqlite_database,
+                        excluded_sidecars=frozenset(
+                            removal.path.name.casefold()
+                            for removal in transaction.removals
+                            if removal.path.is_relative_to(
+                                DevicePath("iPod_Control/iTunes")
+                            )
+                        ),
                         sqlite_library=(
                             prepared.sqlite.library
                             if prepared.sqlite is not None
@@ -1903,6 +2042,8 @@ class DeviceCoordinator:
                         artwork_repairs_pending=bool(updated_source.artwork_repairs),
                         photos_repairs_pending=bool(updated_source.photos_repairs),
                         genius=updated_genius,
+                        genius_mix_state=issued.genius_mix_state
+                        or expected.genius_mix_state,
                     )
                     active.library_source = updated_source
                     active.sidecar_preconditions = tuple(
@@ -2435,6 +2576,7 @@ class DeviceCoordinator:
                     artwork_repairs_pending=bool(library.artwork_repairs),
                     photos_repairs_pending=bool(library.photos_repairs),
                     genius=genius,
+                    genius_mix_state=load_mix_state(session),
                 )
                 if reconcile_metadata:
                     presentation_issues = self._reconcile_volume_presentation(

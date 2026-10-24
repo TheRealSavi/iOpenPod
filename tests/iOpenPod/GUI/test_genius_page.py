@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QShortcut
-from PySide6.QtWidgets import QLabel, QSplitter, QTreeWidget
+from PySide6.QtWidgets import QLabel, QMenu, QSplitter, QTreeWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from device_registry import (
@@ -21,6 +21,7 @@ from iOpenPod.app.models.device import (
     DeviceCandidateId,
     DeviceReadiness,
 )
+from iOpenPod.app.models.library_drag import TrackSelectionMimeData, dropped_tracks
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
 from iOpenPod.GUI.delegates.genius_collection_delegate import (
     DETAIL_ROLE,
@@ -34,6 +35,7 @@ from iOpenPod.GUI.pages.genius_page import GeniusPage
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.widgets import track_table as track_table_module
 from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
 from iOpenPod.GUI.widgets.playlist_artwork_banner import PlaylistArtworkBanner
@@ -41,6 +43,7 @@ from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
+from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iPodDB.library import LibrarySnapshot, Playlist, PlaylistKind, Track
 from iPodDB.library.genius import (
     GeniusBrowse,
@@ -181,8 +184,10 @@ def test_groups_and_saved_playlist_preserve_order_and_repeated_occurrences(
     assert split.handleWidth() == LAYOUT.source_list_splitter_handle_width
     assert panel.isAncestorOf(tree(page))
     assert isinstance(tree(page).itemDelegate(), GeniusCollectionDelegate)
-    assert tree(page).topLevelItem(0).data(0, SECTION_ROLE) is True
-    assert tree(page).topLevelItem(0).child(0).data(0, DETAIL_ROLE) == "3 tracks"
+    section = tree(page).topLevelItem(0)
+    assert section is not None and section.data(0, SECTION_ROLE) is True
+    item = section.child(0)
+    assert item is not None and item.data(0, DETAIL_ROLE) == "3 tracks"
     assert split.widget(1).isAncestorOf(banner)
     assert split.widget(1).isAncestorOf(page.track_table)
     assert visible_ids(page) == (3, 1, 1)
@@ -195,7 +200,8 @@ def test_groups_and_saved_playlist_preserve_order_and_repeated_occurrences(
     assert page.findChild(PlaylistArtworkBanner, "playlistArtworkBanner") is not None
     assert button(page, "editPlaylist").isHidden()
     assert button(page, "evaluateSmartPlaylist").isHidden()
-    assert button(page, "removePlaylist").isHidden()
+    assert button(page, "removePlaylist").isVisible()
+    assert not button(page, "removePlaylist").isEnabled()
     assert button(page, "exportPlaylist").isVisible()
     assert button(page, "queuePlaylist").isVisible()
     assert button(page, "playNextPlaylist").isVisible()
@@ -218,7 +224,8 @@ def test_mix_explains_members_and_only_requested_track_is_played(
     assert "Genius Mix · 3 tracks" in label(page, "pageMeta").text()
     assert button(page, "editPlaylist").isHidden()
     assert button(page, "evaluateSmartPlaylist").isHidden()
-    assert button(page, "removePlaylist").isHidden()
+    assert button(page, "removePlaylist").isVisible()
+    assert not button(page, "removePlaylist").isEnabled()
     assert button(page, "exportPlaylist").isHidden()
     assert not button(page, "playSelectedGeniusTracks").isEnabled()
     assert not button(page, "queuePlaylist").isEnabled()
@@ -266,9 +273,11 @@ def test_saved_genius_playlist_uses_playlist_search_export_and_queue(
     playlist = page
     exports: list[tuple[str, tuple[Track, ...]]] = []
     queued: list[tuple[Track, ...]] = []
-    page.playlistExportRequested.connect(
-        lambda name, tracks: exports.append((name, tracks))
-    )
+
+    def capture_export(name: str, tracks: tuple[Track, ...]) -> None:
+        exports.append((name, tracks))
+
+    page.playlistExportRequested.connect(capture_export)
     page.queueRequested.connect(queued.append)
     search = playlist.findChild(SearchField, "playlistsSearch")
     assert search is not None
@@ -308,6 +317,30 @@ def test_source_change_and_disconnect_clear_selection_tracks_and_playback(
     assert visible_ids(page) == ()
     assert not button(page, "playSelectedGeniusTracks").isEnabled()
     assert "Connect and choose" in label(page, "playlistEmpty").text()
+
+
+def test_draft_track_deletion_updates_genius_members_counts_and_empty_collections(
+    browser: Browser,
+) -> None:
+    current = active()
+    workspace = browser.context.library_workspace
+    workspace.load(current.library)
+    page = browser.page
+    page.set_active_ipod(current)
+    select(page, 0)
+    workspace.remove_tracks((3,), workspace.edit_revision)
+    assert visible_ids(page) == (1, 1)
+    section = tree(page).topLevelItem(0)
+    assert section is not None
+    item = section.child(0)
+    assert item is not None and item.data(0, DETAIL_ROLE) == "2 tracks"
+    workspace.remove_tracks((1,), workspace.edit_revision)
+    assert visible_ids(page) == ()
+    assert tree(page).topLevelItemCount() == 1
+    section = tree(page).topLevelItem(0)
+    assert section is not None and section.text(0) == "Genius Mixes"
+    workspace.reset_changes()
+    assert tree(page).topLevelItemCount() == 2
 
 
 def test_same_connection_refresh_updates_selected_tracks_and_keeps_issues_plain(
@@ -360,18 +393,77 @@ def test_sidebar_exposes_capable_devices_and_actual_captured_data() -> None:
         sidebar.deleteLater()
 
 
-def test_shell_keeps_genius_table_outside_mutable_actions_and_drag() -> None:
+@pytest.mark.parametrize(("section", "track"), ((0, _TRACKS[2]), (1, _TRACKS[1])))
+def test_shell_gives_genius_tracks_the_shared_menu_and_drag(
+    monkeypatch: pytest.MonkeyPatch,
+    section: int,
+    track: Track,
+) -> None:
     context = build_context()
+    current = active()
+    context.library_workspace.load(current.library)
     window = MainWindow(context, auto_discover=False, defer_startup=True)
+    dragged: list[TrackSelectionMimeData] = []
+
+    class RecordingDrag:
+        def __init__(self, _source: object) -> None:
+            pass
+
+        def setMimeData(self, data: TrackSelectionMimeData) -> None:
+            dragged.append(data)
+
+        def setPixmap(self, _pixmap: object) -> None:
+            pass
+
+        def setHotSpot(self, _point: object) -> None:
+            pass
+
+        def exec(self, _action: Qt.DropAction) -> Qt.DropAction:
+            return Qt.DropAction.CopyAction
+
     try:
+        window.show()
         page = window.findChild(GeniusPage, "geniusPage")
+        actions = window.findChild(TrackActions)
         assert page is not None
-        for table in page.read_only_tables:
-            assert not table.dragEnabled()
-            assert (
-                table.contextMenuPolicy() is not Qt.ContextMenuPolicy.CustomContextMenu
+        assert actions is not None
+        page.set_active_ipod(current)
+        select(page, section)
+        table = page.track_table
+        table.selectRow(0)
+        assert table.dragEnabled()
+        assert table.contextMenuPolicy() is Qt.ContextMenuPolicy.CustomContextMenu
+        assert table.findChildren(QShortcut)
+        selection = actions.selection(table)
+        assert selection.track_ids == (track.track_id,)
+        assert selection.playlist_id is None
+        menu = actions.build_menu(selection)
+        try:
+            assert isinstance(menu, QMenu)
+            assert menu.objectName() == "trackContextMenu"
+            assert any(action.text() == "Add to Playlist" for action in menu.actions())
+            assert not any(
+                action.text() == "Remove from Playlist" for action in menu.actions()
             )
-            assert not table.findChildren(QShortcut)
+        finally:
+            menu.deleteLater()
+
+        monkeypatch.setattr(track_table_module, "QDrag", RecordingDrag)
+        table.startDrag(Qt.DropAction.CopyAction)
+        assert len(dragged) == 1
+        assert dragged[0].track_ids == (track.track_id,)
+        assert dropped_tracks(dragged[0], context.library_workspace) == (track,)
+
+        played: list[tuple[Track, ...]] = []
+        page.playRequested.connect(played.append)
+        table.doubleClicked.emit(table.model().index(0, 1))
+        assert played == [(track,)]
+
+        actions.apply(selection, "rating", 80)
+        table.selectRow(0)
+        updated = context.library_workspace.track(track.track_id)
+        assert updated is not None and updated.rating == 80
+        assert actions.selection(table).tracks == (updated,)
     finally:
         window.close()
         context.shutdown()
@@ -383,10 +475,14 @@ def test_shell_connects_genius_queue_only_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     queued: list[tuple[Track, ...]] = []
+
+    def capture_queue(_window: MainWindow, tracks: tuple[Track, ...]) -> None:
+        queued.append(tracks)
+
     monkeypatch.setattr(
         MainWindow,
         "_queue_group_tracks",
-        lambda _window, tracks: queued.append(tracks),
+        capture_queue,
     )
     context = build_context()
     window = MainWindow(context, auto_discover=False, defer_startup=True)

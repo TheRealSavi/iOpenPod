@@ -247,6 +247,8 @@ QDialog#libraryReviewDialog,
 QDialog#scrobbleReport,
 QDialog#playlistExportDialog,
 QDialog#podcastSyncSettingsDialog,
+QDialog#addGeniusMixesDialog,
+QDialog#geniusMixSettingsDialog,
 QDialog#photoAlbumManager,
 QDialog#photoAlbumEditor,
 QDialog#mediaFoldersDialog,
@@ -271,6 +273,29 @@ QLabel#dialogTitle {{
     font-family: "{typography.display}";
     font-size: {typography.title_pt:g}pt;
     font-weight: 700;
+}}
+
+QLabel#geniusMixSectionTitle {{
+    color: {tokens.accent};
+    font-size: {typography.small_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#geniusMixDialogHeading {{
+    color: {tokens.text};
+    font-family: "{typography.display}";
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+}}
+
+QListWidget#geniusMixProposals {{
+    background-color: {tokens.window};
+    border: none;
+    outline: none;
+}}
+
+QLabel#geniusMixEmpty {{
+    color: {tokens.text_secondary};
 }}
 
 QLabel#mediaFolderSummary,

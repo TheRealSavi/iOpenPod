@@ -31,6 +31,7 @@ from iPodDB.library import (
     LibraryWriteResult,
     WriteIssue,
 )
+from iPodDB.library.genius import GeniusCollectionKind
 
 if TYPE_CHECKING:
     from iOpenPod.app.core.settings.service import SettingsService
@@ -361,6 +362,17 @@ class LibraryWriteController(QObject):
             delete_omissions=self._workspace.delete_omissions,
             artwork=self._workspace.artwork_assets,
             media=self._workspace.media_sources,
+            add_genius_mixes=self._workspace.genius_mix_additions,
+            remove_genius_collections=self._workspace.genius_collection_removals,
+            regenerate_genius=bool(
+                self._workspace.genius_mix_additions
+                or any(
+                    collection.collection_id
+                    in self._workspace.genius_collection_removals
+                    and collection.kind is GeniusCollectionKind.MIX
+                    for collection in active.genius.collections
+                )
+            ),
             rockbox_metadata=self._settings.get(ROCKBOX_METADATA_SUPPORT),
             discard_removed_track_media=(
                 not self._workspace.media_sources

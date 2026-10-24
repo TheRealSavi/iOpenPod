@@ -36,6 +36,9 @@ licenses. In particular, the HASHAB implementation retains its adjacent
 into their `licenses` directory. The application license does not replace those
 terms or grant rights to third-party trademarks.
 
+The Genius Mix pictograms are Tabler Icons distributed under the MIT license
+retained beside the SVGs in `src/iOpenPod/assets/glyphs/genius-mixes/`.
+
 ## Free distribution and support
 
 iOpenPod is offered for free. Voluntary donations support development and are not

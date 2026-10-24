@@ -1,11 +1,14 @@
 """Aggregate semantic validation without modifying the retained source."""
 
+from dataclasses import replace
+
 from iPodDB.device_time import TimeConversion
 from iPodDB.library._field_policy import (
     changed_fields,
     needs_media,
     unclassified_fields,
 )
+from iPodDB.library._genius_reconciliation import reconcile_genius_playlists
 from iPodDB.library._photo_analysis import analyze_photos
 from iPodDB.library._smart_writing import smart_chunks
 from iPodDB.library._track_writing import validate_track
@@ -50,15 +53,6 @@ def analyze(
     artwork: list[int] = []
     old_tracks = {t.track_id: t for t in original.tracks}
     tracks = {t.track_id: t for t in draft.snapshot.tracks}
-    removed_persistent_ids = {
-        t.ipod.db_track_id
-        for t in original.tracks
-        if t.track_id not in tracks and t.ipod is not None and t.ipod.db_track_id
-    } - {
-        t.ipod.db_track_id
-        for t in original.tracks
-        if t.track_id in tracks and t.ipod is not None
-    }
     replacements: set[int] = set()
     retagged: set[int] = set()
     if draft.regenerate_sqlite and not target.sqlite_database:
@@ -271,6 +265,12 @@ def analyze(
             artwork.append(track.artwork_id)
     playlists = {p.playlist_id: p for p in draft.snapshot.playlists}
     old_playlists = {p.playlist_id: p for p in original.playlists}
+    reconciled_genius = {
+        p.playlist_id: p
+        for p in reconcile_genius_playlists(
+            original, replace(draft.snapshot, playlists=original.playlists)
+        ).playlists
+    }
     for playlist in draft.snapshot.playlists:
         old_playlist = old_playlists.get(playlist.playlist_id)
 
@@ -304,11 +304,12 @@ def analyze(
                     "kind",
                 )
             if old_playlist.kind is PlaylistKind.GENIUS:
-                if old_playlist.genius_seed_persistent_id in removed_persistent_ids:
+                expected_genius = reconciled_genius.get(playlist.playlist_id)
+                if expected_genius is None:
                     error(
-                        "playlist.genius_seed_deleted",
-                        "Keep the native Genius seed Track or explicitly remove its Genius Playlist together with the Track.",
-                        "genius_seed_persistent_id",
+                        "playlist.genius_empty",
+                        "Remove the Genius Playlist emptied by Track deletion.",
+                        "entries",
                     )
                 retained_entries = tuple(
                     entry for entry in old_playlist.entries if entry.track_id in tracks
@@ -319,13 +320,14 @@ def analyze(
                         "Native Genius membership can only change when removing deleted Tracks.",
                         "entries",
                     )
-                if (
-                    playlist.genius_seed_persistent_id
-                    != old_playlist.genius_seed_persistent_id
+                if playlist.genius_seed_persistent_id != (
+                    expected_genius.genius_seed_persistent_id
+                    if expected_genius is not None
+                    else old_playlist.genius_seed_persistent_id
                 ):
                     error(
                         "playlist.genius_seed",
-                        "The retained native Genius seed cannot be edited.",
+                        "A deleted Genius seed must be replaced by the first surviving member; other seed edits are unsupported.",
                         "genius_seed_persistent_id",
                     )
         if playlist.parent_id is not None:

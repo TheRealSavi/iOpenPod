@@ -96,6 +96,87 @@ def _changed(data: bytes, sql: str) -> bytes:
     return result
 
 
+def test_selective_mix_addition_retains_unmentioned_native_metadata() -> None:
+    baseline = _build(_snapshot())
+    library = _changed(
+        baseline.library,
+        """
+        ALTER TABLE container ADD COLUMN future TEXT;
+        UPDATE container SET future='keep' WHERE pid=999;
+        ALTER TABLE item_to_container ADD COLUMN future_member INTEGER;
+        UPDATE item_to_container SET shuffle_order=17,future_member=88 WHERE container_pid=999;
+        ALTER TABLE container_seed ADD COLUMN future_seed TEXT;
+        UPDATE container_seed SET seed_order=7,future_seed='keep' WHERE container_pid=999;
+    """,
+    )
+    dynamic = _changed(
+        baseline.dynamic,
+        "UPDATE container_ui SET play_order=7,shuffle_items=1 WHERE container_pid=999",
+    )
+    update = replace(
+        _update(), mixes=None, mix_additions=(SQLiteGeniusMix(1000, "New", (8,), 8),)
+    )
+    result = build_sqlite_databases(
+        _snapshot(),
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+        retained=_sources(replace(baseline, library=library, dynamic=dynamic)),
+        genius_update=update,
+    )
+    for table, identity in (
+        ("container", "pid"),
+        ("item_to_container", "container_pid"),
+        ("container_seed", "container_pid"),
+    ):
+        query = f"SELECT * FROM {table} WHERE {identity}=999"
+        assert sqlite_rows(result.library, query) == sqlite_rows(library, query)
+    query = "SELECT * FROM container_ui WHERE container_pid=999"
+    assert sqlite_rows(result.dynamic, query) == sqlite_rows(dynamic, query)
+    state = read_sqlite_genius_state(result.library, result.dynamic, result.genius)
+    assert {mix.container_id for mix in state.mixes} == {999, 1000}
+    removed = build_sqlite_databases(
+        _snapshot(),
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+        retained=_sources(result),
+        genius_update=replace(_update(), mixes=None, mix_removals=(1000,)),
+    )
+    assert {
+        mix.container_id
+        for mix in read_sqlite_genius_state(
+            removed.library, removed.dynamic, removed.genius
+        ).mixes
+    } == {999}
+    assert (
+        sqlite_rows(
+            removed.library, "SELECT * FROM container_seed WHERE container_pid=1000"
+        )
+        == ()
+    )
+    assert (
+        sqlite_rows(
+            removed.dynamic, "SELECT * FROM container_ui WHERE container_pid=1000"
+        )
+        == ()
+    )
+
+
+def test_selective_addition_cannot_overwrite_an_existing_native_mix() -> None:
+    baseline = _build(_snapshot())
+    with pytest.raises(ValueError, match="collides"):
+        build_sqlite_databases(
+            _snapshot(),
+            database_id=42,
+            checksum=WriteChecksum.NONE,
+            retained=_sources(baseline),
+            genius_update=replace(
+                _update(),
+                mixes=None,
+                mix_additions=(SQLiteGeniusMix(999, "Overwrite", (8,)),),
+            ),
+        )
+
+
 def test_document_round_trip_preserves_exact_bytes_and_unknown_schema() -> None:
     original = serialize_genius_database(GeniusDatabase(_data()))
     assert original[18:20] == b"\x01\x01"
@@ -559,6 +640,47 @@ def test_removed_or_replaced_tracks_leave_no_genius_edges_or_mix_seeds(
             )
             == 0
         )
+
+
+def test_deleting_all_mix_members_removes_container_membership_and_seed_rows() -> None:
+    snapshot = _snapshot()
+    baseline = _build(snapshot)
+    result = build_sqlite_databases(
+        replace(snapshot, tracks=(), playlists=()),
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+        retained=_sources(baseline),
+    )
+    assert not sqlite_rows(result.library, "SELECT * FROM container WHERE pid=999")
+    assert not sqlite_rows(
+        result.library, "SELECT * FROM item_to_container WHERE container_pid=999"
+    )
+    assert not sqlite_rows(
+        result.library, "SELECT * FROM container_seed WHERE container_pid=999"
+    )
+    assert not sqlite_rows(
+        result.dynamic, "SELECT * FROM container_ui WHERE container_pid=999"
+    )
+    data = parse_genius_database(result.genius).data
+    assert not data.metadata and not data.similarities
+
+
+def test_unrelated_track_deletion_retains_preexisting_dangling_mix() -> None:
+    snapshot = _snapshot()
+    baseline = _build(snapshot)
+    library = _changed(
+        baseline.library,
+        "UPDATE item_to_container SET item_pid=123456 WHERE container_pid=999",
+    )
+    result = build_sqlite_databases(
+        replace(snapshot, tracks=(snapshot.tracks[0],)),
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+        retained=_sources(replace(baseline, library=library)),
+    )
+    assert sqlite_rows(
+        result.library, "SELECT pid,name FROM container WHERE pid=999"
+    ) == ((999, "Test Mix"),)
 
 
 def test_track_removal_rejects_opaque_retained_edges() -> None:

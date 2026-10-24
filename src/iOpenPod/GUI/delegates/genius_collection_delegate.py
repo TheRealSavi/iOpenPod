@@ -9,6 +9,7 @@ from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 DETAIL_ROLE = Qt.ItemDataRole.UserRole + 1
 SECTION_ROLE = Qt.ItemDataRole.UserRole + 2
+HEADER_WIDGET_ROLE = Qt.ItemDataRole.UserRole + 3
 
 
 class GeniusCollectionDelegate(CollectionListDelegate):
@@ -32,6 +33,8 @@ class GeniusCollectionDelegate(CollectionListDelegate):
         option: QStyleOptionViewItem,
         index: QModelIndex | QPersistentModelIndex,
     ) -> None:
+        if index.data(HEADER_WIDGET_ROLE):
+            return
         section = bool(index.data(SECTION_ROLE))
         enabled = bool(option.state & QStyle.StateFlag.State_Enabled)
         selected = enabled and bool(option.state & QStyle.StateFlag.State_Selected)

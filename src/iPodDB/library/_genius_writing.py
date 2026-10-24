@@ -47,6 +47,18 @@ def mapped_update(
             )
             for mix in update.mixes
         ),
+        mix_additions=tuple(
+            replace(
+                mix,
+                track_ids=tuple(ids.get(t, t) for t in mix.track_ids),
+                seed_track_id=(
+                    None
+                    if mix.seed_track_id is None
+                    else ids.get(mix.seed_track_id, mix.seed_track_id)
+                ),
+            )
+            for mix in update.mix_additions
+        ),
     )
 
 

@@ -216,7 +216,9 @@ def test_track_deletion_can_prune_native_genius_membership(seed: bytes) -> None:
     )
 
 
-def test_known_native_genius_seed_deletion_is_rejected_during_analysis() -> None:
+def test_known_native_genius_seed_deletion_keeps_members_and_reseeds_counterparts() -> (
+    None
+):
     source = genius_library(struct.pack("<Q", 101))
     playlist = source.snapshot.playlists[0]
     desired = replace(
@@ -225,9 +227,34 @@ def test_known_native_genius_seed_deletion_is_rejected_during_analysis() -> None
         playlists=(replace(playlist, entries=playlist.entries[1:2]),),
     )
     plan = source.analyze(source.begin_draft(desired, delete_omissions=True))
-    assert plan.blocked
-    assert "playlist.genius_seed_deleted" in {issue.code for issue in plan.issues}
-    assert source.prepare(plan).prepared is None
+    assert not plan.blocked
+    result = source.prepare(plan, WriteResources(pending_playback_sidecars=False))
+    assert result.prepared is not None, result.issues
+    saved = result.prepared.snapshot.playlists[0]
+    assert saved.playlist_id == playlist.playlist_id
+    assert saved.name == playlist.name
+    assert saved.track_ids == (2,)
+    assert saved.genius_seed_persistent_id == 102
+    original_metadata = _native_genius_bytes(source.serialize().itunes)
+    final_metadata = _native_genius_bytes(result.prepared.itunes)
+    assert len(original_metadata) == len(final_metadata)
+    for before, after in zip(original_metadata, final_metadata, strict=True):
+        if before.endswith(struct.pack("<Q", 101)):
+            assert after == before[:-8] + struct.pack("<Q", 102)
+        else:
+            assert after == before
+
+
+def test_track_deletion_removes_a_newly_empty_genius_playlist() -> None:
+    source = genius_library(struct.pack("<Q", 101))
+    desired = replace(source.snapshot, tracks=())
+    draft = source.begin_draft(desired, delete_omissions=True)
+    assert not draft.snapshot.playlists
+    result = source.prepare(
+        source.analyze(draft), WriteResources(pending_playback_sidecars=False)
+    )
+    assert result.prepared is not None, result.issues
+    assert not result.prepared.snapshot.playlists
 
 
 def test_seed_deletion_can_explicitly_remove_its_native_genius_playlist() -> None:

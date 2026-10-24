@@ -18,6 +18,7 @@ def capture_genius_browse(
     sqlite: bool,
     sidecars: tuple[PlaybackSidecar, ...] | None = None,
     sqlite_library: bytes | None = None,
+    excluded_sidecars: frozenset[str] = frozenset(),
 ) -> GeniusBrowse:
     """Optional display evidence never changes or becomes the editable Library."""
     issues: list[GeniusBrowseIssue] = []
@@ -47,5 +48,13 @@ def capture_genius_browse(
             if not session.is_active:
                 raise
             issues.append(GeniusBrowseIssue("sqlite.unreadable", str(error)))
-    browse = project_genius_browse(snapshot, sidecars, sqlite_library=library)
+    browse = project_genius_browse(
+        snapshot,
+        tuple(
+            sidecar
+            for sidecar in sidecars
+            if sidecar.name.casefold() not in excluded_sidecars
+        ),
+        sqlite_library=library,
+    )
     return replace(browse, issues=(*issues, *browse.issues))

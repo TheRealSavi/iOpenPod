@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-24
 - Extends: ADR-0100, ADR-0141, ADR-0150, and ADR-0175
+- Extended by: ADR-0186 replaces the seed-deletion and application remapping restrictions below.
 
 ## Context
 

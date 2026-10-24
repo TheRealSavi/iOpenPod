@@ -69,6 +69,9 @@ class LibraryPreparationRequest:
     # Sync builds native relationships for every eligible music Track. Ordinary
     # metadata saves preserve existing Genius state instead of regenerating it.
     regenerate_genius: bool = field(default=False, kw_only=True)
+    add_genius_mixes: tuple[str, ...] = field(default=(), kw_only=True)
+    remove_genius_collections: tuple[str, ...] = field(default=(), kw_only=True)
+    rotate_genius_mixes: bool = field(default=False, kw_only=True)
     rebuild_album_indexes: bool = field(default=False, kw_only=True)
     repair_podcast_links: bool = field(default=False, kw_only=True)
     normalize_podcasts: bool = field(default=False, kw_only=True)
