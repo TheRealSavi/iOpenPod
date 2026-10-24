@@ -111,9 +111,15 @@ class PodcastArtworkPreparation:
     def cover(
         self, subscription: PodcastSubscription, episode: PodcastEpisode, target_px: int
     ) -> ArtworkPixels | None:
-        return self._load(
-            episode.artwork_url, episode.title, target_px
-        ) or self.show_cover(subscription, target_px)
+        return self.episode_cover(episode, target_px) or self.show_cover(
+            subscription, target_px
+        )
+
+    def episode_cover(
+        self, episode: PodcastEpisode, target_px: int
+    ) -> ArtworkPixels | None:
+        """Resolve the Episode's own publisher image before other cover sources."""
+        return self._load(episode.artwork_url, episode.title, target_px)
 
     def show_cover(
         self, subscription: PodcastSubscription, target_px: int

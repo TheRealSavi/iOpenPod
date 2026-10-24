@@ -3374,12 +3374,19 @@ def _capture_podcast_artwork(
 ]:
     formats = application_artwork_formats(request.source.profile)
     target_px = max(max(item.width, item.height) for item in formats)
+    artwork = PodcastArtworkPreparation(checkpoint=checkpoint, progress=progress)
     embedded: list[_PreparedPodcast] = []
     issues: list[WriteIssue] = []
-    retained_bytes = 0
     for podcast in prepared:
         checkpoint()
-        if podcast.cover_source is not None:
+        episode_cover = None
+        if podcast.episode is not None:
+            episode_cover = artwork.episode_cover(podcast.episode, target_px)
+            if episode_cover is not None:
+                podcast = replace(
+                    podcast, song=replace(podcast.song, artwork=episode_cover)
+                )
+        if episode_cover is None and podcast.cover_source is not None:
             progress(
                 WriteProgress(
                     "sync.podcast_artwork",
@@ -3394,11 +3401,11 @@ def _capture_podcast_artwork(
                     podcast.cover_source, target_px, checkpoint=checkpoint
                 )
                 if pixels is not None:
-                    if retained_bytes + len(pixels.rgb888) > MAX_PODCAST_COVER_BYTES:
+                    if len(pixels.rgb888) > artwork.remaining_bytes:
                         raise ValueError(
                             "Podcast covers exceed the 64 MiB preparation limit; sync fewer Podcasts at once"
                         )
-                    retained_bytes += len(pixels.rgb888)
+                    artwork.used_bytes += len(pixels.rgb888)
                     podcast = replace(
                         podcast, song=replace(podcast.song, artwork=pixels)
                     )
@@ -3419,9 +3426,6 @@ def _capture_podcast_artwork(
                     )
                 )
         embedded.append(podcast)
-    artwork = PodcastArtworkPreparation(
-        checkpoint=checkpoint, progress=progress, retained_bytes=retained_bytes
-    )
     shows = {
         item.subscription.subscription_id: item.subscription for item in plan.additions
     }

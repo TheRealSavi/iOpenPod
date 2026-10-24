@@ -449,6 +449,7 @@ class MainWindow(QMainWindow):
             self._pages,
         )
         self._genius_page = GeniusPage(
+            context.library_workspace,
             context.settings,
             context.theme_manager,
             self._artwork_provider,
@@ -595,7 +596,7 @@ class MainWindow(QMainWindow):
         from iOpenPod.GUI.widgets.track_table import TrackTable
 
         for table in self._library_browser.findChildren(TrackTable):
-            if table is not self._genius_page.track_table:
+            if table not in self._genius_page.read_only_tables:
                 table.set_library_workspace(context.library_workspace)
         self._track_actions.playlistCreated.connect(self._playlist_selected)
         self._track_actions.trackExportRequested.connect(self._track_export_requested)
@@ -607,7 +608,7 @@ class MainWindow(QMainWindow):
             self._track_actions.show_track
         )
         for table in self._library_browser.findChildren(TrackTable):
-            if table is not self._genius_page.track_table:
+            if table not in self._genius_page.read_only_tables:
                 self._track_actions.install(table)
         for grid in (
             *self._library_browser.findChildren(AlbumGridView),
@@ -634,6 +635,9 @@ class MainWindow(QMainWindow):
                 self._playlist_export_requested
             )
         self._photo_page.photoExportRequested.connect(self._photo_export_requested)
+        self._genius_page.playlistExportRequested.connect(
+            self._playlist_export_requested
+        )
         self._photo_page.photoAlbumExportRequested.connect(
             self._photo_album_export_requested
         )
@@ -902,11 +906,11 @@ class MainWindow(QMainWindow):
         for page in self._library_pages:
             if isinstance(page, PodcastPage):
                 page.trackActivated.connect(controller.enqueue)
-            if isinstance(page, PlaylistPage):
-                page.queueRequested.connect(self._queue_group_tracks)
-                page.playNextRequested.connect(controller.play_next)
             if isinstance(page, GeniusPage):
                 page.playRequested.connect(controller.play_now)
+                page.queueRequested.connect(self._queue_group_tracks)
+                page.playNextRequested.connect(controller.play_next)
+            elif isinstance(page, PlaylistPage):
                 page.queueRequested.connect(self._queue_group_tracks)
                 page.playNextRequested.connect(controller.play_next)
         controller.currentTrackChanged.connect(self._player.set_track)

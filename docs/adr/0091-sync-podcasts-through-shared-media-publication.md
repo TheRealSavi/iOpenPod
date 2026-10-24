@@ -108,3 +108,12 @@ and verified Library publication. This preserves Episode-specific artwork instea
 of replacing it with a generic show cover. Existing Episode cover repair remains
 publisher-based without a device-media reread. Nested chapter images remain a
 separate import requirement.
+
+## Amendment: prefer the Episode RSS image during Sync (2026-10-24)
+
+The Podcast browser presents an Episode's RSS image ahead of device and show
+artwork. Incoming Episode Sync uses that same image first. An unavailable Episode
+RSS image falls back to a usable cover embedded in the original download, then to
+the show's publisher cover. This changes the earlier embedded-first import policy
+without changing the bounded artwork loader, shared preparation budget, or verified
+publication. Existing on-device covers remain preserved during ordinary Sync.

@@ -2007,10 +2007,9 @@ paired existing Track is retained. Complete Library validation remains mandatory
 Diagnostics identify the Episode and show, retain the source URL, and count each
 affected record once across cover retries. Blocked semantic plans return their
 primary errors before validating resources deliberately left unprepared.
-The worker reads incoming Episode covers from the original Storage-owned downloads,
-retained through media preparation. It uses bounded publisher artwork loading when
-an embedded cover is unavailable, preferring the Episode RSS image before the show
-cover. These sources share the retained cover budget and
+The worker prefers each incoming Episode's RSS image, then reads an embedded cover
+from the original Storage-owned download retained through media preparation, then
+uses the show's publisher cover. These sources share the retained cover budget and
 submit owned pixels to the same ArtworkDB and thumbnail preparation as Host media.
 Bounded ID3 CHAP/APIC images from the same original become timed Artwork Assets,
 sharing the cover memory budget. Chapter metadata contains titles and positions;

@@ -182,18 +182,12 @@ QLabel#sidebarSectionLabel {{
     font-size: {typography.small_pt:g}pt;
 }}
 
-QTreeView#playlistTree,
-QTreeWidget#geniusCollections {{
+QTreeView#playlistTree {{
     background-color: {tokens.surface};
     alternate-background-color: {tokens.surface_hover};
     border: none;
     selection-background-color: {tokens.surface_selected};
     selection-color: {tokens.accent};
-}}
-
-QTreeWidget#geniusCollections::item {{
-    min-height: {LAYOUT.control_height_compact}px;
-    padding: {LAYOUT.space_3xs}px {LAYOUT.space_xs}px;
 }}
 
 QPushButton#playlistSectionToggle {{
@@ -2081,7 +2075,8 @@ QLabel[sourceListCount="true"] {{
     font-size: {typography.small_pt:g}pt;
 }}
 
-QListView[sourceList="true"] {{
+QListView[sourceList="true"],
+QTreeWidget#geniusCollections {{
     color: {tokens.text};
     background-color: transparent;
     border: none;

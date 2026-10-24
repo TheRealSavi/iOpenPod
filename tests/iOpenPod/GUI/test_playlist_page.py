@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QToolButton,
     QTreeView,
+    QTreeWidget,
     QWidget,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import (
@@ -167,6 +168,7 @@ def test_playlist_opens_in_source_order_with_repeated_track_occurrences(
     assert _table(browser.page).horizontalHeader().sortIndicatorSection() == -1
     assert "4 track" in _label(browser.page, "pageMeta").text()
     assert browser.page.findChild(QLabel, "playlistSessionNotice") is None
+    assert browser.page.findChild(QTreeWidget, "geniusCollections") is None
     assert browser.page.findChild(ActionButton, "resetPlaylistDrafts") is None
     table = _table(browser.page)
     assert not table.isColumnHidden(TrackColumn.PLAYLIST_POSITION)

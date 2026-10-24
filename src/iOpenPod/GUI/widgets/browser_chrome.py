@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QListView,
     QVBoxLayout,
     QWidget,
 )
@@ -71,7 +70,7 @@ class SourceListPanel(QFrame):
         self.setProperty("sourceListPanel", True)
         self.setMinimumWidth(minimum_width)
         self.resize(width, self.height())
-        self._view: QListView | None = None
+        self._view: QAbstractItemView | None = None
 
         self._title = QLabel(self)
         self._title.setObjectName("sourceListTitle")
@@ -123,11 +122,11 @@ class SourceListPanel(QFrame):
 
     def set_view(
         self,
-        view: QListView,
+        view: QAbstractItemView,
         *,
         standard_items: bool = True,
     ) -> None:
-        """Install one list and apply the common source-navigation behavior."""
+        """Install one source view and apply common navigation behavior."""
 
         if self._view is not None:
             raise RuntimeError("A SourceListPanel can own only one list view.")
