@@ -217,6 +217,7 @@ TRACK_POLICY = (
 PLAYLIST_POLICY = (
     FieldPolicy("playlist_id", FieldOwnership.IDENTITY),
     FieldPolicy("system_managed", FieldOwnership.RETAINED),
+    FieldPolicy("genius_seed_persistent_id", FieldOwnership.RETAINED),
     *(
         FieldPolicy(p, FieldOwnership.EDITABLE)
         for p in (

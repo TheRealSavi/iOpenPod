@@ -1,6 +1,8 @@
 """End-to-end tests for Application Layer device coordination."""
 
 import base64
+import hashlib
+import json
 import os
 import plistlib
 import sqlite3
@@ -14,6 +16,13 @@ from PIL import Image
 from tests.iOpenPod.app.media.test_photo_sync import large_photo_png
 from tests.iPodDB.sidecars.test_sidecar_readers import counts, otg
 
+from device_registry import (
+    DEFAULT_DEVICE_REGISTRY,
+    EvidenceAuthority,
+    FeatureSupport,
+    parse_sysinfo_extended,
+    reconcile_device_metadata,
+)
 from iOpenPod.app.backups import BackupIdentityClaimKind
 from iOpenPod.app.display_text import SourceText
 from iOpenPod.app.library_write import LibraryPreparationRequest
@@ -606,6 +615,56 @@ def test_macos_discovery_identifies_ipod_without_sysinfo(
     assert candidate.readiness is DeviceReadiness.READY
 
 
+@pytest.mark.parametrize(
+    ("release", "support"),
+    [
+        (None, FeatureSupport.UNKNOWN),
+        ("2.0.2", FeatureSupport.UNSUPPORTED),
+        ("2.0.3", FeatureSupport.SUPPORTED),
+    ],
+)
+def test_discovery_uses_retailos_for_genius_and_keeps_transport_revision_separate(
+    tmp_path: Path, release: str | None, support: FeatureSupport
+) -> None:
+    platform = _MacOSVirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MC293")
+    sysinfo = root / "iPod_Control/Device/SysInfo"
+    sysinfo.unlink()
+    payload = {
+        "ModelNumStr": "MC293",
+        "FireWireVersion": "9.99",
+        "BuildID": "9.0.1",
+    }
+    if release is not None:
+        payload["VisibleBuildID"] = release
+    platform.add_volume(
+        root,
+        identifiers=HardwareIdentifiers(usb_vendor_id=0x05AC, usb_product_id=0x1261),
+        probe_result=HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="iokit",
+                    vendor="Apple",
+                    product="iPod",
+                    firmware_revision="9.99",
+                    vendor_payload=plistlib.dumps(payload),
+                ),
+            )
+        ),
+    )
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        assert candidate.profile is not None
+        assert candidate.profile.capabilities.genius.mixes is support
+        assert (
+            candidate.profile.capabilities.genius.playlists is FeatureSupport.SUPPORTED
+        )
+        assert not sysinfo.exists()
+    finally:
+        coordinator.close()
+
+
 def test_valid_authority_avoids_repeating_a_live_hardware_probe(
     tmp_path: Path,
 ) -> None:
@@ -626,6 +685,104 @@ def test_valid_authority_avoids_repeating_a_live_hardware_probe(
 
     assert platform.probe_count == 1
     coordinator.close()
+
+
+@pytest.mark.parametrize("cached_release", [None, "1.62"])
+@pytest.mark.parametrize(
+    ("release", "support"),
+    [("2.0.2", FeatureSupport.UNSUPPORTED), ("2.0.4", FeatureSupport.SUPPORTED)],
+)
+def test_selection_caches_firmware_and_reuses_it_after_reconnecting(
+    tmp_path: Path,
+    cached_release: str | None,
+    release: str,
+    support: FeatureSupport,
+) -> None:
+    platform = _ProbeCountingPlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MC293")
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC293")
+    assert profile is not None
+    payload = {
+        "ModelNumStr": "MC293",
+        "SerialNumber": "TESTSERIAL7G",
+        "FireWireGUID": "000A270012345678",
+        "FireWireVersion": "1.62",
+    }
+    if cached_release is not None:
+        payload["VisibleBuildID"] = cached_release
+    legacy = reconcile_device_metadata(
+        profile=profile,
+        evidence=parse_sysinfo_extended(
+            plistlib.dumps(payload), authority=EvidenceAuthority.CURRENT_HARDWARE
+        ),
+    )
+    extended = plistlib.loads(legacy.sysinfo_extended)
+    extended.pop("VisibleBuildID", None)
+    extended_bytes = plistlib.dumps(extended)
+    authority = json.loads(legacy.authority)
+    if cached_release is not None:
+        authority["fields"]["visibleBuildID"].pop("value_kind", None)
+    authority["file_hashes"]["SysInfoExtended"] = hashlib.sha256(
+        extended_bytes
+    ).hexdigest()
+    cached = {
+        "SysInfo": legacy.sysinfo,
+        "SysInfoExtended": extended_bytes,
+        "iOpenPodSysInfoAuthority": json.dumps(authority).encode(),
+    }
+    device_directory = root / "iPod_Control/Device"
+    for name, content in cached.items():
+        (device_directory / name).write_bytes(content)
+    payload["VisibleBuildID"] = release
+    platform.add_volume(
+        root,
+        probe_result=HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="iokit",
+                    vendor="Apple",
+                    product="iPod",
+                    vendor_payload=plistlib.dumps(payload),
+                ),
+            )
+        ),
+    )
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        assert platform.probe_count == 1
+        assert candidate.profile is not None
+        assert candidate.profile.capabilities.genius.mixes is support
+        assert {
+            name: (device_directory / name).read_bytes() for name in cached
+        } == cached
+
+        coordinator.select_device(candidate.id)
+        saved = {name: (device_directory / name).read_bytes() for name in cached}
+        assert f"visibleBuildID: {release}\n".encode() in saved["SysInfo"]
+        extended = plistlib.loads(saved["SysInfoExtended"])
+        assert extended["VisibleBuildID"] == release
+        assert extended["FireWireVersion"] == "1.62"
+        firmware = json.loads(saved["iOpenPodSysInfoAuthority"])["fields"][
+            "visibleBuildID"
+        ]
+        assert firmware["value"] == release
+        assert firmware["authority"] == "current_hardware"
+        assert firmware["source"] == "iokit"
+        assert firmware["value_kind"] == "retailos_release"
+
+        coordinator.close()
+        platform.disconnect(root)
+        platform.reconnect(root)
+        coordinator = DeviceCoordinator(Storage(platform))
+        candidate = coordinator.discover_devices().candidates[0]
+        assert platform.probe_count == 1
+        assert candidate.profile is not None
+        assert candidate.profile.capabilities.genius.mixes is support
+        coordinator.select_device(candidate.id)
+        assert {name: (device_directory / name).read_bytes() for name in saved} == saved
+    finally:
+        coordinator.close()
 
 
 def test_live_identity_repairs_stale_sysinfo_model_on_selection(

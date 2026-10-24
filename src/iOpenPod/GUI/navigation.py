@@ -14,6 +14,7 @@ class PageId(StrEnum):
     GENRES = "genres"
     TRACKS = "tracks"
     PLAYLISTS = "playlists"
+    GENIUS = "genius"
     PHOTOS = "photos"
     PODCASTS = "podcasts"
     AUDIOBOOKS = "audiobooks"
@@ -35,6 +36,7 @@ _PAGE_LABEL_SOURCES = cast(
         PageId.GENRES: QT_TRANSLATE_NOOP("Navigation", "Genres"),
         PageId.TRACKS: QT_TRANSLATE_NOOP("Navigation", "Tracks"),
         PageId.PLAYLISTS: QT_TRANSLATE_NOOP("Navigation", "Playlists"),
+        PageId.GENIUS: QT_TRANSLATE_NOOP("Navigation", "Genius"),
         PageId.PHOTOS: QT_TRANSLATE_NOOP("Navigation", "Photos"),
         PageId.PODCASTS: QT_TRANSLATE_NOOP("Navigation", "Podcasts"),
         PageId.AUDIOBOOKS: QT_TRANSLATE_NOOP("Navigation", "Audiobooks"),

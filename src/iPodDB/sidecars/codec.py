@@ -28,9 +28,21 @@ _U32 = 0xFFFFFFFF
 
 def is_playback_sidecar(name: str) -> bool:
     name = name.casefold()
-    return not name.endswith((".bak", ".backup")) and name.startswith(
-        ("play counts", "playcounts", "otgplaylist", "on-the-go", "itunesstats")
+    # Saved Genius Playlists are captured for conservative preservation, without
+    # importing or consuming them. Current application publication retains their
+    # bytes for unchanged/append-only Track order and rejects other order changes.
+    return not name.endswith((".bak", ".backup")) and (
+        name.startswith(
+            ("play counts", "playcounts", "otgplaylist", "on-the-go", "itunesstats")
+        )
+        or genius_playlist_number(name) is not None
     )
+
+
+def genius_playlist_number(name: str) -> int | None:
+    """Recognize an active, numbered saved Playlist, excluding inactive backups."""
+    match = re.fullmatch(r"geniusplaylist_([1-9][0-9]*)\.plist", name.casefold())
+    return int(match[1]) if match is not None else None
 
 
 def otg_number(name: str) -> int | None:

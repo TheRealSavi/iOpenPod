@@ -181,6 +181,14 @@ DisplayCapabilities(
 
 This lets application code ask about capabilities instead of hard-coding individual models.
 
+The implemented Genius group distinguishes native Playlist and Mix support with
+supported, unsupported, and unknown states. Classic 7G Mixes require RetailOS 2.0.3;
+exact identification refines an immutable profile using ranked release evidence.
+Missing or conflicting release evidence stays unknown. FireWire/SCSI revisions
+are separate transport evidence, never release versions. Firmware capability does
+not imply that the application can generate or preserve Genius data. See
+[the capability matrix](genius-capabilities.md) and ADR-0175.
+
 #### Data
 
 Contains the actual device definitions.
@@ -730,7 +738,7 @@ iTunesCDB bytes, translates the known metadata, links artwork, and privately ret
 the lossless documents and physical source artifacts. iTunesCDB is the sole Library
 read authority on late devices; firmware-facing SQLite artifacts are never merged
 back into the semantic snapshot.
-The adapter's `snapshot` is the only library data published in Active iPod state;
+The adapter's `snapshot` is the editable Library data published in Active iPod state;
 the adapter itself stays in the private device connection. `artwork_read` and
 `photo_read` return typed relative byte-range plans and decoders for caller-supplied
 bytes. The Application Layer supplies Device Registry capabilities and performs
@@ -744,8 +752,10 @@ models. Oversized writes report the selected iPod's hardware limit before public
 Application and GUI consumers import the public contract, never the binary-format
 packages. Preferences inspection separately consumes the public `iPodDB.preferences`
 contract and `iPodDB.device_time` evidence types (ADR-0097 and ADR-0098); their
-implementation submodules remain private. Snapshot construction and edits do not
-change the retained databases.
+implementation submodules remain private. Genius generation and browsing consume
+the public `iPodDB.library.genius` contract (ADR-0176–0178), rather than its payload
+codecs or SQLite implementation. Snapshot construction and edits do not change the
+retained databases.
 Source-bound Library Drafts now provide semantic preparation over the existing
 lossless writer path. Analysis returns changes and required resources; preparation
 reconciles retained records and verifies finalized output without opening paths.
@@ -764,6 +774,26 @@ application code. `library._sidecar_projection` converts its results into Tracks
 and Playlists; the Library interface re-exports the captured-input type and
 capture/preservation helpers needed by application workflows. Raw document types
 and format readers belong to the sidecar package. See ADR-0100.
+
+Native Genius payload codecs live in `iPodDB.genius`; typed SQLite table documents
+and firmware Mix retention live in `SQLiteDB`. `library.genius` exposes explicit
+Genius update intent outside the semantic Snapshot. Preparation coordinates MHIT
+IDs with Classic Extras or the complete SQLite set; unchanged bytes and Unknown
+Data remain retained. Saved Genius Playlists use the sidecar package without
+automatic import or consumption. See ADR-0176 and [Genius data](ipod-genius.md).
+ADR-0177 adds separate immutable Genius Browse state beside that Snapshot.
+Canonical Genius Playlists, saved sidecars, and SQLite Mixes can be displayed
+without becoming a second editable Library. The application captures optional
+sources through Storage; the GUI receives collection and Track identities only.
+
+ADR-0178 adds an Application Layer generator for all music in the completed Sync
+Library. Device Registry gates the explicit regeneration intent; iPodDB receives
+typed graph data and preserves existing Mixes when no replacement set is supplied.
+The application captures Classic root Extras with source preconditions and includes
+its prepared output in the same Storage Transaction as iTunesDB. Ordinary affected
+Track removals and replacements capture this companion for pruning as well.
+Default no-op serialization and ordinary metadata edits retain their existing
+preservation behavior. The generator creates no Mixes or saved Genius Playlists.
 
 The Application supplies the selected Device Profile's binary database version to
 `WriteTarget`. Library reconciliation may expand a short Track header only to
@@ -2147,6 +2177,12 @@ hashes make an interrupted prefix untrusted on the next pass, so the workflow ca
 replanned safely. A read-only Volume remains loadable and reports that repair was
 skipped. This bounded cache repair does not substitute for a Storage Transaction and
 does not authorize Sync, deletion, or database mutation.
+
+Firmware releases are cached in both SysInfo files with recorded hardware
+provenance in SysInfo Authority. Firmware-dependent profiles require matching
+release values in the hash-verified files before skipping a hardware probe. Missing
+or inconsistent entries are read again during discovery and saved on selection;
+complete caches are reused across connections as Device Metadata (ADR-0175).
 
 `DeviceController` is the thin Qt adapter around that non-visual service. It runs
 discovery, device reads, and parsing through an owned single-worker `QThreadPool`,

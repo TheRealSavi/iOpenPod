@@ -172,7 +172,12 @@ class PlaylistPage(QWidget):
     def create_playlist(self, kind: object) -> None:
         if self._workspace.locked:
             return
-        if not isinstance(kind, PlaylistKind) or self._workspace.snapshot is None:
+        if (
+            not isinstance(kind, PlaylistKind)
+            or kind
+            not in (PlaylistKind.PLAYLIST, PlaylistKind.SMART, PlaylistKind.FOLDER)
+            or self._workspace.snapshot is None
+        ):
             return
         generation = self._workspace.generation
         revision = self._workspace.revision
@@ -223,7 +228,7 @@ class PlaylistPage(QWidget):
             if isinstance(playlist_id, int)
             else None
         )
-        if playlist is None:
+        if playlist is None or playlist.kind is PlaylistKind.GENIUS:
             return
         generation = self._workspace.generation
         revision = self._workspace.revision
@@ -261,7 +266,7 @@ class PlaylistPage(QWidget):
             if isinstance(playlist_id, int)
             else None
         )
-        if playlist is None:
+        if playlist is None or playlist.kind is PlaylistKind.GENIUS:
             return
         revision = self._workspace.edit_revision
         folder = playlist.kind is PlaylistKind.FOLDER
@@ -357,7 +362,8 @@ class PlaylistPage(QWidget):
             )
         else:
             self._summary.clear()
-        self._edit.setVisible(playlist is not None and self._source_actions)
+        editable = playlist is not None and playlist.kind is not PlaylistKind.GENIUS
+        self._edit.setVisible(editable and self._source_actions)
         self._edit.setEnabled(not self._workspace.locked)
         evaluable = False
         if playlist is not None and playlist.kind is PlaylistKind.SMART:
@@ -378,7 +384,7 @@ class PlaylistPage(QWidget):
             if evaluable
             else self.tr("These Smart Playlist rules cannot be evaluated by iOpenPod.")
         )
-        self._remove.setVisible(playlist is not None and self._source_actions)
+        self._remove.setVisible(editable and self._source_actions)
         self._remove.setEnabled(not self._workspace.locked)
         self._remove.setText(
             self.tr("Remove Folder…")
@@ -420,6 +426,8 @@ class PlaylistPage(QWidget):
             message = self.tr(
                 "No tracks in this Smart Playlist.\nUse Edit to review its rules."
             )
+        elif playlist and playlist.kind is PlaylistKind.GENIUS:
+            message = self.tr("No available Tracks in this Genius Playlist.")
         else:
             message = self.tr(
                 "No tracks in this playlist. Drag tracks from a library table onto this playlist in the sidebar."

@@ -281,7 +281,7 @@ class PlaylistTreeModel(QAbstractItemModel):
         self._tokens = {}
         self._children = {}
         for playlist in self._workspace.playlists:
-            if playlist.system_managed:
+            if playlist.system_managed or playlist.kind is PlaylistKind.GENIUS:
                 continue
             children = self._children.setdefault(playlist.parent_id, [])
             self._next_token += 1

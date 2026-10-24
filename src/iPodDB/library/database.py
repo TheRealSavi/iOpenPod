@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
     from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
     from iPodDB.library._resolved_write import ResolvedWrite
+    from iPodDB.library.genius import GeniusUpdate
     from iPodDB.library.writing import RetainedArtworkFile
     from iPodDB.PhotosDB.parser.repair_PhotosDB import PhotosDBCountRepair
     from iPodDB.PhotosDB.shared.chunk_defs.mhfd import MhfdHeader as PhotosMhfdHeader
@@ -283,6 +284,7 @@ class IPodLibrary:
         rebuild_album_indexes: bool = False,
         repair_podcast_links: bool = False,
         normalize_podcasts: bool = False,
+        genius_update: GeniusUpdate | None = None,
     ) -> LibraryDraft:
         """Bind desired state to this source, rejecting omissions unless opted in.
 
@@ -299,6 +301,12 @@ class IPodLibrary:
         requiring metadata edits. Other indexes and Master occurrences remain.
         ``normalize_podcasts`` converges Podcast relationships, albums, Playlist
         settings and traversal indexes on the 12.6 authoring policy (ADR-0152).
+        ``genius_update`` replaces the native graph and Track assignments.
+        Its ``mixes=None`` preserves native Mixes, while an explicit tuple
+        replaces them. Omission preserves all Genius state. Classic preparation
+        requires captured
+        Extras bytes when changing existing Genius identities; callers publish
+        the resulting companion together with iTunesDB (ADR-0176).
         """
         return LibraryDraft(
             self._source_revision,
@@ -311,6 +319,7 @@ class IPodLibrary:
             rebuild_album_indexes=rebuild_album_indexes,
             repair_podcast_links=repair_podcast_links,
             normalize_podcasts=normalize_podcasts,
+            genius_update=genius_update,
         )
 
     def analyze(
@@ -338,6 +347,36 @@ class IPodLibrary:
             self._device_time,
         )
         additional_issues = self.time_warnings
+        if draft.genius_update is not None:
+            from iPodDB.SQLiteDB.genius_projection import validate_genius_update
+
+            try:
+                validate_genius_update(
+                    draft.genius_update,
+                    {
+                        t.track_id: t.ipod.db_track_id if t.ipod else t.track_id
+                        for t in draft.snapshot.tracks
+                    },
+                )
+            except ValueError as error:
+                additional_issues += (WriteIssue("genius.invalid_update", str(error)),)
+            resolved = replace(
+                resolved,
+                plan=replace(
+                    resolved.plan,
+                    changes=(
+                        *resolved.plan.changes,
+                        LibraryChange("genius", None, "update", "Native Genius data"),
+                    ),
+                ),
+            )
+            if draft.genius_update.mixes and not target.sqlite_database:
+                additional_issues += (
+                    WriteIssue(
+                        "genius.mix_requires_sqlite",
+                        "Native Genius Mix authoring requires a SQLite artifact target.",
+                    ),
+                )
         if self._photos_repairs:
             resolved = replace(
                 resolved,

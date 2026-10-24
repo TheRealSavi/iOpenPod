@@ -55,6 +55,10 @@ class DeviceEvidence:
     firmware_versions: tuple[DeviceIdentifier[str], ...] = ()
     family_ids: tuple[DeviceIdentifier[int], ...] = ()
     updater_family_ids: tuple[DeviceIdentifier[int], ...] = ()
+    # SCSI/FireWire revisions are not the user-visible RetailOS version.
+    transport_revisions: tuple[DeviceIdentifier[str], ...] = field(
+        default=(), kw_only=True
+    )
 
     def merged_with(self, other: DeviceEvidence) -> DeviceEvidence:
         """Combine observations without losing either source's provenance."""
@@ -70,6 +74,7 @@ class DeviceEvidence:
             firmware_versions=self.firmware_versions + other.firmware_versions,
             family_ids=self.family_ids + other.family_ids,
             updater_family_ids=(self.updater_family_ids + other.updater_family_ids),
+            transport_revisions=self.transport_revisions + other.transport_revisions,
         )
 
 
@@ -291,6 +296,36 @@ class DatabaseCapabilities:
             raise ValueError("A SQLite checksum requires SQLite database support")
 
 
+class FeatureSupport(StrEnum):
+    """Native firmware support; UNKNOWN must not authorize a feature workflow."""
+
+    UNSUPPORTED = "unsupported"
+    SUPPORTED = "supported"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class GeniusCapabilities:
+    """Native Genius features, independent of generated data or app readiness.
+
+    Catalog Mix support is UNKNOWN where a firmware threshold must be resolved.
+    Exact identification refines it using ranked RetailOS version evidence.
+    """
+
+    playlists: FeatureSupport = FeatureSupport.UNSUPPORTED
+    mixes: FeatureSupport = FeatureSupport.UNSUPPORTED
+    mixes_minimum_firmware: tuple[int, int, int] | None = None
+
+    def __post_init__(self) -> None:
+        if self.mixes_minimum_firmware is not None and (
+            len(self.mixes_minimum_firmware) != 3
+            or any(part < 0 for part in self.mixes_minimum_firmware)
+        ):
+            raise ValueError(
+                "A Genius firmware threshold needs three nonnegative parts"
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class DeviceCapabilities:
     display: DisplayCapabilities
@@ -298,6 +333,7 @@ class DeviceCapabilities:
     artwork: ArtworkCapabilities
     video: VideoCapabilities
     database: DatabaseCapabilities
+    genius: GeniusCapabilities = field(default_factory=GeniusCapabilities, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

@@ -50,6 +50,15 @@ def analyze(
     artwork: list[int] = []
     old_tracks = {t.track_id: t for t in original.tracks}
     tracks = {t.track_id: t for t in draft.snapshot.tracks}
+    removed_persistent_ids = {
+        t.ipod.db_track_id
+        for t in original.tracks
+        if t.track_id not in tracks and t.ipod is not None and t.ipod.db_track_id
+    } - {
+        t.ipod.db_track_id
+        for t in original.tracks
+        if t.track_id in tracks and t.ipod is not None
+    }
     replacements: set[int] = set()
     retagged: set[int] = set()
     if draft.regenerate_sqlite and not target.sqlite_database:
@@ -278,6 +287,47 @@ def analyze(
                 )
             )
 
+        if old_playlist is None and playlist.kind is PlaylistKind.GENIUS:
+            error(
+                "playlist.genius_creation",
+                "Native Genius Playlists cannot be created through ordinary Playlist editing.",
+                "kind",
+            )
+        elif old_playlist is not None:
+            if old_playlist.kind != playlist.kind and PlaylistKind.GENIUS in (
+                old_playlist.kind,
+                playlist.kind,
+            ):
+                error(
+                    "playlist.genius_kind",
+                    "A native Genius Playlist cannot be converted to or from another Playlist kind.",
+                    "kind",
+                )
+            if old_playlist.kind is PlaylistKind.GENIUS:
+                if old_playlist.genius_seed_persistent_id in removed_persistent_ids:
+                    error(
+                        "playlist.genius_seed_deleted",
+                        "Keep the native Genius seed Track or explicitly remove its Genius Playlist together with the Track.",
+                        "genius_seed_persistent_id",
+                    )
+                retained_entries = tuple(
+                    entry for entry in old_playlist.entries if entry.track_id in tracks
+                )
+                if playlist.entries != retained_entries:
+                    error(
+                        "playlist.genius_membership",
+                        "Native Genius membership can only change when removing deleted Tracks.",
+                        "entries",
+                    )
+                if (
+                    playlist.genius_seed_persistent_id
+                    != old_playlist.genius_seed_persistent_id
+                ):
+                    error(
+                        "playlist.genius_seed",
+                        "The retained native Genius seed cannot be edited.",
+                        "genius_seed_persistent_id",
+                    )
         if playlist.parent_id is not None:
             parent = playlists.get(playlist.parent_id)
             if parent is None or parent.kind is not PlaylistKind.FOLDER:

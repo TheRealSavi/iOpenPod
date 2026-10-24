@@ -8,11 +8,18 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhsd import MhsdHeader as ArtworkDataset
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhsd import DEFINITION as MHSD
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.library._artwork_writing import artwork_path
 from iPodDB.library.file_content import content_sha256
 from iPodDB.library.writing import PreparedFile, RetainedArtworkFile, WriteResources
-from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
+from iPodDB.shared.binary_struct import write_binary_struct_into
+from iPodDB.shared.chunk import (
+    ChunkHeader,
+    DatabaseDocument,
+    GenericHeader,
+    ParsedChunk,
+)
 
 
 def retained_artwork(index: ArtworkIndex) -> tuple[RetainedArtworkFile, ...]:
@@ -46,6 +53,8 @@ def verify_relationships(
     artwork_files: tuple[PreparedFile, ...],
     resources: WriteResources,
     changed_artwork_ids: set[int],
+    *,
+    genius_cuid: bytes | None = None,
 ) -> None:
     def dangling(document: DatabaseDocument[MhbdHeader]) -> set[tuple[int, int]]:
         tracks = {s.chunk.header.track_id for s in document.find_chunks(MhitHeader)}
@@ -63,6 +72,27 @@ def verify_relationships(
         for s in original.find_chunks(MhsdHeader)
         if s.chunk.header.dataset_type not in (1, 2, 3, 4, 5, 8)
     ]
+    if genius_cuid is not None:
+        if (
+            len(genius_cuid) != 32
+            or any(value not in b"0123456789ABCDEF" for value in genius_cuid)
+            or any(
+                row.chunk.header.dataset_type == 9
+                for row in original.find_chunks(MhsdHeader)
+            )
+        ):
+            raise ValueError(
+                "Verification received invalid Classic Genius initialization."
+            )
+        # Permit this one complete new dataset, not arbitrary edits to opaque
+        # data. The shared definitions supply both header layouts and extent.
+        header = bytearray(MHSD.default_header_size)
+        write_binary_struct_into(
+            header,
+            GenericHeader(MHSD.marker, len(header), len(header) + len(genius_cuid)),
+        )
+        write_binary_struct_into(header, MhsdHeader(dataset_type=9))
+        original_unknown.append(bytes(header) + genius_cuid)
     output_unknown = [
         _bytes(s.chunk, output_bytes)
         for s in checked.find_chunks(MhsdHeader)

@@ -67,6 +67,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 ITUNESDB = DevicePath("iPod_Control/iTunes/iTunesDB")
 ITUNESCDB = DevicePath("iPod_Control/iTunes/iTunesCDB")
+CLASSIC_GENIUS = DevicePath("iPod_Control/iTunes/Extras.itdb")
 ARTWORKDB = DevicePath("iPod_Control/Artwork/ArtworkDB")
 PHOTOSDB = DevicePath("Photos/Photo Database")
 _ARTWORK = DevicePath("iPod_Control/Artwork")
@@ -293,6 +294,31 @@ def capture(
         ):
             raise FilePreconditionError(f"Embedded artwork source changed: {path}")
         files.append(FilePrecondition(path, fingerprint))
+    genius_source: bytes | None = None
+    desired_ids = {track.track_id for track in plan.draft.snapshot.tracks}
+    if not plan.target.sqlite_database and (
+        plan.draft.genius_update is not None
+        or any(
+            track.ipod is not None
+            and track.ipod.genius_id
+            and (
+                track.track_id not in desired_ids
+                or track.track_id in plan.draft.replace_media
+            )
+            for track in request.source.library.tracks
+        )
+    ):
+        checkpoint()
+        if primary != ITUNESDB:
+            raise ValueError("Classic Genius data requires an iTunesDB Library.")
+        if session.exists(CLASSIC_GENIUS):
+            captured = session.read_snapshot(
+                CLASSIC_GENIUS, max_bytes=_MAX_CAPTURE_BYTES
+            )
+            genius_source = captured.data
+            files.append(FilePrecondition(CLASSIC_GENIUS, captured.fingerprint))
+        else:
+            files.append(FilePrecondition(CLASSIC_GENIUS, None))
     sqlite_sources: list[SQLiteSource] = []
     if plan.changes_sqlite:
         for path in SQLITE_DATABASE_PATHS:
@@ -731,6 +757,7 @@ def capture(
         reserved_artwork_paths=tuple(reserved_artwork),
         playlist_timestamp=int(time()),
         sqlite_sources=tuple(sqlite_sources),
+        genius_source=genius_source,
         video_metadata=video_metadata,
     )
     logger.debug(
@@ -992,6 +1019,22 @@ def transaction(
         for artifact_name, data in prepared.sqlite.artifacts():
             path = sqlite_database_path(artifact_name)
             writes.append(TransactionWrite(path, data, _content(data), before[path]))
+    if prepared.genius is not None or captured.resources.genius_source is not None:
+        if primary_database != ITUNESDB or prepared.sqlite is not None:
+            raise ValueError("Classic Genius data cannot accompany a SQLite Library.")
+        if CLASSIC_GENIUS not in before:
+            raise ValueError("Classic Genius data requires a captured precondition.")
+        if prepared.genius != captured.resources.genius_source:
+            if prepared.genius is None:
+                raise ValueError("A Library save cannot discard retained Genius data.")
+            writes.append(
+                TransactionWrite(
+                    CLASSIC_GENIUS,
+                    prepared.genius,
+                    _content(prepared.genius),
+                    before[CLASSIC_GENIUS],
+                )
+            )
     # Names follow the Library's publication, with icons before their text references.
     writes.extend(captured.presentation_writes)
     changed = {w.path for w in writes} | {r.path for r in captured.removals}

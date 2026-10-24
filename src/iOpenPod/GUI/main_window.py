@@ -98,6 +98,7 @@ from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.backup_page import BackupPage
 from iOpenPod.GUI.pages.collection_page import CollectionPage
+from iOpenPod.GUI.pages.genius_page import GeniusPage
 from iOpenPod.GUI.pages.library_page import LibraryPage
 from iOpenPod.GUI.pages.photo_page import PhotoPage
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
@@ -447,6 +448,13 @@ class MainWindow(QMainWindow):
             self._artwork_provider,
             self._pages,
         )
+        self._genius_page = GeniusPage(
+            context.settings,
+            context.theme_manager,
+            self._artwork_provider,
+            self._pages,
+        )
+        self._genius_page.set_active_ipod(context.device_controller.active_ipod)
         self._photo_page = PhotoPage(
             context.library_workspace,
             context.settings,
@@ -500,6 +508,7 @@ class MainWindow(QMainWindow):
             PageId.BACKUPS: self._backup_page,
             PageId.SETTINGS: self._settings_page,
             PageId.PLAYLISTS: self._playlist_page,
+            PageId.GENIUS: self._genius_page,
             PageId.PODCASTS: self._podcast_page,
             PageId.PHOTOS: self._photo_page,
             PageId.SYNESTHESIA: self._synesthesia_page,
@@ -515,6 +524,7 @@ class MainWindow(QMainWindow):
             music_videos_page,
             videos_page,
             self._playlist_page,
+            self._genius_page,
             self._podcast_page,
         )
 
@@ -585,7 +595,8 @@ class MainWindow(QMainWindow):
         from iOpenPod.GUI.widgets.track_table import TrackTable
 
         for table in self._library_browser.findChildren(TrackTable):
-            table.set_library_workspace(context.library_workspace)
+            if table is not self._genius_page.track_table:
+                table.set_library_workspace(context.library_workspace)
         self._track_actions.playlistCreated.connect(self._playlist_selected)
         self._track_actions.trackExportRequested.connect(self._track_export_requested)
         self._track_actions.chapteredConversionRequested.connect(
@@ -596,7 +607,8 @@ class MainWindow(QMainWindow):
             self._track_actions.show_track
         )
         for table in self._library_browser.findChildren(TrackTable):
-            self._track_actions.install(table)
+            if table is not self._genius_page.track_table:
+                self._track_actions.install(table)
         for grid in (
             *self._library_browser.findChildren(AlbumGridView),
             *self._library_browser.findChildren(CollectionGridView),
@@ -891,6 +903,10 @@ class MainWindow(QMainWindow):
             if isinstance(page, PodcastPage):
                 page.trackActivated.connect(controller.enqueue)
             if isinstance(page, PlaylistPage):
+                page.queueRequested.connect(self._queue_group_tracks)
+                page.playNextRequested.connect(controller.play_next)
+            if isinstance(page, GeniusPage):
+                page.playRequested.connect(controller.play_now)
                 page.queueRequested.connect(self._queue_group_tracks)
                 page.playNextRequested.connect(controller.play_next)
         controller.currentTrackChanged.connect(self._player.set_track)
@@ -1627,6 +1643,7 @@ class MainWindow(QMainWindow):
                 PageId.BACKUPS,
                 PageId.SYNESTHESIA,
                 PageId.PODCASTS,
+                PageId.GENIUS,
             )
             and self._context.device_controller.active_ipod is not None
             and not self._context.device_controller.busy
@@ -2054,6 +2071,7 @@ class MainWindow(QMainWindow):
     def _active_ipod_changed(self, value: object) -> None:
         active_ipod = value if isinstance(value, ActiveIPod) else None
         self._settings_page.set_active_ipod(active_ipod)
+        self._genius_page.set_active_ipod(active_ipod)
         sync_was_visible = self._workspaces.currentWidget() is self._sync_workspace
         retain_sync = (
             self._sync_controller.busy

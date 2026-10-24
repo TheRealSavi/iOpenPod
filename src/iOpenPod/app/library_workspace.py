@@ -989,7 +989,7 @@ class LibraryWorkspace(QObject):
         self._require_snapshot()
         name = self._validate_name(name)
         self._validate_parent(parent_id)
-        if kind not in tuple(PlaylistKind):
+        if kind not in (PlaylistKind.PLAYLIST, PlaylistKind.SMART, PlaylistKind.FOLDER):
             raise ValueError("Choose a Playlist, Smart Playlist, or Playlist Folder.")
         if kind != PlaylistKind.SMART and smart is not None:
             raise ValueError("Only a Smart Playlist can have rules.")
@@ -1048,6 +1048,8 @@ class LibraryWorkspace(QObject):
             description=playlist.description if description is None else description,
             sort_order=playlist.sort_order if sort_order is None else sort_order,
         )
+        if playlist.kind is PlaylistKind.GENIUS:
+            raise ValueError("Native Genius Playlists are read-only.")
         membership_changed = False
         if smart is not None:
             if playlist.kind != PlaylistKind.SMART:
@@ -1122,7 +1124,7 @@ class LibraryWorkspace(QObject):
 
         self.require_revision(expected)
         playlist = self._require(playlist_id)
-        if playlist.system_managed:
+        if playlist.system_managed or playlist.kind is PlaylistKind.GENIUS:
             raise ValueError(
                 "This Playlist is managed by the iPod and cannot be removed."
             )
@@ -1132,6 +1134,10 @@ class LibraryWorkspace(QObject):
             while pending:
                 parent_id = pending.pop()
                 for child in self.children_of(parent_id):
+                    if child.kind is PlaylistKind.GENIUS:
+                        raise ValueError(
+                            "A folder containing a native Genius Playlist cannot be removed."
+                        )
                     if child.playlist_id not in removed_ids:
                         removed_ids.add(child.playlist_id)
                         pending.append(child.playlist_id)
@@ -1216,6 +1222,8 @@ class LibraryWorkspace(QObject):
 
     def can_move(self, playlist_id: int, parent_id: int | None) -> bool:
         if self._locked or playlist_id not in self._playlists:
+            return False
+        if self._playlists[playlist_id].kind is PlaylistKind.GENIUS:
             return False
         current_id = parent_id
         visited: set[int] = set()
@@ -1329,7 +1337,7 @@ class LibraryWorkspace(QObject):
         for playlist_id, playlist in tuple(self._playlists.items()):
             # Firmware grouping and native episode positions belong to iPodDB.
             # Even an unrelated Track edit must leave this retained Playlist alone.
-            if playlist.system_managed:
+            if playlist.system_managed or playlist.kind is PlaylistKind.GENIUS:
                 continue
             if not isinstance(playlist.sort_order, PlaylistSortOrder) or (
                 playlist.sort_order

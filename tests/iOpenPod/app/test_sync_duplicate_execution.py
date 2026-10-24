@@ -16,6 +16,7 @@ from tests.iOpenPod.app.test_sync_execution import (
     _Executor,  # pyright: ignore[reportPrivateUsage]
     _host,  # pyright: ignore[reportPrivateUsage]
     _ipod,  # pyright: ignore[reportPrivateUsage]
+    _prepare_genius_baseline,  # pyright: ignore[reportPrivateUsage]
 )
 
 from iOpenPod.app.host_media_library import (
@@ -150,7 +151,18 @@ def test_explicit_match_alone_persists_for_one_identity_and_preserves_media(
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None and result.helper is not None
         assert result.completed == (item,)
-        assert result.active.library.tracks == originals
+        assigned: set[int] = set()
+        for before, after in zip(originals, result.active.library.tracks, strict=True):
+            assert before.ipod is not None and after.ipod is not None
+            assert 0 < after.ipod.genius_id < 1 << 64
+            assert after.ipod.genius_id not in assigned
+            assigned.add(after.ipod.genius_id)
+            assert (
+                replace(
+                    after, ipod=replace(after.ipod, genius_id=before.ipod.genius_id)
+                )
+                == before
+            )
         for path, data in payloads.items():
             assert (device.root / path).read_bytes() == data
         synced = {track.track_id: track.sync for track in result.helper.tracks}
@@ -184,6 +196,7 @@ def test_deferred_cover_still_persists_match_with_unchanged_library(
 ) -> None:
     device = build_device(tmp_path, shared_media=shared_media)
     try:
+        _prepare_genius_baseline(device)
         original = device.active.library.tracks[0]
         host = _host(tmp_path, "Host copy")
         path = tmp_path / "cover.png"
@@ -353,7 +366,19 @@ def test_duplicate_removal_is_explicit_and_keeps_shared_file(tmp_path: Path) -> 
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None
-        assert keep in result.active.library.tracks
+        retained = next(
+            track
+            for track in result.active.library.tracks
+            if track.track_id == keep.track_id
+        )
+        assert keep.ipod is not None and retained.ipod is not None
+        assert retained.ipod.genius_id
+        assert (
+            replace(
+                retained, ipod=replace(retained.ipod, genius_id=keep.ipod.genius_id)
+            )
+            == keep
+        )
         assert all(t.track_id != remove.track_id for t in result.active.library.tracks)
         assert shared.read_bytes() == payload
         assert all(
@@ -528,6 +553,8 @@ def test_review_exclusion_keeps_pairing_but_never_becomes_removal(
         "changed_device",
         "host_during_prepare",
         "device_during_prepare",
+        "host_after_staging",
+        "device_after_staging",
     ],
 )
 def test_uncommitted_pair_never_records_success(
@@ -535,6 +562,8 @@ def test_uncommitted_pair_never_records_success(
 ) -> None:
     device = build_device(tmp_path)
     try:
+        if failure in {"helper", "helper_cancel"}:
+            _prepare_genius_baseline(device)
         host, ipod, selection = _duplicates(device, tmp_path)
         selection.set_duplicate_resolution(
             SyncDuplicateResolution(
@@ -562,16 +591,20 @@ def test_uncommitted_pair_never_records_success(
         if failure == "cancel":
             cancelled.set()
         before = (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
+        genius = device.root / "iPod_Control/iTunes/Extras.itdb"
+        genius_before = genius.read_bytes() if genius.exists() else None
 
         def progress(event: WriteProgress) -> None:
             if failure == "helper_cancel" and event.phase == "sync.helper":
                 cancelled.set()
-            if event.phase == "save.source_check":
-                if failure == "host_during_prepare":
+            if (event.phase == "save.source_check" and failure.endswith("prepare")) or (
+                event.phase == "save.storage.prepared" and failure.endswith("staging")
+            ):
+                if failure.startswith("host_"):
                     Path(host.sources[0].path).write_bytes(
                         b"changed during preparation"
                     )
-                elif failure == "device_during_prepare":
+                else:
                     (device.root / str(ipod.tracks[0].path)).write_bytes(
                         b"changed during preparation"
                     )
@@ -591,6 +624,10 @@ def test_uncommitted_pair_never_records_success(
         assert not result.completed
         assert not (device.root / str(LIBRARY_SYNC_HELPER_PATH)).exists()
         assert (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes() == before
+        if genius_before is None:
+            assert not genius.exists()
+        else:
+            assert genius.read_bytes() == genius_before
     finally:
         device.coordinator.close()
 

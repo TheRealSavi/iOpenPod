@@ -56,7 +56,12 @@ from iOpenPod.app.library_sync_helper import (
     SyncDetails,
     SyncedTrack,
 )
-from iOpenPod.app.library_write import LibraryReview, LibrarySaveResult, WriteProgress
+from iOpenPod.app.library_write import (
+    LibraryPreparationRequest,
+    LibraryReview,
+    LibrarySaveResult,
+    WriteProgress,
+)
 from iOpenPod.app.media.importing import ImportedSong, LibraryMediaSource
 from iOpenPod.app.media.inspection import _parse  # pyright: ignore[reportPrivateUsage]
 from iOpenPod.app.media.lyrics import embedded_lyrics, rewrite_lyrics
@@ -145,6 +150,26 @@ class _AvailableTools(MediaTranscoder):
     def preflight(self, *, checkpoint: Callable[[], None]) -> MediaTools:
         checkpoint()
         return cast("MediaTools", None)
+
+
+def _prepare_genius_baseline(device: Device) -> None:
+    """Keep unchanged-write tests free of first-Sync database initialization."""
+    active = device.active
+    review = device.coordinator.prepare_library(
+        LibraryPreparationRequest(
+            active.library,
+            active,
+            1,
+            1,
+            regenerate_genius=True,
+            rebuild_album_indexes=True,
+        ),
+        lambda _: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+    saved = device.coordinator.save_library(review, active, lambda _: None, Event())
+    assert saved.active is not None, saved.issues
 
 
 def _photo_host(tmp_path: Path) -> HostMediaLibrary:
@@ -1786,6 +1811,9 @@ def test_sync_without_media_changes_publishes_pending_artwork_repair(
 ) -> None:
     device = build_device(tmp_path)
     try:
+        _prepare_genius_baseline(device)
+        database = device.root / "iPod_Control/iTunes/iTunesDB"
+        database_before = database.read_bytes()
         path = device.root / "iPod_Control/Artwork/ArtworkDB"
         before = path.read_bytes()
         chunk = parse_ArtworkDB(before).find_chunks(MhsdHeader)[0].chunk.children[0]
@@ -1815,9 +1843,7 @@ def test_sync_without_media_changes_publishes_pending_artwork_repair(
             assert not result.active.artwork_repairs_pending
             assert path.read_bytes() == before
             assert not result.completed
-            assert (
-                device.root / "iPod_Control/iTunes/iTunesDB"
-            ).read_bytes() == device.original["iPod_Control/iTunes/iTunesDB"]
+            assert database.read_bytes() == database_before
     finally:
         device.coordinator.close()
 
@@ -3084,11 +3110,17 @@ def test_filename_failure_keeps_failed_replacement_and_commits_other_media(
         )
         assert result.status is SyncExecutionStatus.PARTIAL, result.issues
         assert result.active is not None and result.helper is not None
+        unchanged = next(
+            track
+            for track in result.active.library.tracks
+            if track.track_id == original.track_id
+        )
+        assert unchanged.ipod is not None and original.ipod is not None
+        assert unchanged.ipod.genius_id
         assert (
-            next(
-                track
-                for track in result.active.library.tracks
-                if track.track_id == original.track_id
+            replace(
+                unchanged,
+                ipod=replace(unchanged.ipod, genius_id=original.ipod.genius_id),
             )
             == original
         )
@@ -3135,6 +3167,7 @@ def test_short_filename_appearing_after_review_is_never_overwritten(
             cancelled: Event,
             *,
             retain_recovery: bool = False,
+            validate_sources: Callable[[FilesystemSession], None] | None = None,
         ) -> LibrarySaveResult:
             location = next(
                 item.path
@@ -3147,7 +3180,12 @@ def test_short_filename_appearing_after_review_is_never_overwritten(
             path.write_bytes(b"external file appeared after Review")
             unexpected.append(path)
             return save(
-                review, expected, progress, cancelled, retain_recovery=retain_recovery
+                review,
+                expected,
+                progress,
+                cancelled,
+                retain_recovery=retain_recovery,
+                validate_sources=validate_sources,
             )
 
         monkeypatch.setattr(device.coordinator, "save_library", collide_after_review)
@@ -3282,6 +3320,7 @@ def test_playlist_explicit_unchanged_match_only_publishes_helper(
 ) -> None:
     device = build_device(tmp_path)
     try:
+        _prepare_genius_baseline(device)
         saved = device.save(
             device.prepare(
                 replace(

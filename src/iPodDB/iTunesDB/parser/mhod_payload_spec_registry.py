@@ -9,6 +9,9 @@ from iPodDB.iTunesDB.parser.mhod_parsers.chapter_data_mhod import (
 from iPodDB.iTunesDB.parser.mhod_parsers.contextual_100_mhod import (
     parse_playlist_position_payload,
 )
+from iPodDB.iTunesDB.parser.mhod_parsers.genius_seed_mhod import (
+    parse_genius_seed_payload,
+)
 from iPodDB.iTunesDB.parser.mhod_parsers.library_index_mhod import (
     parse_library_index_payload,
 )
@@ -62,6 +65,7 @@ CHAPTER_DATA_SPEC = unprefixed_mhod_payload_spec(parse_chapter_data_payload)
 VIDEO_DETAILS_SPEC = unprefixed_mhod_payload_spec(parse_video_details_payload)
 PLIST_SPEC = unprefixed_mhod_payload_spec(parse_plist_payload)
 SETTINGS_SPEC = unprefixed_mhod_payload_spec(parse_settings_payload)
+GENIUS_SEED_SPEC = unprefixed_mhod_payload_spec(parse_genius_seed_payload)
 
 STRING_SPEC = prefixed_mhod_payload_spec(MhodStringPrefix, parse_string_payload)
 SMART_PREFS_SPEC = prefixed_mhod_payload_spec(
@@ -124,5 +128,6 @@ MHOD_PAYLOAD_SPECS: Mapping[
         MhodPayloadKind.CONTEXTUAL_100: CONTEXTUAL_100_SPEC,
         MhodPayloadKind.PLAYLIST_POSITION: PLAYLIST_POSITION_SPEC,
         MhodPayloadKind.SETTINGS: SETTINGS_SPEC,
+        MhodPayloadKind.GENIUS_SEED: GENIUS_SEED_SPEC,
     }
 )

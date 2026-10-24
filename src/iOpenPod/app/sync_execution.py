@@ -14,7 +14,7 @@ from threading import Event, Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from device_registry import ArtworkUsage
+from device_registry import ArtworkUsage, FeatureSupport
 from iOpenPod.app.artwork_policy import (
     application_artwork_formats,
     rockbox_artwork,
@@ -152,7 +152,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.scrobbling.service import ScrobbleService
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from iOpenPod.app.sync_plan import SyncPlan
-    from storage import HostPath
+    from storage import FilesystemSession, HostPath
     from storage.content_workspace import ContentWorkspace
     from storage.media_processing import MediaTools
 
@@ -639,6 +639,7 @@ class SyncExecutor:
                     )
                     if requested_changes or (
                         not draft.regenerate_sqlite
+                        and not draft.regenerate_genius
                         and not draft.rebuild_album_indexes
                         and not draft.normalize_podcasts
                         and not any(
@@ -777,8 +778,22 @@ class SyncExecutor:
                     return SyncExecutionResult(
                         SyncExecutionStatus.FAILED, issues=tuple(issues)
                     )
+
+                def validate_sources(session: FilesystemSession) -> None:
+                    _validate_device_sources(request, session, checkpoint)
+                    for update in metadata_updates:
+                        checkpoint()
+                        _validate_host_source(
+                            sources[host_path_identity(update.item.host_path or "")]
+                        )
+
                 saved = self._coordinator.save_library(
-                    review, request.source, progress, cancelled, retain_recovery=True
+                    review,
+                    request.source,
+                    progress,
+                    cancelled,
+                    retain_recovery=True,
+                    validate_sources=validate_sources,
                 )
                 issues.extend(saved.issues)
                 if saved.active is None:
@@ -1067,45 +1082,8 @@ class SyncExecutor:
     def _validate_sources(
         self, request: SyncExecutionRequest, checkpoint: Callable[[], None]
     ) -> None:
-        tracks = {item.track_id: item for item in request.ipod.tracks}
-        images = {item.image_id: item for item in request.ipod.images}
         with self._coordinator.sync_session(request.source) as session:
-            observed: dict[DevicePath, DeviceEntry] = {}
-            for item in request.plan.items:
-                checkpoint()
-                if item.action is SyncPlanAction.ATTENTION:
-                    continue
-                # Unchanged media is neither consumed nor mutated by this Sync.
-                # The Library source is still checked by sync_session, and helper
-                # publication separately validates retained matching evidence.
-                if (
-                    item.action is SyncPlanAction.UNCHANGED
-                    and item.basis is not SyncPlanBasis.USER_MATCH
-                ):
-                    continue
-                if item.ipod_id is not None:
-                    recorded = (
-                        tracks[item.ipod_id]
-                        if item.media_kind is SyncPlanMediaKind.TRACK
-                        else images[item.ipod_id]
-                    )
-                    actual = observed.get(recorded.path)
-                    if actual is None:
-                        actual = session.stat(recorded.path)
-                        observed[recorded.path] = actual
-                    if (
-                        actual.kind is not DeviceEntryKind.FILE
-                        or actual.size != recorded.size_bytes
-                        or not session.modified_time_matches(
-                            actual.modified_ns, recorded.modified_ns
-                        )
-                    ):
-                        raise ValueError(
-                            source_text(
-                                "{name}: the iPod file changed after scanning. Rescan the iPod before Sync.",
-                                name=item.name,
-                            )
-                        )
+            _validate_device_sources(request, session, checkpoint)
 
     def _prepare_tracks(
         self,
@@ -2648,6 +2626,10 @@ def _draft(
             if item.item.action is SyncPlanAction.UPDATE
         ),
         regenerate_sqlite=request.source.profile.capabilities.database.uses_sqlite_database,
+        regenerate_genius=(
+            request.source.profile.capabilities.genius.playlists
+            is FeatureSupport.SUPPORTED
+        ),
         repair_podcast_links=True,
         normalize_podcasts=any(
             t.media_kind is MediaKind.PODCAST or t.metadata.podcast
@@ -2936,6 +2918,52 @@ def _playlists(
         if row.choice.included and row.issue_code
     )
     return result, result != original
+
+
+def _validate_device_sources(
+    request: SyncExecutionRequest,
+    session: FilesystemSession,
+    checkpoint: Callable[[], None],
+) -> None:
+    """Recheck consumed or matched media within the caller's bound session."""
+
+    tracks = {item.track_id: item for item in request.ipod.tracks}
+    images = {item.image_id: item for item in request.ipod.images}
+    observed: dict[DevicePath, DeviceEntry] = {}
+    for item in request.plan.items:
+        checkpoint()
+        if item.action is SyncPlanAction.ATTENTION:
+            continue
+        # Unchanged media is neither consumed nor mutated by this Sync, except
+        # when its identity supports a newly accepted matching association.
+        if (
+            item.action is SyncPlanAction.UNCHANGED
+            and item.basis is not SyncPlanBasis.USER_MATCH
+        ):
+            continue
+        if item.ipod_id is not None:
+            recorded = (
+                tracks[item.ipod_id]
+                if item.media_kind is SyncPlanMediaKind.TRACK
+                else images[item.ipod_id]
+            )
+            actual = observed.get(recorded.path)
+            if actual is None:
+                actual = session.stat(recorded.path)
+                observed[recorded.path] = actual
+            if (
+                actual.kind is not DeviceEntryKind.FILE
+                or actual.size != recorded.size_bytes
+                or not session.modified_time_matches(
+                    actual.modified_ns, recorded.modified_ns
+                )
+            ):
+                raise ValueError(
+                    source_text(
+                        "{name}: the iPod file changed after scanning. Rescan the iPod before Sync.",
+                        name=item.name,
+                    )
+                )
 
 
 def _validate_host_source(source: HostMediaSource) -> None:

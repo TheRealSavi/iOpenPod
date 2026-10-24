@@ -22,6 +22,9 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import 
     MhodPlaylistPositionPayload,
     MhodPlaylistPositionPrefix,
 )
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.genius_seed_mhod import (
+    MhodGeniusSeedPayload,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
     MhodLibraryIndexPayload,
     MhodLibraryIndexPrefix,
@@ -119,6 +122,7 @@ _PAYLOAD_SHAPES: Mapping[MhodPayloadKind, MhodPayloadShape] = MappingProxyType(
             MhodPlaylistPositionPayload,
         ),
         MhodPayloadKind.SETTINGS: (None, MhodSettingsPayload),
+        MhodPayloadKind.GENIUS_SEED: (None, MhodGeniusSeedPayload),
     }
 )
 
@@ -600,6 +604,13 @@ def encode_mhod_body(
         body = _encode_playlist_position(chunk)
     elif payload_kind == MhodPayloadKind.SETTINGS:
         body = _encode_settings(chunk)
+    elif payload_kind == MhodPayloadKind.GENIUS_SEED:
+        payload = chunk.payload_as(MhodGeniusSeedPayload)
+        body = (
+            _binary_struct_bytes(payload.seed)
+            if payload.seed is not None
+            else payload.unknown_data
+        )
     else:
         raise ValueError(
             f"MHOD payload kind {payload_kind.value} has no concrete encoder"

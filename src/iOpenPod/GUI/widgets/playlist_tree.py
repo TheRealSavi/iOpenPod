@@ -246,6 +246,7 @@ class _PlaylistDelegate(QStyledItemDelegate):
             PlaylistKind.PLAYLIST: "playlist",
             PlaylistKind.SMART: "smart-playlist",
             PlaylistKind.FOLDER: "folder",
+            PlaylistKind.GENIUS: "smart-playlist",
         }.get(kind, "playlist")
         glyph_icon(glyph, LAYOUT.icon_size, color, view.devicePixelRatioF()).paint(
             painter, icon_rect
@@ -495,7 +496,7 @@ class PlaylistTree(QWidget):
         self._add.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._create_menu = QMenu(self._add)
         self._create_actions: dict[PlaylistKind, QAction] = {}
-        for kind in PlaylistKind:
+        for kind in (PlaylistKind.PLAYLIST, PlaylistKind.SMART, PlaylistKind.FOLDER):
             action = QAction(self._create_menu)
             action.setData(kind)
             action.triggered.connect(

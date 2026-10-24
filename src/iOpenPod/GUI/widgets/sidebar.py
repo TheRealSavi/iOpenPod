@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from device_registry import DeviceProfile
+from device_registry import DeviceProfile, FeatureSupport
 from iOpenPod.app.library_workspace import EditRevision, LibraryWorkspace
 from iOpenPod.app.models.device import ActiveIPod, DeviceDiscovery
 from iOpenPod.GUI.navigation import PageId, page_label
@@ -53,6 +53,7 @@ _LIBRARY = (
     _NavigationDefinition(PageId.ARTISTS, "user"),
     _NavigationDefinition(PageId.GENRES, "grid"),
     _NavigationDefinition(PageId.TRACKS, "music"),
+    _NavigationDefinition(PageId.GENIUS, "smart-playlist"),
     _NavigationDefinition(PageId.PHOTOS, "photo"),
     _NavigationDefinition(PageId.PODCASTS, "broadcast"),
     _NavigationDefinition(PageId.AUDIOBOOKS, "book"),
@@ -484,6 +485,7 @@ class Sidebar(QFrame):
         self._button_group = QButtonGroup(self)
         self._button_group.setExclusive(True)
         self._active_profile: DeviceProfile | None = None
+        self._has_genius_data = False
         self._normalization_count = 0
 
         self._device_card = DeviceCard(self)
@@ -591,6 +593,10 @@ class Sidebar(QFrame):
     def set_active_ipod(self, active_ipod: ActiveIPod | None) -> None:
         self._device_card.set_active_ipod(active_ipod)
         self._active_profile = active_ipod.profile if active_ipod is not None else None
+        self._has_genius_data = bool(
+            active_ipod
+            and (active_ipod.genius.collections or active_ipod.genius.issues)
+        )
         self._sync.setEnabled(active_ipod is not None)
         self._sync.setToolTip(
             ""
@@ -676,7 +682,10 @@ class Sidebar(QFrame):
     def _refresh_page_visibility(self) -> None:
         profile = self._active_profile
         for page_id, button in self._buttons.items():
-            button.setVisible(_page_supported(page_id, profile))
+            button.setVisible(
+                _page_supported(page_id, profile)
+                or (page_id is PageId.GENIUS and self._has_genius_data)
+            )
 
 
 def _format_bytes(byte_count: int) -> str:
@@ -686,6 +695,11 @@ def _format_bytes(byte_count: int) -> str:
 
 
 def _page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
+    if page_id is PageId.GENIUS:
+        return profile is not None and (
+            profile.capabilities.genius.playlists is not FeatureSupport.UNSUPPORTED
+            or profile.capabilities.genius.mixes is not FeatureSupport.UNSUPPORTED
+        )
     if page_id in _VIDEO_PAGES:
         return profile is not None and profile.capabilities.video.supported
     if page_id is PageId.PHOTOS:

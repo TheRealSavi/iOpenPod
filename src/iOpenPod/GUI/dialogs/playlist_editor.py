@@ -70,6 +70,9 @@ def kind_label(kind: PlaylistKind) -> str:
         PlaylistKind.FOLDER: QCoreApplication.translate(
             "PlaylistEditorDialog", "Playlist Folder"
         ),
+        PlaylistKind.GENIUS: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Genius Playlist"
+        ),
     }[kind]
 
 
@@ -876,6 +879,8 @@ class PlaylistEditorDialog(QDialog):
         *,
         playlists: tuple[Playlist, ...] = (),
     ) -> None:
+        if kind is PlaylistKind.GENIUS:
+            raise ValueError("Native Genius Playlists are read-only.")
         super().__init__(parent)
         self.setObjectName("playlistEditor")
         self.setWindowTitle(

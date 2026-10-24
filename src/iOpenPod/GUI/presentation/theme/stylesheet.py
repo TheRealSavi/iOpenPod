@@ -131,6 +131,7 @@ QWidget {{
 QMainWindow,
 QWidget#appShell,
 QWidget#syncWorkspace,
+QWidget#geniusPage,
 QFrame#appBody,
 QStackedWidget#pageStack,
 QStackedWidget#syncWorkspaceContent,
@@ -181,12 +182,18 @@ QLabel#sidebarSectionLabel {{
     font-size: {typography.small_pt:g}pt;
 }}
 
-QTreeView#playlistTree {{
+QTreeView#playlistTree,
+QTreeWidget#geniusCollections {{
     background-color: {tokens.surface};
     alternate-background-color: {tokens.surface_hover};
     border: none;
     selection-background-color: {tokens.surface_selected};
     selection-color: {tokens.accent};
+}}
+
+QTreeWidget#geniusCollections::item {{
+    min-height: {LAYOUT.control_height_compact}px;
+    padding: {LAYOUT.space_3xs}px {LAYOUT.space_xs}px;
 }}
 
 QPushButton#playlistSectionToggle {{

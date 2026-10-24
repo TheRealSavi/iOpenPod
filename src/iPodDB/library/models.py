@@ -91,6 +91,7 @@ class IPodTrackDetails:
     composer_id: int = 0
     tv_show_media_type_flag: int = 0
     itunes_store_asset_info: str = ""
+    genius_id: int = 0
 
 
 @dataclass(frozen=True, slots=True)

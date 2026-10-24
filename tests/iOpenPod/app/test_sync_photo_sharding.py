@@ -12,6 +12,7 @@ from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_sync_execution import (
     _AvailableTools,  # pyright: ignore[reportPrivateUsage]
     _Executor,  # pyright: ignore[reportPrivateUsage]
+    _prepare_genius_baseline,  # pyright: ignore[reportPrivateUsage]
     _request,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -215,6 +216,9 @@ def test_sync_without_photo_changes_publishes_pending_photo_count_repair(
 ) -> None:
     device = build_device(tmp_path, photos=True)
     try:
+        _prepare_genius_baseline(device)
+        database = device.root / "iPod_Control/iTunes/iTunesDB"
+        database_before = database.read_bytes()
         path = device.root / "Photos/Photo Database"
         valid = path.read_bytes()
         images = parse_PhotosDB(valid).find_chunks(MhsdHeader)[0].chunk.children[0]
@@ -245,9 +249,7 @@ def test_sync_without_photo_changes_publishes_pending_photo_count_repair(
             )
             assert path.read_bytes() == valid
             assert not result.completed
-        assert (
-            device.root / "iPod_Control/iTunes/iTunesDB"
-        ).read_bytes() == device.original["iPod_Control/iTunes/iTunesDB"]
+        assert database.read_bytes() == database_before
     finally:
         device.coordinator.close()
 

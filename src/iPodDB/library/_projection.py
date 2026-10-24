@@ -139,6 +139,7 @@ def _project_ipod_details(
         mpeg_audio_type=header.mpeg_audio_type,
         purchased_aac_flag=header.purchased_aac_flag,
         genius_category_id=header.genius_category_id,
+        genius_id=header.genius_id,
         has_artwork=header.has_artwork,
         secondary_db_track_id=header.db_track_id_2,
         movie_flag=header.video_flag,

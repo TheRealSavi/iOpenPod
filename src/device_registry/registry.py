@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from device_registry.genius import refine_genius_capabilities
 from device_registry.identifiers import (
     format_usb_identifier,
     normalize_model_number,
@@ -211,6 +212,7 @@ class DeviceRegistry:
                         ),
                     ),
                 )
+            exact_profile = refine_genius_capabilities(exact_profile, evidence)
             return IdentificationResult(
                 status=IdentificationStatus.EXACT,
                 connection_mode=connection_mode,

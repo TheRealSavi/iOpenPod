@@ -72,6 +72,7 @@ _TRACKS = (
     Track(3, "Beta", "Third artist", "An album", 90_000),
 )
 _ORIGINAL = Playlist(10, "Road trip", entries=playlist_entries((3, 1, 1, 2)))
+_EDITABLE_KINDS = (PlaylistKind.PLAYLIST, PlaylistKind.SMART, PlaylistKind.FOLDER)
 
 
 @dataclass(frozen=True)
@@ -310,7 +311,7 @@ def test_folder_editor_places_and_applies_the_sort_order_control(
     assert folder.sort_order is PlaylistSortOrder.TITLE
 
 
-@pytest.mark.parametrize("kind", tuple(PlaylistKind))
+@pytest.mark.parametrize("kind", _EDITABLE_KINDS)
 def test_playlist_pages_offer_contextual_actions_in_the_header(
     browser: _Browser,
     kind: PlaylistKind,
@@ -754,7 +755,7 @@ def test_smart_rule_groups_alternate_surface_by_nesting_depth() -> None:
         dialog.deleteLater()
 
 
-@pytest.mark.parametrize("kind", tuple(PlaylistKind))
+@pytest.mark.parametrize("kind", _EDITABLE_KINDS)
 def test_blank_names_keep_the_editor_open(kind: PlaylistKind) -> None:
     dialog = PlaylistEditorDialog(kind)
     try:
@@ -769,7 +770,7 @@ def test_blank_names_keep_the_editor_open(kind: PlaylistKind) -> None:
         dialog.deleteLater()
 
 
-@pytest.mark.parametrize("kind", tuple(PlaylistKind))
+@pytest.mark.parametrize("kind", _EDITABLE_KINDS)
 def test_creation_uses_the_selected_folder_and_selects_the_new_item(
     browser: _Browser, monkeypatch: pytest.MonkeyPatch, kind: PlaylistKind
 ) -> None:

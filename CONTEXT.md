@@ -14,6 +14,38 @@ then beyond it.
 
 ## Current stage
 
+Sync now prepares basic native Genius relationships for all music Tracks on
+Genius-capable iPods. It uses the final Library, stable Genius identities, bounded
+metadata-ranked candidates, and the tested compact configuration. Existing Mixes
+remain retained; Sync creates no Genius collections or Host playback controls.
+Classic `Extras.itdb` participates in the same captured and verified transaction as
+iTunesDB, including pruning during ordinary affected Library saves. See ADR-0178
+and the [Genius data contract](docs/ipod-genius.md).
+
+iOpenPod now exposes native Genius Playlists and Mixes in a dedicated read-only
+Genius browser. Classic MHOD 54 seed records identify Genius Playlists before
+ordinary Smart classification; these records retain their bytes and do not enter
+Smart refresh or ordinary Playlist editing. Saved nano sidecars and SQLite Mixes
+are captured as separate browse state, without changing Library authority or
+consuming the sidecars. See ADR-0177.
+
+iPodDB now models native Genius graphs, saved Genius Playlist sidecars, and
+SQLite-only Genius Mixes. Explicit Library preparation coordinates Genius Track
+identities and companion artifacts; regeneration preserves Mixes and prunes
+understood relationships for removed media. Application editing/import workflows
+remain separate. Basic Sync generation is
+specified in ADR-0178. See ADR-0176 and the
+[Genius data contract](docs/ipod-genius.md).
+
+Device Registry now distinguishes native Genius Playlist and Mix capabilities.
+Classic 7G Mix support is refined from ranked RetailOS release evidence against
+2.0.3; missing or conflicting versions remain unknown. Transport revisions remain
+separate from RetailOS versions. This describes firmware capability, not an
+implemented Genius generation or Sync workflow. Reconciliation caches the release
+in both SysInfo files with recorded hardware provenance. Firmware-dependent profiles
+probe incomplete caches and reuse complete caches across connections. See ADR-0175 and the
+[capability matrix](docs/genius-capabilities.md).
+
 Affected Playlist writes create a missing flat dataset-2 counterpart for a retained
 special Podcasts Playlist in dataset 3. Existing counterparts keep their own
 metadata, and ordinary counterpart consistency checks remain required. See ADR-0174.

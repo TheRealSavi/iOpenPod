@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from contextlib import suppress
-from dataclasses import fields, replace
+from dataclasses import dataclass, fields, replace
 from time import perf_counter
 from typing import TYPE_CHECKING, cast
 
@@ -40,6 +40,12 @@ from iPodDB.iTunesDB.writer.signature import (
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library._artwork_verification import verify_artwork
 from iPodDB.library._artwork_writing import reconcile_artwork, validated_path
+from iPodDB.library._genius_writing import (
+    bootstrap_classic_genius,
+    mapped_update,
+    prepare_classic_genius,
+    reconcile_genius_tracks,
+)
 from iPodDB.library._group_verification import verify_browse_groups
 from iPodDB.library._lyrics_resources import validate_lyrics
 from iPodDB.library._photo_projection import project_photos
@@ -90,6 +96,7 @@ if TYPE_CHECKING:
     from iPodDB.library.database import IPodLibrary
     from iPodDB.library.photos import PhotoAlbum
     from iPodDB.library.writing import (
+        FileDependency,
         IdentityMapping,
         LibraryDraft,
         PreparedLyrics,
@@ -301,6 +308,7 @@ def _prepare_sqlite(
         cleared_lyrics=cleared_lyrics | replaced_pids,
         cleared_chapters=cleared_chapters | replaced_pids,
         replaced_tracks=replaced_pids,
+        genius_update=mapped_update(plan.draft.genius_update, mappings),
         video_metadata={
             next(
                 (
@@ -315,36 +323,28 @@ def _prepare_sqlite(
     )
 
 
-def _prepare(
-    source: IPodLibrary,
-    document: DatabaseDocument[MhbdHeader],
+@dataclass(frozen=True, slots=True)
+class _ResourceFacts:
+    dependencies: tuple[FileDependency, ...]
+    known_artwork: frozenset[int]
+
+
+def _validate_resources(
+    original: LibrarySnapshot,
     artwork: DatabaseDocument[MhfdHeader] | None,
     artwork_index: ArtworkIndex,
-    photos: DatabaseDocument[PhotosMhfdHeader] | None,
-    requested_plan: LibraryWritePlan,
+    resolved: ResolvedWrite,
     resources: WriteResources,
-    notify: Callable[[WritePhase], None],
-    *,
-    resolve: Callable[[LibraryDraft, WriteTarget], ResolvedWrite],
-    source_revision: str,
-    cdb_framing: ITunesCDB | None,
-) -> LibraryWriteResult:
-    # Revalidate public immutable plans: callers cannot bypass validation by
-    # constructing a plan or replacing its issues/requirements themselves.
-    notify(WritePhase.VALIDATION)
-    resolved = resolve(requested_plan.draft, requested_plan.target)
+    issues: list[WriteIssue],
+) -> _ResourceFacts:
+    """Collect independent evidence errors and retain captured dependencies."""
+
     plan = resolved.plan
-    issues = list(plan.issues)
-    # A blocked draft cannot prepare resources. Report its actionable errors
-    # before diagnosing evidence the caller intentionally has not produced.
-    if plan.blocked:
-        return LibraryWriteResult(tuple(issues))
-    notify(WritePhase.RESOURCES)
     media = {m.track_id: m for m in resources.media}
     lyrics = {item.track_id: item for item in resources.lyrics}
     issues.extend(validate_lyrics(plan, resources))
     issues.extend(validate_video_metadata(plan, resources))
-    issues.extend(validate_photos(plan, resources, source.snapshot.photos))
+    issues.extend(validate_photos(plan, resources, original.photos))
     assets = {a.artwork_id: a for a in resources.artwork}
     if len(media) != len(resources.media) or len(assets) != len(resources.artwork):
         issues.append(
@@ -353,11 +353,11 @@ def _prepare(
                 "Prepared resources contain duplicate identities.",
             )
         )
-    desired, generated_podcasts = resolved.desired, resolved.generated_podcasts
+    desired = resolved.desired
     tracks = {t.track_id: t for t in desired.tracks}
     deleted_owners = {
         t.ipod.db_track_id: t.track_id
-        for t in source.snapshot.tracks
+        for t in original.tracks
         if t.ipod and t.track_id not in tracks
     }
     if artwork is not None:
@@ -575,6 +575,249 @@ def _prepare(
                     detail=source_file.dependency.relative_path,
                 )
             )
+    return _ResourceFacts(tuple(dependencies.values()), frozenset(known_artwork))
+
+
+def _verify_desired_snapshot(
+    original: LibrarySnapshot,
+    checked: LibrarySnapshot,
+    resolved: ResolvedWrite,
+    mappings: tuple[IdentityMapping, ...],
+    art_mappings: tuple[IdentityMapping, ...],
+    resources: WriteResources,
+    *,
+    had_artwork: bool,
+    has_artwork: bool,
+    checked_index: ArtworkIndex,
+    issues: list[WriteIssue],
+) -> None:
+    """Compare the reparsed semantic result with the resolved desired values."""
+
+    desired = resolved.desired
+    lyrics = {item.track_id: item for item in resources.lyrics}
+    identity_maps = {
+        kind: {
+            m.draft_id: m.output_id
+            for m in mappings
+            if m.subject == kind and m.track_id is None
+        }
+        for kind in ("track", "playlist", "artwork")
+    }
+    actual_tracks = {t.track_id: t for t in checked.tracks}
+    track_artwork = {
+        m.track_id: m.output_id for m in art_mappings if m.track_id is not None
+    }
+    original_tracks = {t.track_id: t for t in original.tracks}
+    for wanted in desired.tracks:
+        native_id = identity_maps["track"].get(wanted.track_id, wanted.track_id)
+        actual = actual_tracks.get(native_id)
+        if actual is None:
+            issues.append(
+                WriteIssue(
+                    "verification.missing_track",
+                    "Prepared output omitted a desired Track.",
+                    phase="verification",
+                    subject="track",
+                    record_id=wanted.track_id,
+                )
+            )
+            continue
+        expected = replace(
+            wanted,
+            size_bytes=lyrics[wanted.track_id].file.size
+            if wanted.track_id in lyrics
+            else wanted.size_bytes,
+            track_id=native_id,
+            ipod=actual.ipod,
+            artwork_id=track_artwork.get(
+                wanted.track_id,
+                identity_maps["artwork"].get(wanted.artwork_id, wanted.artwork_id),
+            ),
+        )
+        metadata = expected.metadata
+        prior = original_tracks.get(wanted.track_id)
+        if (
+            not had_artwork
+            and has_artwork
+            and prior is not None
+            and prior.artwork_id
+            and prior.artwork_id == wanted.artwork_id
+            and checked_index.item_for_image_id(prior.artwork_id) is None
+        ):
+            # Attaching the first index resolves previously unverified IDs.
+            # Keep the native field; an absent image remains unavailable.
+            expected = replace(expected, artwork_id=0)
+            issues.append(
+                WriteIssue(
+                    "artwork.unresolved_reference",
+                    "This Track's retained artwork reference has no image in the new ArtworkDB and remains unavailable.",
+                    severity=IssueSeverity.WARNING,
+                    phase="verification",
+                    subject="track",
+                    record_id=wanted.track_id,
+                    field="artwork_id",
+                )
+            )
+        if prior is None or prior.artwork_id != wanted.artwork_id:
+            artwork_item = checked_index.item_for_image_id(expected.artwork_id)
+            metadata = replace(
+                metadata,
+                artwork_count=len(artwork_item.display_times)
+                if artwork_item is not None
+                else 0,
+            )
+        expected = replace(expected, metadata=metadata)
+        if actual != expected:
+            differing = ", ".join(
+                f.name
+                for f in fields(actual)
+                if getattr(actual, f.name) != getattr(expected, f.name)
+            )
+            issues.append(
+                WriteIssue(
+                    "verification.track_mismatch",
+                    "Prepared Track does not match the desired values.",
+                    phase="verification",
+                    subject="track",
+                    record_id=wanted.track_id,
+                    field=differing,
+                )
+            )
+    if len(actual_tracks) != len(desired.tracks):
+        issues.append(
+            WriteIssue(
+                "verification.track_count",
+                "Prepared output has unexpected Track records.",
+                phase="verification",
+            )
+        )
+    actual_playlists = {p.playlist_id: p for p in checked.playlists}
+    for wanted_playlist in desired.playlists:
+        native_id = identity_maps["playlist"].get(
+            wanted_playlist.playlist_id, wanted_playlist.playlist_id
+        )
+        actual_playlist = actual_playlists.get(native_id)
+        expected_playlist = replace(
+            wanted_playlist,
+            playlist_id=native_id,
+            parent_id=identity_maps["playlist"].get(
+                wanted_playlist.parent_id, wanted_playlist.parent_id
+            )
+            if wanted_playlist.parent_id is not None
+            else None,
+        )
+        expected_track_ids = tuple(
+            identity_maps["track"].get(t, t) for t in wanted_playlist.track_ids
+        )
+        if (
+            actual_playlist is None
+            or replace(actual_playlist, entries=())
+            != replace(expected_playlist, entries=())
+            or actual_playlist.track_ids != expected_track_ids
+        ):
+            issues.append(
+                WriteIssue(
+                    "verification.playlist_mismatch",
+                    "Prepared Playlist does not match its desired values or occurrences.",
+                    phase="verification",
+                    subject="playlist",
+                    record_id=wanted_playlist.playlist_id,
+                )
+            )
+    if (
+        len(actual_playlists) != len(desired.playlists)
+        or checked.device_name != desired.device_name
+    ):
+        issues.append(
+            WriteIssue(
+                "verification.library_mismatch",
+                "Prepared Library does not match the desired Playlists or device name.",
+                phase="verification",
+            )
+        )
+    expected_photos = desired.photos
+    if expected_photos is not None:
+        source_albums = (
+            {}
+            if original.photos is None
+            else {album.album_id: album for album in original.photos.albums}
+        )
+        expected_albums: list[PhotoAlbum] = []
+        persistent_ids = dict(resolved.persistent_ids)
+        for album in expected_photos.albums:
+            source_album = source_albums.get(album.album_id)
+            ipod = album.ipod
+            if ipod is not None and (
+                source_album is None
+                or album.music_track_id != source_album.music_track_id
+            ):
+                ipod = replace(
+                    ipod,
+                    music_db_track_id=(
+                        persistent_ids[album.music_track_id]
+                        if album.music_track_id is not None
+                        else 0
+                    ),
+                )
+            expected_albums.append(
+                replace(
+                    album,
+                    music_track_id=(
+                        identity_maps["track"].get(
+                            album.music_track_id,
+                            album.music_track_id,
+                        )
+                        if album.music_track_id is not None
+                        else None
+                    ),
+                    ipod=ipod,
+                )
+            )
+        expected_photos = replace(
+            expected_photos,
+            albums=tuple(expected_albums),
+        )
+    if checked.photos != expected_photos:
+        issues.append(
+            WriteIssue(
+                "verification.photos_mismatch",
+                "Prepared Photos do not match the desired Photo Library.",
+                phase="verification",
+                subject="photos",
+                artifact="PhotosDB",
+            )
+        )
+
+
+def _prepare(
+    source: IPodLibrary,
+    document: DatabaseDocument[MhbdHeader],
+    artwork: DatabaseDocument[MhfdHeader] | None,
+    artwork_index: ArtworkIndex,
+    photos: DatabaseDocument[PhotosMhfdHeader] | None,
+    requested_plan: LibraryWritePlan,
+    resources: WriteResources,
+    notify: Callable[[WritePhase], None],
+    *,
+    resolve: Callable[[LibraryDraft, WriteTarget], ResolvedWrite],
+    source_revision: str,
+    cdb_framing: ITunesCDB | None,
+) -> LibraryWriteResult:
+    # Revalidate public immutable plans: callers cannot bypass validation by
+    # constructing a plan or replacing its issues/requirements themselves.
+    notify(WritePhase.VALIDATION)
+    resolved = resolve(requested_plan.draft, requested_plan.target)
+    plan = resolved.plan
+    issues = list(plan.issues)
+    # A blocked draft cannot prepare resources. Report its actionable errors
+    # before diagnosing evidence the caller intentionally has not produced.
+    if plan.blocked:
+        return LibraryWriteResult(tuple(issues))
+    notify(WritePhase.RESOURCES)
+    resource_facts = _validate_resources(
+        source.snapshot, artwork, artwork_index, resolved, resources, issues
+    )
+    desired, generated_podcasts = resolved.desired, resolved.generated_podcasts
     # An unchanged draft still validates supplied evidence. Returning retained
     # bytes needs no reconciliation or signing, even for unsupported signatures.
     if not plan.changes and not plan.changes_sqlite:
@@ -610,6 +853,9 @@ def _prepare(
                 plan.draft.source_revision,
                 retained_artwork(artwork_index),
                 photos=output.photos,
+                genius=resources.genius_source
+                if not plan.target.sqlite_database
+                else None,
             ),
         )
     if (
@@ -668,6 +914,24 @@ def _prepare(
                 resources,
             )
             mappings = (*mappings, *art_mappings)
+        genius_update = mapped_update(plan.draft.genius_update, mappings)
+        replaced_ids = frozenset(
+            next(
+                (
+                    m.output_id
+                    for m in mappings
+                    if m.subject == "track" and m.draft_id == identity
+                ),
+                identity,
+            )
+            for identity in plan.draft.replace_media
+        )
+        candidate = reconcile_genius_tracks(candidate, genius_update, replaced_ids)
+        genius_cuid = None
+        if not plan.target.sqlite_database:
+            candidate, genius_cuid = bootstrap_classic_genius(
+                candidate, genius_update, plan.draft.source_revision
+            )
         candidate_photos = photos
         if plan.changes_photos:
             if resolved.desired.photos is None:
@@ -821,6 +1085,8 @@ def _prepare(
                 database_version=plan.target.database_version,
                 artwork_tracks=resolved.artwork_tracks,
                 normalize_podcasts=plan.draft.normalize_podcasts,
+                genius_update=plan.draft.genius_update,
+                replaced_tracks=plan.draft.replace_media,
             )
         )
         issues.extend(
@@ -908,7 +1174,8 @@ def _prepare(
             artwork_files,
             resources,
             {m.output_id for m in art_mappings}
-            | {i for i in plan.required_artwork if i in known_artwork},
+            | {i for i in plan.required_artwork if i in resource_facts.known_artwork},
+            genius_cuid=genius_cuid,
         )
         verify_artwork(
             artwork,
@@ -922,216 +1189,51 @@ def _prepare(
             original_bytes.artwork,
             artwork_bytes,
         )
-        identity_maps = {
-            kind: {
-                m.draft_id: m.output_id
-                for m in mappings
-                if m.subject == kind and m.track_id is None
-            }
-            for kind in ("track", "playlist", "artwork")
-        }
-        actual_tracks = {t.track_id: t for t in checked.tracks}
-        track_artwork = {
-            m.track_id: m.output_id for m in art_mappings if m.track_id is not None
-        }
-        original_tracks = {t.track_id: t for t in source.snapshot.tracks}
-        for wanted in desired.tracks:
-            native_id = identity_maps["track"].get(wanted.track_id, wanted.track_id)
-            actual = actual_tracks.get(native_id)
-            if actual is None:
-                issues.append(
-                    WriteIssue(
-                        "verification.missing_track",
-                        "Prepared output omitted a desired Track.",
-                        phase="verification",
-                        subject="track",
-                        record_id=wanted.track_id,
-                    )
-                )
-                continue
-            expected = replace(
-                wanted,
-                size_bytes=lyrics[wanted.track_id].file.size
-                if wanted.track_id in lyrics
-                else wanted.size_bytes,
-                track_id=native_id,
-                ipod=actual.ipod,
-                artwork_id=track_artwork.get(
-                    wanted.track_id,
-                    identity_maps["artwork"].get(wanted.artwork_id, wanted.artwork_id),
-                ),
-            )
-            metadata = expected.metadata
-            prior = original_tracks.get(wanted.track_id)
-            if (
-                artwork is None
-                and checked_artwork is not None
-                and prior is not None
-                and prior.artwork_id
-                and prior.artwork_id == wanted.artwork_id
-                and checked_index.item_for_image_id(prior.artwork_id) is None
-            ):
-                # Attaching the first index resolves previously unverified IDs.
-                # Keep the native field; an absent image remains unavailable.
-                expected = replace(expected, artwork_id=0)
-                issues.append(
-                    WriteIssue(
-                        "artwork.unresolved_reference",
-                        "This Track's retained artwork reference has no image in the new ArtworkDB and remains unavailable.",
-                        severity=IssueSeverity.WARNING,
-                        phase="verification",
-                        subject="track",
-                        record_id=wanted.track_id,
-                        field="artwork_id",
-                    )
-                )
-            if prior is None or prior.artwork_id != wanted.artwork_id:
-                artwork_item = checked_index.item_for_image_id(expected.artwork_id)
-                metadata = replace(
-                    metadata,
-                    artwork_count=len(artwork_item.display_times)
-                    if artwork_item is not None
-                    else 0,
-                )
-            expected = replace(expected, metadata=metadata)
-            if actual != expected:
-                differing = ", ".join(
-                    f.name
-                    for f in fields(actual)
-                    if getattr(actual, f.name) != getattr(expected, f.name)
-                )
-                issues.append(
-                    WriteIssue(
-                        "verification.track_mismatch",
-                        "Prepared Track does not match the desired values.",
-                        phase="verification",
-                        subject="track",
-                        record_id=wanted.track_id,
-                        field=differing,
-                    )
-                )
-        if len(actual_tracks) != len(desired.tracks):
-            issues.append(
-                WriteIssue(
-                    "verification.track_count",
-                    "Prepared output has unexpected Track records.",
-                    phase="verification",
-                )
-            )
-        actual_playlists = {p.playlist_id: p for p in checked.playlists}
-        for wanted_playlist in desired.playlists:
-            native_id = identity_maps["playlist"].get(
-                wanted_playlist.playlist_id, wanted_playlist.playlist_id
-            )
-            actual_playlist = actual_playlists.get(native_id)
-            expected_playlist = replace(
-                wanted_playlist,
-                playlist_id=native_id,
-                parent_id=identity_maps["playlist"].get(
-                    wanted_playlist.parent_id, wanted_playlist.parent_id
-                )
-                if wanted_playlist.parent_id is not None
-                else None,
-            )
-            expected_track_ids = tuple(
-                identity_maps["track"].get(t, t) for t in wanted_playlist.track_ids
-            )
-            if (
-                actual_playlist is None
-                or replace(actual_playlist, entries=())
-                != replace(expected_playlist, entries=())
-                or actual_playlist.track_ids != expected_track_ids
-            ):
-                issues.append(
-                    WriteIssue(
-                        "verification.playlist_mismatch",
-                        "Prepared Playlist does not match its desired values or occurrences.",
-                        phase="verification",
-                        subject="playlist",
-                        record_id=wanted_playlist.playlist_id,
-                    )
-                )
-        if (
-            len(actual_playlists) != len(desired.playlists)
-            or checked.device_name != desired.device_name
-        ):
-            issues.append(
-                WriteIssue(
-                    "verification.library_mismatch",
-                    "Prepared Library does not match the desired Playlists or device name.",
-                    phase="verification",
-                )
-            )
-        expected_photos = desired.photos
-        if expected_photos is not None:
-            source_albums = (
-                {}
-                if source.snapshot.photos is None
-                else {album.album_id: album for album in source.snapshot.photos.albums}
-            )
-            expected_albums: list[PhotoAlbum] = []
-            persistent_ids = dict(resolved.persistent_ids)
-            for album in expected_photos.albums:
-                source_album = source_albums.get(album.album_id)
-                ipod = album.ipod
-                if ipod is not None and (
-                    source_album is None
-                    or album.music_track_id != source_album.music_track_id
-                ):
-                    ipod = replace(
-                        ipod,
-                        music_db_track_id=(
-                            persistent_ids[album.music_track_id]
-                            if album.music_track_id is not None
-                            else 0
-                        ),
-                    )
-                expected_albums.append(
-                    replace(
-                        album,
-                        music_track_id=(
-                            identity_maps["track"].get(
-                                album.music_track_id,
-                                album.music_track_id,
-                            )
-                            if album.music_track_id is not None
-                            else None
-                        ),
-                        ipod=ipod,
-                    )
-                )
-            expected_photos = replace(
-                expected_photos,
-                albums=tuple(expected_albums),
-            )
-        if checked.photos != expected_photos:
-            issues.append(
-                WriteIssue(
-                    "verification.photos_mismatch",
-                    "Prepared Photos do not match the desired Photo Library.",
-                    phase="verification",
-                    subject="photos",
-                    artifact="PhotosDB",
-                )
-            )
+        _verify_desired_snapshot(
+            source.snapshot,
+            checked,
+            resolved,
+            mappings,
+            art_mappings,
+            resources,
+            had_artwork=artwork is not None,
+            has_artwork=checked_artwork is not None,
+            checked_index=checked_index,
+            issues=issues,
+        )
         if _blocked(issues):
             return LibraryWriteResult(tuple(issues))
         sqlite = _prepare_sqlite(
             source, checked, checked_document, plan, resources, mappings
         )
+        genius = (
+            None
+            if plan.target.sqlite_database
+            else prepare_classic_genius(
+                source.snapshot, checked, resources.genius_source, genius_update
+            )
+        )
+        if genius_update is not None:
+            expected_genius = {t.track_id: t.genius_id for t in genius_update.tracks}
+            if any(
+                t.ipod is None or t.ipod.genius_id != expected_genius.get(t.track_id, 0)
+                for t in checked.tracks
+            ):
+                raise ValueError("Prepared MHIT Genius identities failed verification")
         return LibraryWriteResult(
             tuple(issues),
             PreparedLibrary(
                 itunes,
                 artwork_bytes,
                 artwork_files,
-                tuple(dependencies.values()),
+                resource_facts.dependencies,
                 checked,
                 mappings,
                 plan.draft.source_revision,
                 retained_artwork(checked_index),
                 photos=photos_bytes,
                 sqlite=sqlite,
+                genius=genius,
             ),
         )
     except iPodDBWriteError as error:

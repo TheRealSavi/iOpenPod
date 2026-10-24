@@ -46,8 +46,14 @@ from iPodDB.SQLiteDB.artifacts import SQLiteDatabaseSet
 from iPodDB.SQLiteDB.browse import complete_browse_metadata, name_ranks, sort_name
 from iPodDB.SQLiteDB.chapters import chapter_blob
 from iPodDB.SQLiteDB.checksum import build_locations_cbk, verify_locations_cbk
+from iPodDB.SQLiteDB.genius_projection import (
+    genius_mix_ids,
+    project_genius_mixes,
+    reconcile_genius,
+)
 from iPodDB.SQLiteDB.inputs import (
     SQLiteContainer,
+    SQLiteGeniusUpdate,
     SQLiteNativeMetadata,
     SQLiteSmartPreferences,
     SQLiteSource,
@@ -350,6 +356,7 @@ def build_sqlite_databases(
     cleared_chapters: frozenset[int] = frozenset(),
     replaced_tracks: frozenset[int] = frozenset(),
     video_metadata: Mapping[int, VideoPlaybackMetadata] | None = None,
+    genius_update: SQLiteGeniusUpdate | None = None,
 ) -> SQLiteDatabaseSet:
     """Project a verified Library Snapshot into all firmware SQLite artifacts."""
 
@@ -370,6 +377,7 @@ def build_sqlite_databases(
                 cleared_chapters=cleared_chapters,
                 replaced_tracks=replaced_tracks,
                 video_metadata=video_metadata or {},
+                genius_update=genius_update,
                 connections=connections,
             )
         except sqlite3.DatabaseError as error:
@@ -392,6 +400,7 @@ def _build_sqlite_databases(
     cleared_chapters: frozenset[int],
     replaced_tracks: frozenset[int],
     video_metadata: Mapping[int, VideoPlaybackMetadata],
+    genius_update: SQLiteGeniusUpdate | None,
     connections: ExitStack,
 ) -> SQLiteDatabaseSet:
     library = connections.enter_context(closing(_new(LIBRARY_SCHEMA)))
@@ -415,12 +424,15 @@ def _build_sqlite_databases(
             c for c in containers if c.dataset != 5 or c.playlist.entries
         )
     user_ids = frozenset(c.playlist.playlist_id for c in containers if c.dataset != 5)
+    mix_ids = genius_mix_ids(retained, genius_update)
+    if mix_ids & user_ids:
+        raise ValueError("Genius Mix identity conflicts with a native CDB container")
     # Native Smart rules can refer to user Playlist IDs. Keep those identities
     # even when a category or the database's master seed uses the same value.
     master_pid = _allocate_pids(
         "master",
         (((str(database_id),), native.master_id or database_id or 1),),
-        reserved=user_ids,
+        reserved=user_ids | mix_ids,
     )[0]
     library.execute(
         "INSERT INTO db_info VALUES (?,?,NULL,-1,-1,NULL,NULL,NULL)",
@@ -808,7 +820,7 @@ def _build_sqlite_databases(
             )
             for c in containers
         ),
-        reserved=frozenset((master_pid,)),
+        reserved=frozenset((master_pid,)) | mix_ids,
     )
     user_container_ids = {
         c.playlist.playlist_id: pid
@@ -856,10 +868,32 @@ def _build_sqlite_databases(
                     "INSERT INTO item_to_container VALUES (?,?,?,NULL)",
                     (_s64(pids[track_id]), _s64(playlist_pid), position),
                 )
+        if (
+            playlist.kind is PlaylistKind.GENIUS
+            and playlist.genius_seed_persistent_id is not None
+        ):
+            if playlist.genius_seed_persistent_id not in pids.values():
+                raise ValueError(
+                    "Canonical Genius Playlist seed references a missing Track"
+                )
+            library.execute(
+                "INSERT INTO container_seed (container_pid,item_pid,seed_order) VALUES (?,?,0)",
+                (_s64(playlist_pid), _s64(playlist.genius_seed_persistent_id)),
+            )
     dynamic.executemany(
         "INSERT INTO container_ui VALUES (?,0,0,1,0,0,0)",
         ((_s64(pid),) for pid in container_pids),
     )
+    genius_containers, genius_membership = project_genius_mixes(
+        library,
+        dynamic,
+        retained,
+        genius_update,
+        pids,
+        frozenset(_s64(pid) for pid in replaced_tracks),
+    )
+    container_pids.extend(genius_containers)
+    membership.extend(genius_membership)
 
     if postprocess_commands:
         library, locations, dynamic, extras, genius = _postprocess(
@@ -909,6 +943,33 @@ def _build_sqlite_databases(
         )
     )
     apply_video_metadata(library, video_metadata, pids)
+    reconcile_genius(
+        library,
+        dynamic,
+        genius,
+        retained,
+        genius_update,
+        pids,
+        frozenset(_s64(pid) for pid in replaced_tracks),
+    )
+    for container, pid in zip(containers, allocated, strict=True):
+        if container.playlist.kind is not PlaylistKind.GENIUS:
+            continue
+        library.execute(
+            "UPDATE container SET smart_is_genius=1 WHERE pid=?", (_s64(pid),)
+        )
+        seed = container.playlist.genius_seed_persistent_id
+        if seed is not None:
+            # A known CDB seed is authoritative. An uninterpreted native seed
+            # leaves surviving SQLite seed rows untouched, including Unknown Data.
+            library.execute(
+                "DELETE FROM container_seed WHERE container_pid=? AND item_pid!=?",
+                (_s64(pid), _s64(seed)),
+            )
+            library.execute(
+                "UPDATE container_seed SET seed_order=0 WHERE container_pid=? AND item_pid=?",
+                (_s64(pid), _s64(seed)),
+            )
     if native.normalize_podcasts:
         # This is explicit Sync intent, applied after retention so old manual UI
         # state cannot undo the selected Release Date policy. Other UI survives.
@@ -1170,7 +1231,7 @@ def _insert_container(
             int(kind is PlaylistKind.FOLDER),
             None if smart is None else int(smart.live_update),
             None if smart is None else int(smart.match_rules),
-            0,
+            int(kind is PlaylistKind.GENIUS),
             0 if smart is None else int(smart.checked_only),
             None if smart is None else int(limit is not None),
             None if limit is None else limit_kinds[limit.unit.value],

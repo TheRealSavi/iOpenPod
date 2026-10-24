@@ -66,6 +66,9 @@ class LibraryPreparationRequest:
     replace_photos: tuple[int, ...] = field(default=(), kw_only=True)
     discard_removed_track_media: bool = field(default=False, kw_only=True)
     regenerate_sqlite: bool = field(default=False, kw_only=True)
+    # Sync builds native relationships for every eligible music Track. Ordinary
+    # metadata saves preserve existing Genius state instead of regenerating it.
+    regenerate_genius: bool = field(default=False, kw_only=True)
     rebuild_album_indexes: bool = field(default=False, kw_only=True)
     repair_podcast_links: bool = field(default=False, kw_only=True)
     normalize_podcasts: bool = field(default=False, kw_only=True)

@@ -138,6 +138,7 @@ MHOD_DEFINITIONS: Mapping[int, MhodDefinitionSpec] = MappingProxyType(
                 "Library Playlist Jump Table",
                 MhodPayloadKind.LIBRARY_JUMP_TABLE,
             ),
+            _mhod(54, "Genius Playlist Seed", MhodPayloadKind.GENIUS_SEED),
             _mhod(55, "Playlist Property Plist", MhodPayloadKind.PLIST),
             _contextual_mhod(
                 100,

@@ -67,7 +67,7 @@ def parse_sysinfo(
     firmware = next(
         (
             values[key].strip()
-            for key in ("visibleBuildID", "VisibleBuildID", "BuildID")
+            for key in ("visibleBuildID", "VisibleBuildID")
             if values.get(key, "").strip()
         ),
         "",
@@ -95,6 +95,11 @@ def parse_sysinfo(
         usb_identifiers=usb_identifiers,
         board_hardware_names=board_hardware_names,
         firmware_versions=firmware_versions,
+        transport_revisions=_text_identifier(
+            values.get("FireWireVersion", "") or values.get("scsi_revision", ""),
+            source,
+            authority,
+        ),
         family_ids=_integer_identifier(
             values.get("FamilyID") or values.get("iPodFamily") or "",
             source,
@@ -144,10 +149,7 @@ def parse_sysinfo_extended(
     model_number = normalize_model_number(_mapping_text(plist, "ModelNumStr"))
     firmware = _first_mapping_text(
         plist,
-        "FireWireVersion",
-        "scsi_revision",
         "VisibleBuildID",
-        "BuildID",
         "visibleBuildID",
     )
     board = _first_mapping_text(plist, "BoardHwName", "BoardHwID")
@@ -188,6 +190,11 @@ def parse_sysinfo_extended(
         usb_identifiers=usb_identifiers,
         board_hardware_names=_text_identifier(board, source, authority),
         firmware_versions=_text_identifier(firmware, source, authority),
+        transport_revisions=_text_identifier(
+            _first_mapping_text(plist, "FireWireVersion", "scsi_revision"),
+            source,
+            authority,
+        ),
         family_ids=_mapping_integer_identifier(
             plist,
             "FamilyID",

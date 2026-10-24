@@ -9,6 +9,9 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
     MhodPlaylistPositionPrefix,
 )
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.genius_seed_mhod import (
+    MhodGeniusSeedPayload,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.plist_mhod import MhodPlistPayload
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
     MhodStringPayload,
@@ -82,6 +85,19 @@ def project_playlist(
 ) -> Playlist:
     header = selection.chunk.header
     metadata = _metadata(selection)
+    genius_seeds = tuple(
+        row for row in metadata if row.header.mhod_type == MhodType.GENIUS_PLAYLIST_SEED
+    )
+    # Presence is authoritative even for an unknown seed layout. Such a row
+    # must never become an ordinary Smart Playlist eligible for refresh.
+    seed_ids = {
+        row.payload.seed.seed_track_persistent_id
+        if isinstance(row.payload, MhodGeniusSeedPayload)
+        and row.payload.seed is not None
+        else None
+        for row in genius_seeds
+    }
+    seed_id = next(iter(seed_ids)) if len(seed_ids) == 1 else None
     has_smart = any(
         row.header.mhod_type
         in (MhodType.SMART_PLAYLIST_PREFERENCES, MhodType.SMART_PLAYLIST_RULES)
@@ -89,6 +105,8 @@ def project_playlist(
     )
     if header.playlist_kind_flags & 0x0100:
         kind = PlaylistKind.FOLDER
+    elif genius_seeds:
+        kind = PlaylistKind.GENIUS
     elif has_smart:
         kind = PlaylistKind.SMART
     else:
@@ -117,6 +135,9 @@ def project_playlist(
         # Bit zero identifies the firmware-maintained Podcasts Playlist. Keep
         # that native interpretation in iPodDB and expose only its semantics.
         system_managed=bool(header.playlist_kind_flags & 1),
+        genius_seed_persistent_id=(seed_id or None)
+        if kind is PlaylistKind.GENIUS
+        else None,
     )
 
 

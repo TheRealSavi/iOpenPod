@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 class PlaylistKind(StrEnum):
     PLAYLIST = "playlist"
     SMART = "smart"
+    GENIUS = "genius"
     FOLDER = "folder"
 
 
@@ -411,8 +412,9 @@ class Playlist:
 
     IDs are opaque and unique in their Library Snapshot. A ``None`` parent means
     the sidebar root. Folders can parent any kind, including other folders.
-    ``system_managed`` is source metadata for presentation policy, not an editable
-    value, so it does not participate in draft equality.
+    ``system_managed`` and ``genius_seed_persistent_id`` are source metadata for
+    presentation policy, not editable values, and do not participate in draft
+    equality. A Genius seed is a Track persistent ID, not a semantic Track ID.
     """
 
     playlist_id: int
@@ -424,6 +426,9 @@ class Playlist:
     description: str = ""
     sort_order: PlaylistSort = PlaylistSortOrder.DEFAULT
     system_managed: bool = field(default=False, compare=False)
+    genius_seed_persistent_id: int | None = field(
+        default=None, compare=False, kw_only=True
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(

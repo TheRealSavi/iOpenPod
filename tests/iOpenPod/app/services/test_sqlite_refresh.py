@@ -40,6 +40,8 @@ from storage.testing import VirtualStoragePlatform
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from iPodDB.library import Track
+
 
 _NAMES = (
     "Library.itdb",
@@ -54,6 +56,21 @@ _GUID = bytes.fromhex("000A270012345678")
 
 def _sqlite_bytes(directory: Path) -> dict[str, bytes]:
     return {name: (directory / name).read_bytes() for name in _NAMES}
+
+
+def _assert_genius_is_only_track_change(
+    original: tuple[Track, ...], refreshed: tuple[Track, ...]
+) -> None:
+    assigned: set[int] = set()
+    for before, after in zip(original, refreshed, strict=True):
+        assert before.ipod is not None and after.ipod is not None
+        assert 0 < after.ipod.genius_id < 1 << 64
+        assert after.ipod.genius_id not in assigned
+        assigned.add(after.ipod.genius_id)
+        assert (
+            replace(after, ipod=replace(after.ipod, genius_id=before.ipod.genius_id))
+            == before
+        )
 
 
 def _assert_refreshed(directory: Path, original: dict[str, bytes]) -> None:
@@ -290,13 +307,17 @@ def test_sync_executor_refreshes_sqlite_with_no_media_or_smart_playlists(
         draft, completed, changed = _draft(request, [], [])
         assert not completed
         assert draft.snapshot == active.library
+        assert draft.regenerate_genius
         assert not changed
 
         result = SyncExecutor(coordinator).execute(request, lambda _: None, Event())
 
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None
-        assert cdb.read_bytes() == retained
+        assert cdb.read_bytes() != retained
+        _assert_genius_is_only_track_change(
+            active.library.tracks, result.active.library.tracks
+        )
         _assert_refreshed(directory, original)
     finally:
         coordinator.close()
@@ -334,7 +355,10 @@ def test_photo_only_sync_also_refreshes_sqlite(tmp_path: Path) -> None:
         assert result.active is not None
         assert result.active.library.photos is not None
         assert len(result.active.library.photos.photos) == 1
-        assert cdb.read_bytes() == retained
+        assert cdb.read_bytes() != retained
+        _assert_genius_is_only_track_change(
+            active.library.tracks, result.active.library.tracks
+        )
         _assert_refreshed(directory, original)
     finally:
         coordinator.close()

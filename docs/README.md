@@ -36,6 +36,13 @@ sessions.
   regenerated virtual devices, corrected metadata, timed artwork, and integrity checks.
 - [Finder and Play Counts compatibility](research/finder-playcounts-compatibility-2026-10-18.md) —
   paired Nano 5 evidence, missing-date handling, dual signatures, and retained SQLite metadata.
+- [Native Genius capabilities](genius-capabilities.md) — Device Registry feature
+  matrix, firmware requirements, evidence rules, and validation limits.
+- [Native Genius data](ipod-genius.md) — pure codecs, coordinated preparation,
+  saved Playlist variants, and Mix preservation.
+- [Native Genius generation](research/genius-generation-2026-10-24.md) — offline
+  format research, successful Classic Playlist and nano 7G Mix experiments, and
+  current retention gaps.
 - [`packaging.md`](packaging.md) — native builds, store metadata, validation, and
   unresolved store-release requirements.
 - [`licensing.md`](licensing.md) — GPL distribution, corresponding source,

@@ -21,6 +21,8 @@ from device_registry.models import (
     DeviceCapabilities,
     DeviceProfile,
     DisplayCapabilities,
+    FeatureSupport,
+    GeniusCapabilities,
     ModelIdentity,
     RegistryCatalog,
     SerialSuffixDefinition,
@@ -34,6 +36,19 @@ _MIB = 1024 * 1024
 _STANDARD_DATABASE_LIMIT = 32 * _MIB
 # Device hardware limits prepared writes; Host reads have a separate bound.
 _LARGE_DATABASE_LIMIT = 64 * _MIB
+
+# Native feature policy, not an assertion that iOpenPod can author/preserve it.
+# Sources and firmware boundary: docs/genius-capabilities.md and ADR-0175.
+_NO_GENIUS = GeniusCapabilities()
+_GENIUS_PLAYLISTS = GeniusCapabilities(playlists=FeatureSupport.SUPPORTED)
+_GENIUS_PLAYLISTS_AND_MIXES = GeniusCapabilities(
+    playlists=FeatureSupport.SUPPORTED, mixes=FeatureSupport.SUPPORTED
+)
+_GENIUS_CLASSIC_7G = GeniusCapabilities(
+    playlists=FeatureSupport.SUPPORTED,
+    mixes=FeatureSupport.UNKNOWN,
+    mixes_minimum_firmware=(2, 0, 3),
+)
 
 
 def _artwork_format(
@@ -159,6 +174,7 @@ def _capabilities(
     compressed_database: bool = False,
     sqlite_database: bool = False,
     sqlite_checksum: DatabaseChecksum = DatabaseChecksum.NONE,
+    genius: GeniusCapabilities = _NO_GENIUS,
 ) -> DeviceCapabilities:
     width, height, color = display
     video_capabilities = (
@@ -175,6 +191,7 @@ def _capabilities(
         )
     )
     return DeviceCapabilities(
+        genius=genius,
         display=DisplayCapabilities(width=width, height=height, color=color),
         audio=AudioCapabilities(
             supports_podcasts=podcasts,
@@ -285,8 +302,12 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
     ("iPod", "5th Gen"): _IPOD_5G_CAPABILITIES,
     ("iPod", "5.5th Gen"): _IPOD_5_5G_CAPABILITIES,
     ("iPod Classic", "6th Gen"): _CLASSIC_CAPABILITIES,
-    ("iPod Classic", "6.5th Gen"): _CLASSIC_CAPABILITIES,
-    ("iPod Classic", "7th Gen"): _CLASSIC_CAPABILITIES,
+    ("iPod Classic", "6.5th Gen"): replace(
+        _CLASSIC_CAPABILITIES, genius=_GENIUS_PLAYLISTS
+    ),
+    ("iPod Classic", "7th Gen"): replace(
+        _CLASSIC_CAPABILITIES, genius=_GENIUS_CLASSIC_7G
+    ),
     ("iPod Mini", "1st Gen"): _MINI_CAPABILITIES,
     ("iPod Mini", "2nd Gen"): _MINI_2G_CAPABILITIES,
     ("iPod Nano", "1st Gen"): _capabilities(
@@ -315,6 +336,7 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         music_directories=20,
     ),
     ("iPod Nano", "4th Gen"): _capabilities(
+        genius=_GENIUS_PLAYLISTS,
         display=(240, 320, True),
         gapless=True,
         cover_formats=_artwork_formats(1055, 1068, 1071, 1074, 1078, 1084),
@@ -329,6 +351,7 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         music_directories=20,
     ),
     ("iPod Nano", "5th Gen"): _capabilities(
+        genius=_GENIUS_PLAYLISTS_AND_MIXES,
         display=(240, 376, True),
         gapless=True,
         cover_formats=_artwork_formats(1056, 1078, 1073, 1074),
@@ -346,6 +369,7 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         sqlite_checksum=DatabaseChecksum.HASH72,
     ),
     ("iPod Nano", "6th Gen"): _capabilities(
+        genius=_GENIUS_PLAYLISTS_AND_MIXES,
         display=(240, 240, True),
         gapless=True,
         cover_formats=_artwork_formats(1073, 1085, 1089, 1074),
@@ -363,6 +387,7 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         sqlite_checksum=DatabaseChecksum.HASHAB,
     ),
     ("iPod Nano", "7th Gen"): _capabilities(
+        genius=_GENIUS_PLAYLISTS_AND_MIXES,
         display=(240, 432, True),
         gapless=True,
         cover_formats=_NANO_7G_COVER_FORMATS,

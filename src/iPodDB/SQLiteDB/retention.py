@@ -73,7 +73,7 @@ _RETAIN_COLUMNS: dict[str, frozenset[str]] = {
             "has_been_shuffled",
         }
     ),
-    "container": frozenset({"workout_template_id"}),
+    "container": frozenset({"workout_template_id", "smart_is_genius"}),
     "location": frozenset(
         {"file_creator", "file_type", "num_dir_levels_file", "num_dir_levels_lib"}
     ),

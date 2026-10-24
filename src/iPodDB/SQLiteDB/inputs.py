@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from iPodDB.library.playlists import Playlist
+from iPodDB.SQLiteDB.genius import GeniusData
 
 
 @dataclass(frozen=True, slots=True)
@@ -11,6 +12,37 @@ class SQLiteSource:
 
     name: str
     data: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class SQLiteGeniusTrack:
+    """Bind one checked Library Track to its separate Genius identity."""
+
+    track_id: int
+    genius_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class SQLiteGeniusMix:
+    """Native Mix membership supplies possible starting Tracks."""
+
+    container_id: int
+    name: str
+    track_ids: tuple[int, ...]
+    seed_track_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SQLiteGeniusUpdate:
+    """Replace graph and assignments; omitted Mix intent preserves native Mixes.
+
+    ``mixes=None`` retains existing containers and their surviving assigned
+    starting Tracks. An explicit tuple replaces the Mix set; ``()`` clears it.
+    """
+
+    data: GeniusData
+    tracks: tuple[SQLiteGeniusTrack, ...] = ()
+    mixes: tuple[SQLiteGeniusMix, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)

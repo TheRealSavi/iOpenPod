@@ -17,6 +17,7 @@ from device_registry import (
     DeviceIdentifier,
     DeviceRegistry,
     EvidenceAuthority,
+    FeatureSupport,
     IdentificationResult,
     IdentificationStatus,
     UsbIdentifier,
@@ -37,6 +38,7 @@ from iOpenPod.app.core.settings.device import (
     save_device_settings,
 )
 from iOpenPod.app.display_text import exception_text, source_text
+from iOpenPod.app.genius_generation import generate_genius_update
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
     IPodMediaLibrary,
@@ -79,6 +81,7 @@ from iOpenPod.app.services import (
     photo_shard_resources,
     volume_presentation,
 )
+from iOpenPod.app.services.genius_browse import capture_genius_browse
 from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
 from iOpenPod.app.smart_playlist_preview import refresh_smart_playlists
@@ -1345,8 +1348,28 @@ class DeviceCoordinator:
                 ),
             )
             request = replace(request, snapshot=snapshot)
-            checkpoint("draft.analysis", "Analyzing changes")
             request = with_rockbox_edits(request, source)
+            genius_update = None
+            if request.regenerate_genius:
+                if capabilities.genius.playlists is not FeatureSupport.SUPPORTED:
+                    raise ValueError(
+                        "Native Genius generation requires a supported iPod."
+                    )
+                checkpoint(
+                    "draft.genius", source_text("Preparing Genius for music Tracks")
+                )
+
+                def genius_checkpoint() -> None:
+                    # The generator checks every Track and collision probe.
+                    # Cancellation must not enqueue a GUI event for each check.
+                    if cancelled.is_set():
+                        raise PreparationCancelledError
+
+                genius_update = generate_genius_update(
+                    snapshot,
+                    checkpoint=genius_checkpoint,
+                )
+            checkpoint("draft.analysis", "Analyzing changes")
             plan = source.analyze(
                 source.begin_draft(
                     snapshot,
@@ -1361,6 +1384,7 @@ class DeviceCoordinator:
                     rebuild_album_indexes=request.rebuild_album_indexes,
                     repair_podcast_links=request.repair_podcast_links,
                     normalize_podcasts=request.normalize_podcasts,
+                    genius_update=genius_update,
                 ),
                 target,
             )
@@ -1525,11 +1549,14 @@ class DeviceCoordinator:
         cancelled: threading.Event,
         *,
         retain_recovery: bool = False,
+        validate_sources: Callable[[FilesystemSession], None] | None = None,
     ) -> LibrarySaveResult:
         """Publish the issued review and clean its verified transaction by default.
 
         Sync explicitly retains recovery until its post-commit provenance step,
         then owns finalization. Ordinary saves must not leave that work to callers.
+        Caller-owned source assertions run before staging and publication using
+        this save's bound Filesystem Session.
         """
         from iOpenPod.app.library_write import (
             LibrarySaveResult,
@@ -1657,6 +1684,8 @@ class DeviceCoordinator:
                                 raise DeviceChangedError(
                                     "The device HASH72 signing material changed"
                                 )
+                        if validate_sources is not None:
+                            validate_sources(session)
 
                     progress(
                         WriteProgress(
@@ -1739,6 +1768,19 @@ class DeviceCoordinator:
                                 expected.database_fingerprint.sha256,
                             ),
                         )
+                    # Build optional browse state before publication, using the
+                    # prepared companion when it changes. Post-commit display
+                    # reads must not turn a verified save into a failed save.
+                    updated_genius = capture_genius_browse(
+                        session,
+                        updated_source.snapshot,
+                        sqlite=expected.profile.capabilities.database.uses_sqlite_database,
+                        sqlite_library=(
+                            prepared.sqlite.library
+                            if prepared.sqlite is not None
+                            else None
+                        ),
+                    )
                     committed = session.execute_transaction(
                         transaction,
                         checkpoint=cancel_checkpoint,
@@ -1764,6 +1806,7 @@ class DeviceCoordinator:
                         photos_database_fingerprint=fingerprints[_PHOTOSDB_PATH],
                         artwork_repairs_pending=bool(updated_source.artwork_repairs),
                         photos_repairs_pending=bool(updated_source.photos_repairs),
+                        genius=updated_genius,
                     )
                     active.library_source = updated_source
                     active.sidecar_preconditions = tuple(
@@ -2254,6 +2297,17 @@ class DeviceCoordinator:
                         "The iTunesDB changed while playback sidecars were loading. Reload the iPod."
                     )
 
+                genius = capture_genius_browse(
+                    session,
+                    library.snapshot,
+                    sqlite=profile.capabilities.database.uses_sqlite_database,
+                    sidecars=sidecars,
+                )
+                if session.fingerprint(database_path) != current_fingerprint:
+                    raise DeviceChangedError(
+                        "The iTunesDB changed while Genius collections were loading. Reload the iPod."
+                    )
+
                 time_warnings = library.time_warnings
                 if time_warnings:
                     current = replace(
@@ -2284,6 +2338,7 @@ class DeviceCoordinator:
                     settings=load_device_settings(session),
                     artwork_repairs_pending=bool(library.artwork_repairs),
                     photos_repairs_pending=bool(library.photos_repairs),
+                    genius=genius,
                 )
                 if reconcile_metadata:
                     presentation_issues = self._reconcile_volume_presentation(
@@ -3900,17 +3955,21 @@ def _hardware_probe_required(
         session,
         _SYSINFO_AUTHORITY_PATH,
     )
-    if not authority_covers_metadata(
-        authority,
-        sysinfo=sysinfo,
-        sysinfo_extended=extended,
-    ):
-        return True
     metadata_evidence = parse_sysinfo(sysinfo).merged_with(
         parse_sysinfo_extended(extended)
     )
     identification = registry.identify(hardware_evidence.merged_with(metadata_evidence))
-    return identification.status is not IdentificationStatus.EXACT
+    profile = identification.profile
+    if profile is None:
+        return True
+    return not authority_covers_metadata(
+        authority,
+        sysinfo=sysinfo,
+        sysinfo_extended=extended,
+        require_firmware_version=(
+            profile.capabilities.genius.mixes_minimum_firmware is not None
+        ),
+    )
 
 
 def _inspection_failed_record(
@@ -3984,7 +4043,7 @@ def _probe_evidence(
                 observation.transport_serial,
                 source,
             ),
-            firmware_versions=_current_text_identifier(
+            transport_revisions=_current_text_identifier(
                 observation.firmware_revision,
                 source,
             ),

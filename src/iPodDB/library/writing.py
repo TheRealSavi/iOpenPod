@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
     from iPodDB.library.artwork import ArtworkPixels, CoverFormat
     from iPodDB.library.file_content import ContentBuffer, FileContentData
+    from iPodDB.library.genius import GeniusUpdate
     from iPodDB.library.models import LibrarySnapshot
     from iPodDB.library.photos import Photo, PhotoThumbnailFormat
     from iPodDB.library.signing import Hash72Material
@@ -110,6 +111,8 @@ class LibraryDraft:
     repair_podcast_links: bool = field(default=False, kw_only=True)
     # Explicit Sync authoring policy; ordinary no-op preparation stays lossless.
     normalize_podcasts: bool = field(default=False, kw_only=True)
+    # Complete native graph/assignment/Mix replacement; None preserves state.
+    genius_update: GeniusUpdate | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,6 +330,8 @@ class WriteResources:
     # Zero supplies no clock evidence; iPodDB never reads the Host clock.
     playlist_timestamp: int = field(default=0, kw_only=True)
     sqlite_sources: tuple[SQLiteSource, ...] = field(default=(), kw_only=True)
+    # Classic root Extras.itdb; late devices use the complete SQLite sources.
+    genius_source: bytes | None = field(default=None, kw_only=True)
     video_metadata: tuple[PreparedVideoMetadata, ...] = field(default=(), kw_only=True)
 
 
@@ -413,6 +418,8 @@ class PreparedLibrary:
     retained_artwork: tuple[RetainedArtworkFile, ...] = ()
     photos: bytes | None = field(default=None, kw_only=True)
     sqlite: SQLiteDatabaseSet | None = field(default=None, kw_only=True)
+    # Classic root Extras.itdb, prepared with its matching MHIT identities.
+    genius: bytes | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

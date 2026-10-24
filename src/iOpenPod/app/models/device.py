@@ -7,6 +7,7 @@ from device_registry import DeviceProfile, IdentificationStatus
 from iOpenPod.app.core.settings.device import DeviceSettings
 from iOpenPod.app.models.ipod_preferences import IPodPreferenceSection
 from iPodDB.library import LibrarySnapshot
+from iPodDB.library.genius import GeniusBrowse
 from storage import FileFingerprint
 
 
@@ -138,6 +139,7 @@ class ActiveIPod:
     settings: DeviceSettings = field(default_factory=DeviceSettings)
     artwork_repairs_pending: bool = False
     photos_repairs_pending: bool = False
+    genius: GeniusBrowse = field(default_factory=GeniusBrowse)
 
     @property
     def display_name(self) -> str:

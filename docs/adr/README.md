@@ -247,3 +247,7 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0172: Keep artist capitalization significant](0172-keep-artist-capitalization-significant.md)
 - [ADR-0173: Initialize missing Libraries on selected iPods](0173-initialize-missing-libraries-on-selected-ipods.md)
 - [ADR-0174: Create missing flat Podcasts counterparts](0174-create-missing-flat-podcasts-counterparts.md)
+- [ADR-0175: Model native Genius capabilities by firmware](0175-model-native-genius-capabilities-by-firmware.md)
+- [ADR-0176: Preserve and author native Genius data](0176-preserve-and-author-native-genius-data.md)
+- [ADR-0177: Browse native Genius collections](0177-browse-native-genius-collections.md)
+- [ADR-0178: Generate basic Genius during Sync](0178-generate-basic-genius-during-sync.md)

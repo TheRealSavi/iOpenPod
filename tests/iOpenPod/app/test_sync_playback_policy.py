@@ -123,7 +123,16 @@ def test_sync_saves_playback_repairs_without_media_changes(
         assert repaired.play_count == 7
         assert repaired.metadata.bookmark_time_ms == 450
         assert repaired.metadata.last_played == 1_700_000_000
-        assert retained_music == music
+        assert music.ipod is not None and retained_music.ipod is not None
+        assert retained_music.ipod.genius_id
+        assert (
+            replace(
+                retained_music,
+                ipod=replace(retained_music.ipod, genius_id=music.ipod.genius_id),
+            )
+            == music
+        )
+        assert repaired.ipod is not None and repaired.ipod.genius_id == 0
         assert all(
             (device.root / path).read_bytes() == content
             for path, content in media.items()

@@ -111,6 +111,8 @@ class MhitHeader(ChunkHeader):
     store_album_id_2: int = cf(0x1D0, "u64")
     unk_mhit_0xF4_2_0x1D8: int = cf(0x1D8, "u64")
     artist_id_ref: int = cf(0x1E0, "u32")
+    # Joins the Genius tables in Extras.itdb on observed Classic databases.
+    genius_id: int = cf(0x1E4, "u64")
     unk_mhit_0x1EC: int = cf(0x1EC, "u32", default=1)
     composer_id: int = cf(0x1F4, "u32")
     tv_show_media_type_flag: int = cf(0x1F8, "u32")

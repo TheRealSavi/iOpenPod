@@ -48,6 +48,7 @@ from iPodDB.library._playlist_datasets import (
 from iPodDB.library._playlist_projection import project_playlist
 from iPodDB.library._projection import project_tracks
 from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.playlists import PlaylistKind
 from iPodDB.library.writing import IdentityMapping, IssueSeverity, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
@@ -56,6 +57,28 @@ def _bytes(chunk: ParsedChunk[ChunkHeader], data: bytes) -> bytes:
     return data[
         chunk.offset : chunk.offset + chunk.generic_header.length_or_child_count
     ]
+
+
+def _genius_payload_bytes(
+    chunk: ParsedChunk[MhypHeader], data: bytes
+) -> tuple[bytes, ...]:
+    """Native Genius seed and Smart bodies are retained as complete MHODs.
+
+    Library indexes and occurrence positions may change with Track deletion;
+    they are deliberately outside this fixed Genius metadata comparison.
+    """
+
+    return tuple(
+        _bytes(child, data)
+        for child in chunk.children
+        if isinstance(child.header, MhodHeader)
+        and child.header.mhod_type
+        in (
+            MhodType.SMART_PLAYLIST_PREFERENCES,
+            MhodType.SMART_PLAYLIST_RULES,
+            MhodType.GENIUS_PLAYLIST_SEED,
+        )
+    )
 
 
 def verify_playlists(
@@ -455,6 +478,17 @@ def verify_playlists(
                 )
             continue
         previous = prior.get(playlist.playlist_id)
+        if previous is not None and previous.kind is PlaylistKind.GENIUS:
+            source_row = baseline or old.get((3, identity)) or old.get((2, identity))
+            if source_row is None or _genius_payload_bytes(
+                source_row.chunk, original_bytes
+            ) != _genius_payload_bytes(chunk, output_bytes):
+                fail(
+                    "playlist_genius_payloads",
+                    "A native Genius Playlist's seed or retained Smart data changed.",
+                    kind,
+                    chunk,
+                )
         if (
             playlist.playlist_id in generated_podcasts
             and not chunk.header.playlist_kind_flags & 1
