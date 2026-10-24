@@ -62,6 +62,13 @@ the completed scan. See ADR-0064 and ADR-0067.
 - Metadata locations are descriptive values, not permission to open a file or URL.
   For an iPod source, the adapter normalizes colon-delimited locations to relative
   slash-delimited paths; Storage still validates containment and identity.
+- Artist grouping is case-sensitive in the common Library and native writer.
+  Album presentation keys also retain the exact effective Album Artist, while
+  text search remains case-insensitive. When an artist-name or membership change
+  touches a source artist record shared by distinct names, preparation splits it
+  into separate exact-name records and relinks the affected Tracks, preserving
+  the source record and its Unknown Data. See
+  [ADR-0172](adr/0172-keep-artist-capitalization-significant.md).
 
 ## Playlists
 

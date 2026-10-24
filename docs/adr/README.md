@@ -244,3 +244,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0169: Sign HASHAB with the published scheme](0169-sign-hashab-with-the-published-scheme.md)
 - [ADR-0170: Correct development Qt typing](0170-correct-development-qt-typing.md)
 - [ADR-0171: Use standard Track headers on Mini 2 and iPod video](0171-use-standard-track-headers-on-mini-2-and-ipod-video.md)
+- [ADR-0172: Keep artist capitalization significant](0172-keep-artist-capitalization-significant.md)

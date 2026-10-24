@@ -194,13 +194,13 @@ class Track:
     def album_key(self) -> str:
         """Return the stable presentation key used to group this Track."""
 
-        return "\x1f".join(
-            (self.effective_album_artist.casefold(), self.album.casefold())
-        )
+        return "\x1f".join((self.effective_album_artist, self.album.casefold()))
 
     @property
     def artist_key(self) -> str:
-        return self.artist.casefold()
+        """Keep differently capitalized artists distinct, as on the iPod."""
+
+        return self.artist
 
     @property
     def genre_key(self) -> str:

@@ -4,7 +4,7 @@ This never calls reconciliation or trusts a candidate's projected iPod diagnosti
 Shared semantic grouping inputs do not specify or bless its native record IDs.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhia import MhiaHeader
@@ -16,6 +16,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
+from iPodDB.library._artist_groups import native_artist_name, shared_artist_changes
 from iPodDB.library._browse_groups import (
     album_values,
     native_browse_groups,
@@ -79,6 +80,36 @@ def verify_browse_groups(
         if track_ids.get(t.track_id, t.track_id) in native
     }
     kinds = {s.chunk.header.dataset_type for s in original.find_chunks(MhsdHeader)}
+    artist_changes = shared_artist_changes(before.tracks, desired.tracks)
+    source_browse_ids = (
+        {
+            value
+            for chunk in old_native.values()
+            for value in (
+                chunk.header.album_id,
+                chunk.header.artist_id_ref,
+                chunk.header.composer_id,
+            )
+        }
+        | set(_rows(original, 4))
+        | set(_rows(original, 8))
+    )
+    source_sql_ids = {
+        row.header.sql_id
+        for kind in (4, 8)
+        for rows in _rows(original, kind).values()
+        for row in rows
+    }
+    output_sql_counts = Counter(
+        row.header.sql_id
+        for kind in (4, 8)
+        for rows in _rows(checked, kind).values()
+        for row in rows
+    )
+    artist_owners: dict[int, set[str]] = defaultdict(set)
+    for track in desired.tracks:
+        if track.track_id in output:
+            artist_owners[output[track.track_id].header.artist_id_ref].add(track.artist)
 
     def fail(
         code: str,
@@ -134,8 +165,15 @@ def verify_browse_groups(
                 continue
             prior = prior_groups.get(key, ())
             member_ids = {t.track_id for t in members}
-            affected = member_ids != {t.track_id for t in prior} or (
-                album and bool(prior) and album_values(members) != album_values(prior)
+            split_artist = not album and members[0].artist in artist_changes
+            affected = (
+                member_ids != {t.track_id for t in prior}
+                or (
+                    album
+                    and bool(prior)
+                    and album_values(members) != album_values(prior)
+                )
+                or split_artist
             )
             if not affected or kind not in kinds:
                 for t in members:
@@ -176,8 +214,34 @@ def verify_browse_groups(
                     and prior_owners[next(iter(previous_refs))] == member_ids
                 ):
                     candidates = previous_refs - {0}
+            if split_artist:
+                split_sources = artist_changes[members[0].artist]
+                candidates = {
+                    i
+                    for i in split_sources
+                    if len(source_rows.get(i, [])) == 1
+                    and native_artist_name(source_rows[i][0]) == members[0].artist
+                }
+                if len(split_sources) != 1 or any(
+                    len(source_rows.get(i, [])) != 1 for i in split_sources
+                ):
+                    fail(
+                        "group_identity",
+                        first_id,
+                        field,
+                        "A split artist must have one unambiguous source record.",
+                        output[first_id],
+                    )
+            if not album and len(artist_owners[identity]) != 1:
+                fail(
+                    "shared_artist",
+                    first_id,
+                    field,
+                    f"Artist {identity} is shared by distinct exact names.",
+                    output[first_id],
+                )
             if (candidates and candidates != {identity}) or (
-                not candidates and identity in source_rows
+                not candidates and identity in source_browse_ids
             ):
                 fail(
                     "group_identity",
@@ -207,16 +271,16 @@ def verify_browse_groups(
                         f"Dataset {kind}, group {identity}: retained SQL identity changed.",
                         row,
                     )
-            elif not row.header.sql_id or any(
-                row.header.sql_id == r.header.sql_id
-                for rs in source_rows.values()
-                for r in rs
+            elif (
+                not row.header.sql_id
+                or row.header.sql_id in source_sql_ids
+                or output_sql_counts[row.header.sql_id] != 1
             ):
                 fail(
                     "sql_identity",
                     first_id,
                     field,
-                    f"Dataset {kind}, new group {identity}: SQL identity is zero or collides with a retained record.",
+                    f"Dataset {kind}, new group {identity}: SQL identity is zero or collides with another record.",
                     row,
                 )
             expected: tuple[tuple[MhodType, str], ...]

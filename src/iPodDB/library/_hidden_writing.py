@@ -25,6 +25,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._album_index import master_tracks
+from iPodDB.library._artist_groups import native_artist_name, shared_artist_changes
 from iPodDB.library._browse_groups import (
     album_values,
     native_browse_groups,
@@ -188,6 +189,7 @@ def reconcile_hidden(
         ),
         64,
     )
+    artist_changes = shared_artist_changes(original.tracks, desired.tracks)
     # Album and artist datasets are optional in older formats. Retain unreferenced
     # records and their Unknown Data; only referenced groups are reconciled.
     for dataset_kind in (4, 8):
@@ -241,6 +243,7 @@ def reconcile_hidden(
         assigned: dict[int, int] = {}
         updated_rows = dict(rows)
         for key, members in groups.items():
+            split_artist = not album and members[0].artist in artist_changes
             candidates = original_groups.get(key, set())
             if not candidates:
                 previous_refs = {
@@ -252,8 +255,15 @@ def reconcile_hidden(
                     next(iter(previous_refs))
                 ) == {t.track_id for t in members}:
                     candidates = previous_refs
-            if original_members.get(key, set()) == {t.track_id for t in members} and (
-                not album or album_values(prior_members[key]) == album_values(members)
+            if split_artist:
+                candidates = set(artist_changes[members[0].artist])
+            if (
+                not split_artist
+                and original_members.get(key, set()) == {t.track_id for t in members}
+                and (
+                    not album
+                    or album_values(prior_members[key]) == album_values(members)
+                )
             ):
                 # A title, rating or other unrelated edit does not normalize the
                 # retained album/artist representation or repair missing links.
@@ -264,22 +274,28 @@ def reconcile_hidden(
                     sorted(candidates),
                 )
                 continue
-            if any(
-                native_members[identity] - original_members.get(key, set())
-                for identity in original_groups.get(key, ())
-            ):
+            shared_ids = tuple(
+                identity
+                for identity in sorted(original_groups.get(key, ()))
+                if native_members[identity] - original_members.get(key, set())
+            )
+            if album and shared_ids:
                 issues.append(
                     WriteIssue(
                         "library.ambiguous_group",
                         "A changed native browse record is shared by incompatible groups.",
-                        field="album" if album else "artist",
+                        field="album",
+                        detail=(
+                            f"Dataset {dataset_kind}, shared native IDs {shared_ids!r}; "
+                            f"requested group {key!r}."
+                        ),
                     )
                 )
                 continue
             if len(candidates) > 1:
                 # Existing duplicate groups are harmless until their fields or
                 # membership change; keep each Track's existing association.
-                if all(t in original.tracks for t in members):
+                if not split_artist and all(t in original.tracks for t in members):
                     continue
                 issues.append(
                     WriteIssue(
@@ -323,6 +339,23 @@ def reconcile_hidden(
                 )
             else:
                 row = rows[identity]
+            if (
+                split_artist
+                and isinstance(row.header, MhiiHeader)
+                and native_artist_name(row) != members[0].artist
+            ):
+                # Only the matching exact name owns the retained ID. Clone
+                # all other names with fresh identities, keeping private
+                # header bytes and children from the shared source record.
+                identity = browse_allocator.take()
+                row = replace(
+                    row,
+                    header=replace(
+                        row.header,
+                        artist_id=identity,
+                        sql_id=sql_allocator.take(),
+                    ),
+                )
             exemplar = members[0]
             if album:
                 values = album_values(members)

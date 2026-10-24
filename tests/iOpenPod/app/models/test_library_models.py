@@ -423,6 +423,48 @@ def test_collection_models_build_fixed_four_tile_artwork_collages() -> None:
     assert summary.representative_artwork_id == 11
 
 
+@pytest.mark.parametrize("explicit_album_artist", [False, True])
+def test_artist_case_variants_have_separate_collections_albums_and_filters(
+    explicit_album_artist: bool,
+) -> None:
+    tracks = TrackTableModel()
+    artists = CollectionListModel(tracks, CollectionKind.ARTIST)
+    albums = AlbumListModel(tracks)
+    track_proxy = TrackFilterProxyModel(tracks)
+    album_proxy = AlbumFilterProxyModel(albums)
+    artist_proxy = CollectionFilterProxyModel(artists)
+    names = ("Paul van Dyk", "Paul Van Dyk")
+    tracks.replace_tracks(
+        tuple(
+            Track(
+                n,
+                f"Track {n}",
+                name,
+                "Shared album title",
+                1000,
+                album_artist=name if explicit_album_artist else "",
+            )
+            for n, name in enumerate(names, start=1)
+        )
+    )
+    assert artists.rowCount() == 2
+    assert albums.rowCount() == 2
+    for n, name in enumerate(names, start=1):
+        collection = artists.index(n - 1, 0).data(CollectionRole.SUMMARY)
+        assert isinstance(collection, CollectionSummary)
+        assert collection.title == name
+        assert collection.track_ids == (n,)
+        track_proxy.set_collection_key(CollectionKind.ARTIST, collection.key)
+        assert track_proxy.rowCount() == 1
+        assert track_proxy.index(0, 0).data(TrackRole.TRACK_ID) == n
+        album_proxy.set_collection_key(CollectionKind.ARTIST, collection.key)
+        assert album_proxy.rowCount() == 1
+        assert album_proxy.index(0, 0).data(AlbumRole.ARTIST) == name
+    # Search remains forgiving; identity and text matching are different policies.
+    artist_proxy.set_query("PAUL VAN DYK")
+    assert artist_proxy.rowCount() == 2
+
+
 def test_track_proxy_filters_specific_media_kinds() -> None:
     tracks = TrackTableModel()
     tracks.replace_tracks(
