@@ -763,6 +763,8 @@ class SettingsPage(QWidget):
                 "<p>An honorary thank-you to the {libgpod} and {gtkpod} "
                 "contributors for their pioneering iPod support, documentation, "
                 "and the references this project learned from.</p>"
+                "<p>Thanks to {dotm5} and their {genius_research} repository "
+                "for helping us understand native Genius Data.</p>"
                 "<p>Application icon by DJShott, used with permission.</p>"
             ).format(
                 license='<a href="https://www.gnu.org/licenses/gpl-3.0.html">'
@@ -771,6 +773,11 @@ class SettingsPage(QWidget):
                 hashab='<a href="https://github.com/dstaley/hashab">Dylan Staley (@dstaley)</a>',
                 libgpod='<a href="https://github.com/gtkpod/libgpod">libgpod</a>',
                 gtkpod='<a href="https://github.com/gtkpod/gtkpod">gtkpod</a>',
+                dotm5='<a href="https://github.com/dotm5">dotm5</a>',
+                genius_research=(
+                    '<a href="https://github.com/dotm5/Genius-Mix-Research">'
+                    "Genius-Mix-Research</a>"
+                ),
             )
         )
 

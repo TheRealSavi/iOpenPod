@@ -306,5 +306,9 @@ features. See [LICENSE](https://github.com/TheRealSavi/iOpenPod/blob/main/LICENS
 credits, including HASHAB, libgpod, and gtkpod research. The application icon has
 separate permission terms documented with its assets.
 
+Thanks to [dotm5](https://github.com/dotm5) and their
+[Genius-Mix-Research](https://github.com/dotm5/Genius-Mix-Research) repository for
+helping us understand native Genius Data.
+
 Independent software, not affiliated with or endorsed by Apple Inc. iPod and
 iTunes are trademarks of Apple Inc.

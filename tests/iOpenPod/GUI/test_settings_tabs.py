@@ -380,7 +380,12 @@ def test_about_displays_license_and_community_credits(context: AppContext) -> No
             "Dylan Staley (@dstaley)",
             "DJShott",
             "HASHAB WebAssembly",
+            "dotm5",
+            "Genius-Mix-Research",
+            "native Genius Data",
             "https://github.com/dstaley/hashab",
+            "https://github.com/dotm5",
+            "https://github.com/dotm5/Genius-Mix-Research",
             "https://github.com/gtkpod/libgpod",
             "https://github.com/gtkpod/gtkpod",
         ):

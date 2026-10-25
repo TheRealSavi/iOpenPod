@@ -24,6 +24,12 @@ and accumulated understanding of iPod databases and device behavior have been
 valuable references for iOpenPod. Their work helped establish the open-source
 iPod ecosystem this project learns from and hopes to continue.
 
+## dotm5 — Genius-Mix-Research
+
+Thanks to [dotm5](https://github.com/dotm5) for their
+[Genius-Mix-Research](https://github.com/dotm5/Genius-Mix-Research) repository. Its
+research helped iOpenPod understand native Genius Data formats.
+
 ## DJShott — application icon
 
 Thank you to **DJShott** for designing and contributing the application icon and
