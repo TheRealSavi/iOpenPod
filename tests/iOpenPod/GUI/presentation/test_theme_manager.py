@@ -50,6 +50,7 @@ from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import ScrobbleReportDialog
 from iOpenPod.GUI.pages.backup_page import BackupSnapshotCard
 from iOpenPod.GUI.presentation.theme.backup_styles import render_backup_page_style
+from iOpenPod.GUI.presentation.theme.dynamic import genius_artwork_colors
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.stylesheet import render_stylesheet
 from iOpenPod.GUI.presentation.theme.tokens import (
@@ -86,6 +87,26 @@ def _application() -> QApplication:
 APPLICATION = _application()
 ALL_THEMES: tuple[Theme, ...] = (*LightTheme, *DarkTheme)
 ALL_TOKENS = tuple(tokens_for(theme) for theme in ALL_THEMES)
+
+
+@pytest.mark.parametrize("tokens", ALL_TOKENS)
+def test_genius_artwork_keeps_symbols_readable_in_every_theme(
+    tokens: ThemeTokens,
+) -> None:
+    for accent in (
+        tokens.artwork_blue,
+        tokens.artwork_green,
+        tokens.artwork_gold,
+        tokens.artwork_coral,
+        tokens.artwork_violet,
+        tokens.artwork_slate,
+    ):
+        colors = genius_artwork_colors(accent, tokens)
+        assert _contrast_ratio(colors.ink.name(), colors.field.name()) >= 4.5
+        assert _contrast_ratio(tokens.border_strong, tokens.surface) >= 3
+        assert all(
+            color.alpha() == 255 for color in (colors.field, colors.ink, colors.line)
+        )
 
 
 def test_runtime_theme_switch_updates_palette_and_stylesheet() -> None:

@@ -8,6 +8,14 @@
         <translation>Genius-Mixe hinzufügen</translation>
     </message>
     <message>
+        <source>%1 selected</source>
+        <translation>%1 ausgewählt</translation>
+    </message>
+    <message>
+        <source>Select your mixes</source>
+        <translation>Mixe auswählen</translation>
+    </message>
+    <message>
         <source>Choose mixes to keep on your iPod. Manually added mixes never expire.</source>
         <translation type="vanished">Wählen Sie Mixe aus, die auf Ihrem iPod bleiben sollen. Manuell hinzugefügte Mixe laufen nie ab.</translation>
     </message>

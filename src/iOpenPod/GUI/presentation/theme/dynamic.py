@@ -35,6 +35,27 @@ class RoundHeaderColors:
     bottom: QColor
 
 
+@dataclass(frozen=True, slots=True)
+class GeniusArtworkColors:
+    """Opaque, contrast-safe colors for the Genius chooser's symbolic artwork."""
+
+    field: QColor
+    ink: QColor
+    line: QColor
+
+
+def genius_artwork_colors(color: str, tokens: ThemeTokens) -> GeniusArtworkColors:
+    """Keep the catalog hue while adapting its artwork to the active theme."""
+
+    field = _blend(_rgb(color), _rgb(tokens.surface), 0.32)
+    ink = _normalized_for_contrast(_rgb(color), field, _TEXT_CONTRAST)
+    return GeniusArtworkColors(
+        field=QColor(*field),
+        ink=QColor(*ink),
+        line=QColor(*_blend(ink, field, 0.22)),
+    )
+
+
 def colorful_card_fill(
     color: RGBColor,
     tokens: ThemeTokens,
@@ -190,9 +211,11 @@ def _linearize(channel: float) -> float:
 
 __all__ = [
     "ColorfulHeaderColors",
+    "GeniusArtworkColors",
     "RoundHeaderColors",
     "colorful_card_fill",
     "colorful_header_colors",
     "contrasting_ink",
+    "genius_artwork_colors",
     "round_header_colors",
 ]

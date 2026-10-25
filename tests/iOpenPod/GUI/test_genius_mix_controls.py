@@ -4,15 +4,16 @@ from collections.abc import Iterator
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QItemSelectionModel, Qt, QTimer
 from PySide6.QtGui import QColor
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog, QLabel, QListWidget, QMessageBox, QSpinBox
 from tests.iOpenPod.app.test_genius_mixes import music
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 from tests.iOpenPod.GUI.test_genius_page import Browser, active, button, tree
 
 from device_registry import DEFAULT_DEVICE_REGISTRY
-from iOpenPod.app.core.settings.definitions import DRAFT_ALL_CHANGES
+from iOpenPod.app.core.settings.definitions import DRAFT_ALL_CHANGES, AppearanceMode
 from iOpenPod.app.genius_mixes import GENIUS_MIX_POLICY, MixPolicy, propose_mixes
 from iOpenPod.GUI.dialogs.genius_mixes import (
     AddGeniusMixesDialog,
@@ -220,6 +221,105 @@ def test_mood_cards_show_only_the_mix_name() -> None:
         assert dialog.findChild(QLabel, "geniusMixDialogDescription") is None
         assert dialog.findChild(QLabel, "geniusMixDialogNote") is None
     finally:
+        dialog.deleteLater()
+
+
+def test_selection_summary_tracks_keyboard_toggles_without_losing_other_mixes() -> None:
+    dialog = AddGeniusMixesDialog(propose_mixes(music("Rock", "Jazz")))
+    try:
+        dialog.show()
+        APPLICATION.processEvents()
+        grid = dialog.findChild(QListWidget, "geniusMixProposals")
+        summary = dialog.findChild(QLabel, "geniusMixSelectionSummary")
+        add = dialog.findChild(ActionButton, "confirmAddGeniusMixes")
+        assert grid is not None and summary is not None and add is not None
+        assert summary.text() == "Select your mixes"
+        grid.setFocus()
+        grid.setCurrentRow(0, QItemSelectionModel.SelectionFlag.NoUpdate)
+        QTest.keyClick(grid, Qt.Key.Key_Space)
+        assert dialog.selected_keys == ("rock",)
+        assert summary.text() == "1 selected" and add.isEnabled()
+        QTest.keyClick(grid, Qt.Key.Key_Right)
+        QTest.keyClick(grid, Qt.Key.Key_Space)
+        assert set(dialog.selected_keys) == {"rock", "jazz"}
+        assert summary.text() == "2 selected"
+        grid.clearSelection()
+        assert summary.text() == "Select your mixes" and not add.isEnabled()
+        QTest.keyClick(dialog, Qt.Key.Key_Escape)
+        assert dialog.result() == QDialog.DialogCode.Rejected
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_open_dialog_refreshes_artwork_when_theme_changes(mix_browser: Browser) -> None:
+    manager = mix_browser.context.theme_manager
+    manager.set_mode(AppearanceMode.LIGHT)
+    dialog = AddGeniusMixesDialog(propose_mixes(music("Rock")), theme_manager=manager)
+    try:
+        grid = dialog.findChild(QListWidget, "geniusMixProposals")
+        assert grid is not None
+        grid.item(0).setSelected(True)
+        light_artwork = grid.item(0).icon().pixmap(80, 80).toImage()
+        manager.set_mode(AppearanceMode.DARK)
+        dark_artwork = grid.item(0).icon().pixmap(80, 80).toImage()
+        assert light_artwork != dark_artwork
+        assert dialog.selected_keys == ("rock",)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_open_dialog_retranslates_selection_without_resetting_it(
+    mix_browser: Browser,
+) -> None:
+    dialog = AddGeniusMixesDialog(propose_mixes(music("Rock")))
+    try:
+        dialog.show()
+        grid = dialog.findChild(QListWidget, "geniusMixProposals")
+        summary = dialog.findChild(QLabel, "geniusMixSelectionSummary")
+        assert grid is not None and summary is not None
+        grid.item(0).setSelected(True)
+        mix_browser.context.i18n_manager.set_language("de")
+        APPLICATION.processEvents()
+        assert summary.text() == "1 ausgewählt"
+        assert dialog.selected_keys == ("rock",)
+        grid.clearSelection()
+        assert summary.text() == "Mixe auswählen"
+    finally:
+        mix_browser.context.i18n_manager.set_language("en")
+        dialog.close()
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize(
+    "direction", (Qt.LayoutDirection.LeftToRight, Qt.LayoutDirection.RightToLeft)
+)
+def test_compact_dialog_keeps_actions_and_shelf_accessible(
+    direction: Qt.LayoutDirection,
+) -> None:
+    dialog = AddGeniusMixesDialog(propose_mixes(music("Rock", "Jazz", "Pop", "Folk")))
+    try:
+        dialog.setLayoutDirection(direction)
+        dialog.resize(520, dialog.height())
+        dialog.show()
+        APPLICATION.processEvents()
+        grid = dialog.findChild(QListWidget, "geniusMixProposals")
+        add = dialog.findChild(ActionButton, "confirmAddGeniusMixes")
+        assert grid is not None and add is not None
+        grid.scrollToItem(grid.item(grid.count() - 1))
+        assert (
+            grid.viewport()
+            .rect()
+            .contains(
+                grid.visualItemRect(grid.item(grid.count() - 1)).adjusted(4, 4, -4, -4)
+            )
+        )
+        assert grid.verticalScrollBar().maximum() == 0
+        assert dialog.rect().contains(add.mapTo(dialog, add.rect().bottomRight()))
+        assert add.height() >= 44
+    finally:
+        dialog.close()
         dialog.deleteLater()
 
 

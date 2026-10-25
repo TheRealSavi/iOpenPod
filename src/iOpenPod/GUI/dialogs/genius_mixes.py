@@ -1,4 +1,10 @@
-"""Manual genre Mix selection and per-iPod automatic Mix settings."""
+"""Manual genre Mix selection and per-iPod automatic Mix settings.
+
+Hallmark · component: Genius Mix chooser · genre: atmospheric · theme: iOpenPod
+Pre-emit critique: P4 H4 E4 S4 R5 V4 · contrast: pass (40-41)
+Audience: iPod music collectors · task: select mixes · tone: premium technical
+States: default, hover, focus, pressed, disabled; shared actions own feedback states.
+"""
 
 from PySide6.QtCore import (
     QT_TRANSLATE_NOOP,
@@ -10,11 +16,23 @@ from PySide6.QtCore import (
     QSize,
     Qt,
 )
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen
+from PySide6.QtGui import (
+    QColor,
+    QFocusEvent,
+    QFont,
+    QFontMetrics,
+    QIcon,
+    QKeyEvent,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPen,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListView,
@@ -30,6 +48,10 @@ from PySide6.QtWidgets import (
 
 from iOpenPod.app.genius_mixes import MIX_CATALOG, MixPolicy, MixProposal
 from iOpenPod.GUI.presentation.icons import glyph_icon
+from iOpenPod.GUI.presentation.theme.dynamic import (
+    GeniusArtworkColors,
+    genius_artwork_colors,
+)
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import (
     LAYOUT,
@@ -91,7 +113,7 @@ _MIX_COLOR_INDEX = {
 }
 
 
-def _mix_colors(key: str, tokens: ThemeTokens) -> tuple[QColor, QColor]:
+def _mix_colors(key: str, tokens: ThemeTokens) -> GeniusArtworkColors:
     accents = (
         tokens.artwork_blue,
         tokens.artwork_green,
@@ -100,43 +122,96 @@ def _mix_colors(key: str, tokens: ThemeTokens) -> tuple[QColor, QColor]:
         tokens.artwork_violet,
         tokens.artwork_slate,
     )
-    source = QColor(accents[_MIX_COLOR_INDEX[key]])
-    hue = source.hue()
-    saturation = source.saturation()
-    surface = QColor()
-    surface.setHsv(hue, max(55, saturation // 2), 44)
-    ink = QColor()
-    ink.setHsv(hue, max(165, saturation), 245)
-    return surface, ink
+    return genius_artwork_colors(accents[_MIX_COLOR_INDEX[key]], tokens)
 
 
 def _mix_icon(proposal: MixProposal, tokens: ThemeTokens) -> QIcon:
-    _, ink = _mix_colors(proposal.definition.key, tokens)
-    return glyph_icon(f"genius-mixes/{proposal.definition.key}", 56, ink)
+    colors = _mix_colors(proposal.definition.key, tokens)
+    return glyph_icon(f"genius-mixes/{proposal.definition.key}", 80, colors.ink)
+
+
+class _MixList(QListWidget):
+    """Retain native multi-selection while exposing transient press feedback."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.pressed_index = QPersistentModelIndex()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.pressed_index = QPersistentModelIndex(
+                self.indexAt(event.position().toPoint())
+            )
+        super().mousePressEvent(event)
+        self.viewport().update()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        self.pressed_index = QPersistentModelIndex()
+        super().mouseReleaseEvent(event)
+        self.viewport().update()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Space:
+            self.pressed_index = QPersistentModelIndex(self.currentIndex())
+        super().keyPressEvent(event)
+        self.viewport().update()
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        self.pressed_index = QPersistentModelIndex()
+        super().keyReleaseEvent(event)
+        self.viewport().update()
+
+    def focusOutEvent(self, event: QFocusEvent) -> None:
+        self.pressed_index = QPersistentModelIndex()
+        super().focusOutEvent(event)
+        self.viewport().update()
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.Type.EnabledChange:
+            self.pressed_index = QPersistentModelIndex()
+            self.setCursor(
+                Qt.CursorShape.PointingHandCursor
+                if self.isEnabled()
+                else Qt.CursorShape.ArrowCursor
+            )
+        super().changeEvent(event)
 
 
 class _MixCardDelegate(QStyledItemDelegate):
     """Paint one compact, keyboard-readable Mix card in the horizontal chooser."""
 
     def __init__(
-        self, tokens: ThemeTokens, typography: TypographyTokens, parent: QWidget
+        self, tokens: ThemeTokens, typography: TypographyTokens, parent: _MixList
     ) -> None:
         super().__init__(parent)
         self._tokens = tokens
         self._typography = typography
-        light_theme = QColor(tokens.window).lightness() >= 128
-        self._selected_icon = glyph_icon(
-            "check-circle",
-            20,
-            QColor(tokens.accent_ink if light_theme else tokens.text),
+        self._view = parent
+
+    @property
+    def title_font(self) -> QFont:
+        font = QFont(self._typography.display)
+        font.setPointSizeF(self._typography.album_card_title_pt)
+        font.setWeight(QFont.Weight.DemiBold)
+        return font
+
+    @property
+    def card_size(self) -> QSize:
+        metrics = QFontMetrics(self.title_font)
+        return QSize(
+            max(208, metrics.height() * 8),
+            184 + metrics.height() + LAYOUT.space_2xl,
         )
+
+    def set_theme(self, tokens: ThemeTokens) -> None:
+        self._tokens = tokens
 
     def sizeHint(
         self,
         _option: QStyleOptionViewItem,
         _index: QModelIndex | QPersistentModelIndex,
     ) -> QSize:
-        return QSize(196, 180)
+        return self.card_size
 
     def paint(
         self,
@@ -146,52 +221,129 @@ class _MixCardDelegate(QStyledItemDelegate):
     ) -> None:
         tokens = self._tokens
         state = option.state
+        enabled = bool(state & QStyle.StateFlag.State_Enabled)
         selected = bool(state & QStyle.StateFlag.State_Selected)
-        hovered = bool(state & QStyle.StateFlag.State_MouseOver)
+        hovered = enabled and bool(state & QStyle.StateFlag.State_MouseOver)
         focused = bool(state & QStyle.StateFlag.State_HasFocus)
+        pressed = enabled and index == self._view.pressed_index
         key = str(index.data(Qt.ItemDataRole.UserRole))
-        surface, ink = _mix_colors(key, tokens)
-        light_theme = QColor(tokens.window).lightness() >= 128
+        colors = _mix_colors(key, tokens)
         card = QRectF(option.rect).adjusted(4, 4, -4, -4)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        background = surface.lighter(125 if selected else 115 if hovered else 100)
-        painter.setBrush(background)
-        border = QColor(ink)
-        border.setAlpha(255 if selected else 120 if hovered else 55)
-        painter.setPen(QPen(border, 2 if selected else 1))
+        painter.setLayoutDirection(option.direction)
+        fill = (
+            tokens.surface_pressed
+            if pressed
+            else tokens.surface_selected
+            if selected
+            else tokens.surface_hover
+            if hovered
+            else tokens.surface
+        )
+        painter.setBrush(QColor(fill))
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(card, LAYOUT.radius_panel, LAYOUT.radius_panel)
-        if focused:
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(tokens.focus), 2))
-            painter.drawRoundedRect(
-                card.adjusted(2, 2, -2, -2),
-                LAYOUT.radius_control,
-                LAYOUT.radius_control,
+
+        # Symbolic record artwork, separate from the semantic selection surface.
+        artwork = QRectF(card.left(), card.top(), card.width(), 176)
+        clip = QPainterPath()
+        clip.addRoundedRect(card, LAYOUT.radius_panel, LAYOUT.radius_panel)
+        painter.save()
+        painter.setClipPath(clip)
+        painter.fillRect(
+            artwork, colors.field if enabled else QColor(tokens.surface_alt)
+        )
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(colors.line if enabled else QColor(tokens.border), 1))
+        center = artwork.center()
+        for diameter in (112, 140, 168):
+            orbit = QRectF(
+                center.x() - diameter / 2,
+                center.y() - diameter / 2,
+                diameter,
+                diameter,
             )
+            painter.drawArc(orbit, 25 * 16, 130 * 16)
+            painter.drawArc(orbit, 205 * 16, 130 * 16)
         icon = index.data(Qt.ItemDataRole.DecorationRole)
         if isinstance(icon, QIcon):
             icon.paint(
                 painter,
-                QRectF(card.center().x() - 28, card.top() + 25, 56, 56).toRect(),
+                QRectF(center.x() - 40, center.y() - 40, 80, 80).toRect(),
+                Qt.AlignmentFlag.AlignCenter,
+                QIcon.Mode.Normal if enabled else QIcon.Mode.Disabled,
             )
+        painter.restore()
+
+        # A persistent checkbox affordance makes multi-selection discoverable.
+        marker_x = (
+            card.left() + LAYOUT.space_sm
+            if option.direction == Qt.LayoutDirection.RightToLeft
+            else card.right() - LAYOUT.space_sm - LAYOUT.checkbox_indicator_size
+        )
+        marker = QRectF(
+            marker_x,
+            card.top() + LAYOUT.space_sm,
+            LAYOUT.checkbox_indicator_size,
+            LAYOUT.checkbox_indicator_size,
+        )
+        marker_fill = tokens.accent if enabled and selected else tokens.surface
+        painter.setBrush(QColor(marker_fill))
+        painter.setPen(QPen(QColor(tokens.accent) if selected else colors.ink, 1))
+        painter.drawEllipse(marker)
         if selected:
-            self._selected_icon.paint(
-                painter,
-                QRectF(card.right() - 32, card.top() + 12, 20, 20).toRect(),
+            painter.setPen(
+                QPen(
+                    QColor(tokens.accent_ink if enabled else tokens.text_disabled),
+                    2,
+                    Qt.PenStyle.SolidLine,
+                    Qt.PenCapStyle.RoundCap,
+                    Qt.PenJoinStyle.RoundJoin,
+                )
+            )
+            check = QPainterPath()
+            check.moveTo(marker.left() + 6, marker.top() + 12)
+            check.lineTo(marker.left() + 10, marker.top() + 16)
+            check.lineTo(marker.left() + 18, marker.top() + 8)
+            painter.drawPath(check)
+
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(
+            QPen(
+                QColor(
+                    tokens.accent
+                    if selected
+                    else tokens.border_strong
+                    if hovered
+                    else tokens.border
+                ),
+                2 if selected else 1,
+            )
+        )
+        painter.drawRoundedRect(card, LAYOUT.radius_panel, LAYOUT.radius_panel)
+        if focused:
+            painter.setPen(QPen(QColor(tokens.focus), 2, Qt.PenStyle.DashLine))
+            painter.drawRoundedRect(
+                card.adjusted(-3, -3, 3, 3),
+                LAYOUT.radius_panel + 3,
+                LAYOUT.radius_panel + 3,
             )
         title = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
-        title_font = QFont(self._typography.display)
-        title_font.setPointSizeF(self._typography.album_card_title_pt)
-        title_font.setWeight(QFont.Weight.DemiBold)
-        painter.setFont(title_font)
-        painter.setPen(QColor(tokens.accent_ink if light_theme else tokens.text))
+        painter.setFont(self.title_font)
+        painter.setPen(QColor(tokens.text if enabled else tokens.text_disabled))
+        caption = QRectF(
+            card.left() + LAYOUT.space_md,
+            artwork.bottom(),
+            card.width() - 2 * LAYOUT.space_md,
+            card.bottom() - artwork.bottom(),
+        )
         painter.drawText(
-            QRectF(card.left() + 12, card.top() + 110, card.width() - 24, 48),
-            Qt.AlignmentFlag.AlignHCenter
-            | Qt.AlignmentFlag.AlignTop
-            | Qt.TextFlag.TextWordWrap,
-            title,
+            caption,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeading,
+            QFontMetrics(self.title_font).elidedText(
+                title, Qt.TextElideMode.ElideRight, int(caption.width())
+            ),
         )
         painter.restore()
 
@@ -207,8 +359,9 @@ class AddGeniusMixesDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("addGeniusMixesDialog")
         self.setWindowModality(Qt.WindowModality.WindowModal)
-        self.resize(832, 350)
-        self.setMinimumSize(520, 350)
+        self.resize(920, 424)
+        self.setMinimumWidth(520)
+        self._theme_manager = theme_manager
         self._proposals = tuple(proposal for proposal in proposals if proposal.eligible)
         tokens = theme_manager.tokens if theme_manager is not None else LIGHT_TOKENS
         typography = (
@@ -218,7 +371,12 @@ class AddGeniusMixesDialog(QDialog):
         )
         self._heading = QLabel(self)
         self._heading.setObjectName("geniusMixDialogHeading")
-        self._grid = QListWidget(self)
+        self._heading.setWordWrap(True)
+        self._emblem = QLabel(self)
+        self._emblem.setFixedSize(
+            LAYOUT.minimum_touch_target, LAYOUT.minimum_touch_target
+        )
+        self._grid = _MixList(self)
         self._grid.setObjectName("geniusMixProposals")
         self._grid.setViewMode(QListView.ViewMode.IconMode)
         self._grid.setFlow(QListView.Flow.LeftToRight)
@@ -226,67 +384,79 @@ class AddGeniusMixesDialog(QDialog):
         self._grid.setMovement(QListView.Movement.Static)
         self._grid.setResizeMode(QListView.ResizeMode.Fixed)
         self._grid.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
-        self._grid.setGridSize(QSize(196, 180))
-        self._grid.setFixedHeight(200)
+        self._delegate = _MixCardDelegate(tokens, typography, self._grid)
+        self._grid.setGridSize(self._delegate.card_size)
+        self._grid.setFixedHeight(self._delegate.card_size.height() + LAYOUT.space_xl)
         self._grid.setSpacing(LAYOUT.space_2xs)
         self._grid.setMouseTracking(True)
-        self._grid.setItemDelegate(_MixCardDelegate(tokens, typography, self._grid))
+        self._grid.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._grid.setItemDelegate(self._delegate)
         self._grid.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self._grid.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._grid.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._grid.horizontalScrollBar().setStyleSheet(
-            "QScrollBar:horizontal {"
-            f" height: {LAYOUT.space_xs}px; background: transparent; border: none;"
-            " }"
-            "QScrollBar::handle:horizontal {"
-            f" margin: {LAYOUT.space_3xs + 1}px 0;"
-            f" background: {tokens.border_strong};"
-            f" border-radius: {LAYOUT.space_3xs // 2}px;"
-            " }"
-            "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {"
-            " width: 0; border: none; background: transparent;"
-            " }"
-            "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {"
-            " background: transparent;"
-            " }"
-        )
         for proposal in self._proposals:
             item = QListWidgetItem(self._grid)
             item.setData(Qt.ItemDataRole.UserRole, proposal.definition.key)
-            item.setIcon(_mix_icon(proposal, tokens))
-            item.setSizeHint(QSize(196, 180))
+            item.setSizeHint(self._delegate.card_size)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty = QLabel(self)
         self._empty.setObjectName("geniusMixEmpty")
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty.setWordWrap(True)
+        self._empty.setMinimumHeight(self._delegate.card_size.height())
         self._empty.setVisible(not self._proposals)
         self._grid.setVisible(bool(self._proposals))
-        self._cancel = ActionButton(parent=self)
+        self._selection = QLabel(self)
+        self._selection.setObjectName("geniusMixSelectionSummary")
+        self._selection.setWordWrap(True)
+        self._cancel = ActionButton(parent=self, kind=ActionButtonKind.QUIET)
         self._cancel.clicked.connect(self.reject)
-        self._add = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
+        self._add = ActionButton(
+            parent=self, kind=ActionButtonKind.PRIMARY, glyph="plus"
+        )
         self._add.setObjectName("confirmAddGeniusMixes")
         self._add.setDefault(True)
         self._add.setEnabled(False)
         self._add.clicked.connect(self.accept)
-        self._grid.itemSelectionChanged.connect(
-            lambda: self._add.setEnabled(bool(self.selected_keys))
+        self._grid.itemSelectionChanged.connect(self._update_selection)
+        for action in (self._cancel, self._add):
+            action.setMinimumHeight(LAYOUT.control_height_large)
+            action.setMinimumWidth(96)
+        footer = QFrame(self)
+        footer.setObjectName("geniusMixDialogFooter")
+        actions = QHBoxLayout(footer)
+        actions.setContentsMargins(
+            LAYOUT.space_xl, LAYOUT.space_md, LAYOUT.space_xl, LAYOUT.space_md
         )
-        actions = QHBoxLayout()
         actions.setSpacing(LAYOUT.space_sm)
-        actions.addStretch(1)
+        actions.addWidget(self._selection, 1)
         actions.addWidget(self._cancel)
         actions.addWidget(self._add)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(
-            LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg
+        header = QHBoxLayout()
+        header.setContentsMargins(
+            LAYOUT.space_xl, LAYOUT.space_lg, LAYOUT.space_xl, LAYOUT.space_lg
         )
+        header.setSpacing(LAYOUT.space_md)
+        header.addWidget(self._emblem)
+        header.addWidget(self._heading, 1)
+        shelf = QVBoxLayout()
+        shelf.setContentsMargins(
+            LAYOUT.space_xl - LAYOUT.space_2xs,
+            0,
+            LAYOUT.space_xl - LAYOUT.space_2xs,
+            LAYOUT.space_md,
+        )
+        shelf.addWidget(self._grid)
+        shelf.addWidget(self._empty)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._heading)
-        layout.addSpacing(LAYOUT.space_md)
-        layout.addWidget(self._grid, 1)
-        layout.addWidget(self._empty, 1)
-        layout.addSpacing(LAYOUT.space_lg)
-        layout.addLayout(actions)
+        layout.addLayout(header)
+        layout.addLayout(shelf, 1)
+        layout.addWidget(footer)
+        if theme_manager is not None:
+            theme_manager.effectiveThemeChanged.connect(self._refresh_theme)
+        self._refresh_theme()
         self.retranslate_ui()
         self._cancel.setFocus()
 
@@ -309,9 +479,41 @@ class AddGeniusMixesDialog(QDialog):
                     "GeniusMixNames", str(_MIX_LABELS[proposal.definition.key])
                 )
             )
-            item.setToolTip(self.tr("Select to add this mix"))
+            instruction = self.tr("Select to add this mix")
+            item.setToolTip(f"{item.text()}\n{instruction}")
         self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._add.setText(self.tr("Add"))
+        self._update_selection()
+
+    def _update_selection(self) -> None:
+        count = len(self.selected_keys)
+        self._add.setEnabled(count > 0)
+        self._selection.setText(
+            self.tr("%1 selected").replace("%1", str(count))
+            if count
+            else self.tr("Select your mixes")
+            if self._proposals
+            else ""
+        )
+
+    def _refresh_theme(self) -> None:
+        tokens = (
+            self._theme_manager.tokens
+            if self._theme_manager is not None
+            else LIGHT_TOKENS
+        )
+        self._delegate.set_theme(tokens)
+        self._emblem.setPixmap(
+            glyph_icon(
+                "atom", LAYOUT.minimum_touch_target, QColor(tokens.accent)
+            ).pixmap(
+                QSize(LAYOUT.minimum_touch_target, LAYOUT.minimum_touch_target),
+                self.devicePixelRatioF(),
+            )
+        )
+        for row, proposal in enumerate(self._proposals):
+            self._grid.item(row).setIcon(_mix_icon(proposal, tokens))
+        self._grid.viewport().update()
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:

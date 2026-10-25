@@ -288,10 +288,48 @@ QLabel#geniusMixDialogHeading {{
     font-weight: 700;
 }}
 
+/* Hallmark · component: Genius Mix chooser · genre: atmospheric · theme: iOpenPod
+ * pre-emit critique: P4 H4 E4 S4 R5 V4 · contrast: pass (40-41)
+ * states: default · hover · focus · active · disabled (native selection)
+ * loading · error · success (shared ActionButton feedback contract)
+ * typography: native · motion: cut · artwork: symbolic record grooves
+ */
 QListWidget#geniusMixProposals {{
     background-color: {tokens.window};
     border: none;
     outline: none;
+}}
+
+QListWidget#geniusMixProposals QScrollBar:horizontal {{
+    height: {LAYOUT.space_sm}px;
+    background: {tokens.window};
+    border: none;
+}}
+
+QListWidget#geniusMixProposals QScrollBar::handle:horizontal {{
+    min-width: {LAYOUT.scrollbar_handle_minimum}px;
+    margin: {LAYOUT.space_3xs}px 0;
+    background: {tokens.scrollbar};
+    border-radius: {LAYOUT.space_2xs}px;
+}}
+
+QListWidget#geniusMixProposals QScrollBar::handle:horizontal:hover {{
+    background: {tokens.scrollbar_hover};
+}}
+
+QFrame#geniusMixDialogFooter {{
+    background: {tokens.surface};
+    border: none;
+    border-top: 1px solid {tokens.border};
+}}
+
+QFrame#geniusMixDialogFooter QPushButton {{
+    min-height: {LAYOUT.control_height_large}px;
+}}
+
+QLabel#geniusMixSelectionSummary {{
+    color: {tokens.text_secondary};
+    background: transparent;
 }}
 
 QLabel#geniusMixEmpty {{

@@ -409,6 +409,21 @@ scrollbar is hidden, and every layout batch ends on a complete row. Those invari
 keep row spacing stable across scrollbar transitions, viewport resizes, accessibility
 font changes, and large collection boundaries.
 
+The Add Genius Mixes dialog presents one horizontal shelf of symbolic record
+artwork with a separate caption band. Larger catalog glyphs and fine record grooves
+give the chooser its musical character without introducing decorative motion.
+An always-visible selection marker, an accent outline, and an independent dashed
+keyboard-focus ring distinguish selection from focus. The footer shows the selected
+count beside Cancel and Add. Mix names stay on one line with full names available
+in tooltips and native accessibility; the chooser adds no Track counts or analysis
+claims. Card height follows font metrics, and the shelf remains scrollable at the
+dialog's compact desktop width.
+
+Genius artwork uses a narrow Theme Module color recipe: existing catalog hues are
+composited over the semantic surface, then their glyph ink is normalized to at least
+4.5:1 contrast. This is symbolic artwork, not a replacement for selection or action
+colors. Open dialogs refresh this artwork when the effective theme changes.
+
 ## Typography
 
 Qt's Host-provided General and Title fonts fill the body and display roles. The mono
