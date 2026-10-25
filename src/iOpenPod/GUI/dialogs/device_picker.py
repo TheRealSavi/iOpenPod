@@ -75,6 +75,9 @@ class DevicePickerDialog(QDialog):
         self._detail = QLabel(self)
         self._detail.setObjectName("deviceCandidateDetail")
         self._detail.setTextFormat(Qt.TextFormat.PlainText)
+        self._detail.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         self._detail.setWordWrap(True)
 
         self._refresh = ActionButton(parent=self)
@@ -326,7 +329,7 @@ def _readiness_text(
             "DevicePickerDialog", "This iPod database format is not supported yet"
         ),
         DeviceReadiness.INSPECTION_FAILED: QCoreApplication.translate(
-            "DevicePickerDialog", "The device filesystem could not be inspected"
+            "DevicePickerDialog", "Device access could not be prepared"
         ),
     }[readiness]
 
@@ -385,11 +388,15 @@ def _issue_text(
             "Recovery files were removed. Safely eject before unplugging.",
         ),
         DeviceCandidateIssueCode.INSPECTION_FAILED: QCoreApplication.translate(
-            "DevicePickerDialog", "The device filesystem could not be inspected."
+            "DevicePickerDialog", "Device access could not be prepared."
         ),
     }[issue.code]
     if (
-        issue.code is DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE
+        issue.code
+        in {
+            DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE,
+            DeviceCandidateIssueCode.INSPECTION_FAILED,
+        }
         and issue.detail
     ):
         return f"{summary}\n{issue.detail}"

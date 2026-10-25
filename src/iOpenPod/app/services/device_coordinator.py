@@ -2376,6 +2376,20 @@ class DeviceCoordinator:
                     )
                     + cleanup_issues,
                 )
+            if (
+                current is not None
+                and current.candidate.readiness is DeviceReadiness.INSPECTION_FAILED
+                and (
+                    previous is None
+                    or previous.candidate.readiness != current.candidate.readiness
+                    or previous.candidate.issues != current.candidate.issues
+                )
+            ):
+                logger.warning(
+                    "Could not prepare device access at %s: %s",
+                    mounted.mount_point.path,
+                    "; ".join(issue.detail for issue in current.candidate.issues),
+                )
             return current
         except SyncRecoveryRequiredError as error:
             # Discovery must still list every other iPod. Selection opens the

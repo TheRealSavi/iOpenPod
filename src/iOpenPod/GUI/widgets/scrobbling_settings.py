@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QEvent, Qt, QUrl
-from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from iOpenPod.app.scrobbling.models import Service
 from iOpenPod.app.scrobbling.settings import account_setting
 from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
+from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
@@ -110,12 +110,10 @@ class ScrobblingSettings(QWidget):
             lambda: controller.disconnect_service(Service.LISTENBRAINZ)
         )
         self._lastfm_help.clicked.connect(
-            lambda: QDesktopServices.openUrl(
-                QUrl("https://www.last.fm/api/account/create")
-            )
+            lambda: open_desktop_url(QUrl("https://www.last.fm/api/account/create"))
         )
         self._lb_help.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://listenbrainz.org/settings/"))
+            lambda: open_desktop_url(QUrl("https://listenbrainz.org/settings/"))
         )
         controller.authorizationRequested.connect(self._open_authorization)
         controller.changed.connect(self._refresh)
@@ -138,7 +136,7 @@ class ScrobblingSettings(QWidget):
             show_scrobble_report(result, self)
 
     def _open_authorization(self, url: str) -> None:
-        if not QDesktopServices.openUrl(QUrl(url)):
+        if not open_desktop_url(QUrl(url)):
             self._status.setText(
                 self.tr(
                     "The browser could not be opened. Enable your default browser and start signing in again."

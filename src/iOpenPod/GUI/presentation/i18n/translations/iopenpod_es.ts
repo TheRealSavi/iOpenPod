@@ -1288,7 +1288,7 @@
     </message>
     <message>
         <source>The device filesystem could not be inspected</source>
-        <translation>No se pudo revisar el sistema de archivos del dispositivo</translation>
+        <translation type="vanished">No se pudo revisar el sistema de archivos del dispositivo</translation>
     </message>
     <message>
         <source>Some dates need a timezone fallback or cannot be interpreted uniquely.</source>
@@ -1340,11 +1340,19 @@
     </message>
     <message>
         <source>The device filesystem could not be inspected.</source>
-        <translation>No se pudo revisar el sistema de archivos del dispositivo.</translation>
+        <translation type="vanished">No se pudo revisar el sistema de archivos del dispositivo.</translation>
     </message>
     <message>
         <source>Select to create the missing iPod Library</source>
         <translation>Selecciona para crear la biblioteca del iPod que falta</translation>
+    </message>
+    <message>
+        <source>Device access could not be prepared</source>
+        <translation>No se pudo preparar el acceso al dispositivo</translation>
+    </message>
+    <message>
+        <source>Device access could not be prepared.</source>
+        <translation>No se pudo preparar el acceso al dispositivo.</translation>
     </message>
 </context>
 <context>
@@ -6070,6 +6078,18 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Media tool status is read-only.</source>
         <translation type="vanished">El estado de las herramientas multimedia es de solo lectura.</translation>
+    </message>
+    <message>
+        <source>Log file path</source>
+        <translation>Ruta del archivo de registro</translation>
+    </message>
+    <message>
+        <source>Select and copy this path if the folder does not open.</source>
+        <translation>Seleccione y copie esta ruta si la carpeta no se abre.</translation>
+    </message>
+    <message>
+        <source>Open this folder manually: %1</source>
+        <translation>Abra esta carpeta manualmente: %1</translation>
     </message>
 </context>
 <context>
