@@ -185,6 +185,9 @@ class LastFmClient:
     def _call(
         self, values: dict[str, str], secret: str, *, post: bool = False
     ) -> dict[str, object]:
+        # Last.fm requires MD5 for api_sig; a stronger hash breaks its protocol.
+        # https://www.last.fm/api/authspec (section 8). See docs/scrobbling.md
+        # for the security constraint; this remains an authentication operation.
         signature = "".join(key + values[key] for key in sorted(values)) + secret
         params = {
             **values,

@@ -102,3 +102,23 @@ HTTP responses are bounded, credential-bearing redirects are refused, and networ
 and keyring operations run outside the Qt GUI thread. Tests use deterministic HTTP
 doubles and virtual devices; live-account and physical-device acceptance remain
 manual checks.
+
+## Last.fm signature security constraint
+
+Rechecked on 2026-10-25: section 8 of the
+[Last.fm authentication specification](https://www.last.fm/api/authspec) requires
+MD5 for `api_sig`. Replacing it with SHA-256 or another algorithm would break
+authentication and Scrobble submission. This use remains an authentication
+operation; it must not be relabeled as non-security hashing with
+`usedforsecurity=False` to silence a scanner.
+
+[Code-scanning alert #1](https://github.com/TheRealSavi/iOpenPod/security/code-scanning/1)
+(`py/weak-sensitive-data-hashing`) identifies this protocol constraint. Retaining
+Last.fm support requires accepting its legacy signature algorithm. The exception
+is limited to Last.fm request signing, and should be revisited if Last.fm provides
+a stronger supported scheme.
+
+Requests use the fixed HTTPS service endpoint with certificate verification, and
+the HTTP transport refuses redirects. Credentials remain in the native OS keyring;
+the shared secret contributes to the signature but is not sent as a request
+parameter. These controls limit exposure without making MD5 a strong algorithm.
