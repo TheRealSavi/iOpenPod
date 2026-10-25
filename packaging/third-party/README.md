@@ -101,7 +101,7 @@ after packaging the replacement.
 - **NumPy/SciPy OpenBLAS:** the release requirements pin scipy-openblas64
   0.3.34.106.0 and scipy-openblas32 0.3.31.22.0. The matching build repositories
   and their exact OpenBLAS submodule commits are preserved.
-- **Pillow 12.3.0:** the full tagged source includes its Windows build recipe and
+- **Pillow 13.0.0:** the full tagged source includes its Windows build recipe and
   upstream `wheels/dependency_licenses` text set, omitted by the Python sdist.
 - **PyInstaller:** its pinned source, GPL bootloader license with the distribution
   exception, and notices are included. The exception allows distributing bundled

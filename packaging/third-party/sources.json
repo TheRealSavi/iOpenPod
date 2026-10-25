@@ -190,12 +190,12 @@
   },
   {
     "name": "pillow",
-    "version": "12.3.0",
-    "url": "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz",
-    "sha256": "3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce",
-    "filename": "pillow-12.3.0.tar.gz",
+    "version": "13.0.0",
+    "url": "https://files.pythonhosted.org/packages/ce/a4/9cc30690a394a8305e8be4c9036aa16d0dfddadd09079860b582f562496d/pillow-13.0.0.tar.gz",
+    "sha256": "cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510",
+    "filename": "pillow-13.0.0.tar.gz",
     "kind": "python-sdist",
-    "size": 47025035
+    "size": 47058631
   },
   {
     "name": "platformdirs",
@@ -577,12 +577,12 @@
   },
   {
     "name": "pillow-build",
-    "version": "12.3.0",
-    "url": "https://github.com/python-pillow/Pillow/archive/refs/tags/12.3.0.tar.gz",
-    "filename": "pillow-build-12.3.0.tar.gz",
+    "version": "13.0.0",
+    "url": "https://github.com/python-pillow/Pillow/archive/refs/tags/13.0.0.tar.gz",
+    "filename": "pillow-build-13.0.0.tar.gz",
     "kind": "native-source",
-    "sha256": "d7ce60fdf8b3d3b4370ea213834d7c852b1ca16396d4e75e5046be815b11b2fb",
-    "size": 47120631
+    "sha256": "edf59ba26a21ea6d7e6a3755fe139a57297704591c4113ad470dac9ac2ccaf5e",
+    "size": 47158478
   },
   {
     "name": "libsndfile",
