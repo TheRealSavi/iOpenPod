@@ -554,9 +554,10 @@ See ADR-0147, ADR-0148, and ADR-0150.
 The Library Workspace retains Photos and Photo Albums in that same desired snapshot.
 Retained Photo rating/dates and retained user Photo Album names, membership,
 slideshow settings, and music Track references use the existing source-bound Library
-Draft, review, preparation, and safe-save contract. The Photos header can create an
-empty user Photo Album using the selected Device Profile's explicit MHBA type policy;
-the new album uses the same automatic or manual safe-save policy. User Photo Album
+Draft, review, preparation, and safe-save contract. The plus glyph beside the Photo
+Albums sidebar heading creates an empty user Photo Album using the selected Device
+Profile's explicit MHBA type policy; the new album uses the same automatic or manual
+safe-save policy. User Photo Album
 deletion requires explicit omission intent. Selected Photos can also be omitted from
 the Photo Library and every Photo Album as one reversible draft edit. Preparation
 removes their MHII/MHIA references, while Save recoverably removes unshared

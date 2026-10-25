@@ -71,7 +71,7 @@ from iOpenPod.GUI.widgets.photo_album_membership_grid import (
 from iOpenPod.GUI.widgets.photo_grid import PhotoGridView
 from iOpenPod.GUI.widgets.photo_inspector import PhotoInspector
 from iOpenPod.GUI.widgets.search_field import SearchField
-from iOpenPod.GUI.widgets.themed_buttons import ActionButton
+from iOpenPod.GUI.widgets.themed_buttons import ActionButton, IconButton, IconButtonKind
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import (
     LibrarySnapshot,
@@ -252,6 +252,19 @@ def test_photos_route_is_a_three_pane_grid_browser(browser: _Browser) -> None:
     assert source_list.title_label.text() == "PHOTO ALBUMS"
     assert source_list.count_label.text() == "2"
     assert source_list.minimumWidth() == LAYOUT.photo_album_pane_minimum_width
+    create = source_list.findChild(IconButton, "photoCreateAlbum")
+    assert create is not None and create.isVisible()
+    assert not header.isAncestorOf(create)
+    assert create.x() > source_list.count_label.geometry().right()
+    assert (
+        create.geometry().center().y()
+        == source_list.title_label.geometry().center().y()
+    )
+    assert create.geometry().right() == (
+        source_list.rect().right()
+        - source_list.contentsMargins().right()
+        - LAYOUT.space_md
+    )
     assert splitter is not None and splitter.orientation() is Qt.Orientation.Horizontal
     assert splitter.count() == 3
     assert splitter.handleWidth() == LAYOUT.source_list_splitter_handle_width <= 4
@@ -468,13 +481,15 @@ def test_photo_toolbar_searches_and_sorts_the_current_album(
     assert _photo_ids(grid) == (1, 2, 3)
 
 
-def test_photo_header_creates_and_selects_an_empty_album(
+def test_photo_sidebar_plus_creates_and_selects_an_empty_album(
     browser: _Browser,
 ) -> None:
-    create = browser.page.findChild(ActionButton, "photoCreateAlbum")
+    create = browser.page.findChild(IconButton, "photoCreateAlbum")
     albums = browser.page.findChild(QListView, "photoAlbumList")
     assert create is not None and albums is not None
-    assert create.text() == "New Album"
+    assert create.text() == ""
+    assert not create.icon().isNull()
+    assert create.kind is IconButtonKind.QUIET
     assert create.accessibleName() == "Create a new Photo Album"
     assert create.isEnabled()
 
@@ -510,7 +525,7 @@ def test_photo_header_creates_and_selects_an_empty_album(
 def test_photo_album_creation_action_tracks_workspace_availability(
     browser: _Browser,
 ) -> None:
-    create = browser.page.findChild(ActionButton, "photoCreateAlbum")
+    create = browser.page.findChild(IconButton, "photoCreateAlbum")
     assert create is not None and create.isEnabled()
 
     browser.context.library_workspace.set_locked(True)

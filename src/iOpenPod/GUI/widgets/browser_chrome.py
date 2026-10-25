@@ -79,12 +79,12 @@ class SourceListPanel(QFrame):
         self._count.setObjectName("sourceListCount")
         self._count.setProperty("sourceListCount", True)
 
-        heading = QHBoxLayout()
-        heading.setContentsMargins(0, 0, 0, 0)
-        heading.setSpacing(LAYOUT.space_xs)
-        heading.addWidget(self._title)
-        heading.addWidget(self._count)
-        heading.addStretch(1)
+        self._heading = QHBoxLayout()
+        self._heading.setContentsMargins(0, 0, 0, 0)
+        self._heading.setSpacing(LAYOUT.space_xs)
+        self._heading.addWidget(self._title)
+        self._heading.addWidget(self._count)
+        self._heading.addStretch(1)
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(
@@ -94,7 +94,7 @@ class SourceListPanel(QFrame):
             LAYOUT.space_md,
         )
         self._layout.setSpacing(LAYOUT.space_xs)
-        self._layout.addLayout(heading)
+        self._layout.addLayout(self._heading)
 
     @property
     def title_label(self) -> QLabel:
@@ -119,6 +119,11 @@ class SourceListPanel(QFrame):
         """Present a non-negative source count beside the heading."""
 
         self._count.setText(str(max(0, count)))
+
+    def add_action(self, action: QWidget) -> None:
+        """Append a source-list action at the right edge of the heading."""
+
+        self._heading.addWidget(action)
 
     def set_view(
         self,

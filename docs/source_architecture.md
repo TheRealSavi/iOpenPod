@@ -2348,9 +2348,11 @@ rating, original-date, and taken-date fields. Multi-Photo mixed values remain
 unchanged unless explicitly edited, and `LibraryWorkspace` validates and publishes
 the complete selected batch as one revision-checked Library Draft edit. Source size
 and retained representation facts remain read-only in the dialog.
-The Photos page header also owns one **New Album** action. It collects a name and
-stages an empty user Photo Album through the revision-checked Library Workspace. The
-Device Registry supplies the non-master MHBA type required by the selected iPod;
+The Photo Albums sidebar heading owns one quiet **+** glyph action at its right
+edge, matching the Genius Mixes Add control. It replaces the page-header placement
+originally described in ADR-0058. It collects a name and stages an empty user Photo
+Album through the revision-checked Library Workspace. The Device Registry supplies
+the non-master MHBA type required by the selected iPod;
 iPodDB validates that creation policy and appends one typed album Chunk without
 rebuilding retained albums. The action is unavailable without a readable Photo
 Database or while the Workspace is locked, and creation never writes directly to
