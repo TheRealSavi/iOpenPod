@@ -23,6 +23,11 @@ from iPodDB.library.genius_browse import (
     GeniusCollectionKind,
     project_genius_browse,
 )
+from iPodDB.sidecars import (
+    genius_playlist_number,
+    parse_genius_playlist,
+    remap_genius_playlist,
+)
 from iPodDB.SQLiteDB.genius import (
     GeniusConfigRow,
     GeniusData,
@@ -60,10 +65,13 @@ __all__ = [
     "GeniusSpacingRule",
     "GeniusTrack",
     "GeniusUpdate",
+    "genius_playlist_number",
     "make_no_rule_genius_config",
     "parse_genius_database",
+    "parse_genius_playlist",
     "project_genius_browse",
     "read_sqlite_genius_state",
     "reconcile_genius_playlists",
+    "remap_genius_playlist",
     "serialize_genius_database",
 ]

@@ -1008,6 +1008,11 @@ class MainWindow(QMainWindow):
             widget.hide()
         # The normal shell's minimum size must not constrain smaller displays.
         self.setMinimumSize(0, 0)
+        # Recalculate hidden chrome before Qt applies native fullscreen geometry.
+        # A pending layout can otherwise retain the open Playback pane's width.
+        layout = self.layout()
+        if layout is not None:
+            layout.activate()
         self.showFullScreen()
 
     def _exit_synesthesia_fullscreen(self) -> None:

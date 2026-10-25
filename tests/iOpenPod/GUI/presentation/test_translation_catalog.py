@@ -139,6 +139,34 @@ def test_catalog_update_preserves_existing_translations(
     assert translations["CommonActions", "Cancel"] == "Abbrechen"
 
 
+def test_extraction_skips_sources_without_qt_messages(tmp_path: Path) -> None:
+    package = tmp_path / "src/iOpenPod"
+    package.mkdir(parents=True)
+    # Qt's Python extractor crashes on f-strings larger than 64 KiB on Windows.
+    # A stylesheet without translation calls should never reach that parser.
+    (package / "stylesheet.py").write_text(
+        'STYLE = f"' + "{tokens.accent} " * 5000 + '"\n', encoding="utf-8"
+    )
+    (package / "labels.py").write_text(
+        "class Window:\n"
+        "    def title(self):\n"
+        '        return self.tr("Hello")\n'
+        'QT_TRANSLATE_NOOP("Labels", "Ready")\n',
+        encoding="utf-8",
+    )
+    (package / "workflow.py").write_text('source_text("Working…")\n', encoding="utf-8")
+    catalog = tmp_path / "iopenpod_de.ts"
+    extract_catalogs([catalog], root=tmp_path)
+    messages = {
+        (context.findtext("name"), message.findtext("source"))
+        for context in ET.parse(catalog).findall("context")
+        for message in context.findall("message")
+    }
+    assert {("Window", "Hello"), ("Labels", "Ready"), ("Workflow", "Working…")} <= (
+        messages
+    )
+
+
 def test_compiled_catalog_translates_workflows_and_selects_plural_forms(
     catalog: Path, tmp_path: Path
 ) -> None:

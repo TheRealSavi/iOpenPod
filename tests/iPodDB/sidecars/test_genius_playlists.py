@@ -295,6 +295,16 @@ def test_invalid_known_values_fail_without_producing_an_editable_document(
         ),
         b'<?xml version="1.0"?><!DOCTYPE plist [<!ENTITY value "bad">]><plist><dict><key>name</key><string>&value;</string></dict></plist>',
     ],
+    ids=(
+        "empty",
+        "truncated-binary",
+        "truncated-xml",
+        "wrong-root",
+        "missing-fields",
+        "oversized",
+        "duplicate-key",
+        "entity",
+    ),
 )
 def test_malformed_oversized_duplicate_key_and_entity_inputs_are_rejected(
     data: bytes,

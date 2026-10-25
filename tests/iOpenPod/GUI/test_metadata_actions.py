@@ -1103,7 +1103,7 @@ def test_context_signal_shortcuts_and_new_playlist_use_current_selection(
         APPLICATION.processEvents()
         actions = window.findChild(TrackActions)
         table = window.findChild(TrackTable, "tracksTrackTable")
-        page = window.findChild(PlaylistPage)
+        page = window.findChild(PlaylistPage, "playlistsPage")
         assert actions is not None and table is not None and page is not None
         table.selectRow(1)
         shortcuts = table.findChildren(QShortcut)
@@ -1164,7 +1164,7 @@ def test_sorted_duplicate_occurrences_with_dangling_tracks_remove_the_exact_row(
     context.track_model.replace_tracks(_TRACKS)
     window = MainWindow(context, auto_discover=False)
     try:
-        page = window.findChild(PlaylistPage)
+        page = window.findChild(PlaylistPage, "playlistsPage")
         actions = window.findChild(TrackActions)
         assert page is not None and actions is not None
         page.select_playlist(10)

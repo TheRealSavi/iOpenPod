@@ -36,8 +36,8 @@ from iPodDB.library import (
     is_playback_sidecar,
     remap_playback_sidecar,
 )
-from iPodDB.library.genius import GeniusCollectionKind
-from iPodDB.sidecars import (
+from iPodDB.library.genius import (
+    GeniusCollectionKind,
     genius_playlist_number,
     parse_genius_playlist,
     remap_genius_playlist,

@@ -440,7 +440,7 @@ class _PlaylistView(QTreeView):
         super().scrollTo(index, hint)
         # Expansion changes the outer layout; reveal after it has resized the
         # scroll content, rather than clamping to the old scrollbar range.
-        QTimer.singleShot(0, self._reveal_current)
+        QTimer.singleShot(0, self, self._reveal_current)
 
     def _reveal_current(self) -> None:
         index = self.currentIndex()

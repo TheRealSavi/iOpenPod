@@ -423,10 +423,19 @@ def test_sqlite_refresh_rejects_corrupt_companions_before_publication(
         result = SyncExecutor(coordinator).execute(request, lambda _: None, Event())
 
         assert result.status is SyncExecutionStatus.FAILED
-        assert any(
-            "SQLite Library generation failed" in issue.message
-            for issue in result.issues
-        )
+        if name == "Library.itdb":
+            # Genius preservation validates this source before SQLite generation.
+            assert any(
+                issue.code == "resources.invalid_input"
+                and issue.detail
+                == "Genius Mix collections could not be verified. Reload the iPod."
+                for issue in result.issues
+            )
+        else:
+            assert any(
+                "SQLite Library generation failed" in issue.message
+                for issue in result.issues
+            )
         assert result.active is None
         assert not result.completed
         assert cdb.read_bytes() == retained

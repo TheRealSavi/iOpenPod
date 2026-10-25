@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
+from weakref import ref
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 
 from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 
@@ -41,21 +42,17 @@ class _ArtworkWorkerSignals(QObject):
     finished = Signal(int, object)
 
 
-class _ArtworkWork(QRunnable):
+class _ArtworkWork:
     def __init__(
         self,
         token: int,
         key: _RequestKey,
         work: Callable[[], ArtworkImage | None],
     ) -> None:
-        super().__init__()
         self.token = token
         self.key = key
         self.work = work
         self.signals = _ArtworkWorkerSignals()
-        # Qt owns submitted jobs; dropping the Python wrapper alone does not
-        # release a runnable whose auto-deletion is disabled.
-        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -173,7 +170,16 @@ class ArtworkController(QObject):
         )
         self._pending.add(key)
         self._work_items[token] = item
-        self._thread_pool.start(item)
+        # The callable overload avoids PySide retaining deleted QRunnable wrappers
+        # on the pool when short jobs finish during submission. Keep only a weak
+        # reference in the callable so clearing queued work releases its payload.
+        work_ref = ref(item)
+
+        def run() -> None:
+            if (work := work_ref()) is not None:
+                work.run()
+
+        self._thread_pool.start(run)
         return None
 
     @Slot(object)

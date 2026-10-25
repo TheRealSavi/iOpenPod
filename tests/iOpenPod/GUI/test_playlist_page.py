@@ -557,7 +557,7 @@ def test_playlist_play_next_is_connected_to_the_application_queue() -> None:
     context.track_model.replace_tracks(_TRACKS)
     window = MainWindow(context, auto_discover=False)
     try:
-        page = window.findChild(PlaylistPage)
+        page = window.findChild(PlaylistPage, "playlistsPage")
         assert page is not None
         page.select_playlist(10)
         controller = context.playback_controller

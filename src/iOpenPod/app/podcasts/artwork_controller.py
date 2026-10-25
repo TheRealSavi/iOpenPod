@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from weakref import ref
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 
 from iOpenPod.app.podcasts.models import PodcastArtworkImage, PodcastArtworkRequest
 
@@ -39,19 +40,17 @@ class _ArtworkSignals(QObject):
     finished = Signal(int, object)
 
 
-class _ArtworkWork(QRunnable):
+class _ArtworkWork:
     def __init__(
         self,
         token: int,
         key: _RequestKey,
         work: Callable[[], PodcastArtworkImage | None],
     ) -> None:
-        super().__init__()
         self.token = token
         self.key = key
         self.work = work
         self.signals = _ArtworkSignals()
-        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -175,7 +174,14 @@ class PodcastArtworkController(QObject):
         )
         self._pending.add(key)
         self._work_items[token] = item
-        self._pool.start(item)
+        # Qt may retain cancelled callables; the controller owns queued payloads.
+        work_ref = ref(item)
+
+        def run() -> None:
+            if (work := work_ref()) is not None:
+                work.run()
+
+        self._pool.start(run)
         return None
 
     def shutdown(self) -> None:

@@ -9,11 +9,11 @@
     </message>
     <message>
         <source>Choose mixes to keep on your iPod. Manually added mixes never expire.</source>
-        <translation>Elige las mezclas que quieres conservar en el iPod. Las mezclas añadidas manualmente nunca caducan.</translation>
+        <translation type="vanished">Elige las mezclas que quieres conservar en el iPod. Las mezclas añadidas manualmente nunca caducan.</translation>
     </message>
     <message>
         <source>Mood mixes are checked when you save.</source>
-        <translation>Las mezclas de ambiente se comprueban al guardar.</translation>
+        <translation type="vanished">Las mezclas de ambiente se comprueban al guardar.</translation>
     </message>
     <message>
         <source>Proposed Genius Mixes</source>
@@ -21,7 +21,7 @@
     </message>
     <message>
         <source>Analyze when saving</source>
-        <translation>Analizar al guardar</translation>
+        <translation type="vanished">Analizar al guardar</translation>
     </message>
     <message>
         <source>Select to add this mix</source>
@@ -33,7 +33,7 @@
     </message>
     <message>
         <source>Cancel</source>
-        <translation>Cancelar</translation>
+        <translation type="vanished">Cancelar</translation>
     </message>
     <message>
         <source>Add</source>
@@ -1678,7 +1678,7 @@
     </message>
     <message>
         <source>Cancel</source>
-        <translation>Cancelar</translation>
+        <translation type="vanished">Cancelar</translation>
     </message>
     <message>
         <source>Save</source>
@@ -11278,6 +11278,10 @@ Playlists: %3</translation>
         <translation>A un programa de pódcast le falta una identidad persistente única o los metadatos del grupo.</translation>
     </message>
     <message>
+        <source>A deleted Genius seed must be replaced by the first surviving member; other seed edits are unsupported.</source>
+        <translation>Una pista inicial de Genius eliminada debe sustituirse por la primera pista restante; no se admiten otros cambios de la pista inicial.</translation>
+    </message>
+    <message>
         <source>A normalized Podcast Episode position differs from its row identity.</source>
         <translation>La posición de una entrega de pódcast normalizada difiere de su identificador de fila.</translation>
     </message>
@@ -11366,6 +11370,18 @@ Playlists: %3</translation>
         <translation>Los ajustes de pódcasts no se conservaron ni se inicializaron a partir de los valores predeterminados capturados.</translation>
     </message>
     <message>
+        <source>Remove the Genius Playlist emptied by Track deletion.</source>
+        <translation>Elimina la lista de reproducción Genius que ha quedado vacía al eliminar pistas.</translation>
+    </message>
+    <message>
+        <source>The replacement Genius seed differs from the reviewed Playlist.</source>
+        <translation>La nueva pista inicial de Genius no coincide con la lista de reproducción revisada.</translation>
+    </message>
+    <message>
+        <source>The selected native Playlist is not a Genius Playlist.</source>
+        <translation>La lista de reproducción nativa seleccionada no es una lista de reproducción Genius.</translation>
+    </message>
+    <message>
         <source>Tracks</source>
         <translation>Pistas</translation>
     </message>
@@ -11392,6 +11408,10 @@ Playlists: %3</translation>
     <message>
         <source>Unknown (code {code})</source>
         <translation>Desconocido (código {code})</translation>
+    </message>
+    <message>
+        <source>Unsupported Genius collection kind.</source>
+        <translation>Tipo de colección Genius no compatible.</translation>
     </message>
     <message>
         <source>Unsupported Smart Playlist rules are read-only.</source>
@@ -11691,7 +11711,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Keep the native Genius seed Track or explicitly remove its Genius Playlist together with the Track.</source>
-        <translation>Conserva la pista inicial de Genius nativa o elimina explícitamente su lista de reproducción Genius junto con la pista.</translation>
+        <translation type="vanished">Conserva la pista inicial de Genius nativa o elimina explícitamente su lista de reproducción Genius junto con la pista.</translation>
     </message>
     <message>
         <source>Native Genius Mix authoring requires a SQLite artifact target.</source>
@@ -11723,7 +11743,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The retained native Genius seed cannot be edited.</source>
-        <translation>No se puede editar la pista inicial de Genius nativa conservada.</translation>
+        <translation type="vanished">No se puede editar la pista inicial de Genius nativa conservada.</translation>
     </message>
     <message>
         <source>Verifying Genius sources</source>

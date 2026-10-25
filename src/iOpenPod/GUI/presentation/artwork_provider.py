@@ -7,9 +7,10 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from math import ceil
 from typing import TYPE_CHECKING
+from weakref import ref
 
 from PIL import Image
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 from PySide6.QtGui import QImage, QPixmap
 
 from iOpenPod.app.models.artwork import ArtworkImage
@@ -39,19 +40,17 @@ class _ArtworkColorSignals(QObject):
     finished = Signal(int, object)
 
 
-class _ArtworkColorWork(QRunnable):
+class _ArtworkColorWork:
     def __init__(
         self,
         token: int,
         generation: int,
         image: ArtworkImage,
     ) -> None:
-        super().__init__()
         self.token = token
         self.generation = generation
         self.image = image
         self.signals = _ArtworkColorSignals()
-        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -252,7 +251,14 @@ class ArtworkPixmapProvider(QObject):
         )
         self._color_pending[image.artwork_id] = token
         self._color_work_items[token] = item
-        self._color_pool.start(item)
+        # Qt may retain cancelled callables; the provider owns queued payloads.
+        work_ref = ref(item)
+
+        def run() -> None:
+            if (work := work_ref()) is not None:
+                work.run()
+
+        self._color_pool.start(run)
 
     @Slot(int, int, object)
     def _color_work_succeeded(

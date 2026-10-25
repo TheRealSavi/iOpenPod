@@ -310,7 +310,7 @@ class AddGeniusMixesDialog(QDialog):
                 )
             )
             item.setToolTip(self.tr("Select to add this mix"))
-        self._cancel.setText(self.tr("Cancel"))
+        self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._add.setText(self.tr("Add"))
 
     def changeEvent(self, event: QEvent) -> None:
@@ -385,7 +385,7 @@ class GeniusMixSettingsDialog(QDialog):
                 "Expired mixes are replaced with a different random mix at the next Sync. If none is available, the current mix stays. Manual mixes never expire and do not count toward Count. Reducing Count removes excess automatic mixes at the next Sync."
             )
         )
-        self._cancel.setText(self.tr("Cancel"))
+        self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._save.setText(self.tr("Save"))
 
     def changeEvent(self, event: QEvent) -> None:

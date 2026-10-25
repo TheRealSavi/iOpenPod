@@ -758,7 +758,7 @@ class PlayerBar(QFrame):
         if watched is getattr(self, "_rating", None):
             if event.type() in {QEvent.Type.FontChange, QEvent.Type.StyleChange}:
                 if not self._rating_repolishing:
-                    QTimer.singleShot(0, self._refresh_active_height)
+                    QTimer.singleShot(0, self, self._refresh_active_height)
             elif event.type() is QEvent.Type.Leave:
                 self._set_rating_hover(None)
             elif (

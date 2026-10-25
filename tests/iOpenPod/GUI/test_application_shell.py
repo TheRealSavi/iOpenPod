@@ -4,7 +4,15 @@ import sys
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QEvent, QModelIndex, QPoint, QSize, Qt, QUrl
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QModelIndex,
+    QPoint,
+    QSize,
+    Qt,
+    QUrl,
+)
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import (
@@ -17,6 +25,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QStyle,
     QStyleOptionViewItem,
+    QTreeView,
     QWidget,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import (
@@ -91,7 +100,39 @@ from iOpenPod.GUI.widgets.themed_buttons import (
 from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iOpenPod.GUI.widgets.track_list_header import LibrarySplitter
 from iOpenPod.GUI.widgets.track_table import TrackTable
-from iPodDB.library import LibrarySnapshot, MediaType, Track
+from iPodDB.library import LibrarySnapshot, MediaType, Playlist, Track
+
+
+@pytest.mark.parametrize("pending_update", ["player_rating", "playlist_scroll"])
+def test_deferred_widget_updates_are_cancelled_when_shell_is_deleted(
+    pending_update: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _context()
+    context.library_workspace.load(LibrarySnapshot(playlists=(Playlist(1, "Queued"),)))
+    window = MainWindow(context, auto_discover=False)
+    APPLICATION.processEvents()
+    errors: list[tuple[object, ...]] = []
+
+    def record_exception(*args: object) -> None:
+        errors.append(args)
+
+    monkeypatch.setattr(sys, "excepthook", record_exception)
+    try:
+        if pending_update == "player_rating":
+            rating = window.findChild(QLabel, "playerRating")
+            assert rating is not None
+            rating.setStyleSheet("font-size: 40pt;")
+        else:
+            tree = window.findChild(QTreeView, "playlistTree")
+            assert tree is not None
+            tree.scrollTo(tree.model().index(0, 0))
+    finally:
+        window.close()
+        context.shutdown()
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        APPLICATION.processEvents()
+    assert errors == []
 
 
 def test_draft_all_changes_setting_controls_review_visibility_immediately() -> None:
