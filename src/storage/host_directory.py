@@ -320,13 +320,17 @@ def pin_host_directory(
     # Enumerate the pinned descriptor, not a path that could be renamed or swapped.
     directory_flag = cast("int", vars(os)["O_DIRECTORY"])
     no_follow = cast("int", vars(os)["O_NOFOLLOW"])
+    read_flags = os.O_RDONLY | directory_flag | no_follow
+    ancestor_flags = getattr(os, "O_PATH", os.O_RDONLY) | directory_flag | no_follow
+    components = path.parts[1:]
     with ExitStack() as stack:
-        descriptor = os.open(path.anchor, os.O_RDONLY | directory_flag | no_follow)
+        descriptor = os.open(path.anchor, ancestor_flags if components else read_flags)
         stack.callback(os.close, descriptor)
-        for component in path.parts[1:]:
-            descriptor = os.open(
-                component, os.O_RDONLY | directory_flag | no_follow, dir_fd=descriptor
-            )
+        for index, component in enumerate(components):
+            # Only the listed directory needs a readable descriptor. Linux
+            # ancestors need search permission; other POSIX Hosts retain O_RDONLY.
+            flags = read_flags if index == len(components) - 1 else ancestor_flags
+            descriptor = os.open(component, flags, dir_fd=descriptor)
             stack.callback(os.close, descriptor)
         yield descriptor
 

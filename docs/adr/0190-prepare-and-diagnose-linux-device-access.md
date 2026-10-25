@@ -68,6 +68,9 @@ graphs and fails closed for unsupported layouts. Search-only ancestor permission
 discovery without udev properties, and additional recovery-location support remain
 separate follow-ups.
 
+ADR-0192 subsequently permits search-only ancestors while retaining pinned
+no-follow reads and normal leaf read/listing permissions.
+
 Regression coverage uses captured Linux mount/udev facts with real temporary files,
 same-device and unresolved-backing rejection, discovery/setup integration, repeated
 failure logging, a real detached child that records its environment and fails to

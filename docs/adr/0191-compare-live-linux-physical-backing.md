@@ -47,6 +47,9 @@ privileges, dependencies, permissions, device mutations, or journal migrations a
 introduced. Search-only ancestor access and discovery without udev remain separate
 compatibility work from PR #283.
 
+ADR-0192 subsequently handles search-only ancestors. udev remains a Linux
+prerequisite; this work does not add a replacement discovery mechanism.
+
 ## Evidence and limits
 
 Regression tests reach the real Storage recovery preflight using captured mounts,

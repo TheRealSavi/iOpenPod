@@ -337,6 +337,12 @@ must never be treated as the permanent identity of a device.
 
 Defines safe path abstractions.
 
+Read-only Host and device access pins each ancestor without following links. On
+Linux, ancestor handles require search access rather than directory-listing access;
+the file or directory being read still requires its ordinary read permission.
+Final identity checks and Connection Generation validation remain required. See
+ADR-0192 for the descriptor contract and native permission tests.
+
 For device-relative access, use a dedicated type such as:
 
 ```python

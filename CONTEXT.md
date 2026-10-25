@@ -14,6 +14,11 @@ then beyond it.
 
 ## Current stage
 
+Linux Storage access now permits known readable files and readable directory
+listings beneath search-only ancestors. It retains pinned no-follow access,
+ordinary file/listing permissions, final identity checks, and cancellation cleanup.
+Native permission and path-swap tests cover Host and device reads. See ADR-0192.
+
 Linux Host recovery now compares live physical backing independently of persisted
 Device Identity. Supported local filesystems, bind aliases, eCryptfs, device-mapper
 stacks, and complete MD RAID graphs reject any shared backing with the selected
