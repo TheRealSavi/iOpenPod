@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from storage.errors import MountInspectionError
+from storage.platform.linux_btrfs import read_filesystem_info
 
 if TYPE_CHECKING:
     from storage.platform.linux import LinuxMountRecord
@@ -54,6 +55,7 @@ class _BackingResolver:
     def __init__(self, records: tuple[LinuxMountRecord, ...], sys_class: Path) -> None:
         self.records = records
         self.sys_devices = (sys_class.parent.parent / "devices").resolve(strict=True)
+        self.sys_btrfs = sys_class.parent.parent / "fs" / "btrfs"
         self.evidence: dict[str, str] = {}
         self.nodes: dict[str, set[Path]] = {}
         for entry in sys_class.iterdir():
@@ -92,6 +94,8 @@ class _BackingResolver:
                     "eCryptfs backing must be an absolute directory"
                 )
             return self.for_path(backing, visiting)
+        if record.filesystem_type == "btrfs":
+            return self.for_btrfs(requested, record, visiting)
         if record.filesystem_type not in _SINGLE_DEVICE_FILESYSTEMS or any(
             option.startswith(_EXTERNAL_DEVICE_OPTIONS) for option in record.options
         ):
@@ -100,6 +104,49 @@ class _BackingResolver:
                 f"{record.mount_point}; use recovery storage on a supported local filesystem"
             )
         return self.for_block(record.device_number, visiting)
+
+    def for_btrfs(
+        self, path: Path, record: LinuxMountRecord, visiting: frozenset[str]
+    ) -> frozenset[str]:
+        info = read_filesystem_info(path, record.mount_id)
+        visiting = self.enter(f"btrfs:{info.fsid}", visiting)
+        self.evidence[f"btrfs:{path}"] = repr(info)
+        root = self.sys_btrfs / info.fsid
+        if self.read(root / "exclusive_operation") != "none":
+            raise MountInspectionError("Btrfs storage reconfiguration is in progress")
+        members = tuple(sorted((root / "devinfo").iterdir()))
+        self.evidence[f"btrfs-members:{root}"] = repr(tuple(p.name for p in members))
+        if (
+            len(members) != info.device_count
+            or any(not p.name.isascii() or not p.name.isdecimal() for p in members)
+            or any(int(p.name) < 1 for p in members)
+            or max(int(p.name) for p in members) != info.max_device_id
+        ):
+            raise MountInspectionError("Incomplete Btrfs device membership")
+        for member in members:
+            if (
+                self.read(member / "missing") != "0"
+                or self.read(member / "replace_target") != "0"
+                or self.read(member / "in_fs_metadata") != "1"
+                or self.read(member / "fsid") != info.fsid
+            ):
+                raise MountInspectionError(
+                    "Missing, replacing, or seed Btrfs device cannot establish recovery backing"
+                )
+        links = tuple(sorted((root / "devices").iterdir()))
+        targets = tuple(p.resolve(strict=True) for p in links)
+        self.evidence[f"btrfs-devices:{root}"] = repr(tuple(str(p) for p in targets))
+        if len(targets) != info.device_count or len(set(targets)) != len(targets):
+            raise MountInspectionError("Incomplete Btrfs block-device membership")
+        leaves: set[str] = set()
+        for target in targets:
+            number = self.read(target / "dev")
+            if self.nodes.get(number) != {target}:
+                raise MountInspectionError("Unresolved Btrfs block-device backing")
+            leaves.update(self.for_block(number, visiting))
+        if read_filesystem_info(path, record.mount_id) != info:
+            raise MountInspectionError("Btrfs membership changed during inspection")
+        return frozenset(leaves)
 
     def for_block(self, number: str, visiting: frozenset[str]) -> frozenset[str]:
         visiting = self.enter(f"block:{number}", visiting)

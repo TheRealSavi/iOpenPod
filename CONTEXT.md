@@ -22,9 +22,11 @@ Native permission and path-swap tests cover Host and device reads. See ADR-0192.
 Linux Host recovery now compares live physical backing independently of persisted
 Device Identity. Supported local filesystems, bind aliases, eCryptfs, device-mapper
 stacks, and complete MD RAID graphs reject any shared backing with the selected
-iPod. Incomplete, changing, and unsupported graphs fail closed; Btrfs and loop
-images remain unsupported recovery locations. Existing recovery journal keys are
-unchanged. See ADR-0191 for the supported boundary and native acceptance limits.
+iPod. Btrfs recovery resolves every member device, including subvolumes and members
+on supported device mappings. Missing, changing, and unsupported backing fails
+closed; loop images remain unsupported recovery locations. Existing recovery
+journal keys are unchanged. See ADR-0191 and ADR-0193 for the supported boundary
+and native acceptance limits.
 Device inspection failures retain their details in the picker and
 log new or changed failures. Native frozen Linux desktop helpers receive a clean
 Host environment, and Settings > About exposes a copyable log path. These changes
