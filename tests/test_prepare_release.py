@@ -32,10 +32,23 @@ def checkout(tmp_path: Path) -> Path:
     return tmp_path
 
 
-@pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
-def test_candidates_do_not_request_a_tag(checkout: Path, event: str) -> None:
+@pytest.mark.parametrize(
+    "event,ref",
+    [
+        ("pull_request", "refs/pull/123/merge"),
+        ("workflow_dispatch", "refs/heads/main"),
+        ("workflow_dispatch", "refs/heads/feature"),
+        ("push", "refs/heads/main"),
+        ("pull_request_target", "refs/heads/main"),
+        ("workflow_run", "refs/heads/main"),
+        ("issue_comment", "refs/heads/main"),
+        ("pull_request", "refs/tags/v2.0.1"),
+        ("workflow_run", "refs/tags/v2.0.1"),
+    ],
+)
+def test_candidates_do_not_request_a_tag(checkout: Path, event: str, ref: str) -> None:
     assert prepare(
-        checkout, event=event, ref="refs/heads/main", publish_requested=False
+        checkout, event=event, ref=ref, publish_requested=False
     ) == ReleaseRequest("v2.0.1", False, False)
 
 
@@ -120,6 +133,9 @@ def test_existing_tag_cannot_be_reused_for_new_code(checkout: Path) -> None:
         ("push", "refs/tags/v2.0.1", False, "missing"),
         ("workflow_dispatch", "refs/heads/feature", True, "requires main"),
         ("pull_request", "refs/pull/1/merge", True, "requires main"),
+        ("pull_request_target", "refs/heads/main", True, "requires main"),
+        ("workflow_run", "refs/tags/v2.0.1", True, "requires main"),
+        ("issue_comment", "refs/heads/main", True, "requires main"),
     ],
 )
 def test_invalid_requests_are_rejected(

@@ -13,8 +13,10 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           version: "0.12.7"
       - name: Install build and desktop tools
@@ -38,7 +40,7 @@ jobs:
           flatpak run --env=QT_QPA_PLATFORM=offscreen io.github.therealsavi.iOpenPod --smoke-test
           flatpak build-bundle build/flatpak-repo dist/iOpenPod-Linux-x86_64.flatpak io.github.therealsavi.iOpenPod
           sha256sum dist/iOpenPod-Linux-x86_64.flatpak > dist/iOpenPod-Linux-x86_64.flatpak.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: flatpak-candidate
           if-no-files-found: error

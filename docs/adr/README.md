@@ -261,3 +261,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0186: Reconcile Genius collections after Track removal](0186-reconcile-genius-collections-after-track-removal.md)
 - [ADR-0187: Propose audio-informed Genius Mixes](0187-propose-audio-informed-genius-mixes.md)
 - [ADR-0188: Bound authored Genius candidate rows](0188-bound-authored-genius-candidate-rows.md)
+- [ADR-0189: Protect GitHub release credentials](0189-protect-github-release-credentials.md)
