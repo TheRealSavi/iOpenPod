@@ -34,6 +34,7 @@ from storage.models import (
 )
 from storage.platform.base import ObservationDiscoveryResult
 from storage.platform.common import capabilities, disk_usage
+from storage.platform.linux_backing import capture_backing
 from storage.platform.linux_eject import LinuxDeviceEjector
 from storage.platform.linux_eject import set_volume_label as set_udisks_volume_label
 from storage.scsi_vpd import collect_scsi_vpd
@@ -232,6 +233,22 @@ class LinuxPlatformAdapter:
     def enable_volume_icon(self, observation: VolumeObservation) -> None:
         # Desktop environments read the ordinary companion files.
         pass
+
+    def paths_share_physical_device(self, first: Path, second: Path) -> bool:
+        """Use comparable kernel backing evidence without changing journal identities."""
+        try:
+            records = self._records()
+            before = capture_backing((first, second), records, _SYS_CLASS_BLOCK)
+            after = capture_backing((first, second), records, _SYS_CLASS_BLOCK)
+            if before != after or records != self._records():
+                raise MountInspectionError(
+                    "Linux physical backing changed during Host path validation"
+                )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise MountInspectionError(
+                f"Could not establish Linux physical backing: {error}"
+            ) from error
+        return bool(before.devices[0] & before.devices[1])
 
     def physical_device_id_for_path(self, path: Path) -> PhysicalDeviceId | None:
         requested = Path(os.path.realpath(path))

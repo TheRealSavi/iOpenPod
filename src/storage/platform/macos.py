@@ -30,7 +30,7 @@ from storage.models import (
     VolumeObservation,
 )
 from storage.platform.base import ObservationDiscoveryResult
-from storage.platform.common import capabilities, disk_usage
+from storage.platform.common import capabilities, disk_usage, paths_share_single_device
 from storage.platform.macos_eject import MacOSDeviceEjector
 from storage.platform.macos_vpd import probe_macos_scsi
 
@@ -195,6 +195,11 @@ class MacOSPlatformAdapter:
             volume_uuid=volume_uuid,
             case_sensitive=case_sensitive,
             retained=retained,
+        )
+
+    def paths_share_physical_device(self, first: Path, second: Path) -> bool | None:
+        return paths_share_single_device(
+            self.physical_device_id_for_path, first, second
         )
 
     def physical_device_id_for_path(self, path: Path) -> PhysicalDeviceId | None:

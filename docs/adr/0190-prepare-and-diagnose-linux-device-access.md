@@ -63,6 +63,11 @@ case or establish the ADR-0167 separation guarantee for arbitrary storage stacks
 Physical-backing resolution, search-only ancestor permissions, discovery without
 udev properties, and durable ZFS/network/FUSE recovery locations need follow-up.
 
+ADR-0191 subsequently adds a separate live backing comparison for supported block
+graphs and fails closed for unsupported layouts. Search-only ancestor permissions,
+discovery without udev properties, and additional recovery-location support remain
+separate follow-ups.
+
 Regression coverage uses captured Linux mount/udev facts with real temporary files,
 same-device and unresolved-backing rejection, discovery/setup integration, repeated
 failure logging, a real detached child that records its environment and fails to
