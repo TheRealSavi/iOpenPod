@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>iOpenPod updates</title><item><title>iOpenPod 2.0.15</title><sparkle:version>2.0.15</sparkle:version><sparkle:minimumSystemVersion>12.3</sparkle:minimumSystemVersion><enclosure url="https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.15/iOpenPod-2.0.15-sparkle-update-macOS-x86_64.zip" length="173409401" type="application/octet-stream" sparkle:edSignature="gEAZKy1WRqtNpurYD9jVZ0A3HiQm8kRj54b2XczDPz7HkhEPTaAB38xJf7mG9IejG0KJ70yg8cXmvWdCf1p1Bg=="></enclosure></item></channel></rss><!-- sparkle-signatures:
-edSignature: BJlGiIIg4F0sW+XsdTTPt7XwPAxk3iARt1LvxayrFC6bpkm0m6U/EwZmFpgMuXGmZeXejcZnAAfV8EtWFwQeDg==
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>iOpenPod updates</title><item><title>iOpenPod 2.0.16</title><sparkle:version>2.0.16</sparkle:version><sparkle:minimumSystemVersion>12.3</sparkle:minimumSystemVersion><enclosure url="https://github.com/TheRealSavi/iOpenPod/releases/download/v2.0.16/iOpenPod-2.0.16-sparkle-update-macOS-x86_64.zip" length="173726303" type="application/octet-stream" sparkle:edSignature="ugY3trXXJ7hRaCmYQIvLe4YPr4OA5lwWTaMuIio7z66clRqLG5Y7GzhlLL3EffVi1l+u+5Qxm4gs1QBA+cjuCQ=="></enclosure></item></channel></rss><!-- sparkle-signatures:
+edSignature: uzHhTBKbmK8dvTFeM+KzCh5uH0XL6mEs2DTJwi/xkr1r1CzK9A/q4uWstqutGeznFBK993yJHnI3/8Wu4go/Ag==
 length: 888
 -->
