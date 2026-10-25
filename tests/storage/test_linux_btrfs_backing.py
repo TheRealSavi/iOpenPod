@@ -56,9 +56,9 @@ def btrfs_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BtrfsLayout
     layout = BtrfsLayout(recovery, root, BtrfsFilesystemInfo(_FSID, 1, 1))
     layout.add_member((tmp_path / "sys/class/block/fixture-host1").resolve(), 1)
 
-    def info(path: Path, device_number: str | None = None) -> BtrfsFilesystemInfo:
+    def info(path: Path, mount_id: str) -> BtrfsFilesystemInfo:
         assert path.is_relative_to(recovery.home)
-        assert device_number in {None, "0:42"}
+        assert mount_id in {"2", "4"}
         return layout.info
 
     monkeypatch.setattr("storage.platform.linux_backing.read_filesystem_info", info)
@@ -102,15 +102,14 @@ def test_btrfs_descendant_must_match_the_captured_mount(
     descendant = layout.home / "different-filesystem"
     descendant.mkdir()
 
-    def info(path: Path, _device_number: str | None = None) -> BtrfsFilesystemInfo:
+    def info(path: Path, mount_id: str) -> BtrfsFilesystemInfo:
         if path == descendant:
-            return replace(
-                btrfs_layout.info, fsid="87654321-1234-5678-9abc-123456789abc"
-            )
+            assert mount_id == "2"
+            raise MountInspectionError("Btrfs mount changed before inspection")
         return btrfs_layout.info
 
     monkeypatch.setattr("storage.platform.linux_backing.read_filesystem_info", info)
-    with pytest.raises(MountInspectionError, match="does not match"):
+    with pytest.raises(MountInspectionError, match="mount changed"):
         layout.adapter.paths_share_physical_device(descendant, layout.ipod)
 
 
@@ -272,7 +271,7 @@ def test_btrfs_changes_within_one_observation_are_rejected(
 ) -> None:
     calls = 0
 
-    def info(_path: Path, _device_number: str | None = None) -> BtrfsFilesystemInfo:
+    def info(_path: Path, _mount_id: str) -> BtrfsFilesystemInfo:
         nonlocal calls
         calls += 1
         return (

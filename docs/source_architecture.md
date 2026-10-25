@@ -695,8 +695,9 @@ snapshot; repeated backing observations and a final mount-table check reject obs
 changes. Shared physical leaves are rejected even when udev identity formats differ.
 For Btrfs, a read-only filesystem query binds the mounted filesystem identity and
 device count to its complete sysfs membership. Every member then follows the same
-block-device graph. Subvolumes and bind mounts compare filesystem identities even
-when their filesystem device numbers differ. Missing, cyclic, incomplete, and
+block-device graph. An open directory's kernel mount ID binds subvolumes and bind
+mounts to the captured mount table even when filesystem device numbers differ.
+Missing, cyclic, incomplete, and
 unsupported graphs fail closed. Loop images, unknown virtual devices, Btrfs seed
 layouts, and unresolved filesystem backing remain unsupported. Btrfs membership
 changes and active storage reconfiguration also reject validation.

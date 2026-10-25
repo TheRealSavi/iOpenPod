@@ -19,11 +19,12 @@ pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="requires Linux 
 _FSID = "12345678-1234-5678-9abc-123456789abc"
 
 
-def _device_number(path: Path) -> str:
-    if sys.platform != "linux":
-        pytest.skip("requires Linux")
-    device = path.stat().st_dev
-    return f"{os.major(device)}:{os.minor(device)}"
+def _mount_id(path: Path) -> str:
+    records = parse_mountinfo(Path("/proc/self/mountinfo").read_text())
+    return max(
+        (r for r in reversed(records) if path.is_relative_to(r.mount_point)),
+        key=lambda r: len(str(r.mount_point)),
+    ).mount_id
 
 
 def test_btrfs_ioctl_matches_installed_linux_headers(tmp_path: Path) -> None:
@@ -31,7 +32,8 @@ def test_btrfs_ioctl_matches_installed_linux_headers(tmp_path: Path) -> None:
     if compiler is None:
         pytest.skip("C compiler required for native UAPI layout validation")
     binary = tmp_path / "btrfs-uapi"
-    source = """+#include <linux/btrfs.h>
+    source = """
+#include <linux/btrfs.h>
 #include <stddef.h>
 #include <stdio.h>
 int main(void) {
@@ -104,12 +106,12 @@ def test_btrfs_ioctl_validates_identity_and_closes_descriptor(
 
     monkeypatch.setattr(os, "open", opened_directory)
     monkeypatch.setattr(fcntl, "ioctl", ioctl)
-    number = "0:0" if failure == "mount" else _device_number(directory)
+    mount_id = "0" if failure == "mount" else _mount_id(directory)
     if failure:
         with pytest.raises((MountInspectionError, PermissionError)):
-            read_filesystem_info(directory, number)
+            read_filesystem_info(directory, mount_id)
     else:
-        assert read_filesystem_info(directory, number) == BtrfsFilesystemInfo(
+        assert read_filesystem_info(directory, mount_id) == BtrfsFilesystemInfo(
             _FSID, 2, 17
         )
     assert len(opened) == 1
@@ -134,7 +136,7 @@ def test_live_btrfs_membership_and_loop_rejection() -> None:
             key=lambda r: len(str(r.mount_point)),
         )
         assert record.filesystem_type == "btrfs"
-        info = read_filesystem_info(path)
+        info = read_filesystem_info(path, record.mount_id)
         snapshots.append(info)
         assert info.device_count == 2
         assert info.max_device_id == 2

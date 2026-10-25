@@ -10,10 +10,10 @@ Rejecting every Btrfs recovery location excludes ordinary Linux installations,
 including a single internal disk. A mount source still cannot establish the full
 device set. Storage therefore uses the read-only `BTRFS_IOC_FS_INFO` interface on
 an open directory to obtain the filesystem UUID, device count, and maximum device
-ID. The captured mount device number must match its mount root. Descendant
-subvolumes can have different device numbers; their filesystem UUID and membership
-must match the mount root instead. Open descriptors are always closed, and named
-directory identity is checked after the query.
+ID. The open descriptor's `/proc/self/fdinfo` mount ID must match the captured
+mount-table entry. Filesystem device numbers are unsuitable for this comparison:
+Btrfs subvolumes and bind aliases can report different values. Open descriptors
+are always closed, and named directory identity is checked after the query.
 
 The filesystem UUID selects `/sys/fs/btrfs/<uuid>`. Its `devinfo` entries and
 `devices` links must both match the kernel device count, with unique resolved block
@@ -64,3 +64,4 @@ References:
 - [Btrfs sysfs device membership](https://btrfs.readthedocs.io/en/latest/Administration.html#uuid-devinfo)
 - [Linux Btrfs UAPI](https://github.com/torvalds/linux/blob/v6.8/include/uapi/linux/btrfs.h)
 - [Linux Btrfs sysfs implementation](https://github.com/torvalds/linux/blob/v6.8/fs/btrfs/sysfs.c)
+- [Descriptor mount identity](https://man7.org/linux/man-pages/man5/proc_pid_fdinfo.5.html)

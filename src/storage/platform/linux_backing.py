@@ -108,14 +108,7 @@ class _BackingResolver:
     def for_btrfs(
         self, path: Path, record: LinuxMountRecord, visiting: frozenset[str]
     ) -> frozenset[str]:
-        info = read_filesystem_info(record.mount_point, record.device_number)
-        # An unmounted subvolume can have a different st_dev than its containing
-        # mount. Compare filesystem UUIDs, while still binding the mount root to
-        # mountinfo's device number.
-        if path != record.mount_point and read_filesystem_info(path) != info:
-            raise MountInspectionError(
-                "Btrfs directory does not match its mounted filesystem"
-            )
+        info = read_filesystem_info(path, record.mount_id)
         visiting = self.enter(f"btrfs:{info.fsid}", visiting)
         self.evidence[f"btrfs:{path}"] = repr(info)
         root = self.sys_btrfs / info.fsid
@@ -151,7 +144,7 @@ class _BackingResolver:
             if self.nodes.get(number) != {target}:
                 raise MountInspectionError("Unresolved Btrfs block-device backing")
             leaves.update(self.for_block(number, visiting))
-        if read_filesystem_info(path) != info:
+        if read_filesystem_info(path, record.mount_id) != info:
             raise MountInspectionError("Btrfs membership changed during inspection")
         return frozenset(leaves)
 

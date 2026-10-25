@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import struct
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, cast
+from pathlib import Path
+from typing import Protocol, cast
 from uuid import UUID
 
 from storage.errors import MountInspectionError
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 # linux/btrfs.h: _IOR(0x94, 31, struct btrfs_ioctl_fs_info_args).
 # The fixed-size UAPI structure is 1024 bytes, starting with two u64s and a UUID.
@@ -39,10 +38,8 @@ class BtrfsFilesystemInfo:
     max_device_id: int
 
 
-def read_filesystem_info(
-    path: Path, device_number: str | None = None
-) -> BtrfsFilesystemInfo:
-    """Bind a read-only ioctl to the directory and captured mount device number."""
+def read_filesystem_info(path: Path, mount_id: str) -> BtrfsFilesystemInfo:
+    """Bind a read-only ioctl to the directory and captured kernel mount ID."""
     if (
         sys.platform != "linux"
         or platform.machine().lower() not in _GENERIC_IOCTL_ARCHES
@@ -54,9 +51,10 @@ def read_filesystem_info(
     descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         before = os.fstat(descriptor)
-        if device_number is not None and (
-            f"{os.major(before.st_dev)}:{os.minor(before.st_dev)}" != device_number
-        ):
+        # Btrfs subvolumes have distinct st_dev values, including bind aliases.
+        # fdinfo's mount ID binds this actual open to the mountinfo snapshot.
+        fdinfo = Path(f"/proc/self/fdinfo/{descriptor}").read_text(encoding="ascii")
+        if re.findall(r"^mnt_id:\s*(\d+)$", fdinfo, re.MULTILINE) != [mount_id]:
             raise MountInspectionError("Btrfs mount changed before inspection")
         buffer = bytearray(_FS_INFO_SIZE)
         ioctl(descriptor, _FS_INFO, buffer)
