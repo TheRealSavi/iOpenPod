@@ -117,27 +117,103 @@ def test_sync_profiles_retained_audio_and_reuses_persistent_cache(
         assert all(isinstance(row.payload, GeniusMetadata) for row in graph.metadata)
         # A new coordinator/service proves reuse is persistent, not just a live map.
         device = _with_analysis(device, cache, decoder)
+        progress.clear()
         second = SyncExecutor(device.coordinator).execute(
-            _refresh_request(device.active), lambda _: None, Event()
+            _refresh_request(device.active), progress.append, Event()
         )
         assert second.status is SyncExecutionStatus.SUCCESS, second.issues
         assert len(decoder.calls) == 2
+        assert not any(event.phase == "draft.genius.audio" for event in progress)
         assert parse_genius_database(path.read_bytes()).data == graph
     finally:
         device.coordinator.close()
 
 
-def test_sync_analyzes_prepared_new_media_on_host(tmp_path: Path) -> None:
+@pytest.mark.parametrize("model", ["MB565", "MD479"])
+@pytest.mark.parametrize("warm_cache", [False, True])
+def test_sync_analyzes_prepared_new_media_on_host(
+    tmp_path: Path, model: str, warm_cache: bool
+) -> None:
     decoder = _Decoder()
-    device = _with_analysis(build_device(tmp_path), tmp_path / "profiles.json", decoder)
+    device = _with_analysis(
+        build_device(tmp_path, model=model, compressed_database=model == "MD479"),
+        tmp_path / "profiles.json",
+        decoder,
+    )
     try:
+        if warm_cache:
+            initial = SyncExecutor(device.coordinator).execute(
+                _refresh_request(device.active), lambda _: None, Event()
+            )
+            assert initial.status is SyncExecutionStatus.SUCCESS, initial.issues
+        progress: list[WriteProgress] = []
         result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
-            _request(device, _host(tmp_path, "New song")), lambda _: None, Event()
+            _request(device, _host(tmp_path, "New song")), progress.append, Event()
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert len(decoder.calls) == 3
         assert sum(isinstance(source, HostPath) for source in decoder.calls) == 1
         assert not any(issue.code.startswith("genius.") for issue in result.issues)
+        if warm_cache:
+            audio_progress = [p for p in progress if p.phase == "draft.genius.audio"]
+            assert [(p.completed, p.total) for p in audio_progress] == [(0, 1), (1, 1)]
+            assert audio_progress[0].active_items[0].name == "New song"
+        device = _with_analysis(device, tmp_path / "profiles.json", decoder)
+        progress.clear()
+        repeated = SyncExecutor(device.coordinator).execute(
+            _refresh_request(device.active), progress.append, Event()
+        )
+        assert repeated.status is SyncExecutionStatus.SUCCESS, repeated.issues
+        assert len(decoder.calls) == 3
+        assert not any(event.phase == "draft.genius.audio" for event in progress)
+    finally:
+        device.coordinator.close()
+
+
+def test_committed_profile_cache_failure_does_not_fail_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = _with_analysis(
+        build_device(tmp_path), tmp_path / "profiles.json", _Decoder()
+    )
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise OSError("Host profile cache is unavailable")
+
+    monkeypatch.setattr(GeniusAnalysisService, "remember_committed", fail)
+    try:
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            _request(device, _host(tmp_path, "New song")), lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        assert any(t.title == "New song" for t in result.active.library.tracks)
+        assert any(issue.code == "save.genius_cache_warning" for issue in result.issues)
+    finally:
+        device.coordinator.close()
+
+
+def test_interrupted_sync_does_not_associate_profiles_with_uncommitted_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = _with_analysis(
+        build_device(tmp_path), tmp_path / "profiles.json", _Decoder()
+    )
+
+    def unexpected(*args: object, **kwargs: object) -> None:
+        pytest.fail("Uncommitted media must not receive a device profile cache entry")
+
+    def interrupt(event: WriteProgress) -> None:
+        if event.phase == "save.storage.publishing":
+            raise OSError("Simulated publication interruption")
+
+    monkeypatch.setattr(GeniusAnalysisService, "remember_committed", unexpected)
+    try:
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            _request(device, _host(tmp_path, "New song")), interrupt, Event()
+        )
+        assert result.status is SyncExecutionStatus.FAILED, result.issues
+        device.assert_original()
     finally:
         device.coordinator.close()
 

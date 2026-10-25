@@ -152,6 +152,100 @@ def test_cache_reuse_never_crosses_device_identity(tmp_path: Path) -> None:
     assert len(decoder.sources) == 2
 
 
+def test_only_uncached_tracks_are_queued_and_reported(tmp_path: Path) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    tracks = [snapshot.tracks[0]]
+    for track_id in (2, 3):
+        name = f"song-{track_id}.mp3"
+        (root / name).write_bytes(b"audio")
+        tracks.append(
+            replace(
+                tracks[0],
+                track_id=track_id,
+                metadata=TrackMetadata(location=name),
+                ipod=IPodTrackDetails(db_track_id=100 + track_id),
+            )
+        )
+    decoder = _Decoder()
+    service = GeniusAnalysisService(decoder=decoder, profiler=_profile)
+    service.analyze(
+        replace(snapshot, tracks=(tracks[0], tracks[2])),
+        session,
+        checkpoint=_checkpoint,
+    )
+    decoder.sources.clear()
+    progress: list[GeniusAnalysisProgress] = []
+    snapshot = replace(snapshot, tracks=tuple(tracks))
+    result = service.analyze(
+        snapshot, session, checkpoint=_checkpoint, progress=progress.append
+    )
+    assert decoder.sources == [DevicePath("song-2.mp3")]
+    assert [(event.completed, event.total) for event in progress] == [(0, 1), (1, 1)]
+    assert progress[0].active == (GeniusAnalysisActivity(2, "Song"),)
+    assert progress[-1].active == ()
+    assert tuple(result.profiles) == (1, 2, 3)
+    assert len(result.dependencies) == 3
+    progress.clear()
+    decoder.sources.clear()
+    repeated = service.analyze(
+        snapshot, session, checkpoint=_checkpoint, progress=progress.append
+    )
+    assert repeated == result
+    assert progress == []
+    assert decoder.sources == []
+
+
+@pytest.mark.parametrize("publication", ["matching", "missing", "different", "changed"])
+def test_prepared_profile_reuse_requires_matching_committed_content(
+    tmp_path: Path, publication: str
+) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    host = tmp_path / "replacement.mp3"
+    host.write_bytes(b"replacement")
+    with capture_host_file(HostPath(host), checkpoint=_checkpoint) as captured:
+        fingerprint = captured.fingerprint
+    source = LibraryMediaSource(
+        HostPath(host),
+        fingerprint,
+        prepared_audio(
+            1,
+            FileDependency("song.mp3", fingerprint.size, fingerprint.sha256),
+            AudioEncoding.MP3,
+        ),
+    )
+    cache = AtomicHostFile(tmp_path / "profiles.json")
+    decoder = _Decoder()
+    service = GeniusAnalysisService(cache, decoder, profiler=_profile)
+    result = service.analyze(snapshot, session, media=(source,), checkpoint=_checkpoint)
+    (root / "song.mp3").write_bytes(
+        b"other audio" if publication == "different" else b"replacement"
+    )
+    committed = session.fingerprint(DevicePath("song.mp3"))
+    if publication == "changed":
+        (root / "song.mp3").write_bytes(b"changed after commit")
+    # Publication can assign the persistent identity after Host analysis.
+    snapshot = replace(
+        snapshot,
+        tracks=(
+            replace(
+                snapshot.tracks[0], track_id=7, ipod=IPodTrackDetails(db_track_id=777)
+            ),
+        ),
+    )
+    service.remember_committed(
+        result,
+        snapshot,
+        session,
+        {} if publication == "missing" else {DevicePath("song.mp3"): committed},
+    )
+    repeated = GeniusAnalysisService(cache, decoder, profiler=_profile).analyze(
+        snapshot, session, checkpoint=_checkpoint
+    )
+    assert tuple(repeated.profiles) == (7,)
+    assert len(decoder.sources) == (1 if publication == "matching" else 2)
+    assert len(repeated.dependencies) == 1
+
+
 def test_new_and_replaced_tracks_use_prepared_host_sources(tmp_path: Path) -> None:
     root, _, session, snapshot = _device(tmp_path)
     host = tmp_path / "replacement.mp3"

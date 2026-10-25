@@ -2072,6 +2072,26 @@ class DeviceCoordinator:
                             ),
                         )
                     )
+                    if issued.genius_analysis is not None:
+                        try:
+                            self._genius_analysis.remember_committed(
+                                issued.genius_analysis,
+                                updated.library,
+                                session,
+                                fingerprints,
+                            )
+                        except Exception as error:
+                            # This disposable Host cache cannot undo a verified
+                            # Library commit or turn it into a failed save.
+                            issues += (
+                                WriteIssue(
+                                    "save.genius_cache_warning",
+                                    "Library changes were saved, but Genius audio profiles could not be cached for the iPod. A later Sync may repeat audio analysis.",
+                                    severity=IssueSeverity.WARNING,
+                                    phase="save",
+                                    detail=exception_text(error),
+                                ),
+                            )
                     if (
                         not retain_recovery
                         and any(

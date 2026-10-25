@@ -44,9 +44,11 @@ the earlier no-rule experiments do not validate them.
 Cold Sync analyzes up to two prepared Host sources or retained iPod music Tracks
 concurrently through Storage. The normal application keeps a versioned,
 checksummed, bounded Host cache of successful compact profiles. Unchanged
-sources reuse profiles; changed sources invalidate them. PCM is transient. Each
+sources reuse profiles; changed sources invalidate them. Cache lookup and source
+checks happen before queuing audio work. Only uncached Tracks enter the analysis
+step, so a fully cached Sync shows no audio-analysis step. PCM is transient. Each
 active Track has its own indeterminate progress bar during analysis; the overall
-bar counts completed Tracks. Decoder and profiler phases do not provide reliable
+bar counts only Tracks needing analysis. Decoder and profiler phases do not provide reliable
 percentages. Decode or cache failure is reported with metadata fallback, while
 cancellation, device disconnect, and source mutation stop preparation. Device
 identities are checked again before publication.
@@ -55,6 +57,15 @@ The current decoder accepts up to 15 minutes of audio and 300 seconds of decodin
 time per Track; longer or undecodable Tracks retain metadata candidates. Spectral
 and tempo analysis use bounded blocks. The disposable cache is capped at 50,000
 records and 64 MiB.
+
+After a successful Storage commit, profiles computed from prepared Host media are
+also cached against the final iPod Track identity and committed file fingerprint.
+The published size and SHA-256 must match the analyzed content. This reuses Storage's
+verified output evidence without another media read; later lookups still check
+the device file identity. Interrupted publication creates no device cache entries.
+Failure to save this disposable cache reports a warning without failing an already
+committed Sync. Newly added or replaced songs therefore need no second analysis
+merely because their source moved from the Host to the iPod.
 
 The graph is published with the Library through the existing reviewed Storage
 transaction. Classic root `Extras.itdb` is captured, checked, and published with

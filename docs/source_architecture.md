@@ -863,6 +863,10 @@ The Application Layer analyzes prepared Host media or retained device media thro
 Storage's pinned read-only inputs. A bounded, disposable Host cache retains compact
 successful profiles with analysis version and source facts. Audio vectors stay
 outside iPodDB and outside Synesthesia's runtime-only Track Analysis contract.
+Cache lookup precedes worker admission, so only uncached Tracks enter audio-analysis
+progress. After commit, matching published size and SHA-256 associate prepared Host
+profiles with final iPod identities using Storage's verified output fingerprints.
+This adds no device media read, and a cache failure cannot undo a committed Library.
 At most two Tracks are decoded and profiled concurrently; result collection,
 progress, and cache writes stay on the preparation thread. Per-Track source
 validation and cancellation still apply before any profile is accepted.

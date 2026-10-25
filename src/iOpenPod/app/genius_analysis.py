@@ -23,6 +23,7 @@ from storage import (
     AtomicHostFile,
     ConcurrentModificationError,
     DevicePath,
+    FileIdentity,
     FilePreconditionError,
     FilesystemSessionError,
     HostPath,
@@ -42,7 +43,7 @@ if TYPE_CHECKING:
 
     from iOpenPod.app.media.importing import LibraryMediaSource
     from iPodDB.library import LibrarySnapshot, Track
-    from storage import FileIdentity, FilesystemSession
+    from storage import FileFingerprint, FilesystemSession
 
 
 GENIUS_SAMPLE_RATE_HZ = 22_050
@@ -209,7 +210,6 @@ class GeniusAnalysisProgress:
     total: int
     track_id: int
     title: str
-    cached: bool = False
     active: tuple[GeniusAnalysisActivity, ...] = ()
 
 
@@ -222,10 +222,21 @@ class GeniusAnalysisDependency:
 
 
 @dataclass(frozen=True, slots=True)
+class GeniusPreparedProfile:
+    """Analyzed Host content awaiting verified publication at its device path."""
+
+    path: DevicePath
+    size: int
+    sha256: str
+    profile: GeniusAudioProfile
+
+
+@dataclass(frozen=True, slots=True)
 class GeniusAnalysisResult:
     profiles: Mapping[int, GeniusAudioProfile]
     issues: tuple[GeniusAnalysisIssue, ...] = ()
     dependencies: tuple[GeniusAnalysisDependency, ...] = ()
+    prepared_profiles: tuple[GeniusPreparedProfile, ...] = ()
 
     def validate_sources(
         self, session: FilesystemSession, *, checkpoint: Callable[[], None]
@@ -260,7 +271,6 @@ class _Source:
 class _AnalyzedTrack:
     source: _Source
     profile: GeniusAudioProfile
-    cached: bool
 
 
 class GeniusAnalysisService:
@@ -298,10 +308,9 @@ class GeniusAnalysisService:
         if len(supplied) != len(media):
             raise ValueError("Genius analysis media must have unique Track IDs")
         issues: list[GeniusAnalysisIssue] = []
-        profiles: dict[int, GeniusAudioProfile] = {}
-        dependencies: dict[DevicePath, GeniusAnalysisDependency] = {}
         try:
-            self._cache.load(checkpoint)
+            with self._cache_lock:
+                self._cache.load(checkpoint)
         except (
             FilesystemSessionError,
             ConcurrentModificationError,
@@ -316,7 +325,8 @@ class GeniusAnalysisService:
             nonlocal cache_writable
             if cache_writable:
                 try:
-                    self._cache.save(checkpoint, force=force)
+                    with self._cache_lock:
+                        self._cache.save(checkpoint, force=force)
                 except (
                     FilesystemSessionError,
                     ConcurrentModificationError,
@@ -337,6 +347,8 @@ class GeniusAnalysisService:
             and not is_video_track(track)
         )
         stopped = Event()
+        outcomes: dict[int, _AnalyzedTrack | GeniusAnalysisIssue] = {}
+        pending: list[tuple[Track, _Source]] = []
 
         def worker_checkpoint() -> None:
             if stopped.is_set():
@@ -345,76 +357,78 @@ class GeniusAnalysisService:
             checkpoint()
 
         try:
+            # Resolve cache hits before admitting work. Cached Tracks still get
+            # source checks, but never appear as active acoustic analysis.
+            for track in tracks:
+                checkpoint()
+                resolved = self._resolve_track(
+                    track, supplied.get(track.track_id), session, checkpoint
+                )
+                if isinstance(resolved, _Source):
+                    pending.append((track, resolved))
+                else:
+                    outcomes[track.track_id] = resolved
             with ThreadPoolExecutor(max_workers=_MAX_ANALYSIS_WORKERS) as workers:
-                for first in range(0, len(tracks), _MAX_ANALYSIS_WORKERS):
+                for first in range(0, len(pending), _MAX_ANALYSIS_WORKERS):
                     checkpoint()
-                    batch = tracks[first : first + _MAX_ANALYSIS_WORKERS]
-                    futures = tuple(
-                        workers.submit(
-                            self._analyze_track,
-                            track,
-                            supplied.get(track.track_id),
-                            session,
-                            decoder,
-                            worker_checkpoint,
-                        )
-                        for track in batch
-                    )
+                    batch = pending[first : first + _MAX_ANALYSIS_WORKERS]
                     if progress is not None:
                         try:
                             progress(
                                 GeniusAnalysisProgress(
                                     first,
-                                    len(tracks),
-                                    batch[0].track_id,
-                                    batch[0].title,
+                                    len(pending),
+                                    batch[0][0].track_id,
+                                    batch[0][0].title,
                                     active=tuple(
                                         GeniusAnalysisActivity(
                                             track.track_id, track.title
                                         )
-                                        for track in batch
+                                        for track, _ in batch
                                     ),
                                 ),
                             )
                         except BaseException:
                             stopped.set()
                             raise
-                    for index, (track, future) in enumerate(
+                    futures = tuple(
+                        workers.submit(
+                            self._analyze_track,
+                            track,
+                            source,
+                            session,
+                            decoder,
+                            worker_checkpoint,
+                        )
+                        for track, source in batch
+                    )
+                    for index, ((track, _), future) in enumerate(
                         zip(batch, futures, strict=True), first
                     ):
                         try:
                             outcome = future.result()
                             checkpoint()
-                            if isinstance(outcome, GeniusAnalysisIssue):
-                                issues.append(outcome)
-                                cached = False
-                            else:
-                                if not outcome.cached:
-                                    with self._cache_lock:
-                                        self._cache.remember(
-                                            outcome.source.key, outcome.profile
-                                        )
-                                profiles[track.track_id] = outcome.profile
-                                if outcome.source.dependency is not None:
-                                    dependencies[outcome.source.dependency.path] = (
-                                        outcome.source.dependency
-                                    )
-                                cached = outcome.cached
+                            outcomes[track.track_id] = outcome
+                            if isinstance(outcome, _AnalyzedTrack):
                                 with self._cache_lock:
-                                    save()
+                                    self._cache.remember(
+                                        outcome.source.key, outcome.profile
+                                    )
+                                save()
                             if progress is not None:
                                 progress(
                                     GeniusAnalysisProgress(
                                         index + 1,
-                                        len(tracks),
+                                        len(pending),
                                         track.track_id,
                                         track.title,
-                                        cached,
                                         tuple(
                                             GeniusAnalysisActivity(
-                                                pending.track_id, pending.title
+                                                remaining.track_id, remaining.title
                                             )
-                                            for pending in batch[index - first + 1 :]
+                                            for remaining, _ in batch[
+                                                index - first + 1 :
+                                            ]
                                         ),
                                     )
                                 )
@@ -425,49 +439,137 @@ class GeniusAnalysisService:
             # Successful earlier work survives a failed source. Cancellation is
             # still propagated; checkpointed cache writes never mask it.
             save(force=True)
+        profiles: dict[int, GeniusAudioProfile] = {}
+        dependencies: dict[DevicePath, GeniusAnalysisDependency] = {}
+        prepared_profiles: list[GeniusPreparedProfile] = []
+        for track in tracks:
+            checkpoint()
+            outcome = outcomes[track.track_id]
+            if isinstance(outcome, GeniusAnalysisIssue):
+                issues.append(outcome)
+                continue
+            profiles[track.track_id] = outcome.profile
+            if outcome.source.dependency is not None:
+                dependencies[outcome.source.dependency.path] = outcome.source.dependency
+            incoming = supplied.get(track.track_id)
+            if incoming is not None:
+                prepared_profiles.append(
+                    GeniusPreparedProfile(
+                        DevicePath(incoming.media.file.relative_path),
+                        incoming.fingerprint.size,
+                        incoming.fingerprint.sha256,
+                        outcome.profile,
+                    )
+                )
         result = GeniusAnalysisResult(
-            MappingProxyType(profiles), tuple(issues), tuple(dependencies.values())
+            MappingProxyType(profiles),
+            tuple(issues),
+            tuple(dependencies.values()),
+            tuple(prepared_profiles),
         )
         result.validate_sources(session, checkpoint=checkpoint)
         return result
 
-    def _analyze_track(
+    def remember_committed(
+        self,
+        result: GeniusAnalysisResult,
+        snapshot: LibrarySnapshot,
+        session: FilesystemSession,
+        fingerprints: Mapping[DevicePath, FileFingerprint | None],
+    ) -> None:
+        """Associate profiles only with matching, Storage-verified output bytes.
+
+        Use the committed fingerprint's identity, never a fresh observation that
+        might already describe different content. The next lookup rechecks it.
+        """
+        prepared = {str(item.path): item for item in result.prepared_profiles}
+        if not prepared:
+            return
+        checkpoint = _session_checkpoint(session, lambda: None)
+        for track in snapshot.tracks:
+            checkpoint()
+            item = prepared.get(track.metadata.location)
+            if item is None:
+                continue
+            path = item.path
+            fingerprint = fingerprints.get(path)
+            if fingerprint is None or (item.size, item.sha256) != (
+                fingerprint.size,
+                fingerprint.sha256,
+            ):
+                continue
+            identity = FileIdentity(
+                fingerprint.size,
+                fingerprint.modified_ns,
+                fingerprint.device,
+                fingerprint.inode,
+            )
+            with self._cache_lock:
+                self._cache.remember(
+                    _device_key(track, path, session, identity), item.profile
+                )
+        with self._cache_lock:
+            self._cache.save(checkpoint, force=True)
+
+    def _resolve_track(
         self,
         track: Track,
         supplied: LibraryMediaSource | None,
+        session: FilesystemSession,
+        checkpoint: Callable[[], None],
+    ) -> _Source | _AnalyzedTrack | GeniusAnalysisIssue:
+        try:
+            source = _source(track, supplied, session, checkpoint)
+            with self._cache_lock:
+                profile = self._cache.get(source.key)
+            if profile is None:
+                return source
+            source.validate(session)
+            checkpoint()
+            return _AnalyzedTrack(source, profile)
+        except (
+            FilesystemSessionError,
+            ConcurrentModificationError,
+            FilePreconditionError,
+        ):
+            raise
+        except (OSError, StorageError, ValueError) as error:
+            return GeniusAnalysisIssue(
+                track.track_id, "genius.audio_unavailable", str(error)
+            )
+
+    def _analyze_track(
+        self,
+        track: Track,
+        source: _Source,
         session: FilesystemSession,
         decoder: GeniusPCMDecoder,
         checkpoint: Callable[[], None],
     ) -> _AnalyzedTrack | GeniusAnalysisIssue:
         try:
-            source = _source(track, supplied, session, checkpoint)
-            with self._cache_lock:
-                profile = self._cache.get(source.key)
-            cached = profile is not None
             try:
-                if profile is None:
-                    if track.length_ms > MAX_GENIUS_AUDIO_SECONDS * 1000:
-                        raise GeniusAudioDecodeError(
-                            "Track exceeds the 15-minute acoustic analysis limit"
-                        )
-                    pcm = decoder.decode(
-                        source.path,
-                        input_suffix=PurePosixPath(track.metadata.location).suffix,
-                        session=session,
-                        checkpoint=checkpoint,
+                checkpoint()
+                source.validate(session)
+                if track.length_ms > MAX_GENIUS_AUDIO_SECONDS * 1000:
+                    raise GeniusAudioDecodeError(
+                        "Track exceeds the 15-minute acoustic analysis limit"
                     )
-                    if len(pcm) > _MAX_PCM_BYTES:
-                        raise GeniusAudioDecodeError(
-                            "Decoded audio exceeds its byte limit"
-                        )
-                    profile = self._profiler(
-                        pcm, sample_rate_hz=GENIUS_SAMPLE_RATE_HZ, checkpoint=checkpoint
-                    )
-                    del pcm
+                pcm = decoder.decode(
+                    source.path,
+                    input_suffix=PurePosixPath(track.metadata.location).suffix,
+                    session=session,
+                    checkpoint=checkpoint,
+                )
+                if len(pcm) > _MAX_PCM_BYTES:
+                    raise GeniusAudioDecodeError("Decoded audio exceeds its byte limit")
+                profile = self._profiler(
+                    pcm, sample_rate_hz=GENIUS_SAMPLE_RATE_HZ, checkpoint=checkpoint
+                )
+                del pcm
             finally:
                 source.validate(session)
                 checkpoint()
-            return _AnalyzedTrack(source, profile, cached)
+            return _AnalyzedTrack(source, profile)
         except (
             FilesystemSessionError,
             ConcurrentModificationError,
@@ -527,8 +629,21 @@ def _source(
         return _Source(supplied.source, key, host=observed)
     path = DevicePath(track.metadata.location)
     identity = session.file_identity(path)
+    return _Source(
+        path,
+        _device_key(track, path, session, identity),
+        dependency=GeniusAnalysisDependency(path, identity),
+    )
+
+
+def _device_key(
+    track: Track,
+    path: DevicePath,
+    session: FilesystemSession,
+    identity: FileIdentity,
+) -> str:
     mounted = session.mounted_volume
-    key = _key(
+    return _key(
         (
             "device",
             mounted.physical_device.id.value,
@@ -541,7 +656,6 @@ def _source(
             identity.inode,
         )
     )
-    return _Source(path, key, dependency=GeniusAnalysisDependency(path, identity))
 
 
 def _key(values: tuple[object, ...]) -> str:

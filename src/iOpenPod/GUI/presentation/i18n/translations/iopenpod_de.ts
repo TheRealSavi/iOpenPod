@@ -3799,7 +3799,7 @@
     </message>
     <message>
         <source>New Album</source>
-        <translation>Neues Album</translation>
+        <translation type="vanished">Neues Album</translation>
     </message>
     <message>
         <source>Create a new Photo Album</source>
@@ -9636,6 +9636,10 @@ Playlists: %3</translation>
     <message>
         <source>Library changes were saved and recovery files were removed, but the final device flush could not be confirmed. Safely eject before unplugging.</source>
         <translation>Änderungen an der Mediathek wurden gespeichert und Wiederherstellungsdateien entfernt. Der Abschluss der letzten Schreibvorgänge auf dem Gerät konnte jedoch nicht bestätigt werden. Werfen Sie den iPod vor dem Trennen sicher aus.</translation>
+    </message>
+    <message>
+        <source>Library changes were saved, but Genius audio profiles could not be cached for the iPod. A later Sync may repeat audio analysis.</source>
+        <translation>Die Änderungen an der Mediathek wurden gespeichert, aber die Genius-Audioprofile konnten nicht für den iPod zwischengespeichert werden. Bei einer späteren Synchronisierung wird die Audioanalyse möglicherweise wiederholt.</translation>
     </message>
     <message>
         <source>Library changes were saved, but Sync history could not be updated. Keep the iPod connected and rescan before another Sync.</source>
