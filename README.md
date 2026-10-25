@@ -72,6 +72,12 @@ underlying error. **Settings → About** shows a copyable log file path even if
 `~/.local/state/iOpenPod/iopenpod.log`, or `$XDG_STATE_HOME/iOpenPod/iopenpod.log`
 when `XDG_STATE_HOME` is configured; a custom log setting takes precedence.
 
+Linux device selection also validates that persistent Host recovery storage is
+separate from the selected iPod. Unsupported or incomplete storage layouts are
+blocked with a diagnostic; Btrfs and loop-backed recovery locations currently need
+additional support. See [the backing-storage contract](docs/adr/0191-compare-live-linux-physical-backing.md)
+for supported layouts and remaining Linux acceptance work.
+
 Mac App Store, Flathub, and Snap Store remain planned. Check the
 [website](https://iopenpod.com/#install) for channel availability.
 

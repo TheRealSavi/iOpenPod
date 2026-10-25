@@ -43,6 +43,10 @@ class PlatformAdapter(Protocol):
 
     def physical_device_id_for_path(self, path: Path) -> PhysicalDeviceId | None: ...
 
+    def paths_share_physical_device(self, first: Path, second: Path) -> bool | None:
+        """Compare live backing; None means separation cannot be established."""
+        ...
+
     def probe(
         self,
         observation: VolumeObservation,

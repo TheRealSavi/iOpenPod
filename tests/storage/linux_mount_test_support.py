@@ -25,6 +25,43 @@ class LinuxRecoveryLayout:
     storage: Storage
 
 
+def add_linux_block(
+    sysfs: Path,
+    name: str,
+    number: str,
+    *,
+    parent: Path | None = None,
+    virtual: bool = False,
+    slaves: tuple[Path, ...] = (),
+) -> Path:
+    """Create a kernel-shaped block graph, including real sysfs symlinks."""
+    root = sysfs / "devices" / ("virtual" if virtual else "pci") / "block"
+    node = (parent if parent is not None else root) / name
+    node.mkdir(parents=True)
+    (node / "dev").write_text(number, encoding="ascii")
+    if parent is not None:
+        (node / "partition").write_text("1", encoding="ascii")
+    else:
+        (node / "diskseq").write_text(number.split(":")[1], encoding="ascii")
+    (node / "slaves").mkdir()
+    if name.startswith("dm-"):
+        (node / "dm").mkdir()
+        (node / "dm" / "suspended").write_text("0", encoding="ascii")
+    if name.startswith("md"):
+        (node / "md").mkdir()
+        (node / "md" / "raid_disks").write_text(str(len(slaves)), encoding="ascii")
+        (node / "md" / "degraded").write_text("0", encoding="ascii")
+    links = sysfs / "class" / "block"
+    links.mkdir(parents=True, exist_ok=True)
+    try:
+        (links / name).symlink_to(node, target_is_directory=True)
+        for slave in slaves:
+            (node / "slaves" / slave.name).symlink_to(slave, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"Directory symlinks unavailable: {error}")
+    return node
+
+
 def linux_recovery_layout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, backing_on_device: bool = False
 ) -> LinuxRecoveryLayout:
@@ -50,11 +87,11 @@ def linux_recovery_layout(
     def udev_properties(record: LinuxMountRecord) -> dict[str, str]:
         return properties.copy() if record.mount_id == "3" else {}
 
-    def whole_disk_number(source: str) -> str:
-        return {
-            "/dev/fixture-host1": "8:0",
-            "/dev/fixture-ipod1": "8:16",
-        }.get(source, "")
+    sysfs = tmp_path / "sys"
+    host_disk = add_linux_block(sysfs, "fixture-host", "8:0")
+    add_linux_block(sysfs, "fixture-host1", "8:1", parent=host_disk)
+    ipod_disk = add_linux_block(sysfs, "fixture-ipod", "8:16")
+    add_linux_block(sysfs, "fixture-ipod1", "8:17", parent=ipod_disk)
 
     def probe(
         observation: VolumeObservation, page_plan: ScsiVpdPagePlan | None = None
@@ -66,7 +103,7 @@ def linux_recovery_layout(
     monkeypatch.setattr(adapter, "udev_properties_for_record", udev_properties)
     monkeypatch.setattr(adapter, "probe", probe)
     monkeypatch.setattr(
-        "storage.platform.linux._whole_disk_device_number", whole_disk_number
+        "storage.platform.linux._SYS_CLASS_BLOCK", sysfs / "class" / "block"
     )
     storage = Storage(
         adapter,

@@ -14,10 +14,12 @@ then beyond it.
 
 ## Current stage
 
-Linux Host recovery checks now resolve eCryptfs backing storage before comparing
-Physical Device identities. Covered direct-device and eCryptfs cases reject
-recovery on the selected iPod; unresolved storage remains blocked. Mapped and
-multi-device backing relationships still need broader separation checks.
+Linux Host recovery now compares live physical backing independently of persisted
+Device Identity. Supported local filesystems, bind aliases, eCryptfs, device-mapper
+stacks, and complete MD RAID graphs reject any shared backing with the selected
+iPod. Incomplete, changing, and unsupported graphs fail closed; Btrfs and loop
+images remain unsupported recovery locations. Existing recovery journal keys are
+unchanged. See ADR-0191 for the supported boundary and native acceptance limits.
 Device inspection failures retain their details in the picker and
 log new or changed failures. Native frozen Linux desktop helpers receive a clean
 Host environment, and Settings > About exposes a copyable log path. These changes
