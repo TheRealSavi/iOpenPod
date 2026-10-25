@@ -494,8 +494,9 @@ exercise Windows x64, macOS arm64 and x86_64, and Linux x64 and validate wheel
 contents. Native environments exclude dev tools and optional GPU dependencies.
 
 Pushing a tag that exactly matches `v<version>` in `pyproject.toml` automatically
-builds and publishes a public GitHub Release, then publishes the same version to
-PyPI. A manual Build and release run on a version tag does the same. To create the
+builds release candidates, then waits for maintainer approval before publishing
+to GitHub, PyPI, and the signed update feed. A manual Build and release run on a
+version tag does the same. To create the
 tag through GitHub, open **Actions → Build and release → Run workflow**, select
 **main**, and enable **Publish to GitHub and PyPI**.
 The workflow reads the version from `pyproject.toml`, builds that exact commit,
@@ -504,6 +505,14 @@ An existing tag must already point at that commit; tags are never moved. A manua
 branch run with publication unchecked only retains candidate artifacts, as do pull
 requests. Other branches cannot request publication. No workflow publishes to a
 Store.
+
+Open the run's **Review deployments** to approve `github-release` before GitHub
+publication. After it succeeds, approve the `pypi` and `release-signing`
+deployments as they become ready. Only `TheRealSavi` is a required reviewer;
+self-review is allowed so the sole maintainer can release. Each environment
+allows the `main` branch and `v*` tags, with administrator approval bypass disabled.
+The `pypi` name and workflow identity remain unchanged for Trusted Publishing.
+Candidate runs and pull requests do not request release credentials or approvals.
 
 Publication waits for all four builds and their frozen smoke tests. It verifies
 each native archive and macOS disk image checksum, collects dependency inventories
@@ -541,8 +550,8 @@ with these GitHub values:
 | Workflow filename | `release.yml` |
 | Environment | `pypi` |
 
-Create the matching `pypi` environment in GitHub repository settings. If deployment
-branch/tag restrictions are enabled, allow both `main` (manual publication) and
+Create the matching protected `pypi` environment in GitHub repository settings.
+Require maintainer approval and allow both `main` (manual publication) and
 version tags matching `v*`. No PyPI API-token secret is needed. See
 [PyPI's setup guide](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
 
