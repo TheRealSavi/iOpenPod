@@ -6,6 +6,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -78,8 +79,8 @@ def test_btrfs_ioctl_validates_identity_and_closes_descriptor(
 
     def opened_directory(path: Path, flags: int) -> int:
         assert path == directory
-        assert flags & os.O_DIRECTORY
-        assert flags & os.O_NOFOLLOW
+        assert flags & cast("int", vars(os)["O_DIRECTORY"])
+        assert flags & cast("int", vars(os)["O_NOFOLLOW"])
         assert not flags & (os.O_WRONLY | os.O_RDWR)
         descriptor = real_open(path, flags)
         opened.append(descriptor)
