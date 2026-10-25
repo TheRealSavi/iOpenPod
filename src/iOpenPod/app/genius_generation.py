@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from iPodDB.library import LibrarySnapshot, Track
 
 
-MAX_GENIUS_CANDIDATES = 256
+MAX_GENIUS_CANDIDATES = 32
 _MAX_ID = (1 << 64) - 1
 _ARTIST_CANDIDATES = 16
 _ALBUM_CANDIDATES = 8

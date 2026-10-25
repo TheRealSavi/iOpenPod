@@ -260,3 +260,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0185: Remove native Genius collections explicitly](0185-remove-native-genius-collections-explicitly.md)
 - [ADR-0186: Reconcile Genius collections after Track removal](0186-reconcile-genius-collections-after-track-removal.md)
 - [ADR-0187: Propose audio-informed Genius Mixes](0187-propose-audio-informed-genius-mixes.md)
+- [ADR-0188: Bound authored Genius candidate rows](0188-bound-authored-genius-candidate-rows.md)

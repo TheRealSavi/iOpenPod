@@ -36,7 +36,7 @@ Canonical Playlists, matching saved sidecars, Mix containers, and Mix ownership
 are updated through the reviewed Library save. See ADR-0185.
 
 Sync now prepares native Genius relationships for all music Tracks on
-Genius-capable iPods. Elephant-Ear-style audio profiles rank bounded candidates
+Genius-capable iPods. Elephant-Ear-style audio profiles rank up to 32 candidates
 using body similarity and outro-to-intro compatibility, with metadata fallback.
 Profiles are cached on the Host; short Tracks use body-only analysis. Stable Genius
 identities, real artist and album keys, and native spacing rules accompany the

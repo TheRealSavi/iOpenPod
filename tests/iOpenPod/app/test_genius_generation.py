@@ -497,6 +497,21 @@ def test_large_homogeneous_library_has_bounded_unique_candidates_and_global_reac
     ) == size * (12 + 8 * MAX_GENIUS_CANDIDATES)
 
 
+def test_rehearsal_sized_library_uses_32_candidates_per_track() -> None:
+    tracks = tuple(_track(index) for index in range(1, 113))
+
+    update = generate_genius_update(LibrarySnapshot(tracks))
+
+    graph = _candidates(update)
+    assert len(graph) == 112
+    assert {len(candidates) for candidates in graph.values()} == {32}
+    assert sum(
+        len(serialize_genius_similarities(row.payload))
+        for row in update.data.similarities
+        if row.payload is not None
+    ) == 112 * (12 + 8 * 32)
+
+
 def test_generated_data_round_trips_through_the_public_database_codec() -> None:
     snapshot = LibrarySnapshot(tuple(_track(index) for index in range(-8, 12)))
     update = generate_genius_update(snapshot)

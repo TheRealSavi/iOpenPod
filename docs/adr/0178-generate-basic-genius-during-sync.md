@@ -7,6 +7,7 @@
 ADR-0179 extends this generation policy with cached Elephant-Ear audio profiles,
 real artist and album keys, and native spacing rules. The transaction, identity,
 capability, and collection-preservation decisions here remain in effect.
+ADR-0188 reduces the authored candidate cap from 256 to 32.
 
 ## Context
 

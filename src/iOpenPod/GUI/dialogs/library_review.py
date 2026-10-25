@@ -242,6 +242,7 @@ class LibraryReviewDialog(QDialog):
         actions = {
             "add": self.tr("Add"),
             "edit": self.tr("Edit"),
+            "update": self.tr("Update"),
             "delete": self.tr("Delete"),
             "retag": self.tr("Update tags"),
             "replace": self.tr("Replace"),
@@ -255,6 +256,7 @@ class LibraryReviewDialog(QDialog):
     def _subject_label(self, subject: str) -> str:
         return {
             "library": self.tr("Library"),
+            "genius": self.tr("Genius"),
             "media": self.tr("Media"),
             "track": self.tr("Track"),
             "playlist": self.tr("Playlist"),

@@ -2004,6 +2004,10 @@
         <translation>Bearbeiten</translation>
     </message>
     <message>
+        <source>Update</source>
+        <translation>Aktualisieren</translation>
+    </message>
+    <message>
         <source>Delete</source>
         <translation>Löschen</translation>
     </message>
@@ -2026,6 +2030,10 @@
     <message>
         <source>Library</source>
         <translation>Mediathek</translation>
+    </message>
+    <message>
+        <source>Genius</source>
+        <translation>Genius</translation>
     </message>
     <message>
         <source>Media</source>

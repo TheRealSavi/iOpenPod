@@ -47,11 +47,13 @@ class _ReviewTranslator(QTranslator):
         return {
             "Add": "Hinzufügen",
             "Edit": "Bearbeiten",
+            "Update": "Aktualisieren",
             "Delete": "Löschen",
             "Update tags": "Tags aktualisieren",
             "Replace": "Ersetzen",
             "Repair": "Reparieren",
             "Media": "Medien",
+            "Genius": "Genius",
             "Photo Album": "Fotoalbum",
             "Playlist": "Wiedergabeliste",
             "{action} · {subject}": "{subject}: {action}",
@@ -100,6 +102,41 @@ def test_review_renders_supported_actions_and_preserves_identity(
         tree.itemDoubleClicked.emit(item, 0)
         assert navigated.count() == 1
         assert navigated.at(0) == [subject, 42]
+    finally:
+        dialog.close()
+        APPLICATION.removeTranslator(translator)
+        context.shutdown()
+
+
+def test_review_renders_native_genius_update_and_later_issues() -> None:
+    context = build_context()
+    translator = _ReviewTranslator()
+    assert APPLICATION.installTranslator(translator)
+    dialog = LibraryReviewDialog(context.library_write_controller)
+    try:
+        snapshot = LibrarySnapshot()
+        context.library_write_controller.review = LibraryReview(
+            LibraryWritePlan(
+                LibraryDraft("revision", snapshot),
+                WriteTarget(),
+                (LibraryChange("genius", None, "update", "Native Genius data"),),
+                (),
+            ),
+            LibraryWriteResult((WriteIssue("test.issue", "Review error"),)),
+        )
+        dialog.refresh()
+        tree = dialog.findChild(QTreeWidget, "libraryReviewItems")
+        assert tree is not None
+        changes = tree.topLevelItem(0)
+        issues = tree.topLevelItem(1)
+        assert changes is not None and issues is not None
+        item = changes.child(0)
+        assert item is not None
+        assert (item.text(0), item.text(1)) == (
+            "Genius: Aktualisieren",
+            "Native Genius data",
+        )
+        assert issues.text(0) == "Errors (1)"
     finally:
         dialog.close()
         APPLICATION.removeTranslator(translator)

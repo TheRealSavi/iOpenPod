@@ -23,7 +23,10 @@ falls back to body comparison, rather than matching a fabricated silent vector.
 Libraries with more than 512 profiles use bounded deterministic projection
 neighborhoods; smaller ones use exact body comparisons. Missing profiles use artist, album, and genre
 neighborhoods. A Library-wide ring fallback keeps the graph connected. Each Track
-has at most 256 candidates, an application cap rather than a firmware limit.
+has at most 32 candidates, an application cap rather than a firmware limit.
+The smaller cap is a playback-latency precaution under
+[ADR-0188](adr/0188-bound-authored-genius-candidate-rows.md); native timing and
+queue behavior still require hardware comparison.
 Retained unique Genius IDs are reused; others are allocated deterministically with
 collision checks. See [ADR-0179](adr/0179-rank-genius-with-elephant-ear-audio-profiles.md).
 

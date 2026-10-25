@@ -5,6 +5,9 @@
 - Extends: ADR-0176 and ADR-0178
 - Preserves: ADR-0042, ADR-0123, ADR-0156, and ADR-0172
 
+ADR-0188 reduces the authored candidate cap from 256 to 32 while preserving this
+ranking and spacing policy.
+
 ## Context
 
 The working native Genius Sync path uses metadata neighborhoods and placeholder
