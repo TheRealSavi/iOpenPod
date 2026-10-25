@@ -1,6 +1,7 @@
 """Exercise physical separation through the real Storage recovery preflight."""
 
 import hashlib
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -22,8 +23,29 @@ from storage import (
     VolumeIdentityChangedError,
 )
 from storage.models import VolumeObservation
-from storage.platform.linux import LinuxMountRecord
+from storage.platform.linux import (
+    LinuxMountRecord,
+    LinuxPlatformAdapter,
+    parse_mountinfo,
+)
 from storage.platform.linux_backing import LinuxBacking, capture_backing
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires native Linux sysfs")
+def test_native_linux_local_mount_resolves_its_physical_backing(tmp_path: Path) -> None:
+    """Read real kernel facts without mounting, opening, or writing block devices."""
+    records = parse_mountinfo(Path("/proc/self/mountinfo").read_text())
+    record = max(
+        (
+            r
+            for r in reversed(records)
+            if tmp_path.resolve().is_relative_to(r.mount_point)
+        ),
+        key=lambda r: len(str(r.mount_point)),
+    )
+    if record.filesystem_type not in {"ext2", "ext3", "ext4", "xfs"}:
+        pytest.skip(f"Native test location uses unsupported {record.filesystem_type}")
+    assert LinuxPlatformAdapter().paths_share_physical_device(tmp_path, tmp_path)
 
 
 def test_mapped_recovery_backed_by_the_ipod_is_rejected(
