@@ -101,3 +101,44 @@ def test_picker_offers_missing_library_initialization() -> None:
         assert select.isEnabled()
     finally:
         picker.close()
+
+
+def test_picker_preserves_host_recovery_error_as_selectable_plain_text() -> None:
+    application = QApplication.instance() or QApplication([])
+    candidate = DeviceCandidate(
+        id=DeviceCandidateId("failed-access"),
+        display_name="iPod",
+        host_description="",
+        bus="usb",
+        identification_status=IdentificationStatus.UNKNOWN,
+        readiness=DeviceReadiness.INSPECTION_FAILED,
+        profile=None,
+        total_bytes=1024,
+        available_bytes=512,
+        issues=(
+            DeviceCandidateIssue(
+                DeviceCandidateIssueCode.INSPECTION_FAILED,
+                "Could not validate Host recovery storage at /home/<user>/.config: access denied",
+            ),
+        ),
+    )
+    picker = DevicePickerDialog()
+    try:
+        picker.set_discovery(DeviceDiscovery(candidates=(candidate,)))
+        detail = picker.findChild(QLabel, "deviceCandidateDetail")
+        assert detail is not None
+        assert "Host recovery storage" in detail.text()
+        assert "<user>" in detail.text()
+        assert detail.textFormat() == Qt.TextFormat.PlainText
+        assert (
+            detail.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        select = next(
+            button
+            for button in picker.findChildren(QPushButton)
+            if button.text() == "Use This iPod"
+        )
+        assert not select.isEnabled()
+        application.processEvents()
+    finally:
+        picker.close()

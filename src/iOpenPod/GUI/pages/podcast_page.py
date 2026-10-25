@@ -18,7 +18,7 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QAction, QDesktopServices, QHideEvent, QShowEvent
+from PySide6.QtGui import QAction, QHideEvent, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -53,6 +53,7 @@ from iOpenPod.GUI.delegates.podcast_delegates import (
 )
 from iOpenPod.GUI.dialogs.podcast_search import PodcastSearchDialog
 from iOpenPod.GUI.dialogs.podcast_sync_settings import PodcastSyncSettingsDialog
+from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
 from iOpenPod.GUI.presentation.i18n.text import (
     episode_count_text,
     result_count_text,
@@ -869,7 +870,7 @@ class PodcastPage(QWidget):
 
     def _open_publisher_link(self, url: str) -> None:
         if normalize_feed_url(url):
-            QDesktopServices.openUrl(QUrl(url))
+            open_desktop_url(QUrl(url))
 
     def _set_listened(self, listened: bool) -> None:
         identities = self._selected_episode_identities()

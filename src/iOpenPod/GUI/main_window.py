@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import cast
 
 from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QCloseEvent, QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -107,6 +107,7 @@ from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.pages.synesthesia_page import SynesthesiaPage
 from iOpenPod.GUI.pages.track_page import TrackPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
 from iOpenPod.GUI.presentation.i18n.text import (
     device_count_text,
     english_count_fallback,
@@ -726,7 +727,7 @@ class MainWindow(QMainWindow):
             )
 
     def _open_update_release(self, url: str) -> None:
-        QDesktopServices.openUrl(QUrl(url))
+        open_desktop_url(QUrl(url))
 
     def retranslate_ui(self) -> None:
         self._refresh_library_write_status()

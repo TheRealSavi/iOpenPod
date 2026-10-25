@@ -10,7 +10,15 @@ import pytest
 from PySide6.QtCore import QEvent, Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QPalette
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QTabWidget, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QScrollArea,
+    QTabWidget,
+    QWidget,
+)
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.context import AppContext
@@ -123,11 +131,44 @@ def test_about_opens_active_log_folder(
             button.click()
             assert len(opened) == 1
             assert Path(opened[0]) == log_path.parent
+            path_field = about.findChild(QLineEdit, "activeLogPath")
+            assert path_field is not None and path_field.isReadOnly()
+            assert path_field.text() == str(log_path)
+            path_field.selectAll()
+            assert path_field.selectedText() == str(log_path)
         finally:
             page.close()
     finally:
         root_logger.removeHandler(handler)
         handler.close()
+
+
+def test_about_retains_manual_log_access_when_desktop_opening_fails(
+    context: AppContext, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log_path = tmp_path / "log files" / "iopenpod.log"
+    monkeypatch.setattr(settings_page, "active_log_path", lambda: log_path)
+
+    def fail_open(_url: QUrl) -> bool:
+        return False
+
+    monkeypatch.setattr(settings_page, "open_desktop_url", fail_open)
+    warnings: list[str] = []
+
+    def warning(_parent: QWidget, _title: str, text: str) -> None:
+        warnings.append(text)
+
+    monkeypatch.setattr(QMessageBox, "warning", warning)
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    try:
+        button = page.findChild(ActionButton, "openLogFolder")
+        path_field = page.findChild(QLineEdit, "activeLogPath")
+        assert button is not None and path_field is not None
+        button.click()
+        assert len(warnings) == 1 and str(log_path.parent) in warnings[0]
+        assert path_field.isReadOnly() and path_field.text() == str(log_path)
+    finally:
+        page.close()
 
 
 def test_appearance_lists_and_applies_every_theme_without_retranslation_reset(

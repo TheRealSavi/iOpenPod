@@ -682,6 +682,14 @@ remain the preferred next integration for event-driven discovery. User-directed
 eject already resolves the selected block object through UDisks2, unmounts every
 mounted filesystem on its Drive without force, and requires confirmed Drive power-off.
 
+Host-path Physical Device checks resolve an eCryptfs mount through its absolute
+backing directory using one mount-table snapshot. These handled relationships retain
+same-device rejection and fail closed for missing, cyclic, or unsupported backing
+paths. General mapped and multi-device physical-backing resolution remains a gap. Host
+recovery validation remains mandatory during discovery; its failures identify the
+Host location rather than implying that the iPod filesystem format is unsupported.
+See ADR-0190.
+
 All native safe-removal paths revalidate the retained Connection Generation before
 calling the Host. Windows preserves Plug and Play veto details; macOS separately
 checks whole-disk unmount and eject; Linux preserves UDisks2 busy and authorization

@@ -12,7 +12,7 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -59,6 +59,7 @@ from iOpenPod.app.updates.backend import InstallChannel
 from iOpenPod.GUI.dialogs.linux_identity_setup import (
     LinuxIdentityUninstallDialog,
 )
+from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.icons import glyph_icon
@@ -306,10 +307,15 @@ class SettingsPage(QWidget):
         self._open_log_folder = ActionButton(parent=self)
         self._open_log_folder.setObjectName("openLogFolder")
         self._open_log_folder_row = SettingRow("", "", self._open_log_folder, self)
+        self._log_file_path = QLineEdit(self)
+        self._log_file_path.setObjectName("activeLogPath")
+        self._log_file_path.setReadOnly(True)
+        self._log_file_path_row = SettingRow("", "", self._log_file_path, self)
         about = SettingGroup(self)
         about.setMaximumWidth(960)
         about.add_row(self._version_row)
         about.add_row(self._open_log_folder_row)
+        about.add_row(self._log_file_path_row)
         about.add_row(self._report_issue_row)
 
         self._credits = QLabel(self)
@@ -631,7 +637,14 @@ class SettingsPage(QWidget):
             self.tr("Open the folder containing the active iOpenPod log file."),
         )
         self._open_log_folder.setText(self.tr("Open Log Folder"))
-        self._open_log_folder.setEnabled(active_log_path() is not None)
+        log_path = active_log_path()
+        self._open_log_folder.setEnabled(log_path is not None)
+        self._log_file_path_row.set_copy(
+            self.tr("Log file path"),
+            self.tr("Select and copy this path if the folder does not open."),
+        )
+        self._log_file_path.setText(str(log_path) if log_path is not None else "")
+        self._log_file_path.setToolTip(self._log_file_path.text())
         self._donation_title.setText(self.tr("Support iOpenPod"))
         self._donation_description.setText(
             self.tr(
@@ -1049,22 +1062,22 @@ class SettingsPage(QWidget):
         self._inspect_udev_rule()
 
     def _open_issue_tracker(self) -> None:
-        QDesktopServices.openUrl(QUrl(_ISSUES_URL))
+        open_desktop_url(QUrl(_ISSUES_URL))
 
     def _show_log_folder(self) -> None:
         log_path = active_log_path()
         if log_path is None:
             return
         folder = log_path.parent
-        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))):
+        if not open_desktop_url(QUrl.fromLocalFile(str(folder))):
             QMessageBox.warning(
                 self,
                 self.tr("Could Not Open Log Folder"),
-                str(folder),
+                self.tr("Open this folder manually: %1").replace("%1", str(folder)),
             )
 
     def _open_donation_page(self) -> None:
-        QDesktopServices.openUrl(QUrl(_DONATION_URL))
+        open_desktop_url(QUrl(_DONATION_URL))
 
     def _udev_status_description(self) -> str:
         status = self._udev_rule_status

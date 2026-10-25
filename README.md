@@ -65,6 +65,13 @@ and keep the whole `iOpenPod` folder together. Always start its top-level launch
 including after an update. The binary is built on Ubuntu 24.04 and requires glibc
 2.39 or later plus desktop libraries.
 
+If Linux does not launch the app, run its top-level launcher from a terminal to
+see the startup error. For device-access problems, the Device Picker includes the
+underlying error. **Settings → About** shows a copyable log file path even if
+**Open Log Folder** fails. The default Linux log is
+`~/.local/state/iOpenPod/iopenpod.log`, or `$XDG_STATE_HOME/iOpenPod/iopenpod.log`
+when `XDG_STATE_HOME` is configured; a custom log setting takes precedence.
+
 Mac App Store, Flathub, and Snap Store remain planned. Check the
 [website](https://iopenpod.com/#install) for channel availability.
 

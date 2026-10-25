@@ -1288,7 +1288,7 @@
     </message>
     <message>
         <source>The device filesystem could not be inspected</source>
-        <translation>Das Dateisystem des Geräts konnte nicht geprüft werden</translation>
+        <translation type="vanished">Das Dateisystem des Geräts konnte nicht geprüft werden</translation>
     </message>
     <message>
         <source>Some dates need a timezone fallback or cannot be interpreted uniquely.</source>
@@ -1340,11 +1340,19 @@
     </message>
     <message>
         <source>The device filesystem could not be inspected.</source>
-        <translation>Das Dateisystem des Geräts konnte nicht geprüft werden.</translation>
+        <translation type="vanished">Das Dateisystem des Geräts konnte nicht geprüft werden.</translation>
     </message>
     <message>
         <source>Select to create the missing iPod Library</source>
         <translation>Auswählen, um die fehlende iPod-Mediathek zu erstellen</translation>
+    </message>
+    <message>
+        <source>Device access could not be prepared</source>
+        <translation>Der Gerätezugriff konnte nicht vorbereitet werden</translation>
+    </message>
+    <message>
+        <source>Device access could not be prepared.</source>
+        <translation>Der Gerätezugriff konnte nicht vorbereitet werden.</translation>
     </message>
 </context>
 <context>
@@ -6070,6 +6078,18 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Media tool status is read-only.</source>
         <translation type="vanished">Der Status der Medienwerkzeuge ist schreibgeschützt.</translation>
+    </message>
+    <message>
+        <source>Log file path</source>
+        <translation>Pfad der Protokolldatei</translation>
+    </message>
+    <message>
+        <source>Select and copy this path if the folder does not open.</source>
+        <translation>Markieren und kopieren Sie diesen Pfad, falls sich der Ordner nicht öffnet.</translation>
+    </message>
+    <message>
+        <source>Open this folder manually: %1</source>
+        <translation>Diesen Ordner manuell öffnen: %1</translation>
     </message>
 </context>
 <context>

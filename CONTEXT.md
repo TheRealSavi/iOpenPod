@@ -14,6 +14,16 @@ then beyond it.
 
 ## Current stage
 
+Linux Host recovery checks now resolve eCryptfs backing storage before comparing
+Physical Device identities. Covered direct-device and eCryptfs cases reject
+recovery on the selected iPod; unresolved storage remains blocked. Mapped and
+multi-device backing relationships still need broader separation checks.
+Device inspection failures retain their details in the picker and
+log new or changed failures. Native frozen Linux desktop helpers receive a clean
+Host environment, and Settings > About exposes a copyable log path. These changes
+cover a reproduced failure consistent with issue 270; the reporter's cause and
+released Linux desktop behavior still need confirmation. See ADR-0190.
+
 Track deletion now reconciles Genius collections through the same Library save.
 Surviving occurrences retain their order and duplicates; a deleted known Playlist
 seed becomes the first surviving member. Saved sidecars are remapped against final

@@ -30,6 +30,8 @@ from storage._transaction_journal import (
 )
 from storage.errors import (
     FilePreconditionError,
+    HostPathOnPhysicalDeviceError,
+    MountInspectionError,
     RecoverableWriteError,
     StorageCapacityError,
     StorageOperationError,
@@ -73,7 +75,16 @@ def _directory(session: FilesystemSession, path: DevicePath | None = None) -> Pa
         raise StorageOperationError(
             "A persistent Host transaction recovery directory is required"
         )
-    check(HostPath(configured), session.mounted_volume)
+    try:
+        check(HostPath(configured), session.mounted_volume)
+    except MountInspectionError as error:
+        raise MountInspectionError(
+            f"Could not validate Host recovery storage at {configured}: {error}"
+        ) from error
+    except HostPathOnPhysicalDeviceError as error:
+        raise HostPathOnPhysicalDeviceError(
+            f"Could not validate Host recovery storage at {configured}: {error}"
+        ) from error
     root = configured.resolve()
     volume = session.mounted_volume
     identity = hashlib.sha256(

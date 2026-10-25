@@ -15,7 +15,6 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QDesktopServices, QShowEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -81,6 +80,7 @@ from iOpenPod.GUI.presentation.backup_messages import (
     BackupMessageSeverity,
     backup_message_for,
 )
+from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
 from iOpenPod.GUI.presentation.device_images import device_pixmap
 from iOpenPod.GUI.presentation.i18n.text import english_count_fallback
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
@@ -91,6 +91,8 @@ from iOpenPod.GUI.widgets.eta_label import EtaLabel
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
 if TYPE_CHECKING:
+    from PySide6.QtGui import QShowEvent
+
     from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.GUI.presentation.theme.manager import ThemeManager
@@ -1215,7 +1217,7 @@ class BackupPage(QWidget):
                 self.tr("Make your first backup and its folder will appear here."),
             )
             return
-        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+        if not open_desktop_url(QUrl.fromLocalFile(str(path))):
             QMessageBox.warning(
                 self,
                 self.tr("Could Not Open Backup Folder"),
