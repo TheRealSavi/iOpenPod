@@ -1,13 +1,13 @@
-pillow-build 12.3.0
-Source: https://github.com/python-pillow/Pillow/archive/refs/tags/12.3.0.tar.gz
-Archive SHA-256: d7ce60fdf8b3d3b4370ea213834d7c852b1ca16396d4e75e5046be815b11b2fb
+pillow-build 13.0.0
+Source: https://github.com/python-pillow/Pillow/archive/refs/tags/13.0.0.tar.gz
+Archive SHA-256: edf59ba26a21ea6d7e6a3755fe139a57297704591c4113ad470dac9ac2ccaf5e
 
 These notices are preserved from the upstream source distribution.
 This may include notices for upstream components not used in iOpenPod.
 Each component retains its own license; inclusion is not relicensing.
 
 ========================================================================
-Source file: Pillow-12.3.0/LICENSE
+Source file: Pillow-13.0.0/LICENSE
 ========================================================================
 
 The Python Imaging Library (PIL) is
@@ -42,7 +42,7 @@ OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
 ========================================================================
-Source file: Pillow-12.3.0/Tests/fonts/DejaVuSans/LICENSE.txt
+Source file: Pillow-13.0.0/Tests/fonts/DejaVuSans/LICENSE.txt
 ========================================================================
 
 DejaVuSans-24-{1,2,4,8}-stripped.ttf are based on DejaVuSans.ttf converted using FontForge to add bitmap strikes and keep only the ASCII range.
@@ -87,7 +87,7 @@ THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
 Except as contained in this notice, the name of Tavmjong Bah shall not be used in advertising or otherwise to promote the sale, use or other dealings in this Font Software without prior written authorization from Tavmjong Bah. For further information, contact: tavmjong @ free . fr.
 
 ========================================================================
-Source file: Pillow-12.3.0/Tests/fonts/LICENSE.txt
+Source file: Pillow-13.0.0/Tests/fonts/LICENSE.txt
 ========================================================================
 
 
@@ -120,7 +120,7 @@ FreeMono.ttf is licensed under GPLv3.
 CBDTTestFont.ttf and EBDTTestFont.ttf from https://github.com/nulano/font-tests are public domain.
 
 ========================================================================
-Source file: Pillow-12.3.0/Tests/icc/LICENSE.txt
+Source file: Pillow-13.0.0/Tests/icc/LICENSE.txt
 ========================================================================
 
 from http://www.color.org/srgbprofiles.xalter
@@ -149,7 +149,7 @@ prior permission. ICC makes no representations about the suitability
 of this software for any purpose.
 
 ========================================================================
-Source file: Pillow-12.3.0/docs/COPYING
+Source file: Pillow-13.0.0/docs/COPYING
 ========================================================================
 
 The Python Imaging Library (PIL) is
@@ -186,7 +186,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ========================================================================
-Source file: Pillow-12.3.0/src/thirdparty/raqm/AUTHORS
+Source file: Pillow-13.0.0/src/thirdparty/raqm/AUTHORS
 ========================================================================
 
 Abderraouf Adjal
@@ -200,13 +200,13 @@ Mazoon Almaamari
 Shamsa Alqassabi
 
 ========================================================================
-Source file: Pillow-12.3.0/src/thirdparty/raqm/COPYING
+Source file: Pillow-13.0.0/src/thirdparty/raqm/COPYING
 ========================================================================
 
 The MIT License (MIT)
 
 Copyright © 2015 Information Technology Authority (ITA) <foss@ita.gov.om>
-Copyright © 2016-2025 Khaled Hosny <khaled@aliftype.com>
+Copyright © 2016-2026 Khaled Hosny <khaled@aliftype.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -227,7 +227,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/AOM.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/AOM.txt
 ========================================================================
 
 Copyright (c) 2016, Alliance for Open Media. All rights reserved.
@@ -258,7 +258,7 @@ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/BROTLI.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/BROTLI.txt
 ========================================================================
 
 Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
@@ -282,7 +282,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/BZIP2.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/BZIP2.txt
 ========================================================================
 
 
@@ -329,7 +329,7 @@ bzip2/libbzip2 version 1.0.8 of 13 July 2019
 --------------------------------------------------------------------------
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/DAV1D.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/DAV1D.txt
 ========================================================================
 
 Copyright © 2018-2019, VideoLAN and dav1d authors
@@ -357,7 +357,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/FREETYPE2.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/FREETYPE2.txt
 ========================================================================
 
 The FreeType  2 font  engine is  copyrighted work  and cannot  be used
@@ -669,7 +669,7 @@ PCF format.  Undoubtedly, this driver is inspired from his work.
 ```
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/HARFBUZZ.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/HARFBUZZ.txt
 ========================================================================
 
 HarfBuzz is licensed under the so-called "Old MIT" license.  Details follow.
@@ -716,7 +716,7 @@ ON AN "AS IS" BASIS, AND THE COPYRIGHT HOLDER HAS NO OBLIGATION TO
 PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/LCMS2.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/LCMS2.txt
 ========================================================================
 
 Little CMS
@@ -729,7 +729,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/LIBAVIF.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/LIBAVIF.txt
 ========================================================================
 
 Copyright 2019 Joe Drago. All rights reserved.
@@ -1121,7 +1121,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/LIBJPEG.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/LIBJPEG.txt
 ========================================================================
 
 1. We don't promise that this software works.  (But if you find any bugs,
@@ -1169,7 +1169,7 @@ commercial products, provided that all warranty or liability claims are
 assumed by the product vendor.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/LIBLZMA.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/LIBLZMA.txt
 ========================================================================
 
 XZ Utils Licensing
@@ -1237,7 +1237,7 @@ XZ Utils Licensing
     information.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/LIBPNG.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/LIBPNG.txt
 ========================================================================
 
 COPYRIGHT NOTICE, DISCLAIMER, and LICENSE
@@ -1376,7 +1376,7 @@ this source code in a product, acknowledgment is not required but would
 be appreciated.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/LIBTIFF.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/LIBTIFF.txt
 ========================================================================
 
 Copyright (c) 1988-1997 Sam Leffler
@@ -1402,7 +1402,7 @@ LIABILITY, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
 OF THIS SOFTWARE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/LIBWEBP.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/LIBWEBP.txt
 ========================================================================
 
 Copyright (c) 2010, Google Inc. All rights reserved.
@@ -1436,7 +1436,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/LIBYUV.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/LIBYUV.txt
 ========================================================================
 
 Copyright 2011 The LibYuv Project Authors. All rights reserved.
@@ -1470,7 +1470,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/OPENJPEG.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/OPENJPEG.txt
 ========================================================================
 
 *
@@ -1514,7 +1514,7 @@ Source file: Pillow-12.3.0/wheels/dependency_licenses/OPENJPEG.txt
  */
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/RAQM.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/RAQM.txt
 ========================================================================
 
 The MIT License (MIT)
@@ -1541,7 +1541,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/TCL_TK.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/TCL_TK.txt
 ========================================================================
 
 This software is copyrighted by the Regents of the University
@@ -1591,7 +1591,7 @@ software in accordance with the terms specified in this
 license
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/XAU.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/XAU.txt
 ========================================================================
 
 Copyright 1988, 1993, 1994, 1998  The Open Group
@@ -1617,7 +1617,7 @@ used in advertising or otherwise to promote the sale, use or other dealings
 in this Software without prior written authorization from The Open Group.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/XCB.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/XCB.txt
 ========================================================================
 
 Copyright (C) 2001-2006 Bart Massey, Jamey Sharp, and Josh Triplett.
@@ -1652,7 +1652,7 @@ Software without prior written authorization from the
 authors.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/XDMCP.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/XDMCP.txt
 ========================================================================
 
 Copyright 1989, 1998  The Open Group
@@ -1680,7 +1680,7 @@ in this Software without prior written authorization from The Open Group.
 Author:  Keith Packard, MIT X Consortium
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/ZLIB.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/ZLIB.txt
 ========================================================================
 
  (C) 1995-2017 Jean-loup Gailly and Mark Adler
@@ -1714,7 +1714,7 @@ the file ChangeLog history information documenting your changes.  Please read
 the FAQ for more information on the distribution of modified source versions.
 
 ========================================================================
-Source file: Pillow-12.3.0/wheels/dependency_licenses/ZSTD.txt
+Source file: Pillow-13.0.0/wheels/dependency_licenses/ZSTD.txt
 ========================================================================
 
 BSD License

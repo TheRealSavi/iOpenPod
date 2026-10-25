@@ -1,13 +1,13 @@
-pillow 12.3.0
-Source: https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz
-Archive SHA-256: 3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce
+pillow 13.0.0
+Source: https://files.pythonhosted.org/packages/ce/a4/9cc30690a394a8305e8be4c9036aa16d0dfddadd09079860b582f562496d/pillow-13.0.0.tar.gz
+Archive SHA-256: cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510
 
 These notices are preserved from the upstream source distribution.
 This may include notices for upstream components not used in iOpenPod.
 Each component retains its own license; inclusion is not relicensing.
 
 ========================================================================
-Source file: pillow-12.3.0/LICENSE
+Source file: pillow-13.0.0/LICENSE
 ========================================================================
 
 The Python Imaging Library (PIL) is
@@ -42,7 +42,7 @@ OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
 ========================================================================
-Source file: pillow-12.3.0/Tests/fonts/DejaVuSans/LICENSE.txt
+Source file: pillow-13.0.0/Tests/fonts/DejaVuSans/LICENSE.txt
 ========================================================================
 
 DejaVuSans-24-{1,2,4,8}-stripped.ttf are based on DejaVuSans.ttf converted using FontForge to add bitmap strikes and keep only the ASCII range.
@@ -87,7 +87,7 @@ THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
 Except as contained in this notice, the name of Tavmjong Bah shall not be used in advertising or otherwise to promote the sale, use or other dealings in this Font Software without prior written authorization from Tavmjong Bah. For further information, contact: tavmjong @ free . fr.
 
 ========================================================================
-Source file: pillow-12.3.0/Tests/fonts/LICENSE.txt
+Source file: pillow-13.0.0/Tests/fonts/LICENSE.txt
 ========================================================================
 
 
@@ -120,7 +120,7 @@ FreeMono.ttf is licensed under GPLv3.
 CBDTTestFont.ttf and EBDTTestFont.ttf from https://github.com/nulano/font-tests are public domain.
 
 ========================================================================
-Source file: pillow-12.3.0/Tests/icc/LICENSE.txt
+Source file: pillow-13.0.0/Tests/icc/LICENSE.txt
 ========================================================================
 
 from http://www.color.org/srgbprofiles.xalter
@@ -149,7 +149,7 @@ prior permission. ICC makes no representations about the suitability
 of this software for any purpose.
 
 ========================================================================
-Source file: pillow-12.3.0/docs/COPYING
+Source file: pillow-13.0.0/docs/COPYING
 ========================================================================
 
 The Python Imaging Library (PIL) is
@@ -186,7 +186,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ========================================================================
-Source file: pillow-12.3.0/src/thirdparty/raqm/AUTHORS
+Source file: pillow-13.0.0/src/thirdparty/raqm/AUTHORS
 ========================================================================
 
 Abderraouf Adjal
@@ -200,13 +200,13 @@ Mazoon Almaamari
 Shamsa Alqassabi
 
 ========================================================================
-Source file: pillow-12.3.0/src/thirdparty/raqm/COPYING
+Source file: pillow-13.0.0/src/thirdparty/raqm/COPYING
 ========================================================================
 
 The MIT License (MIT)
 
 Copyright © 2015 Information Technology Authority (ITA) <foss@ita.gov.om>
-Copyright © 2016-2025 Khaled Hosny <khaled@aliftype.com>
+Copyright © 2016-2026 Khaled Hosny <khaled@aliftype.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
