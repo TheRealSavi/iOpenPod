@@ -49,6 +49,8 @@ compatibility work from PR #283.
 
 ADR-0192 subsequently handles search-only ancestors. udev remains a Linux
 prerequisite; this work does not add a replacement discovery mechanism.
+ADR-0193 extends the supported boundary to complete Btrfs member graphs. Loop-backed
+recovery remains explicitly unsupported.
 
 ## Evidence and limits
 

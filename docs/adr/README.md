@@ -265,3 +265,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0190: Prepare and diagnose Linux device access](0190-prepare-and-diagnose-linux-device-access.md)
 - [ADR-0191: Compare live Linux physical backing](0191-compare-live-linux-physical-backing.md)
 - [ADR-0192: Pin Linux search-only ancestors](0192-pin-linux-search-only-ancestors.md)
+- [ADR-0193: Resolve Btrfs recovery through all member devices](0193-resolve-btrfs-recovery-through-all-member-devices.md)

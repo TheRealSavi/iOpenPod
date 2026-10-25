@@ -179,9 +179,7 @@ def test_incomplete_or_unsupported_block_graphs_fail_closed(
     assert not (layout.home / "TransactionRecovery").exists()
 
 
-@pytest.mark.parametrize(
-    "filesystem", ["btrfs", "zfs", "nfs", "fuse", "overlay", "tmpfs"]
-)
+@pytest.mark.parametrize("filesystem", ["zfs", "nfs", "fuse", "overlay", "tmpfs"])
 def test_filesystems_with_unproven_backing_fail_even_with_a_source_device(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, filesystem: str
 ) -> None:

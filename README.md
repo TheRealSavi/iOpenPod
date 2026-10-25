@@ -74,8 +74,10 @@ when `XDG_STATE_HOME` is configured; a custom log setting takes precedence.
 
 Linux device selection also validates that persistent Host recovery storage is
 separate from the selected iPod. Unsupported or incomplete storage layouts are
-blocked with a diagnostic; Btrfs and loop-backed recovery locations currently need
-additional support. See [the backing-storage contract](docs/adr/0191-compare-live-linux-physical-backing.md)
+blocked with a diagnostic. Btrfs recovery is supported when every member device can
+be verified as separate from the iPod; loop-backed recovery remains unsupported.
+See [the backing-storage contract](docs/adr/0191-compare-live-linux-physical-backing.md)
+and [Btrfs recovery support](docs/adr/0193-resolve-btrfs-recovery-through-all-member-devices.md)
 for supported layouts and remaining Linux acceptance work.
 
 Mac App Store, Flathub, and Snap Store remain planned. Check the

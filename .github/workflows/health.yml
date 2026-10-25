@@ -55,7 +55,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libpulse0 libasound2t64 udev
+          sudo apt-get install -y libegl1 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libpulse0 libasound2t64 udev btrfs-progs
 
       - name: Install project and dev dependencies
         if: runner.os != 'macOS'
@@ -64,6 +64,33 @@ jobs:
       - name: Install macOS environment for the declared deployment target
         if: runner.os == 'macOS'
         run: uv run --no-project --managed-python --python 3.12 python scripts/sync_macos_build.py --with-checks
+
+      - name: Validate native Btrfs membership without application privileges
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture=$(mktemp -d "$RUNNER_TEMP/iopenpod-btrfs.XXXXXX")
+          first=""
+          second=""
+          cleanup() {
+            result=$?
+            if mountpoint -q "$fixture/alias"; then sudo umount -- "$fixture/alias"; fi
+            if mountpoint -q "$fixture/mounted"; then sudo umount -- "$fixture/mounted"; fi
+            if [ -n "$second" ]; then sudo losetup -d "$second"; fi
+            if [ -n "$first" ]; then sudo losetup -d "$first"; fi
+            exit "$result"
+          }
+          trap cleanup EXIT
+          mkdir "$fixture/mounted" "$fixture/alias"
+          truncate -s 256M "$fixture/first.img" "$fixture/second.img"
+          first=$(sudo losetup --find --show "$fixture/first.img")
+          second=$(sudo losetup --find --show "$fixture/second.img")
+          sudo mkfs.btrfs -f "$first" "$second"
+          sudo mount "$first" "$fixture/mounted"
+          sudo btrfs subvolume create "$fixture/mounted/home"
+          sudo mount --bind "$fixture/mounted/home" "$fixture/alias"
+          IOPENPOD_TEST_BTRFS="$fixture" uv run --no-sync pytest -q tests/storage/test_linux_btrfs_native.py
 
       - name: Validate Storage before GUI tests
         run: uv run --no-sync pytest -q tests/storage
