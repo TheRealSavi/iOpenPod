@@ -188,8 +188,10 @@ def test_groups_and_saved_playlist_preserve_order_and_repeated_occurrences(
     assert section is not None and section.data(0, SECTION_ROLE) is True
     item = section.child(0)
     assert item is not None and item.data(0, DETAIL_ROLE) == "3 tracks"
-    assert split.widget(1).isAncestorOf(banner)
-    assert split.widget(1).isAncestorOf(page.track_table)
+    detail_widget = split.widget(1)
+    assert detail_widget is not None
+    assert detail_widget.isAncestorOf(banner)
+    assert detail_widget.isAncestorOf(page.track_table)
     assert visible_ids(page) == (3, 1, 1)
     assert page.track_table.horizontalHeader().sortIndicatorSection() == -1
     assert label(page, "pageTitle").text() == "Saved seed"
