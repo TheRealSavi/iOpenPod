@@ -58,16 +58,24 @@ the existing HTML verification filename is not that token. Keep the verification
 file available but excluded from the sitemap. `404.html` is also excluded and
 marked `noindex`; it offers routes back to useful content.
 
-The homepage hero includes a subtle background panel with an outlined heart, a
-short development-support message, and a pill-shaped Ko-fi link beside the
-introduction. This invitation, the compact Donate link in
-the navigation, and the footer support link share `donation_url` in `_config.yml`.
+The introduction explains the application beside a real library screenshot, with
+a download link. A short developer note explains the project's two years of
+personal research and reverse engineering, with a link to the source and research.
+Beside it, `images/ipod-workbench.jpg` is the developer's supplied photograph.
+The original image is retained intact; CSS crops its display around the iPods and
+exposed parts. A visible caption identifies the workbench. The photograph sits
+below the note on smaller screens and is separate from the screenshot viewer.
+An in-page index links to that note, features, supported iPods, downloads,
+migration, and questions. Keep headings descriptive
+and copy practical: name the action or feature and explain any relevant limit.
+Use modest type, ordinary links, and compact spacing throughout the site.
 
-The header links to the GitHub project and shows total release-asset downloads
-through Shields.io, including earlier releases. Downloads are not unique or active
-users. Keep the label accurate; the count depends on Shields.io and its cache.
-The star-count badge was replaced with a stable project link after it displayed
-an invalid response during the October 2026 review.
+Development support appears with the community links near the end of the page.
+That invitation, Donate in the navigation, and the footer support link share
+`donation_url` in `_config.yml`. A small invitation to star the project sits beside
+the installation notes, with a Shields.io image showing the repository's star
+count. The badge and prompt link directly to `repository_url`; no extra script is
+needed. On smaller screens, the invitation follows the notes.
 
 `tokens.css` and `theme.css` own the shared colors and typography. `iop2.css`
 contains the scoped IOP2 layout and consumes the existing `site.css` foundation.
@@ -80,9 +88,9 @@ timestamp (`?v=...`) so a newly deployed page requests fresh assets even when a
 browser still caches files from an earlier deployment. Keep these URLs versioned
 and load shared styles through the layout rather than unversioned CSS imports.
 
-The Sync showcase alternates four compact screenshot-and-text rows on desktop:
-media folders, media selection, Sync Review, and conversion settings. On smaller screens each
-image appears above its description. The other product-tour sections are separate.
+The Sync showcase uses two columns on wider screens and one on small screens.
+Each explanation sits above its screenshot: media folders, media selection,
+Sync Review, and conversion settings. The other product-tour sections are separate.
 
 Screenshot buttons open a native modal dialog. It supports actual-size zoom,
 scrolling, Escape, backdrop dismissal, and returning focus to the clicked image.
@@ -121,7 +129,7 @@ node tests/website/navigation.cjs http://127.0.0.1:4000/iOpenPod/
 This checks every screenshot in both themes, mobile and desktop sizes, keyboard
 focus, zoom, all dismissal methods, unwanted downloads, and logo pixel density.
 Navigation checks cover all content pages, responsive header links, rounded images,
-the direct hero-to-Sync transition, and synchronized header/footer theme controls
+single-line control labels, the in-page index, and synchronized theme controls
 with keyboard activation and saved preferences.
 
 ## Migration and FAQ content
@@ -168,6 +176,13 @@ Microsoft Store is available at
 (product ID `9P2LXCHHWLG9`). PyPI is available at
 [the iOpenPod package page](https://pypi.org/project/iopenpod/).
 Mac App Store, Flathub, and Snap Store remain `planned` with a null URL.
+
+The homepage uses Microsoft's hosted `ms-store-badge` component for the Store
+channel, with direct launch, automatic theme, large size, English text, and hover
+animation, displayed at a compact 161 × 44 pixels. The product ID lives beside the
+listing URL in `distribution.json`.
+The text link remains available if the component script cannot load or JavaScript
+is disabled. The badge scales down to fit narrow screens.
 
 The homepage and setup guide share the native download URLs from this data file.
 `native_release.url` and each native channel URL use `/releases/latest` so new

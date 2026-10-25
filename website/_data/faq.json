@@ -2,7 +2,7 @@
   {
     "id": "sync-without-itunes",
     "question": "How do I sync my iPod without iTunes?",
-    "answer": "iOpenPod lets you select a mounted iPod, choose media folders on your computer, review additions, updates, and removals, then apply your Sync Selection. You do not need iTunes for that workflow. Native downloads are available for Windows, macOS, and Linux; Windows users can also install from Microsoft Store."
+    "answer": "Connect your iPod and select it in iOpenPod. Choose media folders on your computer, select what you want to sync, and review the changes before applying them. iTunes is not required. Downloads are available for Windows, macOS, and Linux, including Microsoft Store for Windows."
   },
   {
     "id": "python",
@@ -21,8 +21,8 @@
   },
   {
     "id": "legacy-tools",
-    "question": "What should I use if I am migrating from gtkpod, YamiPod, CopyPod, EphPod, Strawberry, or Clementine?",
-    "answer": "iOpenPod is being developed as an alternative for managing filesystem-accessible iPods on Windows, macOS, and Linux. Its iPodDB engine does not depend on libgpod. Start by browsing the existing iPod library, keep a Backup Snapshot, and review your first Sync carefully. Direct import of another manager’s application database or settings is not promised."
+    "question": "Can I switch from another iPod manager?",
+    "answer": "You can use iOpenPod to manage a supported iPod on Windows, macOS, or Linux. It reads the existing iPod library and does not depend on libgpod. Create a Backup Snapshot before making changes and check your first Sync Review carefully. Direct import of another manager’s database or settings is not promised."
   },
   {
     "id": "platforms",
@@ -37,7 +37,7 @@
   {
     "id": "erase",
     "question": "Will syncing erase my iPod?",
-    "answer": "Sync Review shows proposed additions, updates, and removals before you approve a Sync. Removal candidates start unchecked. Review the selection carefully and keep a Backup Snapshot of data you want to preserve. Backups are user-controlled, and interrupted writes can require recovery."
+    "answer": "Sync Review lists additions, updates, and removals before anything is applied. Tracks marked for removal start unchecked. Review the list and create a Backup Snapshot of anything you want to keep. Backups are your choice; an interrupted sync may still need recovery."
   },
   {
     "id": "selected-files",
@@ -67,7 +67,7 @@
   {
     "id": "recovery",
     "question": "What happens if something goes wrong mid-sync?",
-    "answer": "If the iPod disconnects, further operations stop and the interrupted work may be incomplete. Reconnect the same iPod and follow the recovery action shown by the app. Keep recovery files in place until recovery completes. Backup Snapshots are an additional user-controlled recovery option, not a guarantee that every Sync has an automatic snapshot."
+    "answer": "If your iPod disconnects, iOpenPod stops further operations. Some changes may be incomplete. Reconnect the same iPod and follow the recovery instructions in the app. Leave recovery files in place until it finishes. You can also restore a Backup Snapshot if you made one; snapshots are not automatically taken before every sync."
   },
   {
     "id": "internet",
@@ -77,11 +77,11 @@
   {
     "id": "multiple-computers",
     "question": "Can I sync the same iPod from multiple computers?",
-    "answer": "iOpenPod stores matching information on the iPod and scans each computer’s selected media folders separately. Always review each computer’s Sync Selection: their files can differ, and a track missing from one computer is not necessarily something you want removed from the iPod. Device validation is ongoing."
+    "answer": "Yes, but check the changes each time. iOpenPod keeps matching information on the iPod and scans each computer’s selected folders separately. A track missing from one computer may still be one you want to keep on your iPod. Testing across devices is ongoing."
   },
   {
     "id": "ipod-touch",
     "question": "Does iOpenPod support iPod touch?",
-    "answer": "iPod touch and iPhone are outside the iOpenPod target because they use a different device-access model. The current target covers filesystem-accessible full-size iPods, iPod classic, iPod mini, and iPod nano. iPod shuffle is also not yet supported; capabilities vary by model."
+    "answer": "No. iPod touch and iPhone use a different way of connecting to the computer. iOpenPod targets full-size iPods, Classic, Mini, and Nano models whose files the computer can access. iPod shuffle is not yet supported. Features vary by model."
   }
 ]

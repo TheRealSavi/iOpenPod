@@ -1,17 +1,19 @@
-/* iOpenPod web design tokens · single runtime source */
+/* Hallmark · macrostructure: Long Document · tone: plain and practical · anchor hue: blue
+ * iOpenPod web design tokens · single runtime source
+ */
 :root {
-  --color-paper: oklch(0.95656 0.00666 286.27);
-  --color-paper-2: oklch(0.93331 0.01073 286.19);
-  --color-paper-3: oklch(0.91727 0.00673 286.27);
-  --color-rule: oklch(0.88676 0.00679 286.26);
-  --color-rule-2: oklch(0.81212 0.00555 286.28);
+  --color-paper: oklch(0.985 0.002 250);
+  --color-paper-2: oklch(0.962 0.004 250);
+  --color-paper-3: oklch(0.935 0.005 250);
+  --color-rule: oklch(0.865 0.008 250);
+  --color-rule-2: oklch(0.74 0.01 250);
   --color-neutral: oklch(0.48 0.006 286);
   --color-muted: oklch(0.48 0.006 286);
   --color-ink-2: oklch(0.48 0.006 286);
   --color-ink: oklch(0.248 0.006 286);
-  --color-accent: oklch(0.515 0.178 256);
+  --color-accent: oklch(0.46 0.105 250);
   --color-accent-ink: oklch(0.985 0.005 256);
-  --color-focus: oklch(0.515 0.178 256);
+  --color-focus: oklch(0.46 0.105 250);
   --color-success: oklch(0.56040 0.14275 146.89);
   --color-warning: oklch(0.67523 0.16411 56.60);
   --color-error: oklch(0.58613 0.19891 23.53);
@@ -24,7 +26,7 @@
 
   --display-weight: 700;
   --body-weight: 400;
-  --tracking-display: -0.015em;
+  --tracking-display: 0;
   --tracking-label: 0.03em;
 
   --text-xs: 0.75rem;
@@ -36,12 +38,12 @@
   --text-2xl: 2.4414rem;
   --text-3xl: 3.0518rem;
   --text-4xl: 3.8147rem;
-  --text-display-s: clamp(2.4rem, 6vw, 4rem);
-  --text-display: clamp(2.75rem, 6.2vw, 5.5rem);
-  --text-section: clamp(2rem, 3.7vw, 3.05rem);
-  --tracking-hero: -0.025em;
+  --text-display-s: clamp(1.75rem, 4vw, 2.25rem);
+  --text-display: clamp(1.875rem, 3.2vw, 2.5rem);
+  --text-section: clamp(1.375rem, 2.5vw, 1.75rem);
+  --tracking-hero: -0.015em;
   --rule-accent: 3px;
-  --radius-image: 0.75rem;
+  --radius-image: 0.25rem;
 
   --space-3xs: 0.125rem;
   --space-2xs: 0.25rem;
@@ -57,9 +59,9 @@
   --rule-hair: 1px;
   --rule-fine: 2px;
   --rule-focus: 2px;
-  --radius-card: 0.75rem;
+  --radius-card: 0.25rem;
   --radius-pill: 999px;
-  --radius-input: 0.5rem;
+  --radius-input: 0.25rem;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
@@ -68,10 +70,10 @@
   --dur-short: 220ms;
   --dur-long: 420ms;
 
-  --layout-max: 76rem;
+  --layout-max: 66rem;
   --layout-prose: 65ch;
   --layout-help: 70rem;
-  --layout-reading: 58rem;
+  --layout-reading: 46rem;
   --control-hit: 2.75rem;
   --nav-height: 4.5rem;
   --z-base: 1;

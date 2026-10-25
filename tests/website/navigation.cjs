@@ -62,6 +62,17 @@ async function saveReport(error) {
               boxes.slice(index + 1).every((other) => box.right <= other.x || other.right <= box.x || box.bottom <= other.y || other.bottom <= box.y));
           }), "Header controls must have usable targets without overlapping or overflowing");
           assert(await page.locator("img").evaluateAll((images) => images.every((image) => parseFloat(getComputedStyle(image).borderTopLeftRadius) > 0)), "All images should have rounded corners");
+          assert(await page.locator(".product-nav a, .product-nav button, .footer-links a, .footer-links button, .channel-link, .intro-actions a, .page-index a").evaluateAll((controls) => controls.every((control) => {
+            const walker = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);
+            const lines = [];
+            while (walker.nextNode()) {
+              if (!walker.currentNode.textContent.trim()) continue;
+              const range = document.createRange();
+              range.selectNodeContents(walker.currentNode);
+              lines.push(...[...range.getClientRects()].filter((rect) => rect.height > 0));
+            }
+            return !lines.length || Math.max(...lines.map((rect) => rect.y)) - Math.min(...lines.map((rect) => rect.y)) < 2;
+          })), `${testCase}: short navigation and download labels must stay on one line`);
           if (route.startsWith("guides/")) {
             assert(await page.locator(".guide-header").evaluate((header) => {
               const style = getComputedStyle(header);
@@ -106,8 +117,11 @@ async function saveReport(error) {
             screenshots.push(filename);
           }
           if (!route) {
-            assert(await page.locator(".intro-visual").evaluate((hero) => hero.nextElementSibling.id === "tour" && hero.nextElementSibling.querySelector("#sync-heading")), "The hero should lead directly to Sync");
-            await page.getByRole("link", { name: "Explore the app" }).click();
+            assert(await page.locator(".intro [data-screenshot-trigger]").isVisible(), "The introduction must show the app screenshot");
+            const pageIndex = page.getByRole("navigation", { name: "On this page" });
+            assert.deepEqual(await pageIndex.getByRole("link").evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+              ["#why-iopenpod", "#tour", "#compatibility", "#install", "#migration", "#faq"], "The page index must reach the main product information");
+            await pageIndex.getByRole("link", { name: "Features", exact: true }).click();
             assert.equal(new URL(page.url()).hash, "#tour");
           }
           results.push({ route: route || "home", colorScheme, width });

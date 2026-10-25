@@ -9,11 +9,11 @@ permalink: /guides/
 <main class="container guide-main" id="main-content">
   <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{{ '/' | relative_url }}">Home</a><span aria-hidden="true">/</span><span aria-current="page">Guides</span></nav>
   <header class="guide-header">
-    <h1>Keep your iPod playing.</h1>
-    <p class="guide-lead">Work through Apple sync problems, then explore a different way to manage your music and podcasts with iOpenPod.</p>
+    <h1>iPod guides</h1>
+    <p class="guide-lead">Setup instructions for iOpenPod and help with common iPod sync problems.</p>
   </header>
   <section aria-labelledby="troubleshooting-heading">
-  <h2 id="troubleshooting-heading">Trouble with your current iPod setup?</h2>
+  <h2 id="troubleshooting-heading">Troubleshooting</h2>
   <ul class="guide-links guide-directory">
     {% assign troubleshooting_guides = site.data.guides | where: 'group', 'troubleshooting' %}
     {% for guide in troubleshooting_guides %}
@@ -31,7 +31,7 @@ permalink: /guides/
   </ul>
   </section>
   <div class="guide-next">
-    <h2>Already know your way around?</h2>
+    <h2>Download and setup</h2>
     <p><a href="{{ '/#install' | relative_url }}">Download iOpenPod</a> or go straight to the <a href="{{ '/install-help/' | relative_url }}">installation guide</a>.</p>
   </div>
 </main>

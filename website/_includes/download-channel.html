@@ -5,7 +5,15 @@
   </div>
   {% assign channel_url = include.channel.url | default: '' | strip %}
   {% if include.channel.status == 'available' and channel_url != '' %}
-  <a class="channel-link" href="{{ channel_url | escape }}">{{ include.channel.label }} <span aria-hidden="true">↗</span></a>
+  {% if include.channel.id == 'microsoft-store' %}
+  <div class="store-download">
+    <ms-store-badge productid="{{ include.channel.product_id | escape }}" productname="iOpenPod" window-mode="direct" theme="auto" size="large" language="en-us" animation="on"></ms-store-badge>
+    <a class="channel-link store-download-fallback" href="{{ channel_url | escape }}">{{ include.channel.label }}</a>
+  </div>
+  <script type="module" src="https://get.microsoft.com/badge/ms-store-badge.bundled.js"></script>
+  {% else %}
+  <a class="channel-link" href="{{ channel_url | escape }}">{{ include.channel.label }}</a>
+  {% endif %}
   {% else %}
   <span class="channel-status">Planned</span>
   {% endif %}

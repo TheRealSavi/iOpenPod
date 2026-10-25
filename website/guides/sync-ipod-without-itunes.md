@@ -2,7 +2,7 @@
 layout: guide
 title: How to sync an iPod without iTunes | iOpenPod
 description: Add music to an iPod without iTunes using iOpenPod. Choose folders, review additions and removals, and prepare your first Sync on Windows, Mac, or Linux.
-heading: Sync your iPod without iTunes.
+heading: Sync your iPod without iTunes
 lead: iOpenPod lets you browse an existing iPod library and add music from folders on your computer. You choose the media and review the changes before Sync runs.
 breadcrumb_title: Sync without iTunes
 body_class: iop2-page guide-page

@@ -2,7 +2,7 @@
 layout: guide
 title: Free iPod manager for Windows, Mac & Linux | iOpenPod
 description: Choose an iOpenPod download for Windows, Apple Silicon, Intel Mac, or Linux. Compare installation routes and requirements for managing an iPod without iTunes.
-heading: Your iPod. Your choice of computer.
+heading: iPod management on Windows, macOS, and Linux
 lead: iOpenPod is a free, open-source iPod manager for Windows, macOS, and Linux. Native downloads include the application runtime, so you do not need to install Python separately.
 breadcrumb_title: Windows, Mac & Linux
 body_class: iop2-page guide-page

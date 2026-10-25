@@ -7,7 +7,7 @@ lead: An episode is downloaded in Apple Podcasts, but absent on your iPod classi
 breadcrumb_title: Podcasts not syncing
 body_class: iop2-page guide-page
 permalink: /guides/ipod-podcasts-not-syncing/
-cta_heading: Try your next episode with iOpenPod.
+cta_heading: Manage podcasts with iOpenPod
 cta_description: Add a publisher's RSS feed and test one episode on a supported iPod using iOpenPod's own Podcast workflow.
 related_guides:
   - /guides/ipod-music-not-syncing/

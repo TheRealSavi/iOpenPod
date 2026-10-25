@@ -3,11 +3,11 @@ layout: guide
 title: iPod not syncing with Finder or iTunes? Music sync help | iOpenPod
 description: iPod visible in Finder or iTunes but songs will not sync? Check music selection, local files, format errors, and a folder-based alternative with iOpenPod.
 heading: iPod not syncing music with Finder or iTunes?
-lead: If your iPod appears but songs will not transfer, check the selected library and one affected file first. If Apple's sync workflow keeps getting in the way, iOpenPod offers a separate way to manage your own music files.
+lead: If your iPod appears but songs will not transfer, check the selected library and one affected file first. This guide covers common causes and how to test a small sync.
 breadcrumb_title: Finder & iTunes music sync
 body_class: iop2-page guide-page
 permalink: /guides/ipod-music-not-syncing/
-cta_heading: Try a different way to sync your music.
+cta_heading: Sync with iOpenPod
 cta_description: Manage your own music folders with iOpenPod. Start with one album and review the changes before syncing.
 related_guides:
   - /guides/apple-devices-itunes-ipod-windows/

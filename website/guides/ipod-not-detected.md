@@ -2,7 +2,7 @@
 layout: guide
 title: iPod not detected? Connection & discovery help | iOpenPod
 description: Troubleshoot an iPod missing from iOpenPod. Check the model, cable, mounted filesystem, and Device Picker, then collect useful details for support.
-heading: When your iPod does not appear.
+heading: iPod not detected
 lead: First check whether the computer can see the iPod's files. Then check whether iOpenPod can identify it. Those are separate steps, and they need different fixes.
 breadcrumb_title: iPod not detected
 body_class: iop2-page guide-page

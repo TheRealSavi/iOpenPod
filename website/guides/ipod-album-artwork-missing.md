@@ -7,8 +7,8 @@ lead: A cover that looks right in Music or iTunes can still be missing, wrong, o
 breadcrumb_title: Missing iPod album art
 body_class: iop2-page guide-page
 permalink: /guides/ipod-album-artwork-missing/
-cta_heading: Give one album a fresh cover.
-cta_description: Try iOpenPod's artwork editor with a supported iPod and one small, deliberate change to its library.
+cta_heading: Edit artwork with iOpenPod
+cta_description: Use the artwork editor to update a cover on a supported iPod. Start with one album and check the result.
 related_guides:
   - /guides/ipod-music-not-syncing/
   - /guides/ipod-podcasts-not-syncing/
