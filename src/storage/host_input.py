@@ -448,13 +448,14 @@ def open_local_file(path: Path, *, buffering: int = -1) -> Generator[BinaryIO]:
     directory_flag = cast("int", vars(os)["O_DIRECTORY"])
     no_follow = cast("int", vars(os)["O_NOFOLLOW"])
     nonblock = cast("int", vars(os)["O_NONBLOCK"])
+    # Linux O_PATH pins a directory without requiring permission to list it.
+    # O_DIRECTORY remains essential: O_PATH | O_NOFOLLOW alone can open a link.
+    directory_flags = getattr(os, "O_PATH", os.O_RDONLY) | directory_flag | no_follow
     with ExitStack() as stack:
-        directory = os.open(path.anchor, os.O_RDONLY | directory_flag)
+        directory = os.open(path.anchor, directory_flags)
         stack.callback(os.close, directory)
         for component in path.parts[1:-1]:
-            directory = os.open(
-                component, os.O_RDONLY | directory_flag | no_follow, dir_fd=directory
-            )
+            directory = os.open(component, directory_flags, dir_fd=directory)
             stack.callback(os.close, directory)
         descriptor = os.open(
             path.name, os.O_RDONLY | no_follow | nonblock, dir_fd=directory

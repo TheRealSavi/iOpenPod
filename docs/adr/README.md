@@ -264,3 +264,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0189: Protect GitHub release credentials](0189-protect-github-release-credentials.md)
 - [ADR-0190: Prepare and diagnose Linux device access](0190-prepare-and-diagnose-linux-device-access.md)
 - [ADR-0191: Compare live Linux physical backing](0191-compare-live-linux-physical-backing.md)
+- [ADR-0192: Pin Linux search-only ancestors](0192-pin-linux-search-only-ancestors.md)

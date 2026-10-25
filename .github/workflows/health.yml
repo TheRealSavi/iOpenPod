@@ -2,6 +2,11 @@ name: Health
 
 on:
   workflow_dispatch:
+    inputs:
+      storage_only:
+        description: Run Storage validation without the full GUI suite
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -60,8 +65,9 @@ jobs:
         if: runner.os == 'macOS'
         run: uv run --no-project --managed-python --python 3.12 python scripts/sync_macos_build.py --with-checks
 
-      - name: Validate physical recovery separation before GUI tests
-        run: uv run --no-sync pytest -q tests/storage/test_linux_physical_backing.py tests/storage/test_linux_host_identity.py tests/storage/test_portal.py tests/storage/test_platform_facts.py
+      - name: Validate Storage before GUI tests
+        run: uv run --no-sync pytest -q tests/storage
 
       - name: Test, including 1x/1.5x/2x display probes
+        if: ${{ !inputs.storage_only }}
         run: uv run --no-sync pytest
