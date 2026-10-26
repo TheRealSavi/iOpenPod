@@ -544,12 +544,14 @@ See ADR-0020 and ADR-0022 for hierarchy and editor behavior.
 
 Sync's **Refresh Library** action can repair existing Albums browse indexes on
 non-SQLite iPods with Tracks, including Classic models, without reimporting media.
+Retained Album indexes may omit jump tables; refresh preserves that absence while
+still rejecting duplicate or orphan records and ambiguous Master membership.
 SQLite targets refresh their companion Library artifacts while retaining captured
 firmware schemas, version rows, and metadata absent from the CDB. Changed HASH72
 databases receive valid HASH58 and HASH72 signatures. Binary Play Counts ignores
 the evidenced missing-date reference epoch. Both paths use the normal verified
 Storage Transaction. Loading and ordinary no-op serialization remain byte-exact.
-See ADR-0147, ADR-0148, and ADR-0150.
+See ADR-0147, ADR-0148, ADR-0150, and ADR-0194.
 
 The Library Workspace retains Photos and Photo Albums in that same desired snapshot.
 Retained Photo rating/dates and retained user Photo Album names, membership,

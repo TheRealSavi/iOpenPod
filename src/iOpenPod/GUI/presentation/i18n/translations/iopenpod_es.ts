@@ -11342,8 +11342,12 @@ Playlists: %3</translation>
         <translation>No se pudo preparar un fotograma de {name}. El episodio se puede sincronizar sin carátula.</translation>
     </message>
     <message>
-        <source>Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.</source>
-        <translation>La reconstrucción del índice de álbumes requiere un único par de índice y tabla de saltos, además de entradas completas e inequívocas en la lista principal.</translation>
+        <source>Album index rebuilding requires complete, unambiguous Master Playlist membership.</source>
+        <translation>La reconstrucción del índice de álbumes requiere entradas completas e inequívocas en la lista principal.</translation>
+    </message>
+    <message>
+        <source>Album index rebuilding requires exactly one Album index and at most one jump table.</source>
+        <translation>La reconstrucción del índice de álbumes requiere exactamente un índice de álbumes y, como máximo, una tabla de saltos.</translation>
     </message>
     <message>
         <source>Album rebuilding changed Master Playlist occurrences.</source>

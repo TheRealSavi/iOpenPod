@@ -22,6 +22,8 @@ from iOpenPod.app.sync_execution import (
     SyncExecutor,
 )
 from iOpenPod.app.sync_plan import SyncPlan
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.writer.signature import verify_hash58
 from iPodDB.library import LibrarySnapshot
 from storage import Storage
@@ -30,10 +32,14 @@ from storage.testing import VirtualStoragePlatform
 GUID = bytes.fromhex("000A270012345678")
 
 
-def classic(tmp_path: Path) -> tuple[Path, DeviceCoordinator, VirtualStoragePlatform]:
+def classic(
+    tmp_path: Path,
+    *,
+    jump_tables: bool = True,
+) -> tuple[Path, DeviceCoordinator, VirtualStoragePlatform]:
     root = _ipod_volume(tmp_path / "classic", model_number="MB145")
     (root / "iPod_Control/iTunes/iTunesDB").write_bytes(
-        album_source().serialize().itunes
+        album_source(jump_tables=jump_tables).serialize().itunes
     )
     (root / "iPod_Control/Device/SysInfo").write_text(
         f"ModelNumStr: MB145\nFirewireGuid: {GUID.hex().upper()}\n", encoding="utf-8"
@@ -43,10 +49,12 @@ def classic(tmp_path: Path) -> tuple[Path, DeviceCoordinator, VirtualStoragePlat
     return root, DeviceCoordinator(Storage(platform)), platform
 
 
+@pytest.mark.parametrize("jump_tables", [False, True])
 def test_no_change_sync_repairs_classic_album_indexes_and_signs_output(
     tmp_path: Path,
+    jump_tables: bool,
 ) -> None:
-    root, coordinator, _ = classic(tmp_path)
+    root, coordinator, _ = classic(tmp_path, jump_tables=jump_tables)
     database = root / "iPod_Control/iTunes/iTunesDB"
     original = database.read_bytes()
     media = root / "iPod_Control/Music/F00/track.m4a"
@@ -70,6 +78,10 @@ def test_no_change_sync_repairs_classic_album_indexes_and_signs_output(
         assert result.active is not None
         assert album_orders(database.read_bytes()) == {2: (1, 2, 3, 4), 3: (1, 2, 3, 4)}
         assert verify_hash58(database.read_bytes(), GUID)
+        assert sum(
+            s.chunk.header.mhod_type == 53
+            for s in parse_iTunesDB(database.read_bytes()).find_chunks(MhodHeader)
+        ) == (2 if jump_tables else 0)
         assert result.active.library == active.library
         assert media.read_bytes() == payload
     finally:

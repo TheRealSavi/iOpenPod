@@ -45,6 +45,7 @@ def album_source(
     *,
     explicit: bool = False,
     native: bool = True,
+    jump_tables: bool = True,
     master_order: tuple[int, ...] = (4, 2, 3, 1),
 ) -> IPodLibrary:
     """Four Tracks, two distinct Albums, deliberately interleaved type-4 indexes."""
@@ -145,18 +146,26 @@ def album_source(
                             b"index-tail",
                         ),
                     ),
-                    new_itunes_chunk(
-                        MHOD,
-                        MhodHeader(mhod_type=53),
-                        prefix=MhodLibraryJumpTablePrefix(sort_type=4),
-                        payload=MhodLibraryJumpTablePayload(
-                            (
-                                MhodLibraryJumpTableEntry(
-                                    letter_code=ord("N"), start_index=0, entry_count=4
+                    *(
+                        (
+                            new_itunes_chunk(
+                                MHOD,
+                                MhodHeader(mhod_type=53),
+                                prefix=MhodLibraryJumpTablePrefix(sort_type=4),
+                                payload=MhodLibraryJumpTablePayload(
+                                    (
+                                        MhodLibraryJumpTableEntry(
+                                            letter_code=ord("N"),
+                                            start_index=0,
+                                            entry_count=4,
+                                        ),
+                                    ),
+                                    b"jump-tail",
                                 ),
                             ),
-                            b"jump-tail",
-                        ),
+                        )
+                        if jump_tables
+                        else ()
                     ),
                     *(
                         new_itunes_chunk(MHIP, MhipHeader(track_id=i))
@@ -223,10 +232,11 @@ def test_album_collisions_stay_grouped_after_metadata_edit(
     assert album_orders(result.prepared.itunes) == {2: (1, 2, 3, 4), 3: (1, 2, 3, 4)}
 
 
-def test_explicit_rebuild_repairs_without_changing_tracks_or_master_occurrences() -> (
-    None
-):
-    source = album_source()
+@pytest.mark.parametrize("jump_tables", [False, True])
+def test_explicit_rebuild_repairs_without_changing_tracks_or_master_occurrences(
+    jump_tables: bool,
+) -> None:
+    source = album_source(jump_tables=jump_tables)
     original = source.serialize().itunes
     noop = source.prepare(source.analyze(source.begin_draft()))
     assert noop.prepared is not None and noop.prepared.itunes == original
@@ -238,6 +248,9 @@ def test_explicit_rebuild_repairs_without_changing_tracks_or_master_occurrences(
     assert album_orders(result.prepared.itunes) == {2: (1, 2, 3, 4), 3: (1, 2, 3, 4)}
     assert result.prepared.snapshot == source.snapshot
     before, after = parse_iTunesDB(original), parse_iTunesDB(result.prepared.itunes)
+    assert sum(
+        s.chunk.header.mhod_type == 53 for s in after.find_chunks(MhodHeader)
+    ) == (2 if jump_tables else 0)
     for header in (MhitHeader, MhiaHeader, MhipHeader):
         assert [chunk_bytes(s.chunk, original) for s in before.find_chunks(header)] == [
             chunk_bytes(s.chunk, result.prepared.itunes)
@@ -267,10 +280,12 @@ def test_explicit_rebuild_repairs_without_changing_tracks_or_master_occurrences(
     )
 
 
+@pytest.mark.parametrize("jump_tables", [False, True])
 def test_rebuild_verification_rejects_retained_bad_index(
     monkeypatch: pytest.MonkeyPatch,
+    jump_tables: bool,
 ) -> None:
-    source = album_source()
+    source = album_source(jump_tables=jump_tables)
     original = source.serialize().itunes
 
     def corrupt(_document: DatabaseDocument[MhbdHeader]) -> bytes:
@@ -281,7 +296,9 @@ def test_rebuild_verification_rejects_retained_bad_index(
         source.analyze(source.begin_draft(rebuild_album_indexes=True))
     )
     assert result.prepared is None
-    assert any(i.code == "verification.playlist_index" for i in result.issues)
+    assert any(i.code == "verification.playlist_index" for i in result.issues), (
+        result.issues
+    )
 
 
 def test_rebuild_requires_the_normal_signing_identity() -> None:
@@ -454,11 +471,23 @@ def test_rebuild_regenerates_jump_ranges_for_distinct_letters() -> None:
 
 
 @pytest.mark.parametrize(
-    "malformation",
-    ["missing_member", "duplicate_member", "duplicate_index", "missing_jump"],
+    ("jump_tables", "malformation"),
+    [
+        (False, "missing_member"),
+        (True, "missing_member"),
+        (False, "duplicate_member"),
+        (True, "duplicate_member"),
+        (False, "duplicate_index"),
+        (True, "duplicate_index"),
+        (True, "duplicate_jump"),
+        (True, "missing_index"),
+    ],
 )
-def test_rebuild_rejects_ambiguous_native_structures(malformation: str) -> None:
-    document = parse_iTunesDB(album_source().serialize().itunes)
+def test_rebuild_rejects_ambiguous_native_structures(
+    jump_tables: bool,
+    malformation: str,
+) -> None:
+    document = parse_iTunesDB(album_source(jump_tables=jump_tables).serialize().itunes)
     master = next(
         s for s in document.find_chunks(MhypHeader) if s.chunk.header.master_flag
     )
@@ -469,8 +498,10 @@ def test_rebuild_rejects_ambiguous_native_structures(malformation: str) -> None:
         children.append(children[-1])
     elif malformation == "duplicate_index":
         children.insert(1, children[1])
+    elif malformation == "duplicate_jump":
+        children.insert(2, children[2])
     else:
-        children.pop(2)
+        children.pop(1)
     document = document.replace_chunk(
         master, replace(master.chunk, children=tuple(children))
     )
@@ -480,17 +511,32 @@ def test_rebuild_rejects_ambiguous_native_structures(malformation: str) -> None:
         source.analyze(source.begin_draft(rebuild_album_indexes=True))
     )
     assert result.prepared is None
-    assert any(i.code == "library.album_rebuild_ambiguous" for i in result.issues)
+    issues = [i for i in result.issues if i.code == "library.album_rebuild_ambiguous"]
+    assert len(issues) == 1
+    assert issues[0].message == (
+        "Album index rebuilding requires complete, unambiguous Master Playlist membership."
+        if malformation in ("missing_member", "duplicate_member")
+        else "Album index rebuilding requires exactly one Album index and at most one jump table."
+    )
     assert source.serialize().itunes == original
 
 
 @pytest.mark.parametrize(
-    "corruption", ["missing_index", "duplicate_position", "jump_ranges"]
+    ("jump_tables", "corruption"),
+    [
+        (False, "missing_index"),
+        (True, "missing_index"),
+        (False, "duplicate_position"),
+        (True, "duplicate_position"),
+        (True, "jump_ranges"),
+        (True, "missing_jump"),
+        (False, "added_jump"),
+    ],
 )
 def test_rebuild_verifier_checks_index_presence_and_jump_ranges(
-    monkeypatch: pytest.MonkeyPatch, corruption: str
+    monkeypatch: pytest.MonkeyPatch, jump_tables: bool, corruption: str
 ) -> None:
-    source = album_source()
+    source = album_source(jump_tables=jump_tables)
     writer = write_iTunesDB
 
     def corrupt(document: DatabaseDocument[MhbdHeader]) -> bytes:
@@ -503,6 +549,33 @@ def test_rebuild_verifier_checks_index_presence_and_jump_ranges(
                     for c in selection.chunk.children
                     if not isinstance(c.payload, MhodLibraryIndexPayload)
                 )
+            elif corruption == "missing_jump":
+                children = tuple(
+                    c
+                    for c in selection.chunk.children
+                    if not isinstance(c.payload, MhodLibraryJumpTablePayload)
+                )
+            elif corruption == "added_jump":
+                jump = new_itunes_chunk(
+                    MHOD,
+                    MhodHeader(mhod_type=53),
+                    prefix=MhodLibraryJumpTablePrefix(sort_type=4),
+                    payload=MhodLibraryJumpTablePayload(
+                        (
+                            MhodLibraryJumpTableEntry(
+                                letter_code=ord("N"),
+                                start_index=0,
+                                entry_count=4,
+                            ),
+                        ),
+                        b"",
+                    ),
+                )
+                children = selection.chunk.children
+                if not any(
+                    isinstance(c.payload, MhodLibraryJumpTablePayload) for c in children
+                ):
+                    children = (jump, *children)
             elif corruption == "duplicate_position":
                 children = tuple(
                     replace(c, payload=replace(c.payload, indices=(0, 0, 2, 3)))
@@ -527,7 +600,27 @@ def test_rebuild_verifier_checks_index_presence_and_jump_ranges(
         source.analyze(source.begin_draft(rebuild_album_indexes=True))
     )
     assert result.prepared is None
-    assert any(i.code == "verification.playlist_index" for i in result.issues)
+    assert any(i.code == "verification.playlist_index" for i in result.issues), (
+        result.issues
+    )
+
+
+def test_structural_rebuild_creates_missing_jump_tables() -> None:
+    source = album_source(jump_tables=False)
+    desired = replace(source.snapshot, tracks=tuple(reversed(source.snapshot.tracks)))
+    result = source.prepare(
+        source.analyze(source.begin_draft(desired, rebuild_album_indexes=True)),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    assert album_orders(result.prepared.itunes) == {2: (1, 2, 3, 4), 3: (1, 2, 3, 4)}
+    assert (
+        sum(
+            s.chunk.header.mhod_type == 53
+            for s in parse_iTunesDB(result.prepared.itunes).find_chunks(MhodHeader)
+        )
+        == 10
+    )
 
 
 @pytest.mark.parametrize("structural", [False, True])

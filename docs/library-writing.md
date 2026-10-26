@@ -762,8 +762,8 @@ To repair existing bad Albums indexes in the application, load the iPod, open
 **Sync with Host**, proceed to **Review Sync** with no media changes selected,
 and choose **Refresh Library**. Disable Playlist reconciliation in the review if
 only the database refresh is wanted. Non-SQLite iPods with Tracks, including
-Classic models, rebuild their retained Albums index/jump-table pairs. Normal Sync
-also requests this rebuild. SQLite iPods retain their existing complete SQLite
+Classic models, rebuild their retained Albums indexes and any existing jump tables.
+Normal Sync also requests this rebuild. SQLite iPods retain their existing complete SQLite
 regeneration workflow. Refresh uses normal signing, source-fingerprint checks,
 and a recoverable Storage Transaction; it does not require media reimport.
 
@@ -780,9 +780,12 @@ result = source.prepare(plan, resources)
 result still requires normal application review and Storage publication. The
 intent is also available on `LibraryPreparationRequest`. Repair-only preparation
 preserves Track metadata, native Album records, Master occurrences, unrelated
-indexes, and Unknown Data. Missing or duplicate halves of an existing sort-4 pair,
-or ambiguous Master membership, block repair. A source with neither half remains
-unchanged unless a structural edit independently requires index creation. Loading,
+indexes, and Unknown Data. Each retained sort-4 index may have zero or one jump
+table; refresh preserves an absent jump table. Duplicate indexes, duplicate or
+orphan jump tables, or ambiguous Master membership block repair. See
+[ADR-0194](adr/0194-allow-retained-album-indexes-without-jump-tables.md).
+A source with neither record remains unchanged unless a structural edit independently
+requires index creation. Loading,
 `serialize()`, and default no-op drafts do not repair or normalize source bytes.
 
 Retained sort-36 album indexes use a matching captured collation profile when group

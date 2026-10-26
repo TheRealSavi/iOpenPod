@@ -11342,8 +11342,12 @@ Playlists: %3</translation>
         <translation>Ein Videobild für {name} konnte nicht vorbereitet werden. Die Folge kann weiterhin ohne Cover synchronisiert werden.</translation>
     </message>
     <message>
-        <source>Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.</source>
-        <translation>Zum Neuaufbau des Albumindex sind genau ein Paar aus Index und Sprungtabelle sowie vollständige, eindeutige Einträge in der Hauptwiedergabeliste erforderlich.</translation>
+        <source>Album index rebuilding requires complete, unambiguous Master Playlist membership.</source>
+        <translation>Zum Neuaufbau des Albumindex sind vollständige, eindeutige Einträge in der Hauptwiedergabeliste erforderlich.</translation>
+    </message>
+    <message>
+        <source>Album index rebuilding requires exactly one Album index and at most one jump table.</source>
+        <translation>Zum Neuaufbau des Albumindex sind genau ein Albumindex und höchstens eine Sprungtabelle erforderlich.</translation>
     </message>
     <message>
         <source>Album rebuilding changed Master Playlist occurrences.</source>

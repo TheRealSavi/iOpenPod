@@ -1953,7 +1953,9 @@ time and the input draft's saved Playlist memberships; unsupported rules and fir
 preserved. No-change Sync also reaches this step. See ADR-0142.
 Sync also carries an explicit database refresh intent. SQLite targets regenerate
 their companion artifacts under ADR-0147; non-SQLite targets with Tracks rebuild
-retained sort-4 Albums indexes under ADR-0148. The GUI exposes **Refresh Library**
+retained sort-4 Albums indexes under ADR-0148 and ADR-0194. A retained index may
+omit its jump table; refresh preserves that layout while validating any existing
+table and rejecting duplicate or orphan records. The GUI exposes **Refresh Library**
 when no changes are selected. iPodDB derives contiguous Album groups and verifies
 their indexes; the Application Layer and Storage retain ordinary review, signing,
 source validation, and recoverable publication. Default no-op drafts and ordinary

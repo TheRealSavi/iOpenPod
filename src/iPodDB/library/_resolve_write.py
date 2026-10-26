@@ -293,18 +293,24 @@ def resolve(
                 for c in row.chunk.children
                 if isinstance(c.header, MhipHeader)
             ]
-            if Counter(
+            index_types = Counter(
                 c.header.mhod_type
                 for c in album_chunks
                 if isinstance(c.header, MhodHeader)
-            ) != Counter((52, 53)) or (
+            )
+            # Retained Apple-written indexes can omit alphabetical jump tables.
+            # Refresh preserves that layout; duplicates and orphan tables are ambiguous.
+            ambiguous_indexes = index_types not in (Counter((52,)), Counter((52, 53)))
+            if ambiguous_indexes or (
                 not structural
                 and Counter(members) != Counter(t.track_id for t in original.tracks)
             ):
                 issues.append(
                     WriteIssue(
                         "library.album_rebuild_ambiguous",
-                        "Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.",
+                        "Album index rebuilding requires exactly one Album index and at most one jump table."
+                        if ambiguous_indexes
+                        else "Album index rebuilding requires complete, unambiguous Master Playlist membership.",
                         phase="resolution",
                         subject="playlist",
                         record_id=row.chunk.header.playlist_id,

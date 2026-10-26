@@ -266,3 +266,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0191: Compare live Linux physical backing](0191-compare-live-linux-physical-backing.md)
 - [ADR-0192: Pin Linux search-only ancestors](0192-pin-linux-search-only-ancestors.md)
 - [ADR-0193: Resolve Btrfs recovery through all member devices](0193-resolve-btrfs-recovery-through-all-member-devices.md)
+- [ADR-0194: Allow retained Album indexes without jump tables](0194-allow-retained-album-indexes-without-jump-tables.md)
