@@ -156,7 +156,9 @@ than the Original iOpenPod or libgpod definitions.
   are persistent IDs. Optional absent Dynamic Genius columns are supported;
   conflicting present assignments fail.
 - `IPodTrackDetails.genius_id` exposes the MHIT relationship identity, distinct
-  from `track_id`, `db_track_id`, and `genius_category_id`.
+  from `track_id` and `db_track_id`. MHIT `+0x98` is the total skip counter,
+  formerly mislabeled `genius_category_id`; it has no established Genius role.
+  See [ADR-0195](adr/0195-adopt-firmware-database-field-semantics.md).
 - `iPodDB.sidecars` provides saved Playlist parse/create/write, reference validation,
   and `remap_genius_playlist`. Both Classic positional arrays and nano identity-only
   documents are supported.

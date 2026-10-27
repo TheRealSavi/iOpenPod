@@ -35,6 +35,7 @@ caller, based on its device/firmware evidence:
 | `STANDARD` (default) | None | None | Any known base layout |
 | `NANO_3` | `Nano3Preferences.daylight_saving_minutes` | 0 or 60 | 2,952 bytes |
 | `VOLUME_LIMIT_1_1_1` | `VolumeLimitPreferences.volume_limit` | 0 through 64, device units | Known base layout containing the field |
+| `CLASSIC_120GB_2_0_1` | `Classic201Preferences` and `Classic201ClockPreferences` | Language only; city/clock fields read-only | 2,956 bytes, version word `0x3d` |
 
 The volume profile asserts the documented Video/nano firmware 1.1.1 behavior;
 file size alone does not make that assertion. Zero is not assigned an invented
@@ -42,13 +43,35 @@ file size alone does not make that assertion. Zero is not assigned an invented
 DST switch is exposed separately; it is not automatically added to a city's
 historical UTC offset.
 
+The Classic profile replaces the generic two-byte city view with a full u32 at
+payload `0xb70`. A value such as `0x00010029` remains unknown rather than aliasing
+city `0x29`. Its separate clock structure exposes `format_version`, raw
+`retained_dst_state` at `0xb6c`, signed `clock_bias_days` at `0xb78`, and the raw
+u32 `clock_bias_seconds` word at `0xb7c`. Saved DST has mixed 0/1 and 0/60 callers;
+neither it nor the bias is added to IANA date conversion. City/clock edits are
+rejected, while language changes preserve those bytes exactly.
+
+The Application Layer automatically asserts this profile only for the exact
+Classic 6.5th Gen 120GB Device Profile with unconflicted RetailOS 2.0.1 evidence,
+matching extent and format version. Transport revisions do not qualify. Generic
+city files and other releases retain their prior profile. The Settings view shows
+these captured clock observations without offering clock edits. See the
+[firmware evidence](research/classic201-clock-semantics-2026-10-26.md).
+
 `document.timezone` returns:
 
 - `FixedOffsetTimezone(offset_seconds)`: seconds east of UTC for older encodings,
   including their encoded DST adjustment.
-- `CityTimezone(city_id, timezone_name)`: city identity and known zone name.
+- `CityTimezone(city_id, timezone_name, detail="")`: city identity, known zone
+  name and any interpretation diagnostic through the public Preferences contract.
   Unknown cities, including zero, retain `timezone_name=None`.
 - `None`: an opaque layout or invalid older code.
+
+Qualified Classic city `0x26` also returns no geographical zone: the inherited
+London mapping contradicts that firmware's base offset and its intended city
+identity is unresolved. Other profiles retain their existing interpretation.
+Four corroborated city mappings are corrected in the shared table; see
+[the city identity evidence](research/classic201-additional-contracts-2026-10-26.md#city-identity-corrections).
 
 The reader never consults the Host timezone or substitutes UTC for an unknown
 reading. The Application Layer now resolves city rules into a Device Time Context for

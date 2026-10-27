@@ -137,7 +137,7 @@ def verify_normalized_podcasts(
             )
         for item in selection.find_chunks(MhipHeader):
             h = item.chunk.header
-            if h.podcast_group_flag & 0x100:
+            if h.is_group:
                 if (
                     not h.group_persistent_id
                     or h.group_persistent_id in seen_groups

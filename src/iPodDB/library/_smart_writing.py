@@ -23,6 +23,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
 )
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._smart_projection import (
+    BOOLEAN_TRUE_OPERANDS,
     CHOICE_ACTIONS,
     DATE_IDENTIFIER,
     DESCENDING_SORTS,
@@ -51,6 +52,7 @@ from iPodDB.library.playlists import (
 from iPodDB.library.smart_rules import (
     BOOLEAN_FIELDS,
     DATE_FIELDS,
+    MAX_SMART_NUMERIC_VALUE,
     TEXT_FIELDS,
     validate_smart_playlist,
 )
@@ -147,12 +149,13 @@ def encode_rule(
             MhodSmartNumericRuleData(value, 0, 1, value, 0, 1, 0, 0, 0, 0, 0, b""),
         )
     if rule.field in BOOLEAN_FIELDS:
+        value = BOOLEAN_TRUE_OPERANDS.get(rule.field, 0)
         return MhodSmartRule(
             field,
             1 if rule.operator is SmartOperator.IS_TRUE else 0x02000001,
             0,
             bytes(40),
-            MhodSmartNumericRuleData(0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, b""),
+            MhodSmartNumericRuleData(value, 0, 1, value, 0, 1, 0, 0, 0, 0, 0, b""),
         )
     if rule.field in DATE_FIELDS and rule.operator in RELATIVE_ACTIONS.values():
         assert isinstance(rule.value, int)
@@ -205,9 +208,9 @@ def encode_rule(
         upper = unix_to_mac(upper, timezone_offset, missing_zero=False)
         if not 0 < value <= upper <= 0xFFFFFFFF:
             raise ValueError("The date cannot be represented in the device timezone.")
-    if not isinstance(upper, int) or not 0 <= value <= upper <= 0xFFFFFFFFFFFFFFFF:
+    if not isinstance(upper, int) or not 0 <= value <= upper <= MAX_SMART_NUMERIC_VALUE:
         raise ValueError(
-            "Smart Playlist numeric bounds must be ordered unsigned 64-bit values."
+            "Smart Playlist numeric bounds must be ordered nonnegative signed 64-bit values."
         )
     return MhodSmartRule(
         field,

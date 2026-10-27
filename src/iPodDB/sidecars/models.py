@@ -16,7 +16,11 @@ class PlaybackEntry:
     bookmark_time_ms: int = 0
     rating: int | None = None
     skip_count: int = 0
-    last_skipped: int = 0
+    # None means the format/record has no date field; a present zero is distinct.
+    last_skipped: int | None = None
+    # Play Counts row byte +0x11: Host projection interprets 1 as played and 2
+    # as unplayed. Retain all other raw values without assigning an override.
+    played_marker: int | None = None
     persistent_id: int | None = None
     date_kind: PlaybackDateKind = PlaybackDateKind.LOCAL_MAC
     # iTunesStats has a separate, incompletely understood 'skipped' value.

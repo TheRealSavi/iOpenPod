@@ -2590,7 +2590,9 @@ class DeviceCoordinator:
                                 *(
                                     DeviceCandidateIssue(
                                         DeviceCandidateIssueCode.TIMEZONE_UNCERTAIN,
-                                        issue.message,
+                                        f"{issue.message} {issue.detail}"
+                                        if issue.detail
+                                        else issue.message,
                                     )
                                     for issue in time_warnings
                                 ),

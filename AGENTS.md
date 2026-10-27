@@ -72,6 +72,14 @@ uv run pytest
 
 The VS Code task `Check: All` runs the same validation sequence.
 
+Ordinary full-suite runs (`uv run pytest`, `uv run pytest tests`, or
+`uv run pytest .` from the repository root) default to eight workers with whole-file
+scheduling. Focused paths, `-k`, `-m`, `--lf`, and collection-only runs default to serial.
+Use explicit `-n8` to parallelize a focused run; reserve `-n0` for diagnosis, then
+use the normal default for full-suite validation. CI and VS Code inherit this
+repository policy; keep the worker count out of their command definitions.
+See [ADR-0197](docs/adr/0197-default-full-suite-tests-to-eight-workers.md).
+
 Apply automatic formatting and safe fixes with the VS Code task `Format: All`, or
 run the underlying commands explicitly:
 

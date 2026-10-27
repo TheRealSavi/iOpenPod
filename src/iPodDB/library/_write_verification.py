@@ -61,8 +61,7 @@ def verify_relationships(
         return {
             (s.chunk.header.track_id, s.chunk.header.track_persistent_id)
             for s in document.find_chunks(MhipHeader)
-            if not s.chunk.header.podcast_group_flag & 0x100
-            and s.chunk.header.track_id not in tracks
+            if not s.chunk.header.is_group and s.chunk.header.track_id not in tracks
         }
 
     if dangling(checked) - dangling(original):

@@ -169,6 +169,9 @@ def verify_native_tracks(
                 original_chunk,
                 {**extent_fields, **header_requirements.get(track.track_id, {})},
                 database_version,
+                required_presence=frozenset({"not_played_flag"})
+                if track.metadata.played != (track.play_count > 0)
+                else frozenset(),
             )
             check("header_length", length, output_chunk.generic_header.header_length)
             expanded |= length > original_chunk.generic_header.header_length

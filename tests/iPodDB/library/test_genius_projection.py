@@ -1,4 +1,4 @@
-"""Genius graph identity is an iPod diagnostic, distinct from Track/category IDs."""
+"""Genius graph identity is distinct from Track IDs and playback counters."""
 
 import struct
 
@@ -21,6 +21,7 @@ def test_library_exposes_genius_identity_without_changing_original_bytes(
     struct.pack_into("<I", fields, 0x10 - 12, 7)
     struct.pack_into("<Q", fields, 0x70 - 12, 19)
     struct.pack_into("<I", fields, 0x98 - 12, 23)
+    struct.pack_into("<I", fields, 0x9C - 12, 29)
     struct.pack_into("<Q", fields, 0x1E4 - 12, 0xFEDCBA9876543210)
     data = itunes_database(
         dataset(
@@ -35,7 +36,8 @@ def test_library_exposes_genius_identity_without_changing_original_bytes(
     assert track.track_id == 7
     assert track.ipod is not None
     assert track.ipod.db_track_id == 19
-    assert track.ipod.genius_category_id == 23
+    assert track.metadata.skip_count == 23
+    assert track.ipod.secondary_skip_count == 29
     assert track.ipod.genius_id == 0xFEDCBA9876543210
     assert library.serialize().itunes == data
 

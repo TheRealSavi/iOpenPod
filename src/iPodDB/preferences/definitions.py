@@ -24,6 +24,7 @@ class PreferencesProfile(StrEnum):
     STANDARD = "standard"
     NANO_3 = "nano_3"
     VOLUME_LIMIT_1_1_1 = "volume_limit_1_1_1"
+    CLASSIC_120GB_2_0_1 = "classic_120gb_2_0_1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +52,28 @@ class CityPreferences(BinaryStruct):
 
 
 @dataclass(frozen=True, slots=True)
+class Classic201Preferences(BinaryStruct):
+    """Classic 120GB 2.0.1 reads the entire city word; only language is editable."""
+
+    city_id: int = cf(0xB70, "u32")
+    language_code: int = cf(2808, "u8")
+
+
+@dataclass(frozen=True, slots=True)
+class Classic201ClockPreferences(BinaryStruct):
+    """Read-only saved clock state, distinct from a current or historical offset.
+
+    DST callers store both 0/1 and 0/60. The seconds word is retained raw;
+    neither it nor the day displacement establishes the hardware clock's origin.
+    """
+
+    format_version: int = cf(0, "u32")
+    retained_dst_state: int = cf(0xB6C, "u8")
+    clock_bias_days: int = cf(0xB78, "i32")
+    clock_bias_seconds: int = cf(0xB7C, "u32")
+
+
+@dataclass(frozen=True, slots=True)
 class Nano3Preferences(BinaryStruct):
     """Explicit DST switch; not an extra shift to apply to an IANA zone."""
 
@@ -64,7 +87,9 @@ class VolumeLimitPreferences(BinaryStruct):
     volume_limit: int = cf(0xB50, "u8")
 
 
-type ExtendedPreferencesSettings = Nano3Preferences | VolumeLimitPreferences
+type ExtendedPreferencesSettings = (
+    Nano3Preferences | VolumeLimitPreferences | Classic201ClockPreferences
+)
 
 
 def extension_for_profile(
@@ -76,11 +101,16 @@ def extension_for_profile(
         return Nano3Preferences
     if profile is PreferencesProfile.VOLUME_LIMIT_1_1_1 and size >= 2897:
         return VolumeLimitPreferences
+    if profile is PreferencesProfile.CLASSIC_120GB_2_0_1 and size == 2956:
+        return Classic201ClockPreferences
     raise ValueError(f"Preferences profile {profile.value} does not fit {size} bytes.")
 
 
 type PreferencesSettings = (
-    FourthGenerationPreferences | VideoPreferences | CityPreferences
+    FourthGenerationPreferences
+    | VideoPreferences
+    | CityPreferences
+    | Classic201Preferences
 )
 
 
@@ -100,5 +130,15 @@ PREFERENCES_DEFINITIONS = (
 )
 
 
-def definition_for_size(size: int) -> PreferencesDefinition | None:
+def definition_for_size(
+    size: int, profile: PreferencesProfile = PreferencesProfile.STANDARD
+) -> PreferencesDefinition | None:
+    if profile is PreferencesProfile.CLASSIC_120GB_2_0_1:
+        return (
+            PreferencesDefinition(
+                PreferencesLayout.CITY, (2956,), Classic201Preferences
+            )
+            if size == 2956
+            else None
+        )
     return next((item for item in PREFERENCES_DEFINITIONS if size in item.sizes), None)

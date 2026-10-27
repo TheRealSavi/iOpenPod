@@ -62,7 +62,7 @@ def test_empty_library_has_device_version_named_master_and_no_media(
     assert all(
         s.chunk.header.master_flag == 1 and s.chunk.header.playlist_id for s in masters
     )
-    assert all(s.chunk.header.string_mhod_child_count == 1 for s in masters)
+    assert all(s.chunk.header.unk_mhyp_0x28 == 1 for s in masters)
     library = IPodLibrary.parse(data)
     assert library.snapshot.device_name == "John's iPod"
     assert library.snapshot.tracks == ()

@@ -270,16 +270,27 @@ def verify_playlists(
             expected_items = tuple(
                 s.chunk.header.track_id
                 for s in selection.find_chunks(MhipHeader)
-                if s.chunk.header.track_id not in deleted
+                if s.chunk.header.is_group or s.chunk.header.track_id not in deleted
             )
             actual_items = tuple(
                 s.chunk.header.track_id for s in retained.find_chunks(MhipHeader)
+            )
+            old_groups = tuple(
+                _bytes(s.chunk, original_bytes)
+                for s in selection.find_chunks(MhipHeader)
+                if s.chunk.header.is_group
+            )
+            new_groups = tuple(
+                _bytes(s.chunk, output_bytes)
+                for s in retained.find_chunks(MhipHeader)
+                if s.chunk.header.is_group
             )
             expected_header = replace(
                 chunk.header, mhip_child_count=retained.chunk.header.mhip_child_count
             )
             if (
                 old_metadata != new_metadata
+                or old_groups != new_groups
                 or expected_items != actual_items
                 or expected_header != retained.chunk.header
             ):
@@ -672,7 +683,7 @@ def verify_playlists(
                         chunk,
                     )
                 native_ids.add(h.group_id)
-                if h.podcast_group_flag & 0x100:
+                if h.is_group:
                     title = next(
                         (
                             c.payload.value
@@ -722,7 +733,7 @@ def verify_playlists(
                 grouped_ids = Counter(
                     (item.header.track_id, item.header.group_id)
                     for item in items
-                    if not item.header.podcast_group_flag & 0x100
+                    if not item.header.is_group
                 )
                 flat_ids = Counter(
                     (s.chunk.header.track_id, s.chunk.header.group_id)
@@ -742,7 +753,7 @@ def verify_playlists(
                         if isinstance(c.prefix, MhodPlaylistPositionPrefix)
                     }
                     for item in items
-                    if not item.header.podcast_group_flag & 0x100
+                    if not item.header.is_group
                 }
                 for occurrence in counterpart.find_chunks(MhipHeader):
                     item = occurrence.chunk
@@ -775,7 +786,7 @@ def verify_playlists(
                 and is_podcasts(3, grouped.chunk.header)
             )
             for position, item in enumerate(items):
-                if item.header.podcast_group_flag & 0x100 or item.header.group_id_ref:
+                if item.header.is_group or item.header.group_id_ref:
                     fail(
                         "podcast_dataset",
                         "Podcast grouping occurs outside dataset 3's special Podcasts playlist.",

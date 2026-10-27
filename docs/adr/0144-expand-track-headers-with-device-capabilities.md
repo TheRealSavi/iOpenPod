@@ -7,11 +7,14 @@
   including device-aware new Track creation and later derived fields.
 - Amended by: [ADR-0171](0171-use-standard-track-headers-on-mini-2-and-ipod-video.md),
   selecting 624-byte headers for Mini 2G and full-size iPod 5G/5.5G.
+- Corrected by: [ADR-0195](0195-adopt-firmware-database-field-semantics.md):
+  the total skip counter fits a 156-byte header; the secondary counter and
+  last-skipped date do not. Expansion and preservation policy remain in force.
 
 ## Context
 
 An iPod nano 6G can contain a 156-byte MHIT while reporting skip history in a
-playback sidecar. That header has no skip fields. Keeping its extent while merging
+playback sidecar. That header lacks the last-skipped date. Keeping its extent while merging
 the history makes serialization fail; discarding the fields makes consumption
 lose understood evidence. Original iOpenPod selected larger headers from the
 device's database version, but rebuilt records rather than retaining their bytes.

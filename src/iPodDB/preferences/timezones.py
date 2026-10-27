@@ -1,8 +1,16 @@
-"""Device city codes retained from the existing iPodDB format research.
+"""Device city identities and the Host's geographical timezone policy.
 
-Reference: https://github.com/gtkpod/libgpod/blob/master/src/itdb_tzinfo_data.h
+Baseline: gtkpod/libgpod src/itdb_tzinfo_data.h at 7982c5554f78dde47fd006afbeff659201d6db3d.
+San Jose, San Juan, Rio de Janeiro and Victoria mappings are corrected using
+their source city labels, Classic 2.0.1 city offsets and IANA geographical data.
+Firmware offsets corroborate identity; they are not historical timezone rules.
 Names describe zones, never the Host timezone or an offset evaluated at import.
 """
+
+# The baseline calls 0x26 Manchester/London, but Classic 2.0.1 assigns -300
+# minutes. Its geographical identity is unresolved; other profiles retain the
+# legacy mapping until independently investigated.
+CLASSIC201_UNRESOLVED_CITY_IDS = frozenset({0x26})
 
 TIME_ZONE_ALIASES = {
     "PST8PDT": "America/Los_Angeles",
@@ -36,7 +44,7 @@ CITY_TIMEZONE_NAMES: dict[int, str] = {
     0x15: "America/Mexico_City",
     0x16: "CST6CDT",
     0x17: "America/Regina",
-    0x18: "PST8PDT",
+    0x18: "America/Costa_Rica",
     0x19: "America/El_Salvador",
     0x1A: "CST6CDT",
     0x1B: "America/Tegucigalpa",
@@ -66,7 +74,7 @@ CITY_TIMEZONE_NAMES: dict[int, str] = {
     0x33: "America/Guyana",
     0x34: "America/Halifax",
     0x35: "America/La_Paz",
-    0x36: "America/Argentina/San_Juan",
+    0x36: "America/Puerto_Rico",
     0x37: "America/Santiago",
     0x38: "America/Santo_Domingo",
     0x39: "America/St_Johns",
@@ -77,7 +85,7 @@ CITY_TIMEZONE_NAMES: dict[int, str] = {
     0x3E: "America/Godthab",
     0x3F: "America/Paramaribo",
     0x40: "America/Recife",
-    0x41: "Africa/Casablanca",
+    0x41: "America/Sao_Paulo",
     0x42: "America/Sao_Paulo",
     0x43: "Atlantic/South_Georgia",
     0x44: "Atlantic/Azores",
@@ -161,6 +169,7 @@ CITY_TIMEZONE_NAMES: dict[int, str] = {
     0x92: "Asia/Dubai",
     0x93: "Asia/Muscat",
     0x94: "Indian/Mauritius",
+    0x95: "Indian/Mahe",
     0x96: "Asia/Karachi",
     0x97: "Indian/Maldives",
     0x98: "Asia/Samarkand",

@@ -111,9 +111,11 @@ def parse_play_counts(data: bytes) -> PlaybackDocument:
                 bookmark_time_ms=value(8),
                 rating=_rating(value(12)) if len(row) >= 16 else None,
                 skip_count=value(20) if len(row) >= 28 else 0,
-                last_skipped=value(24) if len(row) >= 28 else 0,
+                last_skipped=value(24) if len(row) >= 28 else None,
+                played_marker=row[17] if len(row) >= 18 else None,
                 unknown=(row[12:16] if len(row) < 16 else b"")
-                + row[16:20]
+                + row[16:17]
+                + row[18:20]
                 + (row[28:] if len(row) >= 28 else row[20:]),
             )
         )
@@ -160,7 +162,7 @@ def _stats(data: bytes, word: int) -> PlaybackDocument:
                 play_count=value(4 if word == 3 else 2),
                 bookmark_time_ms=value(1),
                 last_played=value(3) if word == 4 else 0,
-                last_skipped=value(5) if word == 4 else 0,
+                last_skipped=value(5) if word == 4 else None,
                 skipped=value(5 if word == 3 else 4),
                 date_kind=PlaybackDateKind.UNIX,
                 unknown=(row[6:12] + row[18:]) if word == 3 else row[24:],
@@ -242,7 +244,9 @@ def parse_play_counts_plist(data: bytes) -> PlaybackDocument:
                 bookmark_time_ms=integer("bookmarkTimeInMS"),
                 rating=_rating(rating) if rating else None,
                 skip_count=integer("skipCount"),
-                last_skipped=integer("skipMacOSDate"),
+                last_skipped=integer("skipMacOSDate")
+                if "skipMacOSDate" in item
+                else None,
             )
         )
     return PlaybackDocument(bytes(data), tuple(entries), "PlayCounts.plist")

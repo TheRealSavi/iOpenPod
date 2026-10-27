@@ -12,10 +12,21 @@ from tests.iOpenPod.app.test_sync_execution import (
     _host,  # pyright: ignore[reportPrivateUsage]
     _request,  # pyright: ignore[reportPrivateUsage]
 )
+from tests.iPodDB.library.test_writing import library
 
 from iOpenPod.app.library_write import PreparationCancelledError
 from iOpenPod.app.smart_playlist_preview import refresh_smart_playlists
 from iOpenPod.app.sync_execution import SyncExecutionStatus
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
+    MhodSmartNumericRuleData,
+    MhodSmartRawRuleData,
+    MhodSmartRulesPayload,
+)
+from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
+from iPodDB.iTunesDB.shared.constants import MhodType
+from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library import (
     IPodLibrary,
     LibrarySnapshot,
@@ -36,6 +47,8 @@ from iPodDB.library import (
     UnsupportedSmartRule,
     playlist_entries,
 )
+from iPodDB.library._smart_writing import smart_chunks
+from iPodDB.shared.chunk import ParsedChunk
 
 
 def _smart(identity: int, rule: SmartRule, *members: int) -> Playlist:
@@ -100,6 +113,118 @@ def test_refresh_preserves_unknown_rules_and_firmware_managed_membership() -> No
     )
 
     assert refresh_smart_playlists(snapshot) == snapshot
+
+
+@pytest.mark.parametrize("upper_displacement", (-1, 1))
+def test_displaced_relative_upper_bound_retains_bytes_and_saved_occurrences(
+    upper_displacement: int,
+) -> None:
+    smart = SmartPlaylist(
+        rules=SmartRuleGroup(
+            rules=(SmartRule(SmartField.DATE_ADDED, SmartOperator.IN_LAST, 86400),)
+        )
+    )
+    prefs, row = smart_chunks(smart, ())
+    payload = row.payload
+    assert isinstance(payload, MhodSmartRulesPayload)
+    rule = payload.rules[0]
+    assert isinstance(rule.data, MhodSmartNumericRuleData)
+    native = replace(
+        row,
+        payload=replace(
+            payload,
+            rules=(replace(rule, data=replace(rule.data, to_date=upper_displacement)),),
+        ),
+    )
+    _assert_unsupported_definition_preserves_bytes_and_membership(prefs, native)
+
+
+@pytest.mark.parametrize("upper", (False, True))
+def test_signed_native_numeric_bound_retains_bytes_and_saved_occurrences(
+    upper: bool,
+) -> None:
+    semantic = (
+        SmartRule(SmartField.PLAY_COUNT, SmartOperator.BETWEEN, 0, 10)
+        if upper
+        else SmartRule(SmartField.PLAY_COUNT, SmartOperator.LESS_THAN, 10)
+    )
+    prefs, row = smart_chunks(
+        SmartPlaylist(rules=SmartRuleGroup(rules=(semantic,))), ()
+    )
+    payload = row.payload
+    assert isinstance(payload, MhodSmartRulesPayload)
+    rule = payload.rules[0]
+    assert isinstance(rule.data, MhodSmartNumericRuleData)
+    data = (
+        replace(rule.data, to_value=1 << 63)
+        if upper
+        else replace(rule.data, from_value=1 << 63)
+    )
+    native = replace(row, payload=replace(payload, rules=(replace(rule, data=data),)))
+    _assert_unsupported_definition_preserves_bytes_and_membership(prefs, native)
+
+
+@pytest.mark.parametrize("raw_text", (b"\x00A\xff", b"\xd8\x00", b"\xdc\x00"))
+def test_malformed_utf16_operand_retains_bytes_and_saved_occurrences(
+    raw_text: bytes,
+) -> None:
+    smart = SmartPlaylist(
+        rules=SmartRuleGroup(
+            rules=(SmartRule(SmartField.TITLE, SmartOperator.IS, "A"),)
+        )
+    )
+    prefs, row = smart_chunks(smart, ())
+    payload = row.payload
+    assert isinstance(payload, MhodSmartRulesPayload)
+    rule = replace(payload.rules[0], data=MhodSmartRawRuleData(raw_text))
+    native = replace(row, payload=replace(payload, rules=(rule,)))
+    _assert_unsupported_definition_preserves_bytes_and_membership(prefs, native)
+
+
+def _assert_unsupported_definition_preserves_bytes_and_membership(
+    prefs: ParsedChunk[MhodHeader], native: ParsedChunk[MhodHeader]
+) -> None:
+    document = parse_iTunesDB(library(mirrored=True).serialize().itunes)
+    for path in document.find_chunks(MhypHeader):
+        if path.chunk.header.playlist_id == 10:
+            document = document.replace_chunk(
+                path,
+                replace(path.chunk, children=(prefs, native, *path.chunk.children)),
+            )
+    before = write_iTunesDB(document)
+    source = IPodLibrary.parse(before)
+    playlists = tuple(p for p in source.snapshot.playlists if p.playlist_id == 10)
+    assert playlists and all(
+        p.smart is not None and not p.smart.editable for p in playlists
+    )
+    assert playlists[0].track_ids == (1, 2, 1)
+
+    refreshed = refresh_smart_playlists(source.snapshot, now=1_700_000_000)
+    assert refreshed == source.snapshot
+    desired = replace(
+        refreshed,
+        tracks=(
+            replace(refreshed.tracks[0], title="Unrelated edit"),
+            *refreshed.tracks[1:],
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    adopted = IPodLibrary.parse(result.prepared.itunes)
+    assert adopted.snapshot.playlists == source.snapshot.playlists
+    assert adopted.snapshot.tracks[0].title == "Unrelated edit"
+    native_rule_bytes: list[tuple[bytes, ...]] = []
+    for data in (before, result.prepared.itunes):
+        parsed = parse_iTunesDB(data)
+        native_rule_bytes.append(
+            tuple(
+                path.chunk.raw_header + path.chunk.raw_body
+                for path in parsed.find_chunks(MhodHeader)
+                if path.chunk.header.mhod_type == MhodType.SMART_PLAYLIST_RULES
+            )
+        )
+    assert len(native_rule_bytes[0]) == 2
+    assert native_rule_bytes[1] == native_rule_bytes[0]
 
 
 def test_refresh_uses_one_instant_and_saved_folder_memberships_without_cascading() -> (

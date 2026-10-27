@@ -75,10 +75,14 @@ def _parse_rules(
             header.field_id not in SMART_RULE_NUMERIC_FIELD_IDS
             and (not raw_data or bool(header.action_id & 0x01000000))
         ):
-            rule_data = MhodSmartStringRuleData(
-                value=raw_data.decode("utf-16-be", errors="replace"),
-                raw_data=raw_data,
-            )
+            try:
+                value = raw_data.decode("utf-16-be")
+            except UnicodeDecodeError:
+                # Replacement text would let automatic refresh invent membership
+                # for an operand the semantic text contract cannot represent.
+                rule_data = MhodSmartRawRuleData(raw_data=raw_data)
+            else:
+                rule_data = MhodSmartStringRuleData(value=value, raw_data=raw_data)
 
         elif len(raw_data) >= _NUMERIC_DATA_SIZE:
             fields = parse_binary_struct(

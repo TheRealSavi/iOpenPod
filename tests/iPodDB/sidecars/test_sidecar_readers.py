@@ -65,7 +65,33 @@ def test_play_counts_variants_keep_every_original_byte(endian: str, width: int) 
     assert entry.bookmark_time_ms == 500
     assert entry.rating == (80 if width >= 16 else None)
     assert entry.skip_count == (2 if width >= 28 else 0)
-    assert entry.last_skipped == (3_800_000_100 if width >= 28 else 0)
+    assert entry.last_skipped == (3_800_000_100 if width >= 28 else None)
+    assert document.serialize() == data
+
+
+@pytest.mark.parametrize("endian", ["<", ">"])
+@pytest.mark.parametrize("marker", [0, 1, 2, 255])
+@pytest.mark.parametrize("width", [17, 18, 28])
+def test_played_marker_is_a_byte_independent_of_word_order(
+    endian: str, marker: int, width: int
+) -> None:
+    data = bytearray(counts(endian=endian, width=width))
+    if width >= 18:
+        data[96 + 0x11] = marker
+    document = parse_play_counts(bytes(data))
+    assert document.entries[0].played_marker == (marker if width >= 18 else None)
+    assert document.serialize() == data
+
+
+@pytest.mark.parametrize("endian", ["<", ">"])
+@pytest.mark.parametrize("width", [12, 24, 25, 27, 28, 36])
+def test_zero_skip_date_is_distinct_from_an_absent_or_partial_field(
+    endian: str, width: int
+) -> None:
+    data = counts(((0, 0, 0, 0xFFFFFFFF, 0, 0, 0),), endian=endian, width=width)
+    document = parse_play_counts(data)
+    assert document.entries[0].last_played == 0
+    assert document.entries[0].last_skipped == (0 if width >= 28 else None)
     assert document.serialize() == data
 
 
@@ -98,6 +124,7 @@ def test_stats_advances_each_record_and_retains_unknowns(word: int) -> None:
     assert document.entries[1].skipped == 1
     assert document.entries[1].skip_count == 0
     assert document.entries[0].date_kind is PlaybackDateKind.UNIX
+    assert document.entries[0].last_skipped == (1_700_000_100 if word == 4 else None)
     assert document.serialize() == data
 
 
@@ -125,6 +152,14 @@ def test_plist_uses_persistent_identity_and_preserves_unknown_keys(
     assert document.entries[0].play_count == 4
     assert document.entries[0].skip_count == 2
     assert document.entries[0].rating is None
+    assert document.entries[0].last_skipped is None
+    assert document.serialize() == data
+
+
+def test_plist_present_zero_skip_date_is_retained_as_a_value() -> None:
+    data = plistlib.dumps({"tracks": [{"persistentID": 1, "skipMacOSDate": 0}]})
+    document = parse_play_counts_plist(data)
+    assert document.entries[0].last_skipped == 0
     assert document.serialize() == data
 
 

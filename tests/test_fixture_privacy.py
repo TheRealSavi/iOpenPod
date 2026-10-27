@@ -5,7 +5,7 @@ import json
 import re
 from collections.abc import Iterator
 from contextlib import suppress
-from dataclasses import fields, is_dataclass
+from dataclasses import fields, is_dataclass, replace
 from pathlib import Path
 from typing import cast
 
@@ -98,6 +98,10 @@ def _clean_chunk(chunk: ParsedChunk[ChunkHeader]) -> ParsedChunk[ChunkHeader]:
     assert marker in allowed
     assert is_dataclass(chunk.header)
     defaults = type(chunk.header)()
+    if isinstance(defaults, MhypHeader):
+        # These anonymized fixtures deliberately zero the retained repeat word.
+        # Their privacy contract is independent of new Playlist authoring defaults.
+        defaults = replace(defaults, unk_mhyp_0x28=0)
     for field in fields(chunk.header):
         if field.name not in allowed[marker]:
             assert getattr(chunk.header, field.name) == getattr(defaults, field.name), (

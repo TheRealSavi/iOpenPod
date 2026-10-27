@@ -233,11 +233,11 @@ def podcast_rows_need_repair(
     for item in items:
         header = item.header
         if header.group_id <= previous or (
-            not header.podcast_group_flag & 0x100 and not header.group_id_ref
+            not header.is_group and not header.group_id_ref
         ):
             return True
         previous = header.group_id
-        if header.podcast_group_flag & 0x100:
+        if header.is_group:
             continue
         positions = _positions(item)
         if not positions or len(set(positions)) != 1:
@@ -249,7 +249,7 @@ def podcast_rows_need_repair(
             other = matches.popleft()
             if (
                 other.header.group_id != header.group_id
-                or other.header.podcast_group_flag & 0x100
+                or other.header.is_group
                 or other.header.group_id_ref
                 or not _positions(other)
                 or set(_positions(other)) != set(positions)
@@ -286,8 +286,8 @@ def reconcile_podcasts(
         if not is_podcasts(kind, chunk.header):
             continue
         items = tuple(s.chunk for s in selection.find_chunks(MhipHeader))
-        groups = tuple(c for c in items if c.header.podcast_group_flag & 0x100)
-        episodes = tuple(c for c in items if not c.header.podcast_group_flag & 0x100)
+        groups = tuple(c for c in items if c.header.is_group)
+        episodes = tuple(c for c in items if not c.header.is_group)
         if chunk.header.playlist_id not in changed_playlists:
             continue
         logger.debug(
@@ -367,7 +367,7 @@ def reconcile_podcasts(
         if counterpart is not None:
             for occurrence in counterpart.find_chunks(MhipHeader):
                 item = occurrence.chunk
-                if item.header.podcast_group_flag & 0x100 or item.header.group_id_ref:
+                if item.header.is_group or item.header.group_id_ref:
                     raise ValueError(
                         "Podcast counterparts have ambiguous Episode membership."
                     )

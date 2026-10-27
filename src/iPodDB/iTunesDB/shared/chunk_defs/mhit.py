@@ -52,9 +52,11 @@ class MhitHeader(ChunkHeader):
     explicit_flag: int = cf(0x92, "u8")
     purchased_aac_flag: int = cf(0x93, "u8")
     unk_mhit_0x94: int = cf(0x94, "u32")
-    genius_category_id: int = cf(0x98, "u32")
+    # Classic 2.0.1 imports the total at 0x98 and a separate counter at 0x9C.
+    # The secondary counter's reset/host-consumption contract is not established.
+    skip_count: int = cf(0x98, "u32")
     # Extended Header Fields
-    skip_count: int = cf(0x9C, "u32")
+    secondary_skip_count: int = cf(0x9C, "u32")
     last_skipped: int = cf(0xA0, "u32")
     has_artwork: int = cf(0xA4, "u8")
     skip_when_shuffling: int = cf(0xA5, "u8")

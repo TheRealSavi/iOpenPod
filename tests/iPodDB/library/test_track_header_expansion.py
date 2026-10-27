@@ -242,6 +242,7 @@ def test_expansion_retains_unknown_bytes_children_and_float_representation() -> 
         "play_count_2",
         "last_played",
         "bookmark_time",
+        "skip_count",
     }
     allowed = {
         i

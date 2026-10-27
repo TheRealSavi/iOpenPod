@@ -17,6 +17,12 @@ sessions.
   typography, metric, and interaction foundations for the desktop GUI.
 - [`eta.md`](eta.md) — reusable stage ETA model, integration, and accuracy limits.
 - [iPod timestamp conversion](ipod-time.md)
+- [Further firmware contract corrections](research/classic201-additional-contracts-2026-10-26.md) —
+  Podcast group markers, Smart boolean and numeric operands, city identity fixes,
+  and remaining research-to-product work.
+- [Classic clock evidence](research/classic201-clock-semantics-2026-10-26.md) —
+  firmware calendar provenance, playback date replacement, Smart endpoint
+  preservation and qualified Preferences observations.
 - [Firmware playback sidecars](playback-sidecars.md) — parsing, Library projection,
   transactional consumption, and recovery of playback history and OTG Playlists.
 - [`ipod-preferences.md`](ipod-preferences.md) — typed, lossless firmware Preferences

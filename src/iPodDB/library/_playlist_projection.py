@@ -124,7 +124,7 @@ def project_playlist(
             )
             for index, item in enumerate(selection.find_chunks(MhipHeader))
             if kind is not PlaylistKind.FOLDER
-            and not item.chunk.header.podcast_group_flag & 0x0100
+            and not item.chunk.header.is_group
             and item.chunk.header.track_id in track_ids
         ),
         smart=project_smart(metadata, timezone_offset)

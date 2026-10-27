@@ -66,12 +66,6 @@ def _values(
         meta = track.metadata
         if prior is None or prior.metadata.lyrics != meta.lyrics:
             meta = replace(meta, has_lyrics=bool(meta.lyrics))
-        if (
-            prior is None
-            or prior.play_count != track.play_count
-            or prior.metadata.played != meta.played
-        ):
-            meta = replace(meta, played=track.play_count > 0 or meta.played)
         for attr in ("volume_adjustment_percent", "normalization_gain_db"):
             value = getattr(meta, attr)
             if prior is not None and value == getattr(prior.metadata, attr):

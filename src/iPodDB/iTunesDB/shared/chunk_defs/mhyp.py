@@ -20,7 +20,10 @@ class MhypHeader(ChunkHeader):
     timestamp: int = cf(0x18, "u32")
     playlist_id: int = cf(0x1C, "u64")
     unk_mhyp_0x24: int = cf(0x24, "u32")
-    string_mhod_child_count: int = cf(0x28, "u16")
+    # Classic 2.0.1 interprets this as a repeat override, not a string count.
+    # Preserve imported values; do not derive it from metadata children. Keep
+    # the historical authored default until other firmware semantics are known.
+    unk_mhyp_0x28: int = cf(0x28, "u16", default=1)
     playlist_kind_flags: int = cf(0x2A, "u16")
     sort_order: int = cf(0x2C, "u32")
     parent_folder_playlist_id: int = cf(0x30, "u64")

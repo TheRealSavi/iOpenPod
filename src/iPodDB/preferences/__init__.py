@@ -3,6 +3,8 @@
 from iPodDB.preferences.codec import parse_preferences, write_preferences
 from iPodDB.preferences.definitions import (
     CityPreferences,
+    Classic201ClockPreferences,
+    Classic201Preferences,
     FourthGenerationPreferences,
     Nano3Preferences,
     PreferencesLayout,
@@ -34,6 +36,8 @@ from iPodDB.preferences.models import (
 __all__ = [
     "CityPreferences",
     "CityTimezone",
+    "Classic201ClockPreferences",
+    "Classic201Preferences",
     "FixedOffsetTimezone",
     "FourthGenerationPreferences",
     "ITunesPreferences",

@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-30
 - Extends: ADR-0019, ADR-0022, ADR-0057, ADR-0097
+- Clarified by: [ADR-0196](0196-adopt-firmware-clock-and-date-evidence.md) for firmware clock provenance and Host policy
 
 Library dates are Unix instants. The Application Layer captures firmware
 Preferences through Storage and resolves geographical timezone rules before
@@ -18,7 +19,9 @@ blanket database-header-offset assumption and rejects libgpod's current-offset
 approximation and extra SQLite header subtraction. See the
 [evidence and limits](../research/ipod-time-reconciliation.md).
 
-Known city Preferences supply historical IANA rules. Older offset Preferences
+The Host maps known Preferences city IDs to historical IANA rules. This is a
+Host interpretation policy, not evidence that the firmware uses IANA rules or
+that the selected city was active at every retained event. Older offset Preferences
 supply their effective fixed offset, already including encoded DST. Unknown or
 unreadable Preferences can use a valid database header offset only as a diagnosed
 fallback; no Host timezone or invented UTC fallback is permitted. A header offset
@@ -32,8 +35,10 @@ a diagnostic is published, and unchanged native bytes remain intact. New dates
 that lose fold identity are rejected. Absolute Smart Playlist conditions can name
 Unix zero as an actual instant; relative conditions remain durations. SQLite
 regeneration is blocked if retained Track dates cannot be resolved, rather than
-replacing them with missing dates. The existing zero sentinel also cannot
-distinguish an ordinary missing date from exactly the Unix epoch.
+replacing them with missing dates. The semantic Library's zero sentinel cannot
+distinguish an ordinary missing date from exactly the Unix epoch; native Mac zero
+itself means a missing date. Relative-duration interpretation remains Host policy,
+not a claim of parity with the firmware's calendar-day bounds.
 
 Photo dates use the same local Mac conversion. Every retained date is changed only
 on explicit semantic change, including when a sibling field changes. This fixes

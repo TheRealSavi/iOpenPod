@@ -243,6 +243,12 @@ uv run mypy
 uv run pytest
 ```
 
+Full-suite runs use eight workers with whole-file scheduling by default, including
+`uv run pytest tests` and `uv run pytest .` from the repository root. A focused
+test path, `-k`, `-m`, `--lf`, or collection-only run defaults to serial. Add `-n8` to
+parallelize a focused run; use `-n0` only when diagnosing a failure. CI and VS Code
+inherit the same default. See the [test scheduling decision](docs/adr/0197-default-full-suite-tests-to-eight-workers.md).
+
 Hardware testing, platform testing, reproducible bug reports, and focused pull
 requests all help. For bug reports, include your iPod model, operating system,
 iOpenPod version, and steps to reproduce the problem.

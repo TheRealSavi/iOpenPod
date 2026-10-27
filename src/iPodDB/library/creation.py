@@ -55,7 +55,6 @@ def create_empty_library(
             playlist_id_2=master_id,
             db_id_2=secondary_id,
             sort_order=5,
-            string_mhod_child_count=1,
         ),
         children=(new_string_mhod(MhodType.TITLE, ""), playlist_preferences()),
     )

@@ -16,6 +16,8 @@ from iPodDB.device_time import DeviceTimeContext
 from iPodDB.preferences import (
     CityPreferences,
     CityTimezone,
+    Classic201ClockPreferences,
+    Classic201Preferences,
     FixedOffsetTimezone,
     ITunesPreferencesProfile,
     Nano3Preferences,
@@ -172,7 +174,18 @@ def _device_document(
     if document.settings is None:
         return document
     # Only assert extensions with both model evidence and a recognized extent.
-    if (profile.family, profile.generation) == ("iPod Nano", "3rd Gen") and len(
+    if (profile.family, profile.generation, profile.advertised_capacity) == (
+        "iPod Classic",
+        "6.5th Gen",
+        "120GB",
+    ) and set(firmware_versions) == {"2.0.1"}:
+        # The caller passes RetailOS releases, separately from transport revisions.
+        # Rejecting conflicting releases is conservative: this seam has no ranks.
+        with suppress(ValueError):
+            document = parse_preferences(
+                data, profile=PreferencesProfile.CLASSIC_120GB_2_0_1
+            )
+    elif (profile.family, profile.generation) == ("iPod Nano", "3rd Gen") and len(
         data
     ) == 2952:
         document = parse_preferences(data, profile=PreferencesProfile.NANO_3)
@@ -202,7 +215,9 @@ def _device_rows(
         return ()
     zone = document.timezone
     timezone: str = source_text("Unknown")
-    if zone is None and not isinstance(settings, CityPreferences):
+    if zone is None and not isinstance(
+        settings, (CityPreferences, Classic201Preferences)
+    ):
         timezone = _unknown(settings.timezone_code)
     if isinstance(zone, CityTimezone):
         timezone = zone.timezone_name or source_text(
@@ -229,8 +244,18 @@ def _device_rows(
             if 0 <= extension.volume_limit <= 64
             else _unknown(extension.volume_limit)
         )
-    return (
-        _row("timezone", "Timezone", timezone),
+    classic = isinstance(extension, Classic201ClockPreferences)
+    if isinstance(extension, Classic201ClockPreferences):
+        if extension.retained_dst_state == 0:
+            daylight_saving = source_text("Off (raw 0)")
+        elif extension.retained_dst_state in (1, 60):
+            daylight_saving = source_text(
+                "On (raw {value})", value=str(extension.retained_dst_state)
+            )
+        else:
+            daylight_saving = _unknown(extension.retained_dst_state)
+    rows: tuple[IPodPreference, ...] = (
+        _row("timezone", "Library timezone" if classic else "Timezone", timezone),
         _row(
             "language",
             "Menu language",
@@ -238,9 +263,27 @@ def _device_rows(
             if settings.language_code == 0
             else _unknown(settings.language_code),
         ),
-        _row("daylight_saving", "Daylight saving switch", daylight_saving),
+        _row(
+            "daylight_saving",
+            "Saved daylight saving state" if classic else "Daylight saving switch",
+            daylight_saving,
+        ),
         _row("volume_limit", "Volume limit", volume_limit),
     )
+    if isinstance(extension, Classic201ClockPreferences):
+        rows += (
+            _row(
+                "clock_bias_days",
+                "Saved clock correction (days)",
+                str(extension.clock_bias_days),
+            ),
+            _row(
+                "clock_bias_seconds",
+                "Saved clock correction (raw seconds word)",
+                str(extension.clock_bias_seconds),
+            ),
+        )
+    return rows
 
 
 def _itunes_rows(data: bytes, profile: DeviceProfile) -> tuple[IPodPreference, ...]:

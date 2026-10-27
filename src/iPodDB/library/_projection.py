@@ -44,7 +44,12 @@ from iPodDB.library.models import (
     TrackChapter,
     TrackMetadata,
 )
+from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import ChunkSelection, DatabaseDocument
+
+_NOT_PLAYED = next(
+    f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "not_played_flag"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +118,13 @@ def _project_track(
         album_artist=text.album_artist,
         season_number=header.season_number,
         episode_number=header.episode_number,
-        metadata=_project_metadata(header, text, chapters, device_timezone),
+        metadata=_project_metadata(
+            header,
+            text,
+            chapters,
+            device_timezone,
+            selection.chunk.generic_header.header_length,
+        ),
         ipod=_project_ipod_details(header, text, device_timezone),
     )
 
@@ -138,7 +149,7 @@ def _project_ipod_details(
         sample_rate_2=header.sample_rate_2,
         mpeg_audio_type=header.mpeg_audio_type,
         purchased_aac_flag=header.purchased_aac_flag,
-        genius_category_id=header.genius_category_id,
+        secondary_skip_count=header.secondary_skip_count,
         genius_id=header.genius_id,
         has_artwork=header.has_artwork,
         secondary_db_track_id=header.db_track_id_2,
@@ -172,6 +183,7 @@ def _project_metadata(
     text: _TrackTextMetadata,
     chapters: tuple[TrackChapter, ...],
     device_timezone: TimeConversion,
+    header_length: int,
 ) -> TrackMetadata:
     """Translate source fields into semantic values with the contract's units."""
 
@@ -203,7 +215,12 @@ def _project_metadata(
         remember_position=bool(header.remember_position),
         podcast=bool(header.podcast_now_playing_flag),
         has_lyrics=bool(header.lyrics_flag),
-        played=header.play_count_1 > 0 or header.not_played_flag == 1,
+        played=(
+            header.not_played_flag == 1
+            if _NOT_PLAYED.offset + _NOT_PLAYED.size <= header_length
+            and header.not_played_flag in (1, 2)
+            else header.play_count_1 > 0
+        ),
         pregap=header.pregap,
         sample_count=header.sample_count,
         postgap=header.postgap,

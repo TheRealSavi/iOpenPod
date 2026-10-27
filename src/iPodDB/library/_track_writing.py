@@ -335,13 +335,15 @@ def edit_track(
         values["sample_rate_2"] = float(meta.sample_rate_hz)
     if meta.checked != prior.checked or old is None:
         values["checked_flag"] = int(not meta.checked)
-    needs_new_played_field = (
-        _NOT_PLAYED.offset + _NOT_PLAYED.size > chunk.generic_header.header_length
+    needs_explicit_played_field = (
+        (
+            _NOT_PLAYED.offset + _NOT_PLAYED.size > chunk.generic_header.header_length
+            or header.not_played_flag not in (1, 2)
+        )
         and meta.played != (new.play_count > 0)
-        and old is not None
-        and new.play_count != old.play_count
+        and (old is None or new.play_count != old.play_count)
     )
-    if meta.played != prior.played or needs_new_played_field:
+    if meta.played != prior.played or needs_explicit_played_field:
         if (
             _NOT_PLAYED.offset + _NOT_PLAYED.size <= chunk.generic_header.header_length
             or (
@@ -534,7 +536,14 @@ def edit_track(
         ) or header.size_2:
             values["size_2"] = lyrics.file.size
     length = required_header_length(
-        chunk, {**values, **(required_fields or {})}, database_version
+        chunk,
+        {**values, **(required_fields or {})},
+        database_version,
+        # An absent marker falls back to play count, even though its parser
+        # default is 2. Explicit unplayed state can therefore require growth.
+        required_presence=frozenset({"not_played_flag"})
+        if "not_played_flag" in values and meta.played != (new.play_count > 0)
+        else frozenset(),
     )
     if (
         _SORT_INDICATORS.offset

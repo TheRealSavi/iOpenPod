@@ -68,7 +68,7 @@ class IPodTrackDetails:
     sample_rate_2: float = 0.0
     mpeg_audio_type: int = 0
     purchased_aac_flag: int = 0
-    genius_category_id: int = 0
+    secondary_skip_count: int = 0
     has_artwork: int = 0
     secondary_db_track_id: int = 0
     movie_flag: int = 0
@@ -125,6 +125,7 @@ class TrackMetadata:
     remember_position: bool = False
     podcast: bool = False
     has_lyrics: bool = False
+    # Playback status is independent of the cumulative Track.play_count.
     played: bool = False
     pregap: int = 0
     sample_count: int = 0

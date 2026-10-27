@@ -592,7 +592,7 @@ def _build_column_definitions() -> tuple[TrackColumnDefinition, ...]:
         _column("Checked", lambda track: track.metadata.checked, _format_boolean),
         _column(
             "Played",
-            lambda track: track.play_count > 0 or track.metadata.played,
+            lambda track: track.metadata.played,
             _format_boolean,
         ),
         _column(

@@ -16,11 +16,13 @@ from iPodDB.ArtworkDB.shared.artwork_index import (
 from iPodDB.device_time import DeviceTimeContext
 from iPodDB.iTunesDB.cdb import decompress_iTunesCDB, is_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.library._genius_reconciliation import reconcile_genius_playlists
 from iPodDB.library._photo_projection import project_photos
 from iPodDB.library._playlist_projection import project_playlists
 from iPodDB.library._projection import link_artwork, project_tracks
-from iPodDB.library._sidecar_projection import project_sidecars
+from iPodDB.library._sidecar_projection import RetainedPlaybackDates, project_sidecars
 from iPodDB.library._write_logging import log_plan
 from iPodDB.library.artwork import ArtworkRead, CoverFormat, select_artwork
 from iPodDB.library.models import LibrarySnapshot
@@ -155,8 +157,28 @@ class IPodLibrary:
         return updated
 
     def _refresh_sidecars(self) -> None:
+        # Use the same first Track dataset and row order as semantic projection;
+        # an unavailable native date and a genuine zero share semantic zero.
+        dataset = next(
+            (
+                item
+                for item in self._document.find_chunks(MhsdHeader)
+                if item.chunk.header.dataset_type == 1
+            ),
+            None,
+        )
+        retained_dates = (
+            tuple(
+                RetainedPlaybackDates(
+                    item.chunk.header.last_played, item.chunk.header.last_skipped
+                )
+                for item in dataset.find_chunks(MhitHeader)
+            )
+            if dataset is not None
+            else ()
+        )
         projection = project_sidecars(
-            self._database_snapshot, self._sidecars, self._device_time
+            self._database_snapshot, self._sidecars, self._device_time, retained_dates
         )
         self._snapshot = projection.snapshot
         self._consumed_sidecars = projection.consumed

@@ -250,10 +250,6 @@ def reconcile(
             desired.device_name,
             first=True,
         )
-        master = replace(
-            master,
-            header=replace(master.header, string_mhod_child_count=1),
-        )
         document = document.append_child(
             new_itunes_chunk(
                 MHSD,
@@ -324,7 +320,7 @@ def reconcile(
                     )
                     source_item_ids = [c.header.track_id for c in source_items]
                     if len(set(source_item_ids)) != len(source_item_ids) or any(
-                        c.header.podcast_group_flag & 0x100 for c in source_items
+                        c.header.is_group for c in source_items
                     ):
                         issues.append(
                             WriteIssue(
@@ -373,6 +369,7 @@ def reconcile(
                 if deleted:
                     removed = any(
                         isinstance(c.header, MhipHeader)
+                        and not c.header.is_group
                         and c.header.track_id in deleted
                         for c in chunk.children
                     )
@@ -382,6 +379,7 @@ def reconcile(
                             c
                             for c in chunk.children
                             if not isinstance(c.header, MhipHeader)
+                            or c.header.is_group
                             or c.header.track_id not in deleted
                         ),
                     )
@@ -391,7 +389,7 @@ def reconcile(
                         for child in chunk.children:
                             if (
                                 isinstance(child.header, MhipHeader)
-                                and not child.header.podcast_group_flag & 0x100
+                                and not child.header.is_group
                             ):
                                 from iPodDB.shared.chunk import chunk_as
 

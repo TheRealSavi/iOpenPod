@@ -24,20 +24,31 @@ def time_warnings(
 ) -> tuple[WriteIssue, ...]:
     issues: list[WriteIssue] = []
 
-    def warn(code: str, text: str, artifact: str = "iTunesDB") -> None:
+    def warn(
+        code: str, text: str, artifact: str = "iTunesDB", *, detail: str = ""
+    ) -> None:
         issues.append(
-            WriteIssue(code, text, IssueSeverity.WARNING, "source", artifact=artifact)
+            WriteIssue(
+                code,
+                text,
+                IssueSeverity.WARNING,
+                "source",
+                artifact=artifact,
+                detail=detail,
+            )
         )
 
     if context.source is DeviceTimeSource.UNRESOLVED:
         warn(
             "source.timezone_unresolved",
             "The iPod timezone is unknown. Local dates are unavailable; unchanged date bytes will be retained.",
+            detail=context.detail,
         )
     elif context.source is DeviceTimeSource.DATABASE_HEADER and context.detail:
         warn(
             "source.timezone_fallback",
             "Preferences do not resolve the iPod timezone. Dates use the database's fixed offset; historical DST cannot be reconstructed.",
+            detail=context.detail,
         )
     if context.detail and context.source is DeviceTimeSource.PREFERENCES_CITY:
         warn("source.timezone_policy", context.detail)

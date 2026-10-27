@@ -71,6 +71,10 @@ DATE_FIELDS = frozenset(
     )
 )
 
+# Firmware compares numeric operands as signed 64-bit integers. The semantic
+# number contract remains nonnegative, so the sign bit is not authorable.
+MAX_SMART_NUMERIC_VALUE = 0x7FFFFFFFFFFFFFFF
+
 
 def smart_value_kind(field: SmartField) -> SmartValueKind:
     if field not in tuple(SmartField):
@@ -217,13 +221,13 @@ def _validate_rule(rule: SmartRule) -> None:
     relative = rule.operator in (SmartOperator.IN_LAST, SmartOperator.NOT_IN_LAST)
     lower = 1 if relative else MIN_LOCAL_UNIX_TIME if kind is SmartValueKind.DATE else 0
     maximum = (
-        0x7FFFFFFFFFFFFFFF
+        MAX_SMART_NUMERIC_VALUE
         if relative
         else MAX_LOCAL_UNIX_TIME
         if kind is SmartValueKind.DATE
         else 100
         if rule.field is SmartField.RATING
-        else 0xFFFFFFFFFFFFFFFF
+        else MAX_SMART_NUMERIC_VALUE
     )
     if not lower <= rule.value <= maximum:
         raise ValueError("Smart Playlist value is outside the supported range.")

@@ -333,7 +333,7 @@ def normalize_identities(
             if (
                 kind == 3
                 and isinstance(item.header, MhipHeader)
-                and item.header.podcast_group_flag & 0x100
+                and item.header.is_group
             ):
                 item = replace(
                     item,

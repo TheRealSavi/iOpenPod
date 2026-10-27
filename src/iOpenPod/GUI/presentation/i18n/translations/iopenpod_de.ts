@@ -9654,6 +9654,10 @@ Playlists: %3</translation>
         <translation>Änderungen an der Mediathek wurden geprüft. Das System konnte jedoch nicht bestätigen, dass alle Schreibvorgänge auf dem Gerät abgeschlossen sind. Werfen Sie den iPod über das Betriebssystem sicher aus, bevor Sie ihn trennen.</translation>
     </message>
     <message>
+        <source>Library timezone</source>
+        <translation>Zeitzone der Mediathek</translation>
+    </message>
+    <message>
         <source>Linked library identifier</source>
         <translation>Kennung der verknüpften Mediathek</translation>
     </message>
@@ -10364,6 +10368,18 @@ Playlists: %3</translation>
     <message>
         <source>Same name</source>
         <translation>Gleicher Name</translation>
+    </message>
+    <message>
+        <source>Saved clock correction (days)</source>
+        <translation>Gespeicherte Uhrkorrektur (Tage)</translation>
+    </message>
+    <message>
+        <source>Saved clock correction (raw seconds word)</source>
+        <translation>Gespeicherte Uhrkorrektur (Sekunden-Rohwert)</translation>
+    </message>
+    <message>
+        <source>Saved daylight saving state</source>
+        <translation>Gespeicherter Sommerzeitstatus</translation>
     </message>
     <message>
         <source>Saved match</source>
@@ -11368,6 +11384,14 @@ Playlists: %3</translation>
     <message>
         <source>Normalize Podcast album ownership, representative links, show identities and target-specific Playlist traversal.</source>
         <translation>Albumzuordnung, repräsentative Verknüpfungen, Sendungsidentitäten und gerätespezifische Wiedergabelistenreihenfolge für Podcasts normalisieren.</translation>
+    </message>
+    <message>
+        <source>Off (raw 0)</source>
+        <translation>Aus (Rohwert 0)</translation>
+    </message>
+    <message>
+        <source>On (raw {value})</source>
+        <translation>Ein (Rohwert {value})</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved. {detail}</source>

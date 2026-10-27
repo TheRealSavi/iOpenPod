@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from pathlib import Path
-from tempfile import gettempdir
 from time import monotonic, sleep
 from typing import TYPE_CHECKING
 
@@ -22,6 +20,7 @@ from iPodDB.library import Track
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from iOpenPod.app.playback.backend import PlaybackSource
     from iOpenPod.app.synesthesia import AnalysisProgress, TrackAnalysis
@@ -241,8 +240,11 @@ def test_analysis_failure_is_reported_after_the_materialized_copy_is_removed(
 
 def test_invalidated_source_read_fails_without_leaving_a_temporary_copy(
     synthetic_analysis: TrackAnalysis,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    temporary_roots_before = set(Path(gettempdir()).glob("iopenpod-synesthesia-*"))
+    # Other workers can materialize audio concurrently in the system temp root.
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     backend = _RecordingBackend(synthetic_analysis)
     controller = SynesthesiaController(
         backend,
@@ -258,9 +260,7 @@ def test_invalidated_source_read_fails_without_leaving_a_temporary_copy(
 
         assert failures == ["The current Track changed while its media was being read."]
         assert backend.paths == []
-        assert set(Path(gettempdir()).glob("iopenpod-synesthesia-*")) == (
-            temporary_roots_before
-        )
+        assert not tuple(tmp_path.glob("iopenpod-synesthesia-*"))
     finally:
         controller.shutdown()
 

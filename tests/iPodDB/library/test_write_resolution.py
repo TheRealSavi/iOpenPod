@@ -326,11 +326,10 @@ def test_resolution_exposes_derived_flags_and_quantization_before_writing() -> N
     plan = source.analyze(source.begin_draft(desired))
     assert plan.resolution is not None
     resolved = plan.resolution.snapshot.tracks[0]
-    assert resolved.metadata.has_lyrics and resolved.metadata.played
+    assert resolved.metadata.has_lyrics and not resolved.metadata.played
     assert resolved.metadata.volume_adjustment_percent == 3 / 255 * 100
     assert set(plan.resolution.generated_changes[0].fields) == {
         "metadata.has_lyrics",
-        "metadata.played",
         "metadata.volume_adjustment_percent",
     }
     result = source.prepare(plan, WriteResources(lyrics=(lyrics_resource(resolved),)))
@@ -339,12 +338,16 @@ def test_resolution_exposes_derived_flags_and_quantization_before_writing() -> N
     assert sum(i.code == "track.quantized" for i in result.issues) == 1
 
 
-def test_positive_play_count_auto_resolves_an_unplayed_edit() -> None:
+def test_positive_play_count_does_not_override_an_unplayed_edit() -> None:
     source = library()
     seeded = replace(
         source.snapshot,
         tracks=(
-            replace(source.snapshot.tracks[0], play_count=1),
+            replace(
+                source.snapshot.tracks[0],
+                play_count=1,
+                metadata=replace(source.snapshot.tracks[0].metadata, played=True),
+            ),
             source.snapshot.tracks[1],
         ),
     )
@@ -365,9 +368,11 @@ def test_positive_play_count_auto_resolves_an_unplayed_edit() -> None:
 
     assert not any(issue.code == "track.invalid_value" for issue in plan.issues)
     assert plan.resolution is not None
-    assert plan.resolution.snapshot.tracks[0].metadata.played
+    assert not plan.resolution.snapshot.tracks[0].metadata.played
     result = loaded.prepare(plan)
     assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.tracks[0].play_count == 1
+    assert not result.prepared.snapshot.tracks[0].metadata.played
 
 
 def test_normalization_gain_quantization_is_not_reported_as_a_warning() -> None:

@@ -59,7 +59,7 @@ def source_warnings(
                     )
                 )
             if any(
-                not item.chunk.header.podcast_group_flag & 0x100
+                not item.chunk.header.is_group
                 and item.chunk.header.track_id not in tracks
                 for item in selection.find_chunks(MhipHeader)
             ):

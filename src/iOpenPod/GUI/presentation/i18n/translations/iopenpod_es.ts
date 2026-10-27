@@ -9654,6 +9654,10 @@ Playlists: %3</translation>
         <translation>Los cambios de la biblioteca se verificaron, pero el sistema no pudo confirmar que todos los datos pendientes se guardaran en el dispositivo. Usa la expulsión segura del sistema operativo antes de desconectar.</translation>
     </message>
     <message>
+        <source>Library timezone</source>
+        <translation>Zona horaria de la biblioteca</translation>
+    </message>
+    <message>
         <source>Linked library identifier</source>
         <translation>Identificador de la biblioteca vinculada</translation>
     </message>
@@ -10364,6 +10368,18 @@ Playlists: %3</translation>
     <message>
         <source>Same name</source>
         <translation>Mismo nombre</translation>
+    </message>
+    <message>
+        <source>Saved clock correction (days)</source>
+        <translation>Corrección del reloj guardada (días)</translation>
+    </message>
+    <message>
+        <source>Saved clock correction (raw seconds word)</source>
+        <translation>Corrección del reloj guardada (valor de segundos sin procesar)</translation>
+    </message>
+    <message>
+        <source>Saved daylight saving state</source>
+        <translation>Estado guardado del horario de verano</translation>
     </message>
     <message>
         <source>Saved match</source>
@@ -11368,6 +11384,14 @@ Playlists: %3</translation>
     <message>
         <source>Normalize Podcast album ownership, representative links, show identities and target-specific Playlist traversal.</source>
         <translation>Normalizar la asignación de álbumes de pódcast, los enlaces representativos, las identidades de los programas y el orden de las listas de reproducción según el dispositivo.</translation>
+    </message>
+    <message>
+        <source>Off (raw 0)</source>
+        <translation>Desactivado (valor sin procesar: 0)</translation>
+    </message>
+    <message>
+        <source>On (raw {value})</source>
+        <translation>Activado (valor sin procesar: {value})</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved. {detail}</source>

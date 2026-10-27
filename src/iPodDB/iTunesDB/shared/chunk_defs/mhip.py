@@ -21,6 +21,11 @@ class MhipHeader(ChunkHeader):
     track_persistent_id: int = cf(0x2C, "u64")
     mhip_persistent_id: int = cf(0x3C, "u64")
 
+    @property
+    def is_group(self) -> bool:
+        """A nonzero byte at 0x11 selects a group; byte 0x10 is independent."""
+        return bool(self.podcast_group_flag & 0xFF00)
+
 
 DEFINITION: ChunkDefinition[MhipHeader] = ChunkDefinition(
     marker=b"mhip",

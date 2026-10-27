@@ -255,6 +255,52 @@ def test_source_neutral_tracks_use_the_same_models_and_optional_columns() -> Non
     assert proxy.index(0, 0).data(TrackRole.TRACK_ID) == 2
 
 
+@pytest.mark.parametrize("play_count", [0, 5])
+@pytest.mark.parametrize("played", [False, True])
+def test_played_column_uses_the_projected_marker_independently_of_play_count(
+    play_count: int, played: bool
+) -> None:
+    model = TrackTableModel()
+    model.replace_tracks(
+        (
+            Track(
+                1,
+                "Retained playback state",
+                "",
+                "",
+                1,
+                play_count=play_count,
+                metadata=TrackMetadata(played=played),
+            ),
+        )
+    )
+    index = model.index(0, TrackColumn.PLAYED)
+    assert index.data() == ("Yes" if played else "No")
+    assert index.data(TrackRole.SORT_VALUE) is played
+
+
+def test_played_sorting_respects_cleared_marker_with_retained_play_count() -> None:
+    model = TrackTableModel()
+    model.replace_tracks(
+        (
+            Track(1, "Marked played", "", "", 1, metadata=TrackMetadata(played=True)),
+            Track(
+                2,
+                "Marker cleared",
+                "",
+                "",
+                1,
+                play_count=5,
+                metadata=TrackMetadata(played=False),
+            ),
+        )
+    )
+    proxy = TrackFilterProxyModel(model)
+    proxy.sort(TrackColumn.PLAYED, Qt.SortOrder.AscendingOrder)
+    assert proxy.index(0, 0).data(TrackRole.TRACK_ID) == 2
+    assert proxy.index(1, 0).data(TrackRole.TRACK_ID) == 1
+
+
 def test_media_type_column_displays_translated_types_and_unknown_diagnostics() -> None:
     model = TrackTableModel()
     model.replace_tracks(

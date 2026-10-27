@@ -213,12 +213,12 @@ def _flat_playlist(
     members = [
         chunk_as(c, MhipHeader)
         for c in playlist.children
-        if isinstance(c.header, MhipHeader) and not c.header.podcast_group_flag & 0x100
+        if isinstance(c.header, MhipHeader) and not c.header.is_group
     ]
     if is_master(3, playlist.header):
         by_track = {c.header.track_id: c for c in members}
         if len(by_track) != len(members) or any(
-            isinstance(c.header, MhipHeader) and c.header.podcast_group_flag & 0x100
+            isinstance(c.header, MhipHeader) and c.header.is_group
             for c in playlist.children
         ):
             raise ValueError(

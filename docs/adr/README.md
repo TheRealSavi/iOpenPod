@@ -267,3 +267,7 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0192: Pin Linux search-only ancestors](0192-pin-linux-search-only-ancestors.md)
 - [ADR-0193: Resolve Btrfs recovery through all member devices](0193-resolve-btrfs-recovery-through-all-member-devices.md)
 - [ADR-0194: Allow retained Album indexes without jump tables](0194-allow-retained-album-indexes-without-jump-tables.md)
+- [ADR-0195: Adopt firmware database field semantics](0195-adopt-firmware-database-field-semantics.md)
+- [ADR-0196: Adopt firmware clock and date evidence](0196-adopt-firmware-clock-and-date-evidence.md)
+- [ADR-0197: Default full-suite tests to eight workers](0197-default-full-suite-tests-to-eight-workers.md)
+- [ADR-0198: Adopt native rule operands and import markers](0198-adopt-native-rule-operands-and-import-markers.md)

@@ -15,7 +15,11 @@ from iOpenPod.app.services.device_coordinator import (
     DeviceAccessError,
     DeviceCoordinator,
 )
-from iOpenPod.app.services.ipod_preferences import read_ipod_preferences
+from iOpenPod.app.services.ipod_preferences import (
+    capture_ipod_preferences,
+    read_ipod_preferences,
+)
+from iPodDB.device_time import DeviceTimeSource
 from storage import AccessMode, DevicePath, FileSnapshot, FilesystemSession, Storage
 from storage.testing import VirtualStoragePlatform
 
@@ -151,3 +155,80 @@ def test_model_specific_dst_and_unknown_city_are_not_guessed(tmp_path: Path) -> 
     assert rows["timezone"] == "Unknown (city 0)"
     assert rows["daylight_saving"] == "On"
     assert itunes.status is PreferenceFileStatus.MISSING
+
+
+@pytest.mark.parametrize("model", ("MB565", "MB562"))
+@pytest.mark.parametrize("city", (0x29, 0x10029))
+def test_classic201_capture_uses_full_city_and_displays_saved_clock_state(
+    tmp_path: Path, model: str, city: int
+) -> None:
+    root = _ipod_volume(tmp_path / "ipod", model_number=model)
+    data = bytearray(2956)
+    struct.pack_into("<I", data, 0, 0x3D)
+    struct.pack_into("<I", data, 0xB70, city)
+    data[0xB6C] = 60
+    struct.pack_into("<iI", data, 0xB78, -1, 0xFFFFFFFF)
+    path = root / "iPod_Control/Device/Preferences"
+    path.write_bytes(data)
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root)
+    storage = _RecordingStorage(platform)
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number(model)
+    assert profile is not None
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        captured = capture_ipod_preferences(
+            session, profile, firmware_versions=("2.0.1",)
+        )
+    rows = {row.key: row for row in captured.sections[0].rows}
+    assert rows["timezone"].title == "Library timezone"
+    assert rows["daylight_saving"].title == "Saved daylight saving state"
+    assert rows["daylight_saving"].value == "On (raw 60)"
+    assert rows["clock_bias_days"].value == "-1"
+    assert rows["clock_bias_seconds"].value == "4294967295"
+    assert captured.time_precondition is not None
+    if city == 0x29:
+        assert captured.device_time.source is DeviceTimeSource.PREFERENCES_CITY
+        assert captured.device_time.timezone_name == "America/New_York"
+        assert "manual switch" in captured.device_time.detail
+    else:
+        assert rows["timezone"].value == "Unknown (city 65577)"
+        assert captured.device_time.source is DeviceTimeSource.UNRESOLVED
+        assert captured.device_time.zone is None
+    assert set(storage.access_modes) == {AccessMode.READ_ONLY}
+    assert path.read_bytes() == data
+
+
+@pytest.mark.parametrize(
+    "model,versions,size,version",
+    (
+        ("MB565", (), 2956, 0x3D),
+        ("MB565", ("1.62",), 2956, 0x3D),
+        ("MB565", ("2.0.1", "2.0.5"), 2956, 0x3D),
+        ("MB565", ("2.0.5",), 2956, 0x3D),
+        ("MA978", ("2.0.1",), 2956, 0x3D),
+        ("MB565", ("2.0.1",), 2952, 0x3D),
+        ("MB565", ("2.0.1",), 2960, 0x3D),
+        ("MB565", ("2.0.1",), 2956, 0x3E),
+    ),
+)
+def test_classic_clock_profile_requires_model_release_extent_and_format(
+    tmp_path: Path, model: str, versions: tuple[str, ...], size: int, version: int
+) -> None:
+    root = _ipod_volume(tmp_path / "ipod", model_number=model)
+    data = bytearray(size)
+    struct.pack_into("<I", data, 0, version)
+    struct.pack_into("<I", data, 0xB70, 0x10029)
+    (root / "iPod_Control/Device/Preferences").write_bytes(data)
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root)
+    storage = Storage(platform)
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number(model)
+    assert profile is not None
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        captured = capture_ipod_preferences(
+            session, profile, firmware_versions=versions
+        )
+    rows = {row.key: row for row in captured.sections[0].rows}
+    assert "clock_bias_days" not in rows
+    assert rows["timezone"].title == "Timezone"
+    assert rows["timezone"].value == "America/New_York"

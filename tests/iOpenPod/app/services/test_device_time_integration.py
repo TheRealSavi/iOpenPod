@@ -7,20 +7,151 @@ from threading import Event
 
 import pytest
 from tests.iOpenPod.app.services.test_library_resources import build_device
+from tests.iPodDB.library.test_writing import library
 
 from iOpenPod.app.library_write import LibraryPreparationRequest
 from iOpenPod.app.models.device import DeviceCandidateIssueCode
 from iOpenPod.app.services.device_time import resolve_device_time
-from iPodDB.device_time import DeviceTimeSource
+from iPodDB.device_time import DeviceTimeSource, mac_to_unix
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
-from iPodDB.preferences import parse_preferences
+from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
+from iPodDB.library import IPodLibrary
+from iPodDB.preferences import PreferencesProfile, parse_preferences
 
 
 def _prefs(city: int = 0x21) -> bytes:
     data = bytearray(2956)
     struct.pack_into("<h", data, 0xB70, city)
     return bytes(data)
+
+
+@pytest.mark.parametrize(
+    "city,name,instant",
+    (
+        (0x18, "America/Costa_Rica", 1704088800),
+        (0x36, "America/Puerto_Rico", 1704081600),
+        (0x41, "America/Sao_Paulo", 1704078000),
+        (0x95, "Indian/Mahe", 1704052800),
+    ),
+)
+@pytest.mark.parametrize(
+    "profile", (PreferencesProfile.STANDARD, PreferencesProfile.CLASSIC_120GB_2_0_1)
+)
+def test_corrected_city_resolves_literal_calendar_word_without_rewriting_database(
+    city: int, name: str, instant: int, profile: PreferencesProfile
+) -> None:
+    data = bytearray(_prefs(city))
+    struct.pack_into("<I", data, 0, 0x3D)
+    context = resolve_device_time(parse_preferences(data, profile=profile))
+    assert context.source is DeviceTimeSource.PREFERENCES_CITY
+    assert context.timezone_name == name
+    # 2024-01-01 00:00:00 as a calendar-shaped Mac word. Expected UTC
+    # instants are literals, independent of the conversion implementation.
+    assert mac_to_unix(3786912000, context) == instant
+    document = parse_iTunesDB(library().serialize().itunes)
+    slot = document.find_chunks(MhitHeader)[0]
+    document = document.replace_chunk(
+        slot,
+        replace(slot.chunk, header=replace(slot.chunk.header, last_played=3786912000)),
+    )
+    raw = write_iTunesDB(document)
+    source = IPodLibrary.parse(raw, device_time=context)
+    assert source.snapshot.tracks[0].metadata.last_played == instant
+    assert source.serialize().itunes == raw
+    prepared = source.prepare(source.analyze(source.begin_draft())).prepared
+    assert prepared is not None
+    assert prepared.itunes == raw
+
+
+@pytest.mark.parametrize("offset", (-18000, 0, 86400))
+def test_qualified_classic_unresolved_city_explains_existing_header_fallback(
+    offset: int,
+) -> None:
+    data = bytearray(_prefs(0x26))
+    struct.pack_into("<I", data, 0, 0x3D)
+    context = resolve_device_time(
+        parse_preferences(data, profile=PreferencesProfile.CLASSIC_120GB_2_0_1)
+    )
+    assert context.source is DeviceTimeSource.UNRESOLVED
+    assert context.zone is None and context.timezone_name is None
+    assert "city 0x26" in context.detail and "legacy London" in context.detail
+    document = parse_iTunesDB(library().serialize().itunes)
+    raw = write_iTunesDB(
+        replace(document, header=replace(document.header, timezone_offset=offset))
+    )
+    source = IPodLibrary.parse(raw, device_time=context)
+    if offset == 86400:
+        assert source.device_time.source is DeviceTimeSource.UNRESOLVED
+        code = "source.timezone_unresolved"
+        with pytest.raises(ValueError, match="unresolved"):
+            mac_to_unix(3786912000, source.device_time)
+    else:
+        assert source.device_time.source is DeviceTimeSource.DATABASE_HEADER
+        assert mac_to_unix(3786912000, source.device_time) == 1704067200 - offset
+        code = "source.timezone_fallback"
+    issue = next(item for item in source.time_warnings if item.code == code)
+    assert issue.detail == context.detail
+    assert source.serialize().itunes == raw
+
+
+def test_qualified_classic_city_conflict_reaches_inspection_and_save_warning(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        metadata = device.root / "iPod_Control/Device"
+        sysinfo = metadata / "SysInfo"
+        sysinfo.write_text(
+            sysinfo.read_text(encoding="utf-8") + "visibleBuildID: 2.0.1\n",
+            encoding="utf-8",
+        )
+        data = bytearray(_prefs(0x26))
+        struct.pack_into("<I", data, 0, 0x3D)
+        path = metadata / "Preferences"
+        path.write_bytes(data)
+        candidate = device.coordinator.discover_devices().candidates[0]
+        active = device.coordinator.select_device(
+            candidate.id, reconcile_metadata=False
+        )
+        warning = next(
+            issue
+            for issue in active.candidate.issues
+            if issue.code is DeviceCandidateIssueCode.TIMEZONE_UNCERTAIN
+            and "city 0x26" in issue.detail
+        )
+        assert "fixed offset" in warning.detail
+        assert "legacy London" in warning.detail
+        assert "cannot recover historical city rules" in warning.detail
+        review = device.prepare(replace(active.library, device_name="Changed"))
+        assert review.result.prepared is not None, review.result.issues
+        warning_at_save = next(
+            issue
+            for issue in review.result.issues
+            if issue.code == "source.timezone_fallback"
+        )
+        assert "city 0x26" in warning_at_save.detail
+        assert device.save(review).active is not None
+        assert path.read_bytes() == data
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("dst", (0, 1, 60, 255))
+def test_classic_saved_dst_and_bias_do_not_shift_historical_city_rules(
+    dst: int,
+) -> None:
+    data = bytearray(_prefs())
+    struct.pack_into("<I", data, 0, 0x3D)
+    data[0xB6C] = dst
+    struct.pack_into("<iI", data, 0xB78, -1, 81000)
+    context = resolve_device_time(
+        parse_preferences(data, profile=PreferencesProfile.CLASSIC_120GB_2_0_1)
+    )
+    assert context.source is DeviceTimeSource.PREFERENCES_CITY
+    assert "firmware DST rules" in context.detail
+    assert mac_to_unix(1704067200 + 2082844800, context) == 1704085200
+    assert mac_to_unix(1719792000 + 2082844800, context) == 1719806400
 
 
 def test_selected_preferences_control_saved_dates_and_adopted_source(

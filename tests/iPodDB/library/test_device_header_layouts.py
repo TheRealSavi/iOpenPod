@@ -72,7 +72,7 @@ def test_artwork_alone_expands_short_header(version: int, expected: int) -> None
 
 
 def add_audio(
-    source: IPodLibrary, version: int | None, *, skip_count: int = 0
+    source: IPodLibrary, version: int | None, *, last_skipped: int = 0
 ) -> LibraryWriteResult:
     track = Track(
         -1,
@@ -87,7 +87,7 @@ def add_audio(
             location="iPod_Control/Music/F00/new.mp3",
             sample_rate_hz=44100,
             file_format="MP3 audio file",
-            skip_count=skip_count,
+            last_skipped=last_skipped,
         ),
     )
     media = PreparedMedia(
@@ -161,10 +161,10 @@ def test_creation_without_device_capability_keeps_generic_default() -> None:
 def test_creation_rejects_history_outside_selected_layout() -> None:
     source = short_header_library()
     original = source.serialize()
-    result = add_audio(source, 0x0B, skip_count=2)
+    result = add_audio(source, 0x0B, last_skipped=1_700_000_000)
     assert result.prepared is None
     assert any(
-        i.code == "binary.short_header" and i.field == "skip_count"
+        i.code == "binary.short_header" and i.field == "last_skipped"
         for i in result.issues
     )
     assert source.serialize() == original

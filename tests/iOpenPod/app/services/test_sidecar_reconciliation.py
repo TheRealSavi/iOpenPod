@@ -76,6 +76,86 @@ def test_discovery_is_read_only_and_selection_commits_history_and_otg_once(
         device.coordinator.close()
 
 
+@pytest.mark.parametrize("numbered_playlists", [False, True])
+def test_selection_consumes_empty_otg_semaphore_and_numbered_playlists_once(
+    tmp_path: Path, numbered_playlists: bool
+) -> None:
+    device = build_device(tmp_path)
+    directory = device.root / "iPod_Control/iTunes"
+    original = device.active.library
+    files = {"OTGPlaylistInfo": b""}
+    if numbered_playlists:
+        # A numeric gap and reverse creation order must not alter import order.
+        files.update(
+            {
+                "OTGPlaylistInfo_10": otg((0, 0)),
+                "OTGPlaylistInfo_2": otg((1, 0, 1)),
+            }
+        )
+    try:
+        for name, data in files.items():
+            (directory / name).write_bytes(data)
+        selected = device.coordinator.select_device(device.active.candidate.id)
+        assert selected is device.active
+        snapshot = selected.library
+        assert snapshot.tracks == original.tracks
+        if numbered_playlists:
+            assert len(snapshot.playlists) == len(original.playlists) + 2
+            added = snapshot.playlists[-2:]
+            assert tuple(p.name for p in added) == ("On-The-Go 3", "On-The-Go 11")
+            first, second = snapshot.tracks
+            assert added[0].track_ids == (
+                second.track_id,
+                first.track_id,
+                second.track_id,
+            )
+            assert added[1].track_ids == (first.track_id, first.track_id)
+        else:
+            assert snapshot.playlists == original.playlists
+            device.assert_original()
+        for name, data in files.items():
+            assert not (directory / name).exists()
+            assert (directory / (name + ".bak")).read_bytes() == data
+        committed = (directory / "iTunesDB").read_bytes()
+        persisted = IPodLibrary(committed)
+        assert persisted.snapshot.playlists == snapshot.playlists
+        assert not tuple(
+            (device.root / ".iopenpod-recovery").glob("*/transaction.json")
+        )
+        reloaded = device.coordinator.select_device(selected.candidate.id)
+        assert reloaded.library.playlists == snapshot.playlists
+        assert (directory / "iTunesDB").read_bytes() == committed
+        for name, data in files.items():
+            assert not (directory / name).exists()
+            assert (directory / (name + ".bak")).read_bytes() == data
+    finally:
+        device.coordinator.close()
+
+
+def test_empty_numbered_otg_blocks_selection_without_consuming_empty_semaphore(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    directory = device.root / "iPod_Control/iTunes"
+    files = {
+        "OTGPlaylistInfo": b"",
+        "OTGPlaylistInfo_1": otg((0,)),
+        "OTGPlaylistInfo_2": b"",
+    }
+    try:
+        for name, data in files.items():
+            (directory / name).write_bytes(data)
+        with pytest.raises(DeviceLibraryLoadError, match="OTGPlaylistInfo_2"):
+            device.coordinator.select_device(device.active.candidate.id)
+        assert device.coordinator.active_ipod is None
+        device.assert_original()
+        for name, data in files.items():
+            assert (directory / name).read_bytes() == data
+            assert not (directory / (name + ".bak")).exists()
+    finally:
+        device.coordinator.close()
+
+
 @pytest.mark.parametrize("kind", ["stats24", "stats32", "plist"])
 def test_other_playback_formats_publish_through_the_same_transaction(
     tmp_path: Path, kind: str

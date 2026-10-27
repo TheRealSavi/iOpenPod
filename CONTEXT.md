@@ -14,6 +14,31 @@ then beyond it.
 
 ## Current stage
 
+Podcast group projection now follows the whole native marker byte. Smart Checked
+and Compilation rules retain operand-aware truth, and unsupported numeric/text
+operands preserve saved membership. Four city mappings are corrected; a
+contradictory qualified Classic city remains unresolved with a diagnosed header
+fallback. See [ADR-0198](docs/adr/0198-adopt-native-rule-operands-and-import-markers.md)
+for evidence and cross-model limits.
+
+Binary Play Counts now replaces present playback dates even after clock setbacks,
+while retaining the Finder sentinel and failing closed on unrepresentable dates.
+Unsupported Smart date ranges preserve both native endpoints and saved membership.
+A qualified Classic 120GB 2.0.1 Preferences view reads full city IDs and exposes
+saved DST and clock-bias observations without using them as extra timestamp
+adjustments. Historical IANA interpretation remains explicit Host policy; raw
+hardware-clock UTC/local provenance remains unproved. See
+[ADR-0196](docs/adr/0196-adopt-firmware-clock-and-date-evidence.md).
+
+iPodDB now uses the firmware-backed total skip counter, preserves the independent
+secondary counter, and retains Playlist repeat data during text edits. Binary
+Play Counts can clear bookmarks and explicitly set or clear played state; an empty
+On-The-Go base file activates numbered Playlists without creating an empty one.
+The shared field interpretation is directly verified in Classic 2.0.1 and inferred
+for other models. Existing Smart Playlist Host policies remain explicit. See
+[ADR-0195](docs/adr/0195-adopt-firmware-database-field-semantics.md) for evidence,
+preservation rules, and validation limits.
+
 Linux Storage access now permits known readable files and readable directory
 listings beneath search-only ancestors. It retains pinned no-follow access,
 ordinary file/listing permissions, final identity checks, and cancellation cleanup.

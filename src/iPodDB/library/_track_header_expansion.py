@@ -43,26 +43,33 @@ def required_header_length(
     source: ParsedChunk[MhitHeader],
     values: Mapping[str, ChunkFieldValue],
     database_version: int | None,
+    *,
+    required_presence: frozenset[str] = frozenset(),
 ) -> int:
     """Grow only to encode intent that cannot fit, within device policy.
 
     Missing/insufficient capabilities leave the original extent in place so the
     strict binary writer rejects unrepresentable intent without losing evidence.
+    ``required_presence`` handles fields whose absence has different semantics
+    from their encoded default, such as an explicit unplayed marker.
     """
     length = source.generic_header.header_length
     required = max(
         (
             f.schema.offset + f.schema.size
             for f in binary_fields(MhitHeader)
-            if f.attribute_name in values
-            and (
-                values[f.attribute_name] != f.schema.default
-                or (
-                    f.schema.encoding == "raw"
-                    and isinstance(f.schema.default, bytes)
-                    and f.schema.offset < length < f.schema.offset + f.schema.size
-                    and source.raw_header[f.schema.offset : length]
-                    != f.schema.default[: length - f.schema.offset]
+            if f.attribute_name in required_presence
+            or (
+                f.attribute_name in values
+                and (
+                    values[f.attribute_name] != f.schema.default
+                    or (
+                        f.schema.encoding == "raw"
+                        and isinstance(f.schema.default, bytes)
+                        and f.schema.offset < length < f.schema.offset + f.schema.size
+                        and source.raw_header[f.schema.offset : length]
+                        != f.schema.default[: length - f.schema.offset]
+                    )
                 )
             )
         ),

@@ -2,6 +2,14 @@
 
 ## Scope and confidence
 
+**2026-10-26 correction:** the historical source descriptions below retain the
+labels used by the pinned revisions. Direct Classic 2.0.1 analysis identifies
+MHIT `+0x98` as total skips, fitting exactly within 156 bytes, and `+0x9c` as an
+independent secondary counter. A 158-byte header ends inside the secondary
+counter. Last-skipped and played-state boundaries are unchanged. The current
+implementation adopts that correction in
+[ADR-0195](../adr/0195-adopt-firmware-database-field-semantics.md).
+
 Investigated on 2026-10-14 in response to
 [PR #249](https://github.com/TheRealSavi/iOpenPod/pull/249). The question is whether
 Original iOpenPod handled playback evidence whose fields do not fit a retained
