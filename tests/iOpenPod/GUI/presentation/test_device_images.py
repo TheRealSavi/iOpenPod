@@ -32,7 +32,9 @@ from iOpenPod.GUI.dialogs.linux_identity_setup import (
 )
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.presentation.device_images import device_icon
-from iOpenPod.GUI.widgets.sidebar import Sidebar
+from iOpenPod.GUI.presentation.theme.stylesheet import render_stylesheet
+from iOpenPod.GUI.presentation.theme.tokens import DARK_TOKENS, resolve_typography
+from iOpenPod.GUI.widgets.sidebar import DeviceCard, Sidebar
 from iPodDB.library import LibrarySnapshot
 from storage import FileFingerprint
 
@@ -99,6 +101,23 @@ def test_device_icon_contains_visible_high_dpi_pixels() -> None:
         for x in range(image.width())
         for y in range(image.height())
     )
+
+
+def test_device_usage_values_share_typography() -> None:
+    original_stylesheet = APPLICATION.styleSheet()
+    card = DeviceCard()
+    try:
+        APPLICATION.setStyleSheet(render_stylesheet(DARK_TOKENS, resolve_typography()))
+        card.show()
+        APPLICATION.processEvents()
+        storage = card.findChild(QLabel, "deviceMetricValue")
+        database = card.findChild(QLabel, "deviceDatabaseValue")
+        assert storage is not None and database is not None
+        assert storage.font().pointSizeF() == database.font().pointSizeF()
+        assert storage.font().weight() == database.font().weight()
+    finally:
+        card.close()
+        APPLICATION.setStyleSheet(original_stylesheet)
 
 
 def test_profile_image_appears_in_device_picker_and_active_sidebar() -> None:

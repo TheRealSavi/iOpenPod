@@ -178,6 +178,7 @@ QLabel#deviceModel,
 QLabel#deviceSummary,
 QLabel#deviceMetricLabel,
 QLabel#deviceMetricValue,
+QLabel#deviceDatabaseValue,
 QLabel#sidebarSectionLabel {{
     font-size: {typography.small_pt:g}pt;
 }}
@@ -1437,7 +1438,8 @@ QLabel#deviceCandidateDetail {{
     color: {tokens.text_secondary};
 }}
 
-QLabel#deviceMetricValue {{
+QLabel#deviceMetricValue,
+QLabel#deviceDatabaseValue {{
     color: {tokens.text};
     font-weight: 600;
 }}
