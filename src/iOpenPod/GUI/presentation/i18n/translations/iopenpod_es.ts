@@ -6608,6 +6608,10 @@ Playlists: %3</translation>
         <translation>Paso %1 de %2</translation>
     </message>
     <message>
+        <source>Skipping remaining Genius analysis. Completed profiles will be kept.</source>
+        <translation>Omitiendo el análisis de Genius restante. Se conservarán los perfiles completados.</translation>
+    </message>
+    <message>
         <source>Cancellation requested; waiting for a safe stopping point. Keep the iPod connected.</source>
         <translation>Se ha solicitado cancelar; esperando un punto seguro para detenerse. Mantén el iPod conectado.</translation>
     </message>
@@ -6674,6 +6678,10 @@ Playlists: %3</translation>
     <message>
         <source>Cancel Sync</source>
         <translation>Cancelar sincronización</translation>
+    </message>
+    <message>
+        <source>Skip for this Sync</source>
+        <translation>Omitir en esta sincronización</translation>
     </message>
     <message>
         <source>Return to Library</source>
@@ -7335,6 +7343,14 @@ Playlists: %3</translation>
     <message>
         <source>On</source>
         <translation>Activado</translation>
+    </message>
+    <message>
+        <source>Analyze for Genius</source>
+        <translation>Analizar para Genius</translation>
+    </message>
+    <message>
+        <source>Analyze music and refresh native Genius recommendations during Sync on supported iPods. Off skips Genius generation and keeps existing Genius data where possible.</source>
+        <translation>Analiza la música y actualiza las recomendaciones nativas de Genius durante la sincronización en los iPod compatibles. Si se desactiva, se omite la generación de Genius y se conservan los datos de Genius existentes siempre que sea posible.</translation>
     </message>
     <message>
         <source>Compute Sound Check</source>

@@ -12,7 +12,7 @@ from tests.iOpenPod.app.test_genius_mixes import music
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 from tests.iOpenPod.GUI.test_genius_page import Browser, active, button, tree
 
-from device_registry import DEFAULT_DEVICE_REGISTRY
+from device_registry import DEFAULT_DEVICE_REGISTRY, FeatureSupport
 from iOpenPod.app.core.settings.definitions import DRAFT_ALL_CHANGES, AppearanceMode
 from iOpenPod.app.genius_mixes import GENIUS_MIX_POLICY, MixPolicy, propose_mixes
 from iOpenPod.GUI.dialogs.genius_mixes import (
@@ -21,6 +21,7 @@ from iOpenPod.GUI.dialogs.genius_mixes import (
 )
 from iOpenPod.GUI.pages.genius_page import GeniusPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, IconButton
 from iPodDB.library.genius import GeniusBrowse, GeniusCollection, GeniusCollectionKind
 
@@ -73,6 +74,53 @@ def test_empty_mix_header_shows_settings_then_add_and_locks_during_work(
     assert settings.x() < add.x()
     mix_browser.context.library_workspace.set_locked(True)
     assert not settings.isEnabled() and not add.isEnabled()
+
+
+@pytest.mark.parametrize(
+    "support", [FeatureSupport.UNSUPPORTED, FeatureSupport.UNKNOWN]
+)
+@pytest.mark.parametrize("captured", [False, True])
+def test_mix_section_requires_confirmed_support_and_returns_after_device_switch(
+    mix_browser: Browser, support: FeatureSupport, captured: bool
+) -> None:
+    page = mix_browser.page
+    current = active()
+    collections = tuple(
+        collection
+        for collection in current.genius.collections
+        if captured or collection.kind is not GeniusCollectionKind.MIX
+    )
+    unsupported = replace(
+        current,
+        profile=replace(
+            current.profile,
+            capabilities=replace(
+                current.profile.capabilities,
+                genius=replace(current.profile.capabilities.genius, mixes=support),
+            ),
+        ),
+        genius=GeniusBrowse(collections=collections),
+    )
+    page.set_active_ipod(unsupported)
+    assert tree(page).topLevelItemCount() == 1
+    section = tree(page).topLevelItem(0)
+    assert section is not None and section.text(0) == "Genius Playlists"
+    assert not any(
+        control.isVisible()
+        for control in page.findChildren(IconButton)
+        if control.objectName() in {"geniusMixSettings", "addGeniusMixes"}
+    )
+    panel = page.findChild(SourceListPanel, "geniusCollectionPanel")
+    assert panel is not None and panel.count_label.text() == "1"
+    page.set_active_ipod(current)
+    assert tree(page).topLevelItemCount() == 2
+    section = tree(page).topLevelItem(1)
+    assert section is not None
+    header = tree(page).itemWidget(section, 0)
+    assert header.isVisible()
+    assert header.findChild(IconButton, "geniusMixSettings") is not None
+    assert header.findChild(IconButton, "addGeniusMixes") is not None
+    assert panel.count_label.text() == "2"
 
 
 def test_add_grid_supports_multiple_selection_and_stages_one_edit(

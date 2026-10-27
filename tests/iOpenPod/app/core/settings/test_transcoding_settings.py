@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from iOpenPod.app.core.settings.definitions import (
+    ANALYZE_FOR_GENIUS,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
     LOSSY_ENCODER,
@@ -74,6 +75,7 @@ def test_sync_preferences_persist_and_policy_is_an_immutable_snapshot(
     settings.set_global(encoder_cutoff(LossyEncoder.FDK_AAC), 18000)
     settings.set_global(encoder_option(LossyEncoder.FDK_AAC, "afterburner"), False)
     booleans = (
+        ANALYZE_FOR_GENIUS,
         COMPUTE_SOUND_CHECK,
         FIT_THUMBNAILS,
         NORMALIZE_SAMPLE_RATE,

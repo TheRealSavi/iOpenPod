@@ -1476,6 +1476,11 @@ class DeviceCoordinator:
                     media=request.media,
                     checkpoint=genius_checkpoint,
                     progress=genius_progress,
+                    skip_requested=(
+                        request.genius_analysis_skip.is_set
+                        if request.genius_analysis_skip is not None
+                        else None
+                    ),
                 )
                 checkpoint(
                     "draft.genius.rank", source_text("Ranking Genius candidates")

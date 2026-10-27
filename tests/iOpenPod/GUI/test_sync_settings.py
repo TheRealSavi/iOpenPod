@@ -4,6 +4,7 @@ from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QApplication, QWidget
 
 from iOpenPod.app.core.settings.definitions import (
+    ANALYZE_FOR_GENIUS,
     COMPUTE_SOUND_CHECK,
     LOSSY_ENCODER,
     ROCKBOX_METADATA_SUPPORT,
@@ -92,9 +93,13 @@ def test_policy_precedence_is_visible_and_optional_sync_settings_save() -> None:
     assert _combo(widget, "spokenWordBitrate").isEnabled()
     sound = _combo(sync, "computeSoundCheck")
     sound.setCurrentIndex(sound.findData(True))
+    genius = _combo(sync, "analyzeForGenius")
+    assert genius.currentData() is True
+    genius.setCurrentIndex(genius.findData(False))
     rockbox = _combo(sync, "rockboxMetadataSupport")
     rockbox.setCurrentIndex(rockbox.findData(True))
     assert settings.get(COMPUTE_SOUND_CHECK) is True
+    assert settings.get(ANALYZE_FOR_GENIUS) is False
     assert settings.get(ROCKBOX_METADATA_SUPPORT) is True
     parent.close()
     application.processEvents()

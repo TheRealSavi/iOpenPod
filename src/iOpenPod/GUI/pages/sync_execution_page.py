@@ -48,6 +48,7 @@ class SyncExecutionPage(QWidget):
     )
 
     cancelRequested = Signal()
+    skipGeniusRequested = Signal()
     recoveryRequested = Signal()
     keepContentsRequested = Signal()
     exitRequested = Signal()
@@ -58,6 +59,7 @@ class SyncExecutionPage(QWidget):
         self.setObjectName("syncExecutionPage")
         self._result: SyncExecutionResult | None = None
         self._cancel_requested = False
+        self._genius_skip_requested = False
         self._cancel_notice = False
         self._last_write_progress: WriteProgress | None = None
         self._completed_stages: list[int] = []
@@ -128,6 +130,10 @@ class SyncExecutionPage(QWidget):
         self._cancel = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
         self._cancel.setObjectName("cancelSyncExecution")
         self._cancel.clicked.connect(self._request_cancel)
+        self._skip_genius = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
+        self._skip_genius.setObjectName("skipGeniusAnalysis")
+        self._skip_genius.clicked.connect(self._request_genius_skip)
+        self._skip_genius.hide()
         self._done = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
         self._done.setObjectName("finishSyncExecution")
         self._done.clicked.connect(self.exitRequested.emit)
@@ -142,6 +148,7 @@ class SyncExecutionPage(QWidget):
         self._keep.hide()
         actions = QHBoxLayout()
         actions.addStretch()
+        actions.addWidget(self._skip_genius)
         actions.addWidget(self._cancel)
         actions.addWidget(self._recover)
         actions.addWidget(self._keep)
@@ -217,6 +224,7 @@ class SyncExecutionPage(QWidget):
         self._clock.start()
         self._result = None
         self._cancel_requested = False
+        self._genius_skip_requested = False
         self._cancel_notice = False
         self._last_write_progress = None
         self._completed_stages.clear()
@@ -237,6 +245,8 @@ class SyncExecutionPage(QWidget):
         self._progress.show()
         self._cancel.setEnabled(True)
         self._cancel.show()
+        self._skip_genius.hide()
+        self._skip_genius.setEnabled(True)
         self._done.hide()
         self._recover.hide()
         self._keep.hide()
@@ -255,6 +265,11 @@ class SyncExecutionPage(QWidget):
         self._render_progress(progress)
 
     def _render_progress(self, progress: WriteProgress) -> None:
+        analyzing_genius = progress.phase in ("draft.genius", "draft.genius.audio")
+        self._skip_genius.setVisible(analyzing_genius and self._recovery_mode is None)
+        self._skip_genius.setEnabled(
+            not self._genius_skip_requested and not self._cancel_requested
+        )
         stage_index = self._stage_index(progress.phase)
         self._set_stage(stage_index)
         title = self._stage_titles()[stage_index]
@@ -267,6 +282,10 @@ class SyncExecutionPage(QWidget):
             .replace("%2", str(len(self._STAGES)))
         )
         message = workflow_text(progress.message)
+        if analyzing_genius and self._genius_skip_requested:
+            message += " " + self.tr(
+                "Skipping remaining Genius analysis. Completed profiles will be kept."
+            )
         if self._cancel_requested:
             message += " " + self.tr(
                 "Cancellation requested; waiting for a safe stopping point. Keep the iPod connected."
@@ -342,8 +361,16 @@ class SyncExecutionPage(QWidget):
         self._cancel_requested = True
         self._cancel_notice = True
         self._cancel.setEnabled(False)
+        self._skip_genius.setEnabled(False)
         self._render_cancel_notice()
         self.cancelRequested.emit()
+
+    def _request_genius_skip(self) -> None:
+        self._genius_skip_requested = True
+        self._skip_genius.setEnabled(False)
+        if self._last_write_progress is not None:
+            self._render_progress(self._last_write_progress)
+        self.skipGeniusRequested.emit()
 
     def _render_cancel_notice(self) -> None:
         self._detail.setText(
@@ -370,6 +397,7 @@ class SyncExecutionPage(QWidget):
         if result.status in (SyncExecutionStatus.SUCCESS, SyncExecutionStatus.PARTIAL):
             self._set_stage(len(self._STAGES))
         self._cancel.hide()
+        self._skip_genius.hide()
         self._done.show()
         self._recover.setVisible(
             result.status is SyncExecutionStatus.RECOVERY_REQUIRED
@@ -383,6 +411,7 @@ class SyncExecutionPage(QWidget):
         self.retranslate_ui()
 
     def begin_recovery(self, *, cleanup: bool = False) -> None:
+        self._skip_genius.hide()
         self._views.setCurrentWidget(self._running_view)
         self._recovery_mode = "cleanup" if cleanup else "restore"
         self._last_write_progress = None
@@ -429,6 +458,7 @@ class SyncExecutionPage(QWidget):
 
     def retranslate_ui(self) -> None:
         self._cancel.setText(self.tr("Cancel Sync"))
+        self._skip_genius.setText(self.tr("Skip for this Sync"))
         self._done.setText(self.tr("Return to Library"))
         self._recover.setText(self.tr("Restore Previous Library"))
         self._keep.setText(self.tr("Keep Current Contents"))

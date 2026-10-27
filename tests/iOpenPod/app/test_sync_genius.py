@@ -24,6 +24,7 @@ from iOpenPod.app.sync_execution import (
     SyncExecutionRequest,
     SyncExecutionStatus,
     SyncExecutor,
+    SyncOptions,
     _draft,  # pyright: ignore[reportPrivateUsage]
 )
 from iOpenPod.app.sync_plan import SyncPlan
@@ -124,6 +125,53 @@ def test_sync_requests_genius_only_for_confirmed_capability(
         active = replace(device.active, profile=profile)
         draft, _, _ = _draft(_refresh_request(active), [], [])
         assert draft.regenerate_genius is supported
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("model", ["MB565", "MD479"])
+def test_disabling_genius_skips_generation_and_preserves_existing_data(
+    tmp_path: Path, model: str
+) -> None:
+    device = build_device(tmp_path, model=model, compressed_database=model == "MD479")
+    try:
+        request = replace(
+            _refresh_request(device.active),
+            options=SyncOptions(analyze_for_genius=False),
+        )
+        draft, _, _ = _draft(request, [], [])
+        assert not draft.regenerate_genius
+        assert not draft.rotate_genius_mixes
+        phases: list[str] = []
+        result = SyncExecutor(device.coordinator, transcoder=_NoMediaWork()).execute(
+            request, lambda progress: phases.append(progress.phase), Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert not any(phase.startswith("draft.genius") for phase in phases)
+        companion = device.root / (
+            "iPod_Control/iTunes/iTunes Library.itlp/Genius.itdb"
+            if model == "MD479"
+            else "iPod_Control/iTunes/Extras.itdb"
+        )
+        if companion.exists():
+            assert not parse_genius_database(companion.read_bytes()).data.metadata
+        enabled = SyncExecutor(device.coordinator, transcoder=_NoMediaWork()).execute(
+            _refresh_request(result.active or device.active), lambda _: None, Event()
+        )
+        assert enabled.status is SyncExecutionStatus.SUCCESS, enabled.issues
+        graph = parse_genius_database(companion.read_bytes()).data
+        disabled_again = SyncExecutor(
+            device.coordinator, transcoder=_NoMediaWork()
+        ).execute(
+            replace(
+                _refresh_request(enabled.active or device.active),
+                options=SyncOptions(analyze_for_genius=False),
+            ),
+            lambda _: None,
+            Event(),
+        )
+        assert disabled_again.status is SyncExecutionStatus.SUCCESS
+        assert parse_genius_database(companion.read_bytes()).data == graph
     finally:
         device.coordinator.close()
 

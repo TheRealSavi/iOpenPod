@@ -70,7 +70,7 @@ _BROWSE = GeniusBrowse(
 
 def active() -> ActiveIPod:
     profile = next(
-        p for p in DEFAULT_DEVICE_REGISTRY.profiles if p.model_number == "MB565"
+        p for p in DEFAULT_DEVICE_REGISTRY.profiles if p.model_number == "MD479"
     )
     return ActiveIPod(
         DeviceCandidate(

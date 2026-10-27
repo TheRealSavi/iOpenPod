@@ -296,8 +296,10 @@ class GeniusAnalysisService:
         media: tuple[LibraryMediaSource, ...] = (),
         checkpoint: Callable[[], None],
         progress: Callable[[GeniusAnalysisProgress], None] | None = None,
+        skip_requested: Callable[[], bool] | None = None,
     ) -> GeniusAnalysisResult:
         checkpoint = _session_checkpoint(session, checkpoint)
+        should_skip = skip_requested or (lambda: False)
         checkpoint()
         decoder = (
             self._decoder.for_analysis()
@@ -351,19 +353,25 @@ class GeniusAnalysisService:
         pending: list[tuple[Track, _Source]] = []
 
         def worker_checkpoint() -> None:
-            if stopped.is_set():
-                checkpoint()
-                raise PreparationStoppedError
             checkpoint()
+            if stopped.is_set():
+                raise PreparationStoppedError
+            if should_skip():
+                raise _AnalysisSkippedError
 
         try:
             # Resolve cache hits before admitting work. Cached Tracks still get
             # source checks, but never appear as active acoustic analysis.
             for track in tracks:
                 checkpoint()
-                resolved = self._resolve_track(
-                    track, supplied.get(track.track_id), session, checkpoint
-                )
+                if should_skip():
+                    break
+                try:
+                    resolved = self._resolve_track(
+                        track, supplied.get(track.track_id), session, worker_checkpoint
+                    )
+                except _AnalysisSkippedError:
+                    break
                 if isinstance(resolved, _Source):
                     pending.append((track, resolved))
                 else:
@@ -371,6 +379,8 @@ class GeniusAnalysisService:
             with ThreadPoolExecutor(max_workers=_MAX_ANALYSIS_WORKERS) as workers:
                 for first in range(0, len(pending), _MAX_ANALYSIS_WORKERS):
                     checkpoint()
+                    if should_skip():
+                        break
                     batch = pending[first : first + _MAX_ANALYSIS_WORKERS]
                     if progress is not None:
                         try:
@@ -406,7 +416,10 @@ class GeniusAnalysisService:
                         zip(batch, futures, strict=True), first
                     ):
                         try:
-                            outcome = future.result()
+                            try:
+                                outcome = future.result()
+                            except _AnalysisSkippedError:
+                                continue
                             checkpoint()
                             outcomes[track.track_id] = outcome
                             if isinstance(outcome, _AnalyzedTrack):
@@ -444,13 +457,17 @@ class GeniusAnalysisService:
         prepared_profiles: list[GeniusPreparedProfile] = []
         for track in tracks:
             checkpoint()
-            outcome = outcomes[track.track_id]
-            if isinstance(outcome, GeniusAnalysisIssue):
-                issues.append(outcome)
+            resolved_outcome = outcomes.get(track.track_id)
+            if resolved_outcome is None:
                 continue
-            profiles[track.track_id] = outcome.profile
-            if outcome.source.dependency is not None:
-                dependencies[outcome.source.dependency.path] = outcome.source.dependency
+            if isinstance(resolved_outcome, GeniusAnalysisIssue):
+                issues.append(resolved_outcome)
+                continue
+            profiles[track.track_id] = resolved_outcome.profile
+            if resolved_outcome.source.dependency is not None:
+                dependencies[resolved_outcome.source.dependency.path] = (
+                    resolved_outcome.source.dependency
+                )
             incoming = supplied.get(track.track_id)
             if incoming is not None:
                 prepared_profiles.append(
@@ -458,7 +475,7 @@ class GeniusAnalysisService:
                         DevicePath(incoming.media.file.relative_path),
                         incoming.fingerprint.size,
                         incoming.fingerprint.sha256,
-                        outcome.profile,
+                        resolved_outcome.profile,
                     )
                 )
         result = GeniusAnalysisResult(
@@ -575,6 +592,7 @@ class GeniusAnalysisService:
             ConcurrentModificationError,
             FilePreconditionError,
             PreparationStoppedError,
+            _AnalysisSkippedError,
         ):
             raise
         except (GeniusAudioDecodeError, OSError, StorageError, ValueError) as error:
@@ -585,6 +603,10 @@ class GeniusAnalysisService:
 
 class PreparationStoppedError(RuntimeError):
     """A peer failed, so unfinished optional analysis must stop."""
+
+
+class _AnalysisSkippedError(RuntimeError):
+    """The user skipped unfinished acoustic analysis for this Sync."""
 
 
 def _source(

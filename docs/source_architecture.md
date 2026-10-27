@@ -798,6 +798,13 @@ implementation submodules remain private. Genius generation and browsing consume
 the public `iPodDB.library.genius` contract (ADR-0176–0178), rather than its payload
 codecs or SQLite implementation. Snapshot construction and edits do not change the
 retained databases.
+Sync captures the effective Analyze for Genius setting at start. On supported
+iPods, the enabled setting requests audio profiling, graph regeneration, and
+automatic Mix rotation; the disabled setting leaves ordinary Library preparation
+to retain and reconcile existing Genius data (ADR-0199).
+The progress view can skip unfinished audio analysis for the current Sync through
+a request-scoped signal. Completed profiles remain cached and participate in
+ranking; remaining Tracks use metadata candidates (ADR-0200).
 Source-bound Library Drafts now provide semantic preparation over the existing
 lossless writer path. Analysis returns changes and required resources; preparation
 reconciles retained records and verifies finalized output without opening paths.

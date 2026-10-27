@@ -472,6 +472,109 @@ def test_analysis_runs_two_tracks_at_once_with_bounded_progress(tmp_path: Path) 
     assert len(progress_threads) == 1
 
 
+def test_skip_stops_active_and_waiting_work_and_keeps_completed_profiles(
+    tmp_path: Path,
+) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    tracks = [snapshot.tracks[0]]
+    for track_id in (2, 3):
+        name = f"song-{track_id}.mp3"
+        (root / name).write_bytes(b"audio")
+        tracks.append(
+            replace(
+                tracks[0],
+                track_id=track_id,
+                metadata=TrackMetadata(location=name),
+                ipod=IPodTrackDetails(db_track_id=100 + track_id),
+            )
+        )
+    snapshot = replace(snapshot, tracks=tuple(tracks))
+    skip = Event()
+    peer_started = Event()
+    peer_stopped = Event()
+
+    class SkippableDecoder(_Decoder):
+        def decode(
+            self,
+            source: HostPath | DevicePath,
+            *,
+            input_suffix: str,
+            session: FilesystemSession,
+            checkpoint: Callable[[], None],
+        ) -> bytes:
+            self.sources.append(source)
+            if source == DevicePath("song.mp3"):
+                assert peer_started.wait(5)
+                return b"\x01\x00\x00\x00"
+            peer_started.set()
+            try:
+                assert skip.wait(5)
+                checkpoint()
+                pytest.fail("Skipped audio decoding should stop at its checkpoint")
+            finally:
+                peer_stopped.set()
+
+    decoder = SkippableDecoder()
+    cache = AtomicHostFile(tmp_path / "profiles.json")
+
+    def progress(value: GeniusAnalysisProgress) -> None:
+        if value.completed == 1:
+            skip.set()
+
+    result = GeniusAnalysisService(cache, decoder, profiler=_profile).analyze(
+        snapshot,
+        session,
+        checkpoint=_checkpoint,
+        progress=progress,
+        skip_requested=skip.is_set,
+    )
+    assert peer_stopped.is_set()
+    assert tuple(result.profiles) == (1,)
+    assert not result.issues
+    assert set(decoder.sources) == {
+        DevicePath("song.mp3"),
+        DevicePath("song-2.mp3"),
+    }
+    retry_decoder = _Decoder()
+    retried = GeniusAnalysisService(cache, retry_decoder, profiler=_profile).analyze(
+        snapshot, session, checkpoint=_checkpoint
+    )
+    assert tuple(retried.profiles) == (1, 2, 3)
+    assert set(retry_decoder.sources) == {
+        DevicePath("song-2.mp3"),
+        DevicePath("song-3.mp3"),
+    }
+
+
+@pytest.mark.parametrize("failure", ["cancel", "source_change"])
+def test_skip_does_not_hide_cancellation_or_changed_sources(
+    tmp_path: Path, failure: str
+) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    skip = Event()
+    cancelled = Event()
+
+    def action() -> None:
+        skip.set()
+        if failure == "cancel":
+            cancelled.set()
+        else:
+            (root / "song.mp3").write_bytes(b"changed source")
+
+    def checkpoint() -> None:
+        if cancelled.is_set():
+            raise PreparationCancelledError
+
+    with pytest.raises(
+        PreparationCancelledError
+        if failure == "cancel"
+        else ConcurrentModificationError
+    ):
+        GeniusAnalysisService(decoder=_Decoder(action), profiler=_profile).analyze(
+            snapshot, session, checkpoint=checkpoint, skip_requested=skip.is_set
+        )
+
+
 def test_concurrent_source_change_stops_peer_and_rejects_profiles(
     tmp_path: Path,
 ) -> None:

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from device_registry import FeatureSupport
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.genius_mixes import (
     GENIUS_MIX_POLICY,
@@ -172,15 +173,14 @@ class GeniusPage(PlaylistPage):
         selected: QTreeWidgetItem | None = None
         pending_removals = set(self._workspace.genius_collection_removals)
         self._visible_removals = frozenset(pending_removals)
+        displayed = self._displayed_collections()
         for kind, label in (
             (GeniusCollectionKind.PLAYLIST, self.tr("Genius Playlists")),
             (GeniusCollectionKind.MIX, self.tr("Genius Mixes")),
         ):
-            items = tuple(
-                item
-                for item in self._browse.collections
-                if item.kind is kind and item.collection_id not in pending_removals
-            )
+            if kind is GeniusCollectionKind.MIX and not self._mixes_supported():
+                continue
+            items = tuple(item for item in displayed if item.kind is kind)
             if not items and (
                 kind is not GeniusCollectionKind.MIX or self._active is None
             ):
@@ -233,12 +233,7 @@ class GeniusPage(PlaylistPage):
         if selected is not None:
             self._collections.setCurrentItem(selected)
         self._collections.blockSignals(False)
-        self._panel.set_count(
-            sum(
-                collection.collection_id not in pending_removals
-                for collection in self._browse.collections
-            )
-        )
+        self._panel.set_count(len(displayed))
         if selected is None:
             self._selected_collection_id = None
         messages = [issue.detail for issue in self._browse.issues]
@@ -248,6 +243,25 @@ class GeniusPage(PlaylistPage):
         self._issues.setVisible(bool(messages))
         self._refresh_collection()
         self._refresh_mix_actions()
+
+    def _mixes_supported(self) -> bool:
+        return (
+            self._active is not None
+            and self._active.profile.capabilities.genius.mixes
+            is FeatureSupport.SUPPORTED
+        )
+
+    def _displayed_collections(self) -> tuple[GeniusCollection, ...]:
+        return tuple(
+            collection
+            for collection in self._browse.collections
+            if collection.collection_id
+            not in self._workspace.genius_collection_removals
+            and (
+                collection.kind is not GeniusCollectionKind.MIX
+                or self._mixes_supported()
+            )
+        )
 
     def _workspace_changed(self) -> None:
         browse = self._browse
@@ -335,7 +349,11 @@ class GeniusPage(PlaylistPage):
 
     def _add_mixes(self) -> None:
         active = self._active
-        if active is None or not self._mix_buttons[-1].isEnabled():
+        if (
+            active is None
+            or not self._mix_buttons
+            or not self._mix_buttons[-1].isEnabled()
+        ):
             return
         revision = self._workspace.edit_revision
         native_ids = {
@@ -374,7 +392,11 @@ class GeniusPage(PlaylistPage):
 
     def _configure_mixes(self) -> None:
         active = self._active
-        if active is None or not self._mix_buttons[0].isEnabled():
+        if (
+            active is None
+            or not self._mix_buttons
+            or not self._mix_buttons[0].isEnabled()
+        ):
             return
         value, overridden = self._settings.device_edit_value(GENIUS_MIX_POLICY)
         policy = MixPolicy.decode(value) if overridden else MixPolicy()
@@ -415,10 +437,7 @@ class GeniusPage(PlaylistPage):
             empty_message = self.tr(
                 "Connect and choose an iPod to browse its Genius collections."
             )
-        elif not any(
-            collection.collection_id not in self._workspace.genius_collection_removals
-            for collection in self._browse.collections
-        ):
+        elif not self._displayed_collections():
             empty_message = self.tr("No Genius collections were found on this iPod.")
         else:
             empty_message = self.tr("Choose a Genius Playlist or Mix.")

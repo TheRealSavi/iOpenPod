@@ -168,6 +168,7 @@ class SyncExecutionStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class SyncOptions:
+    analyze_for_genius: bool = True
     compute_sound_check: bool = False
     normalize_tags: bool = False
     rotate_tall_photos: bool = False
@@ -190,6 +191,9 @@ class SyncExecutionRequest:
     podcasts: PodcastSyncRequest | None = None
     scrobble_accounts: tuple[Account, ...] = ()
     playlist_choices: tuple[PlaylistSyncChoice, ...] = ()
+    genius_analysis_skip: Event = field(
+        default_factory=Event, compare=False, repr=False, kw_only=True
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -2628,10 +2632,15 @@ def _draft(
         ),
         regenerate_sqlite=request.source.profile.capabilities.database.uses_sqlite_database,
         regenerate_genius=(
-            request.source.profile.capabilities.genius.playlists
+            request.options.analyze_for_genius
+            and request.source.profile.capabilities.genius.playlists
             is FeatureSupport.SUPPORTED
         ),
-        rotate_genius_mixes=supports_mix_creation(request.source.profile),
+        genius_analysis_skip=request.genius_analysis_skip,
+        rotate_genius_mixes=(
+            request.options.analyze_for_genius
+            and supports_mix_creation(request.source.profile)
+        ),
         repair_podcast_links=True,
         normalize_podcasts=any(
             t.media_kind is MediaKind.PODCAST or t.metadata.podcast

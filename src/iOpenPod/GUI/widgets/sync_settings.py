@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from iOpenPod.app.core.settings.definitions import (
+    ANALYZE_FOR_GENIUS,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
     LOSSY_ENCODER,
@@ -90,6 +91,7 @@ class SyncSettings(QWidget):
         self._sound_check = _Choice(
             scope, COMPUTE_SOUND_CHECK, "computeSoundCheck", self
         )
+        self._genius = _Choice(scope, ANALYZE_FOR_GENIUS, "analyzeForGenius", self)
         self._normalize = _Choice(
             scope, NORMALIZE_TAGS_AFTER_SYNC, "normalizeTagsAfterSync", self
         )
@@ -103,6 +105,7 @@ class SyncSettings(QWidget):
         )
         self._rows = (
             self._scrobble,
+            self._genius,
             self._sound_check,
             self._normalize,
             self._rotate,
@@ -128,6 +131,14 @@ class SyncSettings(QWidget):
             self.tr("Scrobble during Sync"),
             self.tr(
                 "Submit pending iPod plays to connected services before syncing media. Failed submissions are saved for retry."
+            ),
+        )
+        self._genius.set_copy(
+            self.tr("Analyze for Genius"),
+            self.tr(
+                "Analyze music and refresh native Genius recommendations during Sync "
+                "on supported iPods. Off skips Genius generation and keeps existing "
+                "Genius data where possible."
             ),
         )
         self._sound_check.set_copy(

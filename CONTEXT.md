@@ -66,6 +66,8 @@ matching Mix ownership are removed recoverably. Metadata edits preserve collecti
 membership. See ADR-0186; firmware acceptance of replacement seeds remains open.
 
 Genius now offers manual genre Mix additions and per-iPod Count/Expiry settings.
+The Genius sidebar shows Mixes only on iPods with confirmed native Mix support
+(ADR-0201).
 Focus, Love, Energy, and Relax Mixes now use the existing librosa-derived Genius
 Audio Profiles during Library preparation; Love also requires an explicit title or
 album cue. The Add dialog defers their eligibility check until save. These are
@@ -82,6 +84,12 @@ are updated through the reviewed Library save. See ADR-0185.
 Sync now prepares native Genius relationships for all music Tracks on
 Genius-capable iPods. Elephant-Ear-style audio profiles rank up to 32 candidates
 using body similarity and outro-to-intro compatibility, with metadata fallback.
+The Analyze for Genius Sync setting is on by default and can be disabled per iPod;
+disabled Syncs preserve existing Genius data without regenerating relationships or
+rotating automatic Mixes (ADR-0199).
+During Genius analysis, Skip for this Sync stops unfinished audio work, retains
+completed profiles, and continues Sync with metadata fallback for remaining Tracks
+(ADR-0200).
 Profiles are cached on the Host; short Tracks use body-only analysis. Stable Genius
 identities, real artist and album keys, and native spacing rules accompany the
 final Library. The new spacing policy still needs hardware listening validation.

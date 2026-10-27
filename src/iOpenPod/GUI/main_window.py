@@ -570,6 +570,9 @@ class MainWindow(QMainWindow):
         self._sync_workspace.executionCancelRequested.connect(
             self._sync_controller.cancel
         )
+        self._sync_workspace.execution.skipGeniusRequested.connect(
+            self._sync_controller.skip_genius_analysis
+        )
         self._sync_controller.progressChanged.connect(self._sync_progress_changed)
         self._sync_controller.finished.connect(self._sync_finished)
         self._sync_workspace.execution.recoveryRequested.connect(self._recover_sync)

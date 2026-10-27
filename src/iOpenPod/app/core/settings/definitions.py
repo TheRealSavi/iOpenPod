@@ -328,6 +328,12 @@ COMPUTE_SOUND_CHECK = SettingDefinition[bool](
     default=False,
     device_overridable=True,
 )
+ANALYZE_FOR_GENIUS = SettingDefinition[bool](
+    key="sync/analyze-for-genius",
+    value_type=bool,
+    default=True,
+    device_overridable=True,
+)
 NORMALIZE_TAGS_AFTER_SYNC = SettingDefinition[bool](
     key="sync/normalize-tags-after-sync",
     value_type=bool,

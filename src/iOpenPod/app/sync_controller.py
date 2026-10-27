@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Protocol
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 
 from iOpenPod.app.core.settings.definitions import (
+    ANALYZE_FOR_GENIUS,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
     NORMALIZE_TAGS_AFTER_SYNC,
@@ -421,6 +422,7 @@ class SyncController(QObject):
                 settings=read_transcoder_settings(self._settings),
                 options=SyncOptions(
                     scrobble=self._settings.get(SCROBBLE_DURING_SYNC),
+                    analyze_for_genius=self._settings.get(ANALYZE_FOR_GENIUS),
                     compute_sound_check=self._settings.get(COMPUTE_SOUND_CHECK),
                     normalize_tags=self._settings.get(NORMALIZE_TAGS_AFTER_SYNC),
                     rotate_tall_photos=self._settings.get(ROTATE_TALL_PHOTOS),
@@ -480,6 +482,11 @@ class SyncController(QObject):
     def cancel(self) -> None:
         if self._job is not None:
             self._job.cancelled.set()
+
+    @Slot()
+    def skip_genius_analysis(self) -> None:
+        if isinstance(self._job, _SyncWork):
+            self._job.request.genius_analysis_skip.set()
 
     def recover(self) -> bool:
         result = self.result

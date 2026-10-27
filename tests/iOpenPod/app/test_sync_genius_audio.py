@@ -170,6 +170,40 @@ def test_sync_analyzes_prepared_new_media_on_host(
         device.coordinator.close()
 
 
+def test_skipping_genius_analysis_continues_sync_and_only_affects_this_request(
+    tmp_path: Path,
+) -> None:
+    decoder = _Decoder()
+    device = _with_analysis(build_device(tmp_path), tmp_path / "profiles.json", decoder)
+    try:
+        request = _request(device, _host(tmp_path, "New song"))
+        phases: list[str] = []
+
+        def progress(value: WriteProgress) -> None:
+            phases.append(value.phase)
+            if value.phase == "draft.genius.audio":
+                request.genius_analysis_skip.set()
+
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, progress, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        assert any(track.title == "New song" for track in result.active.library.tracks)
+        assert "draft.genius.rank" in phases
+        assert not decoder.calls
+        assert not any(issue.code.startswith("genius.") for issue in result.issues)
+        next_request = _refresh_request(result.active)
+        assert not next_request.genius_analysis_skip.is_set()
+        result = SyncExecutor(device.coordinator).execute(
+            next_request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert len(decoder.calls) == 3
+    finally:
+        device.coordinator.close()
+
+
 def test_committed_profile_cache_failure_does_not_fail_sync(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
