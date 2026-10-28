@@ -3084,8 +3084,8 @@
         <translation>Felder filtern</translation>
     </message>
     <message>
-        <source>Podcasts and videos keep their place and are skipped when shuffling.</source>
-        <translation>Podcasts und Videos merken sich die Wiedergabeposition und werden bei der Zufallswiedergabe übersprungen.</translation>
+        <source>Podcasts, audiobooks, and videos keep their place and are skipped when shuffling.</source>
+        <translation>Podcasts, Hörbücher und Videos merken sich die Wiedergabeposition und werden bei der Zufallswiedergabe übersprungen.</translation>
     </message>
     <message>
         <source>Other</source>
@@ -8005,8 +8005,8 @@ Playlists: %3</translation>
         <translation> (unterschiedlich)</translation>
     </message>
     <message>
-        <source>Podcasts and videos keep their place and are skipped when shuffling.</source>
-        <translation>Podcasts und Videos merken sich die Wiedergabeposition und werden bei der Zufallswiedergabe übersprungen.</translation>
+        <source>Podcasts, audiobooks, and videos keep their place and are skipped when shuffling.</source>
+        <translation>Podcasts, Hörbücher und Videos merken sich die Wiedergabeposition und werden bei der Zufallswiedergabe übersprungen.</translation>
     </message>
     <message>
         <source>Rating</source>

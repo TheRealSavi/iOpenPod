@@ -528,7 +528,7 @@ class MetadataEditorDialog(QDialog):
                 editor.setEnabled(not required or editor.currentData() is not True)
                 editor.setToolTip(
                     self.tr(
-                        "Podcasts and videos keep their place and are skipped "
+                        "Podcasts, audiobooks, and videos keep their place and are skipped "
                         "when shuffling."
                     )
                     if required

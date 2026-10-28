@@ -558,7 +558,7 @@ class TrackActions(QObject):
             if required_playback_flag:
                 item.setToolTip(
                     self.tr(
-                        "Podcasts and videos keep their place and are skipped "
+                        "Podcasts, audiobooks, and videos keep their place and are skipped "
                         "when shuffling."
                     )
                 )

@@ -2116,7 +2116,7 @@ Episodes without downloading their media. Existing covers survive, and cover
 failures produce warnings rather than dropping otherwise valid Episodes.
 
 The shared Application Layer playback policy enables Remember position and Skip
-when shuffling for all Podcast and video Tracks during import, editing, and Library
+when shuffling for all Podcast, Audiobook, and video Tracks during import, editing, and Library
 Draft preparation. Sync repairs retained Tracks with those flags off even when
 their media remains unchanged. Audio and video Podcasts also require the Podcast
 Now Playing marker; enabling it uses the existing native `0x01` mapping, while

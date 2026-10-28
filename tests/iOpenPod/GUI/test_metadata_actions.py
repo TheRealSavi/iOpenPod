@@ -235,7 +235,9 @@ def test_chaptered_action_requests_the_complete_album() -> None:
         context.shutdown()
 
 
-@pytest.mark.parametrize("media_type", (MediaType.PODCAST, MediaType.VIDEO))
+@pytest.mark.parametrize(
+    "media_type", (MediaType.PODCAST, MediaType.AUDIOBOOK, MediaType.VIDEO)
+)
 @pytest.mark.parametrize("saved_value", (False, True))
 def test_track_playback_flags_show_saved_values_in_editor_and_context_menu(
     media_type: MediaType,

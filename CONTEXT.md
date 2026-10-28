@@ -809,7 +809,7 @@ Podcasts Playlist consequences. The metadata editor's Media type selector also
 reclassifies retained audio or video within its current media family, including
 Movie to TV Show, atomically with explicit metadata and artwork edits. Mixed and
 retained compound classifications stay unchanged until selected for replacement.
-Podcasts and videos always use Remember position and Skip when shuffling in
+Podcasts, Audiobooks, and videos always use Remember position and Skip when shuffling in
 application imports, edits, and prepared Library Drafts. Save and Sync repair
 retained Tracks with those flags off. Audio and video Podcasts also enable the
 native Podcast Now Playing marker. Merely loading an iPod preserves its raw

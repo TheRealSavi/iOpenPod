@@ -41,6 +41,7 @@ def test_reclassification_preserves_unrelated_metadata(
     )
 
     required = after in (
+        MediaType.AUDIOBOOK,
         MediaType.PODCAST,
         MediaType.VIDEO,
         MediaType.TV_SHOW,

@@ -3084,8 +3084,8 @@
         <translation>Filtrar campos</translation>
     </message>
     <message>
-        <source>Podcasts and videos keep their place and are skipped when shuffling.</source>
-        <translation>Los pódcast y los vídeos conservan su posición y se omiten en la reproducción aleatoria.</translation>
+        <source>Podcasts, audiobooks, and videos keep their place and are skipped when shuffling.</source>
+        <translation>Los pódcast, los audiolibros y los vídeos conservan su posición y se omiten en la reproducción aleatoria.</translation>
     </message>
     <message>
         <source>Other</source>
@@ -8005,8 +8005,8 @@ Playlists: %3</translation>
         <translation> (valores distintos)</translation>
     </message>
     <message>
-        <source>Podcasts and videos keep their place and are skipped when shuffling.</source>
-        <translation>Los pódcast y los vídeos conservan su posición y se omiten en la reproducción aleatoria.</translation>
+        <source>Podcasts, audiobooks, and videos keep their place and are skipped when shuffling.</source>
+        <translation>Los pódcast, los audiolibros y los vídeos conservan su posición y se omiten en la reproducción aleatoria.</translation>
     </message>
     <message>
         <source>Rating</source>

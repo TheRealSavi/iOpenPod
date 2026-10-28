@@ -1,4 +1,4 @@
-"""Application playback requirements for Podcasts and timed video media.
+"""Application playback requirements for Podcasts, Audiobooks, and timed video media.
 
 Apply to incoming or desired Library state only. Retained database projections
 remain truthful, and iPodDB keeps its lossless unchanged-document contract.
@@ -13,6 +13,7 @@ from iPodDB.library import LibrarySnapshot, MediaType, Track
 
 _REQUIRED_TYPES = frozenset(
     (
+        MediaType.AUDIOBOOK,
         MediaType.PODCAST,
         MediaType.VIDEO_PODCAST,
         MediaType.VIDEO,

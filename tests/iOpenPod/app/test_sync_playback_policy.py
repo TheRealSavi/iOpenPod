@@ -41,6 +41,8 @@ def _request(active: ActiveIPod) -> SyncExecutionRequest:
 @pytest.mark.parametrize(
     "kind",
     (
+        MediaType.AUDIOBOOK,
+        MediaType.AUDIOBOOK,
         MediaType.PODCAST,
         MediaType.VIDEO,
         MediaType.AUDIO_VIDEO,
@@ -70,7 +72,9 @@ class _NoMediaPreparation(MediaTranscoder):
         pytest.fail("Playback option repair must not require media tools")
 
 
-@pytest.mark.parametrize("kind", (MediaType.PODCAST, MediaType.VIDEO_PODCAST))
+@pytest.mark.parametrize(
+    "kind", (MediaType.PODCAST, MediaType.VIDEO_PODCAST, MediaType.AUDIOBOOK)
+)
 @pytest.mark.parametrize("playback_enabled", (False, True))
 def test_sync_saves_playback_repairs_without_media_changes(
     tmp_path: Path, kind: MediaType, playback_enabled: bool
@@ -119,7 +123,11 @@ def test_sync_saves_playback_repairs_without_media_changes(
         assert repaired.track_id == first.track_id
         assert repaired.metadata.remember_position
         assert repaired.metadata.skip_shuffle
-        assert repaired.metadata.podcast
+        assert (
+            repaired.metadata.podcast
+            is (kind is not MediaType.AUDIOBOOK)
+            is (kind is not MediaType.AUDIOBOOK)
+        )
         assert repaired.play_count == 7
         assert repaired.metadata.bookmark_time_ms == 450
         assert repaired.metadata.last_played == 1_700_000_000
@@ -140,7 +148,11 @@ def test_sync_saves_playback_repairs_without_media_changes(
         reloaded = device.coordinator.select_device(before.candidate.id)
         assert reloaded.library.tracks[0].metadata.remember_position
         assert reloaded.library.tracks[0].metadata.skip_shuffle
-        assert reloaded.library.tracks[0].metadata.podcast
+        assert (
+            reloaded.library.tracks[0].metadata.podcast
+            is (kind is not MediaType.AUDIOBOOK)
+            is (kind is not MediaType.AUDIOBOOK)
+        )
 
         headers = {
             selection.chunk.header.track_id: selection.chunk.header
@@ -148,7 +160,9 @@ def test_sync_saves_playback_repairs_without_media_changes(
                 (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
             ).find_chunks(MhitHeader)
         }
-        assert headers[first.track_id].podcast_now_playing_flag == 1
+        assert headers[first.track_id].podcast_now_playing_flag == int(
+            kind is not MediaType.AUDIOBOOK
+        )
         assert headers[music.track_id].podcast_now_playing_flag == 0
 
         # Explicit Podcast normalization may date the Playlist again, while

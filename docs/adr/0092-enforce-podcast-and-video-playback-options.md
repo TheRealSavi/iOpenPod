@@ -6,6 +6,7 @@
 
 - Status: Accepted
 - Date: 2026-09-27
+- Updated: 2026-10-28 to require both options for Audiobooks as well
 - Amends: ADR-0088's preservation of all other metadata during reclassification
 
 ## Context
@@ -18,10 +19,10 @@ Previously saved Tracks can also have either option disabled.
 ## Decision
 
 A shared Application Layer policy requires `remember_position` and `skip_shuffle`
-for Podcast and video classifications, including Video Podcasts, Movies, TV Shows,
+for Podcast, Audiobook, and video classifications, including Video Podcasts, Movies, TV Shows,
 Music Videos, and compound audio/video classifications. A retained Podcast marker
-also identifies a Track that requires the policy. Music and Audiobook options
-remain editable.
+also identifies a Track that requires the policy. Music options remain editable. Audiobooks require both playback options without
+acquiring the Podcast marker.
 
 Podcast and Video Podcast classifications also require the Podcast Now Playing
 marker (`TrackMetadata.podcast`). The existing iPodDB field mapping writes native

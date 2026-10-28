@@ -27,6 +27,7 @@ from storage import FileFingerprint, HostPath
 @pytest.mark.parametrize(
     "kind",
     (
+        MediaType.AUDIOBOOK,
         MediaType.PODCAST,
         MediaType.VIDEO_PODCAST,
         MediaType.VIDEO,
@@ -36,7 +37,7 @@ from storage import FileFingerprint, HostPath
     ),
 )
 @pytest.mark.parametrize("disc_number", (0, 1, 3))
-def test_all_podcasts_and_video_types_require_both_flags(
+def test_all_required_media_types_enable_both_flags(
     kind: MediaType, disc_number: int
 ) -> None:
     original = Track(
@@ -98,7 +99,7 @@ def test_legacy_semantic_podcast_flag_also_requires_both_flags() -> None:
     assert updated.media_types == (MediaType.PODCAST,)
 
 
-@pytest.mark.parametrize("kind", (MediaType.AUDIO, MediaType.AUDIOBOOK, MediaType.MEMO))
+@pytest.mark.parametrize("kind", (MediaType.AUDIO, MediaType.MEMO))
 @pytest.mark.parametrize("enabled", (False, True))
 def test_other_media_keep_their_existing_playback_preferences(
     kind: MediaType,
