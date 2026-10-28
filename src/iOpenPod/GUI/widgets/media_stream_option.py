@@ -102,6 +102,8 @@ class StreamOptionDelegate(SelectionDelegate):
         combo.installEventFilter(self)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is not self._combo and watched is not self._popup:
+            return super().eventFilter(watched, event)
         if (
             event.type() in (QEvent.Type.Resize, QEvent.Type.Show)
             and watched is self._combo
@@ -109,7 +111,9 @@ class StreamOptionDelegate(SelectionDelegate):
             border = self._popup.frameWidth() if isinstance(self._popup, QFrame) else 0
             self._popup.setFixedWidth(self._combo.width())
             self._combo.view().setFixedWidth(max(1, self._combo.width() - 2 * border))
-        return super().eventFilter(watched, event)
+        # Qt's delegate filter treats its target as a cell editor. Let the
+        # combo and popup handle their own focus, key, and hide events.
+        return False
 
     def _blocks(
         self, option: QStyleOptionViewItem, data: StreamOption, width: int
