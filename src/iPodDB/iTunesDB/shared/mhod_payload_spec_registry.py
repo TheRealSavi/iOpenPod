@@ -95,6 +95,8 @@ MHOD_DEFINITIONS: Mapping[int, MhodDefinitionSpec] = MappingProxyType(
             _mhod(7, "EQ Setting", MhodPayloadKind.STRING),
             _mhod(8, "Comment", MhodPayloadKind.STRING),
             _mhod(9, "Category", MhodPayloadKind.STRING),
+            # Retained application compatibility; the native meaning is
+            # unverified. See docs/research/mhod-10-provenance.md.
             _mhod(10, "Lyrics", MhodPayloadKind.STRING),
             _mhod(11, "Unknown (MHOD 11)", MhodPayloadKind.OPAQUE),
             _mhod(12, "Composer", MhodPayloadKind.STRING),

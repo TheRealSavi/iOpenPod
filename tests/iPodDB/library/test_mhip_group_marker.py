@@ -59,7 +59,9 @@ def _retagged_podcasts(group_byte: int, *, companion: bool = True) -> IPodLibrar
             occurrence,
             replace(
                 item,
-                header=replace(item.header, podcast_group_flag=(marker << 8) | 0x80),
+                header=replace(
+                    item.header, unchecked_override=0x80, group_marker=marker
+                ),
             ),
         )
     if not companion:
@@ -181,7 +183,8 @@ def test_track_deletion_preserves_hidden_group_with_matching_unused_track_word(
         category=7,
         items=(
             MhipHeader(
-                podcast_group_flag=(group_byte << 8) | 0x80,
+                unchecked_override=0x80,
+                group_marker=group_byte,
                 track_id=1,
                 group_id=7,
                 timestamp=919,

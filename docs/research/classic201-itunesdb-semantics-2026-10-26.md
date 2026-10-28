@@ -130,7 +130,8 @@ repeat-all becomes repeat-off in the examined importer. A title rename with the
 same string count happened to preserve it. Actual MHOD/MHIP child counts are
 separate fields at `+0x0c/+0x10`.
 
-The correction uses the neutral raw [field `unk_mhyp_0x28`][mhyp], preserves its
+The correction uses the raw [field `serialized_repeat_override`][mhyp] (initially
+retained as `unk_mhyp_0x28`), preserves its
 value during text edits and companion-dataset construction, and stops deriving it
 from text-child counts. The existing authored default `1` is retained for new
 Playlists. That default is a compatibility choice; it means repeat-off here, but

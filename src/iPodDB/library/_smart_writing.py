@@ -13,7 +13,6 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_prefs_mhod import (
     MhodSmartPrefsPrefix,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
-    SMART_RULE_GROUP_MARKER,
     MhodSmartNumericRuleData,
     MhodSmartRule,
     MhodSmartRuleGroupData,
@@ -75,8 +74,10 @@ def encode_rule(
     if isinstance(rule, SmartRuleGroup):
         data = MhodSmartRuleGroupData(
             b"SLst",
-            0x10001,
+            1,
+            1,
             len(rule.rules),
+            bytes(3),
             int(rule.match is SmartMatch.ANY),
             bytes(120),
             _encode_rules(
@@ -96,11 +97,13 @@ def encode_rule(
                 data=replace(
                     existing.data,
                     rules=data.rules,
-                    conjunction=data.conjunction,
+                    conjunction=_retained_conjunction(
+                        rule.match, existing.data.conjunction
+                    ),
                     rule_count=data.rule_count,
                 ),
             )
-        return MhodSmartRule(0, 1, SMART_RULE_GROUP_MARKER, bytes(40), data)
+        return MhodSmartRule(0, 1, 1, 0, b"\x00\x00", bytes(40), data)
     field = {value: key for key, value in FIELDS.items()}[rule.field]
     if isinstance(rule.value, SmartPlaylistReference):
         playlist_id = (
@@ -110,11 +113,9 @@ def encode_rule(
         )
         if not 0 < playlist_id <= 0xFFFFFFFFFFFFFFFF:
             raise ValueError("The referenced Playlist is not available for writing.")
-        return MhodSmartRule(
+        return _leaf_rule(
             field,
             {v: k for k, v in CHOICE_ACTIONS.items()}[rule.operator],
-            0,
-            bytes(40),
             MhodSmartNumericRuleData(
                 playlist_id,
                 0,
@@ -129,41 +130,37 @@ def encode_rule(
                 0,
                 b"",
             ),
+            existing,
         )
     if isinstance(rule.value, SmartMediaKind):
         value = {v: k for k, v in MEDIA_KIND_VALUES.items()}[rule.value]
-        return MhodSmartRule(
+        return _leaf_rule(
             field,
             {v: k for k, v in CHOICE_ACTIONS.items()}[rule.operator],
-            0,
-            bytes(40),
             MhodSmartNumericRuleData(value, 0, 1, value, 0, 1, 0, 0, 0, 0, 0, b""),
+            existing,
         )
     if isinstance(rule.value, SmartLocation):
         value = {v: k for k, v in LOCATION_VALUES.items()}[rule.value]
-        return MhodSmartRule(
+        return _leaf_rule(
             field,
             {v: k for k, v in LOCATION_ACTIONS.items()}[rule.operator],
-            0,
-            bytes(40),
             MhodSmartNumericRuleData(value, 0, 1, value, 0, 1, 0, 0, 0, 0, 0, b""),
+            existing,
         )
     if rule.field in BOOLEAN_FIELDS:
         value = BOOLEAN_TRUE_OPERANDS.get(rule.field, 0)
-        return MhodSmartRule(
+        return _leaf_rule(
             field,
             1 if rule.operator is SmartOperator.IS_TRUE else 0x02000001,
-            0,
-            bytes(40),
             MhodSmartNumericRuleData(value, 0, 1, value, 0, 1, 0, 0, 0, 0, 0, b""),
+            existing,
         )
     if rule.field in DATE_FIELDS and rule.operator in RELATIVE_ACTIONS.values():
         assert isinstance(rule.value, int)
-        return MhodSmartRule(
+        return _leaf_rule(
             field,
             {v: k for k, v in RELATIVE_ACTIONS.items()}[rule.operator],
-            0,
-            bytes(40),
             MhodSmartNumericRuleData(
                 DATE_IDENTIFIER,
                 -rule.value,
@@ -178,6 +175,7 @@ def encode_rule(
                 0,
                 b"",
             ),
+            existing,
         )
     if rule.field in TEXT_FIELDS:
         if (
@@ -188,12 +186,11 @@ def encode_rule(
                 "Text Smart Playlist rules require a supported text comparison."
             )
         rule.value.encode("utf-16-be")
-        return MhodSmartRule(
+        return _leaf_rule(
             field,
             {v: k for k, v in STRING_ACTIONS.items()}[rule.operator],
-            0,
-            bytes(40),
             MhodSmartStringRuleData(rule.value, b""),
+            existing,
         )
     if not isinstance(rule.value, int) or rule.operator not in NUMERIC_ACTIONS.values():
         raise ValueError(
@@ -212,12 +209,49 @@ def encode_rule(
         raise ValueError(
             "Smart Playlist numeric bounds must be ordered nonnegative signed 64-bit values."
         )
-    return MhodSmartRule(
+    return _leaf_rule(
         field,
         {v: k for k, v in NUMERIC_ACTIONS.items()}[rule.operator],
-        0,
-        bytes(40),
         MhodSmartNumericRuleData(value, 0, 1, upper, 0, 1, 0, 0, 0, 0, 0, b""),
+        existing,
+    )
+
+
+def _retained_conjunction(match: SmartMatch, existing: int) -> int:
+    """Keep a noncanonical ANY byte when its boolean meaning is unchanged."""
+    desired = match is SmartMatch.ANY
+    return existing if bool(existing) == desired else int(desired)
+
+
+def _leaf_rule(
+    field_id: int,
+    action_id: int,
+    data: MhodSmartNumericRuleData | MhodSmartStringRuleData,
+    existing: MhodSmartRule | None,
+) -> MhodSmartRule:
+    """Change understood operands while retaining an existing leaf's envelope."""
+    if existing is not None and not existing.is_nested:
+        if isinstance(data, MhodSmartNumericRuleData) and isinstance(
+            existing.data, MhodSmartNumericRuleData
+        ):
+            data = replace(
+                data,
+                unk_0x30=existing.data.unk_0x30,
+                unk_0x34=existing.data.unk_0x34,
+                unk_0x38=existing.data.unk_0x38,
+                unk_0x3C=existing.data.unk_0x3C,
+                unk_0x40=existing.data.unk_0x40,
+                raw_data=existing.data.raw_data,
+            )
+        return replace(existing, field_id=field_id, action_id=action_id, data=data)
+    return MhodSmartRule(
+        field_id=field_id,
+        action_id=action_id,
+        is_nested=0,
+        disabled=0,
+        unknown_0x0A=bytes(2),
+        header_data=bytes(40),
+        data=data,
     )
 
 
@@ -230,20 +264,36 @@ def _encode_rules(
 ) -> tuple[MhodSmartRule, ...]:
     # Preserve each unchanged occurrence, including its private header and payload.
     retained: dict[
-        SmartRule | SmartRuleGroup | UnsupportedSmartRule, deque[MhodSmartRule]
+        SmartRule | SmartRuleGroup | UnsupportedSmartRule,
+        deque[tuple[int, MhodSmartRule]],
     ] = defaultdict(deque)
-    for native in existing:
-        retained[project_rule(native, timezone_offset)].append(native)
+    for index, native in enumerate(existing):
+        retained[project_rule(native, timezone_offset)].append((index, native))
+    # Reserve exact matches before pairing edited occurrences by position. An
+    # edited leaf must not borrow the envelope of an unchanged, reordered leaf.
+    matches: list[MhodSmartRule | None] = []
+    used: set[int] = set()
+    for rule in rules:
+        if retained[rule]:
+            index, native = retained[rule].popleft()
+            used.add(index)
+            matches.append(native)
+        else:
+            matches.append(None)
+    for index, rule in enumerate(rules):
+        if matches[index] is not None or index in used or index >= len(existing):
+            continue
+        previous = project_rule(existing[index], timezone_offset)
+        if (isinstance(rule, SmartRule) and isinstance(previous, SmartRule)) or (
+            isinstance(rule, SmartRuleGroup) and isinstance(previous, SmartRuleGroup)
+        ):
+            matches[index] = existing[index]
     return tuple(
         encode_rule(
             rule,
             depth,
             timezone_offset,
-            retained[rule].popleft()
-            if retained[rule]
-            else existing[index]
-            if index < len(existing) and isinstance(rule, SmartRuleGroup)
-            else None,
+            matches[index],
             playlist_ids,
         )
         for index, rule in enumerate(rules)
@@ -290,7 +340,7 @@ def smart_chunks(
     prefix = (
         rules_row.prefix
         if rules_row
-        else MhodSmartRulesPrefix(magic=b"SLst", unk_0x1C=0x10001)
+        else MhodSmartRulesPrefix(magic=b"SLst", format_version=1, unknown_0x1E=1)
     )
     payload = rules_row.payload if rules_row else MhodSmartRulesPayload((), b"")
     assert isinstance(prefix, MhodSmartRulesPrefix) and isinstance(
@@ -302,7 +352,9 @@ def smart_chunks(
         timezone_offset,
         playlist_ids=playlist_ids,
     )
-    prefix = replace(prefix, conjunction=int(smart.rules.match is SmartMatch.ANY))
+    prefix = replace(
+        prefix, conjunction=_retained_conjunction(smart.rules.match, prefix.conjunction)
+    )
     payload = replace(payload, rules=encoded)
     return (
         replace(prefs_row, prefix=prefs)

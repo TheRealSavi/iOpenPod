@@ -49,7 +49,8 @@ def genius_library(*seeds: bytes, include_smart: bool = True) -> IPodLibrary:
                 smart[0],
                 prefix=replace(
                     prefs,
-                    padding_0x26=b"\x01\x00\x05\x00" + prefs.padding_0x26[4:],
+                    attachment_inhibit=1,
+                    padding_0x27=b"\x00\x05\x00" + prefs.padding_0x27[3:],
                 ),
             ),
             smart[1],
@@ -362,11 +363,13 @@ def test_verification_withholds_tampered_native_genius_payloads(
             prefix = child.prefix_as(MhodSmartPrefsPrefix)
             children[index] = replace(
                 child,
-                prefix=replace(prefix, padding_0x26=b"\xff" + prefix.padding_0x26[1:]),
+                prefix=replace(prefix, attachment_inhibit=255),
             )
         elif change == "smart_rules":
             prefix_rules = child.prefix_as(MhodSmartRulesPrefix)
-            children[index] = replace(child, prefix=replace(prefix_rules, unk_0x1C=999))
+            children[index] = replace(
+                child, prefix=replace(prefix_rules, format_version=0, unknown_0x1E=999)
+            )
         else:
             children[index] = replace(
                 child,

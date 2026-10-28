@@ -340,14 +340,11 @@ def test_new_playlist_completes_podcast_counterparts_and_preserves_existing_rows
     grouped = next(s for s in rows(original, 3) if s.chunk.header.playlist_id == 10)
     flat_episodes = [s.chunk for s in flat.find_chunks(MhipHeader)]
     grouped_episodes = [
-        s.chunk
-        for s in grouped.find_chunks(MhipHeader)
-        if not s.chunk.header.podcast_group_flag & 0x100
+        s.chunk for s in grouped.find_chunks(MhipHeader) if not s.chunk.header.is_group
     ]
     assert tuple(c.header.track_id for c in flat_episodes) == (1, 1, 2)
     assert all(
-        not c.header.podcast_group_flag & 0x100 and not c.header.group_id_ref
-        for c in flat_episodes
+        not c.header.is_group and not c.header.group_id_ref for c in flat_episodes
     )
     if not with_flat_counterpart:
         assert flat.chunk.header == replace(
@@ -472,7 +469,7 @@ def test_new_podcast_counterpart_receives_edits_in_the_same_write(
         episodes = [
             s.chunk
             for s in podcast.find_chunks(MhipHeader)
-            if not s.chunk.header.podcast_group_flag & 0x100
+            if not s.chunk.header.is_group
         ]
         assert [c.header.track_id for c in episodes] == [2]
     assert (
@@ -581,11 +578,13 @@ def test_empty_podcasts_gains_groups_only_in_dataset3(
     grouped = rows(checked, 3)[1].find_chunks(MhipHeader)
     assert tuple(s.chunk.header.track_id for s in standard) == expected
     assert all(
-        not s.chunk.header.podcast_group_flag and not s.chunk.header.group_id_ref
+        not s.chunk.header.is_group and not s.chunk.header.group_id_ref
         for s in standard
     )
-    assert sum(bool(s.chunk.header.podcast_group_flag & 0x100) for s in grouped) == len(
-        set(track_ids)
+    assert sum(s.chunk.header.is_group for s in grouped) == len(set(track_ids))
+    assert all(s.chunk.header.unchecked_override == 0 for s in (*standard, *grouped))
+    assert all(
+        s.chunk.header.group_marker == 1 for s in grouped if s.chunk.header.is_group
     )
     assert all(s.chunk.header.group_id for s in grouped)
     grouped_ids = [s.chunk.header.group_id for s in grouped]
@@ -739,8 +738,7 @@ def test_podcast_track_changes_create_and_update_special_membership() -> None:
         )
         assert playlist.chunk.header.playlist_kind_flags & 1
         assert sum(
-            bool(s.chunk.header.podcast_group_flag & 0x100)
-            for s in playlist.find_chunks(MhipHeader)
+            bool(s.chunk.header.is_group) for s in playlist.find_chunks(MhipHeader)
         ) == (1 if kind == 3 else 0)
     reloaded = IPodLibrary(result.prepared.itunes)
     cleared = replace(
@@ -1064,6 +1062,5 @@ def test_existing_dataset2_podcasts_updates_without_creating_dataset3() -> None:
     )
     assert result.prepared.snapshot.playlists[0].track_ids == (2, 1)
     assert all(
-        not s.chunk.header.podcast_group_flag
-        for s in rows(checked, 2)[1].find_chunks(MhipHeader)
+        not s.chunk.header.is_group for s in rows(checked, 2)[1].find_chunks(MhipHeader)
     )

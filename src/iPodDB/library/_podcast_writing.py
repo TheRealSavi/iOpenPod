@@ -1,7 +1,7 @@
 """Retain podcast group ownership while reconciling affected album groups.
 
-Group MHIPs use flag 0x100. Episode positions agree across dataset counterparts;
-Apple captures retain these values even when native row IDs change.
+Group MHIPs use a nonzero marker byte at 0x11. Episode positions agree across
+dataset counterparts; Apple captures retain these values when native row IDs change.
 """
 
 import logging
@@ -382,7 +382,7 @@ def reconcile_podcasts(
             group = by_album.get(album)
             if group is None:
                 group = edit_text(
-                    new_itunes_chunk(MHIP, MhipHeader(podcast_group_flag=0x100)),
+                    new_itunes_chunk(MHIP, MhipHeader(group_marker=1)),
                     MhodType.TITLE,
                     album,
                 )

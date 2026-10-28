@@ -135,7 +135,7 @@ def observed_source(baseline: bool, *, missing_index: bool = False) -> IPodLibra
                     new_itunes_chunk(
                         MHIP,
                         MhipHeader(
-                            podcast_group_flag=256,
+                            group_marker=1,
                             group_id=10,
                             group_persistent_id=9990 if baseline else 0,
                             unk_mhip_0x12=0x8101 if baseline else 0,
@@ -208,7 +208,7 @@ def assert_normalized(data: bytes, *, tracks: int = 4) -> None:
         assert s.chunk.header.db_id_2 == 900
         for row in s.find_chunks(MhipHeader):
             h = row.chunk.header
-            if h.podcast_group_flag:
+            if h.is_group:
                 assert h.group_persistent_id and h.unk_mhip_0x12 in (0x8001, 0x8101)
             else:
                 assert {
@@ -217,6 +217,46 @@ def assert_normalized(data: bytes, *, tracks: int = 4) -> None:
                     if isinstance(c.prefix, MhodPlaylistPositionPrefix)
                 } == {h.group_id}
     assert b"private-album-data" in data
+
+
+@pytest.mark.parametrize("baseline", [True, False])
+@pytest.mark.parametrize("unchecked", [2, 0x80, 0xFF])
+def test_normalization_preserves_independent_mhip_bytes(
+    baseline: bool, unchecked: int
+) -> None:
+    document = parse_iTunesDB(observed_source(baseline).serialize().itunes)
+    for selection in document.find_chunks(MhipHeader):
+        item = selection.chunk
+        document = document.replace_chunk(
+            selection,
+            replace(
+                item,
+                header=replace(
+                    item.header,
+                    unchecked_override=unchecked,
+                    group_marker=0x80 if item.header.is_group else 0,
+                ),
+            ),
+        )
+    source = IPodLibrary(write_iTunesDB(document))
+    original = source.serialize().itunes
+    result = source.prepare(
+        source.analyze(
+            source.begin_draft(
+                enforce_library_playback_policy(source.snapshot),
+                normalize_podcasts=True,
+            )
+        ),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    output = parse_iTunesDB(result.prepared.itunes)
+    for output_item in output.find_chunks(MhipHeader):
+        assert output_item.chunk.header.unchecked_override == unchecked
+        assert output_item.chunk.header.group_marker == (
+            0x80 if output_item.chunk.header.is_group else 0
+        )
+    assert source.serialize().itunes == original
 
 
 @pytest.mark.parametrize("baseline", [True, False])
@@ -376,7 +416,7 @@ def test_serialized_normalization_corruption_is_rejected(
                     )
         elif field == "group_id":
             for item in document.find_chunks(MhipHeader):
-                if item.chunk.header.podcast_group_flag:
+                if item.chunk.header.is_group:
                     document = document.replace_chunk(
                         item,
                         replace(

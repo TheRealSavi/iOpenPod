@@ -86,7 +86,7 @@ def finder_source(*, compressed: bool = False) -> IPodLibrary:
                 items.append(
                     new_itunes_chunk(
                         MHIP,
-                        MhipHeader(podcast_group_flag=0x100, group_id=group),
+                        MhipHeader(group_marker=1, group_id=group),
                         children=(new_string_mhod(MhodType.TITLE, str(identity)),),
                     )
                 )
@@ -194,7 +194,7 @@ def test_affected_finder_podcast_groups_gain_explicit_parent_links(
     groups: dict[int, str] = {}
     for selection in rows(checked, 3)[1].find_chunks(MhipHeader):
         item = selection.chunk
-        if item.header.podcast_group_flag & 0x100:
+        if item.header.is_group:
             groups[item.header.group_id] = next(
                 c.payload.value
                 for c in item.children
@@ -210,7 +210,7 @@ def test_affected_finder_podcast_groups_gain_explicit_parent_links(
             ) == (0 if change == "remove" else item.header.track_id * 100 + 1)
     flat = rows(checked, 2)[1].find_chunks(MhipHeader)
     assert all(not i.chunk.header.group_id_ref for i in flat)
-    assert all(not i.chunk.header.podcast_group_flag for i in flat)
+    assert all(not i.chunk.header.is_group for i in flat)
     assert {
         i.chunk.header.track_id: next(
             c.prefix.position

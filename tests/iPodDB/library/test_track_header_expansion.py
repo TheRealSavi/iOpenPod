@@ -105,13 +105,19 @@ def test_capability_does_not_normalize_noop_or_unrelated_edit(length: int) -> No
     )
 
 
-@pytest.mark.parametrize("length", [158, 162, 170])
+@pytest.mark.parametrize("length", [158, 162, 170, 249, 252, 255, 325, 327])
 def test_numeric_partial_fields_block_expansion(length: int) -> None:
     source = short_header_library(length)
     track = source.snapshot.tracks[0]
     desired = replace(
         source.snapshot,
-        tracks=(replace(track, season_number=1), *source.snapshot.tracks[1:]),
+        tracks=(
+            replace(
+                track,
+                metadata=replace(track.metadata, composer="Requires expanded header"),
+            ),
+            *source.snapshot.tracks[1:],
+        ),
     )
     loaded = source
     result = loaded.prepare(
@@ -123,31 +129,31 @@ def test_numeric_partial_fields_block_expansion(length: int) -> None:
 
 
 def test_expansion_policy_preserves_partial_opaque_field() -> None:
-    source = short_header_library(328)
+    source = short_header_library(332)
     doc = parse_iTunesDB(source.serialize().itunes)
     selection = doc.find_chunks(MhitHeader)[0]
     raw = bytearray(selection.chunk.raw_header)
     field = next(
         f.schema
         for f in binary_fields(MhitHeader)
-        if f.attribute_name == "unk_mhit_0x13C"
+        if f.attribute_name == "unk_mhit_0x148"
     )
-    raw[field.offset : 328] = b"opaque bytes"
+    raw[field.offset : 332] = b"tail"
     chunk = replace(selection.chunk, raw_header=bytes(raw))
     seeds = extension_values(chunk, source.snapshot.tracks[0], 624)
-    assert seeds["unk_mhit_0x13C"] == b"opaque bytes" + bytes(12)
-    opaque = seeds["unk_mhit_0x13C"]
+    assert seeds["unk_mhit_0x148"] == b"tail" + bytes(8)
+    opaque = seeds["unk_mhit_0x148"]
     assert isinstance(opaque, bytes)
     extended = replace(
         chunk,
-        header=replace(chunk.header, unk_mhit_0x13C=opaque),
+        header=replace(chunk.header, unk_mhit_0x148=opaque),
         raw_header=chunk.raw_header.ljust(624, b"\0"),
         generic_header=replace(chunk.generic_header, header_length=624),
     )
     output = parse_iTunesDB(write_iTunesDB(doc.replace_chunk(selection, extended)))
     actual = output.find_chunks(MhitHeader)[0].chunk
-    assert actual.raw_header[field.offset : 328] == b"opaque bytes"
-    assert actual.header.unk_mhit_0x13C == b"opaque bytes" + bytes(12)
+    assert actual.raw_header[field.offset : 332] == b"tail"
+    assert actual.header.unk_mhit_0x148 == b"tail" + bytes(8)
 
 
 @pytest.mark.parametrize("version,expected", [(0x12, 0x30), (0x75, 0x75)])

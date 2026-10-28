@@ -2,10 +2,12 @@
 
 from dataclasses import replace
 
+import pytest
 from tests.iPodDB.library.test_writing import library
 
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk, new_string_mhod
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhia import DEFINITION as MHIA
 from iPodDB.iTunesDB.shared.chunk_defs.mhia import MhiaHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhii import DEFINITION as MHII
@@ -27,6 +29,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
     MhodSmartNumericRuleData,
     MhodSmartRulesPayload,
+    MhodSmartRulesPrefix,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import DEFINITION as MHSD
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
@@ -39,10 +42,11 @@ from iPodDB.library import (
     PlaylistEntry,
     PlaylistKind,
     SmartPlaylist,
+    _write_preparation,
 )
 from iPodDB.library._smart_writing import smart_chunks
 from iPodDB.library.writing import WriteResources
-from iPodDB.shared.chunk import EmptyChunkHeader
+from iPodDB.shared.chunk import DatabaseDocument, EmptyChunkHeader
 
 
 def test_recursive_folder_aggregates_are_unique_and_rules_reference_direct_children() -> (
@@ -86,6 +90,163 @@ def test_recursive_folder_aggregates_are_unique_and_rules_reference_direct_child
     )
 
 
+@pytest.mark.parametrize("mode", (2, 255))
+def test_folder_relationship_edit_preserves_noncanonical_any_byte_and_unknown_prefix(
+    mode: int,
+) -> None:
+    source = library()
+    desired = replace(
+        source.snapshot,
+        playlists=(
+            Playlist(-1, "Folder", PlaylistKind.FOLDER),
+            replace(source.snapshot.playlists[0], parent_id=-1),
+            Playlist(-2, "Second", parent_id=-1),
+        ),
+    )
+    prepared = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert prepared.prepared is not None, prepared.issues
+    document = parse_iTunesDB(prepared.prepared.itunes)
+    for selection in document.find_chunks(MhodHeader):
+        if isinstance(selection.chunk.prefix, MhodSmartRulesPrefix):
+            document = document.replace_chunk(
+                selection,
+                replace(
+                    selection.chunk,
+                    prefix=replace(
+                        selection.chunk.prefix,
+                        conjunction=mode,
+                        unknown_0x24=b"\xab\xcd\xef",
+                    ),
+                ),
+            )
+    original = write_iTunesDB(document)
+    source = IPodLibrary(original)
+    assert source.serialize().itunes == original
+    # Detaching one direct child forces folder validation, rewrite and verification.
+    desired = replace(
+        source.snapshot,
+        playlists=tuple(
+            replace(playlist, parent_id=None) if playlist.name == "Second" else playlist
+            for playlist in source.snapshot.playlists
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    rows = tuple(
+        selection.chunk
+        for selection in parse_iTunesDB(result.prepared.itunes).find_chunks(MhodHeader)
+        if isinstance(selection.chunk.prefix, MhodSmartRulesPrefix)
+    )
+    assert len(rows) == 2
+    for row in rows:
+        prefix = row.prefix_as(MhodSmartRulesPrefix)
+        assert prefix.conjunction == mode
+        assert prefix.unknown_0x24 == b"\xab\xcd\xef"
+        assert len(row.payload_as(MhodSmartRulesPayload).rules) == 1
+
+
+def _folder_with_child() -> IPodLibrary:
+    source = library()
+    desired = replace(
+        source.snapshot,
+        playlists=(
+            Playlist(-1, "Folder", PlaylistKind.FOLDER),
+            replace(source.snapshot.playlists[0], parent_id=-1),
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    return IPodLibrary(result.prepared.itunes)
+
+
+def _alter_folder_criteria(
+    document: DatabaseDocument[MhbdHeader], disabled: int, version: int
+) -> DatabaseDocument[MhbdHeader]:
+    changed = 0
+    for selection in document.find_chunks(MhodHeader):
+        if isinstance(selection.chunk.prefix, MhodSmartRulesPrefix):
+            payload = selection.chunk.payload_as(MhodSmartRulesPayload)
+            document = document.replace_chunk(
+                selection,
+                replace(
+                    selection.chunk,
+                    prefix=replace(selection.chunk.prefix, format_version=version),
+                    payload=replace(
+                        payload,
+                        rules=(
+                            replace(payload.rules[0], disabled=disabled),
+                            *payload.rules[1:],
+                        ),
+                    ),
+                ),
+            )
+            changed += 1
+    assert changed == 2
+    return document
+
+
+@pytest.mark.parametrize(
+    ("disabled", "version"), ((1, 1), (2, 1), (255, 1), (0, 2), (0, 65535))
+)
+def test_folder_analysis_blocks_disabled_rules_and_unsupported_criteria_versions(
+    disabled: int,
+    version: int,
+) -> None:
+    source = _folder_with_child()
+    original = write_iTunesDB(
+        _alter_folder_criteria(
+            parse_iTunesDB(source.serialize().itunes), disabled, version
+        )
+    )
+    source = IPodLibrary(original)
+    folder = next(p for p in source.snapshot.playlists if p.kind is PlaylistKind.FOLDER)
+    desired = replace(
+        source.snapshot,
+        playlists=(
+            *source.snapshot.playlists,
+            Playlist(-1, "Empty child", parent_id=folder.playlist_id),
+        ),
+    )
+    plan = source.analyze(source.begin_draft(desired))
+    assert plan.blocked
+    result = source.prepare(plan)
+    assert result.prepared is None
+    expected = "playlist.folder_rules" if disabled else "playlist.folder_rules_version"
+    assert expected in {issue.code for issue in result.issues}
+    assert source.serialize().itunes == original
+
+
+@pytest.mark.parametrize(
+    ("disabled", "version"), ((1, 1), (2, 1), (255, 1), (0, 2), (0, 65535))
+)
+def test_folder_verification_independently_rejects_inactive_or_unsupported_rules(
+    disabled: int,
+    version: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _folder_with_child()
+    original = source.serialize().itunes
+    folder = next(p for p in source.snapshot.playlists if p.kind is PlaylistKind.FOLDER)
+    desired = replace(
+        source.snapshot,
+        playlists=(
+            *source.snapshot.playlists,
+            Playlist(-1, "Empty child", parent_id=folder.playlist_id),
+        ),
+    )
+    plan = source.analyze(source.begin_draft(desired))
+    assert not plan.blocked
+
+    def corrupt(document: DatabaseDocument[MhbdHeader]) -> bytes:
+        return write_iTunesDB(_alter_folder_criteria(document, disabled, version))
+
+    monkeypatch.setattr(_write_preparation, "write_iTunesDB", corrupt)
+    result = source.prepare(plan)
+    assert result.prepared is None
+    assert "verification.folder_rules" in {issue.code for issue in result.issues}
+    assert source.serialize().itunes == original
+
+
 def test_podcast_addition_retains_group_and_episode_private_metadata() -> None:
     source = library()
     document = parse_iTunesDB(source.serialize().itunes)
@@ -94,7 +255,7 @@ def test_podcast_addition_retains_group_and_episode_private_metadata() -> None:
     )
     group = new_itunes_chunk(
         MHIP,
-        MhipHeader(podcast_group_flag=0x100, group_id=7, timestamp=919),
+        MhipHeader(group_marker=1, group_id=7, timestamp=919),
         children=(new_string_mhod(MhodType.TITLE, ""),),
     )
     episodes = tuple(
@@ -261,6 +422,8 @@ def test_unsupported_rules_and_saved_membership_survive_rename() -> None:
                     0xFFFF,
                     0xEEEE,
                     0,
+                    0,
+                    b"\x00\x00",
                     bytes(40),
                     MhodSmartRawRuleData(b"unknown rule bytes"),
                 ),

@@ -1,4 +1,8 @@
-"""MHIT (Track Item) Chunk definition."""
+"""MHIT (Track Item) Chunk definition.
+
+Firmware evidence and unresolved fields: docs/research/unknown-field-reconciliation.md.
+Follow-up consumers: docs/research/unknown-itunesdb-field-consumers.md.
+"""
 
 from dataclasses import dataclass
 
@@ -12,7 +16,10 @@ from iPodDB.shared.types import ChunkDefinition
 class MhitHeader(ChunkHeader):
     child_count: int = cf(0x0C, "u32", counts_children=True)
     track_id: int = cf(0x10, "u32")
-    unk_class_flag: int = cf(0x14, "u32", default=1)
+    # Classic 2.0.1 importer (0x08073bb8): 1/2/3 select constructor tags
+    # FILE/SHRD/HTTP; other values skip the Track and its MHOD children.
+    # The tags identify record classes, not independently proven transport types.
+    record_class: int = cf(0x14, "u32", default=1)
     filetype: int = cf(0x18, "u32")
     vbr_flag: int = cf(0x1C, "u8")
     mp3_flag: int = cf(0x1D, "u8")
@@ -83,8 +90,10 @@ class MhitHeader(ChunkHeader):
     unk_mhit_0xEC: int = cf(0xEC, "u32")
     store_album_id: int = cf(0xF0, "u32")
     unk_mhit_0xF4: int = cf(0xF4, "u32")
-    gapless_audio_payload_size: int = cf(0xF8, "u32")
-    unk_mhit_0xFC: int = cf(0xFC, "u32")
+    # Classic 2.0.1 copies +0xF8/+0xFC to native TrackRecord +0x108/+0x10C.
+    # Getter 0x0827B15C returns the full u64 in r0/r1. The storage width is
+    # confirmed; the precise gapless payload-size interpretation is inherited.
+    gapless_audio_payload_size: int = cf(0xF8, "u64")
     gapless_track_flag: int = cf(0x100, "u16")
     gapless_album_flag: int = cf(0x102, "u16")
     unk_mhit_0x104: bytes = cf(0x104, "raw", size=20)
@@ -95,12 +104,21 @@ class MhitHeader(ChunkHeader):
     size_2: int = cf(0x12C, "u32")
     unk_mhit_0x130: int = cf(0x130, "u32")
     sort_mhod_indicators: bytes = cf(0x134, "raw", size=8)
-    unk_mhit_0x13C: bytes = cf(0x13C, "raw", size=24)
+    unk_mhit_0x13C: bytes = cf(0x13C, "raw", size=8)
+    # Copied to native TrackRecord +0xB4 by Classic 2.0.1.
+    # 0x0827B630 and 0x0824883C pass it beside the +0x64 user ID to a protected
+    # timing-window query. The selector role is confirmed; its token namespace
+    # is unresolved. Retain imported values; no automatic DRM authoring policy.
+    protected_timing_selector: int = cf(0x144, "u32")
+    unk_mhit_0x148: bytes = cf(0x148, "raw", size=12)
     unk_mhit_0x154: int = cf(0x154, "u32")
     unk_mhit_0x158: bytes = cf(0x158, "raw", size=8)
     artwork_id_ref: int = cf(0x160, "u32")
     unk_mhit_0x164: int = cf(0x164, "u32")
     unk_mhit_0x168: int = cf(0x168, "u32", default=1)
+    # Classic 2.0.1: any nonzero value sets TrackRecord +0x1C mask 0x1000
+    # and contributes to optional-extension allocation. The feature is unnamed;
+    # this is a nonzero-byte test, not a low-bit Boolean.
     unk_mhit_0x173: int = cf(0x173, "u8")
     video_flag_2: int = cf(0x194, "u8")
     purchased_aac_flag_2: int = cf(0x195, "u8")

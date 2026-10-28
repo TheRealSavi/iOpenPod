@@ -10,7 +10,16 @@ from iPodDB.shared.types import ChunkDefinition
 
 @dataclass(frozen=True, slots=True)
 class MhfdHeader(ChunkHeader):
+    """Root fields retained without imposing one firmware's import policy.
+
+    The observations below concern Classic 120GB 2.0.1's ArtworkDB importer
+    0x080427e4; they do not establish universal meanings or PhotosDB behavior.
+    See docs/research/unknown-field-reconciliation.md for evidence and scope.
+    """
+
+    # Required zero on that import path (-208 otherwise); not a proven version.
     unk_mhfd_0x0c: int = cf(0x0C, "u32")
+    # The low 16 bits can be returned to an optional caller; purpose is unknown.
     unk_mhfd_0x10: int = cf(0x10, "u32")
     child_count: int = cf(0x14, "u32", counts_children=True)
     unk_mhfd_0x18: int = cf(0x18, "u32")
@@ -18,7 +27,10 @@ class MhfdHeader(ChunkHeader):
     unk_mhfd_0x20: int = cf(0x20, "u64")
     unk_mhfd_0x28: int = cf(0x28, "u64")
     unk_mhfd_0x30: int = cf(0x30, "u32", default=2)
+    # Copied to library +0x9c8; zero/nonzero selects an import progress channel.
+    # The full semantic domain and other consumers remain unestablished.
     unk_mhfd_0x34: int = cf(0x34, "u32")
+    # Copied to library +0x9cc; a runtime destination does not identify meaning.
     unk_mhfd_0x38: int = cf(0x38, "u32")
     unk_mhfd_0x3c: int = cf(0x3C, "u32")
     unk_mhfd_0x40: int = cf(0x40, "u32")

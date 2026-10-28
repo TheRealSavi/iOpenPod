@@ -156,8 +156,14 @@ def project_rule(
     rule: MhodSmartRule,
     timezone_offset: TimeConversion = 0,
 ) -> SmartRule | SmartRuleGroup | UnsupportedSmartRule:
+    # The product model has no disabled-node state. Preserve saved membership
+    # and raw bytes instead of silently activating a natively disabled rule.
+    if rule.disabled:
+        return UnsupportedSmartRule()
     data = rule.data
     if isinstance(data, MhodSmartRuleGroupData):
+        if data.format_version > 1:
+            return UnsupportedSmartRule()
         return _project_group(data.conjunction, data.rules, timezone_offset)
     field = FIELDS.get(rule.field_id)
     if field is None:
@@ -268,10 +274,8 @@ def _project_group(
     rules: tuple[MhodSmartRule, ...],
     timezone_offset: TimeConversion = 0,
 ) -> SmartRuleGroup:
-    if conjunction not in (0, 1):
-        return SmartRuleGroup(rules=(UnsupportedSmartRule(),))
     return SmartRuleGroup(
-        SmartMatch.ALL if conjunction == 0 else SmartMatch.ANY,
+        SmartMatch.ANY if conjunction else SmartMatch.ALL,
         tuple(project_rule(rule, timezone_offset) for rule in rules),
     )
 
@@ -306,14 +310,18 @@ def project_smart(
         prefs = prefs_rows[0].prefix
     if len(rules_rows) == 1:
         prefix, payload = rules_rows[0].prefix, rules_rows[0].payload
-        if isinstance(prefix, MhodSmartRulesPrefix) and isinstance(
-            payload, MhodSmartRulesPayload
+        if (
+            isinstance(prefix, MhodSmartRulesPrefix)
+            and isinstance(payload, MhodSmartRulesPayload)
+            and prefix.format_version <= 1
         ):
             rules = _project_group(prefix.conjunction, payload.rules, timezone_offset)
     if prefs is None:
         return SmartPlaylist(rules=rules, editable=False)
 
-    supported_prefs = all(
+    # A nonzero attachment control has order-sensitive native effects not
+    # represented by SmartPlaylist. Keep the entire configuration uneditable.
+    supported_prefs = not prefs.attachment_inhibit and all(
         flag in (0, 1)
         for flag in (
             prefs.live_update,

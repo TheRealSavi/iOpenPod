@@ -101,7 +101,7 @@ def _clean_chunk(chunk: ParsedChunk[ChunkHeader]) -> ParsedChunk[ChunkHeader]:
     if isinstance(defaults, MhypHeader):
         # These anonymized fixtures deliberately zero the retained repeat word.
         # Their privacy contract is independent of new Playlist authoring defaults.
-        defaults = replace(defaults, unk_mhyp_0x28=0)
+        defaults = replace(defaults, serialized_repeat_override=0)
     for field in fields(chunk.header):
         if field.name not in allowed[marker]:
             assert getattr(chunk.header, field.name) == getattr(defaults, field.name), (

@@ -792,7 +792,7 @@ def verify_playlists(
                         "Podcast grouping occurs outside dataset 3's special Podcasts playlist.",
                         kind,
                         chunk,
-                        detail=f"Occurrence {position}, Track {item.header.track_id}, group flag {item.header.podcast_group_flag}, group reference {item.header.group_id_ref}.",
+                        detail=f"Occurrence {position}, Track {item.header.track_id}, group marker {item.header.group_marker}, group reference {item.header.group_id_ref}.",
                         item=item,
                     )
                     break
@@ -846,13 +846,16 @@ def verify_playlists(
                     for r in row.payload.rules
                     if r.field_id == 0x28
                     and r.action_id == 1
+                    and not r.disabled
+                    and not r.is_nested
                     and isinstance(r.data, MhodSmartNumericRuleData)
                 )
                 if (
                     actual_children != expected_children
                     or len(actual_children) != len(row.payload.rules)
                     or not isinstance(row.prefix, MhodSmartRulesPrefix)
-                    or row.prefix.conjunction != 1
+                    or row.prefix.format_version > 1
+                    or not row.prefix.conjunction
                 ):
                     fail(
                         "folder_rules",

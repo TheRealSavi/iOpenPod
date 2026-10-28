@@ -48,7 +48,6 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_prefs_mhod import (
     MhodSmartPrefsPrefix,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
-    SMART_RULE_GROUP_MARKER,
     MhodSmartNumericRuleData,
     MhodSmartNumericRuleFields,
     MhodSmartRawRuleData,
@@ -442,8 +441,10 @@ def _encode_smart_group(data: MhodSmartRuleGroupData) -> bytes:
     rules = b"".join(_encode_smart_rule(rule) for rule in data.rules)
     header = MhodSmartRulesContainerHeader(
         magic=data.magic,
-        unk_0x04=data.unk_0x04,
+        format_version=data.format_version,
+        unknown_0x06=data.unknown_0x06,
         rule_count=len(data.rules),
+        unknown_0x0C=data.unknown_0x0C,
         conjunction=data.conjunction,
         header_data=data.header_data,
     )
@@ -464,19 +465,12 @@ def _encode_smart_rule(rule: MhodSmartRule) -> bytes:
     else:
         encoded_data = _encode_smart_group(data)
 
-    if isinstance(data, MhodSmartRuleGroupData):
-        field_id = 0
-        action_id = 1
-        group_marker = SMART_RULE_GROUP_MARKER
-    else:
-        field_id = rule.field_id
-        action_id = rule.action_id
-        group_marker = rule.group_marker
-
     header = MhodSmartRuleHeader(
-        field_id=field_id,
-        action_id=action_id,
-        group_marker=group_marker,
+        field_id=rule.field_id,
+        action_id=rule.action_id,
+        is_nested=rule.is_nested,
+        disabled=rule.disabled,
+        unknown_0x0A=rule.unknown_0x0A,
         header_data=rule.header_data,
         data_length=len(encoded_data),
     )

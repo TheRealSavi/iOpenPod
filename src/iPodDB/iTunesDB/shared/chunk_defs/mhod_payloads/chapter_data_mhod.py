@@ -74,7 +74,14 @@ class MhodChapterDataHedrHeader(BinaryStruct):
     unk_0x08: int = cf(0x08, "be_u32")
     child_count: int = cf(0x0C, "be_u32")
     unk_0x10: int = cf(0x10, "be_u32")
+    # Classic 120GB 2.0.1's 0x080a42c0 copies both hedr payload words,
+    # but the known navigation/artwork flags are in the second one (+0x18).
     unk_0x14: int = cf(0x14, "be_u32")
+    # Raw flags: mask 0x1 gates named Chapters (0x08023050); mask 0x2
+    # enables the import-side chapter-artwork flags (0x08074980).
+    # Other bits remain unknown. Keep the raw name for compatibility and use
+    # .flags for the named view (ADR-0202); this is not sean +0x08.
+    # See docs/research/unknown-field-reconciliation.md.
     unk_0x18: int = cf(0x18, "be_u32")
 
     @property

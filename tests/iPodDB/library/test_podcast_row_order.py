@@ -50,7 +50,7 @@ def numbering_source(
         items: list[ParsedChunk[MhipHeader]] = []
         for occurrence in playlist.find_chunks(MhipHeader):
             item = occurrence.chunk
-            group = bool(item.header.podcast_group_flag & 0x100)
+            group = bool(item.header.is_group)
             if group and layout == "flat":
                 continue
             show = item.header.group_id // 100
@@ -113,7 +113,7 @@ def assert_numbering(document: DatabaseDocument[MhbdHeader]) -> None:
     parent = 0
     episode_ids: dict[int, list[tuple[int, tuple[int, ...]]]] = {}
     for item in grouped:
-        if item.header.podcast_group_flag & 0x100:
+        if item.header.is_group:
             assert item.header.track_id == 0
             parent = item.header.group_id
         else:
@@ -131,7 +131,7 @@ def assert_numbering(document: DatabaseDocument[MhbdHeader]) -> None:
     flat_ids: dict[int, list[tuple[int, tuple[int, ...]]]] = {}
     for occurrence in rows(document, 2)[1].find_chunks(MhipHeader):
         item = occurrence.chunk
-        assert not item.header.podcast_group_flag and not item.header.group_id_ref
+        assert not item.header.is_group and not item.header.group_id_ref
         flat_ids.setdefault(item.header.track_id, []).append(
             (
                 item.header.group_id,
@@ -248,7 +248,7 @@ def test_membership_edits_number_new_and_retained_rows_in_output_order(
     if change == "append":
         assert [item.header.group_id for item in items[:4]] == [75, 76, 77, 78]
     if change == "rename":
-        assert items[-1].header.podcast_group_flag & 0x100
+        assert items[-1].header.is_group
         assert items[-1].header.mhip_persistent_id == 10001
     assert {
         s.chunk.header.mhip_persistent_id for s in checked.find_chunks(MhipHeader)

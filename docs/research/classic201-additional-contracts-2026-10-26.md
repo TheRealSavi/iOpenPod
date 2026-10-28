@@ -29,13 +29,16 @@ Playlist importer `0x08072f30`, at `0x08073770..0x08073778`, loads byte MHIP
 MHIP `+0x10` is a different input: its nonzero value can set shared Track unchecked
 state in the firmware. The two bytes must not be collapsed into one boolean.
 
-iPodDB retains them together as the raw u16 `podcast_group_flag`. Testing only
+iPodDB initially retained them together as the raw u16 `podcast_group_flag`. Testing only
 `value & 0x0100` misclassified `0x0200` and `0x8000` as ordinary occurrences.
 When such a group carried an ID matching a Track, it could leak into projected
 membership; different consumers could also flatten or verify it incorrectly.
 
-The shared derived predicate now tests `value & 0xff00`. All relevant consumers
-use that predicate. New groups still use high byte `1`; retained noncanonical
+The initial correction made the shared derived predicate test `value & 0xff00`.
+The [2026-10-28 follow-up](../../../ipod-firmware-lab/notes/itunesdb/mhip-control-bytes.md)
+replaces the combined field with actual u8 `unchecked_override` and `group_marker`
+fields; the predicate now tests `bool(group_marker)`. All relevant consumers
+use that predicate. New groups still use marker byte `1`; retained noncanonical
 markers and the independent low byte survive understood edits. Deleting a Track
 also leaves hidden groups intact when their unused Track-ID word happens to match
 the deleted identity. The MHYP

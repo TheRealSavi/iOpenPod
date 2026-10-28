@@ -37,8 +37,11 @@ CORRUPTIONS: tuple[tuple[str, Callable[[MhitHeader], MhitHeader]], ...] = (
     ("mpeg_audio_type", lambda h: replace(h, mpeg_audio_type=999)),
     (
         "gapless_audio_payload_size",
-        lambda h: replace(h, gapless_audio_payload_size=999),
+        lambda h: replace(
+            h, gapless_audio_payload_size=h.gapless_audio_payload_size ^ (1 << 40)
+        ),
     ),
+    ("protected_timing_selector", lambda h: replace(h, protected_timing_selector=999)),
     ("size_2", lambda h: replace(h, size_2=999)),
     ("sample_rate_2", lambda h: replace(h, sample_rate_2=12345.0)),
     ("sample_rate_1", lambda h: replace(h, sample_rate_1=h.sample_rate_1 ^ 1)),

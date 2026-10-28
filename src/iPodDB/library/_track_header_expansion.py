@@ -112,7 +112,7 @@ def extension_values(
                 raise ValueError(
                     "Cannot expand a Track header ending inside a numeric field."
                 )
-            # E.g. a 328-byte MHIT ends inside a declared opaque byte range.
+            # A retained header can end inside a declared opaque byte range.
             assert isinstance(schema.default, bytes)
             prefix = source.raw_header[schema.offset : old_length]
             values[field.attribute_name] = prefix + schema.default[len(prefix) :]

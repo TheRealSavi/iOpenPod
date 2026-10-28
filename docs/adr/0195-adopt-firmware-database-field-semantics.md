@@ -35,7 +35,10 @@ counter unscrobbled, reset it, or derive it from the total. A total of 7, second
 of 11, and sidecar delta of 2 prepares 9 and 11. A 156-byte MHIT can hold the total
 but cannot hold the secondary counter or last-skipped date.
 
-Retain MHYP `+0x28` as the raw u16 `unk_mhyp_0x28`. Every retained value survives
+Retain MHYP `+0x28` as a raw u16. The field-name reconciliation on 2026-10-28
+renames `unk_mhyp_0x28` to `serialized_repeat_override`, describing the evidenced
+Classic consumer without adding an enum conversion or write policy. See the
+[field audit](../research/unknown-field-reconciliation.md). Every retained value survives
 Playlist text edits, independently in each dataset copy, including unknown values
 and zero. New Playlists explicitly default to 1 regardless of string count,
 matching the established one-title/Master authoring baseline. In the inspected

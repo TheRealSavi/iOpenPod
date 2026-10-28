@@ -1,5 +1,4 @@
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
-    SMART_RULE_GROUP_MARKER,
     SMART_RULE_NUMERIC_FIELD_IDS,
     SMART_RULE_STRING_FIELD_IDS,
     MhodSmartNumericRuleData,
@@ -63,12 +62,12 @@ def _parse_rules(
         if (
             header.field_id == 0
             and header.action_id == 1
-            and header.group_marker == SMART_RULE_GROUP_MARKER
+            and header.is_nested
             and raw_data.startswith(b"SLst")
         ):
             rule_data = _parse_group(data, data_offset, data_end)
 
-        elif header.group_marker:
+        elif header.is_nested:
             rule_data = MhodSmartRawRuleData(raw_data=raw_data)
 
         elif header.field_id in SMART_RULE_STRING_FIELD_IDS or (
@@ -126,7 +125,9 @@ def _parse_rules(
             MhodSmartRule(
                 field_id=header.field_id,
                 action_id=header.action_id,
-                group_marker=header.group_marker,
+                is_nested=header.is_nested,
+                disabled=header.disabled,
+                unknown_0x0A=header.unknown_0x0A,
                 header_data=header.header_data,
                 data=rule_data,
             )
@@ -168,8 +169,10 @@ def _parse_group(
 
     return MhodSmartRuleGroupData(
         magic=header.magic,
-        unk_0x04=header.unk_0x04,
+        format_version=header.format_version,
+        unknown_0x06=header.unknown_0x06,
         rule_count=header.rule_count,
+        unknown_0x0C=header.unknown_0x0C,
         conjunction=header.conjunction,
         header_data=header.header_data,
         rules=rules,

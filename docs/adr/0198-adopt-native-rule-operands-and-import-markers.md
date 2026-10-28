@@ -17,12 +17,23 @@ records the evidence, source identities and remaining uncertainties.
 
 ## Decision
 
-Interpret any nonzero MHIP byte `+0x11` as a Podcast group. Keep the existing raw
-u16 field spanning `+0x10..+0x11`, expose one derived group predicate, and use it
-throughout projection, reconciliation and verification. Preserve both retained
-bytes; newly authored groups continue to use the canonical high byte `1`. This
+Interpret any nonzero MHIP byte `+0x11` as a Podcast group. The 2026-10-28
+[MHIP investigation](../../../ipod-firmware-lab/notes/itunesdb/mhip-control-bytes.md)
+supersedes the initial combined-u16 representation: define `unchecked_override`
+at `+0x10` and `group_marker` at `+0x11` as independent raw u8 fields. Neither
+byte swaps position in reversed-endian databases. Derive `is_group` from the
+whole `group_marker` byte and use it throughout projection, reconciliation and
+verification. Preserve both retained bytes; newly authored groups use marker
+`1` and override `0`. This
 does not change the separate MHYP Folder flag or introduce firmware import-order
 repair.
+
+The unchecked override sets shared Track state only for an eligible ordinary
+occurrence in the Playlist dataset actually visited by the firmware. It is not
+Podcast membership or an occurrence-local checked state. Preserve the explicit
+byte through understood edits; do not synthesize the native effective checked
+state by ORing every retained MHIP across both Playlist dataset copies. That
+would ignore the first-dataset selection and import-order dependencies.
 
 For the evidenced Checked and Compilation Smart conditions, interpret the native
 boolean operand as well as the equality/inequality action. The native Checked
@@ -68,3 +79,18 @@ and preparation. Timezone tests must use expected UTC instants and verify that
 Preferences and retained database dates are not rewritten merely by interpretation.
 Full-suite acceptance uses ADR-0197's eight-worker default. Physical execution of
 the changed outputs and cross-platform acceptance remain separate validation.
+
+## 2026-10-28 field-layout follow-up
+
+The [additional consumer investigation](../research/unknown-itunesdb-field-consumers.md)
+establishes independent Smart version halfwords, rule nesting/disabled bytes,
+a single ALL/ANY byte, a full u32 sort selector and an attachment-control byte.
+Represent those as actual fields and preserve the surrounding Unknown Data.
+Retained noncanonical nonzero flag values must survive semantic edits when their
+meaning is unchanged; leaf edits also retain unrelated header and operand bytes.
+
+The current product model does not represent disabled conditions or native
+import-order attachment latching. Retain those configurations and their saved
+membership as uneditable instead of silently activating rules or guessing import
+effects. Unsupported versions also preserve saved membership. This is a Host
+model boundary, not a claim that the firmware ignores those controls.

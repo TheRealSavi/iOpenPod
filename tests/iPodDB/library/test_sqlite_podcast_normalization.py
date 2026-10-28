@@ -117,7 +117,7 @@ def test_sqlite_sync_normalizes_both_inputs_adds_episodes_and_repeats(
             episodes = [
                 tracks[r.chunk.header.track_id]
                 for r in selection.find_chunks(MhipHeader)
-                if not r.chunk.header.podcast_group_flag & 0x100
+                if not r.chunk.header.is_group
             ]
             assert [
                 t.metadata.release_date for t in episodes if t.album == first.album

@@ -118,12 +118,12 @@ def _smart_rule(
     action_id: int,
     data: bytes,
     *,
-    group_marker: int = 0,
+    raw_flag_word: int = 0,
     header_data: bytes = bytes(40),
 ) -> bytes:
     assert len(header_data) == 40
     return (
-        struct.pack(">III", field_id, action_id, group_marker)
+        struct.pack(">III", field_id, action_id, raw_flag_word)
         + header_data
         + struct.pack(">I", len(data))
         + data
@@ -214,7 +214,8 @@ def test_smart_preferences_are_entirely_header_like() -> None:
     payload = chunk.payload_as(MhodSmartPrefsPayload)
 
     assert prefix.limit_value == 25
-    assert prefix.padding_0x26 == bytes(58)
+    assert prefix.attachment_inhibit == 0
+    assert prefix.padding_0x27 == bytes(57)
     assert payload == MhodSmartPrefsPayload()
 
 
@@ -246,7 +247,7 @@ def test_parses_recursive_smart_rules_and_big_endian_numeric_values() -> None:
         0,
         1,
         nested,
-        group_marker=0x01000000,
+        raw_flag_word=0x01000000,
         header_data=bytes(range(40)),
     )
     numeric_data = struct.pack(
@@ -298,7 +299,7 @@ def test_recursive_smart_rule_edits_recalculate_nested_lengths() -> None:
         conjunction=1,
     )
     body = _smart_rules_container(
-        _smart_rule(0, 1, nested, group_marker=0x01000000),
+        _smart_rule(0, 1, nested, raw_flag_word=0x01000000),
     )
     chunk = _parse_mhod(51, body)
     payload = chunk.payload_as(MhodSmartRulesPayload)

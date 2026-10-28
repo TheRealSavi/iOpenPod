@@ -11,7 +11,12 @@ from iPodDB.shared.types import ChunkDefinition
 @dataclass(frozen=True, slots=True)
 class MhipHeader(ChunkHeader):
     child_count: int = cf(0x0C, "u32", counts_children=True)
-    podcast_group_flag: int = cf(0x10, "u16")
+    # On ordinary Track rows, any nonzero byte sets native Track +0x14 bit 2
+    # (unchecked); zero does not clear it. Group rows do not apply this override.
+    unchecked_override: int = cf(0x10, "u8")
+    # Any nonzero byte selects a group. These bytes retain their physical offsets
+    # when the firmware swaps the surrounding multi-byte fields.
+    group_marker: int = cf(0x11, "u8")
     unk_mhip_0x12: int = cf(0x12, "u16")
     group_id: int = cf(0x14, "u32")
     track_id: int = cf(0x18, "u32")
@@ -24,7 +29,7 @@ class MhipHeader(ChunkHeader):
     @property
     def is_group(self) -> bool:
         """A nonzero byte at 0x11 selects a group; byte 0x10 is independent."""
-        return bool(self.podcast_group_flag & 0xFF00)
+        return bool(self.group_marker)
 
 
 DEFINITION: ChunkDefinition[MhipHeader] = ChunkDefinition(

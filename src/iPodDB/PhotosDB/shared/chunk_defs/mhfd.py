@@ -10,7 +10,12 @@ from iPodDB.shared.types import ChunkDefinition
 
 @dataclass(frozen=True, slots=True)
 class MhfdHeader(ChunkHeader):
-    """Nominal PhotosDB root using the evidenced MHFD field layout."""
+    """Nominal PhotosDB root using the evidenced MHFD field layout.
+
+    Classic 120GB 2.0.1 ArtworkDB observations at +0x0c/+0x10/+0x34/+0x38
+    do not establish these fields' meanings or validation in PhotosDB.
+    See docs/research/unknown-field-reconciliation.md for the scope distinction.
+    """
 
     unk_mhfd_0x0c: int = cf(0x0C, "u32")
     unk_mhfd_0x10: int = cf(0x10, "u32")

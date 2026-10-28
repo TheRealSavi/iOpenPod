@@ -196,7 +196,7 @@ def test_nano6_replacement_preserves_retained_root_and_auxiliary_data(
         selection,
         replace(
             selection.chunk,
-            header=replace(selection.chunk.header, unk_mhii_0x24=0x12345678),
+            header=replace(selection.chunk.header, image_order_key=0x12345678),
             children=(
                 *selection.chunk.children[:-1],
                 replace(auxiliary, payload=MhodOpaquePayload(retained_body)),
@@ -239,7 +239,7 @@ def test_nano6_replacement_preserves_retained_root_and_auxiliary_data(
         for s in written.find_chunks(MhiiHeader)
         if s.chunk.header.image_id == image_id
     )
-    assert image.header.unk_mhii_0x24 == 0x12345678
+    assert image.header.image_order_key == 0x12345678
     assert tuple(
         c.payload.data
         for c in image.children
@@ -272,7 +272,7 @@ def test_nano6_photo_addition_retains_existing_auxiliary_and_unknown_data() -> N
         selection,
         replace(
             selection.chunk,
-            header=replace(selection.chunk.header, unk_mhii_0x24=0x12345678),
+            header=replace(selection.chunk.header, image_order_key=0x12345678),
             children=(
                 *selection.chunk.children[:-1],
                 replace(auxiliary, payload=MhodOpaquePayload(retained_body)),
@@ -295,7 +295,7 @@ def test_nano6_photo_addition_retains_existing_auxiliary_and_unknown_data() -> N
     written = parse_PhotosDB(second.prepared.photos)
     assert written.header.unk_mhfd_0x10 == 6
     retained, added = (s.chunk for s in written.find_chunks(MhiiHeader))
-    assert retained.header.unk_mhii_0x24 == 0x12345678
+    assert retained.header.image_order_key == 0x12345678
     assert tuple(
         c.payload.data
         for c in retained.children

@@ -71,10 +71,39 @@ def test_metadata_edits_preserve_each_counterparts_raw_behavior_word(
     for kind, expected in ((2, value), (3, value ^ 0x8000)):
         native = rows(checked, kind)[1].chunk
         assert struct.unpack_from("<H", data, native.offset + 0x28)[0] == expected
+        assert native.header.serialized_repeat_override == expected
         metadata_count = sum(isinstance(c.header, MhodHeader) for c in native.children)
         assert struct.unpack_from("<I", data, native.offset + 0x0C)[0] == metadata_count
     assert result.prepared.snapshot.playlists[0] == changed
     assert source.serialize().itunes == original
+
+
+@pytest.mark.parametrize("flags", [0x80, 0x81, 0xFE, 0xFF])
+def test_shuffle_flags_keep_unknown_bits_through_playlist_text_edits(
+    flags: int,
+) -> None:
+    data = bytearray(retained_source(3).serialize().itunes)
+    document = parse_iTunesDB(bytes(data))
+    for kind in (2, 3):
+        # Independent raw fixture includes bits the firmware research cannot name.
+        playlist = rows(document, kind)[1].chunk
+        data[playlist.offset + 0x15] = flags
+    source = IPodLibrary(bytes(data))
+    assert source.serialize().itunes == bytes(data)
+    retained = parse_iTunesDB(bytes(data))
+    for kind in (2, 3):
+        assert rows(retained, kind)[1].chunk.header.shuffle_flags == flags
+    desired = replace(
+        source.snapshot,
+        playlists=(replace(source.snapshot.playlists[0], name="Renamed"),),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    checked = parse_iTunesDB(result.prepared.itunes)
+    for kind in (2, 3):
+        playlist = rows(checked, kind)[1].chunk
+        assert playlist.header.shuffle_flags == flags
+        assert result.prepared.itunes[playlist.offset + 0x15] == flags
 
 
 @pytest.mark.parametrize("version", [0x13, 0x19, 0x75])

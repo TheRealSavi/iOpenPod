@@ -58,7 +58,9 @@ def reconcile_folders(
             rules_row = new_itunes_chunk(
                 MHOD,
                 MhodHeader(mhod_type=51),
-                prefix=MhodSmartRulesPrefix(magic=b"SLst", unk_0x1C=0x10001),
+                prefix=MhodSmartRulesPrefix(
+                    magic=b"SLst", format_version=1, unknown_0x1E=1
+                ),
                 payload=MhodSmartRulesPayload((), b""),
             )
         assert isinstance(rules_row.prefix, MhodSmartRulesPrefix) and isinstance(
@@ -69,6 +71,8 @@ def reconcile_folders(
                 0x28,
                 1,
                 0,
+                0,
+                b"\x00\x00",
                 bytes(40),
                 MhodSmartNumericRuleData(
                     playlist_ids[child_id],
@@ -100,7 +104,9 @@ def reconcile_folders(
         )
         rules_row = replace(
             rules_row,
-            prefix=replace(rules_row.prefix, conjunction=1),
+            prefix=replace(
+                rules_row.prefix, conjunction=rules_row.prefix.conjunction or 1
+            ),
             payload=replace(rules_row.payload, rules=rules),
         )
         output_children = [
