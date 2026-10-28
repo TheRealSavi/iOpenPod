@@ -831,6 +831,15 @@ surfaces and route media commands back through the controller. Artwork remains b
 RGB888 data until each native adapter converts and caches it. Linux publishes the
 same fail-open contract through MPRIS on the desktop session bus.
 
+The Player uses semantic iTunesDB chapter titles and millisecond positions for
+scrubber markers, chapter-title suffixes, and Previous/Next navigation. Marker
+tooltips show the title and exact timestamp, including milliseconds. Previous
+restarts the current chapter after more than ten seconds; within ten seconds it
+selects the previous chapter, or follows Track History at the start of the Track.
+Next moves through chapters before advancing to the next Track. Decoder completion
+always advances Tracks independently of its last reported position. Playback uses
+ordered, unique starts within the Track duration without changing retained metadata.
+
 The Library setting **Double click shortcut** applies immediately to Track tables,
 Album cards, and collection grids and lists and persists across restarts. **Add to
 queue** remains the default. **Play next** places the selection atop the Playback

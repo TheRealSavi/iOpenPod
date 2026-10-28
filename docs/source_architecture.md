@@ -2202,8 +2202,24 @@ chooses the current Track, delegates play, pause, seek, stop, and volume command
 and treats backend state and position events as authoritative. A backend completion
 event advances History or consumes the next queued occurrence. A source or backend
 failure leaves the failed Track current and exposes a recoverable Application Layer
-error to the GUI. Its read-only `next_entry` exposes the same upcoming occurrence
-that Next selects: forward History first, then the head of the Playback Queue.
+error to the GUI. Its read-only `next_entry` exposes the upcoming Track occurrence:
+forward History first, then the head of the Playback Queue.
+
+Chapter navigation consumes the existing semantic `TrackMetadata.chapters`
+projection of iTunesDB. Shared read-only timing helpers order reachable starts,
+retain the first chapter at a duplicate timestamp, and omit negative positions or
+positions at or beyond the Track duration for playback only. The Library metadata
+and retained database bytes remain unchanged. Next seeks the next chapter before
+advancing Tracks. Previous restarts the current chapter only when strictly more
+than ten seconds past its start; otherwise it seeks the preceding chapter. An
+unnamed introduction before the first chapter remains reachable at time zero, and
+Previous near the Track's start retains History traversal. Chapter seeks preserve
+the Playback Entry, Queue, History, and playing/paused state and use the ordinary
+explicit seek path. Decoder completion advances Tracks directly, even if its final
+position event is delayed. The Player renders thin scrubber markers and appends the
+current chapter title to the Track title, including during scrubbing. Hovering a
+marker shows its title and full timestamp with milliseconds; marker geometry and
+hit testing share the styled slider's handle endpoints and layout direction.
 
 `LyricsController` observes the current Track without controlling playback. It
 publishes known semantic lyrics immediately and honors explicit Library Draft

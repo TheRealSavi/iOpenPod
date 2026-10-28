@@ -6,7 +6,7 @@ from tests.iOpenPod.playback_test_support import FakePlaybackBackend
 
 from iOpenPod.app.playback.backend import PlaybackFailure
 from iOpenPod.app.playback_controller import PlaybackController
-from iPodDB.library import Track
+from iPodDB.library import Track, TrackChapter, TrackMetadata
 
 
 def test_idle_enqueue_starts_track_and_records_history() -> None:
@@ -249,6 +249,148 @@ def test_previous_restarts_only_when_strictly_past_ten_seconds() -> None:
     assert controller.history_model.entries == original_history
 
 
+@pytest.mark.parametrize("paused", (False, True))
+def test_next_seeks_chapters_without_changing_occurrence_or_queue(paused: bool) -> None:
+    backend = FakePlaybackBackend()
+    controller = PlaybackController(backend)
+    track, successor = _chaptered_track(), _track(2, "Successor")
+    controller.play_now((track, successor))
+    if paused:
+        controller.pause()
+    entry_id = controller.current_entry_id
+    history, queue = controller.history_model.entries, controller.queue_model.entries
+    seeks: list[int] = []
+    controller.seeked.connect(seeks.append)
+
+    controller.next()
+    controller.next()
+
+    assert controller.position_ms == 120_123
+    assert backend.seeks == seeks == [60_000, 120_123]
+    assert controller.current_entry_id == entry_id
+    assert controller.history_model.entries == history
+    assert controller.queue_model.entries == queue
+    assert controller.next_entry == queue[0]
+    assert backend.started == [track]
+    assert controller.playing is not paused
+
+    controller.next()
+    assert controller.current_track == successor
+
+
+@pytest.mark.parametrize(
+    ("position", "expected"),
+    (
+        (60_000, 0),
+        (70_000, 0),
+        (70_001, 60_000),
+        (120_122, 60_000),
+        (120_123, 60_000),
+        (130_123, 60_000),
+        (130_124, 120_123),
+    ),
+)
+def test_previous_uses_ten_seconds_relative_to_current_chapter(
+    position: int, expected: int
+) -> None:
+    backend = FakePlaybackBackend()
+    controller = PlaybackController(backend)
+    track = _chaptered_track()
+    controller.enqueue(track)
+    controller.seek(position)
+    controller.pause()
+    history = controller.history_model.entries
+
+    controller.previous()
+
+    assert controller.position_ms == expected
+    assert backend.seeks[-1] == expected
+    assert controller.current_track == track
+    assert controller.history_model.entries == history
+    assert backend.started == [track]
+    assert not controller.playing
+
+
+def test_previous_at_first_chapter_retains_history_navigation() -> None:
+    controller = _controller()
+    older, chaptered, queued = (
+        _track(1, "Older"),
+        _chaptered_track(),
+        _track(3, "Queued"),
+    )
+    controller.play_now((older, chaptered, queued))
+    controller.next()
+    history = controller.history_model.entries
+    controller.seek(10_001)
+    controller.previous()
+    assert controller.current_track == chaptered
+    assert controller.position_ms == 0
+    controller.seek(10_000)
+    controller.previous()
+    assert controller.current_track == older
+    controller.next()
+    assert controller.current_track == chaptered
+    assert controller.history_model.entries == history
+    assert controller.queue_model.entries[0].track == queued
+
+
+@pytest.mark.parametrize("position", (0, 90_000, 180_000))
+def test_chaptered_completion_advances_even_with_delayed_position_report(
+    position: int,
+) -> None:
+    backend = FakePlaybackBackend()
+    controller = PlaybackController(backend)
+    successor = _track(2, "Successor")
+    controller.play_now((_chaptered_track(), successor))
+    backend.emit_position(position)
+
+    backend.finish()
+
+    assert controller.current_track == successor
+    assert backend.seeks == []
+
+
+def test_final_chapter_next_stops_when_no_successor_exists() -> None:
+    controller = _controller()
+    controller.enqueue(_chaptered_track())
+    controller.seek(120_123)
+    controller.next()
+    assert controller.current_track is None
+    assert not controller.playing
+
+
+def test_chapters_after_track_start_keep_intro_reachable() -> None:
+    controller = _controller()
+    track = _chaptered_track((TrackChapter("First chapter", 30_000),))
+    controller.enqueue(track)
+    controller.next()
+    assert controller.position_ms == 30_000
+    controller.previous()
+    assert controller.position_ms == 0
+    controller.seek(29_999)
+    controller.previous()
+    assert controller.position_ms == 0
+
+
+def test_retained_chapters_are_ordered_bounded_and_deduplicated_for_playback() -> None:
+    controller = _controller()
+    chapters = (
+        TrackChapter("Later", 60_000),
+        TrackChapter("Before media", -1),
+        TrackChapter("Start", 0),
+        TrackChapter("Same time", 60_000),
+        TrackChapter("At end", 180_000),
+        TrackChapter("Past end", 190_000),
+    )
+    track = _chaptered_track(chapters)
+    controller.enqueue(track)
+    controller.next()
+    assert controller.position_ms == 60_000
+    assert track.metadata.chapters == chapters
+    controller.next()
+    assert controller.current_track is None
+
+
 def test_history_traversal_precedes_resuming_queue_advancement() -> None:
     controller = _controller()
     first = _track(1, "First")
@@ -472,6 +614,23 @@ def test_stale_backend_events_cannot_mutate_the_successor_attempt() -> None:
 
 def _controller() -> PlaybackController:
     return PlaybackController(FakePlaybackBackend())
+
+
+def _chaptered_track(
+    chapters: tuple[TrackChapter, ...] = (
+        TrackChapter("Introduction", 0),
+        TrackChapter("Main chapter", 60_000),
+        TrackChapter("Conclusion", 120_123),
+    ),
+) -> Track:
+    return Track(
+        10,
+        "Chaptered Track",
+        "Artist",
+        "Album",
+        180_000,
+        metadata=TrackMetadata(chapters=chapters),
+    )
 
 
 def _track(track_id: int, title: str) -> Track:

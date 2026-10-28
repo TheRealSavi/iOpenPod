@@ -4077,6 +4077,14 @@
         <translation>Pause</translation>
     </message>
     <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
+    </message>
+    <message>
+        <source>{track} — {chapter}</source>
+        <translation>{track} — {chapter}</translation>
+    </message>
+    <message>
         <source>Clear Queue</source>
         <translation>Warteschlange leeren</translation>
     </message>
@@ -4087,6 +4095,14 @@
     <message>
         <source>Playback position</source>
         <translation>Wiedergabeposition</translation>
+    </message>
+    <message>
+        <source>Previous Chapter</source>
+        <translation>Vorheriges Kapitel</translation>
+    </message>
+    <message>
+        <source>Next Chapter</source>
+        <translation>Nächstes Kapitel</translation>
     </message>
     <message>
         <source>Track rating: %1 of 5 stars</source>
@@ -12150,6 +12166,13 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     <message>
         <source>Newly discovered music needs to be imported into iOpenPod&apos;s library. This is cached, so next time this step should take only a few seconds.</source>
         <translation>Neu entdeckte Musik muss in die Mediathek von iOpenPod importiert werden. Die Ergebnisse werden zwischengespeichert, sodass dieser Schritt beim nächsten Mal nur wenige Sekunden dauern sollte.</translation>
+    </message>
+</context>
+<context>
+    <name>_SeekSlider</name>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
     </message>
 </context>
 <context>

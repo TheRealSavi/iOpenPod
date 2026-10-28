@@ -1,5 +1,6 @@
 """Persistent runtime Player surface for the application shell."""
 
+from html import escape
 from time import monotonic_ns
 
 from PySide6.QtCore import (
@@ -11,6 +12,7 @@ from PySide6.QtCore import (
     QObject,
     QPoint,
     QPropertyAnimation,
+    QRect,
     QSignalBlocker,
     Qt,
     QTimer,
@@ -23,6 +25,7 @@ from PySide6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
+    QHelpEvent,
     QKeyEvent,
     QMouseEvent,
     QPainter,
@@ -39,6 +42,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QStyle,
     QStyleOptionSlider,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -46,6 +50,7 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.artwork_seed import stable_artwork_seed
 from iOpenPod.app.models.library_drag import TrackSelectionMimeData, dropped_tracks
+from iOpenPod.app.playback.chapters import chapter_at, playback_chapters
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
@@ -55,7 +60,7 @@ from iOpenPod.GUI.presentation.track_drag_preview import (
 )
 from iOpenPod.GUI.widgets.artwork_view import ArtworkView
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
-from iPodDB.library import Track
+from iPodDB.library import Track, TrackChapter
 
 _MUTE_FADE_DURATION_MS = 180
 _POSITION_FRAME_MS = 16
@@ -115,6 +120,87 @@ class _ElidedLabel(QLabel):
 class _SeekSlider(QSlider):
     """Provide direct, continuous pointer control over a playback position."""
 
+    def __init__(self, orientation: Qt.Orientation, parent: QWidget) -> None:
+        super().__init__(orientation, parent)
+        self._chapters: tuple[TrackChapter, ...] = ()
+
+    def set_chapters(self, chapters: tuple[TrackChapter, ...]) -> None:
+        if chapters == self._chapters:
+            return
+        self._chapters = chapters
+        QToolTip.hideText()
+        self.update()
+
+    def _chapter_markers(
+        self, option: QStyleOptionSlider
+    ) -> tuple[tuple[TrackChapter, QRect], ...]:
+        if not self._chapters or option.maximum <= option.minimum:
+            return ()
+        style = self.style()
+        endpoint = QStyleOptionSlider(option)
+        endpoint.sliderPosition = option.minimum
+        first = style.subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            endpoint,
+            QStyle.SubControl.SC_SliderHandle,
+            self,
+        ).center()
+        endpoint.sliderPosition = option.maximum
+        last = style.subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            endpoint,
+            QStyle.SubControl.SC_SliderHandle,
+            self,
+        ).center()
+        span = last.x() - first.x()
+        return tuple(
+            (
+                chapter,
+                QRect(
+                    round(
+                        first.x()
+                        + span
+                        * (chapter.start_ms - option.minimum)
+                        / (option.maximum - option.minimum)
+                    ),
+                    first.y() - 4,
+                    1,
+                    9,
+                ),
+            )
+            for chapter in self._chapters
+        )
+
+    def event(self, event: QEvent) -> bool:
+        if event.type() is QEvent.Type.ToolTip and isinstance(event, QHelpEvent):
+            option = QStyleOptionSlider()
+            self.initStyleOption(option)
+            nearby = tuple(
+                (chapter, marker)
+                for chapter, marker in self._chapter_markers(option)
+                if marker.adjusted(-4, -3, 4, 3).contains(event.pos())
+            )
+            if nearby and self.isEnabled():
+                chapter, marker = min(
+                    nearby, key=lambda item: abs(item[1].x() - event.pos().x())
+                )
+                title = chapter.title.strip() or self.tr("Untitled Chapter")
+                timestamp = (
+                    f"{_format_duration(chapter.start_ms)}."
+                    f"{chapter.start_ms % 1000:03d}"
+                )
+                QToolTip.showText(
+                    event.globalPos(),
+                    f"<p>{escape(title)}<br>{timestamp}</p>",
+                    self,
+                    marker.adjusted(-4, -3, 4, 3),
+                )
+            else:
+                QToolTip.hideText()
+                event.ignore()
+            return True
+        return super().event(event)
+
     def paintEvent(self, event: QPaintEvent) -> None:
         del event
         option = QStyleOptionSlider()
@@ -144,6 +230,10 @@ class _SeekSlider(QSlider):
             QStyle.SubControl.SC_SliderGroove | QStyle.SubControl.SC_SliderTickmarks
         )
         style.drawComplexControl(control, option, painter, self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        for _chapter, marker in self._chapter_markers(option):
+            painter.fillRect(marker, self.palette().color(self.foregroundRole()))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.translate(offset, 0.0)
         option.subControls = handle_control
         style.drawComplexControl(control, option, painter, self)
@@ -224,6 +314,7 @@ class PlayerBar(QFrame):
         self.setFixedHeight(LAYOUT.player_idle_height)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._track: Track | None = None
+        self._chapters: tuple[TrackChapter, ...] = ()
         self._playing = False
         self._target_height = LAYOUT.player_idle_height
         self._active_height = LAYOUT.player_height
@@ -548,6 +639,9 @@ class PlayerBar(QFrame):
 
         self._set_rating_hover(None)
         self._track = track
+        self._chapters = playback_chapters(track)
+        self._position.set_chapters(self._chapters)
+        self._refresh_transport_copy()
         enabled = track is not None
         self._previous.setEnabled(enabled)
         self._play.setEnabled(enabled)
@@ -571,15 +665,13 @@ class PlayerBar(QFrame):
             return
 
         self._set_idle_presentation(False)
-        self._title.set_full_text(
-            track.title or QCoreApplication.translate("LibraryLabels", "Untitled Track")
-        )
         detail = " · ".join(part for part in (track.artist, track.album) if part)
         self._detail.set_full_text(detail or "—")
         stars = min(5, max(0, round(track.rating / 20)))
         self._rating.setText(("★" * stars) + ("☆" * (5 - stars)))
         self._refresh_rating_editability()
         self._position.setRange(0, max(0, track.length_ms))
+        self._refresh_title()
         self._duration.setText(_format_duration(track.length_ms))
         self._artwork.set_seed(stable_artwork_seed(track.album_key))
         self._artwork.set_artwork_id(track.artwork_id)
@@ -629,6 +721,23 @@ class PlayerBar(QFrame):
     def _render_position(self, bounded: int) -> None:
         self._position.setValue(bounded)
         self._elapsed.setText(_format_duration(bounded))
+        self._refresh_title()
+
+    def _refresh_title(self) -> None:
+        track = self._track
+        if track is None:
+            return
+        title = track.title or QCoreApplication.translate(
+            "LibraryLabels", "Untitled Track"
+        )
+        chapter = chapter_at(self._chapters, self._position.value())
+        if chapter is not None:
+            chapter_title = chapter.title.strip() or self.tr("Untitled Chapter")
+            title = self.tr("{track} — {chapter}").format(
+                track=title, chapter=chapter_title
+            )
+        if title != self._title.full_text:
+            self._title.set_full_text(title)
 
     def _refresh_position_timer(self) -> None:
         if (
@@ -719,13 +828,7 @@ class PlayerBar(QFrame):
     def retranslate_ui(self) -> None:
         """Refresh static playback copy without disturbing runtime state."""
 
-        controls = (
-            (self._previous, self.tr("Previous Track")),
-            (self._next, self.tr("Next Track")),
-        )
-        for control, accessible_name in controls:
-            control.setAccessibleName(accessible_name)
-            control.setToolTip(accessible_name)
+        self._refresh_transport_copy()
         self._refresh_mute_copy()
         self._refresh_queue_copy()
         self._clear_queue.setText(self.tr("Clear Queue"))
@@ -739,10 +842,25 @@ class PlayerBar(QFrame):
         if self._track is None:
             self._title.set_full_text(self.tr("Nothing playing"))
             self._detail.set_full_text(self.tr("Drop a Track or Playlist to play it"))
-        elif not self._track.title:
-            self._title.set_full_text(
-                QCoreApplication.translate("LibraryLabels", "Untitled Track")
-            )
+        else:
+            self._refresh_title()
+
+    def _refresh_transport_copy(self) -> None:
+        controls = (
+            (
+                self._previous,
+                self.tr("Previous Chapter")
+                if self._chapters
+                else self.tr("Previous Track"),
+            ),
+            (
+                self._next,
+                self.tr("Next Chapter") if self._chapters else self.tr("Next Track"),
+            ),
+        )
+        for control, accessible_name in controls:
+            control.setAccessibleName(accessible_name)
+            control.setToolTip(accessible_name)
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
@@ -915,6 +1033,7 @@ class PlayerBar(QFrame):
     def _scrub_position_changed(self, position_ms: int) -> None:
         if self._position.isSliderDown():
             self._elapsed.setText(_format_duration(position_ms))
+            self._refresh_title()
 
     def _mute_toggled(self, muted: bool) -> None:
         self._refresh_mute_copy()

@@ -4077,6 +4077,14 @@
         <translation>Pausar</translation>
     </message>
     <message>
+        <source>Untitled Chapter</source>
+        <translation>Capítulo sin título</translation>
+    </message>
+    <message>
+        <source>{track} — {chapter}</source>
+        <translation>{track} — {chapter}</translation>
+    </message>
+    <message>
         <source>Clear Queue</source>
         <translation>Vaciar cola</translation>
     </message>
@@ -4087,6 +4095,14 @@
     <message>
         <source>Playback position</source>
         <translation>Posición de reproducción</translation>
+    </message>
+    <message>
+        <source>Previous Chapter</source>
+        <translation>Capítulo anterior</translation>
+    </message>
+    <message>
+        <source>Next Chapter</source>
+        <translation>Capítulo siguiente</translation>
     </message>
     <message>
         <source>Track rating: %1 of 5 stars</source>
@@ -12150,6 +12166,13 @@ Reiniciar iOpenPod no borra las propiedades ya guardadas en la caché de udev. E
     <message>
         <source>Newly discovered music needs to be imported into iOpenPod&apos;s library. This is cached, so next time this step should take only a few seconds.</source>
         <translation>La música recién descubierta debe importarse a la biblioteca de iOpenPod. Los resultados se guardan en caché, por lo que la próxima vez este paso debería tardar solo unos segundos.</translation>
+    </message>
+</context>
+<context>
+    <name>_SeekSlider</name>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Capítulo sin título</translation>
     </message>
 </context>
 <context>
