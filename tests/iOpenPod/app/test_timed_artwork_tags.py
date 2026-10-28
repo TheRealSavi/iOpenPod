@@ -126,7 +126,7 @@ def test_moving_a_retained_frame_to_zero_embeds_its_exact_source_group(
                 child=replace(
                     location,
                     header=replace(
-                        location.header, unk_mhni_0x24=10_000, ithmb_offset=offset
+                        location.header, image_time_key=10_000, ithmb_offset=offset
                     ),
                 ),
             ),

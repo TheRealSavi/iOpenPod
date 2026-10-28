@@ -4,7 +4,6 @@ import logging
 from collections import Counter
 from dataclasses import replace
 from itertools import pairwise
-from pathlib import PurePosixPath
 
 from iPodDB.ArtworkDB.builder.build_ArtworkDB import (
     new_artwork_chunk,
@@ -20,7 +19,7 @@ from iPodDB.ArtworkDB.ithmb import (
     decode_ithmb,
 )
 from iPodDB.ArtworkDB.ithmb_writer import encode_ithmb
-from iPodDB.ArtworkDB.shared.artwork_index import build_artwork_index
+from iPodDB.ArtworkDB.shared.artwork_index import build_artwork_index, thumbnail_payload
 from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import DEFINITION as MHIF
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
@@ -39,6 +38,8 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.ArtworkDB.shared.constants import ArtworkMhodType
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.library._artwork_paths import artwork_path as artwork_path
+from iPodDB.library._artwork_paths import validated_path as validated_path
 from iPodDB.library._artwork_timing import (
     artwork_formats,
     checked_artwork_count,
@@ -78,36 +79,6 @@ logger = logging.getLogger(__name__)
 _ARTWORK_LINK = next(
     f.schema for f in binary_fields(MhitHeader) if f.attribute_name == "artwork_id_ref"
 )
-
-
-def validated_path(value: str) -> str:
-    value.encode("utf-8")
-    if not value or "\\" in value or ":" in value or "\x00" in value:
-        raise ValueError("A resource requires a validated device-relative path.")
-    parts = value.split("/")
-    if (
-        any(part in ("", ".", "..") for part in parts)
-        or PurePosixPath(value).is_absolute()
-    ):
-        raise ValueError(
-            "A resource path cannot escape the device or contain empty components."
-        )
-    return value
-
-
-def artwork_path(name: str) -> str:
-    value = name[1:] if name.startswith(":") else name
-    value = value.replace(":", "/")
-    if "/" not in value:
-        value = "iPod_Control/Artwork/" + value
-    path = validated_path(value)
-    if not path.startswith("iPod_Control/Artwork/") or not path.casefold().endswith(
-        ".ithmb"
-    ):
-        raise ValueError(
-            "The retained artwork filename does not identify a supported iTHMB path."
-        )
-    return path
 
 
 def retained_artwork_extents(
@@ -242,7 +213,8 @@ def _validate_retained_artwork_format(
             continue
         times: set[int] = set()
         for child in selection.chunk.children:
-            if not isinstance(child.payload, MhodContainerPayload):
+            payload = thumbnail_payload(child)
+            if payload is None:
                 if (
                     isinstance(child.header, MhodHeader)
                     and child.header.mhod_type == ArtworkMhodType.THUMBNAIL_IMAGE
@@ -251,15 +223,15 @@ def _validate_retained_artwork_format(
                         "A retained thumbnail representation is unrecognized."
                     )
                 continue
-            location = child.payload.child
+            location = payload.child
             header = location.header
             if header.format_id != cover.format_id:
                 continue
-            if header.unk_mhni_0x24 in times:
+            if header.image_time_key in times:
                 raise ValueError(
                     "A retained image has duplicate representations of this format."
                 )
-            times.add(header.unk_mhni_0x24)
+            times.add(header.image_time_key)
             image_size, height = header.image_size, cover.height
             # libgpod leaves the optional allocation field zero; foo_dop stores
             # its padded allocation here. Neither changes the raster length.
@@ -341,12 +313,12 @@ def effective_cover_format(
     if artwork is None or not _is_f1061_layout(cover):
         return cover
     image_sizes = Counter(
-        child.payload.child.header.image_size
+        payload.child.header.image_size
         for selection in artwork.find_chunks(MhiiHeader)
         if selection.chunk.header.image_id not in excluded_images
         for child in selection.chunk.children
-        if isinstance(child.payload, MhodContainerPayload)
-        and child.payload.child.header.format_id == 1061
+        if (payload := thumbnail_payload(child)) is not None
+        and payload.child.header.format_id == 1061
     )
     if image_sizes:
         _validate_retained_artwork_format(
@@ -471,8 +443,8 @@ def reconcile_artwork(
             tuple(
                 comparable_group(c)
                 for c in old.children
-                if isinstance(c.payload, MhodContainerPayload)
-                and c.payload.child.header.unk_mhni_0x24 != 0
+                if (payload := thumbnail_payload(c)) is not None
+                and payload.child.header.image_time_key != 0
             )
             if old
             else ()
@@ -571,7 +543,7 @@ def reconcile_artwork(
     def append_image(format_id: int, payload: bytes) -> tuple[str, int]:
         if resources.file_inventory is None:
             raise ValueError("Artwork encoding requires a captured file inventory.")
-        if len(payload) > target.max_artwork_file_bytes:
+        if len(payload) > min(target.max_artwork_file_bytes, 0xFFFFFFFF):
             raise ValueError("One thumbnail exceeds the artwork file size limit.")
         # Use only the established F<format>_<shard>.ithmb namespace. The full
         # inventory reserves even files not referenced by the database.
@@ -661,6 +633,27 @@ def reconcile_artwork(
                 f.format_id: formats[f.format_id]
                 for f in requested_formats(target, asset, source_row)
             }
+            thumbnail_count = 0
+            for frame in frames:
+                if isinstance(frame.source, ArtworkGroupReference):
+                    retained = referenced_group(source_rows, frame)
+                    thumbnail_count += len(retained)
+                    if (
+                        isinstance(asset, TimedArtworkAsset)
+                        and frame.display_time_ms != 0xFFFFFFFF
+                    ):
+                        retained_formats = {
+                            child.payload.child.header.format_id
+                            for child in retained
+                            if isinstance(child.payload, MhodContainerPayload)
+                        }
+                        thumbnail_count += len(asset_formats.keys() - retained_formats)
+                else:
+                    thumbnail_count += len(asset_formats)
+                if thumbnail_count > 0xFFFF:
+                    raise ValueError(
+                        "Artwork exceeds the native thumbnail count limit."
+                    )
             for frame in frames:
                 if (
                     isinstance(frame.source, ArtworkGroupReference)
@@ -847,7 +840,7 @@ def reconcile_artwork(
                         header=replace(
                             location.header,
                             format_id=cover.format_id,
-                            unk_mhni_0x24=frame.display_time_ms,
+                            image_time_key=frame.display_time_ms,
                             ithmb_offset=offset,
                             image_size=len(encoded),
                             image_size_2=len(encoded),
@@ -872,11 +865,7 @@ def reconcile_artwork(
                                 ArtworkMhodType.THUMBNAIL_IMAGE, location
                             )
                         )
-            children.extend(
-                c
-                for c in row.children
-                if not isinstance(c.payload, MhodContainerPayload)
-            )
+            children.extend(c for c in row.children if thumbnail_payload(c) is None)
             if source_row is None and target.include_auxiliary_image_records:
                 children.append(new_auxiliary_mhod())
             rows[image_id] = replace(
@@ -902,6 +891,8 @@ def reconcile_artwork(
         ) and row.header.db_track_id_ref not in (0, owner):
             # Keep the other Track's image and pixels. This Track receives its
             # own MHII identity and reverse link, sharing immutable byte ranges.
+            if sum(thumbnail_payload(c) is not None for c in row.children) > 0xFFFF:
+                raise ValueError("Artwork exceeds the native thumbnail count limit.")
             image_id, next_id = next_id, next_id + 1
             if next_id > 0xFFFFFFFF:
                 raise ValueError("Artwork identities are exhausted.")
@@ -918,9 +909,9 @@ def reconcile_artwork(
         item_count = checked_artwork_count(
             len(
                 {
-                    c.payload.child.header.unk_mhni_0x24
+                    payload.child.header.image_time_key
                     for c in row.children
-                    if isinstance(c.payload, MhodContainerPayload)
+                    if (payload := thumbnail_payload(c)) is not None
                 }
             )
         )

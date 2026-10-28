@@ -332,6 +332,57 @@ def test_rejects_a_truncated_packed_payload() -> None:
         )
 
 
+@pytest.mark.parametrize("stored_rows", (55, 56))
+@pytest.mark.parametrize("unused_word", (0x0000, 0xF81F, 0x07E0))
+def test_f1061_visible_pixels_ignore_row_padding_and_extra_storage_row(
+    stored_rows: int,
+    unused_word: int,
+) -> None:
+    # Independent RGB565 words, not an encoder round trip. The pinned Classic
+    # generic Draw path uses a 55x55 surface with 112-byte rows. Payload size
+    # does not expand that surface to a 56th column or row.
+    colors = (
+        (0xF800, bytes((255, 0, 0))),
+        (0x07E0, bytes((0, 255, 0))),
+        (0x001F, bytes((0, 0, 255))),
+        (0xFFFF, bytes((255, 255, 255))),
+    )
+    payload = b"".join(
+        b"".join(
+            colors[(column + 2 * row) % 4][0].to_bytes(2, "little")
+            for column in range(55)
+        )
+        + unused_word.to_bytes(2, "little")
+        for row in range(55)
+    )
+    if stored_rows == 56:
+        payload += unused_word.to_bytes(2, "little") * 56
+    expected_pixels = b"".join(
+        colors[(column + 2 * row) % 4][1] for row in range(55) for column in range(55)
+    )
+
+    decoded = decode_ithmb(
+        payload,
+        IthmbLayout(55, 55, 112, IthmbPixelFormat.RGB565_LE),
+    )
+
+    assert len(payload) == stored_rows * 112
+    assert decoded == DecodedImage(55, 55, expected_pixels)
+
+
+@pytest.mark.parametrize("payload_length", (0, 6048, 6158, 6159))
+def test_f1061_requires_complete_stride_bytes_even_after_last_visible_pixel(
+    payload_length: int,
+) -> None:
+    # 6158 contains the last visible pixel but lacks the spare word. The native
+    # aligned copier reads that complete word before masking its spare pixel.
+    with pytest.raises(IthmbDecodeError, match="shorter than 6160 bytes"):
+        decode_ithmb(
+            bytes(payload_length),
+            IthmbLayout(55, 55, 112, IthmbPixelFormat.RGB565_LE),
+        )
+
+
 def test_rejects_unsafe_or_mismatched_declared_dimensions() -> None:
     with pytest.raises(ValueError, match="safety limit"):
         IthmbLayout(100_000, 1, 200_000, IthmbPixelFormat.RGB565_LE)

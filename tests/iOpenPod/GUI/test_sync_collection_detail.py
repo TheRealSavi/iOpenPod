@@ -501,7 +501,10 @@ def test_opened_collection_preserves_all_four_artwork_tiles(
         artwork_id: int,
         _logical_size: int,
         _device_pixel_ratio: float,
+        *,
+        display_time_ms: int | None = None,
     ) -> QPixmap | None:
+        assert display_time_ms is None
         return covers.get(artwork_id)
 
     monkeypatch.setattr(ArtworkPixmapProvider, "pixmap", pixmap)

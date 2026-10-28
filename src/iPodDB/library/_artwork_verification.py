@@ -1,10 +1,11 @@
 """Verify native artwork metadata against requested assets and cover capabilities."""
 
 from dataclasses import replace
+from itertools import pairwise
 
 from iPodDB.ArtworkDB.ithmb import IthmbLayout, IthmbPixelFormat, decode_ithmb
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
-from iPodDB.ArtworkDB.shared.artwork_index import build_artwork_index
+from iPodDB.ArtworkDB.shared.artwork_index import build_artwork_index, thumbnail_payload
 from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhii import MhiiHeader
@@ -39,7 +40,23 @@ from iPodDB.library.writing import (
     WriteResources,
 )
 from iPodDB.shared.binary_struct import binary_fields
-from iPodDB.shared.chunk import DatabaseDocument
+from iPodDB.shared.chunk import DatabaseDocument, ParsedChunk
+
+
+def _non_thumbnail_containers(
+    row: ParsedChunk[MhiiHeader] | None, data: bytes | None
+) -> tuple[bytes, ...]:
+    """Compare complete retained records, independent of their file positions."""
+    if row is None:
+        return ()
+    if data is None:
+        raise ValueError("Non-thumbnail preservation requires captured database bytes.")
+    return tuple(
+        data[child.offset : child.offset + child.generic_header.length_or_child_count]
+        for child in row.children
+        if isinstance(child.payload, MhodContainerPayload)
+        and thumbnail_payload(child) is None
+    )
 
 
 def verify_artwork(
@@ -75,22 +92,40 @@ def verify_artwork(
         raise ValueError("Retained ArtworkDB root fields changed unexpectedly.")
     rows = {s.chunk.header.image_id: s.chunk for s in artwork.find_chunks(MhiiHeader)}
     generated = tuple(m for m in mappings if m.subject == "artwork")
+    generated_ids = {mapping.output_id for mapping in generated}
+    if len(generated_ids) != len(generated) or any(
+        identity <= 0 for identity in generated_ids
+    ):
+        raise ValueError("Created artwork requires distinct nonzero image identities.")
     reserved_ids = {
         s.chunk.header.artwork_id_ref for s in original_itunes.find_chunks(MhitHeader)
     }
+    if original is not None:
+        reserved_ids.update(
+            selection.chunk.header.image_id
+            for selection in original.find_chunks(MhiiHeader)
+        )
     if any(mapping.output_id in reserved_ids for mapping in generated):
-        raise ValueError("Created artwork reused a retained Track artwork reference.")
+        raise ValueError(
+            "Created artwork reused a retained image or Track artwork reference."
+        )
     if generated and artwork.header.next_mhii_id <= max(rows):
         raise ValueError("ArtworkDB next image identity would reuse an existing image.")
     index = build_artwork_index(artwork)
     outputs = {f.relative_path.casefold(): f.data for f in files}
+    inventory = {
+        item.relative_path.casefold(): item for item in resources.file_inventory or ()
+    }
     if outputs:
+        if any(
+            len(data) > min(target.max_artwork_file_bytes, 0xFFFFFFFF)
+            for data in outputs.values()
+        ):
+            raise ValueError(
+                "Prepared artwork file exceeds the target file size limit."
+            )
         reserved = {
             artwork_path(path).casefold() for path in resources.reserved_artwork_paths
-        }
-        inventory = {
-            item.relative_path.casefold(): item
-            for item in resources.file_inventory or ()
         }
         if original is not None:
             reserved.update(
@@ -111,6 +146,13 @@ def verify_artwork(
         if source_document
         else {}
     )
+    for image_id, retained_source_row in source_rows.items():
+        if _non_thumbnail_containers(
+            retained_source_row, original_bytes
+        ) != _non_thumbnail_containers(rows.get(image_id), artwork_bytes):
+            raise ValueError(
+                "Retained artwork changed its non-thumbnail container bytes."
+            )
     original_tracks = {t.track_id: t for t in resolved.original.tracks}
     file_formats = tuple(s.chunk.header for s in artwork.find_chunks(MhifHeader))
     original_sizes = (
@@ -138,14 +180,44 @@ def verify_artwork(
     time_schema = next(
         f.schema
         for f in binary_fields(MhniHeader)
-        if f.attribute_name == "unk_mhni_0x24"
+        if f.attribute_name == "image_time_key"
     )
     desired_tracks = {t.track_id: t for t in resolved.desired.tracks}
     first_asset_track = {t.artwork_id: t for t in reversed(resolved.desired.tracks)}
+    # Exact aliases are only expected for clones of the same requested image,
+    # time and format. Different generated images must have separate allocations.
+    generated_ranges: dict[str, set[tuple[int, int, int, int, int]]] = {}
     for mapping in generated:
+        row = rows.get(mapping.output_id)
+        if row is None:
+            raise ValueError("Created artwork is missing its image record.")
+        if sum(thumbnail_payload(c) is not None for c in row.children) > 0xFFFF:
+            raise ValueError(
+                "Created artwork exceeds the native thumbnail count limit."
+            )
         asset = assets.get(mapping.draft_id)
         if asset is None:
+            if _non_thumbnail_containers(
+                source_rows.get(mapping.draft_id), original_bytes
+            ) != _non_thumbnail_containers(row, artwork_bytes):
+                raise ValueError(
+                    "Cloned artwork changed its non-thumbnail container bytes."
+                )
             continue  # A per-Track clone can reuse verified retained ranges.
+        # A shared asset and its per-Track clones use the first asset Track's
+        # source template, just as the base generated image does.
+        template_track = original_tracks.get(
+            first_asset_track[mapping.draft_id].track_id
+        )
+        template = (
+            source_rows.get(template_track.artwork_id) if template_track else None
+        )
+        if _non_thumbnail_containers(
+            template, original_bytes
+        ) != _non_thumbnail_containers(row, artwork_bytes):
+            raise ValueError(
+                "Created artwork changed its non-thumbnail container bytes."
+            )
         track = (
             desired_tracks[mapping.track_id]
             if mapping.track_id is not None
@@ -163,19 +235,16 @@ def verify_artwork(
         frames = desired_frames(
             asset, source_rows.get(old_track.artwork_id) if old_track else None
         )
-        row = rows.get(mapping.output_id)
-        if row is None or row.header.source_image_size != zero_source_size(
-            frames, source_rows
-        ):
+        if row.header.source_image_size != zero_source_size(frames, source_rows):
             raise ValueError(
                 "Created image size does not match its zero-time artwork source."
             )
         locations = tuple(
-            c.payload.child.header
+            payload.child.header
             for c in row.children
-            if isinstance(c.payload, MhodContainerPayload)
+            if (payload := thumbnail_payload(c)) is not None
         )
-        times = tuple(location.unk_mhni_0x24 for location in locations)
+        times = tuple(location.image_time_key for location in locations)
         if times != tuple(sorted(times)) or set(times) != {
             f.display_time_ms for f in frames
         }:
@@ -266,14 +335,14 @@ def verify_artwork(
                 (frame.display_time_ms, format_id) for format_id in asset_formats
             )
         for location in locations:
-            if (location.unk_mhni_0x24, location.format_id) not in generated_pairs:
+            if (location.image_time_key, location.format_id) not in generated_pairs:
                 continue
             bounded = next(
                 (
                     b
                     for b in item.locations
                     if b.format_id == location.format_id
-                    and b.display_time_ms == location.unk_mhni_0x24
+                    and b.display_time_ms == location.image_time_key
                 ),
                 None,
             )
@@ -312,9 +381,24 @@ def verify_artwork(
                 raise ValueError(
                     "Created artwork disagrees with its MHIF file-format entry."
                 )
-            data = outputs.get(artwork_path(bounded.file_name).casefold())
+            path = artwork_path(bounded.file_name).casefold()
+            data = outputs.get(path)
             if data is None:
                 raise ValueError("Created artwork has no prepared pixel file.")
+            dependency = inventory.get(path)
+            if dependency is not None and bounded.offset < dependency.size:
+                raise ValueError(
+                    "Created artwork overlaps a captured thumbnail prefix."
+                )
+            generated_ranges.setdefault(path, set()).add(
+                (
+                    bounded.offset,
+                    bounded.offset + size,
+                    mapping.draft_id,
+                    location.image_time_key,
+                    location.format_id,
+                )
+            )
             decoded = decode_ithmb(
                 read_content(data, bounded.offset, size),
                 IthmbLayout(
@@ -325,6 +409,9 @@ def verify_artwork(
                 raise ValueError(
                     "Created artwork cannot decode to its target dimensions."
                 )
+    for ranges in generated_ranges.values():
+        if any(right[0] < left[1] for left, right in pairwise(sorted(ranges))):
+            raise ValueError("Created artwork allocations overlap.")
     track_ids = {m.draft_id: m.output_id for m in mappings if m.subject == "track"}
     image_ids = {m.draft_id: m.output_id for m in generated if m.track_id is None}
     per_track = {m.track_id: m.output_id for m in generated if m.track_id is not None}

@@ -232,8 +232,9 @@ _CLASSIC_CAPABILITIES = _capabilities(
     display=(320, 240, True),
     gapless=True,
     cover_formats=_artwork_formats(1055, 1060, 1061, 1068),
-    # libgpod's Classic chapter fallback (itdb_device.c, commit 7982c555).
-    # This is source-supported policy, not queried firmware metadata.
+    # Classic 120GB RetailOS 2.0.1 advertises these ChapterImageSpecs and registers
+    # player selectors 15/16 as F1055/F1029. Other Classics retain the established
+    # family policy; this is static firmware evidence, not a live capability query.
     chapter_formats=tuple(
         replace(format_, usage=ArtworkUsage.CHAPTER)
         for format_ in _artwork_formats(1055, 1029)

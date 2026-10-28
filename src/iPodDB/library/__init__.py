@@ -41,6 +41,7 @@ from iPodDB.library.models import (
     TrackChapter,
     TrackMetadata,
 )
+from iPodDB.library.native_chapters import NativeChapterEntry, NativeChapterIndex
 from iPodDB.library.photos import (
     IPodPhotoAlbumDetails,
     Photo,
@@ -170,6 +171,8 @@ __all__ = [
     "MediaType",
     "MemoryContentBuffer",
     "MetadataValue",
+    "NativeChapterEntry",
+    "NativeChapterIndex",
     "Photo",
     "PhotoAlbum",
     "PhotoAlbumKind",

@@ -7,13 +7,15 @@ from dataclasses import dataclass, field
 class ArtworkRequest:
     """Ask for one artwork image near a physical-pixel display target."""
 
+    # Positive identities belong to the source; negative identities belong to
+    # immutable Library Draft assets. Zero means no artwork in presentation.
     artwork_id: int
     target_px: int
     display_time_ms: int | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
-        if self.artwork_id <= 0:
-            raise ValueError("An Artwork Request requires a positive artwork ID")
+        if self.artwork_id == 0:
+            raise ValueError("An Artwork Request requires a nonzero artwork ID")
         if self.target_px <= 0:
             raise ValueError("An Artwork Request requires a positive pixel target")
         if self.display_time_ms is not None:
@@ -22,7 +24,7 @@ class ArtworkRequest:
 
 @dataclass(frozen=True, slots=True)
 class ArtworkImage:
-    """Owned RGB888 pixels decoded for one Active iPod generation."""
+    """Owned RGB888 pixels decoded for one device or draft source generation."""
 
     cache_key: str
     artwork_id: int
@@ -37,8 +39,10 @@ class ArtworkImage:
     def __post_init__(self) -> None:
         if not self.cache_key:
             raise ValueError("An Artwork Image requires a cache key")
-        if self.artwork_id <= 0 or self.format_id <= 0:
-            raise ValueError("Artwork and format IDs must be positive")
+        if self.artwork_id == 0 or self.format_id <= 0:
+            raise ValueError(
+                "Artwork ID must be nonzero and format ID must be positive"
+            )
         if self.width <= 0 or self.height <= 0:
             raise ValueError("Artwork dimensions must be positive")
         if self.display_time_ms is not None:

@@ -59,7 +59,7 @@ def test_exact_time_read_and_metadata_preserve_raw_time_keys() -> None:
             wrapper.payload,
             child=replace(
                 location,
-                header=replace(location.header, unk_mhni_0x24=10000, ithmb_offset=32),
+                header=replace(location.header, image_time_key=10000, ithmb_offset=32),
             ),
         ),
     )
@@ -111,7 +111,7 @@ def test_authored_timeline_serializes_sorted_complete_groups_and_reads_each() ->
         if s.chunk.header.image_id == identity
     )
     assert [
-        c.payload.child.header.unk_mhni_0x24
+        c.payload.child.header.image_time_key
         for c in row.children
         if isinstance(c.payload, MhodContainerPayload)
     ] == [0, 0, 10000, 10000]
@@ -183,7 +183,7 @@ def timeline(*, special: bool = False) -> tuple[IPodLibrary, tuple[PreparedFile,
     for child in row.children:
         if (
             isinstance(child.payload, MhodContainerPayload)
-            and child.payload.child.header.unk_mhni_0x24 == 10000
+            and child.payload.child.header.image_time_key == 10000
         ):
             offset = child.payload.child.offset
             # Independent wire fixture: unknown MHNI bytes must survive edits.
@@ -206,7 +206,7 @@ def group_bytes(data: bytes, identity: int, time: int) -> tuple[bytes, ...]:
         data[c.offset : c.offset + c.generic_header.length_or_child_count]
         for c in row.children
         if isinstance(c.payload, MhodContainerPayload)
-        and c.payload.child.header.unk_mhni_0x24 == time
+        and c.payload.child.header.image_time_key == time
     )
 
 
@@ -414,7 +414,7 @@ def corrupt_timed[**P](
             location = payload.child
             if mode == "time":
                 location = replace(
-                    location, header=replace(location.header, unk_mhni_0x24=9999)
+                    location, header=replace(location.header, image_time_key=9999)
                 )
             else:
                 location = replace(
@@ -514,7 +514,7 @@ def test_timed_frames_roll_over_shards_and_preserve_captured_prefixes() -> None:
         if s.chunk.header.image_id == identity
     )
     assert [
-        (c.payload.child.header.unk_mhni_0x24, c.payload.child.header.format_id)
+        (c.payload.child.header.image_time_key, c.payload.child.header.format_id)
         for c in row.children
         if isinstance(c.payload, MhodContainerPayload)
     ] == [

@@ -49,7 +49,7 @@ from iOpenPod.GUI.presentation.i18n.text import (
 )
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
-from iOpenPod.GUI.widgets.metadata_field_editor import FieldEditor
+from iOpenPod.GUI.widgets.metadata_field_editor import ChapterEditor, FieldEditor
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
@@ -110,7 +110,7 @@ _GROUP_DESCRIPTIONS = {
     str(QT_TRANSLATE_NOOP("MetadataEditorDialog", "Artwork")): str(
         QT_TRANSLATE_NOOP(
             "MetadataEditorDialog",
-            "View artwork, crop images, and choose when each image displays",
+            "View artwork, crop images, and assign images to chapters",
         )
     ),
     str(QT_TRANSLATE_NOOP("EditorLabels", "Technical details")): str(
@@ -766,6 +766,34 @@ class MetadataEditorDialog(QDialog):
         self._artwork_item = QListWidgetItem(self.tr("Artwork"))
         self._artwork_item.setData(Qt.ItemDataRole.UserRole, "Artwork")
         self._nav.addItem(self._artwork_item)
+        chapter_row = self.rows["metadata.chapters"]
+        chapter_editor = chapter_row.editor
+        if isinstance(chapter_editor, ChapterEditor):
+            chapter_editor.set_artwork_preview(self._artwork_editor.chapter_pixmap)
+            chapter_editor.chaptersChanged.connect(self._sync_chapter_artwork)
+            chapter_row.modifiedChanged.connect(self._sync_chapter_artwork)
+            chapter_editor.artworkRequested.connect(self._show_chapter_artwork)
+            self._artwork_editor.previewChanged.connect(chapter_editor.refresh_artwork)
+            self._sync_chapter_artwork()
+
+    def _sync_chapter_artwork(self) -> None:
+        row = self.rows["metadata.chapters"]
+        if not isinstance(row.editor, ChapterEditor):
+            return
+        if row.mixed and not row.is_modified():
+            self._artwork_editor.set_chapters(None)
+            return
+        try:
+            chapters = row.editor.value()
+        except ValueError:
+            self._artwork_editor.set_chapters(None)
+            return
+        self._artwork_editor.set_chapters(chapters)
+
+    def _show_chapter_artwork(self, start_ms: int) -> None:
+        if self._artwork_editor.select_chapter(start_ms):
+            self._search.clear()
+            self._nav.setCurrentItem(self._artwork_item)
 
     def _selection_summary(self) -> str:
         if len(self._tracks) != 1:

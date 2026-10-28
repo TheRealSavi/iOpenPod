@@ -2111,7 +2111,7 @@ def test_classic_chapter_only_rendition_can_be_previewed_at_its_exact_time(
             image_size_2=80000,
             image_width=200,
             image_height=200,
-            unk_mhni_0x24=15000,
+            image_time_key=15000,
         ),
         children=(
             new_artwork_string_mhod(ArtworkMhodType.FILE_NAME, ":F1029_1.ithmb"),
@@ -2838,7 +2838,7 @@ def _install_artwork(root: Path, *, timed: bool = False) -> None:
             image_name,
             header=replace(
                 image_name.header,
-                unk_mhni_0x24=10000,
+                image_time_key=10000,
                 ithmb_offset=6 + 56 * 56 * 2,
             ),
         )

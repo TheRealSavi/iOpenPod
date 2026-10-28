@@ -555,6 +555,25 @@ class IPodLibrary:
         item = self._artwork_index.item_for_image_id(artwork_id)
         return item.display_times if item is not None else ()
 
+    def artwork_file_paths(self) -> tuple[str, ...]:
+        """Return validated known source filenames for write-time inventory.
+
+        Include typed location containers even when their images are orphaned,
+        non-thumbnail metadata or omitted from display projection. This uses the
+        writer's reservation rules; unsupported tokens raise ValueError. The
+        result grants no filesystem access and says nothing about file existence,
+        raster validity or whether full file content needs to be captured.
+        """
+        from iPodDB.library._artwork_writing import retained_artwork_extents
+
+        if self._artwork_document is None:
+            return ()
+        return tuple(
+            dict.fromkeys(
+                path for _, path, _ in retained_artwork_extents(self._artwork_document)
+            )
+        )
+
     def artwork_read(
         self,
         artwork_id: int,

@@ -271,3 +271,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0196: Adopt firmware clock and date evidence](0196-adopt-firmware-clock-and-date-evidence.md)
 - [ADR-0197: Default full-suite tests to eight workers](0197-default-full-suite-tests-to-eight-workers.md)
 - [ADR-0198: Adopt native rule operands and import markers](0198-adopt-native-rule-operands-and-import-markers.md)
+- [ADR-0203: Validate artwork file references and allocations](0203-validate-artwork-file-references-and-allocations.md)
+- [ADR-0204: Edit and preview artwork through Chapters](0204-edit-and-preview-artwork-through-chapters.md)

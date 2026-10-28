@@ -16,6 +16,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader, header_size_for_v
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
+    ChapterDataFlags,
     MhodChapterDataChapter,
     MhodChapterDataHedrHeader,
     MhodChapterDataPayload,
@@ -51,10 +52,12 @@ from iPodDB.library._track_header_expansion import (
     required_header_length,
 )
 from iPodDB.library.models import ContentAdvisory, MediaType, Track, TrackMetadata
+from iPodDB.library.native_chapters import interpret_native_chapters
 from iPodDB.library.writing import (
     IssueSeverity,
     PreparedLyrics,
     PreparedMedia,
+    TimedArtworkAsset,
     WriteIssue,
 )
 from iPodDB.shared.binary_struct import binary_fields
@@ -75,7 +78,79 @@ _SORT_INDICATORS = next(
 
 
 def _chapter_hedr() -> MhodChapterDataHedrHeader:
-    return MhodChapterDataHedrHeader(atom_type=b"hedr", unk_0x08=1, unk_0x18=1)
+    return MhodChapterDataHedrHeader(
+        atom_type=b"hedr", unk_0x08=1, unk_0x18=ChapterDataFlags.HAS_NAMED_CHAPTERS
+    )
+
+
+def _coordinate_chapter_artwork(
+    chunk: ParsedChunk[MhitHeader],
+    asset: TimedArtworkAsset,
+    track_id: int,
+    issues: list[WriteIssue],
+) -> ParsedChunk[MhitHeader]:
+    matches = [
+        i
+        for i, child in enumerate(chunk.children)
+        if isinstance(child.payload, MhodChapterDataPayload)
+    ]
+    if not matches:
+        return chunk
+    index = matches[-1]
+    child = chunk.children[index]
+    payload = child.payload_as(MhodChapterDataPayload)
+    if (
+        payload.hedr is None
+        or payload.hedr_trailing_data
+        or any(atom.atom_type == b"hedr" for atom in payload.other_atoms)
+        or not any(
+            chapter.name_header is not None or chapter.name
+            for chapter in payload.chapters
+        )
+    ):
+        issues.append(
+            WriteIssue(
+                "chapter.artwork_ineligible",
+                "Timed artwork has no complete, recognized named Chapter header. The retained "
+                "Chapter data is unchanged; Classic chapter artwork may be unavailable.",
+                IssueSeverity.WARNING,
+                subject="track",
+                record_id=track_id,
+                field="metadata.chapters",
+            )
+        )
+        return chunk
+    # Explicit timed artwork with authored named Chapters enables both known
+    # gates. Unknown header bits and all Chapter positions/atoms stay retained.
+    payload = replace(
+        payload,
+        hedr=replace(
+            payload.hedr,
+            unk_0x18=int(
+                payload.hedr.flags
+                | ChapterDataFlags.HAS_NAMED_CHAPTERS
+                | ChapterDataFlags.HAS_CHAPTER_ARTWORK
+            ),
+        ),
+    )
+    native = interpret_native_chapters(payload)
+    times = tuple(sorted(frame.display_time_ms for frame in asset.frames))
+    if tuple(chapter.start_ms for chapter in native.entries) != times:
+        issues.append(
+            WriteIssue(
+                "chapter.artwork_timeline_mismatch",
+                "Named Chapter positions and artwork image times differ. Classic "
+                "image refresh compares their indices; playback needs device "
+                "validation. No positions were changed.",
+                IssueSeverity.WARNING,
+                subject="track",
+                record_id=track_id,
+                field="metadata.chapters",
+            )
+        )
+    children = list(chunk.children)
+    children[index] = replace(child, payload=payload)
+    return replace(chunk, children=tuple(children))
 
 
 def edit_text[H: ChunkHeader](
@@ -260,6 +335,7 @@ def edit_track(
     lyrics: PreparedLyrics | None = None,
     database_version: int | None = None,
     required_fields: Mapping[str, ChunkFieldValue] | None = None,
+    timed_artwork: TimedArtworkAsset | None = None,
 ) -> ParsedChunk[MhitHeader]:
     if chunk is None:
         length = creation_header_length(database_version)
@@ -517,6 +593,8 @@ def edit_track(
                     MHOD, MhodHeader(mhod_type=MhodType.CHAPTER_DATA), payload=payload
                 )
             )
+    if timed_artwork is not None:
+        chunk = _coordinate_chapter_artwork(chunk, timed_artwork, new.track_id, issues)
     if media is not None:
         values.update(
             filetype=media.filetype,

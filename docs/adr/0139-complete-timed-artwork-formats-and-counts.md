@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-11
 - Extends: ADR-0138
+- Extended by: ADR-0202 for explicit chapter-artwork flag coordination
 
 ## Context
 

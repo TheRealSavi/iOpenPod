@@ -52,6 +52,7 @@ from iPodDB.library._track_header_requirements import derived_header_requirement
 from iPodDB.library._track_writing import edit_text, edit_track
 from iPodDB.library.writing import (
     IdentityMapping,
+    TimedArtworkAsset,
     WriteIssue,
     WriteResources,
 )
@@ -104,6 +105,11 @@ def reconcile(
     persistent_ids = dict(resolved.persistent_ids)
     media = {m.track_id: m for m in resources.media}
     lyrics = {item.track_id: item for item in resources.lyrics}
+    timed_artwork = {
+        item.artwork_id: item
+        for item in resources.artwork
+        if isinstance(item, TimedArtworkAsset) and resolved.plan.target.chapter_formats
+    }
     required_media = frozenset(resolved.plan.required_media)
     header_requirements = derived_header_requirements(
         source_document,
@@ -134,6 +140,7 @@ def reconcile(
             and track.track_id not in required_media
             and track.track_id not in lyrics
             and track.track_id not in header_requirements
+            and track.artwork_id not in timed_artwork
         ):
             track_output.append(track_chunk)
             continue
@@ -151,6 +158,7 @@ def reconcile(
                     lyrics=lyrics.get(track.track_id),
                     database_version=resolved.plan.target.database_version,
                     required_fields=header_requirements.get(track.track_id),
+                    timed_artwork=timed_artwork.get(track.artwork_id),
                 )
             )
         except (ValueError, OverflowError) as error:

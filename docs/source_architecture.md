@@ -1111,6 +1111,18 @@ already-bounded byte payload plus an explicit layout and returns owned RGB pixel
 Neither component accepts a path, reads a filesystem, selects a Device Profile, or
 constructs a Qt object.
 
+Only type-2 thumbnail containers provide display locations and Artwork Display
+Times. Pixel reads use the primary MHNI byte count, independently of allocation.
+Reverse Track relationships must be unambiguous; direct image IDs remain separate.
+The Library source resolves explicit names through one bounded Artwork path
+contract shared with preparation and capture. It preserves supported nested paths
+and never invents a filename. `IPodLibrary.artwork_file_paths` separately exposes
+known metadata references for write-time inventory, including locations omitted
+from display projection; the Application Layer owns their Storage capture.
+Generated allocations receive independent prefix,
+overlap, size and native thumbnail-count checks. See
+[ADR-0203](adr/0203-validate-artwork-file-references-and-allocations.md).
+
 #### `ArtworkDB/Parser`
 
 Responsible only for turning artwork database bytes or streams into structured
@@ -1187,10 +1199,33 @@ chapter layouts; timed preparation completes the union of cover and chapter
 representations while retaining existing bytes. MHIT artwork count reflects the
 distinct saved image times for changed relationships. Ordinary cover refresh preserves
 later groups. The Metadata Editor previews groups lazily and applies one complete
-sequence through its existing Library Draft. Playback support remains dependent
-on device and firmware evidence. See
+sequence through its existing Library Draft. Its artwork selector uses current
+Chapter titles instead of a free-form timestamp input, and the Chapters table
+shows visible-row thumbnails. Chapter edits preserve unmatched image groups;
+mixed selections require explicit shared artwork intent. Host playback selects
+the latest ordinary time key reached by playback or seeking, while the Chapter
+index requests exact Chapter groups. Provider invalidation and Track changes
+discard the previous selection. A draft-aware application loader publishes an
+immutable artwork snapshot before updated Tracks reach views, resolves negative
+draft identities on the existing worker pool, and delegates retained group reads
+to the device loader. Draft replacement, reset, and disconnect invalidate caches;
+unrelated metadata edits leave them intact. Device identities remain positive, and
+preview does not write device files. Native playback support remains dependent on
+device and firmware evidence. See
 [ADR-0138](adr/0138-edit-artwork-by-display-time.md) and
-[ADR-0139](adr/0139-complete-timed-artwork-formats-and-counts.md).
+[ADR-0139](adr/0139-complete-timed-artwork-formats-and-counts.md), with Chapter UI
+and Host preview policy in
+[ADR-0204](adr/0204-edit-and-preview-artwork-through-chapters.md).
+
+The raw MHNI key is named `image_time_key`; firmware cursor transforms never enter
+the serialized value. iPod Track Details expose a separate Native Chapter Index
+without changing editable Chapter metadata. Explicit timed artwork on targets
+with chapter representations coordinates known Chapter flags only when a
+recognized named Chapter structure exists. Unknown flags and opaque structures
+remain retained, and index/time mismatches produce diagnostics. Direct artwork
+lookup is exclusive for a nonzero stored reference, even when unresolved; only
+zero selects the reverse Track relationship. See
+[ADR-0202](adr/0202-adopt-native-artwork-and-chapter-semantics.md).
 
 During cover preparation, iPodDB automatically reconciles conflicting MHIF image
 sizes when the fixed-size encoding, individually validated retained MHNI

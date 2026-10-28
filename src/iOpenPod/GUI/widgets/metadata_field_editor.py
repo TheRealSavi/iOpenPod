@@ -1,6 +1,17 @@
 """Reusable directly editable metadata field controls."""
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QEvent, Signal
+from collections.abc import Callable
+
+from PySide6.QtCore import (
+    QT_TRANSLATE_NOOP,
+    QCoreApplication,
+    QEvent,
+    QModelIndex,
+    QPersistentModelIndex,
+    Qt,
+    Signal,
+)
+from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -8,6 +19,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -44,17 +58,72 @@ _MEDIA_TYPE_LABELS = {
 }
 
 
+class _ChapterArtworkDelegate(QStyledItemDelegate):
+    """Request thumbnails only when the chapter's cell is painted."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.preview: Callable[[int, int, float], QPixmap | None] | None = None
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> None:
+        styled = QStyleOptionViewItem(option)
+        self.initStyleOption(styled, index)
+        styled.text = "—"
+        styled.displayAlignment = Qt.AlignmentFlag.AlignCenter
+        pixmap = None
+        try:
+            start_ms = int(str(index.sibling(index.row(), 0).data()))
+        except ValueError:
+            pass
+        else:
+            if self.preview is not None:
+                pixmap = self.preview(start_ms, 40, option.widget.devicePixelRatioF())
+        if pixmap is not None:
+            styled.text = ""
+        option.widget.style().drawControl(
+            QStyle.ControlElement.CE_ItemViewItem, styled, painter, option.widget
+        )
+        if pixmap is not None:
+            QIcon(pixmap).paint(
+                painter,
+                option.rect.adjusted(6, 6, -6, -6),
+                Qt.AlignmentFlag.AlignCenter,
+            )
+
+
 class ChapterEditor(QWidget):
     """Edit a Track's ordered chapter markers."""
 
+    chaptersChanged = Signal()
+    artworkRequested = Signal(object)
+
     def __init__(self, chapters: tuple[TrackChapter, ...], parent: QWidget) -> None:
         super().__init__(parent)
-        self.table = QTableWidget(0, 2, self)
-        self.table.setHorizontalHeaderLabels([self.tr("Start (ms)"), self.tr("Title")])
+        self._setting_chapters = False
+        self.table = QTableWidget(0, 3, self)
+        self.table.setHorizontalHeaderLabels(
+            [self.tr("Start (ms)"), self.tr("Title"), self.tr("Artwork")]
+        )
         self.table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
         )
         self.table.setMinimumHeight(230)
+        self.table.setColumnWidth(2, 80)
+        self.table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Fixed
+        )
+        self.table.verticalHeader().setDefaultSectionSize(52)
+        self._artwork_delegate = _ChapterArtworkDelegate(self.table)
+        self.table.setItemDelegateForColumn(2, self._artwork_delegate)
+        self.table.itemChanged.connect(self._chapter_item_changed)
+        self.table.model().rowsRemoved.connect(self._chapters_changed)
+        self.table.cellClicked.connect(self._activate_artwork)
+        self.table.itemActivated.connect(self._artwork_item_activated)
         self.set_chapters(chapters)
         self._add_button = ActionButton(self.tr("Add chapter"), self)
         self._remove_button = ActionButton(
@@ -81,18 +150,66 @@ class ChapterEditor(QWidget):
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
             self.table.setHorizontalHeaderLabels(
-                [self.tr("Start (ms)"), self.tr("Title")]
+                [self.tr("Start (ms)"), self.tr("Title"), self.tr("Artwork")]
             )
+            for row in range(self.table.rowCount()):
+                self._set_artwork_item(row)
             self._add_button.setText(self.tr("Add chapter"))
             self._remove_button.setText(self.tr("Remove selected"))
             self._sort_button.setText(self.tr("Sort by time"))
         super().changeEvent(event)
 
     def set_chapters(self, chapters: tuple[TrackChapter, ...]) -> None:
-        self.table.setRowCount(len(chapters))
-        for row, chapter in enumerate(chapters):
-            self.table.setItem(row, 0, QTableWidgetItem(str(chapter.start_ms)))
-            self.table.setItem(row, 1, QTableWidgetItem(chapter.title))
+        self._setting_chapters = True
+        try:
+            self.table.setRowCount(len(chapters))
+            for row, chapter in enumerate(chapters):
+                self.table.setItem(row, 0, QTableWidgetItem(str(chapter.start_ms)))
+                self.table.setItem(row, 1, QTableWidgetItem(chapter.title))
+                self._set_artwork_item(row)
+        finally:
+            self._setting_chapters = False
+        self._chapters_changed()
+
+    def set_artwork_preview(
+        self, preview: Callable[[int, int, float], QPixmap | None]
+    ) -> None:
+        """Connect draft artwork without decoding images for hidden chapters."""
+        self._artwork_delegate.preview = preview
+        self.refresh_artwork()
+
+    def refresh_artwork(self) -> None:
+        self.table.viewport().update()
+
+    def _set_artwork_item(self, row: int) -> None:
+        item = QTableWidgetItem(self.tr("Choose artwork for this chapter"))
+        item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+        item.setToolTip(item.text())
+        self.table.setItem(row, 2, item)
+
+    def _chapter_item_changed(self, item: QTableWidgetItem) -> None:
+        if item.column() < 2:
+            self._chapters_changed()
+
+    def _chapters_changed(self, *_args: object) -> None:
+        if not self._setting_chapters:
+            self.chaptersChanged.emit()
+            self.refresh_artwork()
+
+    def _artwork_item_activated(self, item: QTableWidgetItem) -> None:
+        self._activate_artwork(item.row(), item.column())
+
+    def _activate_artwork(self, row: int, column: int) -> None:
+        if column != 2:
+            return
+        item = self.table.item(row, 0)
+        if item is not None:
+            try:
+                start_ms = int(item.text())
+            except ValueError:
+                return
+            if 0 <= start_ms < 0xFFFFFFFF:
+                self.artworkRequested.emit(start_ms)
 
     def value(self) -> tuple[TrackChapter, ...]:
         result: list[TrackChapter] = []
@@ -110,6 +227,7 @@ class ChapterEditor(QWidget):
         self.table.setItem(
             row, 1, QTableWidgetItem(self.tr("Chapter %1").replace("%1", str(row + 1)))
         )
+        self._set_artwork_item(row)
 
     def _remove(self) -> None:
         for row in sorted(
@@ -232,8 +350,7 @@ class FieldEditor(QFrame):
                 else ()
             )
             chapter_editor = ChapterEditor(chapters, self)
-            chapter_editor.table.itemChanged.connect(self._modified)
-            chapter_editor.table.model().rowsRemoved.connect(self._modified)
+            chapter_editor.chaptersChanged.connect(self._modified)
             self.editor = chapter_editor
         else:
             line = QLineEdit(self)

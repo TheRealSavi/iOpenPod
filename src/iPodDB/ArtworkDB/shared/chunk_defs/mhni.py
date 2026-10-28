@@ -13,12 +13,15 @@ class MhniHeader(ChunkHeader):
     child_count: int = cf(0x0C, "u32", counts_children=True)
     format_id: int = cf(0x10, "u32")
     ithmb_offset: int = cf(0x14, "u32")
-    image_size: int = cf(0x18, "u32")
+    image_size: int = cf(0x18, "u32")  # Native pixel-file read length.
     vertical_padding: int = cf(0x1C, "i16")
     horizontal_padding: int = cf(0x1E, "i16")
     image_height: int = cf(0x20, "u16")
     image_width: int = cf(0x22, "u16")
-    unk_mhni_0x24: int = cf(0x24, "u32")
+    # Raw serialized playback-position key, not a cursor's transformed key.
+    # Preserve 0xffffffff and never apply the firmware cursor's +1 on disk.
+    image_time_key: int = cf(0x24, "u32")
+    # Retained allocation size (Host interpretation), never a read-length fallback.
     image_size_2: int = cf(0x28, "u32")
 
 

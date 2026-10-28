@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from iPodDB.ArtworkDB.shared.artwork_index import ArtworkItem
+from iPodDB.ArtworkDB.shared.artwork_index import ArtworkItem, thumbnail_payload
 from iPodDB.ArtworkDB.shared.chunk_defs.mhii import MhiiHeader
 from iPodDB.ArtworkDB.shared.chunk_defs.mhod_payloads.container_mhod import (
     MhodContainerPayload,
@@ -119,8 +119,8 @@ def group_children(
     return tuple(
         c
         for c in row.children
-        if isinstance(c.payload, MhodContainerPayload)
-        and c.payload.child.header.unk_mhni_0x24 == time
+        if (payload := thumbnail_payload(c)) is not None
+        and payload.child.header.image_time_key == time
     )
 
 
@@ -157,9 +157,9 @@ def desired_frames(
     times = (
         sorted(
             {
-                c.payload.child.header.unk_mhni_0x24
+                payload.child.header.image_time_key
                 for c in row.children
-                if isinstance(c.payload, MhodContainerPayload)
+                if (payload := thumbnail_payload(c)) is not None
             }
             - {0}
         )
@@ -195,7 +195,7 @@ def referenced_group(
                 child=replace(
                     c.payload.child,
                     header=replace(
-                        c.payload.child.header, unk_mhni_0x24=frame.display_time_ms
+                        c.payload.child.header, image_time_key=frame.display_time_ms
                     ),
                 ),
             ),

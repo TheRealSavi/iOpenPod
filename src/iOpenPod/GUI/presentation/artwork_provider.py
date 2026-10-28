@@ -122,7 +122,7 @@ class ArtworkPixmapProvider(QObject):
     ) -> QPixmap | None:
         """Return a display pixmap now, queuing a decode on a cache miss."""
 
-        if self._closed or artwork_id <= 0 or logical_size <= 0:
+        if self._closed or artwork_id == 0 or logical_size <= 0:
             return None
         target_px = max(1, ceil(logical_size * max(1.0, device_pixel_ratio)))
         image = self._controller.request(
@@ -142,7 +142,7 @@ class ArtworkPixmapProvider(QObject):
     ) -> ArtworkPixels | None:
         """Return exact decoded pixels now, queuing a decode on a cache miss."""
 
-        if self._closed or artwork_id <= 0 or logical_size <= 0:
+        if self._closed or artwork_id == 0 or logical_size <= 0:
             return None
         target_px = max(1, ceil(logical_size * max(1.0, device_pixel_ratio)))
         image = self._controller.request(
@@ -169,7 +169,7 @@ class ArtworkPixmapProvider(QObject):
         if retained is not None:
             self._dominant_colors[artwork_id] = retained
             return retained
-        if self._closed or artwork_id <= 0 or logical_size <= 0:
+        if self._closed or artwork_id == 0 or logical_size <= 0:
             return None
         self._requested_color_ids[artwork_id] = None
         self._requested_color_ids.move_to_end(artwork_id)

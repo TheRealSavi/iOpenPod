@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+from iPodDB.library.native_chapters import NativeChapterIndex
 from iPodDB.library.photos import PhotoLibrary
 from iPodDB.library.playlists import Playlist
 
@@ -92,6 +93,7 @@ class IPodTrackDetails:
     tv_show_media_type_flag: int = 0
     itunes_store_asset_info: str = ""
     genius_id: int = 0
+    native_chapters: NativeChapterIndex | None = None
 
 
 @dataclass(frozen=True, slots=True)

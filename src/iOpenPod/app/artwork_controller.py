@@ -9,10 +9,13 @@ from weakref import ref
 
 from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 
+from iOpenPod.app.draft_artwork import DraftArtworkLoader
 from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from iPodDB.library import ArtworkAsset, TimedArtworkAsset
 
 
 class ArtworkLoader(Protocol):
@@ -87,8 +90,7 @@ class ArtworkController(QObject):
             raise ValueError("Artwork cache size must be positive")
         if max_pending <= 0:
             raise ValueError("Artwork pending-request limit must be positive")
-        self._loader = loader
-        self._display_times = display_times
+        self._loader = DraftArtworkLoader(loader, display_times)
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(2)
         self._cache_byte_limit = cache_byte_limit
@@ -111,14 +113,20 @@ class ArtworkController(QObject):
     def pending_count(self) -> int:
         return len(self._pending)
 
+    def set_draft_assets(
+        self, assets: tuple[ArtworkAsset | TimedArtworkAsset, ...]
+    ) -> None:
+        """Publish draft image sources before their Track identities reach views."""
+
+        if not self._closed and self._loader.replace_assets(assets):
+            self.invalidate()
+
     def display_times(self, artwork_id: int) -> tuple[int, ...]:
         """List retained time groups without loading any image pixels."""
 
-        if self._closed or artwork_id <= 0:
+        if self._closed or artwork_id == 0:
             return ()
-        if self._display_times is None:
-            return (0,)
-        return self._display_times(artwork_id)
+        return self._loader.display_times(artwork_id)
 
     def request(
         self,
@@ -129,7 +137,7 @@ class ArtworkController(QObject):
     ) -> ArtworkImage | None:
         """Return cached pixels now or queue one non-blocking decode."""
 
-        if self._closed or artwork_id <= 0 or target_px <= 0:
+        if self._closed or artwork_id == 0 or target_px <= 0:
             return None
         request = ArtworkRequest(
             artwork_id=artwork_id,
@@ -183,11 +191,13 @@ class ArtworkController(QObject):
         return None
 
     @Slot(object)
-    def active_ipod_changed(self, _active_ipod: object) -> None:
+    def active_ipod_changed(self, active_ipod: object) -> None:
+        if active_ipod is None:
+            self._loader.replace_assets(())
         self.invalidate()
 
     def invalidate(self) -> None:
-        """Drop all state when the Active iPod connection generation changes."""
+        """Drop stale work and pixels when device or draft artwork sources change."""
 
         if self._closed:
             return
@@ -206,6 +216,7 @@ class ArtworkController(QObject):
         self._closed = True
         self._generation += 1
         self._cancel_queued_work()
+        self._loader.replace_assets(())
         self._thread_pool.waitForDone()
         self._work_items.clear()
         self._pending.clear()

@@ -59,6 +59,36 @@ def test_extraction_includes_dynamic_sources_in_runtime_contexts(catalog: Path) 
         ("Workflow", "Reparsing and verifying candidate output"),
         ("Workflow", "steps"),
         ("Workflow", "Rebuild descendant membership and direct-child rules."),
+        (
+            "Workflow",
+            "Multiple retained Chapter headers are not interpreted by this native index view. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "Chapter data has no header enabling the native named index. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "The retained Chapter header disables the native named index. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "Chapters without a name atom are omitted from the native named index. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "The native Chapter index keeps stored order and stops at the first future start. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "The native Chapter index selects the last eligible duplicate start. "
+            "Editable Chapter metadata is retained.",
+        ),
         ("EditorLabels", "Technical details"),
         ("PodcastPresentation", "Unknown publisher"),
     }

@@ -50,6 +50,7 @@ from iPodDB.library import (
     IPodLibrary,
     IPodTrackDetails,
     MediaType,
+    NativeChapterIndex,
     Track,
     TrackChapter,
     TrackMetadata,
@@ -227,6 +228,7 @@ def test_ipod_library_translates_optional_metadata_without_exposing_chunks() -> 
         season_number=1,
         episode_number=2,
         ipod=IPodTrackDetails(
+            native_chapters=NativeChapterIndex(None, (), ("missing_header",)),
             db_track_id=0x0102030405060708,
             media_type_code=4,
             filetype_code=2,
@@ -430,16 +432,41 @@ def test_artwork_relationships_and_replacement_use_source_identifiers() -> None:
     assert tuple(track.artwork_id for track in replaced.snapshot.tracks) == (0, 0, 0)
 
 
-@pytest.mark.parametrize("direct_id", [0, 99])
-def test_missing_direct_artwork_link_keeps_available_reverse_owner(
+@pytest.mark.parametrize(("direct_id", "resolved_id"), [(0, 64), (99, 0)])
+def test_reverse_artwork_lookup_is_only_used_for_zero_direct_id(
     direct_id: int,
+    resolved_id: int,
 ) -> None:
     source = IPodLibrary(
         _itunes_bytes(MhitHeader(track_id=1, db_track_id=7, artwork_id_ref=direct_id))
     )
     linked = source.with_artwork(_artwork_bytes((64, 7)))
-    assert linked.snapshot.tracks[0].artwork_id == 64
+    assert linked.snapshot.tracks[0].artwork_id == resolved_id
     assert linked.serialize().itunes == source.serialize().itunes
+    assert linked.snapshot.tracks[0].ipod is not None
+    assert linked.snapshot.tracks[0].ipod.artwork_id_ref == direct_id
+
+    # Reloading an ArtworkDB can resolve the same retained ID later. The failed
+    # lookup never rewrites it to the reverse owner's image ID.
+    restored = linked.with_artwork(_artwork_bytes((64, 7), (99, 100)))
+    assert restored.snapshot.tracks[0].artwork_id == (99 if direct_id else 64)
+
+
+@pytest.mark.parametrize("identities", [((64, 7), (65, 7)), ((65, 7), (64, 7))])
+def test_ambiguous_reverse_artwork_keeps_direct_links_and_source_bytes(
+    identities: tuple[tuple[int, int], ...],
+) -> None:
+    itunes = _itunes_bytes(
+        MhitHeader(track_id=1, db_track_id=7),
+        MhitHeader(track_id=2, db_track_id=8, artwork_id_ref=64),
+        MhitHeader(track_id=3, db_track_id=9),
+    )
+    artwork = _artwork_bytes(*identities, (66, 9))
+    source = IPodLibrary.parse(itunes).with_artwork(artwork)
+
+    assert tuple(track.artwork_id for track in source.snapshot.tracks) == (0, 64, 66)
+    assert source.serialize().itunes == itunes
+    assert source.serialize().artwork == artwork
 
 
 def test_lazy_artwork_plan_selects_reduced_ranges_and_decodes_only_supplied_bytes() -> (

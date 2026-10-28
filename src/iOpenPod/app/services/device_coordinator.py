@@ -1549,6 +1549,7 @@ class DeviceCoordinator:
                 temporary_files=temporary_files,
                 source_artwork_display_times=source.artwork_display_times,
                 source_artwork_paths=source_artwork_paths,
+                source_artwork_file_paths=source.artwork_file_paths,
                 additional_preconditions=(
                     *sqlite_postprocess_preconditions,
                     active.time_precondition,

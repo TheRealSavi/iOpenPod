@@ -1,6 +1,7 @@
 """Track artwork editing keeps decoded images inside bounded RGB contracts."""
 
 from collections.abc import Callable
+from pathlib import Path
 from threading import Event
 from time import monotonic
 
@@ -12,12 +13,14 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDoubleSpinBox,
+    QFileDialog,
     QLabel,
     QListWidget,
     QPushButton,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
+from iOpenPod.app import artwork_import
 from iOpenPod.app.artwork_controller import ArtworkController
 from iOpenPod.app.artwork_import import ArtworkImportController
 from iOpenPod.app.library_workspace import LibraryWorkspace
@@ -46,7 +49,10 @@ from iPodDB.library import (
     TimedArtworkAsset,
     TimedArtworkFrame,
     Track,
+    TrackChapter,
+    TrackMetadata,
 )
+from storage import HostPath
 
 
 def test_rgb888_copy_removes_qimage_row_padding() -> None:
@@ -270,25 +276,40 @@ class _TimedArtworkLoader:
         )
 
 
-def test_timed_editor_reads_selected_frame_and_preserves_source_when_retimed() -> None:
+def test_chapter_selection_reads_exact_group_without_retiming_after_chapter_edit() -> (
+    None
+):
     loader = _TimedArtworkLoader()
     controller = ArtworkController(loader, display_times=lambda _id: (0, 10_000))
     provider = ArtworkPixmapProvider(controller)
     editor = ArtworkEditor(
-        (Track(1, "One", "Artist", "Album", 30_000, artwork_id=101),), (), provider
+        (
+            Track(
+                1,
+                "One",
+                "Artist",
+                "Album",
+                30_000,
+                artwork_id=101,
+                metadata=TrackMetadata(
+                    chapters=(TrackChapter("Opening", 1), TrackChapter("Next", 10_000))
+                ),
+            ),
+        ),
+        (),
+        provider,
     )
     try:
         entries = editor.findChild(QComboBox, "metadataArtworkEntries")
-        time = editor.findChild(QDoubleSpinBox, "metadataArtworkTime")
+        assert editor.findChild(QDoubleSpinBox, "metadataArtworkTime") is None
         preview = editor.findChild(QLabel, "metadataArtworkImage")
         remove = editor.findChild(QPushButton, "removeTimedArtwork")
-        assert (
-            entries is not None
-            and time is not None
-            and preview is not None
-            and remove is not None
-        )
-        assert entries.count() == 2 and not time.isEnabled() and not remove.isEnabled()
+        assert entries is not None and preview is not None and remove is not None
+        assert entries.count() == 2 and not remove.isEnabled()
+        assert [entries.itemText(index) for index in range(2)] == [
+            "1. Opening",
+            "2. Next",
+        ]
         _wait_until(lambda: not preview.pixmap().isNull())
         assert [request.display_time_ms for request in loader.requests] == [0]
         assert not editor.is_modified()
@@ -302,29 +323,25 @@ def test_timed_editor_reads_selected_frame_and_preserves_source_when_retimed() -
         )
         assert [request.display_time_ms for request in loader.requests] == [0, 10_000]
         assert not editor.is_modified()
-        time.setValue(12.345)
-        edit = editor.edit()
-        assert edit is not None and edit.frames == (
-            TimedArtworkFrame(0, ArtworkGroupReference(101, 0)),
-            TimedArtworkFrame(12_345, ArtworkGroupReference(101, 10_000)),
+        editor.set_chapters(
+            (TrackChapter("Opening", 1), TrackChapter("Renamed", 12_345))
         )
-        assert time.value() == 12.345
-
-        # The start time changes while preview/storage retain the original group.
+        assert editor.edit() is None
+        assert entries.currentData() == 10_000
+        assert entries.currentText() == "Unassigned artwork — 10.000 seconds"
+        assert editor.frame_source(12_345) is None
+        assert editor.frame_source(10_000) == ArtworkGroupReference(101, 10_000)
         assert [request.display_time_ms for request in loader.requests] == [0, 10_000]
-        before = editor.edit()
-        time.setValue(0)
-        assert editor.edit() == before and time.value() == 12.345
-        error = editor.findChild(QLabel, "metadataArtworkError")
-        assert error is not None and "different display time" in error.text()
-
         signals = QSignalSpy(editor.modifiedChanged)
         APPLICATION.sendEvent(editor, QEvent(QEvent.Type.LanguageChange))
-        assert signals.count() == 0 and editor.edit() == before
-        assert entries.currentData() == 12_345
+        assert signals.count() == 0 and editor.edit() is None
+        assert entries.currentData() == 10_000
+        assert editor.select_chapter(12_345)
+        editor.set_pending_artwork(ArtworkPixels(1, 1, b"\0\xff\0"))
         editor.reset()
         assert not editor.is_modified() and entries.currentData() == 0
-        assert entries.itemData(1) == 10_000
+        assert entries.itemData(1) == 12_345
+        assert entries.itemData(2) == 10_000
     finally:
         editor.shutdown()
         editor.close()
@@ -419,7 +436,7 @@ def test_timed_editor_adds_sorts_replaces_and_removes_only_selected_entry() -> N
         editor.clear_artwork()
         cleared = editor.edit()
         assert cleared is not None and cleared.frames is None
-        assert entries.count() == 0
+        assert entries.count() == 1 and entries.currentText() == "Cover"
         editor.reset()
         assert entries.count() == 2 and not editor.is_modified()
         assert asset.frames[1].source == blue
@@ -451,10 +468,10 @@ def test_timed_sequences_with_matching_covers_remain_distinct_in_consolidation()
     dialog = ConsolidateArtworkDialog((-1, -2), assets)
     try:
         grid = dialog.findChild(QListWidget, "artworkConsolidationGrid")
-        add = editor.findChild(QPushButton, "addTimedArtwork")
+        choose = editor.findChild(QPushButton, "chooseTrackArtwork")
         consolidate = editor.findChild(QPushButton, "consolidateTrackArtwork")
         assert grid is not None and grid.count() == 2
-        assert add is not None and not add.isEnabled()
+        assert choose is not None and choose.isEnabled()
         assert consolidate is not None and not consolidate.isHidden()
         editor.set_pending_artwork(red)
         replacement = editor.edit()
@@ -465,7 +482,7 @@ def test_timed_sequences_with_matching_covers_remain_distinct_in_consolidation()
         editor.set_pending_artwork_id(-2)
         entries = editor.findChild(QComboBox, "metadataArtworkEntries")
         assert entries is not None and entries.itemData(1) == 20_000
-        assert add.isEnabled()
+        assert choose.isEnabled()
         selected = editor.edit()
         assert selected is not None and selected.source_artwork_id == -2
         editor.clear_artwork()
@@ -559,7 +576,7 @@ def test_metadata_dialog_applies_one_shared_timeline_and_reopens_its_entries() -
 @pytest.mark.parametrize(
     "time_ms,number", ((10_000, "10,000"), (1_234_567, "1234,567"))
 )
-def test_entry_caption_uses_spinbox_locale_without_changing_milliseconds(
+def test_unassigned_entry_caption_uses_locale_without_changing_milliseconds(
     locale_name: str, time_ms: int, number: str
 ) -> None:
     red = ArtworkPixels(1, 1, b"\xff\0\0")
@@ -571,15 +588,12 @@ def test_entry_caption_uses_spinbox_locale_without_changing_milliseconds(
     )
     try:
         entries = editor.findChild(QComboBox, "metadataArtworkEntries")
-        time = editor.findChild(QDoubleSpinBox, "metadataArtworkTime")
-        assert entries is not None and time is not None
+        assert entries is not None
         entries.setCurrentIndex(1)
         modified = QSignalSpy(editor.modifiedChanged)
         editor.setLocale(QLocale(locale_name))
-        assert entries.currentText() == f"From {number} seconds"
-        assert time.text() == number
+        assert entries.currentText() == f"Unassigned artwork — {number} seconds"
         assert entries.currentData() == time_ms
-        assert time.value() == time_ms / 1000
         assert modified.count() == 0 and not editor.is_modified()
     finally:
         editor.shutdown()
@@ -597,12 +611,16 @@ def test_legacy_special_entry_is_viewable_and_can_be_retained_after_adding_zero(
     )
     try:
         entries = editor.findChild(QComboBox, "metadataArtworkEntries")
-        time = editor.findChild(QDoubleSpinBox, "metadataArtworkTime")
-        assert entries is not None and time is not None
-        assert entries.currentData() == 0xFFFFFFFF and not time.isEnabled()
+        choose = editor.findChild(QPushButton, "chooseTrackArtwork")
+        assert entries is not None and choose is not None
+        assert entries.currentData() == 0 and choose.isEnabled()
+        entries.setCurrentIndex(entries.findData(0xFFFFFFFF))
+        assert entries.currentText() == "Preserved special entry"
+        assert not choose.isEnabled()
         assert not editor.is_modified()
         red = ArtworkPixels(1, 1, b"\xff\0\0")
-        editor.add_pending_artwork(red, 0)
+        entries.setCurrentIndex(entries.findData(0))
+        editor.set_pending_artwork(red)
         edit = editor.edit()
         assert edit is not None and edit.frames == (
             TimedArtworkFrame(0, red),
@@ -613,3 +631,306 @@ def test_legacy_special_entry_is_viewable_and_can_be_retained_after_adding_zero(
         editor.close()
         provider.shutdown()
         controller.shutdown()
+
+
+def test_empty_chapter_slot_assigns_selected_start_and_preserves_other_groups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    red = ArtworkPixels(1, 1, b"\xff\0\0")
+    blue = ArtworkPixels(1, 1, b"\0\0\xff")
+    editor = ArtworkEditor(
+        (Track(1, "Book", "Author", "Album", 60_000, artwork_id=-1),),
+        (ArtworkAsset(-1, red),),
+    )
+
+    def accept_crop(_dialog: ArtworkCropDialog) -> int:
+        return int(QDialog.DialogCode.Accepted)
+
+    monkeypatch.setattr(ArtworkCropDialog, "exec", accept_crop)
+    try:
+        editor.set_chapters(
+            (TrackChapter("Introduction", 1), TrackChapter("A title", 23_456))
+        )
+        entries = editor.findChild(QComboBox, "metadataArtworkEntries")
+        choose = editor.findChild(QPushButton, "chooseTrackArtwork")
+        remove = editor.findChild(QPushButton, "removeTimedArtwork")
+        preview = editor.findChild(QLabel, "metadataArtworkImage")
+        importer = editor.findChild(ArtworkImportController)
+        assert entries is not None and choose is not None and remove is not None
+        assert preview is not None and importer is not None
+        assert editor.select_chapter(23_456)
+        assert entries.currentText() == "2. A title"
+        assert choose.isEnabled() and not remove.isEnabled()
+        assert choose.text() == "Choose Artwork…" and preview.pixmap().isNull()
+        assert editor.frame_source(23_456) is None
+        assert not editor.is_modified()
+
+        modified = QSignalSpy(editor.modifiedChanged)
+        previews = QSignalSpy(editor.previewChanged)
+        importer.finished.emit(blue, "chapter.png")
+        edit = editor.edit()
+        assert edit is not None and edit.frames == (
+            TimedArtworkFrame(0, red),
+            TimedArtworkFrame(23_456, blue),
+        )
+        assert modified.count() == 1 and previews.count() > 0
+        assert editor.frame_source(1) == red
+        assert editor.frame_source(23_456) == blue
+        assert choose.text() == "Replace Image…" and remove.isEnabled()
+        editor.remove_selected_entry()
+        assert editor.select_chapter(23_456)
+        assert editor.frame_source(23_456) is None and not remove.isEnabled()
+        editor.reset()
+        assert not editor.is_modified() and editor.frame_source(1) == red
+    finally:
+        editor.shutdown()
+        editor.close()
+
+
+def test_later_chapter_requires_deliberate_zero_time_cover_before_assignment() -> None:
+    editor = ArtworkEditor((Track(1, "Book", "Author", "Album", 60_000),), ())
+    pixels = ArtworkPixels(1, 1, b"\xff\0\0")
+    try:
+        editor.set_chapters((TrackChapter("First section", 5_000),))
+        choose = editor.findChild(QPushButton, "chooseTrackArtwork")
+        entries = editor.findChild(QComboBox, "metadataArtworkEntries")
+        assert choose is not None and entries is not None
+        assert entries.itemText(0) == "Cover"
+        assert editor.select_chapter(5_000) and not choose.isEnabled()
+        with pytest.raises(ValueError, match="cover image"):
+            editor.set_pending_artwork(pixels)
+        assert editor.edit() is None
+        entries.setCurrentIndex(0)
+        editor.set_pending_artwork(pixels)
+        assert editor.select_chapter(5_000) and choose.isEnabled()
+        editor.set_pending_artwork(pixels)
+        edit = editor.edit()
+        assert edit is not None and edit.frames == (
+            TimedArtworkFrame(0, pixels),
+            TimedArtworkFrame(5_000, pixels),
+        )
+    finally:
+        editor.shutdown()
+        editor.close()
+
+
+def test_chapter_labels_keep_duplicate_titles_distinct_and_mixed_chapters_explicit() -> (
+    None
+):
+    chapters = (
+        TrackChapter("Same", 0),
+        TrackChapter("Same", 10_000),
+        TrackChapter("", 20_000),
+    )
+    tracks = (
+        Track(
+            1,
+            "One",
+            "Artist",
+            "Album",
+            30_000,
+            metadata=TrackMetadata(chapters=chapters),
+        ),
+        Track(2, "Two", "Artist", "Album", 30_000),
+    )
+    editor = ArtworkEditor(tracks, ())
+    try:
+        entries = editor.findChild(QComboBox, "metadataArtworkEntries")
+        assert entries is not None and entries.count() == 1
+        assert not editor.select_chapter(10_000)
+        editor.set_chapters(chapters)
+        assert [entries.itemText(i) for i in range(entries.count())] == [
+            "1. Same",
+            "2. Same",
+            "3. Untitled Chapter",
+        ]
+        assert editor.select_chapter(10_000)
+        assert entries.currentData() == 10_000
+        editor.set_chapters(None)
+        assert entries.count() == 1 and entries.currentText() == "Cover"
+        assert not editor.is_modified()
+    finally:
+        editor.shutdown()
+        editor.close()
+
+
+def test_chapter_thumbnail_sources_are_metadata_only_and_decode_exact_group_lazily() -> (
+    None
+):
+    loader = _TimedArtworkLoader()
+    controller = ArtworkController(loader, display_times=lambda _id: (0, 10_000))
+    provider = ArtworkPixmapProvider(controller)
+    editor = ArtworkEditor(
+        (Track(1, "Book", "Author", "Album", 30_000, artwork_id=101),), (), provider
+    )
+    try:
+        _wait_until(lambda: controller.pending_count == 0)
+        assert [request.display_time_ms for request in loader.requests] == [0]
+        assert editor.frame_source(10_000) == ArtworkGroupReference(101, 10_000)
+        assert editor.frame_source(15_000) is None
+        assert [request.display_time_ms for request in loader.requests] == [0]
+        preview_signals = QSignalSpy(editor.previewChanged)
+        assert editor.chapter_pixmap(10_000, 32, 2.0) is None
+        _wait_until(lambda: controller.pending_count == 0)
+        thumbnail = editor.chapter_pixmap(10_000, 32, 2.0)
+        assert (
+            thumbnail is not None and thumbnail.toImage().pixelColor(0, 0).blue() == 255
+        )
+        assert [(r.display_time_ms, r.target_px) for r in loader.requests] == [
+            (0, 256),
+            (10_000, 64),
+        ]
+        assert preview_signals.count() > 0 and editor.edit() is None
+    finally:
+        editor.shutdown()
+        editor.close()
+        provider.shutdown()
+        controller.shutdown()
+
+
+def test_staged_chapter_thumbnail_is_scaled_cached_and_invalidated_after_replacement() -> (
+    None
+):
+    red = ArtworkPixels(1, 1, b"\xff\0\0")
+    blue = ArtworkPixels(1, 1, b"\0\0\xff")
+    editor = ArtworkEditor((Track(1, "One", "Artist", "Album", 30_000),), ())
+    try:
+        editor.set_pending_artwork(red)
+        first = editor.chapter_pixmap(1, 32, 2.0)
+        second = editor.chapter_pixmap(1, 32, 2.0)
+        assert first is not None and second is not None
+        assert first.cacheKey() == second.cacheKey()
+        assert first.width() == 64 and first.devicePixelRatio() == 2.0
+        assert editor.chapter_pixmap(5_000, 32, 1.0) is None
+        editor.set_pending_artwork(blue)
+        replaced = editor.chapter_pixmap(0, 32, 2.0)
+        assert (
+            replaced is not None and replaced.toImage().pixelColor(0, 0).blue() == 255
+        )
+        editor.reset()
+        assert editor.chapter_pixmap(0, 32, 2.0) is None
+    finally:
+        editor.shutdown()
+        editor.close()
+
+
+@pytest.mark.parametrize(
+    "starts", ((0, 1), (10_000, 0), (-1, 10_000), (0, 0xFFFFFFFF), (10_000, 10_000))
+)
+def test_invalid_chapter_slots_keep_retained_images_accessible_without_authoring(
+    starts: tuple[int, int],
+) -> None:
+    red = ArtworkPixels(1, 1, b"\xff\0\0")
+    asset = TimedArtworkAsset(
+        -1, (TimedArtworkFrame(0, red), TimedArtworkFrame(10_000, red))
+    )
+    editor = ArtworkEditor(
+        (Track(1, "Book", "Author", "Album", 30_000, artwork_id=-1),), (asset,)
+    )
+    try:
+        editor.set_chapters(
+            tuple(TrackChapter(str(i), start) for i, start in enumerate(starts))
+        )
+        entries = editor.findChild(QComboBox, "metadataArtworkEntries")
+        assert entries is not None and entries.count() == 2
+        assert entries.itemText(0) == "Cover"
+        assert entries.itemText(1) == "Unassigned artwork — 10.000 seconds"
+        assert not editor.select_chapter(10_000)
+        assert editor.frame_source(10_000) == red and editor.edit() is None
+    finally:
+        editor.shutdown()
+        editor.close()
+
+
+def test_sequence_note_compares_normalized_ordered_chapters_and_artwork() -> None:
+    red = ArtworkPixels(1, 1, b"\xff\0\0")
+    asset = TimedArtworkAsset(
+        -1, (TimedArtworkFrame(0, red), TimedArtworkFrame(10_000, red))
+    )
+    editor = ArtworkEditor(
+        (Track(1, "Book", "Author", "Album", 30_000, artwork_id=-1),), (asset,)
+    )
+    try:
+        note = editor.findChild(QLabel, "metadataArtworkSequenceNote")
+        assert note is not None and note.isHidden()
+        editor.set_chapters((TrackChapter("One", 1), TrackChapter("Two", 10_000)))
+        assert note.isHidden()
+        editor.set_chapters((TrackChapter("One", 1), TrackChapter("Two", 20_000)))
+        assert not note.isHidden()
+        assert editor.edit() is None
+        editor.set_chapters(
+            (
+                TrackChapter("One", 1),
+                TrackChapter("Two", 10_000),
+                TrackChapter("Three", 20_000),
+            )
+        )
+        assert not note.isHidden()
+        editor.select_chapter(20_000)
+        editor.set_pending_artwork(red)
+        assert note.isHidden()
+    finally:
+        editor.shutdown()
+        editor.close()
+
+
+@pytest.mark.parametrize("cancel", (False, True))
+def test_pending_import_keeps_original_chapter_or_is_cancelled_when_chapters_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cancel: bool
+) -> None:
+    red = ArtworkPixels(1, 1, b"\xff\0\0")
+    blue = ArtworkPixels(1, 1, b"\0\0\xff")
+    release = Event()
+    started = Event()
+
+    def load(_source: HostPath, *, checkpoint: Callable[[], None]) -> ArtworkPixels:
+        started.set()
+        assert release.wait(3)
+        checkpoint()
+        return blue
+
+    monkeypatch.setattr(artwork_import, "import_artwork", load)
+
+    def choose_file(*_args: object) -> tuple[str, str]:
+        return str(tmp_path / "image.png"), ""
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", choose_file)
+
+    def accept_crop(_dialog: ArtworkCropDialog) -> int:
+        return int(QDialog.DialogCode.Accepted)
+
+    monkeypatch.setattr(ArtworkCropDialog, "exec", accept_crop)
+    editor = ArtworkEditor(
+        (Track(1, "Book", "Author", "Album", 30_000, artwork_id=-1),),
+        (ArtworkAsset(-1, red),),
+    )
+    try:
+        editor.set_chapters((TrackChapter("One", 0), TrackChapter("Two", 10_000)))
+        choose = editor.findChild(QPushButton, "chooseTrackArtwork")
+        entries = editor.findChild(QComboBox, "metadataArtworkEntries")
+        assert choose is not None and entries is not None
+        editor.select_chapter(10_000)
+        choose.click()
+        _wait_until(started.is_set)
+        assert editor.busy and not editor.select_chapter(0)
+        entries.setCurrentIndex(0)
+        assert entries.currentData() == 10_000
+        if cancel:
+            editor.set_chapters((TrackChapter("One", 0), TrackChapter("Moved", 20_000)))
+        release.set()
+        if cancel:
+            editor.shutdown()
+            APPLICATION.processEvents()
+            assert editor.edit() is None
+            assert editor.frame_source(10_000) is None
+        else:
+            _wait_until(lambda: editor.edit() is not None)
+            edit = editor.edit()
+            assert edit is not None and edit.frames == (
+                TimedArtworkFrame(0, red),
+                TimedArtworkFrame(10_000, blue),
+            )
+    finally:
+        release.set()
+        editor.shutdown()
+        editor.close()

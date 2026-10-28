@@ -14,6 +14,22 @@ then beyond it.
 
 ## Current stage
 
+Artwork reads now use stored filenames and primary pixel lengths, preserve
+supported nested paths, and leave ambiguous reverse owners unresolved. Only
+thumbnail containers contribute artwork times; other containers remain retained.
+Preparation independently checks new allocation conflicts and native thumbnail
+count limits, and captures explicitly referenced sources independently of their
+shard naming. See [ADR-0203](docs/adr/0203-validate-artwork-file-references-and-allocations.md).
+
+Artwork projection now follows the firmware's direct-ID lookup rule: a broken
+nonzero link remains unresolved. Chapter header flags have typed interpretations,
+and a separate Native Chapter Index exposes firmware eligibility without changing
+editable metadata. Explicit timed artwork on chapter-capable targets enables the
+known flags when recognized named Chapter data exists; mismatched sequences are
+diagnosed without retiming them. These findings are directly verified in Classic
+120GB RetailOS 2.0.1; physical display behavior remains unverified. See
+[ADR-0202](docs/adr/0202-adopt-native-artwork-and-chapter-semantics.md).
+
 Podcast group projection now follows the whole native marker byte. Smart Checked
 and Compilation rules retain operand-aware truth, and unsupported numeric/text
 operands preserve saved membership. Four city mappings are corrected; a
@@ -136,12 +152,16 @@ preserved; required signatures and complete CDB/SQLite artifact sets use normal
 iPodDB preparation and a verified, recoverable Storage Transaction. See ADR-0173
 for qualification, conflicting artifacts, and hardware-validation limits.
 
-The Metadata Editor supports artwork images at explicit Artwork Display Times.
+The Metadata Editor assigns artwork through named Chapters and shows thumbnails
+alongside their titles and start times. Existing unmatched Artwork Display Times
+remain accessible; changing Chapter metadata never silently moves or deletes images.
+Applied artwork edits preview in the Player before a Library save, including
+untouched retained images within an edited sequence.
 Drafts retain references to untouched images; preparation writes ordered time
 groups and preserves later images during ordinary cover replacement. Explicit
 timelines also supply configured chapter representations and count each saved
 image time once. Playback behavior remains device- and firmware-dependent. See
-ADR-0138, ADR-0139, and the
+ADR-0138, ADR-0139, ADR-0204, and the
 [timing investigation](docs/research/ithmb/artwork-timing-experiments.md).
 
 Sync distinguishes unavailable Host covers from deliberate removal and preserves
@@ -843,6 +863,10 @@ For Audiobooks, a book action replaces the visualizer action and opens a compact
 Chapter index beneath the Player. Selecting a chapter seeks to its start without
 changing the playing or paused state. The index highlights the current chapter and
 shows a read-only empty state when the Audiobook has no chapter metadata.
+Visible Chapter rows show their exact artwork image when available. During Host
+playback and seeking, the Player selects the latest reached ordinary Artwork
+Display Time, excluding the special retained sentinel. This preview policy does
+not claim to reproduce firmware refresh timing. See ADR-0204.
 
 The Library setting **Double click shortcut** applies immediately to Track tables,
 Album cards, and collection grids and lists and persists across restarts. **Add to

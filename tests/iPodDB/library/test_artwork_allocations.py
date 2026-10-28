@@ -8,7 +8,14 @@ from tests.iPodDB.library.test_artwork_format_repair import (
     retained_source,
     with_wrong_sizes,
 )
-from tests.iPodDB.library.test_write_artwork import COVER
+from tests.iPodDB.library.test_write_artwork import (
+    BLUE,
+    COVER,
+    TARGET,
+    resources_for,
+    with_shared_artwork,
+)
+from tests.iPodDB.library.test_writing import library
 
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
 from iPodDB.ArtworkDB.shared.chunk_defs.mhii import MhiiHeader
@@ -16,7 +23,14 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhod_payloads.container_mhod import (
     MhodContainerPayload,
 )
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
-from iPodDB.library import IPodLibrary, content_sha256, read_content
+from iPodDB.library import (
+    IPodLibrary,
+    TimedArtworkAsset,
+    TimedArtworkFrame,
+    WriteResources,
+    content_sha256,
+    read_content,
+)
 
 
 @pytest.mark.parametrize("height", [0, 55, 56])
@@ -113,4 +127,94 @@ def test_padded_allocation_must_fit_captured_file() -> None:
     assert result.prepared is None
     assert any(
         "outside its captured thumbnail file" in i.message for i in result.issues
+    )
+
+
+@pytest.mark.parametrize("counter", [0, 1, 99, 100])
+def test_artwork_allocation_repairs_a_stale_counter_without_reusing_an_image(
+    counter: int,
+) -> None:
+    healthy, file = with_shared_artwork()
+    original = healthy.serialize()
+    assert original.artwork is not None
+    document = parse_ArtworkDB(original.artwork)
+    document = replace(document, header=replace(document.header, next_mhii_id=counter))
+    source = IPodLibrary(original.itunes).with_artwork(write_ArtworkDB(document))
+    retained = source.serialize()
+    first, second = source.snapshot.tracks
+    desired = replace(source.snapshot, tracks=(replace(first, artwork_id=-2), second))
+
+    result = source.prepare(
+        source.analyze(source.begin_draft(desired), TARGET), resources_for(file)
+    )
+
+    assert result.prepared is not None and result.prepared.artwork is not None, (
+        result.issues
+    )
+    output = parse_ArtworkDB(result.prepared.artwork)
+    identities = [
+        selection.chunk.header.image_id for selection in output.find_chunks(MhiiHeader)
+    ]
+    assert identities == [100, 101]
+    assert output.header.next_mhii_id == 102
+    assert result.prepared.snapshot.tracks[1].artwork_id == 100
+    assert source.serialize() == retained
+
+
+@pytest.mark.parametrize("counter", [0xFFFFFFFE, 0xFFFFFFFF])
+def test_artwork_identity_counter_never_wraps_to_zero(counter: int) -> None:
+    healthy, file = with_shared_artwork()
+    original = healthy.serialize()
+    assert original.artwork is not None
+    document = parse_ArtworkDB(original.artwork)
+    document = replace(document, header=replace(document.header, next_mhii_id=counter))
+    source = IPodLibrary(original.itunes).with_artwork(write_ArtworkDB(document))
+    retained = source.serialize()
+    first, second = source.snapshot.tracks
+    desired = replace(source.snapshot, tracks=(replace(first, artwork_id=-2), second))
+
+    result = source.prepare(
+        source.analyze(source.begin_draft(desired), TARGET), resources_for(file)
+    )
+
+    if counter == 0xFFFFFFFF:
+        assert result.prepared is None
+        assert any(
+            "identities are exhausted" in issue.message for issue in result.issues
+        )
+    else:
+        assert result.prepared is not None and result.prepared.artwork is not None, (
+            result.issues
+        )
+        assert result.prepared.snapshot.tracks[0].artwork_id == 0xFFFFFFFE
+        assert (
+            parse_ArtworkDB(result.prepared.artwork).header.next_mhii_id == 0xFFFFFFFF
+        )
+    assert source.serialize() == retained
+
+
+def test_thumbnail_count_includes_all_formats_before_pixel_encoding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = library()
+    first, second = source.snapshot.tracks
+    desired = replace(source.snapshot, tracks=(replace(first, artwork_id=-2), second))
+    # 32,768 source images fit MHIT's u16 count; two representations per image
+    # would wrap the firmware's separate u16 thumbnail count to zero.
+    asset = TimedArtworkAsset(
+        -2, tuple(TimedArtworkFrame(time, BLUE.pixels) for time in range(32768))
+    )
+    target = replace(TARGET, cover_formats=(COVER, replace(COVER, format_id=1060)))
+
+    def reject_encoding(*_args: object, **_kwargs: object) -> bytes:
+        pytest.fail("Thumbnail overflow must be rejected before encoding pixels")
+
+    monkeypatch.setattr("iPodDB.library._artwork_writing.encode_ithmb", reject_encoding)
+    result = source.prepare(
+        source.analyze(source.begin_draft(desired), target),
+        WriteResources(artwork=(asset,), file_inventory=()),
+    )
+    assert result.prepared is None
+    assert any(
+        "native thumbnail count limit" in issue.message for issue in result.issues
     )

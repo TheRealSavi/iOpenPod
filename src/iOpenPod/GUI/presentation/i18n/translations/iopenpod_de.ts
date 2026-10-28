@@ -86,7 +86,7 @@
     </message>
     <message>
         <source>Add Image…</source>
-        <translation>Bild hinzufügen…</translation>
+        <translation type="vanished">Bild hinzufügen…</translation>
     </message>
     <message>
         <source>Remove Entry</source>
@@ -121,12 +121,44 @@
         <translation>Das ausgewählte Bild auf dem Computer wird eingelesen und verarbeitet.</translation>
     </message>
     <message>
+        <source>Chapter artwork</source>
+        <translation>Kapitelcover</translation>
+    </message>
+    <message>
+        <source>Choose a Chapter to assign its artwork. Keep a cover image at the start. Changing Chapters does not move or delete existing artwork. Playback support varies by iPod and firmware. Changes apply to every selected Track.</source>
+        <translation>Wählen Sie ein Kapitel aus, um sein Cover zuzuweisen. Behalten Sie ein Cover am Anfang bei. Kapiteländerungen verschieben oder löschen keine vorhandenen Cover. Die Wiedergabeunterstützung hängt vom iPod und der Firmware ab. Änderungen gelten für alle ausgewählten Titel.</translation>
+    </message>
+    <message>
+        <source>The artwork sequence does not match every Chapter start. Existing images are retained; iPod playback may differ.</source>
+        <translation>Die Cover-Abfolge stimmt nicht mit allen Kapitelanfängen überein. Vorhandene Bilder bleiben erhalten; die Wiedergabe auf dem iPod kann abweichen.</translation>
+    </message>
+    <message>
+        <source>Cover</source>
+        <translation>Cover</translation>
+    </message>
+    <message>
+        <source>%1. %2</source>
+        <translation>%1. %2</translation>
+    </message>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
+    </message>
+    <message>
+        <source>Unassigned artwork — %1 seconds</source>
+        <translation>Nicht zugewiesenes Cover — %1 Sekunden</translation>
+    </message>
+    <message>
+        <source>Select a Chapter to view or edit its artwork.</source>
+        <translation>Wählen Sie ein Kapitel aus, um sein Cover anzuzeigen oder zu bearbeiten.</translation>
+    </message>
+    <message>
         <source>Each artwork entry needs a different display time.</source>
-        <translation>Jeder Bildeintrag benötigt eine andere Anzeigezeit.</translation>
+        <translation type="vanished">Jeder Bildeintrag benötigt eine andere Anzeigezeit.</translation>
     </message>
     <message>
         <source>Artwork entries</source>
-        <translation>Bildeinträge</translation>
+        <translation type="vanished">Bildeinträge</translation>
     </message>
     <message>
         <source>Preserved special entry</source>
@@ -134,11 +166,19 @@
     </message>
     <message>
         <source>From %1 seconds</source>
-        <translation>Ab %1 Sekunden</translation>
+        <translation type="vanished">Ab %1 Sekunden</translation>
     </message>
     <message>
         <source>Choose an image or consolidate an existing sequence for all selected Tracks.</source>
         <translation>Wählen Sie ein Bild aus oder übernehmen Sie eine vorhandene Bildfolge für alle ausgewählten Titel.</translation>
+    </message>
+    <message>
+        <source>Choose a cover image before assigning later Chapter artwork.</source>
+        <translation>Wählen Sie zuerst ein Cover am Anfang aus, bevor Sie späteren Kapiteln Cover zuweisen.</translation>
+    </message>
+    <message>
+        <source>This Chapter has no assigned artwork.</source>
+        <translation>Diesem Kapitel ist kein Cover zugewiesen.</translation>
     </message>
     <message>
         <source>Artwork preview unavailable</source>
@@ -150,7 +190,7 @@
     </message>
     <message>
         <source>Select an entry to view or edit its image and display time.</source>
-        <translation>Wählen Sie einen Eintrag aus, um sein Bild und seine Anzeigezeit anzuzeigen oder zu bearbeiten.</translation>
+        <translation type="vanished">Wählen Sie einen Eintrag aus, um sein Bild und seine Anzeigezeit anzuzeigen oder zu bearbeiten.</translation>
     </message>
     <message>
         <source>No artwork</source>
@@ -158,11 +198,11 @@
     </message>
     <message>
         <source>Display from (seconds)</source>
-        <translation>Anzeigen ab (Sekunden)</translation>
+        <translation type="vanished">Anzeigen ab (Sekunden)</translation>
     </message>
     <message>
         <source>Each image displays from its start time until the next image. Keep an image at zero seconds. Playback support varies by iPod and firmware. Changes apply to every selected Track.</source>
-        <translation>Jedes Bild wird ab seiner Startzeit bis zum nächsten Bild angezeigt. Behalten Sie ein Bild bei null Sekunden bei. Die Wiedergabeunterstützung hängt vom iPod und seiner Firmware ab. Änderungen gelten für alle ausgewählten Titel.</translation>
+        <translation type="vanished">Jedes Bild wird ab seiner Startzeit bis zum nächsten Bild angezeigt. Behalten Sie ein Bild bei null Sekunden bei. Die Wiedergabeunterstützung hängt vom iPod und seiner Firmware ab. Änderungen gelten für alle ausgewählten Titel.</translation>
     </message>
     <message>
         <source>Replace Image…</source>
@@ -821,6 +861,10 @@
         <translation>Titel</translation>
     </message>
     <message>
+        <source>Artwork</source>
+        <translation>Cover</translation>
+    </message>
+    <message>
         <source>Add chapter</source>
         <translation>Kapitel hinzufügen</translation>
     </message>
@@ -831,6 +875,10 @@
     <message>
         <source>Sort by time</source>
         <translation>Nach Zeit sortieren</translation>
+    </message>
+    <message>
+        <source>Choose artwork for this chapter</source>
+        <translation>Cover für dieses Kapitel auswählen</translation>
     </message>
     <message>
         <source>Each chapter needs a start time and title.</source>
@@ -2934,7 +2982,11 @@
     </message>
     <message>
         <source>View artwork, crop images, and choose when each image displays</source>
-        <translation>Bilder anzeigen und zuschneiden sowie ihre Anzeigezeiten festlegen</translation>
+        <translation type="vanished">Bilder anzeigen und zuschneiden sowie ihre Anzeigezeiten festlegen</translation>
+    </message>
+    <message>
+        <source>View artwork, crop images, and assign images to chapters</source>
+        <translation>Cover anzeigen, Bilder zuschneiden und Kapiteln zuweisen</translation>
     </message>
     <message>
         <source>Read-only values retained with the selected Track data</source>
@@ -9227,12 +9279,20 @@ Playlists: %3</translation>
         <translation>Datei {index} von {total} wird erfasst…</translation>
     </message>
     <message>
+        <source>Chapter data has no header enabling the native named index. Editable Chapter metadata is retained.</source>
+        <translation>Die Kapiteldaten haben keinen Header, der den nativen Index benannter Kapitel aktiviert. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
+    </message>
+    <message>
         <source>Chapter positions must be ordered and fit within the Track duration.</source>
         <translation>Kapitelpositionen müssen geordnet sein und innerhalb der Titeldauer liegen.</translation>
     </message>
     <message>
         <source>Chaptered media does not match its verified destination.</source>
         <translation>Die Mediendatei mit Kapiteln stimmt nicht mit dem geprüften Ziel überein.</translation>
+    </message>
+    <message>
+        <source>Chapters without a name atom are omitted from the native named index. Editable Chapter metadata is retained.</source>
+        <translation>Kapitel ohne name-Atom werden aus dem nativen Index benannter Kapitel ausgelassen. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
     </message>
     <message>
         <source>Checking Host Track details.</source>
@@ -9787,12 +9847,20 @@ Playlists: %3</translation>
         <translation>Mehrere Wiedergabelisten-Datenbestände haben denselben Typ. Ihre Zuordnung ist nicht eindeutig.</translation>
     </message>
     <message>
+        <source>Multiple retained Chapter headers are not interpreted by this native index view. Editable Chapter metadata is retained.</source>
+        <translation>Mehrere vorhandene Kapitelheader werden von dieser Ansicht des nativen Index nicht interpretiert. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
+    </message>
+    <message>
         <source>Music selection</source>
         <translation>Musikauswahl</translation>
     </message>
     <message>
         <source>Music sync</source>
         <translation>Musiksynchronisierung</translation>
+    </message>
+    <message>
+        <source>Named Chapter positions and artwork image times differ. Classic image refresh compares their indices; playback needs device validation. No positions were changed.</source>
+        <translation>Die Positionen benannter Kapitel und die Zeitpunkte der Coverbilder unterscheiden sich. Der Classic vergleicht beim Aktualisieren des Bildes ihre Indizes; die Wiedergabe muss am Gerät geprüft werden. Es wurden keine Positionen geändert.</translation>
     </message>
     <message>
         <source>New Photo Albums must follow the retained Photo Albums.</source>
@@ -11491,12 +11559,32 @@ Playlists: %3</translation>
         <translation>Entfernen Sie die Genius-Wiedergabeliste, die durch das Löschen von Titeln leer geworden ist.</translation>
     </message>
     <message>
+        <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>
+        <translation>Der native Kapitelindex behält die gespeicherte Reihenfolge bei und stoppt an der ersten zukünftigen Startposition. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>The native Chapter index selects the last eligible duplicate start. Editable Chapter metadata is retained.</source>
+        <translation>Der native Kapitelindex wählt den letzten passenden Eintrag mit gleicher Startposition aus. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>The referenced artwork item is absent. A reverse-owner image is not substituted; the raw artwork reference is preserved.</source>
+        <translation>Der referenzierte Cover-Eintrag fehlt. Ein Bild mit Rückverweis auf den Titel wird nicht ersatzweise verwendet; der rohe Cover-Verweis bleibt erhalten.</translation>
+    </message>
+    <message>
         <source>The replacement Genius seed differs from the reviewed Playlist.</source>
         <translation>Der neue Genius-Starttitel stimmt nicht mit der geprüften Wiedergabeliste überein.</translation>
     </message>
     <message>
+        <source>The retained Chapter header disables the native named index. Editable Chapter metadata is retained.</source>
+        <translation>Der vorhandene Kapitelheader deaktiviert den nativen Index benannter Kapitel. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
+    </message>
+    <message>
         <source>The selected native Playlist is not a Genius Playlist.</source>
         <translation>Die ausgewählte native Wiedergabeliste ist keine Genius-Wiedergabeliste.</translation>
+    </message>
+    <message>
+        <source>Timed artwork has no complete, recognized named Chapter header. The retained Chapter data is unchanged; Classic chapter artwork may be unavailable.</source>
+        <translation>Für die zeitgesteuerten Coverbilder fehlt ein vollständiger, erkannter Header für benannte Kapitel. Die vorhandenen Kapiteldaten bleiben unverändert; Kapitelbilder sind auf dem Classic möglicherweise nicht verfügbar.</translation>
     </message>
     <message>
         <source>Tracks</source>

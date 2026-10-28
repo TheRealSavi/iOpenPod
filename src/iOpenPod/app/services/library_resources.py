@@ -327,6 +327,7 @@ def capture(
     temporary_files: ExitStack,
     source_artwork_display_times: Callable[[int], tuple[int, ...]],
     source_artwork_paths: Callable[[ArtworkGroupReference], tuple[str, ...]],
+    source_artwork_file_paths: Callable[[], tuple[str, ...]] | None = None,
     additional_preconditions: tuple[FilePrecondition, ...] = (),
     volume_presentation_enabled: bool = True,
     consumed_sidecars: tuple[PlaybackSidecar, ...] = (),
@@ -559,23 +560,36 @@ def capture(
     }
     desired_tracks = {track.track_id: track for track in request.snapshot.tracks}
     assets_by_id = {asset.artwork_id: asset for asset in request.artwork}
-    retains_timed_source = any(
-        isinstance(
+    retained_cover_groups = tuple(
+        ArtworkGroupReference(track.artwork_id, time)
+        for track in request.source.library.tracks
+        if track.artwork_id
+        and track.track_id in desired_tracks
+        and isinstance(
             assets_by_id.get(desired_tracks[track.track_id].artwork_id), ArtworkAsset
         )
-        and any(time != 0 for time in source_artwork_display_times(track.artwork_id))
-        for track in request.source.library.tracks
-        if track.artwork_id and track.track_id in desired_tracks
+        for time in source_artwork_display_times(track.artwork_id)
+        if time != 0
+    )
+    retains_timed_source = bool(retained_cover_groups)
+    referenced_groups = (
+        *retained_cover_groups,
+        *(
+            frame.source
+            for asset in request.artwork
+            if not isinstance(asset, ArtworkAsset)
+            for frame in asset.frames
+            if isinstance(frame.source, ArtworkGroupReference)
+        ),
     )
     # Filling a missing layout may decode a retained group from a full shard.
-    # Capture only that group's known source paths, not unrelated full shards.
+    # Ordinary cover edits implicitly retain nonzero groups, including sentinels.
+    # Capture only required groups, not unrelated full shards.
     retained_source_paths = {
-        path.casefold()
-        for asset in request.artwork
-        if not isinstance(asset, ArtworkAsset)
-        for frame in asset.frames
-        if isinstance(frame.source, ArtworkGroupReference)
-        for path in source_artwork_paths(frame.source)
+        str(path).casefold(): path
+        for reference in referenced_groups
+        for name in source_artwork_paths(reference)
+        for path in (_artwork_source_path(name),)
     }
     regenerate_all = (
         bool(replacement_assets)
@@ -591,7 +605,33 @@ def capture(
     reserved_artwork: list[str] = []
     artwork_issues: list[WriteIssue] = []
     if plan.requires_artwork_inventory and session.exists(_ARTWORK):
-        for entry in session.list_directory(_ARTWORK):
+        entries = list(session.list_directory(_ARTWORK))
+        listed_paths = {str(entry.path).casefold() for entry in entries}
+        known_source_paths = {
+            str(path).casefold(): path
+            for name in (
+                source_artwork_file_paths()
+                if source_artwork_file_paths is not None
+                else ()
+            )
+            if not DevicePath(name).name.startswith("._")
+            for path in (_artwork_source_path(name),)
+        }
+        known_source_paths.update(retained_source_paths)
+        # Retained metadata also needs fingerprint-only evidence, including paths
+        # for unchanged Tracks and typed records absent from display projection.
+        # Storage validates every component, rejects links and revalidates the
+        # session; unrelated subdirectories are never recursively scanned.
+        for key, path in known_source_paths.items():
+            if key not in listed_paths:
+                checkpoint()
+                if key not in retained_source_paths and not session.exists(path):
+                    # Missing metadata-only resources stay unavailable evidence;
+                    # iPodDB decides whether an explicit regeneration can replace
+                    # their last owner. A required frame must still fail below.
+                    continue
+                entries.append(session.stat(path))
+        for entry in entries:
             if entry.path.name.startswith(
                 "._"
             ) or not entry.path.name.casefold().endswith(".ithmb"):
@@ -606,12 +646,12 @@ def capture(
                 )
             # Capture appendable prefixes and any full source shards needed to
             # decode a retained frame for a missing representation.
-            if (
-                request.artwork
-                and entry.path.name.casefold().startswith(cover_prefixes)
-                and (
-                    entry.size < plan.target.max_artwork_file_bytes
-                    or str(entry.path).casefold() in retained_source_paths
+            if request.artwork and (
+                str(entry.path).casefold() in retained_source_paths
+                or (
+                    entry.path.parent == _ARTWORK
+                    and entry.path.name.casefold().startswith(cover_prefixes)
+                    and entry.size < plan.target.max_artwork_file_bytes
                 )
             ):
                 try:
@@ -855,6 +895,21 @@ def capture(
         tuple(discarded_track_media),
         genius_playlists=genius_playlists,
     )
+
+
+def _artwork_source_path(value: str) -> DevicePath:
+    """Validate an explicit retained source without deriving its format from its name."""
+    path = DevicePath(value)
+    if (
+        not path.is_relative_to(_ARTWORK)
+        or len(path.parts) <= len(_ARTWORK.parts)
+        or path.name.startswith("._")
+        or not path.name.casefold().endswith(".ithmb")
+    ):
+        raise ValueError(
+            f"Retained artwork source is outside the supported namespace: {path}"
+        )
+    return path
 
 
 def _removed_photo_path(representation: PhotoRepresentation) -> DevicePath:

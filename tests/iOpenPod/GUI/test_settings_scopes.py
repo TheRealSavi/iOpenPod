@@ -272,6 +272,10 @@ def test_device_save_preserves_scroll_and_keyboard_focus(
         if interaction == "keyboard":
             QTest.keyClick(control, Qt.Key.Key_End)
         else:
+            # mouseClick sends an event without moving the system cursor. Move
+            # onto the control first so a preceding case cannot leave the cursor
+            # at this popup's choice and suppress the next mouseMove event.
+            QTest.mouseMove(control, control.rect().center())
             QTest.mouseClick(control, Qt.MouseButton.LeftButton)
             APPLICATION.processEvents()
             view = control.view()

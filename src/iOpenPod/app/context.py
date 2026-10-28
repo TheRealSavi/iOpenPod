@@ -85,9 +85,15 @@ class AppContext:
     )
 
     def __post_init__(self) -> None:
+        self.library_workspace.changed.connect(self._workspace_artwork_changed)
         self.library_workspace.tracksChanged.connect(self._workspace_tracks_changed)
+        self._workspace_artwork_changed()
+
+    def _workspace_artwork_changed(self) -> None:
+        self.artwork_controller.set_draft_assets(self.library_workspace.artwork_assets)
 
     def _workspace_tracks_changed(self, _tracks: object) -> None:
+        self._workspace_artwork_changed()
         self.track_model.replace_tracks(self.library_workspace.tracks)
 
     @classmethod

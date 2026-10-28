@@ -2,6 +2,8 @@
 
 from dataclasses import replace
 
+import pytest
+
 from iPodDB.ArtworkDB.builder.build_ArtworkDB import (
     new_artwork_chunk,
     new_ArtworkDB,
@@ -140,4 +142,60 @@ def test_one_invalid_format_does_not_hide_other_covers_or_destroy_its_record() -
     assert surviving is not None
     assert len(surviving.locations) == 1
     assert index.item_for_db_track_id(2) is surviving
+    assert write_ArtworkDB(document) == source
+
+
+@pytest.mark.parametrize(
+    ("pixel_bytes", "allocation_bytes", "lengths"),
+    [(0, 32, ()), (8, 32, (8,)), (8, 0, (8,))],
+)
+def test_pixel_read_uses_only_primary_size_and_preserves_allocation(
+    pixel_bytes: int, allocation_bytes: int, lengths: tuple[int, ...]
+) -> None:
+    location = new_artwork_chunk(
+        MHNI_DEFINITION,
+        MhniHeader(
+            format_id=1061,
+            image_size=pixel_bytes,
+            image_size_2=allocation_bytes,
+        ),
+    )
+    item = new_artwork_chunk(
+        MHII_DEFINITION,
+        MhiiHeader(image_id=100),
+        children=(new_container_mhod(ArtworkMhodType.THUMBNAIL_IMAGE, location),),
+    )
+    source = write_ArtworkDB(
+        new_ArtworkDB(next_mhii_id=101, unk_mhfd_0x10=6, image_items=(item,))
+    )
+    document = parse_ArtworkDB(source)
+
+    assert (
+        tuple(
+            loc.byte_length for loc in build_artwork_index(document).items[0].locations
+        )
+        == lengths
+    )
+    assert write_ArtworkDB(document) == source
+
+
+def test_full_resolution_container_is_retained_but_not_a_thumbnail_or_time() -> None:
+    location = new_artwork_chunk(
+        MHNI_DEFINITION,
+        MhniHeader(format_id=1061, image_size=6160, image_time_key=15000),
+    )
+    image = new_artwork_chunk(
+        MHII_DEFINITION,
+        MhiiHeader(image_id=100),
+        children=(new_container_mhod(ArtworkMhodType.FULL_RES_IMAGE, location),),
+    )
+    source = write_ArtworkDB(
+        new_ArtworkDB(next_mhii_id=101, unk_mhfd_0x10=6, image_items=(image,))
+    )
+    document = parse_ArtworkDB(source)
+    item = build_artwork_index(document).item_for_image_id(100)
+
+    assert item is not None
+    assert item.locations == ()
+    assert item.display_times == ()
     assert write_ArtworkDB(document) == source

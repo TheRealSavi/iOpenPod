@@ -44,6 +44,7 @@ from iPodDB.library.models import (
     TrackChapter,
     TrackMetadata,
 )
+from iPodDB.library.native_chapters import NativeChapterIndex, interpret_native_chapters
 from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import ChunkSelection, DatabaseDocument
 
@@ -96,7 +97,7 @@ def _project_track(
     selection: ChunkSelection[MhbdHeader, MhitHeader],
     device_timezone: TimeConversion,
 ) -> Track:
-    text, chapters = _project_track_children(selection)
+    text, chapters, native_chapters = _project_track_children(selection)
     header = selection.chunk.header
     return Track(
         track_id=header.track_id,
@@ -125,7 +126,7 @@ def _project_track(
             device_timezone,
             selection.chunk.generic_header.header_length,
         ),
-        ipod=_project_ipod_details(header, text, device_timezone),
+        ipod=_project_ipod_details(header, text, device_timezone, native_chapters),
     )
 
 
@@ -133,10 +134,12 @@ def _project_ipod_details(
     header: MhitHeader,
     text: _TrackTextMetadata,
     device_timezone: TimeConversion,
+    native_chapters: NativeChapterIndex | None,
 ) -> IPodTrackDetails:
     """Retain source diagnostics separately from common metadata."""
 
     return IPodTrackDetails(
+        native_chapters=native_chapters,
         db_track_id=header.db_track_id,
         media_type_code=header.media_type,
         unknown_media_type_bits=unknown_media_bits(header.media_type),
@@ -257,9 +260,10 @@ def _project_metadata(
 
 def _project_track_children(
     selection: ChunkSelection[MhbdHeader, MhitHeader],
-) -> tuple[_TrackTextMetadata, tuple[TrackChapter, ...]]:
+) -> tuple[_TrackTextMetadata, tuple[TrackChapter, ...], NativeChapterIndex | None]:
     values: dict[MhodType, str] = {}
     chapters: tuple[TrackChapter, ...] = ()
+    native_chapters = None
     for metadata in selection.find_chunks(MhodHeader):
         try:
             mhod_type = MhodType(metadata.chunk.header.mhod_type)
@@ -271,6 +275,7 @@ def _project_track_children(
         elif mhod_type is MhodType.CHAPTER_DATA and isinstance(
             payload, MhodChapterDataPayload
         ):
+            native_chapters = interpret_native_chapters(payload)
             chapters = tuple(
                 TrackChapter(chapter.name, chapter.start_pos_ms)
                 for chapter in payload.chapters
@@ -313,6 +318,7 @@ def _project_track_children(
             purchaser_name=values.get(MhodType.PURCHASER_NAME, ""),
         ),
         chapters,
+        native_chapters,
     )
 
 
@@ -323,11 +329,14 @@ def _project_timestamp(
 
 
 def _resolved_artwork_id(track: Track, artwork_index: ArtworkIndex) -> int:
-    # Explicit sparse links take precedence over stale reverse owners, as in
-    # libgpod. Resolve from the source header, never a previous projection.
+    # Classic 2.0.1 selects direct-ID lookup whenever the stored ID is nonzero,
+    # even if missing. Reverse-owner lookup is only the zero-ID route.
+    # Resolve from the source header, never a previous projection.
     direct_id = track.ipod.artwork_id_ref if track.ipod is not None else 0
-    if direct_id and artwork_index.item_for_image_id(direct_id) is not None:
-        return direct_id
+    if direct_id:
+        return (
+            direct_id if artwork_index.item_for_image_id(direct_id) is not None else 0
+        )
     item = artwork_index.item_for_db_track_id(
         track.ipod.db_track_id if track.ipod is not None else 0
     )

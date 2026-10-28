@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.artwork_seed import stable_artwork_seed
 from iOpenPod.app.models.library_drag import TrackSelectionMimeData, dropped_tracks
+from iOpenPod.app.playback.artwork import artwork_time_at, playback_artwork_times
 from iOpenPod.app.playback.chapters import chapter_at, playback_chapters
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
@@ -322,6 +323,7 @@ class PlayerBar(QFrame):
         self._active_surface_height = LAYOUT.player_surface_height
         self._theme_manager = theme_manager
         self._artwork_provider = artwork_provider
+        self._artwork_display_times: tuple[int, ...] = ()
         self._workspace = workspace
         self._drag_start: QPoint | None = None
         self.setAcceptDrops(workspace is not None)
@@ -466,7 +468,9 @@ class PlayerBar(QFrame):
             LAYOUT.control_height_compact,
             LAYOUT.control_height_compact,
         )
-        self._chapter_popup = ChapterIndexPopup(self._track_action)
+        self._chapter_popup = ChapterIndexPopup(
+            self._track_action, artwork_provider=artwork_provider
+        )
         self._chapter_popup.chapterSelected.connect(self._seek_to_chapter)
         self._chapter_popup.dismissed.connect(self._chapter_popup_dismissed)
         self._rating = QLabel(self._now_playing)
@@ -607,6 +611,7 @@ class PlayerBar(QFrame):
         self._height_animation.setObjectName("playerHeightAnimation")
         self._height_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self._height_animation.finished.connect(self._height_animation_finished)
+        artwork_provider.cleared.connect(self._refresh_artwork_times)
         self.set_track(None)
         self.retranslate_ui()
 
@@ -643,7 +648,17 @@ class PlayerBar(QFrame):
 
         self._set_rating_hover(None)
         self._chapter_popup.dismiss()
+        changed_track = (
+            self._track is None
+            or track is None
+            or (self._track.track_id != track.track_id)
+        )
         self._track = track
+        self._artwork_display_times = playback_artwork_times(
+            self._artwork_provider.display_times(track.artwork_id)
+            if track is not None
+            else ()
+        )
         self._chapters = playback_chapters(track)
         self._position.set_chapters(self._chapters)
         self._refresh_transport_copy()
@@ -680,7 +695,25 @@ class PlayerBar(QFrame):
         self._refresh_title()
         self._duration.setText(_format_duration(track.length_ms))
         self._artwork.set_seed(stable_artwork_seed(track.album_key))
-        self._artwork.set_artwork_id(track.artwork_id)
+        self._refresh_artwork(0 if changed_track else self._position.value())
+
+    def _refresh_artwork_times(self) -> None:
+        track = self._track
+        self._artwork_display_times = playback_artwork_times(
+            self._artwork_provider.display_times(track.artwork_id)
+            if track is not None
+            else ()
+        )
+        self._refresh_artwork(self._position.value())
+
+    def _refresh_artwork(self, position_ms: int) -> None:
+        display_time = artwork_time_at(self._artwork_display_times, position_ms)
+        self._artwork.set_artwork_id(
+            self._track.artwork_id
+            if self._track is not None and display_time is not None
+            else 0,
+            display_time_ms=display_time,
+        )
 
     def set_playing(self, playing: bool) -> None:
         if playing != self._playing:
@@ -728,6 +761,7 @@ class PlayerBar(QFrame):
         self._position.setValue(bounded)
         self._elapsed.setText(_format_duration(bounded))
         self._refresh_title()
+        self._refresh_artwork(bounded)
         if self._chapter_popup.isVisible():
             self._chapter_popup.update_position(bounded)
 
@@ -741,7 +775,11 @@ class PlayerBar(QFrame):
             self._chapter_popup.toggle()
             self._track_action.setChecked(self._chapter_popup.is_open)
         else:
-            self._chapter_popup.show_index(self._chapters, self._position.value())
+            self._chapter_popup.show_index(
+                self._chapters,
+                self._position.value(),
+                artwork_id=self._track.artwork_id,
+            )
             self._track_action.setChecked(True)
 
     def _chapter_popup_dismissed(self) -> None:
@@ -1077,6 +1115,7 @@ class PlayerBar(QFrame):
         if self._position.isSliderDown():
             self._elapsed.setText(_format_duration(position_ms))
             self._refresh_title()
+            self._refresh_artwork(position_ms)
 
     def _mute_toggled(self, muted: bool) -> None:
         self._refresh_mute_copy()

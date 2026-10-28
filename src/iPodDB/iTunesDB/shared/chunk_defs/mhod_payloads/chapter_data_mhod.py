@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import IntFlag
 from typing import NamedTuple
 
 from iPodDB.shared.chunk import BinaryStruct, MhodPayload
@@ -57,6 +58,13 @@ class MhodChapterDataNameHeader(BinaryStruct):
     string_length: int = cf(0x14, "be_u16")
 
 
+class ChapterDataFlags(IntFlag):
+    """Classic 120GB 2.0.1 `hedr` flags; other bits remain retained."""
+
+    HAS_NAMED_CHAPTERS = 0x1
+    HAS_CHAPTER_ARTWORK = 0x2
+
+
 @dataclass(frozen=True, slots=True)
 class MhodChapterDataHedrHeader(BinaryStruct):
     """Final `hedr` atom normally terminating the `sean` children."""
@@ -68,6 +76,19 @@ class MhodChapterDataHedrHeader(BinaryStruct):
     unk_0x10: int = cf(0x10, "be_u32")
     unk_0x14: int = cf(0x14, "be_u32")
     unk_0x18: int = cf(0x18, "be_u32")
+
+    @property
+    def flags(self) -> ChapterDataFlags:
+        """Expose known masks without discarding unknown bits or renaming storage."""
+        return ChapterDataFlags(self.unk_0x18)
+
+    @property
+    def named_chapters_enabled(self) -> bool:
+        return bool(self.flags & ChapterDataFlags.HAS_NAMED_CHAPTERS)
+
+    @property
+    def chapter_artwork_enabled(self) -> bool:
+        return bool(self.flags & ChapterDataFlags.HAS_CHAPTER_ARTWORK)
 
 
 @dataclass(frozen=True, slots=True)
