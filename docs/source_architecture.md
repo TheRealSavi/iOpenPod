@@ -2221,6 +2221,20 @@ current chapter title to the Track title, including during scrubbing. Hovering a
 marker shows its title and full timestamp with milliseconds; marker geometry and
 hit testing share the styled slider's handle endpoints and layout direction.
 
+For Tracks classified as Audiobooks, the Player action above the rating uses the
+existing book glyph and opens a screen-bounded chapter index instead of Synesthesia.
+The popup lists the same reachable chapters, highlights the current chapter, and
+routes selection through the ordinary Player seek intent. It owns no transport or
+Library mutation. Selection, Escape, an outside click, or a current-Track change
+dismisses it; a chapterless Audiobook shows an empty state. Other media keep the
+Synesthesia action.
+The chapter index and statuses popup share one clipped panel animation: a 280 ms
+OutBack entrance with 0.8 overshoot and a 190 ms InCubic exit. The chapter index
+reveals downward from the Player, reversing direction when screen space requires
+opening above it. Interrupted transitions reverse from the current panel position;
+Hosts that disable widget animation show or hide the panel immediately. Replacing
+the current Track dismisses its chapter index immediately.
+
 `LyricsController` observes the current Track without controlling playback. It
 publishes known semantic lyrics immediately and honors explicit Library Draft
 edits. When the Lyrics tab is visible, a single worker

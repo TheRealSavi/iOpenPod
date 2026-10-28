@@ -846,6 +846,27 @@
     </message>
 </context>
 <context>
+    <name>ChapterIndexPopup</name>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
+    </message>
+    <message>
+        <source>{number}. {title}
+{timestamp}</source>
+        <translation>{number}. {title}
+{timestamp}</translation>
+    </message>
+    <message>
+        <source>Chapters</source>
+        <translation>Kapitel</translation>
+    </message>
+    <message>
+        <source>No chapters available</source>
+        <translation>Keine Kapitel verfügbar</translation>
+    </message>
+</context>
+<context>
     <name>CheckableComboBox</name>
     <message>
         <source>None</source>
@@ -4075,6 +4096,10 @@
     <message>
         <source>Pause</source>
         <translation>Pause</translation>
+    </message>
+    <message>
+        <source>Show Chapters</source>
+        <translation>Kapitel anzeigen</translation>
     </message>
     <message>
         <source>Untitled Chapter</source>

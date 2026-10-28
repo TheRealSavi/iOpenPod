@@ -1,22 +1,17 @@
 """Compact status-bar control and a live, keyboard-accessible status popup."""
 
 from PySide6.QtCore import (
-    QEasingCurve,
     QEvent,
     QPoint,
-    QPropertyAnimation,
     QRect,
     QSize,
     Qt,
 )
 from PySide6.QtGui import (
-    QCloseEvent,
-    QMouseEvent,
     QPainter,
     QPaintEvent,
     QPalette,
     QPen,
-    QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -26,7 +21,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -34,13 +28,16 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.core.status import ApplicationStatus, StatusMessage
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.widgets.animated_popup import (
+    POPUP_OVERSHOOT_INSET,
+    AnimatedPopup,
+    PopupDirection,
+)
 from iOpenPod.GUI.widgets.status_controls import StatusControls
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
 
 # Leave room for the entrance curve's small overshoot above the final panel.
-_POPUP_TOP_INSET = LAYOUT.space_md
-_POPUP_ENTER_MS = 280
-_POPUP_EXIT_MS = 190
+_POPUP_TOP_INSET = POPUP_OVERSHOOT_INSET
 
 
 class _StatusSurface(QFrame):
@@ -61,123 +58,13 @@ class _StatusSurface(QFrame):
         )
 
 
-class _StatusPopup(QFrame):
+class _StatusPopup(AnimatedPopup):
     """Clip the panel's full-height travel inside a stationary popup window."""
 
-    def __init__(self, trigger: QWidget, flags: Qt.WindowType) -> None:
-        super().__init__(trigger, flags)
-        self._pressed_trigger = False
-        self._target_open = False
-        self._finalizing_close = False
-        self.surface = _StatusSurface(self)
+    def __init__(self, trigger: QWidget) -> None:
+        super().__init__(trigger, _StatusSurface(), direction=PopupDirection.UP)
         self.surface.setObjectName("activeStatusesSurface")
-        self._animation = QPropertyAnimation(self.surface, b"pos", self)
-        self._animation.setObjectName("activeStatusesAnimation")
-        self._animation.finished.connect(self._animation_finished)
-
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        super().resizeEvent(event)
-        self.surface.resize(
-            event.size().width(), event.size().height() - _POPUP_TOP_INSET
-        )
-
-    def open_at(self, host_pos: QPoint) -> None:
-        """Reveal the full panel from below the popup's clipped lower edge."""
-
-        self._animation.stop()
-        self._target_open = True
-        self.move(host_pos)
-        if not self.isVisible():
-            start = QPoint(0, self.height())
-            rest = QPoint(0, _POPUP_TOP_INSET)
-            self.surface.move(start if self._animations_enabled() else rest)
-            self.show()
-        curve = QEasingCurve(QEasingCurve.Type.OutBack)
-        curve.setOvershoot(0.8)
-        self._animate_to(QPoint(0, _POPUP_TOP_INSET), _POPUP_ENTER_MS, curve)
-
-    def toggle(self) -> None:
-        if self._target_open:
-            self.close()
-        else:
-            self.open_at(self.pos())
-
-    def _animations_enabled(self) -> bool:
-        return bool(
-            self.style().styleHint(QStyle.StyleHint.SH_Widget_Animate, None, self)
-        )
-
-    def _animate_to(
-        self, target: QPoint, duration_ms: int, curve: QEasingCurve
-    ) -> None:
-        current = self.surface.pos()
-        if current == target or not self._animations_enabled():
-            self.surface.move(target)
-            self._animation_finished()
-            return
-        duration = max(
-            1,
-            min(
-                duration_ms,
-                round(
-                    duration_ms * abs(target.y() - current.y()) / self.surface.height()
-                ),
-            ),
-        )
-        self._animation.setDuration(duration)
-        self._animation.setEasingCurve(curve)
-        self._animation.setStartValue(current)
-        self._animation.setEndValue(target)
-        self._animation.start()
-
-    def closeEvent(self, event: QCloseEvent) -> None:
-        if self._finalizing_close or not self.isVisible():
-            super().closeEvent(event)
-            return
-        event.ignore()
-        if not self._target_open:
-            return
-        self._target_open = False
-        self._animation.stop()
-        self._animate_to(
-            QPoint(0, self.height()),
-            _POPUP_EXIT_MS,
-            QEasingCurve(QEasingCurve.Type.InCubic),
-        )
-
-    def _animation_finished(self) -> None:
-        if self._target_open:
-            self.surface.move(0, _POPUP_TOP_INSET)
-            return
-        self._finalizing_close = True
-        self.close()
-        self._finalizing_close = False
-        self.surface.move(0, _POPUP_TOP_INSET)
-
-    def _over_trigger(self, event: QMouseEvent) -> bool:
-        trigger = self.parentWidget()
-        return trigger is not None and trigger.rect().contains(
-            trigger.mapFromGlobal(event.globalPosition().toPoint())
-        )
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        self._pressed_trigger = False
-        if event.button() == Qt.MouseButton.LeftButton and self._over_trigger(event):
-            # Keep the popup's mouse grab until release so the click cannot
-            # close the popup and then activate the underlying trigger.
-            self._pressed_trigger = True
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self._pressed_trigger and event.button() == Qt.MouseButton.LeftButton:
-            self._pressed_trigger = False
-            if self._over_trigger(event):
-                self.toggle()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
+        self.animation.setObjectName("activeStatusesAnimation")
 
 
 class _StatusRow(QWidget):
@@ -243,9 +130,7 @@ class StatusListButton(IconButton):
         self.setObjectName("activeStatusesButton")
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self._popup = _StatusPopup(
-            self, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint
-        )
+        self._popup = _StatusPopup(self)
         self._popup.setObjectName("activeStatusesPopup")
         self._popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         # Clicking the trigger again closes the popup instead of reopening it.

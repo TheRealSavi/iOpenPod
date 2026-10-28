@@ -34,8 +34,9 @@ output and transport. Synesthesia may observe the current Playback Entry, positi
 playing state, and explicit seeks. It may not pause, resume, stop, seek, restart, or
 decode audio for playback, and it does not create another media player.
 
-The Player exposes one Synesthesia action above the current Track's rating. The
-action has no sidebar counterpart. Invoking it opens the internal Synesthesia page
+The Player exposes one Synesthesia action above the current Track's rating for
+non-Audiobook Tracks. Audiobooks use that position for a chapter index action. The
+Synesthesia action has no sidebar counterpart. Invoking it opens the internal Synesthesia page
 and starts a fresh Musical Analysis Job for the current Playback Entry. While the
 page remains active, a successor Playback Entry starts a replacement Job; metadata
 reconciliation within the same entry does not. Leaving the page cancels and

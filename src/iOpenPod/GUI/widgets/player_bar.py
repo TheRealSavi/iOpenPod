@@ -59,8 +59,9 @@ from iOpenPod.GUI.presentation.track_drag_preview import (
     render_single_track_drag_preview,
 )
 from iOpenPod.GUI.widgets.artwork_view import ArtworkView
+from iOpenPod.GUI.widgets.chapter_index import ChapterIndexPopup
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
-from iPodDB.library import Track, TrackChapter
+from iPodDB.library import MediaKind, Track, TrackChapter
 
 _MUTE_FADE_DURATION_MS = 180
 _POSITION_FRAME_MS = 16
@@ -454,17 +455,20 @@ class PlayerBar(QFrame):
         now_layout.addWidget(self._artwork)
         now_layout.addLayout(text, 1)
 
-        self._visualizer = IconButton(
+        self._track_action = IconButton(
             "synesthesia",
             self.tr("Open visualizer for current Track"),
             self._now_playing,
             kind=IconButtonKind.QUIET,
         )
-        self._visualizer.setObjectName("playerVisualizer")
-        self._visualizer.setFixedSize(
+        self._track_action.setObjectName("playerVisualizer")
+        self._track_action.setFixedSize(
             LAYOUT.control_height_compact,
             LAYOUT.control_height_compact,
         )
+        self._chapter_popup = ChapterIndexPopup(self._track_action)
+        self._chapter_popup.chapterSelected.connect(self._seek_to_chapter)
+        self._chapter_popup.dismissed.connect(self._chapter_popup_dismissed)
         self._rating = QLabel(self._now_playing)
         self._rating.setObjectName("playerRating")
         self._rating.setAlignment(
@@ -486,7 +490,7 @@ class PlayerBar(QFrame):
         visualizer_layout.setContentsMargins(0, 0, 0, 0)
         visualizer_layout.setSpacing(LAYOUT.space_3xs)
         visualizer_layout.addWidget(
-            self._visualizer,
+            self._track_action,
             0,
             Qt.AlignmentFlag.AlignHCenter,
         )
@@ -584,7 +588,7 @@ class PlayerBar(QFrame):
         self._next.clicked.connect(self.nextRequested.emit)
         self._mute.toggled.connect(self._mute_toggled)
         self._queue.toggled.connect(self._queue_toggled)
-        self._visualizer.clicked.connect(self.visualizerRequested.emit)
+        self._track_action.clicked.connect(self._activate_track_action)
         self._position.sliderPressed.connect(self._position_timer.stop)
         self._position.sliderReleased.connect(self._seek_released)
         self._position.valueChanged.connect(self._scrub_position_changed)
@@ -638,6 +642,7 @@ class PlayerBar(QFrame):
         """Update the surface for the controller's current Track."""
 
         self._set_rating_hover(None)
+        self._chapter_popup.dismiss()
         self._track = track
         self._chapters = playback_chapters(track)
         self._position.set_chapters(self._chapters)
@@ -647,7 +652,8 @@ class PlayerBar(QFrame):
         self._play.setEnabled(enabled)
         self._next.setEnabled(enabled)
         self._position.setEnabled(enabled)
-        self._visualizer.setEnabled(enabled)
+        self._track_action.setEnabled(enabled)
+        self._refresh_track_action()
         if track is None:
             self._rating.setText("")
             self._refresh_rating_editability()
@@ -722,6 +728,45 @@ class PlayerBar(QFrame):
         self._position.setValue(bounded)
         self._elapsed.setText(_format_duration(bounded))
         self._refresh_title()
+        if self._chapter_popup.isVisible():
+            self._chapter_popup.update_position(bounded)
+
+    def _activate_track_action(self) -> None:
+        if self._track is None:
+            return
+        if self._track.media_kind is not MediaKind.AUDIOBOOK:
+            self.visualizerRequested.emit()
+            return
+        if self._chapter_popup.isVisible():
+            self._chapter_popup.toggle()
+            self._track_action.setChecked(self._chapter_popup.is_open)
+        else:
+            self._chapter_popup.show_index(self._chapters, self._position.value())
+            self._track_action.setChecked(True)
+
+    def _chapter_popup_dismissed(self) -> None:
+        self._track_action.setChecked(False)
+
+    def _seek_to_chapter(self, position_ms: int) -> None:
+        self.set_position(position_ms)
+        self.seekRequested.emit(position_ms)
+
+    def _refresh_track_action(self) -> None:
+        audiobook = (
+            self._track is not None and self._track.media_kind is MediaKind.AUDIOBOOK
+        )
+        self._track_action.set_glyph("book" if audiobook else "synesthesia")
+        self._track_action.setObjectName(
+            "playerChapters" if audiobook else "playerVisualizer"
+        )
+        self._track_action.setCheckable(audiobook)
+        name = (
+            self.tr("Show Chapters")
+            if audiobook
+            else self.tr("Open visualizer for current Track")
+        )
+        self._track_action.setAccessibleName(name)
+        self._track_action.setToolTip(name)
 
     def _refresh_title(self) -> None:
         track = self._track
@@ -832,9 +877,7 @@ class PlayerBar(QFrame):
         self._refresh_mute_copy()
         self._refresh_queue_copy()
         self._clear_queue.setText(self.tr("Clear Queue"))
-        visualizer_name = self.tr("Open visualizer for current Track")
-        self._visualizer.setAccessibleName(visualizer_name)
-        self._visualizer.setToolTip(visualizer_name)
+        self._refresh_track_action()
         self.set_playing(self._playing)
         self._volume.setAccessibleName(self.tr("Volume"))
         self._position.setAccessibleName(self.tr("Playback position"))
@@ -1144,7 +1187,7 @@ class PlayerBar(QFrame):
     def _refresh_active_height(self) -> None:
         required_surface_height = (
             (2 * LAYOUT.space_2xs)
-            + self._visualizer.height()
+            + self._track_action.height()
             + LAYOUT.space_3xs
             + self._rating.sizeHint().height()
         )

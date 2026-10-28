@@ -61,6 +61,8 @@ class LayoutTokens:
     player_volume_minimum_width: int = 64
     player_volume_width: int = 112
     player_transition_ms: int = 220
+    chapter_popup_width: int = 320
+    chapter_popup_maximum_height: int = 360
     playback_pane_width: int = 360
     playback_row_height: int = 64
     playback_row_artwork_size: int = 44

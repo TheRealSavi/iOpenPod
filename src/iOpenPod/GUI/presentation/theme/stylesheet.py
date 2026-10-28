@@ -2447,39 +2447,50 @@ QStatusBar::item {{
     border: none;
 }}
 
-QLabel#activeStatusesHeading {{
+QLabel#activeStatusesHeading,
+QLabel#playerChaptersHeading {{
     color: {tokens.text_secondary};
     font-weight: 600;
 }}
 
-QLabel#activeStatusesEmpty {{
+QLabel#activeStatusesEmpty,
+QLabel#playerChaptersEmpty {{
     color: {tokens.text_secondary};
 }}
 
-QListWidget#activeStatusesList {{
+QListWidget#activeStatusesList,
+QListWidget#playerChapterList {{
     color: {tokens.text};
     background-color: transparent;
     border: none;
     outline: none;
 }}
 
-QListWidget#activeStatusesList::item {{
+QListWidget#activeStatusesList::item,
+QListWidget#playerChapterList::item {{
     padding: {LAYOUT.space_sm}px {LAYOUT.space_xs}px;
     margin: {LAYOUT.space_3xs}px 0;
     border: 1px solid transparent;
     border-radius: {LAYOUT.radius_control}px;
 }}
 
-QListWidget#activeStatusesList::item:hover {{
+QListWidget#activeStatusesList::item:hover,
+QListWidget#playerChapterList::item:hover {{
     background-color: {tokens.surface_hover};
 }}
 
-QListWidget#activeStatusesList::item:selected {{
+QListWidget#playerChapterList::item {{
+    padding: {LAYOUT.space_2xs}px {LAYOUT.space_xs}px;
+}}
+
+QListWidget#activeStatusesList::item:selected,
+QListWidget#playerChapterList::item:selected {{
     color: {tokens.text};
     background-color: {tokens.surface_selected};
 }}
 
-QListWidget#activeStatusesList::item:focus {{
+QListWidget#activeStatusesList::item:focus,
+QListWidget#playerChapterList::item:focus {{
     border: 1px solid {tokens.focus};
 }}
 
