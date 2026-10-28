@@ -1460,16 +1460,17 @@ Its cancellable background inspection uses Storage's pinned metadata reads witho
 whole-file captures. Selected stream facts and indices travel with the reviewed
 Sync Plan and are checked against the captured source during preparation. Explicit
 choices request media preparation when different from the committed choice,
-without changing removal authority. The chooser supports one audio and
-one motion-video stream, optional silence for video, and supported separate subtitle
-and caption tracks. Common text subtitles can convert to dimensioned iPod text;
+without changing removal authority. The chooser supports one motion-video stream,
+primary audio and optional alternate audio for video, optional silence, and
+supported separate subtitle and caption tracks. Audio-only selection retains one
+audio stream. Common text subtitles can convert to dimensioned iPod text;
 mixed text/caption output retains `tx3g` and `c608` sample entries. Durable Host
 preferences survive comparison resets. Library Sync Helper v7 records the applied
 choice digest after commit; older helpers remain readable. Metadata-only updates
 retain that digest. Matching audio suggests a video candidate for explicit Review;
 established Host paths retain their association. Changed video or selected-stream
 source facts require preparation even with equal bounded audio fingerprints. See
-ADR-0157, ADR-0158, and [Choose streams for Sync](media-streams.md).
+ADR-0157, ADR-0158, ADR-0205, and [Choose streams for Sync](media-streams.md).
 
 Text subtitle preparation lives in `app/media/subtitles/`. Pure per-format
 converters recover words from demuxed packets; shared timing combines overlapping

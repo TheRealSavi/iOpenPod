@@ -47,11 +47,11 @@ def _track(
     )
 
 
-@pytest.mark.parametrize("version", [0, 1])
-def test_converted_subtitle_occupies_bottom_fifteen_percent(version: int) -> None:
-    video = _track(b"vide", 640, 360, version=version)
-    subtitle = _track(b"sbtl", 640, 360, version=version)
-    untouched = _track(b"sbtl", 640, 54, version=version)
+@pytest.mark.parametrize("video_version", [0, 1])
+def test_converted_subtitle_occupies_bottom_fifteen_percent(video_version: int) -> None:
+    video = _track(b"vide", 640, 360, version=video_version)
+    subtitle = _track(b"sbtl", 640, 360)
+    untouched = _track(b"sbtl", 640, 54, version=1)
     media = _atom(b"mdat", b"video and subtitle samples remain byte exact")
     before = _atom(b"moov", video + subtitle + untouched) + media
     stream = io.BytesIO(before)
@@ -63,7 +63,7 @@ def test_converted_subtitle_occupies_bottom_fifteen_percent(version: int) -> Non
     after = stream.getvalue()
     selected_start = 8 + len(video)
     tkhd_payload = selected_start + 16
-    matrix_offset = tkhd_payload + (40 if version == 0 else 52)
+    matrix_offset = tkhd_payload + 40
     assert struct.unpack_from(">9i", after, matrix_offset) == (
         65536,
         0,
@@ -135,8 +135,8 @@ def test_extended_atom_sizes_skip_samples_even_when_movie_header_is_last() -> No
     media = _atom(b"mdat", b"untouched samples" * 10_000, extended=True)
     movie = _atom(
         b"moov",
-        _track(b"vide", 320, 240, extended=True)
-        + _track(b"sbtl", 320, 240, version=1, extended=True),
+        _track(b"vide", 320, 240, version=1, extended=True)
+        + _track(b"sbtl", 320, 240, extended=True),
         extended=True,
     )
     before = media + movie
@@ -220,4 +220,20 @@ def test_no_selected_conversions_leaves_native_tracks_uninspected() -> None:
     configure_layout(stream, ())
     verify_layout(stream, ())
 
+    assert stream.getvalue() == before
+
+
+def test_version_one_subtitle_header_rejects_before_any_layout_write() -> None:
+    before = _atom(
+        b"moov",
+        _track(b"vide", 640, 360)
+        + _track(b"sbtl", 640, 360)
+        + _track(b"sbtl", 640, 360, version=1),
+    )
+    stream = io.BytesIO(before)
+
+    with pytest.raises(MediaInspectionError) as caught:
+        configure_layout(stream, (1, 2))
+
+    assert caught.value.code == "media.subtitle_incompatible"
     assert stream.getvalue() == before

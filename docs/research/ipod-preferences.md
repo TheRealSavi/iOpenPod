@@ -69,6 +69,47 @@ also change the timezone offset without selecting a layout, and its
 [decoder acknowledges incorrect results](https://github.com/raleighlittles/iTunesDB-Parser/blob/main/parser/src/preferences.rs#L15).
 That implementation does not override libgpod's model-specific timezone evidence.
 
+## Qualified Classic Alternate Audio
+
+The completed firmware-lab report `notes/itunesdb/video-alternate-audio.md`
+establishes the global Alternate Audio preference in Classic 120GB RetailOS 2.0.1.
+See the [shared video firmware evidence](video-playback-firmware.md) for the
+cross-feature evidence boundary.
+Its source is `inputs/prepared-2.0.1/osos.bin`, 10,513,984 bytes, SHA-256
+`220913cb8569af0538a7e828f1aaa08d9313bf9a5c2b0a7a7e6e2dc0bee5f16e`.
+Addresses below are runtime virtual addresses; names are analyst interpretations.
+
+| Evidence | Established behavior |
+| --- | --- |
+| Named dispatch `081ed904`, wrapper `081c8a68`, property branch `0814efa4..0814efe8` | `HandleAlternateAudioSettingsChanged` toggles property `prID/0x60f2` using payload `0x60bf` |
+| Getter `0802f8ec`, setter `08045558` | Retain/read/write the raw byte at Preferences context `+0xb89`; changes mark context `+0xb90` dirty |
+| Loader `08042020`, initializer `0809c504`, writer `0804d2b0` | Serialized payload starts at context `+4`, spans `0xb8c` bytes, and has version `0x3d`; the byte is file `+0xb85` |
+| Toggle branch `0814efa4..0814efe8` | Known states are `0 = Off` and `1 = On`; other raw values normalize to zero only when toggled |
+| Live setter `08232f10`, getter `08232ed0`, observer `0814fdc0` | Media settings byte `+0x64` notifies event `0x50012`; the observer synchronizes `value == 1` back to persistent state |
+
+The fresh zeroed payload leaves Alternate Audio Off. Raw getters do not normalize
+values `2..255`, so iPodDB preserves them rather than converting nonzero to On.
+The pure codec exposes `Classic201Preferences.alternate_audio` only within the
+existing explicit `CLASSIC_120GB_2_0_1` profile. The Application Layer keeps the
+existing exact model, unconflicted RetailOS release, extent and version gates.
+Other models, releases and generic city layouts leave the byte opaque.
+Explicit candidate-byte edits accept only 0/1; city, DST and clock-bias protections
+remain unchanged. Settings displays the captured value without a physical writer.
+
+The movie reader `0819e194..0819e218` selects an exact requested-language match,
+including a disabled track, otherwise the first enabled track, otherwise none.
+Its signed requested-language value `-1` cannot match unsigned language `0xffff`.
+The writer connecting that requested language to the global Boolean is unresolved.
+Alternate Audio must therefore not be interpreted as a stream index, language ID,
+second audio track, commentary, or descriptive audio, and it does not change the
+Host's Media Stream Selection policy.
+
+The firmware-lab audit covers the input hash, literal words, ARM instructions,
+named action, all 256 toggle inputs and seven selection cases. Repository tests
+use authored bytes for all 256 retained values, known edits, unknown preservation,
+unchanged unrelated bytes, profile qualification and read-only display. Neither
+set of tests executes firmware or establishes physical playback/write acceptance.
+
 ## Documented binary iTunesPrefs fields
 
 The [historical iTunesPrefs table](https://github.com/raleighlittles/iTunesDB-Parser/blob/main/itunesdb_docs/README.md#L16864)

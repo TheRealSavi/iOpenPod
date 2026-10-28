@@ -10,6 +10,7 @@ from threading import Event
 import pytest
 from PySide6.QtCore import Qt, QTimer, QTranslator
 from PySide6.QtTest import QSignalSpy, QTest
+from PySide6.QtWidgets import QLabel
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_media_stream_selection import (
     multiple_streams as multiple_streams,
@@ -76,8 +77,15 @@ def test_dialog_applies_nondefault_choices_and_can_restore_automatic(
         wait_for(dialog.automatic.isEnabled)
         assert dialog.video.count() == 2
         assert dialog.audio.count() == 3
+        assert dialog.alternate_audio.count() == 2
         assert dialog.subtitles.count() == dialog.captions.count() == 1
-        rows = (dialog.video, dialog.audio, dialog.subtitles, dialog.captions)
+        rows = (
+            dialog.video,
+            dialog.audio,
+            dialog.alternate_audio,
+            dialog.subtitles,
+            dialog.captions,
+        )
         for upper, lower in pairwise(rows):
             assert upper.geometry().bottom() < lower.geometry().top()
         assert dialog.subtitles.height() == dialog.subtitles.sizeHint().height()
@@ -90,12 +98,23 @@ def test_dialog_applies_nondefault_choices_and_can_restore_automatic(
         dialog.automatic.setChecked(False)
         dialog.video.setCurrentIndex(1)
         dialog.audio.setCurrentIndex(2)
+        dialog.alternate_audio.setCurrentIndex(1)
+        caption_note = dialog.findChild(QLabel, "captionSubtitleNote")
+        audio_note = dialog.findChild(QLabel, "alternateAudioNote")
+        assert caption_note is not None and caption_note.isVisible()
+        assert "one mode at a time" in caption_note.text()
+        assert audio_note is not None and audio_note.isVisible()
+        assert "still needs playback verification" in audio_note.text()
+        assert "Primary audio" in tuple(
+            label.text() for label in dialog.findChildren(QLabel)
+        )
         dialog.captions.item(0).setCheckState(Qt.CheckState.Unchecked)
         dialog.accept()
         choice = dialog.selection
         assert choice is not None
         assert choice.video is not None and choice.video.index == 1
         assert choice.audio is not None and choice.audio.index == 3
+        assert choice.alternate_audio is not None and choice.alternate_audio.index == 2
         assert len(choice.subtitles) == 1 and choice.captions == ()
         assert dialog.result() == dialog.DialogCode.Accepted
     finally:
@@ -106,6 +125,7 @@ def test_dialog_applies_nondefault_choices_and_can_restore_automatic(
         wait_for(restored.automatic.isEnabled)
         assert restored.video.currentIndex() == 1
         assert restored.audio.currentIndex() == 2
+        assert restored.alternate_audio.currentData() == choice.alternate_audio
         restored.automatic.setChecked(True)
         restored.accept()
         assert restored.selection is None
@@ -152,6 +172,73 @@ def test_unsupported_subtitle_is_visible_but_cannot_be_selected(
         assert item.toolTip() == ""
         dialog.reject()
         assert dialog.selection is None
+    finally:
+        dialog.close()
+
+
+def test_primary_audio_changes_cannot_duplicate_the_alternate(
+    multiple_streams: Path, profile: DeviceProfile
+) -> None:
+    dialog = MediaStreamsDialog(source(multiple_streams), "Movie", profile, None)
+    try:
+        dialog.show()
+        wait_for(dialog.automatic.isEnabled)
+        dialog.automatic.setChecked(False)
+        dialog.alternate_audio.setCurrentIndex(1)
+        alternate = dialog.alternate_audio.currentData()
+        assert alternate is not None and alternate != dialog.audio.currentData()
+        dialog.audio.setCurrentIndex(2)
+        assert dialog.audio.currentData() == alternate
+        assert dialog.alternate_audio.currentData() is None
+        assert alternate not in (
+            dialog.alternate_audio.itemData(index)
+            for index in range(dialog.alternate_audio.count())
+        )
+        dialog.alternate_audio.setCurrentIndex(1)
+        dialog.audio.setCurrentIndex(0)
+        assert dialog.audio.currentData() is None
+        assert dialog.alternate_audio.currentData() is None
+        assert not dialog.alternate_audio.isEnabled()
+        dialog.accept()
+        assert dialog.selection is not None and dialog.selection.audio_streams == ()
+    finally:
+        dialog.close()
+
+
+def test_audio_only_choices_keep_exactly_one_audio_stream(
+    multiple_streams: Path, profile: DeviceProfile
+) -> None:
+    metadata = MediaInspector().scan_metadata(
+        HostPath(multiple_streams), checkpoint=lambda: None
+    )
+    metadata = replace(metadata, streams=metadata.audio_streams)
+
+    class Inspector(MediaInspector):
+        def scan_metadata(
+            self, source: HostPath, *, checkpoint: Callable[[], None]
+        ) -> MediaScanMetadata:
+            checkpoint()
+            return metadata
+
+    dialog = MediaStreamsDialog(
+        source(multiple_streams), "Audio", profile, None, inspector=Inspector()
+    )
+    try:
+        dialog.show()
+        wait_for(dialog.automatic.isEnabled)
+        dialog.automatic.setChecked(False)
+        assert dialog.audio.count() == 2
+        assert all(
+            dialog.audio.itemData(i) is not None for i in range(dialog.audio.count())
+        )
+        assert not dialog.alternate_audio.isVisible()
+        caption_note = dialog.findChild(QLabel, "captionSubtitleNote")
+        assert caption_note is not None and not caption_note.isVisible()
+        dialog.audio.setCurrentIndex(1)
+        dialog.accept()
+        assert dialog.selection is not None
+        assert dialog.selection.audio_streams == (metadata.audio_streams[1],)
+        assert dialog.selection.alternate_audio is None
     finally:
         dialog.close()
 
@@ -227,6 +314,8 @@ def test_language_change_preserves_pending_stream_choices(
         wait_for(dialog.automatic.isEnabled)
         dialog.automatic.setChecked(False)
         dialog.audio.setCurrentIndex(2)
+        dialog.alternate_audio.setCurrentIndex(1)
+        alternate = dialog.alternate_audio.currentData()
         dialog.captions.item(0).setCheckState(Qt.CheckState.Unchecked)
         assert translator.load(str(catalog))
         APPLICATION.installTranslator(translator)
@@ -234,6 +323,7 @@ def test_language_change_preserves_pending_stream_choices(
         assert dialog.windowTitle() == "Streams auswählen"
         assert dialog.automatic.text() == "Streams automatisch auswählen"
         assert dialog.audio.currentIndex() == 2
+        assert dialog.alternate_audio.currentData() == alternate
         assert dialog.captions.item(0).checkState() is Qt.CheckState.Unchecked
     finally:
         APPLICATION.removeTranslator(translator)

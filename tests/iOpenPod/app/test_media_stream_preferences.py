@@ -30,6 +30,7 @@ from iOpenPod.app.media.stream_selection import MediaStreamSelection, is_caption
 from iOpenPod.app.media.stream_selection_codec import (
     selection_digest,
     selection_document,
+    selection_from_document,
 )
 from iOpenPod.app.media_stream_preferences import MediaStreamPreferences
 from iOpenPod.app.models.sync_selection import SyncSelection
@@ -118,14 +119,16 @@ def test_subtitle_compatibility_revision_preserves_other_receipts(
     ):
         document = selection_document(choice)
         assert document["version"] == 1 and "text_subtitle_layout" not in document
+        assert set(document) == {"version", "video", "audio", "subtitles", "captions"}
         previous = hashlib.sha256(
             json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
         assert selection_digest(choice) == previous
 
 
+@pytest.mark.parametrize("with_alternate", (False, True))
 def test_all_four_stream_kinds_round_trip_without_losing_facts(
-    tmp_path: Path, multiple_streams: Path
+    tmp_path: Path, multiple_streams: Path, with_alternate: bool
 ) -> None:
     metadata = MediaInspector().scan_metadata(
         HostPath(multiple_streams), checkpoint=lambda: None
@@ -136,6 +139,7 @@ def test_all_four_stream_kinds_round_trip_without_losing_facts(
         metadata.audio_streams[1],
         tuple(s for s in subtitles if not is_caption(s)),
         tuple(s for s in subtitles if is_caption(s)),
+        metadata.audio_streams[0] if with_alternate else None,
     )
     file = AtomicHostFile(tmp_path / "choices.json")
     MediaStreamPreferences(file).set(str(multiple_streams), choice)
@@ -148,6 +152,82 @@ def test_all_four_stream_kinds_round_trip_without_losing_facts(
         and restored.captions
     )
     assert selection_digest(restored) == selection_digest(choice)
+    assert selection_document(restored)["version"] == (2 if with_alternate else 1)
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    (
+        "unknown_version",
+        "boolean_version",
+        "float_version",
+        "v1_with_alternate",
+        "missing_alternate",
+        "null_alternate",
+        "wrong_kind",
+        "duplicate_audio",
+        "no_video",
+        "no_primary",
+        "extra_field",
+    ),
+)
+def test_saved_alternate_audio_rejects_invalid_versions_and_choices(
+    multiple_streams: Path, invalid: str
+) -> None:
+    metadata = MediaInspector().scan_metadata(
+        HostPath(multiple_streams), checkpoint=lambda: None
+    )
+    choice = MediaStreamSelection(
+        metadata.video_streams[0],
+        metadata.audio_streams[0],
+        alternate_audio=metadata.audio_streams[1],
+    )
+    # JSON reproduces the durable array representation for immutable stream facts.
+    document = json.loads(json.dumps(selection_document(choice)))
+    if invalid == "missing_alternate":
+        del document["alternate_audio"]
+    elif invalid == "null_alternate":
+        document["alternate_audio"] = None
+    elif invalid == "wrong_kind":
+        document["alternate_audio"] = document["video"]
+    elif invalid == "duplicate_audio":
+        document["alternate_audio"] = document["audio"]
+    elif invalid == "no_video":
+        document["video"] = None
+    elif invalid == "no_primary":
+        document["audio"] = None
+    elif invalid == "extra_field":
+        document["unexpected"] = None
+    else:
+        document["version"] = {
+            "unknown_version": 3,
+            "boolean_version": True,
+            "float_version": 2.0,
+            "v1_with_alternate": 1,
+        }[invalid]
+    with pytest.raises(ValueError):
+        selection_from_document(document)
+
+
+def test_adding_or_changing_alternate_audio_changes_the_receipt(
+    multiple_streams: Path,
+) -> None:
+    metadata = MediaInspector().scan_metadata(
+        HostPath(multiple_streams), checkpoint=lambda: None
+    )
+    primary, alternate = metadata.audio_streams
+    old = MediaStreamSelection(metadata.video_streams[0], primary)
+    chosen = replace(old, alternate_audio=alternate)
+    swapped = replace(chosen, audio=alternate, alternate_audio=primary)
+    assert (
+        len(
+            {selection_digest(old), selection_digest(chosen), selection_digest(swapped)}
+        )
+        == 3
+    )
+    assert selection_digest(replace(chosen, alternate_audio=None)) == selection_digest(
+        old
+    )
 
 
 def test_preferences_survive_restart_clear_and_missing_sources(

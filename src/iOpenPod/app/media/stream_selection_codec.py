@@ -14,13 +14,16 @@ from iOpenPod.app.media.subtitles import supports
 
 
 def selection_document(selection: MediaStreamSelection) -> dict[str, object]:
-    return {
-        "version": 1,
+    document: dict[str, object] = {
+        "version": 1 if selection.alternate_audio is None else 2,
         "video": _stream_document(selection.video),
         "audio": _stream_document(selection.audio),
         "subtitles": [_stream_document(s) for s in selection.subtitles],
         "captions": [_stream_document(s) for s in selection.captions],
     }
+    if selection.alternate_audio is not None:
+        document["alternate_audio"] = _stream_document(selection.alternate_audio)
+    return document
 
 
 def selection_digest(selection: MediaStreamSelection | None) -> str | None:
@@ -41,9 +44,15 @@ def selection_digest(selection: MediaStreamSelection | None) -> str | None:
 
 def selection_from_document(value: object) -> MediaStreamSelection:
     row = _object(value)
+    version = row.get("version")
+    expected = {"version", "video", "audio", "subtitles", "captions"}
+    if type(version) is int and version == 2:
+        expected.add("alternate_audio")
     if (
-        set(row) != {"version", "video", "audio", "subtitles", "captions"}
-        or row["version"] != 1
+        type(version) is not int
+        or version not in (1, 2)
+        or set(row) != expected
+        or (version == 2 and row["alternate_audio"] is None)
     ):
         raise ValueError("Unsupported stream selection format")
 
@@ -61,6 +70,7 @@ def selection_from_document(value: object) -> MediaStreamSelection:
         _stream_from_document(row["audio"]),
         streams("subtitles"),
         streams("captions"),
+        _stream_from_document(row["alternate_audio"]) if version == 2 else None,
     )
 
 

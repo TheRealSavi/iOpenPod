@@ -122,6 +122,13 @@ def _patches(
         if handlers[index] not in (b"sbtl", b"text", b"subt"):
             raise _invalid("a selected track is not a subtitle track.")
         track_header = headers[index]
+        if _read(stream, track_header.payload, 1, track_header.end)[0] == 1:
+            raise MediaInspectionError(
+                "media.subtitle_incompatible",
+                "The prepared subtitle uses a version-1 track header that the "
+                "native subtitle reader misinterprets. Prepare a version-0 "
+                "track header before configuring its display rectangle.",
+            )
         matrix_offset = _matrix_offset(stream, track_header)
         minf = _one(_children(stream, media[index]), b"minf")
         stbl = _one(_children(stream, minf), b"stbl")

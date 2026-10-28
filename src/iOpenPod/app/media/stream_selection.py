@@ -66,6 +66,7 @@ class MediaStreamSelection:
     audio: MediaStream | None
     subtitles: tuple[MediaStream, ...] = ()
     captions: tuple[MediaStream, ...] = ()
+    alternate_audio: MediaStream | None = None
 
     def __post_init__(self) -> None:
         if self.video is None and self.audio is None:
@@ -77,6 +78,11 @@ class MediaStreamSelection:
             raise ValueError("Select a motion-video stream")
         if self.audio is not None and self.audio.kind is not StreamKind.AUDIO:
             raise ValueError("Select an audio stream")
+        if self.alternate_audio is not None:
+            if self.video is None or self.audio is None:
+                raise ValueError("Alternate audio requires video and primary audio")
+            if self.alternate_audio.kind is not StreamKind.AUDIO:
+                raise ValueError("Select an alternate audio stream")
         if self.video is None and (self.subtitles or self.captions):
             raise ValueError("Subtitles and captions require video")
         for streams, captions in ((self.subtitles, False), (self.captions, True)):
@@ -91,10 +97,17 @@ class MediaStreamSelection:
             raise ValueError("A stream may only be selected once")
 
     @property
+    def audio_streams(self) -> tuple[MediaStream, ...]:
+        return (
+            *((self.audio,) if self.audio is not None else ()),
+            *((self.alternate_audio,) if self.alternate_audio is not None else ()),
+        )
+
+    @property
     def streams(self) -> tuple[MediaStream, ...]:
         return (
             *((self.video,) if self.video is not None else ()),
-            *((self.audio,) if self.audio is not None else ()),
+            *self.audio_streams,
             *self.subtitles,
             *self.captions,
         )

@@ -298,6 +298,73 @@ def test_selection_requires_playable_media_and_cannot_reclassify_streams(
         MediaStreamSelection(None, observed.video_streams[0])
 
 
+def test_alternate_audio_follows_primary_without_changing_existing_field_order(
+    multiple_streams: Path, profile: DeviceProfile
+) -> None:
+    observed = MediaInspector().scan_metadata(
+        HostPath(multiple_streams), checkpoint=lambda: None
+    )
+    video = observed.video_streams[0]
+    primary, alternate = observed.audio_streams
+    subtitles = tuple(
+        s
+        for s in observed.streams
+        if s.kind is StreamKind.SUBTITLE and not is_caption(s)
+    )
+    captions = tuple(s for s in observed.streams if is_caption(s))
+    selection = MediaStreamSelection(video, primary, subtitles, captions, alternate)
+    selection.validate(observed, profile)
+    assert selection.audio_streams == (primary, alternate)
+    assert selection.streams == (video, primary, alternate, *subtitles, *captions)
+    assert MediaStreamSelection(video, primary, subtitles, captions).audio_streams == (
+        primary,
+    )
+    assert MediaStreamSelection(video, None).audio_streams == ()
+
+
+@pytest.mark.parametrize(
+    "invalid", ("no_video", "no_primary", "wrong_kind", "duplicate")
+)
+def test_alternate_audio_requires_distinct_audio_and_video(
+    multiple_streams: Path, invalid: str
+) -> None:
+    observed = MediaInspector().scan_metadata(
+        HostPath(multiple_streams), checkpoint=lambda: None
+    )
+    video = observed.video_streams[0]
+    primary, alternate = observed.audio_streams
+    with pytest.raises(ValueError):
+        MediaStreamSelection(
+            None if invalid == "no_video" else video,
+            None if invalid == "no_primary" else primary,
+            alternate_audio=video
+            if invalid == "wrong_kind"
+            else primary
+            if invalid == "duplicate"
+            else alternate,
+        )
+
+
+@pytest.mark.parametrize("change", ("index", "language"))
+def test_alternate_audio_observations_cannot_silently_drift(
+    multiple_streams: Path, profile: DeviceProfile, change: str
+) -> None:
+    observed = MediaInspector().scan_metadata(
+        HostPath(multiple_streams), checkpoint=lambda: None
+    )
+    primary, alternate = observed.audio_streams
+    changed = (
+        replace(alternate, index=999)
+        if change == "index"
+        else replace(alternate, tags=())
+    )
+    choice = MediaStreamSelection(
+        observed.video_streams[0], primary, alternate_audio=changed
+    )
+    with pytest.raises(MediaInspectionError, match="selected streams changed"):
+        choice.validate(observed, profile)
+
+
 def test_duration_verification_follows_the_selected_video_edition(
     tmp_path: Path,
     video: Path,

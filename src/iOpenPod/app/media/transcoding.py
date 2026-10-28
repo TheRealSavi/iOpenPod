@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 import mutagen
 
 from iOpenPod.app.export_tagging import ExportMediaTagger
+from iOpenPod.app.media.captions import verify_captions
 from iOpenPod.app.media.chapters import imported_chapters
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.lyrics import embedded_lyrics
@@ -22,6 +23,11 @@ from iOpenPod.app.media.stream_selection import (
     SubtitleHandling,
     is_caption,
     subtitle_handling,
+)
+from iOpenPod.app.media.subtitles.compatibility import (
+    normalize_clocks,
+    verify_compatibility,
+    verify_geometry,
 )
 from iOpenPod.app.media.subtitles.layout import configure_layout, verify_layout
 from iOpenPod.app.media.subtitles.preparation import (
@@ -522,7 +528,7 @@ def compatible_video(observed: MediaInspection, profile: DeviceProfile) -> bool:
     if (
         not caps.supported
         or len(observed.video_streams) != 1
-        or len(observed.audio_streams) > 1
+        or len(observed.audio_streams) > 2
         or "mov" not in observed.containers
     ):
         return False
@@ -548,8 +554,7 @@ def compatible_video(observed: MediaInspection, profile: DeviceProfile) -> bool:
         or not 0 < video.bitrate_bps <= caps.max_bitrate_kbps * 1000
     ):
         return False
-    if observed.audio_streams:
-        audio = observed.audio_streams[0]
+    for audio in observed.audio_streams:
         if (
             audio.codec != "aac"
             or audio.codec_tag != "mp4a"
@@ -568,6 +573,38 @@ def compatible_video(observed: MediaInspection, profile: DeviceProfile) -> bool:
         or subtitle_handling(s, profile) is SubtitleHandling.COPY
         for s in observed.streams
     )
+
+
+def _scoped_audio_arguments(arguments: tuple[str, ...], index: int) -> tuple[str, ...]:
+    """Scope encoder option/value pairs so one audio track cannot alter another."""
+    result: list[str] = []
+    for option, value in zip(arguments[::2], arguments[1::2], strict=True):
+        suffix = f":{index}" if option.endswith(":a") else f":a:{index}"
+        result.extend((option + suffix, value))
+    return tuple(result)
+
+
+def _native_timed_indices(
+    observed: MediaInspection,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    return (
+        tuple(s.index for s in observed.streams if s.codec_tag == "tx3g"),
+        tuple(s.index for s in observed.streams if s.codec_tag == "c608"),
+    )
+
+
+def _prepare_native_headers(
+    stream: BinaryIO, subtitles: tuple[int, ...], captions: tuple[int, ...]
+) -> None:
+    for index in subtitles:
+        try:
+            verify_geometry(stream, (index,))
+        except MediaInspectionError as error:
+            if error.code != "media.subtitle_incompatible":
+                raise
+            configure_layout(stream, (index,))
+    normalize_clocks(stream, subtitles, captions)
+    verify_compatibility(stream, subtitles, captions)
 
 
 def _select_preferred_stream(streams: tuple[MediaStream, ...]) -> MediaStream:
@@ -606,9 +643,16 @@ def _resolve_video(
         if audio_streams
         else None
     )
+    selected_audio = (
+        stream_selection.audio_streams
+        if stream_selection is not None
+        else (audio,)
+        if audio is not None
+        else ()
+    )
     selected_streams = (
         video,
-        *((audio,) if audio is not None else ()),
+        *selected_audio,
         *(
             (*stream_selection.subtitles, *stream_selection.captions)
             if stream_selection is not None
@@ -719,20 +763,34 @@ def _resolve_video(
             "-vf",
             ",".join(filters),
         ]
-    if audio is not None:
+    for audio_index, selected_audio_stream in enumerate(selected_audio):
+        audio = selected_audio_stream
+        audio_rate = min(
+            audio.sample_rate_hz or 44100,
+            44100
+            if settings.normalize_44100
+            else profile.capabilities.audio.max_sample_rate_hz,
+        )
+        audio_channels = min(
+            audio.channels or 2, profile.capabilities.audio.max_channels
+        )
+        if spoken and settings.spoken_word_mono:
+            audio_channels = 1
+        scoped_audio = len(selected_audio) > 1
+        codec_option = f"-c:a:{audio_index}" if scoped_audio else "-c:a"
         args += ["-map", f"0:{audio.index}"]
         mapped_streams.append(audio)
         if (
             audio.codec == "aac"
             and audio.profile == "LC"
-            and audio.channels == channels
-            and audio.sample_rate_hz == rate
+            and audio.channels == audio_channels
+            and audio.sample_rate_hz == audio_rate
             and audio.bitrate_bps is not None
             and 0 < audio.bitrate_bps <= caps.max_audio_bitrate_kbps * 1000
             and not settings.retranscode_lossy
             and not spoken
         ):
-            args += ["-c:a", "copy"]
+            args += [codec_option, "copy"]
         else:
             encoder = settings.lossy_encoder
             if encoder in (LossyEncoder.AUTO, LossyEncoder.MP3):
@@ -761,7 +819,18 @@ def _resolve_video(
                 ),
             )
             _, audio_args = _lossy_arguments(adjusted, available, spoken)
-            args += [*audio_args, "-ar", str(rate), "-ac", str(channels)]
+            stream_args = (
+                *audio_args,
+                "-ar",
+                str(audio_rate),
+                "-ac",
+                str(audio_channels),
+            )
+            args.extend(
+                _scoped_audio_arguments(stream_args, audio_index)
+                if scoped_audio
+                else stream_args
+            )
     subtitle_index = 0
     subtitle_conversions: list[SubtitleConversion] = []
     original_video = _select_preferred_stream(observed.video_streams)
@@ -812,7 +881,10 @@ def _resolve_video(
         if stream_selection is not None:
             disposition = (
                 "default"
-                if stream.kind in (StreamKind.VIDEO, StreamKind.AUDIO)
+                if stream.kind is StreamKind.VIDEO
+                or (selected_audio and stream == selected_audio[0])
+                else "0"
+                if stream.kind is StreamKind.AUDIO
                 else "+".join(stream.dispositions) or "0"
             )
             args += [f"-disposition:{output_index}", disposition]
@@ -864,6 +936,12 @@ class MediaTranscoder:
         inspection = MediaInspector(find_tool=self._find_tool).inspect(
             prepared.source, checkpoint=checkpoint
         )
+        native_indices = _native_timed_indices(inspection)
+        if prepared.encoding is VideoEncoding.MP4 and any(native_indices):
+            with LocalHostFile.observe(prepared.source).open_read(
+                checkpoint=checkpoint
+            ) as stream:
+                verify_compatibility(stream, *native_indices)
         return replace(prepared, inspection=inspection)
 
     def preflight(self, *, checkpoint: Callable[[], None]) -> MediaTools:
@@ -958,8 +1036,93 @@ class MediaTranscoder:
                 source=captured.snapshot,
                 fingerprint=workspace.snapshot_fingerprint(captured),
             )
+            native_indices = _native_timed_indices(
+                replace(
+                    selected,
+                    streams=tuple(
+                        s
+                        for s in selected.streams
+                        if subtitle_handling(s, profile)
+                        is not SubtitleHandling.UNSUPPORTED
+                    ),
+                )
+            )
+            if plan.encoding is VideoEncoding.MP4 and any(native_indices):
+                try:
+                    with LocalHostFile.observe(captured.snapshot).open_read(
+                        checkpoint=checkpoint
+                    ) as stream:
+                        verify_compatibility(stream, *native_indices)
+                except MediaInspectionError as error:
+                    if error.code != "media.subtitle_incompatible":
+                        raise
+                    # Normalize the private input before any muxer sees it:
+                    # FFmpeg can clamp a long subtitle delta at a high clock.
+                    # Source geometry can be repaired separately by remuxing.
+                    output = workspace.transform_stream(
+                        captured.snapshot,
+                        lambda stream: normalize_clocks(
+                            stream, *native_indices, require_geometry=False
+                        ),
+                    )
+                    result = inspector.inspect_captured(output, checkpoint=checkpoint)
+                    if not plan.requires_transcode:
+                        try:
+                            output = workspace.transform_stream(
+                                captured.snapshot,
+                                lambda stream: _prepare_native_headers(
+                                    stream, *native_indices
+                                ),
+                            )
+                        except MediaInspectionError as geometry_error:
+                            if geometry_error.code != "media.subtitle_incompatible":
+                                raise
+                            repair_selection = MediaStreamSelection(
+                                _select_preferred_stream(observed.video_streams),
+                                _select_preferred_stream(observed.audio_streams)
+                                if observed.audio_streams
+                                else None,
+                                tuple(
+                                    s for s in observed.streams if s.codec_tag == "tx3g"
+                                ),
+                                tuple(
+                                    s for s in observed.streams if s.codec_tag == "c608"
+                                ),
+                            )
+                            plan = _resolve_video(
+                                observed,
+                                profile,
+                                settings,
+                                tools.encoders,
+                                spoken_word,
+                                repair_selection,
+                            )
+                        else:
+                            result = inspector.inspect_captured(
+                                output, checkpoint=checkpoint
+                            )
             output_path = captured.snapshot
             subtitle_warnings: tuple[str, ...] = ()
+            source_captions = tuple(
+                s
+                for s in selected.streams
+                if s.codec_tag == "c608"
+                and subtitle_handling(s, profile) is SubtitleHandling.COPY
+            )
+            caption_evidence = verify_captions(
+                source_captions,
+                observed,
+                captured.snapshot,
+                tools,
+                remux=plan.requires_transcode,
+                duration_seconds=_duration(selected) or 0,
+                checkpoint=checkpoint,
+            )
+            caption_warnings = tuple(
+                dict.fromkeys(
+                    warning for item in caption_evidence for warning in item.warnings
+                )
+            )
             if plan.requires_transcode:
                 conversion_message = "Converting media for this iPod"
                 report(MediaPreparationPhase.CONVERTING, conversion_message)
@@ -1106,8 +1269,7 @@ class MediaTranscoder:
                     )
                 if stream_selection is not None and (
                     len(result.video_streams) != int(stream_selection.video is not None)
-                    or len(result.audio_streams)
-                    != int(stream_selection.audio is not None)
+                    or len(result.audio_streams) != len(stream_selection.audio_streams)
                     or sum(s.kind is StreamKind.SUBTITLE for s in result.streams)
                     != len(stream_selection.subtitles) + len(stream_selection.captions)
                 ):
@@ -1144,6 +1306,14 @@ class MediaTranscoder:
                         "media.output_truncated",
                         "The prepared audio duration differs from its source. Check or replace the source file; this item was not written to the iPod.",
                     )
+            native_indices = _native_timed_indices(result)
+            if plan.encoding is VideoEncoding.MP4 and any(native_indices):
+                output = workspace.transform_stream(
+                    output_path,
+                    lambda stream: _prepare_native_headers(stream, *native_indices),
+                )
+                output_path = output.snapshot
+                result = inspector.inspect_captured(output, checkpoint=checkpoint)
             if rockbox_metadata:
                 report(
                     MediaPreparationPhase.METADATA,
@@ -1169,6 +1339,29 @@ class MediaTranscoder:
                         stream,
                         tuple(item.output_index for item in plan.subtitle_conversions),
                     )
+            if plan.encoding is VideoEncoding.MP4 and any(native_indices):
+                with LocalHostFile.observe(output_path).open_read(
+                    checkpoint=checkpoint
+                ) as stream:
+                    verify_compatibility(stream, *_native_timed_indices(result))
+            final_captions = verify_captions(
+                tuple(s for s in result.streams if s.codec_tag == "c608"),
+                result,
+                output_path,
+                tools,
+                remux=False,
+                duration_seconds=_duration(result) or 0,
+                checkpoint=checkpoint,
+            )
+            if tuple(
+                (item.packet_count, item.payload_sha256) for item in final_captions
+            ) != tuple(
+                (item.packet_count, item.payload_sha256) for item in caption_evidence
+            ):
+                raise MediaInspectionError(
+                    "media.caption_payload_changed",
+                    "The prepared video did not preserve its selected caption data. This item was not written to the iPod.",
+                )
             measure_sound_check = compute_sound_check and bool(result.audio_streams)
             verification_message = (
                 "Verifying prepared media and measuring Sound Check"
@@ -1187,7 +1380,12 @@ class MediaTranscoder:
                 "-sn",
             )
             if measure_sound_check:
-                verification += ("-af", "ebur128=framelog=verbose")
+                # One Track has one gain value. Measure primary audio only,
+                # while still decoding every retained audio stream below.
+                verification += (
+                    "-filter:a:0" if len(result.audio_streams) > 1 else "-af",
+                    "ebur128=framelog=verbose",
+                )
             verification_output = run_media_tool(
                 tools.ffmpeg,
                 (
@@ -1214,7 +1412,7 @@ class MediaTranscoder:
                 ),
             )
             gain: float | None = None
-            warnings = (*plan.warnings, *subtitle_warnings)
+            warnings = (*plan.warnings, *subtitle_warnings, *caption_warnings)
             if measure_sound_check:
                 measurements = re.findall(
                     rb"I:\s*(-?\d+(?:\.\d+)?)\s+LUFS", verification_output.stderr

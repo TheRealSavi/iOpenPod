@@ -14,6 +14,14 @@ then beyond it.
 
 ## Current stage
 
+Video stream choices can retain primary and alternate audio with their languages,
+default status and saved intent. Native subtitle preparation validates track
+headers and repairs unsafe clocks only through exact rescaling. Caption payloads
+are verified, including rejection of remuxes that would drop field-2 data. The
+qualified Classic Preferences view displays Alternate Audio without adding a
+physical settings writer. Device switching and rendering still require playback
+acceptance. See [ADR-0205](docs/adr/0205-adopt-native-video-playback-contracts.md).
+
 Artwork reads now use stored filenames and primary pixel lengths, preserve
 supported nested paths, and leave ambiguous reverse owners unresolved. Only
 thumbnail containers contribute artwork times; other containers remain retained.

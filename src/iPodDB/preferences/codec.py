@@ -131,13 +131,24 @@ def write_preferences(document: PreferencesDocument) -> bytes:
         getattr(document.settings, field.attribute_name)
         != getattr(original, field.attribute_name)
         for field in binary_fields(original)
-        if field.attribute_name != "language_code"
+        if field.attribute_name in ("timezone_code", "city_id")
     )
     if isinstance(document.settings, Classic201Preferences) and timezone_changed:
         raise iPodDBWriteError(
             "Classic 2.0.1 clock settings are observation-only.",
             code="preferences.read_only_clock",
             field="city_id",
+        )
+    if (
+        isinstance(document.settings, Classic201Preferences)
+        and isinstance(original, Classic201Preferences)
+        and document.settings.alternate_audio != original.alternate_audio
+        and document.settings.alternate_audio not in (0, 1)
+    ):
+        raise iPodDBWriteError(
+            "Alternate Audio edits require 0 (Off) or 1 (On).",
+            code="preferences.invalid_value",
+            field="alternate_audio",
         )
     zone = document.timezone
     if timezone_changed and (

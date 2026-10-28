@@ -104,18 +104,38 @@ class MediaStreamsDialog(QDialog):
         self.video.setObjectName("videoStream")
         self.audio = AppComboBox(self)
         self.audio.setObjectName("audioStream")
+        self.alternate_audio = AppComboBox(self)
+        self.alternate_audio.setObjectName("alternateAudioStream")
         self.subtitles = CheckableComboBox(self)
         self.subtitles.setObjectName("subtitleStreams")
         self.captions = CheckableComboBox(self)
         self.captions.setObjectName("captionStreams")
-        for combo in (self.video, self.audio, self.subtitles, self.captions):
+        for combo in (
+            self.video,
+            self.audio,
+            self.alternate_audio,
+            self.subtitles,
+            self.captions,
+        ):
             StreamOptionDelegate(combo)
         form.addRow(self.tr("Video"), self.video)
         form.addRow(self.tr("Audio"), self.audio)
+        form.addRow(self.tr("Alternate audio"), self.alternate_audio)
+        form.setRowVisible(self.alternate_audio, False)
         form.addRow(self.tr("Subtitles"), self.subtitles)
         form.addRow(self.tr("Captions"), self.captions)
         self._choices.setEnabled(False)
         layout.addWidget(self._choices)
+        self._caption_note = QLabel(self)
+        self._caption_note.setObjectName("captionSubtitleNote")
+        self._caption_note.setWordWrap(True)
+        self._caption_note.setVisible(False)
+        layout.addWidget(self._caption_note)
+        self._alternate_audio_note = QLabel(self)
+        self._alternate_audio_note.setObjectName("alternateAudioNote")
+        self._alternate_audio_note.setWordWrap(True)
+        self._alternate_audio_note.setVisible(False)
+        layout.addWidget(self._alternate_audio_note)
         layout.addStretch()
         note = QLabel(
             self.tr(
@@ -145,6 +165,7 @@ class MediaStreamsDialog(QDialog):
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
         self.automatic.toggled.connect(self._automatic_changed)
+        self.audio.currentIndexChanged.connect(self._primary_audio_changed)
         layout.addWidget(self._buttons)
         self._controller = MediaStreamController(self, inspector=inspector)
         self._controller.inspected.connect(self._loaded)
@@ -174,13 +195,29 @@ class MediaStreamsDialog(QDialog):
 
     def retranslate_ui(self) -> None:
         self.setWindowTitle(self.tr("Choose streams"))
+        self._caption_note.setText(
+            self.tr(
+                "Both subtitles and captions can be kept. iPod Classic displays one mode at a time."
+            )
+        )
+        self._alternate_audio_note.setText(
+            self.tr(
+                "Both tracks and their languages are preserved. How the iPod's Alternate Audio setting selects between them still needs playback verification."
+            )
+        )
         self.automatic.setText(self.tr("Use automatic stream selection"))
         self._buttons.button(QDialogButtonBox.StandardButton.Ok).setText(
             self.tr("Apply choices")
         )
         for widget, label in (
             (self.video, self.tr("Video")),
-            (self.audio, self.tr("Audio")),
+            (
+                self.audio,
+                self.tr("Primary audio")
+                if self._metadata is not None and self._metadata.video_streams
+                else self.tr("Audio"),
+            ),
+            (self.alternate_audio, self.tr("Alternate audio")),
             (self.subtitles, self.tr("Subtitles")),
             (self.captions, self.tr("Captions")),
         ):
@@ -192,7 +229,7 @@ class MediaStreamsDialog(QDialog):
                 "Choices are remembered for this Host file across scans and Syncs. Changed choices replace the iPod copy once. Text subtitle formatting may be simplified. Captions embedded inside video remain part of that video stream."
             )
         )
-        for combo in (self.video, self.audio):
+        for combo in (self.video, self.audio, self.alternate_audio):
             for index in range(combo.count()):
                 stream = combo.itemData(index)
                 combo.setItemText(
@@ -259,6 +296,9 @@ class MediaStreamsDialog(QDialog):
             else preferred_stream(value.audio_streams),
             allow_none=bool(value.video_streams),
         )
+        self._fill_alternate_audio(
+            self._initial.alternate_audio if self._initial else None
+        )
         for widget, captions in ((self.subtitles, False), (self.captions, True)):
             chosen = (
                 (self._initial.captions if captions else self._initial.subtitles)
@@ -287,10 +327,38 @@ class MediaStreamsDialog(QDialog):
                     widget, widget.count() - 1, self._stream_option(stream)
                 )
             widget.setEnabled(widget.count() > 0)
+        self._caption_note.setVisible(
+            self.subtitles.count() > 0 and self.captions.count() > 0
+        )
         self.automatic.setEnabled(True)
         self._automatic_changed(self.automatic.isChecked())
         self._buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
-        self._render_status()
+        self.retranslate_ui()
+
+    def _primary_audio_changed(self) -> None:
+        chosen = self.alternate_audio.currentData()
+        self._fill_alternate_audio(chosen if isinstance(chosen, MediaStream) else None)
+
+    def _fill_alternate_audio(self, chosen: MediaStream | None) -> None:
+        metadata = self._metadata
+        has_video = metadata is not None and bool(metadata.video_streams)
+        self._form.setRowVisible(self.alternate_audio, has_video)
+        self._alternate_audio_note.setVisible(
+            has_video and metadata is not None and len(metadata.audio_streams) > 1
+        )
+        primary = self.audio.currentData()
+        streams = (
+            tuple(stream for stream in metadata.audio_streams if stream != primary)
+            if metadata is not None and has_video and isinstance(primary, MediaStream)
+            else ()
+        )
+        self._fill_combo(
+            self.alternate_audio,
+            streams,
+            chosen if chosen in streams else None,
+            allow_none=True,
+        )
+        self.alternate_audio.setEnabled(bool(streams))
 
     def _fill_combo(
         self,
@@ -300,6 +368,7 @@ class MediaStreamsDialog(QDialog):
         *,
         allow_none: bool,
     ) -> None:
+        widget.clear()
         if allow_none:
             widget.addItem(self.tr("None"), None)
         for stream in streams:
@@ -406,12 +475,16 @@ class MediaStreamsDialog(QDialog):
         else:
             video = self.video.currentData()
             audio = self.audio.currentData()
+            alternate_audio = self.alternate_audio.currentData()
             try:
                 selection = MediaStreamSelection(
                     video if isinstance(video, MediaStream) else None,
                     audio if isinstance(audio, MediaStream) else None,
                     self._checked(self.subtitles),
                     self._checked(self.captions),
+                    alternate_audio
+                    if isinstance(alternate_audio, MediaStream)
+                    else None,
                 )
                 selection.validate(self._metadata, self._profile)
             except (ValueError, MediaInspectionError) as error:

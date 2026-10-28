@@ -312,7 +312,7 @@ def _basis_label(item: SyncPlanItem) -> str:
             ),
             (
                 QCoreApplication.translate("SyncPlanTableModel", "Audio"),
-                (selection.audio,) if selection.audio else (),
+                selection.audio_streams,
             ),
             (
                 QCoreApplication.translate("SyncPlanTableModel", "Subtitles"),

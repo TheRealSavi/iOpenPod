@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-20
 - Amends: ADR-0083 and ADR-0157
+- Amended by: ADR-0205 for native header repair, exact clocks and caption validation
 
 Automatic preparation and explicit Media Stream Selection retain supported text
 subtitles on iPods that support `tx3g`. Convert MOV text, SubRip, WebVTT, ASS/SSA,

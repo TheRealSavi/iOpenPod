@@ -35,7 +35,7 @@ caller, based on its device/firmware evidence:
 | `STANDARD` (default) | None | None | Any known base layout |
 | `NANO_3` | `Nano3Preferences.daylight_saving_minutes` | 0 or 60 | 2,952 bytes |
 | `VOLUME_LIMIT_1_1_1` | `VolumeLimitPreferences.volume_limit` | 0 through 64, device units | Known base layout containing the field |
-| `CLASSIC_120GB_2_0_1` | `Classic201Preferences` and `Classic201ClockPreferences` | Language only; city/clock fields read-only | 2,956 bytes, version word `0x3d` |
+| `CLASSIC_120GB_2_0_1` | `Classic201Preferences` and `Classic201ClockPreferences` | Language and Alternate Audio (0/1); city/clock fields read-only | 2,956 bytes, version word `0x3d` |
 
 The volume profile asserts the documented Video/nano firmware 1.1.1 behavior;
 file size alone does not make that assertion. Zero is not assigned an invented
@@ -51,11 +51,20 @@ u32 `clock_bias_seconds` word at `0xb7c`. Saved DST has mixed 0/1 and 0/60 calle
 neither it nor the bias is added to IANA date conversion. City/clock edits are
 rejected, while language changes preserve those bytes exactly.
 
+`Classic201Preferences.alternate_audio` retains the raw u8 at payload `0xb85`:
+zero is Off and one is On. Unknown values `2..255` round-trip unchanged, including
+during language edits; explicit Alternate Audio edits accept only 0 or 1 and
+preserve every unrelated byte. It is a global firmware preference, separate from
+Host Media Stream Selection, an audio stream index, or a language identifier.
+The setting's connection to the movie reader's requested audio language remains
+unresolved. See the [Alternate Audio evidence](research/ipod-preferences.md#qualified-classic-alternate-audio).
+
 The Application Layer automatically asserts this profile only for the exact
 Classic 6.5th Gen 120GB Device Profile with unconflicted RetailOS 2.0.1 evidence,
 matching extent and format version. Transport revisions do not qualify. Generic
 city files and other releases retain their prior profile. The Settings view shows
-these captured clock observations without offering clock edits. See the
+these captured clock observations and Alternate Audio as On, Off, or an unknown
+raw code. It offers no firmware preference editing. See the
 [firmware evidence](research/classic201-clock-semantics-2026-10-26.md).
 
 `document.timezone` returns:
@@ -198,6 +207,9 @@ Device Profile and available firmware evidence, never file length alone.
 fixtures with nonzero unknown bytes. They cover the native fields, enum edits,
 timezone encodings, profiles, truncation, unknown values, library-link preservation,
 and exact output outside the edited ranges.
+Qualified Classic checks cover every retained Alternate Audio byte, explicit 0/1
+edits, invalid new values, and continued city/clock protection. Application and GUI
+checks cover profile qualification and selectable, read-only Alternate Audio text.
 
 Read-only checks also exercise both codecs against the three supplied device
 contexts. Captures are not committed or required by tests; candidate edits are

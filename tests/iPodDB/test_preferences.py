@@ -377,11 +377,14 @@ def test_profiles_cannot_decode_wrong_or_unknown_layouts() -> None:
         )
 
 
-def _classic201_source(city_id: int = 0x29, dst: int = 60) -> bytes:
+def _classic201_source(
+    city_id: int = 0x29, dst: int = 60, alternate_audio: int = 0
+) -> bytes:
     data = bytearray((index * 31 + 17) % 256 for index in range(2956))
     struct.pack_into("<I", data, 0, 0x3D)
     struct.pack_into("<I", data, 0xB70, city_id)
     data[0xB6C] = dst
+    data[0xB85] = alternate_audio
     struct.pack_into("<iI", data, 0xB78, -1, 81000)
     data[2808] = 0
     return bytes(data)
@@ -506,4 +509,89 @@ def test_classic201_city_is_observation_only_and_raw_seconds_are_unsigned() -> N
     assert write_preferences(document) == data
     with pytest.raises(iPodDBWriteError) as error:
         write_preferences(replace(document, settings=Classic201Preferences(0x69, 0)))
+    assert error.value.code == "preferences.read_only_clock"
+
+
+@pytest.mark.parametrize("raw", range(256))
+def test_classic201_alternate_audio_retains_every_raw_byte(raw: int) -> None:
+    source = _classic201_source(city_id=0x10029, alternate_audio=raw)
+    document = parse_preferences(source, profile=PreferencesProfile.CLASSIC_120GB_2_0_1)
+    assert isinstance(document.settings, Classic201Preferences)
+    assert document.settings.alternate_audio == raw
+    assert write_preferences(document) == source
+    expected = bytearray(source)
+    expected[2808] = 7
+    edited = replace(document, settings=replace(document.settings, language_code=7))
+    assert write_preferences(edited) == expected
+    generic = parse_preferences(source)
+    assert type(generic.settings) is CityPreferences
+    assert write_preferences(generic) == source
+
+
+@pytest.mark.parametrize("old,new", ((0, 1), (1, 0), (2, 0), (255, 1)))
+def test_classic201_alternate_audio_edit_changes_only_its_byte(
+    old: int, new: int
+) -> None:
+    source = _classic201_source(city_id=0x10029, dst=255, alternate_audio=old)
+    document = parse_preferences(source, profile=PreferencesProfile.CLASSIC_120GB_2_0_1)
+    assert isinstance(document.settings, Classic201Preferences)
+    edited = replace(document, settings=replace(document.settings, alternate_audio=new))
+    expected = bytearray(source)
+    expected[0xB85] = new
+    output = write_preferences(edited)
+    assert output == expected
+    reloaded = parse_preferences(output, profile=document.profile)
+    assert reloaded.settings == edited.settings
+    assert reloaded.extended_settings == document.extended_settings
+    assert reloaded.timezone == document.timezone
+
+
+@pytest.mark.parametrize("new", (-1, 2, 254, 255, 256))
+def test_classic201_alternate_audio_rejects_new_unknown_values(new: int) -> None:
+    document = parse_preferences(
+        _classic201_source(), profile=PreferencesProfile.CLASSIC_120GB_2_0_1
+    )
+    assert isinstance(document.settings, Classic201Preferences)
+    with pytest.raises(iPodDBWriteError) as error:
+        write_preferences(
+            replace(document, settings=replace(document.settings, alternate_audio=new))
+        )
+    assert error.value.code == "preferences.invalid_value"
+    assert error.value.field == "alternate_audio"
+
+
+@pytest.mark.parametrize("value", (False, True, 0.0, "0", None))
+def test_classic201_alternate_audio_rejects_noninteger_values(value: object) -> None:
+    document = parse_preferences(
+        _classic201_source(), profile=PreferencesProfile.CLASSIC_120GB_2_0_1
+    )
+    assert isinstance(document.settings, Classic201Preferences)
+    settings = replace(document.settings)
+    object.__setattr__(settings, "alternate_audio", value)
+    with pytest.raises(iPodDBWriteError, match="integers"):
+        write_preferences(replace(document, settings=settings))
+
+
+def test_classic201_alternate_audio_cannot_bypass_clock_protection() -> None:
+    document = parse_preferences(
+        _classic201_source(), profile=PreferencesProfile.CLASSIC_120GB_2_0_1
+    )
+    assert isinstance(document.settings, Classic201Preferences)
+    clock = document.extended_settings
+    assert isinstance(clock, Classic201ClockPreferences)
+    alternate_edit = replace(
+        document, settings=replace(document.settings, alternate_audio=1)
+    )
+    with pytest.raises(iPodDBWriteError) as error:
+        write_preferences(
+            replace(alternate_edit, extended_settings=replace(clock, clock_bias_days=0))
+        )
+    assert error.value.code == "preferences.read_only_clock"
+    with pytest.raises(iPodDBWriteError) as error:
+        write_preferences(
+            replace(
+                alternate_edit,
+                settings=replace(document.settings, city_id=0x69, alternate_audio=1),
+            )
+        )
     assert error.value.code == "preferences.read_only_clock"

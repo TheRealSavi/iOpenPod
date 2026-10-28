@@ -159,14 +159,18 @@ def test_model_specific_dst_and_unknown_city_are_not_guessed(tmp_path: Path) -> 
 
 @pytest.mark.parametrize("model", ("MB565", "MB562"))
 @pytest.mark.parametrize("city", (0x29, 0x10029))
+@pytest.mark.parametrize(
+    "alternate_audio,display", ((0, "Off"), (1, "On"), (255, "Unknown (code 255)"))
+)
 def test_classic201_capture_uses_full_city_and_displays_saved_clock_state(
-    tmp_path: Path, model: str, city: int
+    tmp_path: Path, model: str, city: int, alternate_audio: int, display: str
 ) -> None:
     root = _ipod_volume(tmp_path / "ipod", model_number=model)
     data = bytearray(2956)
     struct.pack_into("<I", data, 0, 0x3D)
     struct.pack_into("<I", data, 0xB70, city)
     data[0xB6C] = 60
+    data[0xB85] = alternate_audio
     struct.pack_into("<iI", data, 0xB78, -1, 0xFFFFFFFF)
     path = root / "iPod_Control/Device/Preferences"
     path.write_bytes(data)
@@ -185,6 +189,8 @@ def test_classic201_capture_uses_full_city_and_displays_saved_clock_state(
     assert rows["daylight_saving"].value == "On (raw 60)"
     assert rows["clock_bias_days"].value == "-1"
     assert rows["clock_bias_seconds"].value == "4294967295"
+    assert rows["alternate_audio"].title == "Alternate Audio"
+    assert rows["alternate_audio"].value == display
     assert captured.time_precondition is not None
     if city == 0x29:
         assert captured.device_time.source is DeviceTimeSource.PREFERENCES_CITY
@@ -206,6 +212,8 @@ def test_classic201_capture_uses_full_city_and_displays_saved_clock_state(
         ("MB565", ("2.0.1", "2.0.5"), 2956, 0x3D),
         ("MB565", ("2.0.5",), 2956, 0x3D),
         ("MA978", ("2.0.1",), 2956, 0x3D),
+        ("MB029", ("2.0.1",), 2956, 0x3D),
+        ("MC293", ("2.0.1",), 2956, 0x3D),
         ("MB565", ("2.0.1",), 2952, 0x3D),
         ("MB565", ("2.0.1",), 2960, 0x3D),
         ("MB565", ("2.0.1",), 2956, 0x3E),
@@ -230,5 +238,6 @@ def test_classic_clock_profile_requires_model_release_extent_and_format(
         )
     rows = {row.key: row for row in captured.sections[0].rows}
     assert "clock_bias_days" not in rows
+    assert "alternate_audio" not in rows
     assert rows["timezone"].title == "Timezone"
     assert rows["timezone"].value == "America/New_York"

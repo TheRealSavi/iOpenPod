@@ -2629,6 +2629,10 @@
         <translation>Audio</translation>
     </message>
     <message>
+        <source>Alternate audio</source>
+        <translation>Audio alternativo</translation>
+    </message>
+    <message>
         <source>Subtitles</source>
         <translation>Subtítulos</translation>
     </message>
@@ -2655,6 +2659,22 @@
     <message>
         <source>Choose the streams to include in the iPod copy.</source>
         <translation>Elige los flujos que quieres incluir en la copia del iPod.</translation>
+    </message>
+    <message>
+        <source>Both subtitles and captions can be kept. iPod Classic displays one mode at a time.</source>
+        <translation>Se pueden conservar tanto los subtítulos como los subtítulos de accesibilidad. El iPod Classic muestra un modo a la vez.</translation>
+    </message>
+    <message>
+        <source>The iPod&apos;s audio choice depends on its firmware and the track languages. Alternate Audio does not always select the second audio track.</source>
+        <translation type="vanished">La elección de audio del iPod depende de su firmware y de los idiomas de las pistas. Audio alternativo no siempre selecciona la segunda pista de audio.</translation>
+    </message>
+    <message>
+        <source>Both tracks and their languages are preserved. How the iPod&apos;s Alternate Audio setting selects between them still needs playback verification.</source>
+        <translation>Se conservan ambas pistas y sus idiomas. Aún hay que verificar durante la reproducción cómo selecciona entre ellas el ajuste Audio alternativo del iPod.</translation>
+    </message>
+    <message>
+        <source>Primary audio</source>
+        <translation>Audio principal</translation>
     </message>
     <message>
         <source>None</source>
@@ -9263,6 +9283,22 @@ Playlists: %3</translation>
         <translation>La cancelación llegó después de empezar a guardar. La sincronización terminó y verificó los cambios seleccionados para mantener la coherencia de la biblioteca del iPod.</translation>
     </message>
     <message>
+        <source>Caption alarm controls may not work on this iPod. Original caption commands are retained.</source>
+        <translation>Puede que los controles de alarma de los subtítulos de accesibilidad no funcionen en este iPod. Se conservan los comandos originales de los subtítulos de accesibilidad.</translation>
+    </message>
+    <message>
+        <source>Caption field 2 is retained unchanged; its playback on this iPod has not been verified.</source>
+        <translation>El campo 2 de los subtítulos de accesibilidad se conserva sin cambios; no se ha verificado su reproducción en este iPod.</translation>
+    </message>
+    <message>
+        <source>Caption flashing may not display on this iPod. Original caption commands are retained.</source>
+        <translation>Puede que el parpadeo de los subtítulos de accesibilidad no se muestre en este iPod. Se conservan los comandos originales de los subtítulos de accesibilidad.</translation>
+    </message>
+    <message>
+        <source>Caption text mode may not display on this iPod. Original caption commands are retained.</source>
+        <translation>Puede que el modo de texto de los subtítulos de accesibilidad no se muestre en este iPod. Se conservan los comandos originales de los subtítulos de accesibilidad.</translation>
+    </message>
+    <message>
         <source>Captured identities disagree for the same media file. Refresh its prepared facts and inventory together.</source>
         <translation>Las identidades capturadas no coinciden para el mismo archivo multimedia. Actualiza a la vez sus datos preparados y el inventario.</translation>
     </message>
@@ -11497,6 +11533,10 @@ Playlists: %3</translation>
     <message>
         <source>Album rebuilding lost or duplicated a retained browse index.</source>
         <translation>La reconstrucción de los índices de álbumes perdió o duplicó un índice de navegación conservado.</translation>
+    </message>
+    <message>
+        <source>Alternate Audio</source>
+        <translation>Audio alternativo</translation>
     </message>
     <message>
         <source>Another selected Host Playlist uses this iPod Playlist. Choose a different target or uncheck one.</source>

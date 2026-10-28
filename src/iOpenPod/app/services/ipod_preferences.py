@@ -270,6 +270,12 @@ def _device_rows(
         ),
         _row("volume_limit", "Volume limit", volume_limit),
     )
+    if isinstance(settings, Classic201Preferences):
+        rows += (
+            _row(
+                "alternate_audio", "Alternate Audio", _toggle(settings.alternate_audio)
+            ),
+        )
     if isinstance(extension, Classic201ClockPreferences):
         rows += (
             _row(

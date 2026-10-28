@@ -11,14 +11,24 @@ TV episode, open its Track list first if the browser is showing collection cards
 Turn off **Use automatic stream selection**, then choose:
 
 - One **Video** stream, identified by its stream number, codec, and dimensions.
-- One **Audio** stream, with language, title, and channel details when available.
-  Videos also offer **None** for a silent copy.
+- One **Primary audio** stream for video, with language, title, and channel details
+  when available. Videos also offer **None** for a silent copy.
+- An optional **Alternate audio** stream for video. Choose a different stream from
+  the primary; both retain their language and title tags. Audio-only sources still
+  have one **Audio** choice.
 - The **Subtitles** and **Captions** to include. Uncheck all entries to omit separate
   tracks of that type. Unavailable formats show an explanation.
 
 Each dropdown shows structured stream rows with the title, language, format,
 technical details, and any conversion or compatibility note. Subtitle and caption
 dropdowns stay open while you check multiple rows; press Escape or Enter to close.
+
+Primary audio is written first and marked as the default; alternate audio is
+retained as an additional track. Each can be copied or converted independently.
+Sound Check measures the primary. Keeping two streams provides the device with
+an alternate, but the Classic's exact **Alternate Audio** On/Off language-selection
+policy still needs device verification. Do not assume On always selects the second
+track, especially when both tracks use the same language tag.
 
 Use **Apply choices**, select the Track for Sync, and continue to **Review Sync**.
 The reason column shows the chosen streams. A changed choice makes an existing iPod
@@ -54,7 +64,9 @@ stream, turn off automatic selection and uncheck it.
 On iPods that support text subtitles:
 
 - Compatible MOV/MP4 timed text (`tx3g`) is copied when video dimensions stay the
-  same. Resized video gets a matching subtitle display area.
+  same. Native track headers, display boxes and clocks are checked and repaired
+  when exact preservation is possible. Resized video gets a matching subtitle
+  display area. Timing that cannot be safely preserved blocks preparation.
 - SubRip/SRT, WebVTT, ASS/SSA, SAMI, SubViewer, MicroDVD, MPL2, and plain timed text
   are converted to readable iPod text in a correctly positioned bottom subtitle
   region. Both its display rectangle and its text/timing are verified.
@@ -69,11 +81,18 @@ Saved choices that previously converted text with the old display layout or movi
 clock request one Update after the application is restarted and the Library is rescanned.
 Successful Sync replaces that copy and returns it to In sync.
 
-Supported CEA-608 caption tracks can be retained. Some output formats cannot retain
+Supported CEA-608 caption tracks can be retained together with subtitles; the
+Classic displays one mode at a time. Caption payloads are checked before and after
+preparation. A file with field-2 captions cannot be remuxed by the current tooling
+without data loss, so preparation reports that case. An unchanged copy preserves
+those captions with a warning that device playback is unverified. Some unsupported
+caption control commands also produce warnings without being removed.
+
+Some output formats cannot retain
 forced-playback flags; preparation reports this while keeping the selectable text.
 Bitmap subtitles and external subtitle files are not converted here. Captions
 embedded inside video cannot be selected separately from that video stream.
-See ADR-0160 for the conversion and verification contract.
+See ADR-0160 and ADR-0205 for the conversion and verification contract.
 
 On SQLite-capable iPods, including Nano 5, Sync also writes the subtitle and
 caption playback descriptors from the finished video. Existing videos with

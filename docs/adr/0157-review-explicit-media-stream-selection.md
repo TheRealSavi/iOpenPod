@@ -5,6 +5,7 @@
 - Extends: ADR-0031, ADR-0067, ADR-0076, ADR-0083, and ADR-0120
 - Amended by: ADR-0158 for durable choices, applied-choice receipts, and video matching
 - Amended by: ADR-0160 for automatic text conversion and readable subtitle recovery
+- Amended by: ADR-0205 for optional alternate audio and native playback validation
 
 Sync now offers per-Track **Choose streams** in Select Media. A Media Stream
 Selection chooses one motion-video stream, one audio stream or silence for video,

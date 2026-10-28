@@ -16,6 +16,8 @@ from iOpenPod.app.library_sync_helper import (
     IPodMediaLibrary,
     IPodTrackFingerprint,
 )
+from iOpenPod.app.media.models import MediaStream, StreamKind
+from iOpenPod.app.media.stream_selection import MediaStreamSelection
 from iOpenPod.app.media.transcoding import TranscodeQuality, TranscodeSettings
 from iOpenPod.app.models.device import (
     DeviceCandidate,
@@ -259,3 +261,82 @@ def test_video_projection_uses_ipod_bitrate_limit(tmp_path: Path) -> None:
     estimate = SyncStorageProjection(host, ipod, _candidate(), profile).estimate(plan)
 
     assert estimate.incoming_bytes == 20_349_000
+
+
+@pytest.mark.parametrize(
+    "audio_count,incoming", ((0, 19_125_000), (1, 20_349_000), (2, 21_573_000))
+)
+def test_selected_video_audio_count_changes_public_storage_projection(
+    tmp_path: Path, audio_count: int, incoming: int
+) -> None:
+    host, ipod = _sources(tmp_path)
+    source = replace(
+        host.sources[0],
+        path=HostPath(tmp_path / "two-audio.mkv"),
+        kind=HostMediaFileKind.VIDEO,
+        size_bytes=40_000_000,
+    )
+    track = Track(
+        7,
+        "Movie",
+        "",
+        "",
+        60_000,
+        media_types=(MediaType.VIDEO,),
+        metadata=TrackMetadata(location=str(source.path), file_format="mkv"),
+    )
+    host = replace(host, sources=(source,), snapshot=LibrarySnapshot(tracks=(track,)))
+    # Only stream identities/kinds affect this estimate; no media file is read.
+    video = MediaStream(
+        index=0,
+        kind=StreamKind.VIDEO,
+        codec="h264",
+        codec_tag="avc1",
+        profile="",
+        level=None,
+        duration_seconds=None,
+        start_seconds=None,
+        time_base=None,
+        duration_ticks=None,
+        bitrate_bps=None,
+        sample_rate_hz=None,
+        channels=None,
+        channel_layout="",
+        bits_per_sample=None,
+        bits_per_raw_sample=None,
+        width=None,
+        height=None,
+        pixel_format="",
+        frame_rate=None,
+        nominal_frame_rate=None,
+        sample_aspect_ratio=None,
+        attached_picture=False,
+        default=True,
+        dispositions=(),
+        tags=(),
+    )
+    primary = replace(
+        video, index=1, kind=StreamKind.AUDIO, codec="aac", codec_tag="mp4a"
+    )
+    alternate = replace(primary, index=2, default=False)
+    choice = MediaStreamSelection(
+        video,
+        primary if audio_count else None,
+        alternate_audio=alternate if audio_count == 2 else None,
+    )
+    plan = SyncPlan(
+        (
+            replace(
+                _item(tmp_path, SyncPlanAction.ADD),
+                host_path=str(source.path),
+                stream_selection=choice,
+            ),
+        )
+    )
+    profile = next(
+        p for p in DEFAULT_DEVICE_REGISTRY.profiles if p.model_number == "MB565"
+    )
+    estimate = SyncStorageProjection(host, ipod, _candidate(), profile).estimate(plan)
+    assert estimate.incoming_bytes == incoming
+    assert estimate.unknown_items == 0
+    assert estimate.outgoing_bytes == 0

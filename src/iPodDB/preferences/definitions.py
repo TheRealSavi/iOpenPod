@@ -53,10 +53,15 @@ class CityPreferences(BinaryStruct):
 
 @dataclass(frozen=True, slots=True)
 class Classic201Preferences(BinaryStruct):
-    """Classic 120GB 2.0.1 reads the entire city word; only language is editable."""
+    """Qualified Classic fields; city is read-only and Alternate Audio stays raw.
+
+    Alternate Audio uses 0 for Off and 1 for On, not a stream or language ID.
+    Unknown byte values remain unchanged unless explicitly replaced with 0/1.
+    """
 
     city_id: int = cf(0xB70, "u32")
     language_code: int = cf(2808, "u8")
+    alternate_audio: int = cf(0xB85, "u8")
 
 
 @dataclass(frozen=True, slots=True)
