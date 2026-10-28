@@ -515,7 +515,16 @@ def analyze(
                     if track.track_id in old_tracks
                     else ""
                 )
-                or (track.track_id in media_ids and bool(track.metadata.lyrics))
+                or (
+                    track.track_id in media_ids
+                    and (
+                        bool(track.metadata.lyrics)
+                        or (
+                            track.track_id in old_tracks
+                            and old_tracks[track.track_id].metadata.has_lyrics
+                        )
+                    )
+                )
                 or track.track_id in retagged
             )
         ),

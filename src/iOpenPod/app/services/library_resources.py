@@ -24,6 +24,7 @@ from iPodDB.library import (
     FileContentData,
     FileDependency,
     IssueSeverity,
+    MediaKind,
     PhotoRepresentationKind,
     PlaybackSidecar,
     PlaylistKind,
@@ -62,6 +63,7 @@ from storage.media_processing import media_workspace
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from typing import BinaryIO
 
     from iOpenPod.app.library_write import LibraryPreparationRequest
     from iPodDB.library import (
@@ -95,6 +97,18 @@ SQLITE_DATABASE_PATHS = tuple(
         "Locations.itdb.cbk",
     )
 )
+
+
+def _tag_and_verify_native_lyrics(
+    stream: BinaryIO,
+    *,
+    tag: Callable[[BinaryIO], None],
+    file_name: str,
+    lyrics: str,
+) -> None:
+    """Check the tagger's final bytes in the same private staging file."""
+    tag(stream)
+    rewrite_lyrics_stream(stream, file_name, lyrics, native_compatibility=True)
 
 
 def database_path(database_name: str) -> DevicePath:
@@ -1036,11 +1050,13 @@ def _capture_file_tags(
                             request.source.profile, pixels
                         )
                     artwork = covers[track.artwork_id]
+                native_lyrics = request.source.profile.family == "iPod Classic"
                 transform = (
                     partial(
                         rewrite_lyrics_stream,
                         file_name=str(path),
                         lyrics=track.metadata.lyrics,
+                        native_compatibility=native_lyrics,
                     )
                     if update is None
                     else partial(
@@ -1051,6 +1067,16 @@ def _capture_file_tags(
                         preserve_artwork=update.preserve_artwork,
                     )
                 )
+                if native_lyrics and update is not None:
+                    # Full metadata/artwork tagging is another writer. Verify
+                    # the final bytes and repair a lyrics-only encoding mismatch
+                    # before issuing PreparedLyrics evidence for this file.
+                    transform = partial(
+                        _tag_and_verify_native_lyrics,
+                        tag=transform,
+                        file_name=str(path),
+                        lyrics=track.metadata.lyrics,
+                    )
                 output = workspace.transform_stream(private_source, transform)
                 content = FileContent.from_fingerprint(output.fingerprint)
                 if content.size <= remaining:
@@ -1083,6 +1109,21 @@ def _capture_file_tags(
                 FileDependency(str(path), content.size, content.sha256),
             )
         )
+        if (
+            native_lyrics
+            and track.metadata.lyrics
+            and track.media_kind in (MediaKind.PODCAST, MediaKind.AUDIOBOOK)
+        ):
+            issues.append(
+                WriteIssue(
+                    "lyrics.description_precedence",
+                    "iPod Classic displays the description before embedded lyrics for podcasts and audiobooks. The full lyrics are retained in the media file.",
+                    severity=IssueSeverity.WARNING,
+                    record_id=identity,
+                    field="lyrics",
+                    artifact=str(path),
+                )
+            )
     return tuple(lyrics), tuple(writes), tuple(issues)
 
 

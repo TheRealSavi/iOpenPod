@@ -201,7 +201,89 @@ def test_legacy_id3v22_is_not_implicitly_migrated() -> None:
     assert rewrite_lyrics(data, "track.mp3", "") == data
 
 
+def test_native_legacy_id3v22_matching_lyrics_remain_byte_exact() -> None:
+    body = b"\x00eng\x00Retained words"
+    frames = b"ULT" + len(body).to_bytes(3, "big") + body
+    data = (
+        b"ID3\x02\x00\x00\x00\x00\x00"
+        + bytes((len(frames),))
+        + frames
+        + media_payload(fixture("tone.mp3"), ".mp3")
+    )
+    assert (
+        rewrite_lyrics(data, "track.mp3", "Retained words", native_compatibility=True)
+        == data
+    )
+    with pytest.raises(ValueError, match=r"ID3v2\.2"):
+        rewrite_lyrics(data, "track.mp3", "New words", native_compatibility=True)
+
+
 @pytest.mark.parametrize("name", ["track.mp3", "track.m4a", "track.aac"])
 def test_invalid_or_unsupported_media_cannot_claim_lyrics(name: str) -> None:
     with pytest.raises(ValueError):
         rewrite_lyrics(b"not a media file", name, WORDS)
+
+
+def test_native_same_text_repairs_unsupported_encoding_without_changing_version() -> (
+    None
+):
+    buffer = io.BytesIO(fixture("tone.mp3"))
+    audio = MP3_READER(buffer)
+    if audio.tags is None:
+        audio.add_tags()
+    assert audio.tags is not None
+    audio.tags.add(FRAMES.TXXX(encoding=3, desc="private", text="keep"))
+    audio.tags.add(FRAMES.USLT(encoding=2, lang="eng", desc="", text="Same text"))
+    buffer.seek(0)
+    audio.save(buffer, v2_version=4)
+    before = buffer.getvalue()
+    assert rewrite_lyrics(before, "track.mp3", "Same text") == before
+    output = rewrite_lyrics(before, "track.mp3", "Same text", native_compatibility=True)
+    parsed = MP3_READER(io.BytesIO(output))
+    assert parsed.tags.version == (2, 4, 0)
+    assert parsed.tags.getall("USLT")[0].encoding == 3
+    assert str(parsed.tags["TXXX:private"]) == "keep"
+    assert media_payload(output, ".mp3") == media_payload(before, ".mp3")
+    assert (
+        rewrite_lyrics(output, "track.mp3", "Same text", native_compatibility=True)
+        == output
+    )
+
+
+def test_native_v24_size_mismatch_does_not_silently_downgrade_tag() -> None:
+    buffer = io.BytesIO(fixture("tone.mp3"))
+    audio = MP3_READER(buffer)
+    if audio.tags is None:
+        audio.add_tags()
+    assert audio.tags is not None
+    audio.tags.add(FRAMES.TDOR(encoding=3, text="2001-02-03"))
+    buffer.seek(0)
+    audio.save(buffer, v2_version=4)
+    before = buffer.getvalue()
+    with pytest.raises(ValueError, match=r"(?i)(v2\.4|version 4|synchsafe)"):
+        rewrite_lyrics(before, "track.mp3", "x" * 128, native_compatibility=True)
+    assert MP3_READER(io.BytesIO(before)).tags.version == (2, 4, 0)
+
+
+def test_native_new_id3_utf16_limit_includes_both_boms_and_terminators() -> None:
+    original = media_payload(fixture("tone.mp3"), ".mp3")
+    # Four control/language bytes, two BOMs, two terminators, two bytes per é.
+    words = "é" * ((10_240 - 12) // 2)
+    result = rewrite_lyrics(original, "track.mp3", words, native_compatibility=True)
+    assert embedded_lyrics(MP3_READER(io.BytesIO(result))) == words
+    assert media_payload(result, ".mp3") == original
+    with pytest.raises(ValueError, match="10,240"):
+        rewrite_lyrics(original, "track.mp3", words + "é", native_compatibility=True)
+
+
+@pytest.mark.parametrize("name", ["tone.mp3", "tone.wav", "tone.aiff", "tone.m4a"])
+def test_native_authored_unicode_and_noop_preserve_encoded_media(name: str) -> None:
+    before = fixture(name)
+    # Start MP3 with no tag so this exercises the native v2.3 authoring policy.
+    if name.endswith(".mp3"):
+        before = media_payload(before, ".mp3")
+    output = rewrite_lyrics(before, name, WORDS, native_compatibility=True)
+    assert media_payload(output, Path(name).suffix) == media_payload(
+        before, Path(name).suffix
+    )
+    assert rewrite_lyrics(output, name, WORDS, native_compatibility=True) == output

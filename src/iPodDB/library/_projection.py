@@ -217,7 +217,7 @@ def _project_metadata(
         skip_shuffle=bool(header.skip_when_shuffling),
         remember_position=bool(header.remember_position),
         podcast=bool(header.podcast_now_playing_flag),
-        has_lyrics=bool(header.lyrics_flag),
+        has_lyrics=bool(header.lyrics_flag & 1),
         played=(
             header.not_played_flag == 1
             if _NOT_PLAYED.offset + _NOT_PLAYED.size <= header_length

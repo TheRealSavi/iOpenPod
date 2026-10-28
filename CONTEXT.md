@@ -14,6 +14,13 @@ then beyond it.
 
 ## Current stage
 
+Classic lyrics preparation now checks the final embedded representation against
+the native byte bounds, encoding branches and frame/atom layout before issuing
+publication evidence. Incompatible text is preserved and reported rather than
+truncated. The Library projects the lyrics flag's low bit, and Review explains
+podcast/audiobook description precedence. See
+[ADR-0206](docs/adr/0206-validate-native-lyrics-publication.md).
+
 Video stream choices can retain primary and alternate audio with their languages,
 default status and saved intent. Native subtitle preparation validates track
 headers and repairs unsafe clocks only through exact rescaling. Caption payloads

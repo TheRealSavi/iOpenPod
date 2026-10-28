@@ -9735,6 +9735,10 @@ Playlists: %3</translation>
         <translation>Suche in der Mediathek auf dem Computer abgeschlossen.</translation>
     </message>
     <message>
+        <source>ID3 tag flags, extended headers or unsynchronization need explicit conversion first.</source>
+        <translation>ID3-Tag-Flags, erweiterte Header oder Unsynchronisierung erfordern zuerst eine ausdrückliche Konvertierung.</translation>
+    </message>
+    <message>
         <source>Imported Track facts do not match the captured media.</source>
         <translation>Die Angaben zum importierten Titel stimmen nicht mit den erfassten Medien überein.</translation>
     </message>
@@ -9819,8 +9823,20 @@ Playlists: %3</translation>
         <translation>Linux benötigt die mitgelieferte Identifikationsregel 61-iopenpod.rules, damit iOpenPod dieses Modell prüfen kann. Installieren Sie diese in /etc/udev/rules.d, laden Sie die udev-Regeln neu und schließen Sie den iPod erneut an.</translation>
     </message>
     <message>
+        <source>Lyrics cannot be verified for this iPod&apos;s native player: {reason} The full lyrics and source file were not truncated.</source>
+        <translation>Der Liedtext kann für den integrierten Player dieses iPod nicht überprüft werden: {reason} Der vollständige Liedtext und die Quelldatei wurden nicht gekürzt.</translation>
+    </message>
+    <message>
         <source>Lyrics resources repeat a Track identity.</source>
         <translation>Liedtext-Ressourcen enthalten eine Titelkennung mehrfach.</translation>
+    </message>
+    <message>
+        <source>MP4 lyrics contain an ambiguous NUL terminator.</source>
+        <translation>Der MP4-Liedtext enthält ein mehrdeutiges NUL-Abschlusszeichen.</translation>
+    </message>
+    <message>
+        <source>MP4 lyrics exceed the native 10,240-byte text limit.</source>
+        <translation>Der MP4-Liedtext überschreitet die native Textgrenze von 10.240 Byte.</translation>
     </message>
     <message>
         <source>Mac App Store (receipt detected)</source>
@@ -11323,6 +11339,10 @@ Playlists: %3</translation>
         <translation>Die iPod-Einstellungen konnten nicht gelesen werden. Lade den iPod neu, um es erneut zu versuchen. {detail}</translation>
     </message>
     <message>
+        <source>lyrics verification requires an ID3v2.2, v2.3 or v2.4 tag.</source>
+        <translation>die Liedtextprüfung erfordert ein ID3v2.2-, v2.3- oder v2.4-Tag.</translation>
+    </message>
+    <message>
         <source>{value} (units unknown)</source>
         <translation>{value} (Einheiten unbekannt)</translation>
     </message>
@@ -11639,6 +11659,18 @@ Playlists: %3</translation>
         <translation>UTC{offset}</translation>
     </message>
     <message>
+        <source>UTF-16 lyrics contain an incomplete character.</source>
+        <translation>Der UTF-16-Liedtext enthält ein unvollständiges Zeichen.</translation>
+    </message>
+    <message>
+        <source>UTF-16 lyrics end with an incomplete code unit.</source>
+        <translation>Der UTF-16-Liedtext endet mit einer unvollständigen Codeeinheit.</translation>
+    </message>
+    <message>
+        <source>UTF-16 lyrics need a terminator within the native read limit.</source>
+        <translation>Der UTF-16-Liedtext benötigt ein Abschlusszeichen innerhalb der nativen Lesegrenze.</translation>
+    </message>
+    <message>
         <source>Unavailable or unsafe file: {error}</source>
         <translation>Datei nicht verfügbar oder nicht sicher verwendbar: {error}</translation>
     </message>
@@ -11755,8 +11787,40 @@ Playlists: %3</translation>
         <translation>Metadaten werden in die vorbereitete Kopie geschrieben</translation>
     </message>
     <message>
+        <source>a metadata field extends beyond its container.</source>
+        <translation>ein Metadatenfeld reicht über seinen Container hinaus.</translation>
+    </message>
+    <message>
+        <source>an ID3 frame extends beyond its tag.</source>
+        <translation>ein ID3-Frame reicht über sein Tag hinaus.</translation>
+    </message>
+    <message>
+        <source>an ID3 frame identifier is malformed.</source>
+        <translation>eine ID3-Frame-Kennung ist fehlerhaft.</translation>
+    </message>
+    <message>
+        <source>an ID3-containing media chunk is truncated.</source>
+        <translation>ein Medienblock mit ID3-Daten ist unvollständig.</translation>
+    </message>
+    <message>
+        <source>an ID3v2.4 frame size is misread by the native lyrics reader; convert the tag to ID3v2.3 before writing lyrics.</source>
+        <translation>der native Liedtextleser liest eine ID3v2.4-Frame-Größe falsch; konvertieren Sie das Tag vor dem Schreiben des Liedtexts in ID3v2.3.</translation>
+    </message>
+    <message>
+        <source>an MP4 metadata atom has an invalid size.</source>
+        <translation>ein MP4-Metadatenatom hat eine ungültige Größe.</translation>
+    </message>
+    <message>
         <source>bytes</source>
         <translation>Bytes</translation>
+    </message>
+    <message>
+        <source>compressed, encrypted or transformed ID3 frames cannot be verified.</source>
+        <translation>komprimierte, verschlüsselte oder umgewandelte ID3-Frames können nicht überprüft werden.</translation>
+    </message>
+    <message>
+        <source>embedded NUL characters terminate native lyrics early.</source>
+        <translation>eingebettete NUL-Zeichen beenden den nativen Liedtext vorzeitig.</translation>
     </message>
     <message>
         <source>episodes</source>
@@ -11765,6 +11829,10 @@ Playlists: %3</translation>
     <message>
         <source>files</source>
         <translation>Dateien</translation>
+    </message>
+    <message>
+        <source>iPod Classic displays the description before embedded lyrics for podcasts and audiobooks. The full lyrics are retained in the media file.</source>
+        <translation>Bei Podcasts und Hörbüchern zeigt der iPod Classic die Beschreibung bevorzugt vor dem eingebetteten Liedtext an. Der vollständige Liedtext bleibt in der Mediendatei erhalten.</translation>
     </message>
     <message>
         <source>iPod media scan complete.</source>
@@ -11779,8 +11847,100 @@ Playlists: %3</translation>
         <translation>iTunes-Einrichtung abgeschlossen</translation>
     </message>
     <message>
+        <source>lyrics do not contain complete UTF-8 text.</source>
+        <translation>der Liedtext enthält keinen vollständigen UTF-8-Text.</translation>
+    </message>
+    <message>
+        <source>native MP4 lyrics require an ordinary data atom header.</source>
+        <translation>nativer MP4-Liedtext erfordert einen gewöhnlichen data-Atom-Header.</translation>
+    </message>
+    <message>
+        <source>native MP4 lyrics require one data child filling ©lyr.</source>
+        <translation>nativer MP4-Liedtext erfordert genau ein untergeordnetes data-Atom, das ©lyr ausfüllt.</translation>
+    </message>
+    <message>
+        <source>no unsynchronized lyrics frame was found.</source>
+        <translation>es wurde kein Frame mit unsynchronisiertem Liedtext gefunden.</translation>
+    </message>
+    <message>
         <source>steps</source>
         <translation>Schritte</translation>
+    </message>
+    <message>
+        <source>the ID3 lyrics body exceeds 10,240 bytes including its encoding, language and description.</source>
+        <translation>der ID3-Liedtextblock überschreitet einschließlich Kodierung, Sprache und Beschreibung 10.240 Byte.</translation>
+    </message>
+    <message>
+        <source>the ID3 lyrics body is incomplete.</source>
+        <translation>der ID3-Liedtextblock ist unvollständig.</translation>
+    </message>
+    <message>
+        <source>the ID3 lyrics description has no terminator.</source>
+        <translation>die ID3-Liedtextbeschreibung hat kein Abschlusszeichen.</translation>
+    </message>
+    <message>
+        <source>the ID3 synchsafe size is malformed.</source>
+        <translation>die synchsafe-kodierte ID3-Größenangabe ist fehlerhaft.</translation>
+    </message>
+    <message>
+        <source>the ID3 tag extends beyond its media container.</source>
+        <translation>das ID3-Tag reicht über seinen Mediencontainer hinaus.</translation>
+    </message>
+    <message>
+        <source>the MP4 lyrics data header is incomplete.</source>
+        <translation>der Datenheader des MP4-Liedtexts ist unvollständig.</translation>
+    </message>
+    <message>
+        <source>the MP4 lyrics path must contain one unambiguous item.</source>
+        <translation>der MP4-Liedtextpfad muss genau einen eindeutigen Eintrag enthalten.</translation>
+    </message>
+    <message>
+        <source>the UTF-16 lyrics description has no terminator.</source>
+        <translation>die UTF-16-Liedtextbeschreibung hat kein Abschlusszeichen.</translation>
+    </message>
+    <message>
+        <source>the bounded metadata verification limit was exceeded.</source>
+        <translation>die festgelegte Grenze für die Metadatenprüfung wurde überschritten.</translation>
+    </message>
+    <message>
+        <source>the chunked media container has an invalid size.</source>
+        <translation>der in Blöcke unterteilte Mediencontainer hat eine ungültige Größe.</translation>
+    </message>
+    <message>
+        <source>the media container does not match its filename.</source>
+        <translation>der Mediencontainer passt nicht zu seinem Dateinamen.</translation>
+    </message>
+    <message>
+        <source>the media file has no embedded ID3 lyrics tag.</source>
+        <translation>die Mediendatei enthält kein eingebettetes ID3-Liedtext-Tag.</translation>
+    </message>
+    <message>
+        <source>the metadata could not be read completely.</source>
+        <translation>die Metadaten konnten nicht vollständig gelesen werden.</translation>
+    </message>
+    <message>
+        <source>the native decoder would not reproduce the complete requested text.</source>
+        <translation>der native Decoder würde den angeforderten Text nicht vollständig wiedergeben.</translation>
+    </message>
+    <message>
+        <source>the native lyrics decoder cannot read this ID3 text encoding; use UTF-16 with BOM or UTF-8.</source>
+        <translation>der native Liedtextdecoder kann diese ID3-Textkodierung nicht lesen; verwenden Sie UTF-16 mit BOM oder UTF-8.</translation>
+    </message>
+    <message>
+        <source>this MP4 lyrics path uses an unverified atom header.</source>
+        <translation>dieser MP4-Liedtextpfad verwendet einen nicht überprüften Atom-Header.</translation>
+    </message>
+    <message>
+        <source>this MP4 metadata version is not verified.</source>
+        <translation>diese MP4-Metadatenversion ist nicht überprüft.</translation>
+    </message>
+    <message>
+        <source>this filename does not select the native MP4 audio lyrics decoder.</source>
+        <translation>dieser Dateiname wählt nicht den nativen Liedtextdecoder für MP4-Audio aus.</translation>
+    </message>
+    <message>
+        <source>this media filename has no verified lyrics decoder path.</source>
+        <translation>für diesen Mediendateinamen ist kein Liedtextdecoderpfad überprüft.</translation>
     </message>
     <message>
         <source>{count} reviewed Playlist change(s) could not be applied. Resolve the reported source or Track problem, then rescan and review the remaining Playlist changes.</source>

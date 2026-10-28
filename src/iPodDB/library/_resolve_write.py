@@ -57,14 +57,22 @@ PRESERVATION = (
 
 
 def _values(
-    before: LibrarySnapshot, desired: LibrarySnapshot, issues: list[WriteIssue]
+    before: LibrarySnapshot,
+    desired: LibrarySnapshot,
+    issues: list[WriteIssue],
+    *,
+    incoming_media: frozenset[int],
 ) -> LibrarySnapshot:
     original = {t.track_id: t for t in before.tracks}
     tracks: list[Track] = []
     for track in desired.tracks:
         prior = original.get(track.track_id)
         meta = track.metadata
-        if prior is None or prior.metadata.lyrics != meta.lyrics:
+        if (
+            prior is None
+            or prior.metadata.lyrics != meta.lyrics
+            or track.track_id in incoming_media
+        ):
             meta = replace(meta, has_lyrics=bool(meta.lyrics))
         for attr in ("volume_adjustment_percent", "normalization_gain_db"):
             value = getattr(meta, attr)
@@ -191,7 +199,12 @@ def resolve(
             normalize=draft.normalize_podcasts,
             sqlite=target.sqlite_database,
         )
-        desired = _values(original, desired, issues)
+        desired = _values(
+            original,
+            desired,
+            issues,
+            incoming_media=frozenset(plan.required_media),
+        )
     if plan.blocked:
         return ResolvedWrite(
             replace(plan, issues=tuple(issues)),

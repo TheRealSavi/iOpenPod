@@ -390,10 +390,14 @@ Lyrics require both the iTunesDB presence flag and text embedded in the media fi
 The existing type-10 MHOD projection remains for application compatibility; it is
 not evidence that stock firmware can display the lyrics. See the
 [libgpod/GTKpod research](research/itunesdb-lyrics.md) and
-[ADR-0075](adr/0075-publish-lyrics-with-media-file-tags.md).
+[ADR-0075](adr/0075-publish-lyrics-with-media-file-tags.md). Direct
+[Classic firmware findings](research/lyrics-firmware-adoption.md) additionally
+establish the low-bit flag and the native byte/decoder contracts.
 
 Changing or clearing `metadata.lyrics`, or supplying new/replacement media with
-known lyrics, adds the Track to `plan.required_lyrics`. Preparation requires a
+known lyrics, adds the Track to `plan.required_lyrics`. Replacing a Track that
+previously advertised lyrics also requires verification when the new text is
+empty, so the old flag cannot outlive the lyrics it referred to. Preparation requires a
 `PreparedLyrics(track_id, lyrics, file)` resource whose text matches the draft and
 whose `FileDependency` describes the resulting tagged file. Removing requirements
 from a public plan cannot bypass this check. File size and the retained secondary
@@ -410,6 +414,18 @@ ID3v2.3 UTF-16 policy. No new padding is added. This is independently required o
 any optional full metadata policy for Rockbox compatibility.
 Legacy ID3v2.2 edits are blocked because implicit conversion can discard unknown
 frames; an already matching file is retained byte-for-byte.
+
+For Classic Device Profiles, preparation additionally checks the final bytes
+against the native lyrics representation. ID3 has a 10,240-byte frame-body cap
+including its descriptor, while MP4 has a 10,240-byte UTF-8 text cap. The traced
+v2.4 reader disagrees with standard synchsafe frame sizes beyond 127 bytes;
+affected traversed frames prevent verification. Compatible small v2.4 layouts
+remain supported. An equal-text encoding mismatch can be repaired without changing
+the tag version, but preparation never silently truncates text or downgrades an
+entire tag. This check also follows optional full metadata tagging. Review notes
+that podcast/audiobook ExtraInfo prefers the description over lyrics. Other
+families and the broader Host reader retain their existing policies. See
+[ADR-0206](adr/0206-validate-native-lyrics-publication.md).
 
 The issued Storage Transaction publishes captured media before the database and
 retains originals for joint recovery. A changed or missing device file, unsafe

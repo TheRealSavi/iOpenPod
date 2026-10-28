@@ -14,6 +14,7 @@ from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
 from mutagen.wave import WAVE
 
+from iOpenPod.app.media.lyrics_compatibility import verify_native_lyrics
 from iOpenPod.app.media.tags import read_tag_values
 
 _FRAMES: Any = id3_frames
@@ -54,19 +55,31 @@ def embedded_lyrics(parsed: Any) -> str:
     )
 
 
-def rewrite_lyrics(data: bytes, file_name: str, lyrics: str) -> bytes:
+def rewrite_lyrics(
+    data: bytes, file_name: str, lyrics: str, *, native_compatibility: bool = False
+) -> bytes:
     """Replace only lyrics on a private byte buffer and verify by reparsing.
 
     Existing ID3v2.3/v2.4 versions are retained; new tags use v2.3 UTF-16,
     following the Original iOpenPod compatibility policy. No tag padding is added.
-    An unchanged value returns the original bytes, including existing padding.
+    A compatible unchanged value returns the original bytes, including padding.
+    Native validation may repair an encoding mismatch or reject an unsupported
+    layout even when a general Host reader returns the requested text.
     """
     buffer = io.BytesIO(data)
-    rewrite_lyrics_stream(buffer, file_name, lyrics)
+    rewrite_lyrics_stream(
+        buffer, file_name, lyrics, native_compatibility=native_compatibility
+    )
     return buffer.getvalue()
 
 
-def rewrite_lyrics_stream(buffer: BinaryIO, file_name: str, lyrics: str) -> None:
+def rewrite_lyrics_stream(
+    buffer: BinaryIO,
+    file_name: str,
+    lyrics: str,
+    *,
+    native_compatibility: bool = False,
+) -> None:
     """Update a private, seekable media copy and verify its embedded lyrics."""
     suffix = PurePosixPath(file_name).suffix.casefold()
     if suffix not in _ID3_SUFFIXES | _MP4_SUFFIXES:
@@ -93,7 +106,17 @@ def rewrite_lyrics_stream(buffer: BinaryIO, file_name: str, lyrics: str) -> None
     try:
         audio = load(buffer)
         if _matches(audio, lyrics):
-            return
+            if not native_compatibility:
+                return
+            try:
+                verify_native_lyrics(buffer, file_name, lyrics)
+            except ValueError:
+                # Equal text can still use an unsupported encoding or native
+                # layout. Reauthor only USLT/©lyr in this private copy, keeping
+                # the tag version and unrelated data, then verify again below.
+                pass
+            else:
+                return
         id3_version = (
             cast("_ID3Version", audio.tags).version
             if isinstance(audio.tags, ID3)
@@ -133,6 +156,8 @@ def rewrite_lyrics_stream(buffer: BinaryIO, file_name: str, lyrics: str) -> None
         buffer.flush()
         if not _matches(load(buffer), lyrics):
             raise ValueError("Embedded lyrics failed read-back verification.")
+        if native_compatibility:
+            verify_native_lyrics(buffer, file_name, lyrics)
     except (mutagen.MutagenError, OSError) as error:
         raise ValueError(
             f"Could not prepare embedded lyrics for {file_name}: {error}"

@@ -45,8 +45,14 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.parametrize(
-    ("edit", "rockbox"),
-    (("artwork", False), ("artwork", True), ("tags", True), ("lyrics", False)),
+    ("edit", "rockbox", "model"),
+    (
+        ("artwork", False, "MB565"),
+        ("artwork", True, "MB565"),
+        ("tags", True, "MB565"),
+        ("lyrics", False, "MB754"),
+        ("lyrics", False, "MB565"),
+    ),
 )
 def test_library_edit_keeps_transcoded_video_matched(
     tmp_path: Path,
@@ -54,6 +60,7 @@ def test_library_edit_keeps_transcoded_video_matched(
     monkeypatch: pytest.MonkeyPatch,
     edit: Literal["artwork", "tags", "lyrics"],
     rockbox: bool,
+    model: str,
 ) -> None:
     source = tmp_path / "episode.mkv"
     ffmpeg(
@@ -113,7 +120,7 @@ def test_library_edit_keeps_transcoded_video_matched(
     choice = MediaStreamSelection(
         inspected.video_streams[0], inspected.audio_streams[0]
     )
-    device = build_device(tmp_path)
+    device = build_device(tmp_path, model=model)
     try:
         request = _request(device, host)
         item = next(
@@ -143,7 +150,8 @@ def test_library_edit_keeps_transcoded_video_matched(
         assert output_acoustic != acoustic, (
             "This regression requires unequal Host and transcoded fingerprints."
         )
-        payload_before = media_payload(output_path.read_bytes(), output_path.suffix)
+        media_bytes_before = output_path.read_bytes()
+        payload_before = media_payload(media_bytes_before, output_path.suffix)
         selection = SyncSelection()
         before_plan = prepare_sync_plan(host, result.helper, result.active.library)
         selection.reset(host, before_plan)
@@ -154,6 +162,8 @@ def test_library_edit_keeps_transcoded_video_matched(
         old_facts = (output_path.stat().st_size, output_path.stat().st_mtime_ns)
         helper_path = device.root / str(LIBRARY_SYNC_HELPER_PATH)
         helper_bytes_before = helper_path.read_bytes()
+        database_path = device.root / "iPod_Control/iTunes/iTunesDB"
+        database_bytes_before = database_path.read_bytes()
 
         decoded: list[DevicePath] = []
         original_fingerprint = FpcalcFingerprinter.fingerprint_device
@@ -197,13 +207,35 @@ def test_library_edit_keeps_transcoded_video_matched(
             lambda _: None,
             Event(),
         )
-        assert review.result.prepared is not None, review.result.issues
-        saved = device.coordinator.save_library(
-            review, result.active, lambda _: None, Event()
-        )
-        assert saved.active is not None, saved.issues
+        blocked_lyrics = edit == "lyrics" and model == "MB565"
+        if blocked_lyrics:
+            # This Classic decoder selects MP4 audio lyrics by filename. Nano
+            # retains the existing successful retag/matching coverage above.
+            assert output_path.suffix in (".m4v", ".mp4")
+            assert review.result.prepared is None
+            assert not review.file_changes
+            assert any(
+                "filename does not select the native MP4 audio lyrics decoder"
+                in issue.detail
+                for issue in review.result.issues
+            ), review.result.issues
+            rejected = device.coordinator.save_library(
+                review, result.active, lambda _: None, Event()
+            )
+            assert rejected.active is None
+            assert output_path.read_bytes() == media_bytes_before
+            assert helper_path.read_bytes() == helper_bytes_before
+            assert database_path.read_bytes() == database_bytes_before
+            active_after = result.active
+        else:
+            assert review.result.prepared is not None, review.result.issues
+            saved = device.coordinator.save_library(
+                review, result.active, lambda _: None, Event()
+            )
+            assert saved.active is not None, saved.issues
+            active_after = saved.active
         new_facts = (output_path.stat().st_size, output_path.stat().st_mtime_ns)
-        media_changed = rockbox or edit == "lyrics"
+        media_changed = not blocked_lyrics and (rockbox or edit == "lyrics")
         assert (old_facts != new_facts) is media_changed
         if media_changed:
             assert helper_path.read_bytes() != helper_bytes_before
@@ -213,7 +245,7 @@ def test_library_edit_keeps_transcoded_video_matched(
         )
 
         scanned = device.coordinator.scan_ipod_media(
-            saved.active, lambda _: None, Event()
+            active_after, lambda _: None, Event()
         )
         after_record = next(
             item for item in scanned.tracks if item.track_id == track.track_id
@@ -222,7 +254,7 @@ def test_library_edit_keeps_transcoded_video_matched(
         assert after_record.acoustic_fingerprint == acoustic
         assert (after_record.size_bytes, after_record.modified_ns) == new_facts
         assert helper_before.path not in decoded
-        after_plan = prepare_sync_plan(host, scanned, saved.active.library)
+        after_plan = prepare_sync_plan(host, scanned, active_after.library)
         selection.reset(host, after_plan)
         assert (
             selection.track_check_state(original_track.track_id)
