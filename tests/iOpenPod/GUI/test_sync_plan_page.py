@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import (
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QTableView,
     QToolButton,
     QTreeView,
+    QWidget,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
@@ -555,7 +556,16 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert sync is not None
         sync.setEnabled(True)
         sync.click()
+        workspace = window.findChild(SyncWorkspace, "syncWorkspace")
+        assert workspace is not None
+        notice = workspace.findChild(QWidget, "syncScanImportNotice")
+        notice_timer = workspace.findChild(QTimer, "syncScanImportNoticeTimer")
+        assert notice is not None and notice_timer is not None
+        assert notice_timer.isActive() and notice.isHidden()
+        notice_timer.timeout.emit()
+        assert not notice.isHidden()
         context.host_media_controller.finished.emit(host)
+        assert not notice_timer.isActive() and notice.isHidden()
         context.ipod_media_controller.finished.emit(ipod)
         APPLICATION.processEvents()
 

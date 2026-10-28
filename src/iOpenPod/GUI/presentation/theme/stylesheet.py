@@ -451,6 +451,21 @@ QLabel#syncScanDetail {{
     color: {tokens.text_secondary};
 }}
 
+QFrame#syncScanImportNotice {{
+    background-color: {tokens.surface_alt};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QLabel#syncScanImportNoticeTitle {{
+    color: {tokens.text};
+    font-weight: 700;
+}}
+
+QLabel#syncScanImportNoticeDetail {{
+    color: {tokens.text_secondary};
+}}
+
 QWidget#mediaFoldersPage {{
     color: {tokens.text};
     background-color: {tokens.window};

@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -113,8 +113,33 @@ class _ScanPage(QWidget):
         self.eta = EtaLabel(self)
         self.eta.setObjectName("syncScanEta")
         self.eta.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._import_notice = QFrame(self)
+        self._import_notice.setObjectName("syncScanImportNotice")
+        self._import_notice_title = QLabel(self._import_notice)
+        self._import_notice_title.setObjectName("syncScanImportNoticeTitle")
+        self._import_notice_detail = QLabel(self._import_notice)
+        self._import_notice_detail.setObjectName("syncScanImportNoticeDetail")
+        for label in (self._import_notice_title, self._import_notice_detail):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setWordWrap(True)
+        notice_layout = QVBoxLayout(self._import_notice)
+        notice_layout.setContentsMargins(
+            LAYOUT.space_md, LAYOUT.space_md, LAYOUT.space_md, LAYOUT.space_md
+        )
+        notice_layout.setSpacing(LAYOUT.space_xs)
+        notice_layout.addWidget(self._import_notice_title)
+        notice_layout.addWidget(self._import_notice_detail)
+        self._import_notice.hide()
+        self._host_scan_active = False
+        self._import_notice_timer = QTimer(self)
+        self._import_notice_timer.setObjectName("syncScanImportNoticeTimer")
+        self._import_notice_timer.setInterval(10_000)
+        self._import_notice_timer.setSingleShot(True)
+        self._import_notice_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._import_notice_timer.timeout.connect(self._show_import_notice)
         cancel = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
         cancel.setObjectName("cancelSyncScan")
+        cancel.clicked.connect(self.stop_scan)
         cancel.clicked.connect(self.cancelRequested.emit)
         self._cancel = cancel
 
@@ -132,6 +157,7 @@ class _ScanPage(QWidget):
         panel_layout.addWidget(self._detail)
         panel_layout.addWidget(self._progress)
         panel_layout.addWidget(self.eta)
+        panel_layout.addWidget(self._import_notice)
         panel_layout.addWidget(cancel, 0, Qt.AlignmentFlag.AlignCenter)
 
         layout = QVBoxLayout(self)
@@ -146,6 +172,21 @@ class _ScanPage(QWidget):
         layout.addWidget(panel)
         layout.addStretch(1)
         self.retranslate_ui()
+
+    def start_scan(self, *, host_scan: bool) -> None:
+        self._host_scan_active = host_scan
+        if host_scan:
+            self._import_notice_timer.start()
+
+    def stop_scan(self) -> None:
+        self._host_scan_active = False
+        self._import_notice_timer.stop()
+        self._import_notice.hide()
+        self.eta.reset()
+
+    def _show_import_notice(self) -> None:
+        if self._host_scan_active:
+            self._import_notice.show()
 
     def set_progress(
         self,
@@ -169,6 +210,13 @@ class _ScanPage(QWidget):
     def retranslate_ui(self) -> None:
         self._title.setText(self.tr("Scanning the Host Media Library"))
         self._cancel.setText(self.tr("Cancel Scan"))
+        self._import_notice_title.setText(self.tr("Taking a while?"))
+        self._import_notice_detail.setText(
+            self.tr(
+                "Newly discovered music needs to be imported into iOpenPod's library. "
+                "This is cached, so next time this step should take only a few seconds."
+            )
+        )
         self._render_detail()
 
     def _render_detail(self) -> None:
@@ -529,13 +577,14 @@ class SyncWorkspace(QWidget):
             (PageId.PLAYLISTS, *(page_id for page_id, _glyph in _LIBRARY_NAVIGATION))
         )
 
-    def show_scan(self, detail: str) -> None:
+    def show_scan(self, detail: str, *, host_scan: bool = True) -> None:
         self._scan_issues.load(())
         self._podcast_execution = False
         self.retranslate_ui()
         self.stop_scan()
         self._reset_playlist_preview()
         self._scan.set_progress(detail)
+        self._scan.start_scan(host_scan=host_scan)
         self._set_stage(SyncStage.SCANNING)
 
     def update_scan(
@@ -554,7 +603,7 @@ class SyncWorkspace(QWidget):
     def stop_scan(self) -> None:
         """Discard scan timing on exit, cancellation, failure or user review."""
 
-        self._scan.eta.reset()
+        self._scan.stop_scan()
 
     def load_comparison(
         self,

@@ -12143,6 +12143,14 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
         <source>Cancel Scan</source>
         <translation>Suche abbrechen</translation>
     </message>
+    <message>
+        <source>Taking a while?</source>
+        <translation>Dauert es etwas länger?</translation>
+    </message>
+    <message>
+        <source>Newly discovered music needs to be imported into iOpenPod&apos;s library. This is cached, so next time this step should take only a few seconds.</source>
+        <translation>Neu entdeckte Musik muss in die Mediathek von iOpenPod importiert werden. Die Ergebnisse werden zwischengespeichert, sodass dieser Schritt beim nächsten Mal nur wenige Sekunden dauern sollte.</translation>
+    </message>
 </context>
 <context>
     <name>_SyncLibraryNavigation</name>

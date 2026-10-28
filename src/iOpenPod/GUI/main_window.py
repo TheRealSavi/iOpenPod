@@ -1742,14 +1742,16 @@ class MainWindow(QMainWindow):
         if cancel_scans:
             self._cancel_media_scans()
 
-    def _show_media_scan_progress(self, label: str) -> None:
-        self._sync_workspace.show_scan(label)
+    def _show_media_scan_progress(self, label: str, *, host_scan: bool = True) -> None:
+        self._sync_workspace.show_scan(label, host_scan=host_scan)
 
     def _media_scan_progress_changed(self, value: object) -> None:
         if not isinstance(value, (HostMediaScanProgress, IPodMediaScanProgress)):
             return
         if self._sync_workspace.stage is not SyncStage.SCANNING:
-            self._show_media_scan_progress(value.message)
+            self._show_media_scan_progress(
+                value.message, host_scan=isinstance(value, HostMediaScanProgress)
+            )
         path = ""
         if value.path is not None:
             path = (
@@ -1791,7 +1793,8 @@ class MainWindow(QMainWindow):
             self._pending_host_media_library = value
             if self._context.ipod_media_controller.start():
                 self._show_media_scan_progress(
-                    source_text("Comparing the iPod media with its Sync helper…")
+                    source_text("Comparing the iPod media with its Sync helper…"),
+                    host_scan=False,
                 )
                 return
             self._pending_host_media_library = None
@@ -1826,7 +1829,7 @@ class MainWindow(QMainWindow):
                 self._pending_ipod_media_library = value
                 if self._context.host_media_controller.refresh_tracks(host, paths):
                     self._show_media_scan_progress(
-                        source_text("Checking Host Track details.")
+                        source_text("Checking Host Track details."), host_scan=False
                     )
                     return
                 self._pending_ipod_media_library = None

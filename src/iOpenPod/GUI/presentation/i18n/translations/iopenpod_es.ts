@@ -12143,6 +12143,14 @@ Reiniciar iOpenPod no borra las propiedades ya guardadas en la caché de udev. E
         <source>Cancel Scan</source>
         <translation>Cancelar análisis</translation>
     </message>
+    <message>
+        <source>Taking a while?</source>
+        <translation>¿Está tardando?</translation>
+    </message>
+    <message>
+        <source>Newly discovered music needs to be imported into iOpenPod&apos;s library. This is cached, so next time this step should take only a few seconds.</source>
+        <translation>La música recién descubierta debe importarse a la biblioteca de iOpenPod. Los resultados se guardan en caché, por lo que la próxima vez este paso debería tardar solo unos segundos.</translation>
+    </message>
 </context>
 <context>
     <name>_SyncLibraryNavigation</name>
