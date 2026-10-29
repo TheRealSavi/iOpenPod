@@ -513,18 +513,17 @@ def _composers(
             continue
         key = track.metadata.composer.casefold()
         options = candidates.get(key, set())
-        if len(options) > 1:
-            issues.append(
-                WriteIssue(
-                    "library.ambiguous_composer",
-                    "The changed composer has conflicting native identities.",
-                    subject="track",
-                    record_id=track.track_id,
-                    field="metadata.composer",
-                )
-            )
-            continue
-        value = next(iter(options), 0)
+        previous = old.get(track.track_id)
+        retained_id = previous.ipod.composer_id if previous and previous.ipod else 0
+        # A name can have multiple retained IDs. Preserve this Track's ID for
+        # case-only edits; otherwise reuse the lowest matching native ID.
+        value = (
+            retained_id
+            if previous
+            and previous.metadata.composer.casefold() == key
+            and retained_id in options
+            else min(options, default=0)
+        )
         if key and not value:
             value = allocator.take()
             candidates[key] = {value}

@@ -419,13 +419,15 @@ def verify_browse_groups(
             value == 0
             if not composer_key
             else bool(value)
-            and (options == {value} if options else value not in old_ids | group_ids)
+            and (value in options if options else value not in old_ids | group_ids)
         )
         if composer_key:
             valid = (
                 valid
                 and composer_owners[value] == {composer_key}
-                and allocated.setdefault(composer_key, value) == value
+                and (
+                    bool(options) or allocated.setdefault(composer_key, value) == value
+                )
             )
         if not valid:
             fail(

@@ -685,7 +685,23 @@ def execute(
     checkpoint: Callable[[], None] | None,
     progress: Callable[[TransactionProgress], None] | None,
     activity: Callable[[TransactionActivity], None] | None = None,
+    resume_path: DevicePath | None = None,
 ) -> TransactionResult:
+    resumed_fingerprint = None
+    if resume_path is not None:
+        if (
+            plan.host_recovery
+            or plan.recovery_material is not None
+            or plan.removals
+            or plan.stage_one_at_a_time
+            or any(write.expected is not None for write in plan.writes)
+        ):
+            raise ValueError("Only create-only staged transactions can resume")
+        retained, resumed_fingerprint = _read(session, resume_path)
+        if retained != _journal(session, plan):
+            raise FilePreconditionError(
+                "Resume requires the exact original staging journal and plan"
+            )
     if plan.host_recovery:
         from storage._host_transactions import execute as execute_host
 
@@ -701,7 +717,7 @@ def execute(
         )
     validate(session, plan)
     journal = _journal(session, plan)
-    path = _journal_path(plan)
+    path = resume_path if resume_path is not None else _journal_path(plan)
     root = journal_root(path)
     started = False
     flushes: list[FlushResult] = []
@@ -725,7 +741,7 @@ def execute(
     if checkpoint is not None:
         checkpoint()
     try:
-        fingerprint = _persist(session, path, journal, None)
+        fingerprint = resumed_fingerprint or _persist(session, path, journal, None)
         staged: list[FileFingerprint] = []
         # Keep enough free space for a restoration copy after every staged file.
         unit = session.mounted_volume.volume.capabilities.allocation_unit_size
@@ -754,6 +770,21 @@ def execute(
                     checkpoint=checkpoint,
                 )
             if not plan.stage_one_at_a_time:
+                stage = _stage(root, index)
+                if resume_path is not None and session.exists(stage):
+                    existing = session.fingerprint(stage)
+                    if FileContent.from_fingerprint(existing) == write.content:
+                        staged.append(existing)
+                        continue
+                    # Retain incomplete bytes inside the owned namespace; only
+                    # this damaged stage needs to be copied again.
+                    session._move_file(  # pyright: ignore[reportPrivateUsage]
+                        stage,
+                        root.joinpath(f"incomplete-{index}-{uuid.uuid4().hex}.bin"),
+                        expected_source=existing,
+                        expected_destination=None,
+                        create_parents=False,
+                    )
                 staged.append(
                     session._copy_transaction_file(  # pyright: ignore[reportPrivateUsage]
                         write.source,

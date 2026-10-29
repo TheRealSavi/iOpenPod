@@ -275,3 +275,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0204: Edit and preview artwork through Chapters](0204-edit-and-preview-artwork-through-chapters.md)
 - [ADR-0205: Adopt native video playback contracts](0205-adopt-native-video-playback-contracts.md)
 - [ADR-0206: Validate native lyrics publication](0206-validate-native-lyrics-publication.md)
+- [ADR-0207: Resume create-only transaction staging](0207-resume-create-only-transaction-staging.md)

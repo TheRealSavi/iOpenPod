@@ -14,6 +14,11 @@ then beyond it.
 
 ## Current stage
 
+Storage can resume a create-only transaction interrupted during staging through a
+new identity-bound Filesystem Session. It verifies and reuses completed stages,
+copies missing stages, and replaces only damaged stages while retaining their
+bytes until cleanup. See [ADR-0207](docs/adr/0207-resume-create-only-transaction-staging.md).
+
 Classic lyrics preparation now checks the final embedded representation against
 the native byte bounds, encoding branches and frame/atom layout before issuing
 publication evidence. Incompatible text is preserved and reported rather than

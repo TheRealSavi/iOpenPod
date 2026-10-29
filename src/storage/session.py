@@ -829,6 +829,34 @@ class FilesystemSession:
                 self, plan, checkpoint=checkpoint, progress=progress, activity=activity
             )
 
+    def resume_transaction(
+        self,
+        plan: StorageTransaction,
+        journal_path: DevicePath,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+        progress: Callable[[TransactionProgress], None] | None = None,
+        activity: Callable[[TransactionActivity], None] | None = None,
+    ) -> TransactionResult:
+        """Resume a create-only transaction interrupted during staging.
+
+        The exact journal, device identity, plan and existing stage contents are
+        checked before reuse. Replacements and publication recovery still use
+        the existing explicit restoration workflow.
+        """
+        from storage._transactions import execute
+
+        with self._writer_lease():
+            self._revalidate(write=True)
+            return execute(
+                self,
+                plan,
+                checkpoint=checkpoint,
+                progress=progress,
+                activity=activity,
+                resume_path=journal_path,
+            )
+
     def inspect_transaction(
         self,
         journal_path: DevicePath,
