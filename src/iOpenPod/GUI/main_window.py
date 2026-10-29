@@ -47,6 +47,7 @@ from iOpenPod.app.host_media_library import (
     HostMediaScanProgress,
     PlaylistExternalReference,
 )
+from iOpenPod.app.jellyfin.controller import create_jellyfin
 from iOpenPod.app.library_export import (
     ExportProgress,
     ExportResult,
@@ -125,6 +126,7 @@ from iOpenPod.GUI.sync_workspace import SyncStage, SyncWorkspace
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.host_media_drop import HostMediaDropTarget
+from iOpenPod.GUI.widgets.jellyfin_settings import JellyfinSettings
 from iOpenPod.GUI.widgets.playback_pane import PlaybackPane, PlaybackPaneHost
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.sidebar import Sidebar
@@ -220,6 +222,14 @@ class MainWindow(QMainWindow):
         )
         self._scrobbling.message.connect(self._scrobble_message)
         self._scrobbling.finished.connect(self._scrobble_finished)
+        # Fork integration: Jellyfin play count sync (iOpenPod.app.jellyfin).
+        self._jellyfin = create_jellyfin(
+            context.device_coordinator,
+            context.settings,
+            context.device_controller,
+            lambda: context.library_workspace.dirty,
+            self,
+        )
         self._sync_controller = SyncController(
             SyncExecutor(
                 context.device_coordinator,
@@ -417,6 +427,7 @@ class MainWindow(QMainWindow):
             context.i18n_manager,
             self._pages,
             scrobbling=self._scrobbling,
+            sync_sections=(JellyfinSettings(context.settings, self._jellyfin),),
         )
         self._media_tools = MediaToolsController(
             self, find_tool=context.find_media_tool
@@ -1115,6 +1126,7 @@ class MainWindow(QMainWindow):
             or self._chaptered_controller.busy
             or self._media_tools.busy
             or self._scrobbling.busy
+            or self._jellyfin.busy
             or self._workspaces.currentWidget() is self._sync_workspace
         ):
             return self.tr(
@@ -1185,6 +1197,7 @@ class MainWindow(QMainWindow):
         self._host_drop.shutdown()
         self._media_tools.shutdown()
         self._scrobbling.shutdown()
+        self._jellyfin.shutdown()
         self._exit_synesthesia_fullscreen()
         self._sync_controller.shutdown()
         self._normalization.shutdown()

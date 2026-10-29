@@ -96,6 +96,7 @@ class SettingsPage(QWidget):
         parent: QWidget | None = None,
         *,
         scrobbling: ScrobbleController | None = None,
+        sync_sections: tuple[QWidget, ...] = (),
     ) -> None:
         super().__init__(parent)
         self._settings = settings
@@ -374,7 +375,10 @@ class SettingsPage(QWidget):
                 if self._scrobbling_settings is not None
                 else ()
             ),
+            *sync_sections,
         )
+        # Additional global-only sections, such as fork integrations.
+        self._sync_sections = sync_sections
         self._backups_tab = self._add_tab(
             "backupSettingsScroll", self._backups_title, backups
         )
@@ -708,6 +712,8 @@ class SettingsPage(QWidget):
         self._backup_location_row.setVisible(not device)
         if self._scrobbling_settings is not None:
             self._scrobbling_settings.setVisible(not device)
+        for section in self._sync_sections:
+            section.setVisible(not device)
         self._update_scope_state()
 
     def _update_scope_state(self) -> None:

@@ -1898,6 +1898,104 @@
     </message>
 </context>
 <context>
+    <name>JellyfinController</name>
+    <message>
+        <source>Enter the Jellyfin server address, username, and password.</source>
+        <translation>Geben Sie die Adresse des Jellyfin-Servers, den Benutzernamen und das Passwort ein.</translation>
+    </message>
+    <message>
+        <source>Connect Jellyfin in Settings → Sync first.</source>
+        <translation>Verbinden Sie zuerst Jellyfin unter Einstellungen → Synchronisieren.</translation>
+    </message>
+    <message>
+        <source>Save or discard your Library changes before syncing play counts.</source>
+        <translation>Speichern oder verwerfen Sie Ihre Änderungen an der Mediathek, bevor Sie Wiedergaben synchronisieren.</translation>
+    </message>
+    <message>
+        <source>Could not save the Jellyfin preference. Check Host storage and reconnect.</source>
+        <translation>Die Jellyfin-Einstellung konnte nicht gespeichert werden. Prüfen Sie den Speicher des Computers und verbinden Sie Jellyfin erneut.</translation>
+    </message>
+    <message>
+        <source>Connected to Jellyfin as {username}.</source>
+        <translation>Mit Jellyfin als {username} verbunden.</translation>
+    </message>
+    <message>
+        <source>Disconnected from Jellyfin.</source>
+        <translation>Von Jellyfin getrennt.</translation>
+    </message>
+    <message>
+        <source>Play count sync cancelled.</source>
+        <translation>Synchronisierung der Wiedergaben abgebrochen.</translation>
+    </message>
+</context>
+<context>
+    <name>JellyfinSettings</name>
+    <message>
+        <source>Connected as {username} on {server}</source>
+        <translation>Verbunden als {username} auf {server}</translation>
+    </message>
+    <message>
+        <source>Not connected</source>
+        <translation>Nicht verbunden</translation>
+    </message>
+    <message>
+        <source>Jellyfin</source>
+        <translation>Jellyfin</translation>
+    </message>
+    <message>
+        <source>Server address</source>
+        <translation>Serveradresse</translation>
+    </message>
+    <message>
+        <source>The address you open Jellyfin with, including the port.</source>
+        <translation>Die Adresse, mit der Sie Jellyfin öffnen, einschließlich des Ports.</translation>
+    </message>
+    <message>
+        <source>Username</source>
+        <translation>Benutzername</translation>
+    </message>
+    <message>
+        <source>Password</source>
+        <translation>Passwort</translation>
+    </message>
+    <message>
+        <source>Used once to sign in. iOpenPod keeps only a sign-in token in your OS keyring.</source>
+        <translation>Wird nur einmal zur Anmeldung verwendet. iOpenPod speichert lediglich ein Anmeldetoken im Schlüsselbund Ihres Betriebssystems.</translation>
+    </message>
+    <message>
+        <source>Jellyfin server address</source>
+        <translation>Adresse des Jellyfin-Servers</translation>
+    </message>
+    <message>
+        <source>Jellyfin username</source>
+        <translation>Jellyfin-Benutzername</translation>
+    </message>
+    <message>
+        <source>Jellyfin password</source>
+        <translation>Jellyfin-Passwort</translation>
+    </message>
+    <message>
+        <source>Play counts</source>
+        <translation>Wiedergaben</translation>
+    </message>
+    <message>
+        <source>Adds the plays from the Active iPod and Jellyfin together and saves the total on both.</source>
+        <translation>Addiert die Wiedergaben des aktiven iPods und von Jellyfin und speichert die Summe auf beiden.</translation>
+    </message>
+    <message>
+        <source>Connect</source>
+        <translation>Verbinden</translation>
+    </message>
+    <message>
+        <source>Disconnect</source>
+        <translation>Trennen</translation>
+    </message>
+    <message>
+        <source>Sync play counts now</source>
+        <translation>Wiedergaben jetzt synchronisieren</translation>
+    </message>
+</context>
+<context>
     <name>LibraryDragGridView</name>
     <message>
         <source>Drag selected cards to a Playlist, the Queue, or the Player. Hold Shift while dragging empty space to box select.</source>
@@ -11004,7 +11102,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The changed composer has conflicting native identities.</source>
-        <translation>Der geänderte Komponist enthält widersprüchliche Originalkennungen.</translation>
+        <translation type="vanished">Der geänderte Komponist enthält widersprüchliche Originalkennungen.</translation>
     </message>
     <message>
         <source>The chapter timeline does not match the Album Tracks.</source>
