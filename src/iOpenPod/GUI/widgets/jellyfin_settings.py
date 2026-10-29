@@ -4,13 +4,24 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QCoreApplication, QEvent, Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, Qt
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QToolTip,
+    QVBoxLayout,
+    QWidget,
+)
 
 from iOpenPod.app.jellyfin.settings import JELLYFIN_SERVER_URL, JELLYFIN_USERNAME
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
-from iOpenPod.GUI.widgets.themed_buttons import ActionButton
+from iOpenPod.GUI.widgets.themed_buttons import (
+    ActionButton,
+    IconButton,
+    IconButtonKind,
+)
 
 if TYPE_CHECKING:
     from iOpenPod.app.core.settings.service import SettingsService
@@ -60,8 +71,15 @@ class JellyfinSettings(QWidget):
         self._sync.setObjectName("syncJellyfinPlayCounts")
         self._cancel = ActionButton(parent=self)
         self._cancel.setObjectName("cancelJellyfinPlayCounts")
+        self._merge_info = IconButton(
+            "info-circle", "", self, kind=IconButtonKind.SUBTLE
+        )
+        self._merge_info.setObjectName("jellyfinMergeInfo")
         self._sync_row = SettingRow(
-            "", "", self._buttons(self._sync, self._cancel), self
+            "",
+            "",
+            self._buttons(self._sync, self._merge_info, self._cancel),
+            self,
         )
         group = SettingGroup(self)
         group.setMaximumWidth(960)
@@ -83,12 +101,20 @@ class JellyfinSettings(QWidget):
         self._disconnect.clicked.connect(controller.disconnect_account)
         self._sync.clicked.connect(controller.sync_now)
         self._cancel.clicked.connect(controller.cancel)
+        # Hover shows the tooltip; a click shows it for keyboard and touch use.
+        self._merge_info.clicked.connect(
+            lambda: QToolTip.showText(
+                self._merge_info.mapToGlobal(QPoint(0, self._merge_info.height())),
+                self._merge_info.toolTip(),
+                self._merge_info,
+            )
+        )
         controller.changed.connect(self._refresh)
         controller.message.connect(self._status.setText)
         settings.settingChanged.connect(self._refresh)
         self.retranslate_ui()
 
-    def _buttons(self, *buttons: ActionButton) -> QWidget:
+    def _buttons(self, *buttons: QWidget) -> QWidget:
         widget = QWidget(self)
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -158,6 +184,14 @@ class JellyfinSettings(QWidget):
         self._connect.setText(self.tr("Connect"))
         self._disconnect.setText(self.tr("Disconnect"))
         self._sync.setText(self.tr("Sync play counts now"))
+        explanation = self.tr(
+            "First sync of each song: the larger play count wins, whether it is "
+            "on the iPod or on Jellyfin. After that, new plays from both sides "
+            "are added together."
+        )
+        self._merge_info.setAccessibleName(self.tr("How play counts are merged"))
+        self._merge_info.setAccessibleDescription(explanation)
+        self._merge_info.setToolTip(explanation)
         self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._refresh()
 

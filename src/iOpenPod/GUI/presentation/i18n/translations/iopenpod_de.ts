@@ -1994,6 +1994,14 @@
         <source>Sync play counts now</source>
         <translation>Wiedergaben jetzt synchronisieren</translation>
     </message>
+    <message>
+        <source>First sync of each song: the larger play count wins, whether it is on the iPod or on Jellyfin. After that, new plays from both sides are added together.</source>
+        <translation>Erste Synchronisierung eines Titels: Die höhere Anzahl an Wiedergaben gewinnt, egal ob sie auf dem iPod oder in Jellyfin liegt. Danach werden neue Wiedergaben beider Seiten addiert.</translation>
+    </message>
+    <message>
+        <source>How play counts are merged</source>
+        <translation>So werden Wiedergaben zusammengeführt</translation>
+    </message>
 </context>
 <context>
     <name>LibraryDragGridView</name>

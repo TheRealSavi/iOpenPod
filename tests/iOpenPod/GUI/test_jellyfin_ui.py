@@ -20,6 +20,7 @@ from iOpenPod.app.jellyfin.settings import (
 )
 from iOpenPod.app.jellyfin.state import PlayCountStore
 from iOpenPod.GUI.widgets.jellyfin_settings import JellyfinSettings
+from iOpenPod.GUI.widgets.themed_buttons import IconButton
 from storage import AtomicHostFile
 
 
@@ -65,6 +66,10 @@ def test_sign_in_sync_and_disconnect_through_settings(tmp_path: Path) -> None:
         assert tokens.value is not None and tokens.value.user_id == USER
         assert password.text() == "" and not password.isVisible()
         assert sync.isVisible() and sync.isEnabled()
+        info = widget.findChild(IconButton, "jellyfinMergeInfo")
+        assert info is not None and info.isVisible()
+        assert "larger play count wins" in info.toolTip()
+        assert info.accessibleName() == "How play counts are merged"
 
         sync.click()
         assert context.device_controller.busy
