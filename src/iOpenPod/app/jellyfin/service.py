@@ -30,7 +30,7 @@ from .device_state import (
 )
 from .matching import MatchOutcome, TrackIndex
 from .models import MAX_PLAY_COUNT, JellyfinError, PlayCountResult
-from .state import PairState, merged_count, pair_key
+from .state import PairState, merged_count
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -46,7 +46,6 @@ if TYPE_CHECKING:
     from storage import DevicePath, FileFingerprint, TransactionWrite
 
     from .models import JellyfinAccount, JellyfinTrack
-    from .state import PlayCountStore
     from .token_store import TokenStore
 
 
@@ -126,13 +125,10 @@ class PlayCountService:
         tokens: TokenStore,
         *,
         client: JellyfinClient | None = None,
-        legacy: PlayCountStore | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._tokens = tokens
         self._client = client or JellyfinClient()
-        # Host memory from earlier versions, read once to seed the iPod memory.
-        self._legacy = legacy
         self._lock = Lock()
 
     def run(
@@ -157,7 +153,7 @@ class PlayCountService:
         account = self._tokens.load()
         if account is None:
             raise JellyfinError("Connect Jellyfin in Settings → Sync first.")
-        device, device_checkpoint = self._coordinator.scrobble_context(active)
+        _, device_checkpoint = self._coordinator.scrobble_context(active)
 
         def checkpoint() -> None:
             if cancelled.is_set():
@@ -177,9 +173,7 @@ class PlayCountService:
             return PlayCountResult(cancelled=True)
         progress("Matching iPod songs with Jellyfin…")
         remembered = memory.accounts.get(account.identity, {})
-        pairs, unmatched, ambiguous, issues = self._pairs(
-            active, account, device, remembered, remote
-        )
+        pairs, unmatched, ambiguous, issues = self._pairs(active, remembered, remote)
 
         edited: dict[int, Track] = {}
         for pair in list(pairs):
@@ -277,25 +271,13 @@ class PlayCountService:
                 ),
             )
 
-    def _legacy_pairs(self) -> dict[str, PairState]:
-        if self._legacy is None:
-            return {}
-        try:
-            return self._legacy.load().pairs
-        except (JellyfinError, OSError):
-            # A first pairing is the safe fallback for unreadable old memory.
-            return {}
-
     def _pairs(
         self,
         active: ActiveIPod,
-        account: JellyfinAccount,
-        device: str,
         remembered: dict[int, PairState],
         remote: tuple[JellyfinTrack, ...],
     ) -> tuple[list[_Pair], tuple[str, ...], tuple[str, ...], list[str]]:
         index = TrackIndex(remote)
-        legacy = self._legacy_pairs()
         unmatched: list[str] = []
         ambiguous: list[str] = []
         issues: list[str] = []
@@ -308,9 +290,7 @@ class PlayCountService:
             ):
                 continue
             track_id = track.ipod.db_track_id
-            previous = remembered.get(track_id) or legacy.get(
-                pair_key(account.identity, device, track_id)
-            )
+            previous = remembered.get(track_id)
             match = index.match(track, previous.item_id if previous else "")
             if match.outcome is MatchOutcome.MATCHED and match.remote is not None:
                 found.append((track_id, previous, track, match.remote))

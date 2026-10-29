@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
         )
         self._scrobbling.message.connect(self._scrobble_message)
         self._scrobbling.finished.connect(self._scrobble_finished)
-        # Fork integration: Jellyfin play count sync (iOpenPod.app.jellyfin).
+        # Jellyfin play count sync (iOpenPod.app.jellyfin).
         self._jellyfin = create_jellyfin(
             context.device_coordinator,
             context.settings,

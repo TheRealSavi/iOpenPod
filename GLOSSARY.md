@@ -236,6 +236,13 @@ normal lowercase conventions while retaining the same domain term.
 | **Scrobble** | One music play submitted to a connected listening service account with Track metadata and a UTC Unix start timestamp. iPod starts are estimated from retained playback evidence; Last.fm submission dates outside its backdating window are adjusted under ADR-0102. | play count, Playback Entry |
 | **Scrobble Queue** | The durable Host record of pending account deliveries, original playback estimates, optional Last.fm submission dates, and capture cursors, scoped to Volume Identity and persistent Track identity. It survives Track removal and stores each service/account's delivery state independently. | Listening History, Playback History, Unscrobbled Plays counter |
 
+## Jellyfin
+
+| Term | Definition | Aliases to avoid |
+| --- | --- | --- |
+| **Play Count Sync** | Two-way reconciliation of music play counts between the Active iPod and one connected Jellyfin account. iPod changes publish through the Library save; the first pairing keeps the larger count and later runs add new plays from both sides (ADR-0208). | Back Sync, scrobbling |
+| **Play Count Memory** | The on-iPod document that records, per Jellyfin account and persistent Track identity, the agreed play count and the count last confirmed on each side. It lives under `iPod_Control/iOpenPod/Integrations` so every Host merges from the same baseline. | sync state, play count cursor |
+
 ## Application updates
 
 | Term | Definition | Aliases to avoid |

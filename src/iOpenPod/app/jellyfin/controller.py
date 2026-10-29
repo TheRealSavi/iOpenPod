@@ -9,13 +9,10 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
 
-from storage import Storage
-
 from .client import JellyfinClient
 from .models import JellyfinError, PlayCountResult
 from .service import PlayCountService
 from .settings import JELLYFIN_DEVICE_ID, JELLYFIN_SERVER_URL, JELLYFIN_USERNAME
-from .state import PlayCountStore
 from .token_store import SystemTokenStore
 
 if TYPE_CHECKING:
@@ -257,14 +254,7 @@ def create_jellyfin(
     library_dirty: Callable[[], bool],
     parent: QObject | None = None,
 ) -> JellyfinController:
-    """Compose production Host persistence and vault access in the Application Layer."""
+    """Compose production vault access in the Application Layer."""
     tokens = SystemTokenStore()
-    service = PlayCountService(
-        coordinator,
-        tokens,
-        # Earlier versions kept the memory on the Host; it seeds the iPod memory.
-        legacy=PlayCountStore(
-            Storage().host_config_file("iOpenPod", "jellyfin-play-counts-v1.json")
-        ),
-    )
+    service = PlayCountService(coordinator, tokens)
     return JellyfinController(service, tokens, settings, devices, library_dirty, parent)

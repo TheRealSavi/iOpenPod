@@ -377,7 +377,7 @@ class SettingsPage(QWidget):
             ),
             *sync_sections,
         )
-        # Additional global-only sections, such as fork integrations.
+        # Additional global-only sections, such as service integrations.
         self._sync_sections = sync_sections
         self._backups_tab = self._add_tab(
             "backupSettingsScroll", self._backups_title, backups

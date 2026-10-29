@@ -15,12 +15,6 @@ from iOpenPod.app.jellyfin.client import JellyfinClient
 from iOpenPod.app.jellyfin.device_state import PLAY_COUNTS_PATH
 from iOpenPod.app.jellyfin.models import JellyfinAccount, JellyfinError
 from iOpenPod.app.jellyfin.service import PlayCountService
-from iOpenPod.app.jellyfin.state import (
-    PairState,
-    PlayCountState,
-    PlayCountStore,
-    pair_key,
-)
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
     LibraryReview,
@@ -30,7 +24,7 @@ from iOpenPod.app.library_write import (
 from iOpenPod.app.models.device import ActiveIPod
 from iPodDB.library import IssueSeverity, WriteIssue
 from iPodDB.library.editing import TrackFieldEdit, edit_track_metadata
-from storage import AtomicHostFile, DevicePath, FileFingerprint, TransactionWrite
+from storage import DevicePath, FileFingerprint, TransactionWrite
 
 FIRST, SECOND = "a" * 32, "b" * 32
 FIRST_ID = 101
@@ -115,13 +109,11 @@ def service(
     jellyfin: FakeJellyfin,
     *,
     coordinator: FailingSave | None = None,
-    legacy: PlayCountStore | None = None,
 ) -> PlayCountService:
     return PlayCountService(
         coordinator or device.coordinator,
         MemoryTokens(account()),
         client=JellyfinClient(jellyfin),
-        legacy=legacy,
     )
 
 
@@ -275,28 +267,6 @@ def test_a_failed_ipod_save_writes_neither_counts_nor_memory(device: Device) -> 
     retried = service(device, jellyfin).run(device.active, Event(), lambda _: None)
     assert retried.ipod_updated == 1
     assert counts(device.active)["Track 1"] == 4
-
-
-def test_earlier_host_memory_seeds_the_ipod_memory(
-    device: Device, tmp_path: Path
-) -> None:
-    play_on_ipod(device, "Track 1", 12)
-    jellyfin = server(first=11)
-    volume, _ = device.coordinator.scrobble_context(device.active)
-    legacy = PlayCountStore(AtomicHostFile(tmp_path / "legacy.json"))
-    legacy.save(
-        PlayCountState(
-            {
-                pair_key(account().identity, volume, FIRST_ID): PairState(
-                    FIRST, 10, 10, 10
-                )
-            }
-        )
-    )
-    sync(service(device, jellyfin, legacy=legacy), device)
-    # 10 agreed earlier, plus 2 new iPod plays and 1 new Jellyfin play.
-    assert counts(device.active)["Track 1"] == jellyfin.count(FIRST) == 13
-    assert memory(device)[str(FIRST_ID)]["agreed"] == 13
 
 
 def test_unreadable_ipod_memory_stops_before_any_change(device: Device) -> None:

@@ -1,7 +1,6 @@
 """Play count merge rules, song matching, and durable state."""
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -12,14 +11,8 @@ from iOpenPod.app.jellyfin.device_state import (
 )
 from iOpenPod.app.jellyfin.matching import MatchOutcome, TrackIndex
 from iOpenPod.app.jellyfin.models import JellyfinError, JellyfinTrack
-from iOpenPod.app.jellyfin.state import (
-    PairState,
-    PlayCountState,
-    PlayCountStore,
-    merged_count,
-)
+from iOpenPod.app.jellyfin.state import PairState, merged_count
 from iPodDB.library import Track, TrackMetadata
-from storage import AtomicHostFile
 
 
 def remote(
@@ -77,11 +70,6 @@ def test_decreases_are_not_propagated() -> None:
     assert merged_count(previous, 4, 12) == 12
 
 
-def test_an_unconfirmed_ipod_save_falls_back_to_the_larger_count() -> None:
-    previous = PairState("a" * 32, 10, 5, 5, pending=True)
-    assert merged_count(previous, 12, 7) == 12
-
-
 def test_match_by_title_album_artist_number_and_length() -> None:
     index = TrackIndex((remote(), remote("b" * 32, "Other")))
     found = index.match(local(title=" song ", album="ALBUM"))
@@ -118,45 +106,6 @@ def test_a_remembered_item_wins_over_metadata() -> None:
     index = TrackIndex((remote(), remote("b" * 32)))
     found = index.match(local(title="Renamed"), "b" * 32)
     assert found.remote is not None and found.remote.item_id == "b" * 32
-
-
-def test_state_round_trips(tmp_path: Path) -> None:
-    store = PlayCountStore(AtomicHostFile(tmp_path / "state.json"))
-    assert store.load() == PlayCountState()
-    state = PlayCountState({"key": PairState("a" * 32, 5, 5, 3, pending=True)})
-    store.save(state)
-    assert store.load() == state
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        b"not json",
-        json.dumps({"version": 2, "pairs": {}}).encode(),
-        json.dumps(
-            {
-                "version": 1,
-                "pairs": {
-                    "key": {
-                        "item_id": "a",
-                        "agreed": 1,
-                        "ipod_seen": 5,
-                        "jellyfin_seen": 0,
-                        "pending": False,
-                    }
-                },
-            }
-        ).encode(),
-    ],
-)
-def test_unreadable_state_is_reported_and_preserved(
-    tmp_path: Path, content: bytes
-) -> None:
-    path = tmp_path / "state.json"
-    path.write_bytes(content)
-    with pytest.raises(JellyfinError, match="unreadable"):
-        PlayCountStore(AtomicHostFile(path)).load()
-    assert path.read_bytes() == content
 
 
 def test_ipod_memory_round_trips_compactly_and_deterministically() -> None:

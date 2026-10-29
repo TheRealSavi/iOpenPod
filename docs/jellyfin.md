@@ -1,8 +1,8 @@
 # Jellyfin Play Count Sync
 
-This fork adds two-way play count sync between the Active iPod and one Jellyfin
-account. Only music play counts are synchronized. Ratings, favorites, last-played
-dates, and media files are not.
+iOpenPod can synchronize play counts in both directions between the Active iPod
+and one Jellyfin account. Only music play counts are synchronized. Ratings,
+favorites, last-played dates, and media files are not.
 
 ## Using it
 
@@ -53,10 +53,6 @@ Backup Snapshots include the document, so restoring a snapshot restores the
 memory together with the play counts. An unreadable document stops the sync before
 anything changes and is preserved; remove it to start over with a first pairing.
 
-Earlier versions of this fork kept the memory on the Host as
-`jellyfin-play-counts-v1.json` in the Host configuration directory. When the iPod
-has no memory for a song, that file is read once to seed it. It is never written.
-
 ## Matching
 
 Only music Tracks with a persistent iPod Track ID are considered. A song matches a
@@ -88,13 +84,13 @@ unsaved edits. Jellyfin is updated only after the iPod save is confirmed.
 | --- | --- |
 | `src/iOpenPod/app/jellyfin/client.py` | Jellyfin HTTP API (version check, sign-in, audio items, user data) |
 | `src/iOpenPod/app/jellyfin/matching.py` | iPod Track to Jellyfin item matching |
-| `src/iOpenPod/app/jellyfin/state.py` | Baselines, merge rule, and the earlier Host memory |
+| `src/iOpenPod/app/jellyfin/state.py` | Per-song baselines and the merge rule |
 | `src/iOpenPod/app/jellyfin/device_state.py` | The memory document stored on the iPod |
 | `src/iOpenPod/app/jellyfin/service.py` | The workflow without Qt |
 | `src/iOpenPod/app/jellyfin/controller.py` | Qt worker, device reservation, composition root |
 | `src/iOpenPod/app/jellyfin/token_store.py` | Access token in the OS keyring |
 | `src/iOpenPod/GUI/widgets/jellyfin_settings.py` | Settings → Sync controls |
 
-The integration is attached in `MainWindow` and `DeviceCoordinator` (lines marked
-`Fork integration`) and through the `sync_sections` argument of `SettingsPage`. Removing those lines and the
-paths above removes the feature.
+`MainWindow` composes the integration and passes its controls to `SettingsPage`
+through the `sync_sections` argument. `DeviceCoordinator` provides the
+`application_writes` argument and the application document methods it uses.

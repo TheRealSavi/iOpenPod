@@ -171,8 +171,8 @@ _SYSINFO_AUTHORITY_PATH = DevicePath(
     f"iPod_Control/Device/{SYSINFO_AUTHORITY_FILENAME}"
 )
 _IPOD_CONTROL_PATH = DevicePath("iPod_Control")
-# Fork integration: a folder reserved for integration documents
-# (iOpenPod.app.jellyfin), so they cannot replace files other workflows own.
+# Integration documents (such as Jellyfin play counts) live in a reserved folder,
+# so they cannot replace files other workflows own.
 _APPLICATION_ROOT = DevicePath("iPod_Control/iOpenPod/Integrations")
 _ITUNESDB_PATH = DevicePath("iPod_Control/iTunes/iTunesDB")
 _ITUNESCDB_PATH = DevicePath("iPod_Control/iTunes/iTunesCDB")
@@ -1145,7 +1145,7 @@ class DeviceCoordinator:
                 )
             return self._save_podcast_state(active, expected, state)
 
-    # Fork integration: small application-owned documents (iOpenPod.app.jellyfin).
+    # Small application-owned integration documents, such as Jellyfin play counts.
     @staticmethod
     def _check_application_path(path: DevicePath) -> None:
         if path == _APPLICATION_ROOT or not path.is_relative_to(_APPLICATION_ROOT):
@@ -1766,8 +1766,8 @@ class DeviceCoordinator:
                             dependencies=(*write.dependencies, *history.dependencies),
                         )
                     )
-                # Fork integration: application-owned documents that must
-                # commit with this Library (iOpenPod.app.jellyfin).
+                # Integration documents that must commit with this Library,
+                # such as the Jellyfin play count memory.
                 if application_writes:
                     for document in application_writes:
                         self._check_application_path(document.path)
