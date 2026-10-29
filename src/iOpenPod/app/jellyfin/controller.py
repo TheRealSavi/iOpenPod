@@ -261,9 +261,10 @@ def create_jellyfin(
     tokens = SystemTokenStore()
     service = PlayCountService(
         coordinator,
-        PlayCountStore(
+        tokens,
+        # Earlier versions kept the memory on the Host; it seeds the iPod memory.
+        legacy=PlayCountStore(
             Storage().host_config_file("iOpenPod", "jellyfin-play-counts-v1.json")
         ),
-        tokens,
     )
     return JellyfinController(service, tokens, settings, devices, library_dirty, parent)

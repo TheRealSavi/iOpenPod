@@ -27,8 +27,11 @@ new total = agreed + new iPod plays + new Jellyfin plays
 
 - **First pairing:** the larger of the two counts wins. This can miss plays made on
   both sides before the first sync, but never counts one play twice.
-- **Interrupted iPod save:** the next run cannot know whether the save landed, so
-  it falls back to the larger count for those songs.
+- **Interrupted sync:** the play counts and the memory are saved to the iPod in one
+  recoverable Storage transaction, so they land or roll back together. The memory
+  is written with final values before Jellyfin is updated; Jellyfin updates that
+  fail are recorded with Jellyfin's previous count and retried next time. Any
+  interruption can at worst miss a play, never count one twice.
 - **Decreases** (for example, marking a song unplayed in Jellyfin) are not
   propagated. The merged total is restored to that side.
 - Raising an iPod count above zero also marks the song as played. Counts sent to
@@ -36,9 +39,23 @@ new total = agreed + new iPod plays + new Jellyfin plays
 - The iPod's unscrobbled play counter is not changed, so plays that came from
   Jellyfin are not scrobbled as iPod plays.
 
-The state lives in `jellyfin-play-counts-v1.json` in the Host configuration
-directory. It is keyed by Jellyfin server and user, iPod Volume Identity, and the
-iPod's persistent Track ID.
+## The memory lives on the iPod
+
+The memory is stored on the iPod it describes, at
+`iPod_Control/iOpenPod/Integrations/jellyfin-play-counts-v1.json`, so every computer that syncs
+the iPod merges from the same baseline. Plays merged by one computer are never
+added again by another, on Windows, macOS, or Linux. The document is keyed by
+Jellyfin server and user, then by the iPod's persistent Track ID; it needs no
+device key because of where it lives. Entries for songs no longer on the iPod are
+dropped. It is compact JSON limited to 8 MiB, enough for roughly 90,000 songs.
+
+Backup Snapshots include the document, so restoring a snapshot restores the
+memory together with the play counts. An unreadable document stops the sync before
+anything changes and is preserved; remove it to start over with a first pairing.
+
+Earlier versions of this fork kept the memory on the Host as
+`jellyfin-play-counts-v1.json` in the Host configuration directory. When the iPod
+has no memory for a song, that file is read once to seed it. It is never written.
 
 ## Matching
 
@@ -58,10 +75,12 @@ claim the same Jellyfin item are both reported as ambiguous.
 ## Device safety
 
 The iPod is changed only through the existing Library preparation and verified
-save, under the same exclusive device reservation as a Library save. A journal entry
-is written before the save. Sync is refused while the Library has unsaved edits.
-Jellyfin is updated only after the iPod save is confirmed. A Jellyfin failure keeps
-the remaining updates for the next run.
+save, under the same exclusive device reservation as a Library save. The memory
+document joins that save's Storage transaction through the coordinator's
+`application_writes` argument, which accepts only documents under the reserved
+`iPod_Control/iOpenPod/Integrations/` folder; when only the memory changes, it is written alone
+with a generation-checked atomic replacement. Sync is refused while the Library has
+unsaved edits. Jellyfin is updated only after the iPod save is confirmed.
 
 ## Code map
 
@@ -69,12 +88,13 @@ the remaining updates for the next run.
 | --- | --- |
 | `src/iOpenPod/app/jellyfin/client.py` | Jellyfin HTTP API (version check, sign-in, audio items, user data) |
 | `src/iOpenPod/app/jellyfin/matching.py` | iPod Track to Jellyfin item matching |
-| `src/iOpenPod/app/jellyfin/state.py` | Baselines, merge rule, and the state file |
+| `src/iOpenPod/app/jellyfin/state.py` | Baselines, merge rule, and the earlier Host memory |
+| `src/iOpenPod/app/jellyfin/device_state.py` | The memory document stored on the iPod |
 | `src/iOpenPod/app/jellyfin/service.py` | The workflow without Qt |
 | `src/iOpenPod/app/jellyfin/controller.py` | Qt worker, device reservation, composition root |
 | `src/iOpenPod/app/jellyfin/token_store.py` | Access token in the OS keyring |
 | `src/iOpenPod/GUI/widgets/jellyfin_settings.py` | Settings → Sync controls |
 
-The integration is attached in `MainWindow` (lines marked `Fork integration`) and
-through the `sync_sections` argument of `SettingsPage`. Removing those lines and the
+The integration is attached in `MainWindow` and `DeviceCoordinator` (lines marked
+`Fork integration`) and through the `sync_sections` argument of `SettingsPage`. Removing those lines and the
 paths above removes the feature.

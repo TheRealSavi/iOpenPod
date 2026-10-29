@@ -1,4 +1,4 @@
-"""Durable per-song baselines that make two-way play count merges additive."""
+"""Per-song baselines and the merge rule; the Host store is read only to migrate."""
 
 from __future__ import annotations
 

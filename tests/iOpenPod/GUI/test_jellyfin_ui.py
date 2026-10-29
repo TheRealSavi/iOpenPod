@@ -18,10 +18,8 @@ from iOpenPod.app.jellyfin.settings import (
     JELLYFIN_SERVER_URL,
     JELLYFIN_USERNAME,
 )
-from iOpenPod.app.jellyfin.state import PlayCountStore
 from iOpenPod.GUI.widgets.jellyfin_settings import JellyfinSettings
 from iOpenPod.GUI.widgets.themed_buttons import IconButton
-from storage import AtomicHostFile
 
 
 def test_sign_in_sync_and_disconnect_through_settings(tmp_path: Path) -> None:
@@ -33,7 +31,6 @@ def test_sign_in_sync_and_disconnect_through_settings(tmp_path: Path) -> None:
     controller = JellyfinController(
         PlayCountService(
             device.coordinator,
-            PlayCountStore(AtomicHostFile(tmp_path / "play-counts.json")),
             tokens,
             client=client,
         ),
@@ -90,7 +87,7 @@ def test_sign_in_sync_and_disconnect_through_settings(tmp_path: Path) -> None:
         disconnect.click()
         wait_for(lambda: not controller.busy)
         assert context.settings.get(JELLYFIN_USERNAME) == ""
-        assert tokens.value is None
+        assert tokens.load() is None
         assert not sync.isVisible()
     finally:
         controller.shutdown()
@@ -107,7 +104,6 @@ def test_sync_is_refused_while_library_edits_are_unsaved(tmp_path: Path) -> None
     controller = JellyfinController(
         PlayCountService(
             device.coordinator,
-            PlayCountStore(AtomicHostFile(tmp_path / "play-counts.json")),
             tokens,
             client=JellyfinClient(FakeJellyfin()),
         ),

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from contextlib import suppress
 from dataclasses import dataclass, replace
 from threading import Lock
 from typing import TYPE_CHECKING, Protocol
@@ -21,6 +20,14 @@ from iPodDB.library import (
 )
 
 from .client import JellyfinClient
+from .device_state import (
+    MAX_DOCUMENT,
+    PLAY_COUNTS_PATH,
+    DevicePlayCounts,
+    decode_play_counts,
+    encode_play_counts,
+    play_counts_write,
+)
 from .matching import MatchOutcome, TrackIndex
 from .models import MAX_PLAY_COUNT, JellyfinError, PlayCountResult
 from .state import PairState, merged_count, pair_key
@@ -36,12 +43,11 @@ if TYPE_CHECKING:
     )
     from iOpenPod.app.models.device import ActiveIPod
     from iPodDB.library import Track, WriteIssue
+    from storage import DevicePath, FileFingerprint, TransactionWrite
 
     from .models import JellyfinAccount, JellyfinTrack
-    from .state import PlayCountState, PlayCountStore
+    from .state import PlayCountStore
     from .token_store import TokenStore
-
-SAVE_INTERVAL = 50
 
 
 class PlayCountSource(Protocol):
@@ -54,6 +60,8 @@ class PlayCountSource(Protocol):
         request: LibraryPreparationRequest,
         progress: Callable[[WriteProgress], None],
         cancelled: Event,
+        *,
+        application_writes: tuple[TransactionWrite, ...] = (),
     ) -> LibraryReview: ...
 
     def save_library(
@@ -64,10 +72,22 @@ class PlayCountSource(Protocol):
         cancelled: Event,
     ) -> LibrarySaveResult: ...
 
+    def load_application_document(
+        self, expected: ActiveIPod, path: DevicePath, max_bytes: int
+    ) -> tuple[bytes | None, FileFingerprint | None]: ...
+
+    def save_application_document(
+        self,
+        expected: ActiveIPod,
+        path: DevicePath,
+        data: bytes,
+        before: FileFingerprint | None,
+    ) -> FileFingerprint: ...
+
 
 @dataclass(frozen=True, slots=True)
 class _Pair:
-    key: str
+    track_id: int
     track: Track
     remote: JellyfinTrack
     target: int
@@ -90,18 +110,29 @@ def _errors(issues: tuple[WriteIssue, ...]) -> tuple[str, ...]:
 
 
 class PlayCountService:
+    """Merge play counts through a memory stored on the iPod itself.
+
+    Every Host that syncs the iPod reads the same memory, so plays merged by
+    one computer are never added again by another. The memory is written with
+    final values in the same Storage transaction as the iPod's play counts, and
+    before Jellyfin is updated. Jellyfin updates that fail are recorded with
+    Jellyfin's previous count, so they are retried. Any interruption can at
+    worst miss a play; it can never count one twice.
+    """
+
     def __init__(
         self,
         coordinator: PlayCountSource,
-        store: PlayCountStore,
         tokens: TokenStore,
         *,
         client: JellyfinClient | None = None,
+        legacy: PlayCountStore | None = None,
     ) -> None:
         self._coordinator = coordinator
-        self._store = store
         self._tokens = tokens
         self._client = client or JellyfinClient()
+        # Host memory from earlier versions, read once to seed the iPod memory.
+        self._legacy = legacy
         self._lock = Lock()
 
     def run(
@@ -113,8 +144,7 @@ class PlayCountService:
         if not self._lock.acquire(blocking=False):
             raise JellyfinError("Play count sync is already running.")
         try:
-            with self._store.lease():
-                return self._run(active, cancelled, progress)
+            return self._run(active, cancelled, progress)
         finally:
             self._lock.release()
 
@@ -134,8 +164,11 @@ class PlayCountService:
                 raise _CancelledError
             device_checkpoint()
 
-        # An unreadable state file must stop the run before anything changes.
-        state = self._store.load()
+        # An unreadable memory must stop the run before anything changes.
+        raw, revision = self._coordinator.load_application_document(
+            active, PLAY_COUNTS_PATH, MAX_DOCUMENT
+        )
+        memory = decode_play_counts(raw) if raw is not None else DevicePlayCounts()
         try:
             progress("Reading the Jellyfin music library…")
             remote = self._client.tracks(account, checkpoint)
@@ -143,11 +176,9 @@ class PlayCountService:
         except _CancelledError:
             return PlayCountResult(cancelled=True)
         progress("Matching iPod songs with Jellyfin…")
+        remembered = memory.accounts.get(account.identity, {})
         pairs, unmatched, ambiguous, issues = self._pairs(
-            active, account, device, state, remote
-        )
-        result = PlayCountResult(
-            matched=len(pairs), unmatched=unmatched, ambiguous=ambiguous
+            active, account, device, remembered, remote
         )
 
         edited: dict[int, Track] = {}
@@ -165,27 +196,74 @@ class PlayCountService:
                 issues.append(f"{_label(pair.track)}: {error}")
                 pairs.remove(pair)
 
+        # Final values for every pair, assuming every Jellyfin update succeeds.
+        present = {
+            track.ipod.db_track_id
+            for track in active.library.tracks
+            if track.ipod is not None
+        }
+        updated = {
+            track_id: pair
+            for track_id, pair in remembered.items()
+            if track_id in present
+        }
+        for pair in pairs:
+            updated[pair.track_id] = PairState(
+                pair.remote.item_id, pair.target, pair.target, pair.target
+            )
+        memory.accounts[account.identity] = updated
+        document = encode_play_counts(memory)
+        result = PlayCountResult(
+            matched=len(pairs),
+            ipod_updated=len(edited),
+            unmatched=unmatched,
+            ambiguous=ambiguous,
+        )
+
+        current = active
         saved_active: ActiveIPod | None = None
         if edited:
             outcome = self._save_ipod(
-                active, state, pairs, edited, cancelled, progress, checkpoint
+                active,
+                edited,
+                play_counts_write(document, revision),
+                cancelled,
+                progress,
+                checkpoint,
             )
             if isinstance(outcome, PlayCountResult):
                 return replace(
-                    outcome,
-                    matched=len(pairs),
-                    unmatched=unmatched,
-                    ambiguous=ambiguous,
+                    result,
+                    ipod_updated=0,
                     issues=(*issues, *outcome.issues),
+                    cancelled=outcome.cancelled,
                 )
-            saved_active = outcome
-        result = replace(
-            result, matched=len(pairs), ipod_updated=len(edited), active=saved_active
-        )
+            current = saved_active = outcome
+            # The memory now has a new revision; read it when it must change.
+            revision = None
+            result = replace(result, active=saved_active)
+        elif document != raw and (raw is not None or updated):
+            try:
+                checkpoint()
+            except _CancelledError:
+                return replace(result, cancelled=True)
+            progress("Saving the play count memory on the iPod…")
+            revision = self._coordinator.save_application_document(
+                active, PLAY_COUNTS_PATH, document, revision
+            )
         # After an iPod save the app must always learn about the new Library.
         try:
             return self._push(
-                account, state, pairs, edited, result, issues, cancelled, progress
+                account,
+                current,
+                memory,
+                pairs,
+                revision,
+                result,
+                issues,
+                cancelled,
+                progress,
+                reread=saved_active is not None,
             )
         except Exception:
             if saved_active is None:
@@ -199,19 +277,29 @@ class PlayCountService:
                 ),
             )
 
+    def _legacy_pairs(self) -> dict[str, PairState]:
+        if self._legacy is None:
+            return {}
+        try:
+            return self._legacy.load().pairs
+        except (JellyfinError, OSError):
+            # A first pairing is the safe fallback for unreadable old memory.
+            return {}
+
     def _pairs(
         self,
         active: ActiveIPod,
         account: JellyfinAccount,
         device: str,
-        state: PlayCountState,
+        remembered: dict[int, PairState],
         remote: tuple[JellyfinTrack, ...],
     ) -> tuple[list[_Pair], tuple[str, ...], tuple[str, ...], list[str]]:
         index = TrackIndex(remote)
+        legacy = self._legacy_pairs()
         unmatched: list[str] = []
         ambiguous: list[str] = []
         issues: list[str] = []
-        found: list[tuple[str, Track, JellyfinTrack]] = []
+        found: list[tuple[int, PairState | None, Track, JellyfinTrack]] = []
         for track in active.library.tracks:
             if (
                 track.media_kind is not MediaKind.MUSIC
@@ -219,64 +307,46 @@ class PlayCountService:
                 or track.ipod.db_track_id <= 0
             ):
                 continue
-            key = pair_key(account.identity, device, track.ipod.db_track_id)
-            previous = state.pairs.get(key)
+            track_id = track.ipod.db_track_id
+            previous = remembered.get(track_id) or legacy.get(
+                pair_key(account.identity, device, track_id)
+            )
             match = index.match(track, previous.item_id if previous else "")
             if match.outcome is MatchOutcome.MATCHED and match.remote is not None:
-                found.append((key, track, match.remote))
+                found.append((track_id, previous, track, match.remote))
             elif match.outcome is MatchOutcome.AMBIGUOUS:
                 ambiguous.append(_label(track))
             else:
                 unmatched.append(_label(track))
         # Two iPod songs claiming one Jellyfin item would overwrite each other.
-        claims = Counter(item.item_id for _, _, item in found)
+        claims = Counter(item.item_id for _, _, _, item in found)
         pairs: list[_Pair] = []
-        for key, track, item in found:
+        for track_id, previous, track, item in found:
             if claims[item.item_id] > 1:
                 ambiguous.append(_label(track))
                 continue
-            previous = state.pairs.get(key)
-            if previous is not None and previous.item_id != item.item_id:
-                previous = None
-            target = merged_count(previous, track.play_count, item.play_count)
+            baseline = (
+                previous
+                if previous is not None and previous.item_id == item.item_id
+                else None
+            )
+            target = merged_count(baseline, track.play_count, item.play_count)
             if target > MAX_PLAY_COUNT:
                 issues.append(f"{_label(track)}: the play count is too large.")
                 continue
-            pairs.append(_Pair(key, track, item, target))
+            pairs.append(_Pair(track_id, track, item, target))
         return pairs, tuple(unmatched), tuple(ambiguous), issues
 
     def _save_ipod(
         self,
         active: ActiveIPod,
-        state: PlayCountState,
-        pairs: list[_Pair],
         edited: dict[int, Track],
+        memory: TransactionWrite,
         cancelled: Event,
         progress: Callable[[str], None],
         checkpoint: Callable[[], None],
     ) -> ActiveIPod | PlayCountResult:
-        changed = [pair for pair in pairs if pair.track.track_id in edited]
-        before = {pair.key: state.pairs.get(pair.key) for pair in changed}
-
-        def restore() -> None:
-            for key, previous in before.items():
-                if previous is None:
-                    state.pairs.pop(key, None)
-                else:
-                    state.pairs[key] = previous
-            self._store.save(state)
-
-        # Journal first: if the save lands but this process stops, the next run
-        # must not add the same plays again.
-        for pair in changed:
-            state.pairs[pair.key] = PairState(
-                pair.remote.item_id,
-                pair.target,
-                pair.track.play_count,
-                pair.remote.play_count,
-                pending=True,
-            )
-        self._store.save(state)
+        """Commit the play counts and the memory together, or neither."""
 
         def forward(value: WriteProgress) -> None:
             progress(value.message)
@@ -291,51 +361,37 @@ class PlayCountService:
             checkpoint()
             progress("Preparing iPod play counts…")
             review = self._coordinator.prepare_library(
-                LibraryPreparationRequest(snapshot, active, 0, 0), forward, cancelled
+                LibraryPreparationRequest(snapshot, active, 0, 0),
+                forward,
+                cancelled,
+                application_writes=(memory,),
             )
         except (_CancelledError, PreparationCancelledError):
-            restore()
             return PlayCountResult(cancelled=True)
         if review.result.prepared is None:
-            restore()
             return PlayCountResult(issues=_errors(review.result.issues))
         saved = self._coordinator.save_library(review, active, forward, cancelled)
         if saved.active is None:
-            # The journal stays pending: the save may or may not have landed.
+            # Storage recovery restores the counts and the memory together.
             return PlayCountResult(
                 issues=_errors(saved.issues), cancelled=cancelled.is_set()
             )
-        for pair in changed:
-            state.pairs[pair.key] = PairState(
-                pair.remote.item_id, pair.target, pair.target, pair.remote.play_count
-            )
-        # The push step saves the same state again and reports a failure there;
-        # the saved Library must reach the caller either way.
-        with suppress(Exception):
-            self._store.save(state)
         return saved.active
 
     def _push(
         self,
         account: JellyfinAccount,
-        state: PlayCountState,
+        active: ActiveIPod,
+        memory: DevicePlayCounts,
         pairs: list[_Pair],
-        edited: dict[int, Track],
+        revision: FileFingerprint | None,
         result: PlayCountResult,
         issues: list[str],
         cancelled: Event,
         progress: Callable[[str], None],
+        *,
+        reread: bool,
     ) -> PlayCountResult:
-        for pair in pairs:
-            if pair.track.track_id not in edited:
-                # The iPod already holds the merged count.
-                state.pairs[pair.key] = PairState(
-                    pair.remote.item_id,
-                    pair.target,
-                    pair.target,
-                    pair.remote.play_count,
-                )
-        self._store.save(state)
         pending = [pair for pair in pairs if pair.target != pair.remote.play_count]
         pushed = 0
         stopped = False
@@ -351,13 +407,28 @@ class PlayCountService:
                     f"{error} The remaining Jellyfin play counts will be sent next time."
                 )
                 break
-            state.pairs[pair.key] = replace(
-                state.pairs[pair.key], jellyfin_seen=pair.target
-            )
             pushed += 1
-            if pushed % SAVE_INTERVAL == 0:
-                self._store.save(state)
-        self._store.save(state)
+        unsent = pending[pushed:]
+        if unsent:
+            # Record Jellyfin's real counts so the next run sends them again.
+            remembered = memory.accounts[account.identity]
+            for pair in unsent:
+                remembered[pair.track_id] = replace(
+                    remembered[pair.track_id], jellyfin_seen=pair.remote.play_count
+                )
+            try:
+                if reread:
+                    _, revision = self._coordinator.load_application_document(
+                        active, PLAY_COUNTS_PATH, MAX_DOCUMENT
+                    )
+                self._coordinator.save_application_document(
+                    active, PLAY_COUNTS_PATH, encode_play_counts(memory), revision
+                )
+            except Exception:
+                issues.append(
+                    "The iPod could not record which Jellyfin play counts are "
+                    "still unsent. Some plays may be missed instead of counted twice."
+                )
         return replace(
             result, jellyfin_updated=pushed, issues=tuple(issues), cancelled=stopped
         )

@@ -5,6 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from iOpenPod.app.jellyfin.device_state import (
+    DevicePlayCounts,
+    decode_play_counts,
+    encode_play_counts,
+)
 from iOpenPod.app.jellyfin.matching import MatchOutcome, TrackIndex
 from iOpenPod.app.jellyfin.models import JellyfinError, JellyfinTrack
 from iOpenPod.app.jellyfin.state import (
@@ -152,3 +157,43 @@ def test_unreadable_state_is_reported_and_preserved(
     with pytest.raises(JellyfinError, match="unreadable"):
         PlayCountStore(AtomicHostFile(path)).load()
     assert path.read_bytes() == content
+
+
+def test_ipod_memory_round_trips_compactly_and_deterministically() -> None:
+    state = DevicePlayCounts(
+        {
+            "server:user": {
+                101: PairState("a" * 32, 8, 8, 6),
+                7: PairState("b" * 32, 1, 1, 1),
+            }
+        }
+    )
+    data = encode_play_counts(state)
+    assert decode_play_counts(data) == state
+    assert data == encode_play_counts(decode_play_counts(data))
+    assert b" " not in data
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"version": 2, "accounts": {}},
+        {"version": 1, "accounts": {"a": {"x": {}}}},
+        {"version": 1, "accounts": {"a": {"0": {}}}},
+        {
+            "version": 1,
+            "accounts": {
+                "a": {"5": {"item": "i", "agreed": 1, "ipod": 2, "jellyfin": 0}}
+            },
+        },
+        {
+            "version": 1,
+            "accounts": {
+                "a": {"5": {"item": "", "agreed": 1, "ipod": 1, "jellyfin": 1}}
+            },
+        },
+    ],
+)
+def test_invalid_ipod_memory_is_refused(document: object) -> None:
+    with pytest.raises(JellyfinError, match="unreadable"):
+        decode_play_counts(json.dumps(document).encode())
