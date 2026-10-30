@@ -2032,6 +2032,10 @@ Sync and quick or manual Library saves publish those entries in the same transac
 Playlists with Live updating disabled retain saved membership. Each pass uses one
 time and the input draft's saved Playlist memberships; unsupported rules and firmware-managed Playlists remain
 preserved. No-change Sync also reaches this step. See ADR-0142.
+The request identifies evaluated retained live Smart Playlists. iPodDB reconciles
+their matching native counterparts even when only a noncanonical copy has stale
+membership, preserving per-copy occurrence metadata and blocking definition
+conflicts. Default no-op serialization remains byte-exact. See ADR-0213.
 Sync also carries an explicit database refresh intent. SQLite targets regenerate
 their companion artifacts under ADR-0147; non-SQLite targets with Tracks rebuild
 retained sort-4 Albums indexes under ADR-0148 and ADR-0194. A retained index may

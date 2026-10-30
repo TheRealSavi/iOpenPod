@@ -34,3 +34,4 @@ class ResolvedWrite:
     persistent_ids: tuple[tuple[int, int], ...]
     artwork_tracks: tuple[int, ...] = ()
     deleted_tracks: frozenset[int] = frozenset()
+    refreshed_smart_playlists: frozenset[int] = frozenset()

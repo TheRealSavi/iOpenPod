@@ -10100,6 +10100,10 @@ Playlists: %3</translation>
         <translation>Das Ersetzen von Medien erfordert einen vorhandenen Quelltitel, der in der gewünschten Mediathek beibehalten wird.</translation>
     </message>
     <message>
+        <source>Membership refresh requires a retained, supported live Smart Playlist, requested once.</source>
+        <translation>Die Aktualisierung der Titelliste erfordert eine beibehaltene, unterstützte intelligente Wiedergabeliste mit aktivierter Live-Aktualisierung, die genau einmal angefordert wird.</translation>
+    </message>
+    <message>
         <source>Menu language</source>
         <translation>Menüsprache</translation>
     </message>

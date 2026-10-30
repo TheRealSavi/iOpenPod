@@ -14,6 +14,15 @@ then beyond it.
 
 ## Current stage
 
+Automatic Smart Playlist refresh now reconciles differing saved membership in
+otherwise matching native counterparts, including when the canonical copy is
+already current. Occurrences retain each copy's own metadata; conflicting
+definitions still block publication with field-specific diagnostics. Selection,
+ordinary saves, and Sync keep automatic refresh. Synthetic and virtual iPod Video
+checks cover preservation and verification; the reported database remains
+unavailable. See
+[ADR-0213](docs/adr/0213-refresh-compatible-smart-playlist-counterparts.md).
+
 Large Syncs now bound Host staging ownership handles independently of Track count
 while retaining crash cleanup and protecting other processes' live preparations.
 Track preparation failures reach the logs, and Library DEBUG diagnostics use

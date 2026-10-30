@@ -106,6 +106,7 @@ def verify_playlists(
     playlist_timestamp: int = 0,
     normalize_podcasts: bool = False,
     sqlite: bool = False,
+    refreshed_smart_playlists: frozenset[int] = frozenset(),
 ) -> tuple[WriteIssue, ...]:
     issues = list(
         structure_issues(
@@ -550,7 +551,11 @@ def verify_playlists(
                 kind,
                 chunk,
             )
-        affected = playlist != previous or playlist.playlist_id in changed_folders
+        affected = (
+            playlist != previous
+            or playlist.playlist_id in changed_folders
+            or playlist.playlist_id in refreshed_smart_playlists
+        )
         if (
             kind in (2, 3)
             and chunk.header.playlist_kind_flags & 1
@@ -657,7 +662,11 @@ def verify_playlists(
                     kind,
                     chunk,
                 )
-        membership_changed = previous is None or previous.entries != playlist.entries
+        membership_changed = (
+            previous is None
+            or previous.entries != playlist.entries
+            or playlist.playlist_id in refreshed_smart_playlists
+        )
         podcast_changed = is_podcasts(kind, chunk.header) and (
             membership_changed
             or playlist.playlist_id in podcast_playlists

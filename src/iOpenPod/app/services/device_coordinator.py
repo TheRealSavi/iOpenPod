@@ -99,7 +99,10 @@ from iOpenPod.app.services.genius_mixes import (
 from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
 from iOpenPod.app.services.phase import capture_phase_selection, prepare_phase
-from iOpenPod.app.smart_playlist_preview import refresh_smart_playlists
+from iOpenPod.app.smart_playlist_preview import (
+    can_refresh_smart_playlist,
+    refresh_smart_playlists,
+)
 from iPodDB.library import (
     IPodLibrary,
     PhotoPixelFormat,
@@ -1768,6 +1771,11 @@ class DeviceCoordinator:
                     "draft.smart_playlists", source_text("Evaluating Smart Playlists")
                 ),
             )
+            retained_live_smart_ids = frozenset(
+                playlist.playlist_id
+                for playlist in source.snapshot.playlists
+                if can_refresh_smart_playlist(playlist)
+            )
             request = replace(request, snapshot=snapshot)
             request = with_rockbox_edits(request, source)
             genius_update = None
@@ -1914,6 +1922,12 @@ class DeviceCoordinator:
                     rebuild_album_indexes=request.rebuild_album_indexes,
                     repair_podcast_links=request.repair_podcast_links,
                     normalize_podcasts=request.normalize_podcasts,
+                    refresh_smart_playlists=tuple(
+                        playlist.playlist_id
+                        for playlist in snapshot.playlists
+                        if can_refresh_smart_playlist(playlist)
+                        and playlist.playlist_id in retained_live_smart_ids
+                    ),
                     genius_update=genius_update,
                 ),
                 target,

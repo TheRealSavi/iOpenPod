@@ -111,6 +111,9 @@ class LibraryDraft:
     repair_podcast_links: bool = field(default=False, kw_only=True)
     # Explicit Sync authoring policy; ordinary no-op preparation stays lossless.
     normalize_podcasts: bool = field(default=False, kw_only=True)
+    # Memberships already evaluated by the caller; reconcile all native copies,
+    # including a stale counterpart when the canonical copy is already current.
+    refresh_smart_playlists: tuple[int, ...] = field(default=(), kw_only=True)
     # Complete native graph/assignment/Mix replacement; None preserves state.
     genius_update: GeniusUpdate | None = field(default=None, kw_only=True)
 

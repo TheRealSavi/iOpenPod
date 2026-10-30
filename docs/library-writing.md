@@ -873,7 +873,12 @@ supplemental metadata, and unrelated UI values retain ADR-0150's protection.
 
 The semantic writer does not evaluate Smart Playlists or firmware category rules.
 The Application Layer refreshes supported Smart Playlists with Live updating enabled
-before submission. Dataset 5
+before submission. It supplies explicit refresh intent for retained live Smart
+Playlists so iPodDB can update stale native counterparts even when the canonical
+copy is already current. Matching definitions permit differing saved membership;
+conflicting definitions or metadata still block the write. Each copy retains its
+own surviving occurrence metadata. See
+[ADR-0213](adr/0213-refresh-compatible-smart-playlist-counterparts.md). Dataset 5
 retains its native category fields and metadata, including categories that carry a
 Master flag. Ambiguous affected relationships block preparation; unrelated source
 anomalies remain with warnings. See [ADR-0024](adr/0024-reconcile-and-verify-playlists-by-dataset.md).

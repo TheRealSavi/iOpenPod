@@ -323,6 +323,7 @@ class IPodLibrary:
         rebuild_album_indexes: bool = False,
         repair_podcast_links: bool = False,
         normalize_podcasts: bool = False,
+        refresh_smart_playlists: tuple[int, ...] = (),
         genius_update: GeniusUpdate | None = None,
     ) -> LibraryDraft:
         """Bind desired state to this source, rejecting omissions unless opted in.
@@ -340,6 +341,8 @@ class IPodLibrary:
         requiring metadata edits. Other indexes and Master occurrences remain.
         ``normalize_podcasts`` converges Podcast relationships, albums, Playlist
         settings and traversal indexes on the 12.6 authoring policy (ADR-0152).
+        ``refresh_smart_playlists`` identifies caller-evaluated live Smart
+        Playlists whose matching native copies must receive the desired entries.
         ``genius_update`` replaces the native graph and Track assignments.
         Its ``mixes=None`` preserves native Mixes, while an explicit tuple
         replaces them. Omission preserves all Genius state. Classic preparation
@@ -361,6 +364,7 @@ class IPodLibrary:
             rebuild_album_indexes=rebuild_album_indexes,
             repair_podcast_links=repair_podcast_links,
             normalize_podcasts=normalize_podcasts,
+            refresh_smart_playlists=tuple(refresh_smart_playlists),
             genius_update=genius_update,
         )
 

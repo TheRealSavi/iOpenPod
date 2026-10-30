@@ -1175,6 +1175,7 @@ def _prepare(
                 normalize_podcasts=plan.draft.normalize_podcasts
                 and not plan.target.sqlite_database,
                 sqlite=plan.target.sqlite_database,
+                refreshed_smart_playlists=resolved.refreshed_smart_playlists,
             )
         )
         if _blocked(issues):

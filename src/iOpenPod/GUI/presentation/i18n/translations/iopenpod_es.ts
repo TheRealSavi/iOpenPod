@@ -10100,6 +10100,10 @@ Playlists: %3</translation>
         <translation>Reemplazar medios requiere una pista de origen existente que se conserve en la biblioteca deseada.</translation>
     </message>
     <message>
+        <source>Membership refresh requires a retained, supported live Smart Playlist, requested once.</source>
+        <translation>Para actualizar las pistas se requiere una lista inteligente conservada y compatible, con actualización en vivo activada y solicitada una sola vez.</translation>
+    </message>
+    <message>
         <source>Menu language</source>
         <translation>Idioma del menú</translation>
     </message>

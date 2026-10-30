@@ -8,6 +8,7 @@ from threading import Event
 
 import pytest
 from tests.iOpenPod.app.services.test_library_resources import build_device
+from tests.iPodDB.library.test_writing import library
 from tests.iPodDB.sidecars.test_sidecar_readers import counts, otg, stats
 
 from iOpenPod.app.library_write import (
@@ -22,8 +23,303 @@ from iOpenPod.app.services.device_coordinator import (
     DeviceLibraryLoadError,
     SyncRecoveryRequiredError,
 )
-from iPodDB.library import IPodLibrary
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
+from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
+from iPodDB.library import (
+    IPodLibrary,
+    SmartField,
+    SmartOperator,
+    SmartPlaylist,
+    SmartRule,
+    SmartRuleGroup,
+    WriteResources,
+    _write_preparation,
+)
+from iPodDB.library._playlist_writing import position_item
+from iPodDB.library._smart_writing import smart_chunks
+from iPodDB.shared.chunk import DatabaseDocument, chunk_as
 from storage import DevicePath, FilesystemSession
+
+
+def _saved_smart_playlists(
+    mismatch: str, *, canonical_members: tuple[int, ...] | None = None
+) -> bytes:
+    source = library(mirrored=True, conflicting=mismatch == "name")
+    document = parse_iTunesDB(source.serialize().itunes)
+    smart = SmartPlaylist(
+        rules=SmartRuleGroup(
+            rules=(SmartRule(SmartField.PLAY_COUNT, SmartOperator.GREATER_THAN, 0),)
+        )
+    )
+    for dataset in document.find_chunks(MhsdHeader):
+        for row in dataset.find_chunks(MhypHeader):
+            if row.chunk.header.master_flag:
+                continue
+            children = row.chunk.children
+            kind = dataset.chunk.header.dataset_type
+            if canonical_members is not None and kind == 3:
+                children = tuple(
+                    child
+                    for child in children
+                    if not isinstance(child.header, MhipHeader)
+                    or child.header.track_id in canonical_members
+                )
+                if canonical_members == (1,):
+                    # Keep one occurrence even though the source has duplicates.
+                    children = children[:2]
+            if mismatch == "membership" and kind == 2:
+                # Retain a different saved occurrence list in the flat dataset.
+                first_entry = next(
+                    index
+                    for index, child in enumerate(children)
+                    if isinstance(child.header, MhipHeader)
+                )
+                children = children[:first_entry] + children[first_entry + 1 :]
+            if mismatch == "missing_member" and kind == 2:
+                children = tuple(
+                    child
+                    for child in children
+                    if not isinstance(child.header, MhipHeader)
+                    or child.header.track_id != 1
+                )
+            definition = (
+                replace(
+                    smart,
+                    rules=SmartRuleGroup(
+                        rules=(SmartRule(SmartField.PLAY_COUNT, SmartOperator.IS, 0),)
+                    ),
+                )
+                if mismatch == "rules" and kind == 2
+                else smart
+            )
+            children = tuple(
+                position_item(chunk_as(child, MhipHeader), index - 1)
+                if isinstance(child.header, MhipHeader)
+                else child
+                for index, child in enumerate(children)
+            )
+            document = document.replace_chunk(
+                row,
+                replace(row.chunk, children=(*smart_chunks(definition, ()), *children)),
+            )
+    return write_iTunesDB(document)
+
+
+def _smart_metadata_bytes(data: bytes) -> tuple[tuple[bytes, ...], ...]:
+    document = parse_iTunesDB(data)
+    return tuple(
+        tuple(
+            data[
+                child.offset : child.offset + child.generic_header.length_or_child_count
+            ]
+            for child in row.chunk.children
+            if not isinstance(child.header, MhipHeader)
+        )
+        for row in document.find_chunks(MhypHeader)
+        if row.chunk.header.playlist_id == 10
+    )
+
+
+def test_stale_smart_copy_stays_byte_exact_without_refresh_intent() -> None:
+    original = _saved_smart_playlists("membership", canonical_members=(1,))
+    source = IPodLibrary(original)
+    result = source.prepare(source.analyze(source.begin_draft()))
+    assert result.prepared is not None, result.issues
+    assert result.prepared.itunes == original
+
+
+@pytest.mark.parametrize("identities", [(10, 10), (-1,), (1000,)])
+def test_invalid_smart_refresh_intent_cannot_bypass_validation(
+    identities: tuple[int, ...],
+) -> None:
+    source = IPodLibrary(_saved_smart_playlists("membership"))
+    result = source.prepare(
+        source.analyze(source.begin_draft(refresh_smart_playlists=identities))
+    )
+    assert result.prepared is None
+    assert any(i.code == "draft.invalid_smart_refresh" for i in result.issues)
+
+
+def test_refresh_retains_each_counterparts_own_surviving_occurrence() -> None:
+    original = _saved_smart_playlists("membership", canonical_members=(1,))
+    source = IPodLibrary(original)
+    result = source.prepare(
+        source.analyze(source.begin_draft(refresh_smart_playlists=(10,))),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    before = parse_iTunesDB(original)
+    after = parse_iTunesDB(result.prepared.itunes)
+    for kind in (2, 3):
+        source_dataset = next(
+            row
+            for row in before.find_chunks(MhsdHeader)
+            if row.chunk.header.dataset_type == kind
+        )
+        target_dataset = next(
+            row
+            for row in after.find_chunks(MhsdHeader)
+            if row.chunk.header.dataset_type == kind
+        )
+        previous = next(
+            item.chunk
+            for item in source_dataset.find_chunks(MhipHeader)
+            if item.chunk.header.track_id == 1
+        )
+        current = target_dataset.find_chunks(MhipHeader)
+        assert len(current) == 1
+        assert current[0].chunk.header == previous.header
+    assert _smart_metadata_bytes(result.prepared.itunes) == _smart_metadata_bytes(
+        original
+    )
+    assert source.serialize().itunes == original
+
+
+def test_verification_rejects_stale_counterpart_after_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = _saved_smart_playlists("membership", canonical_members=(1,))
+    source = IPodLibrary(original)
+    flat = (
+        next(
+            row
+            for row in parse_iTunesDB(original).find_chunks(MhsdHeader)
+            if row.chunk.header.dataset_type == 2
+        )
+        .find_chunks(MhypHeader)[1]
+        .chunk
+    )
+
+    def corrupt(document: DatabaseDocument[MhbdHeader]) -> bytes:
+        dataset = next(
+            row
+            for row in document.find_chunks(MhsdHeader)
+            if row.chunk.header.dataset_type == 2
+        )
+        selection = dataset.find_chunks(MhypHeader)[1]
+        return write_iTunesDB(document.replace_chunk(selection, flat))
+
+    monkeypatch.setattr(_write_preparation, "write_iTunesDB", corrupt)
+    result = source.prepare(
+        source.analyze(source.begin_draft(refresh_smart_playlists=(10,))),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is None
+    assert any(i.code == "verification.playlist_mirror" for i in result.issues)
+    assert source.serialize().itunes == original
+
+
+@pytest.mark.parametrize("mismatch", ["none", "membership", "missing_member"])
+@pytest.mark.parametrize("sidecar", ["Play Counts", "OTGPlaylistInfo"])
+@pytest.mark.parametrize("canonical_current", [False, True])
+def test_selection_refreshes_smart_playlists_with_stale_counterpart_membership(
+    tmp_path: Path, mismatch: str, sidecar: str, canonical_current: bool
+) -> None:
+    device = build_device(tmp_path, model="MA450")
+    directory = device.root / "iPod_Control/iTunes"
+    expected = (1,) if sidecar == "Play Counts" else ()
+    original = _saved_smart_playlists(
+        mismatch, canonical_members=expected if canonical_current else None
+    )
+    evidence = counts() if sidecar == "Play Counts" else b""
+    try:
+        (directory / "iTunesDB").write_bytes(original)
+        (directory / sidecar).write_bytes(evidence)
+        selected = device.coordinator.select_device(device.active.candidate.id)
+        assert selected.library.tracks[0].play_count == (
+            3 if sidecar == "Play Counts" else 0
+        )
+        assert selected.library.playlists[0].track_ids == expected
+        committed = (directory / "iTunesDB").read_bytes()
+        native = parse_iTunesDB(committed)
+        copies = tuple(
+            row
+            for row in native.find_chunks(MhypHeader)
+            if row.chunk.header.playlist_id == 10
+        )
+        assert len(copies) == 2
+        for row in copies:
+            assert (
+                tuple(
+                    item.chunk.header.track_id for item in row.find_chunks(MhipHeader)
+                )
+                == expected
+            )
+        assert _smart_metadata_bytes(committed) == _smart_metadata_bytes(original)
+        assert (directory / (sidecar + ".bak")).read_bytes() == evidence
+        assert not (directory / sidecar).exists()
+
+        reloaded = device.coordinator.select_device(selected.candidate.id)
+        assert reloaded.library == selected.library
+        assert (directory / "iTunesDB").read_bytes() == committed
+
+        # Ordinary saves continue to refresh and accept the now-current copies.
+        review = device.prepare(replace(reloaded.library, device_name="Refreshed"))
+        assert review.result.prepared is not None, review.result.issues
+        assert review.result.prepared.snapshot.playlists[0].track_ids == expected
+        assert (directory / "iTunesDB").read_bytes() == committed
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("mismatch", ["none", "membership"])
+def test_selection_refreshes_smart_playlists_and_adds_otg(
+    tmp_path: Path, mismatch: str
+) -> None:
+    device = build_device(tmp_path, model="MA450")
+    directory = device.root / "iPod_Control/iTunes"
+    original = _saved_smart_playlists(mismatch)
+    files = {"Play Counts": counts(), "OTGPlaylistInfo": otg((1, 0, 1))}
+    try:
+        (directory / "iTunesDB").write_bytes(original)
+        for name, data in files.items():
+            (directory / name).write_bytes(data)
+        selected = device.coordinator.select_device(device.active.candidate.id)
+        assert selected.library.tracks[0].play_count == 3
+        saved, added = selected.library.playlists
+        assert saved.track_ids == (1,)
+        assert added.track_ids == (2, 1, 2)
+        committed = (directory / "iTunesDB").read_bytes()
+        assert _smart_metadata_bytes(committed) == _smart_metadata_bytes(original)
+        for name, data in files.items():
+            assert (directory / (name + ".bak")).read_bytes() == data
+            assert not (directory / name).exists()
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("mismatch", ["name", "rules"])
+def test_selection_blocks_conflicting_smart_definitions_without_consuming_evidence(
+    tmp_path: Path, mismatch: str
+) -> None:
+    device = build_device(tmp_path, model="MA450")
+    directory = device.root / "iPod_Control/iTunes"
+    original = _saved_smart_playlists(mismatch)
+    files = {"Play Counts": counts(), "OTGPlaylistInfo": otg((1, 0, 1))}
+    try:
+        (directory / "iTunesDB").write_bytes(original)
+        for name, data in files.items():
+            (directory / name).write_bytes(data)
+        candidate_id = device.active.candidate.id
+        with pytest.raises(
+            DeviceLibraryLoadError, match="dataset disagrees"
+        ) as failure:
+            device.coordinator.select_device(candidate_id)
+        assert (
+            f"different source fields: {'smart' if mismatch == 'rules' else 'name'}"
+            in str(failure.value)
+        )
+        assert device.coordinator.active_ipod is None
+        assert (directory / "iTunesDB").read_bytes() == original
+        for name, data in files.items():
+            assert (directory / name).read_bytes() == data
+            assert not (directory / (name + ".bak")).exists()
+    finally:
+        device.coordinator.close()
 
 
 def test_discovery_is_read_only_and_selection_commits_history_and_otg_once(
