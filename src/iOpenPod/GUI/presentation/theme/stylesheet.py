@@ -133,6 +133,8 @@ QWidget#appShell,
 QWidget#syncWorkspace,
 QWidget#geniusPage,
 QWidget#gamesPage,
+QWidget#gamesEmptyPage,
+QStackedWidget#gamesContent,
 QDialog#gameCatalogDialog,
 QFrame#appBody,
 QStackedWidget#pageStack,
@@ -142,7 +144,8 @@ QStackedWidget#syncLibraryStack {{
     background-color: {tokens.window};
 }}
 
-QLabel#pageTitle {{
+QLabel#pageTitle,
+QLabel#gamesEmptyTitle {{
     color: {tokens.text};
     font-family: "{typography.display}";
     font-size: {typography.title_pt:g}pt;
@@ -158,6 +161,7 @@ QLabel[browserTitle="true"] {{
 }}
 
 QLabel#pageDescription,
+QLabel#gamesEmptyDetail,
 QLabel#pageMeta,
 QLabel#deviceSearchStatus,
 QLabel#settingDescription,

@@ -1801,6 +1801,14 @@
         <translation>Dame juegos</translation>
     </message>
     <message>
+        <source>No games on this iPod</source>
+        <translation>No hay juegos en este iPod</translation>
+    </message>
+    <message>
+        <source>Choose games to add</source>
+        <translation>Elige juegos para añadir</translation>
+    </message>
+    <message>
         <source>Uninstall</source>
         <translation>Desinstalar</translation>
     </message>

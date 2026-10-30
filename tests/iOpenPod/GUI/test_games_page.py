@@ -154,7 +154,11 @@ def test_sidebar_opens_games_page_with_one_disabled_action_without_device() -> N
         header = page.findChild(PageHeader)
         assert header is not None and header.title_label.text() == "Games"
         assert header.findChild(QPushButton, "gimmeGames") is action
-        assert len(page.findChildren(QPushButton)) == 1
+        empty_action = page.findChild(QPushButton, "gamesEmptyAdd")
+        assert empty_action is not None and not empty_action.isEnabled()
+        assert len(page.findChildren(QPushButton)) == 2
+        empty = page.findChild(QLabel, "gamesEmptyTitle")
+        assert empty is not None and not empty.isVisible()
         assert page.findChild(QPushButton, "refreshGames") is None
         assert not context.games_controller.start()
     finally:
@@ -352,6 +356,7 @@ def test_games_grid_loads_titles_versions_covers_and_clears_after_disconnect(
         assert all(
             label.text() in {"Games", "Available games", "No available games", ""}
             for label in page.findChildren(QLabel)
+            if label.isVisible()
         )
         deadline = monotonic() + 5
         while context.games_controller.busy and monotonic() < deadline:
@@ -367,6 +372,35 @@ def test_games_grid_loads_titles_versions_covers_and_clears_after_disconnect(
         search.setText("Phase")
         QTest.qWait(220)
         assert offered.model().rowCount() == 0
+        empty_title = page.findChild(QLabel, "gamesEmptyTitle")
+        empty_action = page.findChild(QPushButton, "gamesEmptyAdd")
+        assert empty_title is not None and not empty_title.isVisible()
+        assert empty_action is not None
+        monkeypatch.setattr(
+            coordinator, "load_installed_games", lambda *_: GameCatalog()
+        )
+        context.games_controller.load_games(force=True)
+        deadline = monotonic() + 5
+        while not context.games_controller.catalog_ready and monotonic() < deadline:
+            APPLICATION.processEvents()
+            QTest.qWait(5)
+        assert context.games_controller.catalog_ready
+        assert model.rowCount() == 0 and not grid.isVisible()
+        assert empty_title.isVisible()
+        assert empty_title.text() == "No games on this iPod"
+        assert empty_title.alignment() == Qt.AlignmentFlag.AlignCenter
+        empty_detail = page.findChild(QLabel, "gamesEmptyDetail")
+        assert empty_detail is not None and empty_detail.text() == "Choose games to add"
+        assert empty_detail.height() >= empty_detail.heightForWidth(
+            empty_detail.width()
+        )
+        assert empty_action.isVisible() and empty_action.isEnabled()
+        assert empty_action.text() == "Gimme Games"
+        empty_action.click()
+        assert not empty_action.isEnabled() and not action.isEnabled()
+        wait_for_games(context.games_controller)
+        assert empty_action.isEnabled() and action.isEnabled()
+        assert catalog_dialog.isVisible()
         scan_started, release_scan = Event(), Event()
 
         def delayed(_active: ActiveIPod, _cancelled: Event) -> GameCatalog:
@@ -377,11 +411,13 @@ def test_games_grid_loads_titles_versions_covers_and_clears_after_disconnect(
         monkeypatch.setattr(coordinator, "load_installed_games", delayed)
         context.games_controller.load_games(force=True)
         assert scan_started.wait(5)
+        assert not empty_title.isVisible()
         search.clear()
         QTest.qWait(220)
         assert offered.model().rowCount() == 0
         context.device_controller.finish_sync_recovery(None)
         assert not catalog_dialog.isVisible()
+        assert not empty_title.isVisible() and not empty_action.isEnabled()
         release_scan.set()
         context.games_controller.shutdown()
         APPLICATION.processEvents()

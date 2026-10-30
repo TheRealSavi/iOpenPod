@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QMessageBox,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -65,6 +66,11 @@ class GamesPage(QWidget):
         self._uninstall.triggered.connect(self._uninstall_game)
         self._uninstall_target: tuple[ActiveIPod, InstalledGame] | None = None
         self._shown_catalog: GameCatalog | None = None
+        self._content = QStackedWidget(self)
+        self._content.setObjectName("gamesContent")
+        self._empty_page = self._build_empty_page()
+        self._content.addWidget(self._grid)
+        self._content.addWidget(self._empty_page)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -76,22 +82,61 @@ class GamesPage(QWidget):
             LAYOUT.space_lg, LAYOUT.space_sm, LAYOUT.space_lg, LAYOUT.space_sm
         )
         body.addWidget(self._status)
-        body.addWidget(self._grid, 1)
+        body.addWidget(self._content, 1)
         layout.addLayout(body, 1)
         controller.changed.connect(self._refresh)
         controller.catalogRequested.connect(self._open_game_catalog)
         self._refresh()
 
+    def _build_empty_page(self) -> QWidget:
+        page = QWidget(self)
+        page.setObjectName("gamesEmptyPage")
+        self._empty_title = QLabel(page)
+        self._empty_title.setObjectName("gamesEmptyTitle")
+        self._empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_title.setWordWrap(True)
+        self._empty_detail = QLabel(page)
+        self._empty_detail.setObjectName("gamesEmptyDetail")
+        self._empty_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_detail.setWordWrap(True)
+        self._empty_add = ActionButton(parent=page, kind=ActionButtonKind.PRIMARY)
+        self._empty_add.setObjectName("gamesEmptyAdd")
+        self._empty_add.clicked.connect(self._gimme_games)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(
+            LAYOUT.space_3xl,
+            LAYOUT.space_3xl,
+            LAYOUT.space_3xl,
+            LAYOUT.space_3xl,
+        )
+        layout.setSpacing(LAYOUT.space_sm)
+        layout.addStretch(1)
+        layout.addWidget(self._empty_title)
+        layout.addWidget(self._empty_detail)
+        layout.addSpacing(LAYOUT.space_xs)
+        layout.addWidget(self._empty_add, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch(1)
+        return page
+
     def _refresh(self) -> None:
         self._header.set_title(self.tr("Games"))
         self._button.setText(self.tr("Gimme Games"))
         self._button.setEnabled(self._controller.available)
+        self._empty_title.setText(self.tr("No games on this iPod"))
+        self._empty_detail.setText(self.tr("Choose games to add"))
+        self._empty_add.setText(self.tr("Gimme Games"))
+        self._empty_add.setEnabled(self._controller.available)
         self._status.setText(self._controller.message)
         self._status.setVisible(bool(self._controller.message))
         self._grid.setAccessibleName(self.tr("Installed games"))
         self._uninstall.setText(self.tr("Uninstall"))
         self._uninstall.setEnabled(self._controller.can_uninstall)
         catalog = self._controller.catalog
+        self._content.setCurrentWidget(
+            self._empty_page
+            if self._controller.catalog_ready and not catalog.games
+            else self._grid
+        )
         if self._uninstall_target is not None and (
             self._uninstall_target[0] is not self._controller.active_ipod
             or self._uninstall_target[1] not in catalog.games

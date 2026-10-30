@@ -14,6 +14,11 @@ Folder identifiers may be alphanumeric. `iTunesArtwork` supplies the extensionle
 JPEG cover; the observed 320×240 covers retain their landscape aspect ratio.
 No game executable or purchase metadata is read to build the grid.
 
+When a successful scan finds no installed games, the page shows a centered
+message and a second **Gimme Games** button using the Podcasts empty-state layout.
+Both buttons open the same preparation/catalog workflow and share availability.
+The empty state stays hidden until a successful scan and clears on disconnect.
+
 Manifestless auxiliary folders are skipped. Malformed metadata remains visible
 under its folder identifier with an unavailable version, and missing/invalid
 covers use the gamepad glyph. One bad game does not discard the remaining catalog.
