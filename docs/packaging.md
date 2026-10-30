@@ -59,6 +59,11 @@ desktop entry, and Store tiles. See its [provenance](../src/iOpenPod/assets/icon
 The available master is 256 pixels. ICNS includes larger converted representations;
 the original high-resolution artwork is still needed for final store art review.
 
+Qt 6.11.2 and 6.12.0 on Wayland use a window-icon alpha workaround. Its
+[investigation and native acceptance steps](research/window-icon-wayland-alpha.md)
+must be revisited when changing Qt versions. Fedora KDE standalone title-bar
+rendering remains a native acceptance check.
+
 Outputs are under ignored `build/` and `dist/`. Store staging refuses to overwrite
 an existing staging directory so obsolete files cannot silently enter a package.
 Remove that specific generated directory before staging again. Windows archives
