@@ -347,9 +347,15 @@ def execute(
         started = True
         notify(TransactionState.PUBLISHING, 0, journal.entries[0].path)
         # Reclaim all reviewed originals so Adds can use space from Removes.
-        for precondition in preconditions[: len(journal.entries)]:
+        for index, precondition in enumerate(preconditions[: len(journal.entries)]):
             if precondition.fingerprint is not None:
                 _delete(session, precondition.path, precondition.fingerprint)
+            if index >= len(plan.writes):
+                notify(
+                    TransactionState.PUBLISHING,
+                    index - len(plan.writes) + 1,
+                    precondition.path,
+                )
         reserve = (
             _reserve(session, journal)
             + plan.reserve_bytes
@@ -366,7 +372,9 @@ def execute(
                 modified_ns=write.modified_ns,
                 defer_readback=True,
             )
-            notify(TransactionState.PUBLISHING, index + 1, write.path)
+            notify(
+                TransactionState.PUBLISHING, len(plan.removals) + index + 1, write.path
+            )
         return _finish(
             session,
             path,

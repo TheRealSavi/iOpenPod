@@ -193,7 +193,11 @@ def test_final_verification_still_catches_edits_after_individual_publication(
     root, _, _, session, plan = _small_plan(tmp_path)
 
     def progress(event: TransactionProgress) -> None:
-        if event.state is TransactionState.PUBLISHING and event.completed == 1:
+        if (
+            event.state is TransactionState.PUBLISHING
+            and event.completed > 0
+            and event.path == DevicePath("replace.bin")
+        ):
             target = root / "replace.bin"
             metadata = target.stat()
             target.write_bytes(b"bad")

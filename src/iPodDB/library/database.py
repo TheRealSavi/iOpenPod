@@ -26,6 +26,7 @@ from iPodDB.library._sidecar_projection import RetainedPlaybackDates, project_si
 from iPodDB.library._write_logging import log_plan
 from iPodDB.library.artwork import ArtworkRead, CoverFormat, select_artwork
 from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.phase import resolve_phase_playlist
 from iPodDB.library.photos import (
     PhotoRead,
     PhotoThumbnailFormat,
@@ -83,6 +84,7 @@ class IPodLibrary:
         "_database_snapshot",
         "_device_time",
         "_document",
+        "_phase_playlist_id",
         "_photos_document",
         "_photos_repairs",
         "_sidecar_issues",
@@ -113,7 +115,10 @@ class IPodLibrary:
             frozenset(track.track_id for track in tracks),
             self._device_time,
         )
-        self._snapshot = LibrarySnapshot(tracks, playlists, device_name)
+        self._phase_playlist_id: int | None = None
+        self._snapshot = resolve_phase_playlist(
+            LibrarySnapshot(tracks, playlists, device_name), None
+        )
         self._database_snapshot = self._snapshot
         self._sidecars: tuple[PlaybackSidecar, ...] = ()
         self._consumed_sidecars: tuple[PlaybackSidecar, ...] = ()
@@ -157,6 +162,9 @@ class IPodLibrary:
         return updated
 
     def _refresh_sidecars(self) -> None:
+        self._database_snapshot = resolve_phase_playlist(
+            self._database_snapshot, self._phase_playlist_id
+        )
         # Use the same first Track dataset and row order as semantic projection;
         # an unavailable native date and a genuine zero share semantic zero.
         dataset = next(
@@ -183,6 +191,14 @@ class IPodLibrary:
         self._snapshot = projection.snapshot
         self._consumed_sidecars = projection.consumed
         self._sidecar_issues = projection.issues
+
+    def with_phase_playlist(self, playlist_id: int | None) -> IPodLibrary:
+        """Apply the captured game index ID, falling back to the exact name Phase."""
+        updated = copy(self)
+        updated._phase_playlist_id = playlist_id
+        updated._refresh_sidecars()
+        updated._source_revision = uuid4().hex
+        return updated
 
     @classmethod
     def parse(

@@ -50,6 +50,10 @@ RetailOS requirement would produce incorrect capability decisions.
   reusable across connections as Device Metadata; this does not detect firmware
   replacement when the cached files are unchanged. Profiles without a firmware
   requirement continue caching available release evidence without requiring it.
+  Game-capable profiles also require validated RetailOS provenance, because Games
+  authorization is qualified by exact release. This includes Classic 6.5G even
+  though its Genius Mix capability is not conditional. An unmarked legacy SCSI
+  revision cannot suppress the read-only probe needed to repair these caches.
 - Storage remains generic. The Application Layer places generic probe revisions
   in transport evidence; Device Registry parses already-read vendor payloads,
   resolves capabilities, and returns metadata bytes without I/O.

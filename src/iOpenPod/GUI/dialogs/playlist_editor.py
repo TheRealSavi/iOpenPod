@@ -878,6 +878,7 @@ class PlaylistEditorDialog(QDialog):
         parent: QWidget | None = None,
         *,
         playlists: tuple[Playlist, ...] = (),
+        phase_available: bool = False,
     ) -> None:
         if kind is PlaylistKind.GENIUS:
             raise ValueError("Native Genius Playlists are read-only.")
@@ -927,6 +928,16 @@ class PlaylistEditorDialog(QDialog):
             )
         self._sort_order.setCurrentIndex(self._sort_order.findData(initial_sort.value))
         form.addRow(self.tr("Sort order"), self._sort_order)
+        self.phase = QCheckBox(self.tr("Use as the Phase Playlist"), self)
+        self.phase.setObjectName("phasePlaylistOption")
+        self._was_phase = playlist.is_phase if playlist else False
+        self._phase_editable = kind in (
+            PlaylistKind.PLAYLIST,
+            PlaylistKind.SMART,
+        ) and not (playlist is not None and playlist.system_managed)
+        self.phase.setChecked(self._was_phase)
+        form.addRow(self.phase)
+        self.set_phase_available(phase_available)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
             LAYOUT.space_md,
@@ -966,6 +977,10 @@ class PlaylistEditorDialog(QDialog):
     @property
     def sort_order(self) -> PlaylistSort:
         return playlist_sort_from_value(int(self._sort_order.currentData()))
+
+    def set_phase_available(self, available: bool) -> None:
+        """Allow the shared installation scan to finish while the editor is open."""
+        self.phase.setVisible(self._phase_editable and (available or self._was_phase))
 
     def _build_rules(self, layout: QVBoxLayout) -> None:
         self._match_rules = QCheckBox(self.tr("Match rules"), self)

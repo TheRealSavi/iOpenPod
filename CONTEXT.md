@@ -14,6 +14,34 @@ then beyond it.
 
 ## Current stage
 
+Playlists can designate one Phase Playlist when the game is installed, with a
+distinct sidebar marker and ordinary editing behavior. Library saves include its
+companion index and gameplay charts generated from the actual audio using
+librosa. Content-checked charts are reused on subsequent saves. Native-parser
+and virtual-device checks pass, while physical gameplay remains untested. See
+[ADR-0210](docs/adr/0210-analyze-phase-playlist-audio-with-librosa.md).
+
+Games displays installed titles, versions, and landscape covers from Games_RO.
+Background Storage reads retain one card per installation, tolerate individual
+metadata failures, and clear on Active iPod changes. See
+[IC-Info and Games](docs/ipod-games.md) for the manifest contract and read-only
+device validation.
+
+Games now prepares the bundled Classic 6.5 Game Authorization Store for an
+identified supported iPod using a standalone iPodDB codec. The explicit sidebar
+action merges account/key records, gives bundled entries precedence on conflicts,
+and preserves destination-only authorizations through a recoverable Storage
+Transaction. Firmware and emulators remain lab-only verification tools. Game
+executables are installed separately by selecting cards and pressing Add in the
+Available games dialog. Gimme Games first downloads and extracts the complete
+preservation collection onto the Host, showing progress. Later clicks reuse those
+files. The app retains the catalog and artwork while game payloads stay outside
+its assets and source distribution. Selected games publish through Storage
+without replacing existing game folders or modifying iTunesDB. See ADR-0208,
+[ADR-0211](docs/adr/0211-download-the-game-collection-on-demand.md), and
+[IC-Info and Games](docs/ipod-games.md) for supported builds, merge limits, and
+native differential evidence. Physical device publication remains untested.
+
 Storage can resume a create-only transaction interrupted during staging through a
 new identity-bound Filesystem Session. It verifies and reuses completed stages,
 copies missing stages, and replaces only damaged stages while retaining their

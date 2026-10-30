@@ -1637,6 +1637,207 @@
     </message>
 </context>
 <context>
+    <name>GameCatalogDialog</name>
+    <message>
+        <source>Select all</source>
+        <translation>Seleccionar todos</translation>
+    </message>
+    <message>
+        <source>Adding…</source>
+        <translation>Añadiendo…</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>Añadir</translation>
+    </message>
+    <message>
+        <source>Available games</source>
+        <translation>Juegos disponibles</translation>
+    </message>
+    <message>
+        <source>Search games</source>
+        <translation>Buscar juegos</translation>
+    </message>
+    <message>
+        <source>No available games</source>
+        <translation>No hay juegos disponibles</translation>
+    </message>
+</context>
+<context>
+    <name>GamesController</name>
+    <message>
+        <source>Loading games…</source>
+        <translation type="vanished">Cargando juegos…</translation>
+    </message>
+    <message>
+        <source>Games could not be loaded: {detail}</source>
+        <translation type="vanished">No se pudieron cargar los juegos: {detail}</translation>
+    </message>
+    <message>
+        <source>Select an iPod to view installed games.</source>
+        <translation type="vanished">Selecciona un iPod para ver los juegos instalados.</translation>
+    </message>
+    <message>
+        <source>Some game details could not be read.</source>
+        <translation type="vanished">No se pudieron leer algunos detalles de los juegos.</translation>
+    </message>
+    <message>
+        <source>No installed games found.</source>
+        <translation type="vanished">No se encontraron juegos instalados.</translation>
+    </message>
+    <message>
+        <source>Select an iPod to prepare game authorization.</source>
+        <translation>Selecciona un iPod para preparar la autorización de juegos.</translation>
+    </message>
+    <message>
+        <source>Finish the current iPod operation or recovery first.</source>
+        <translation>Termina primero la operación o recuperación actual del iPod.</translation>
+    </message>
+    <message>
+        <source>Preparing to uninstall {title}…</source>
+        <translation>Preparando la desinstalación de {title}…</translation>
+    </message>
+    <message>
+        <source>Uninstalling {title}…</source>
+        <translation>Desinstalando {title}…</translation>
+    </message>
+    <message>
+        <source>Verifying removal of {title}…</source>
+        <translation>Verificando la eliminación de {title}…</translation>
+    </message>
+    <message>
+        <source>Removing folders for {title}…</source>
+        <translation>Eliminando las carpetas de {title}…</translation>
+    </message>
+    <message>
+        <source>Finishing uninstall of {title}…</source>
+        <translation>Finalizando la desinstalación de {title}…</translation>
+    </message>
+    <message>
+        <source>Downloading game files…</source>
+        <translation>Descargando archivos de juegos…</translation>
+    </message>
+    <message>
+        <source>Preparing games for installation…</source>
+        <translation>Preparando la instalación de juegos…</translation>
+    </message>
+    <message>
+        <source>Extracting {title}…</source>
+        <translation>Extrayendo {title}…</translation>
+    </message>
+    <message>
+        <source>Extracting game archives…</source>
+        <translation>Extrayendo los archivos de juegos…</translation>
+    </message>
+    <message>
+        <source>Installing games…</source>
+        <translation>Instalando juegos…</translation>
+    </message>
+    <message>
+        <source>Verifying installed games…</source>
+        <translation>Verificando los juegos instalados…</translation>
+    </message>
+    <message>
+        <source>Verifying game files…</source>
+        <translation>Verificando archivos de juegos…</translation>
+    </message>
+    <message>
+        <source>Finishing game installation…</source>
+        <translation>Finalizando la instalación de juegos…</translation>
+    </message>
+    <message>
+        <source>Finishing game preparation…</source>
+        <translation>Finalizando la preparación de juegos…</translation>
+    </message>
+    <message>
+        <source>Game removal was interrupted. Device recovery is required before another write.</source>
+        <translation>La desinstalación del juego se ha interrumpido. Es necesario recuperar el dispositivo antes de volver a escribir en él.</translation>
+    </message>
+    <message>
+        <source>Game installation was interrupted. Device recovery is required before another write.</source>
+        <translation>La instalación de juegos se ha interrumpido. Es necesario recuperar el dispositivo antes de volver a escribir en él.</translation>
+    </message>
+    <message>
+        <source>Preparing and verifying game authorization…</source>
+        <translation type="vanished">Preparando y verificando la autorización de juegos…</translation>
+    </message>
+    <message>
+        <source>Game authorization saved: {added} added, {replaced} replaced, {unchanged} unchanged.</source>
+        <translation type="vanished">Autorización de juegos guardada: {added} añadidas, {replaced} sustituidas, {unchanged} sin cambios.</translation>
+    </message>
+    <message>
+        <source>The iPod already has these game authorizations.</source>
+        <translation type="vanished">El iPod ya tiene estas autorizaciones de juegos.</translation>
+    </message>
+    <message>
+        <source>Game authorization was interrupted. Device recovery is required before another write.</source>
+        <translation>La autorización de juegos se ha interrumpido. Es necesario recuperar el dispositivo antes de volver a escribir en él.</translation>
+    </message>
+    <message>
+        <source>Game files could not be prepared: {detail}</source>
+        <translation>No se pudieron preparar los archivos de juegos: {detail}</translation>
+    </message>
+    <message>
+        <source>The game could not be uninstalled: {detail}</source>
+        <translation>No se ha podido desinstalar el juego: {detail}</translation>
+    </message>
+    <message>
+        <source>Games could not be installed: {detail}</source>
+        <translation>No se han podido instalar los juegos: {detail}</translation>
+    </message>
+    <message>
+        <source>Game authorization could not be saved: {detail}</source>
+        <translation>No se ha podido guardar la autorización de juegos: {detail}</translation>
+    </message>
+</context>
+<context>
+    <name>GamesPage</name>
+    <message>
+        <source>Games</source>
+        <translation>Juegos</translation>
+    </message>
+    <message>
+        <source>Gimme Games</source>
+        <translation>Dame juegos</translation>
+    </message>
+    <message>
+        <source>Uninstall</source>
+        <translation>Desinstalar</translation>
+    </message>
+    <message>
+        <source>Uninstall game?</source>
+        <translation>¿Desinstalar el juego?</translation>
+    </message>
+    <message>
+        <source>Uninstall &quot;{title}&quot;?</source>
+        <translation>¿Desinstalar «{title}»?</translation>
+    </message>
+    <message>
+        <source>The game, its saved progress, and its statistics will be deleted from this iPod.</source>
+        <translation>Se eliminarán de este iPod el juego, su progreso guardado y sus estadísticas.</translation>
+    </message>
+    <message>
+        <source>The game catalog could not be loaded: {detail}</source>
+        <translation>No se pudo cargar el catálogo de juegos: {detail}</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation type="vanished">Actualizar</translation>
+    </message>
+    <message>
+        <source>Installed games</source>
+        <translation>Juegos instalados</translation>
+    </message>
+    <message>
+        <source>Version {version}</source>
+        <translation>Versión {version}</translation>
+    </message>
+    <message>
+        <source>Version unavailable</source>
+        <translation>Versión no disponible</translation>
+    </message>
+</context>
+<context>
     <name>GeniusMixNames</name>
     <message>
         <source>Rock Mix</source>
@@ -3429,6 +3630,10 @@
         <translation>Listas de reproducción</translation>
     </message>
     <message>
+        <source>Games</source>
+        <translation>Juegos</translation>
+    </message>
+    <message>
         <source>Photos</source>
         <translation>Fotos</translation>
     </message>
@@ -4613,6 +4818,10 @@
         <translation>Orden</translation>
     </message>
     <message>
+        <source>Use as the Phase Playlist</source>
+        <translation>Usar como lista de reproducción de Phase</translation>
+    </message>
+    <message>
         <source>Apply Changes</source>
         <translation>Aplicar cambios</translation>
     </message>
@@ -5021,6 +5230,14 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Untitled Playlist</source>
         <translation>Lista sin título</translation>
+    </message>
+    <message>
+        <source>Phase Playlist: %1</source>
+        <translation>Lista de reproducción de Phase: %1</translation>
+    </message>
+    <message>
+        <source>%1 · Phase</source>
+        <translation type="vanished">%1 · Phase</translation>
     </message>
 </context>
 <context>
@@ -11004,7 +11221,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The changed composer has conflicting native identities.</source>
-        <translation>El compositor modificado tiene identidades nativas en conflicto.</translation>
+        <translation type="vanished">El compositor modificado tiene identidades nativas en conflicto.</translation>
     </message>
     <message>
         <source>The chapter timeline does not match the Album Tracks.</source>
@@ -11559,6 +11776,10 @@ Playlists: %3</translation>
         <translation>Audio alternativo</translation>
     </message>
     <message>
+        <source>Analyzing Phase playlist audio</source>
+        <translation>Analizando el audio de la lista de reproducción de Phase</translation>
+    </message>
+    <message>
         <source>Another selected Host Playlist uses this iPod Playlist. Choose a different target or uncheck one.</source>
         <translation>Otra lista seleccionada del equipo usa esta lista del iPod. Elige otro destino o desmarca una de ellas.</translation>
     </message>
@@ -11617,6 +11838,10 @@ Playlists: %3</translation>
     <message>
         <source>Remove the Genius Playlist emptied by Track deletion.</source>
         <translation>Elimina la lista de reproducción Genius que ha quedado vacía al eliminar pistas.</translation>
+    </message>
+    <message>
+        <source>The Phase Playlist producer marker is missing.</source>
+        <translation>Falta el marcador del creador de la lista de reproducción de Phase.</translation>
     </message>
     <message>
         <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>

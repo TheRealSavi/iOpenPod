@@ -53,6 +53,76 @@ def _session(
     return root, platform, session
 
 
+@pytest.mark.parametrize("contents", ["empty", "nonempty", "file"])
+def test_remove_empty_directory_preserves_parents_and_rejects_other_entries(
+    tmp_path: Path,
+    contents: str,
+) -> None:
+    root, _, session = _session(tmp_path)
+    parent = root / "parent"
+    parent.mkdir()
+    target = parent / "child"
+    if contents == "file":
+        target.write_bytes(b"preserve")
+    else:
+        target.mkdir()
+        if contents == "nonempty":
+            (target / "keep.bin").write_bytes(b"preserve")
+    try:
+        if contents == "empty":
+            session.remove_empty_directory(DevicePath("parent/child"))
+            assert not target.exists()
+        else:
+            with pytest.raises((StorageOperationError, UnsafeFilesystemPathError)):
+                session.remove_empty_directory(DevicePath("parent/child"))
+            assert (
+                target if contents == "file" else target / "keep.bin"
+            ).read_bytes() == b"preserve"
+        assert parent.is_dir()
+    finally:
+        session.close()
+
+
+def test_remove_empty_directory_rejects_read_only_disconnected_and_link_targets(
+    tmp_path: Path,
+) -> None:
+    root, platform, session = _session(tmp_path)
+    target = root / "empty"
+    target.mkdir()
+    platform.disconnect(root)
+    with pytest.raises(SessionInvalidatedError):
+        session.remove_empty_directory(DevicePath("empty"))
+    assert target.exists()
+    session.close()
+    other = tmp_path / "readonly"
+    other.mkdir()
+    root, _, session = _session(other, writable=False)
+    (root / "empty").mkdir()
+    try:
+        with pytest.raises(ReadOnlyFilesystemError):
+            session.remove_empty_directory(DevicePath("empty"))
+        assert (root / "empty").exists()
+    finally:
+        session.close()
+
+
+def test_remove_empty_directory_rejects_symlink(tmp_path: Path) -> None:
+    root, _, session = _session(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        (root / "link").symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        session.close()
+        pytest.skip(f"Host does not permit symlink creation: {error}")
+    try:
+        with pytest.raises(UnsafeFilesystemPathError):
+            session.remove_empty_directory(DevicePath("link"))
+        assert outside.is_dir()
+    finally:
+        session.close()
+
+
 def test_reads_stats_and_lists_only_root_bound_device_paths(tmp_path: Path) -> None:
     root, _, session = _session(tmp_path)
     music = root / "Music"

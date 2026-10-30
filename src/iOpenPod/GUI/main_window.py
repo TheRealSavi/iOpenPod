@@ -98,6 +98,7 @@ from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.backup_page import BackupPage
 from iOpenPod.GUI.pages.collection_page import CollectionPage
+from iOpenPod.GUI.pages.games_page import GamesPage
 from iOpenPod.GUI.pages.genius_page import GeniusPage
 from iOpenPod.GUI.pages.library_page import LibraryPage
 from iOpenPod.GUI.pages.photo_page import PhotoPage
@@ -448,6 +449,16 @@ class MainWindow(QMainWindow):
             context.theme_manager,
             self._artwork_provider,
             self._pages,
+            phase_available=lambda: (
+                context.games_controller.catalog_ready
+                and any(
+                    game.directory.upper() == "1D000" and bool(game.identifier)
+                    for game in context.games_controller.catalog.games
+                )
+            ),
+        )
+        context.games_controller.changed.connect(
+            self._playlist_page.refresh_phase_availability
         )
         self._genius_page = GeniusPage(
             context.library_workspace,
@@ -457,6 +468,9 @@ class MainWindow(QMainWindow):
             self._pages,
         )
         self._genius_page.set_active_ipod(context.device_controller.active_ipod)
+        self._games_page = GamesPage(
+            context.games_controller, self._pages, theme_manager=context.theme_manager
+        )
         self._photo_page = PhotoPage(
             context.library_workspace,
             context.settings,
@@ -511,6 +525,7 @@ class MainWindow(QMainWindow):
             PageId.SETTINGS: self._settings_page,
             PageId.PLAYLISTS: self._playlist_page,
             PageId.GENIUS: self._genius_page,
+            PageId.GAMES: self._games_page,
             PageId.PODCASTS: self._podcast_page,
             PageId.PHOTOS: self._photo_page,
             PageId.SYNESTHESIA: self._synesthesia_page,
@@ -533,6 +548,7 @@ class MainWindow(QMainWindow):
         for page in self._library_pages:
             self._pages.addWidget(page)
         self._pages.addWidget(self._photo_page)
+        self._pages.addWidget(self._games_page)
         self._pages.addWidget(self._backup_page)
         self._pages.addWidget(self._synesthesia_page)
         self._pages.addWidget(self._settings_page)
@@ -1657,6 +1673,7 @@ class MainWindow(QMainWindow):
                 PageId.SYNESTHESIA,
                 PageId.PODCASTS,
                 PageId.GENIUS,
+                PageId.GAMES,
             )
             and self._context.device_controller.active_ipod is not None
             and not self._context.device_controller.busy

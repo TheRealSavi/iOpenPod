@@ -1051,6 +1051,25 @@ def _prepare(
             checked_name,
             checked_photo_library,
         )
+        # The selection is companion-file intent, never inferred from MHYP +0x52.
+        phase_ids = {
+            mapping.output_id
+            for mapping in mappings
+            if mapping.subject == "playlist"
+            and any(
+                p.is_phase and p.playlist_id == mapping.draft_id
+                for p in desired.playlists
+            )
+        } | {
+            p.playlist_id for p in desired.playlists if p.is_phase and p.playlist_id > 0
+        }
+        checked = replace(
+            checked,
+            playlists=tuple(
+                replace(p, is_phase=p.playlist_id in phase_ids)
+                for p in checked.playlists
+            ),
+        )
         checked_logical = write_iTunesDB(checked_document)
         if (
             (

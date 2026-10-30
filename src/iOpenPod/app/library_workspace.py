@@ -1039,6 +1039,7 @@ class LibraryWorkspace(QObject):
         description: str = "",
         track_ids: tuple[int, ...] = (),
         sort_order: PlaylistSort | None = None,
+        is_phase: bool = False,
     ) -> Playlist:
         self._require_editable()
         self._require_snapshot()
@@ -1078,8 +1079,11 @@ class LibraryWorkspace(QObject):
             description=description,
             entries=entries,
             sort_order=resolved_sort_order,
+            is_phase=is_phase,
         )
         self._next_id -= 1
+        if is_phase:
+            self._clear_other_phase_playlists(playlist.playlist_id)
         self._playlists[playlist.playlist_id] = playlist
         self._publish()
         return playlist
@@ -1092,6 +1096,7 @@ class LibraryWorkspace(QObject):
         description: str | None = None,
         smart: SmartPlaylist | None = None,
         sort_order: PlaylistSort | None = None,
+        is_phase: bool | None = None,
     ) -> Playlist:
         """Apply changed rules and their saved matches as one reversible edit."""
 
@@ -1102,6 +1107,7 @@ class LibraryWorkspace(QObject):
             name=playlist.name if name is None else self._validate_name(name),
             description=playlist.description if description is None else description,
             sort_order=playlist.sort_order if sort_order is None else sort_order,
+            is_phase=playlist.is_phase if is_phase is None else is_phase,
         )
         if playlist.kind is PlaylistKind.GENIUS:
             raise ValueError("Native Genius Playlists are read-only.")
@@ -1140,7 +1146,19 @@ class LibraryWorkspace(QObject):
                     updated.sort_order,
                 ),
             )
+        if updated.is_phase:
+            cleared = self._clear_other_phase_playlists(updated.playlist_id)
+            if cleared and updated == playlist:
+                self._publish()
         return self._replace(updated)
+
+    def _clear_other_phase_playlists(self, selected_id: int) -> bool:
+        changed = False
+        for identity, playlist in tuple(self._playlists.items()):
+            if identity != selected_id and playlist.is_phase:
+                self._playlists[identity] = replace(playlist, is_phase=False)
+                changed = True
+        return changed
 
     def rename(self, playlist_id: int, name: str) -> Playlist:
         return self.update(playlist_id, name=name)

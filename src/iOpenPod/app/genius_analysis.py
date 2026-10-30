@@ -101,7 +101,11 @@ class FFmpegGeniusPCMDecoder:
         self,
         *,
         find_tool: MediaToolFinder | None = None,
+        maximum_duration_seconds: int = MAX_GENIUS_AUDIO_SECONDS,
     ) -> None:
+        if not 0 < maximum_duration_seconds <= 1801:
+            raise ValueError("Invalid acoustic decode duration limit")
+        self._max_pcm_bytes = GENIUS_SAMPLE_RATE_HZ * maximum_duration_seconds * 4
         self._find_tool = find_tool or find_media_tool
         self._lookup_done = False
         self._executable: HostPath | None = None
@@ -167,7 +171,7 @@ class FFmpegGeniusPCMDecoder:
                     arguments_after_input=suffix,
                     checkpoint=checkpoint,
                     timeout_seconds=300,
-                    max_output_bytes=_MAX_PCM_BYTES,
+                    max_output_bytes=self._max_pcm_bytes,
                     max_stderr_bytes=65_536,
                     low_priority=True,
                 )
@@ -179,7 +183,7 @@ class FFmpegGeniusPCMDecoder:
                     arguments_after_input=suffix,
                     checkpoint=checkpoint,
                     timeout_seconds=300,
-                    max_output_bytes=_MAX_PCM_BYTES,
+                    max_output_bytes=self._max_pcm_bytes,
                     max_stderr_bytes=65_536,
                     low_priority=True,
                 )

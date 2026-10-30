@@ -687,7 +687,20 @@ def _profile_capabilities(
     generation: str,
     capacity: str,
 ) -> DeviceCapabilities:
-    capabilities = _CAPABILITIES_BY_IDENTITY[(family, generation)]
+    capabilities = replace(
+        _CAPABILITIES_BY_IDENTITY[(family, generation)],
+        supports_games=(
+            (family == "iPod" and generation in {"5th Gen", "5.5th Gen"})
+            or (
+                family == "iPod Classic"
+                and generation in {"6th Gen", "6.5th Gen", "7th Gen"}
+            )
+            or (
+                family == "iPod Nano"
+                and generation in {"3rd Gen", "4th Gen", "5th Gen"}
+            )
+        ),
+    )
     if family != "iPod" or generation not in {"5th Gen", "5.5th Gen"}:
         return capabilities
     high_memory = capacity in {"60GB", "80GB"} or model_number in {

@@ -1,11 +1,17 @@
 """Playlist sidebar navigation and editing intents."""
 
-from PySide6.QtCore import QPoint, QPointF, Qt
+import pytest
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt
 from PySide6.QtGui import (
+    QColor,
     QDragEnterEvent,
     QDragLeaveEvent,
     QDragMoveEvent,
     QDropEvent,
+    QIcon,
+    QPainter,
+    QPalette,
+    QPixmap,
 )
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -13,6 +19,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QScrollArea,
+    QStyle,
+    QStyleOptionViewItem,
     QToolButton,
     QTreeView,
 )
@@ -22,6 +30,8 @@ from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.library_drag import TrackSelectionMimeData
 from iOpenPod.app.models.playlist_tree_model import PlaylistTreeModel
 from iOpenPod.app.playback_controller import PlaybackController
+from iOpenPod.GUI.presentation.icons import glyph_icon
+from iOpenPod.GUI.widgets import playlist_tree
 from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iPodDB.library import LibrarySnapshot, Playlist, PlaylistKind, Track
@@ -35,6 +45,63 @@ def _application() -> QApplication:
 
 
 APPLICATION = _application()
+
+
+def test_phase_sidebar_label_does_not_rename_playlist() -> None:
+    workspace = LibraryWorkspace()
+    workspace.load(LibrarySnapshot(playlists=(Playlist(1, "Rhythm", is_phase=True),)))
+    model = PlaylistTreeModel(workspace)
+    index = model.index_for_id(1)
+    assert index.data() == "Rhythm"
+    assert "Phase" in str(index.data(Qt.ItemDataRole.AccessibleTextRole))
+    assert workspace.playlists[0].name == "Rhythm"
+    workspace.update(1, is_phase=False)
+    assert model.index_for_id(1).data() == "Rhythm"
+
+
+def test_phase_sidebar_uses_game_icon_with_playlist_text_colors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = LibraryWorkspace()
+    workspace.load(LibrarySnapshot(playlists=(Playlist(1, "Rhythm", is_phase=True),)))
+    tree = PlaylistTree(workspace)
+    view = tree.findChild(QTreeView, "playlistTree")
+    assert view is not None
+    model = view.model()
+    assert isinstance(model, PlaylistTreeModel)
+    colors: list[str] = []
+    glyphs: list[str] = []
+
+    def capture(name: str, height: int, color: QColor, dpr: float = 1.0) -> QIcon:
+        glyphs.append(name)
+        colors.append(color.name())
+        return glyph_icon(name, height, color, dpr)
+
+    monkeypatch.setattr(playlist_tree, "glyph_icon", capture)
+    try:
+        for selected in (False, True):
+            option = QStyleOptionViewItem()
+            option.widget = view
+            option.rect = QRect(0, 0, 250, 30)
+            option.palette.setColor(QPalette.ColorRole.Text, QColor("#aabbcc"))
+            option.palette.setColor(
+                QPalette.ColorRole.HighlightedText, QColor("#eeeeee")
+            )
+            option.palette.setColor(QPalette.ColorRole.Accent, QColor("#0077ff"))
+            option.state = QStyle.StateFlag.State_Enabled
+            if selected:
+                option.state |= QStyle.StateFlag.State_Selected
+            surface = QPixmap(250, 30)
+            surface.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(surface)
+            try:
+                view.itemDelegate().paint(painter, option, model.index_for_id(1))
+            finally:
+                painter.end()
+        assert colors == ["#aabbcc", "#eeeeee"]
+        assert glyphs == ["games", "games"]
+    finally:
+        tree.deleteLater()
 
 
 def _assert_unselected(sidebar: PlaylistTree) -> None:

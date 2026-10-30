@@ -151,6 +151,7 @@ class CapturedLibraryResources:
     discarded_track_media: tuple[DiscardedTrackMedia, ...] = ()
     genius_mix_write: TransactionWrite | None = None
     genius_playlists: CapturedGeniusPlaylists | None = None
+    phase_writes: tuple[TransactionWrite, ...] = ()
 
 
 def pending_sidecars(
@@ -1259,6 +1260,7 @@ def transaction(
     writes.extend(captured.presentation_writes)
     if captured.genius_mix_write is not None:
         writes.append(captured.genius_mix_write)
+    writes.extend(captured.phase_writes)
     changed = {w.path for w in writes} | {r.path for r in removals}
     if changed & {file.path for file in captured.discarded_track_media}:
         raise ValueError("A Track media file cannot be written and deleted together.")

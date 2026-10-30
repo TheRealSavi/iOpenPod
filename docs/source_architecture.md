@@ -441,6 +441,11 @@ global settings: Storage resolves the conventional Host configuration location a
 atomically reads or replaces the file bytes, while iOpenPod owns its schema and JSON
 encoding. Storage must not become a generic wrapper around every file iOpenPod uses.
 
+`FilesystemSession.remove_empty_directory` removes one validated empty directory,
+without traversing its children or removing its parents. Application workflows may
+use it after recoverable file removal to prune their captured directories. A
+nonempty directory or link fails rather than authorizing recursive deletion.
+
 The implemented foundation uses this public flow:
 
 ```text
@@ -765,6 +770,30 @@ It should not contain application GUI logic.
 iPodDB does not use Storage and does not know about iOpenPod. It accepts bytes or
 generic binary streams and returns structured database data or serialized bytes.
 iOpenPod decides when to read or persist those bytes through Storage.
+
+The `ic_info` codec follows this boundary for Game Authorization Stores. It
+authenticates envelopes, transforms device-bound values, reconciles account
+sessions, and merges records in memory. Its cryptographic constants are small
+packaged data resources; firmware execution is confined to the research lab.
+The Application Layer owns the bundled source store and GUID, qualifies the
+Active iPod, and coordinates recoverable Storage publication through the Games
+workflow. See [ADR-0208](adr/0208-prepare-game-authorizations-with-a-standalone-codec.md).
+
+The Games Application Layer downloads and verifies the pinned preservation
+release, then extracts its complete collection into persistent Host storage.
+Gimme Games opens the bundled catalog only after that collection and authorization
+preparation are ready. Subsequent clicks reuse the extracted files; Add validates
+selected contents and publishes them through a Storage Transaction. Game payloads
+are excluded from application assets and release sources. See
+[ADR-0211](adr/0211-download-the-game-collection-on-demand.md).
+
+The public `iPodDB.games` contract also owns Phase Library index and gameplay
+analysis codecs. The Application Layer decodes verified audio and uses librosa
+to generate typed events, with content-checked reuse (ADR-0210). A Phase designation is part of the semantic Playlist; the
+Application Layer enforces one selection and prepares companions using final
+database identities. The normal Library Storage Transaction publishes those files
+with the databases. Installed-game discovery is shared by Games and the Playlist
+editor. See [ADR-0209](adr/0209-publish-phase-companions-with-the-library.md).
 
 ### Common Library interface
 

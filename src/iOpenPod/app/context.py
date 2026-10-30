@@ -15,6 +15,7 @@ from iOpenPod.app.core.settings.stores import (
 )
 from iOpenPod.app.core.status import ApplicationStatus
 from iOpenPod.app.device_controller import DeviceController
+from iOpenPod.app.games_controller import GamesController
 from iOpenPod.app.genius_analysis import FFmpegGeniusPCMDecoder, GeniusAnalysisService
 from iOpenPod.app.host_media_controller import HostMediaScanController
 from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
@@ -31,6 +32,7 @@ from iOpenPod.app.models.collection_list_model import (
     CollectionListModel,
 )
 from iOpenPod.app.models.track_table_model import TrackTableModel
+from iOpenPod.app.phase_analysis import PhaseAnalysisService
 from iOpenPod.app.photo_controller import PhotoController
 from iOpenPod.app.playback.qt_backend import QtPlaybackBackend
 from iOpenPod.app.playback_controller import PlaybackController
@@ -83,8 +85,19 @@ class AppContext:
     stream_preferences: MediaStreamPreferences = field(
         default_factory=MediaStreamPreferences
     )
+    games_controller: GamesController = field(init=False)
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "games_controller",
+            GamesController(
+                self.device_coordinator,
+                self.device_controller,
+                self.device_controller,
+                status=self.status,
+            ),
+        )
         self.library_workspace.changed.connect(self._workspace_artwork_changed)
         self.library_workspace.tracksChanged.connect(self._workspace_tracks_changed)
         self._workspace_artwork_changed()
@@ -137,6 +150,11 @@ class AppContext:
         )
         device_coordinator = DeviceCoordinator(
             storage,
+            phase_analysis=PhaseAnalysisService(
+                FFmpegGeniusPCMDecoder(
+                    find_tool=media_tools.find, maximum_duration_seconds=1801
+                )
+            ),
             genius_analysis=GeniusAnalysisService(
                 cache_file=storage.host_cache_file(
                     "iOpenPod", "genius-acoustic-v1.json"
@@ -275,6 +293,7 @@ class AppContext:
         self.lyrics_controller.shutdown()
         self.playback_controller.shutdown()
         self.backup_controller.shutdown()
+        self.games_controller.shutdown()
         self.host_media_controller.shutdown()
         self.ipod_media_controller.shutdown()
         self.podcast_controller.shutdown()

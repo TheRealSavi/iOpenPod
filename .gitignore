@@ -190,3 +190,8 @@ CLAUDE.md
 
 # Private local planning and work items
 .scratch/
+
+# Game payloads are downloaded and extracted into the Host cache.
+/src/iOpenPod/assets/games/archives/
+/src/iOpenPod/assets/games/**/*.zip
+/src/iOpenPod/assets/games/**/*.7z

@@ -617,6 +617,14 @@ def verify_playlists(
                 entries=(),
             )
             actual = project_playlist(selection, track_ids, device_time)
+            actual = replace(actual, is_phase=playlist.is_phase)
+            if playlist.is_phase and affected and chunk.header.phase_game_flag != 25:
+                fail(
+                    "playlist_phase_marker",
+                    "The Phase Playlist producer marker is missing.",
+                    kind,
+                    chunk,
+                )
             if previous and previous.parent_id == playlist.parent_id:
                 parent_source = (
                     baseline or old.get((3, identity)) or old.get((2, identity))

@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QShortcut
-from PySide6.QtWidgets import QLabel, QMenu, QSplitter, QTreeWidget
+from PySide6.QtWidgets import QLabel, QMenu, QSplitter, QTreeWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from device_registry import (
@@ -153,6 +153,27 @@ def select(page: GeniusPage, section: int) -> None:
     item = group.child(0)
     assert item is not None
     tree(page).setCurrentItem(item)
+
+
+@pytest.mark.parametrize("section", [0, 1])
+def test_genius_hero_displays_atom_for_saved_playlists_and_mixes(
+    browser: Browser, section: int
+) -> None:
+    select(browser.page, section)
+    APPLICATION.processEvents()
+    icon = browser.page.findChild(QWidget, "geniusHeroIcon")
+    phase = browser.page.findChild(QWidget, "phaseHeroWordmark")
+    assert icon is not None and icon.isVisible()
+    assert phase is not None and phase.isHidden()
+    image = icon.grab().toImage()
+    color = browser.context.theme_manager.tokens.text.casefold()
+    assert any(
+        image.pixelColor(x, y).name().casefold() == color
+        for y in range(image.height())
+        for x in range(image.width())
+    )
+    browser.page.set_active_ipod(None)
+    assert icon.isHidden()
 
 
 def test_groups_and_saved_playlist_preserve_order_and_repeated_occurrences(

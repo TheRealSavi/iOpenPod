@@ -72,6 +72,7 @@ from iOpenPod.app.models.photos import (
     PhotoImage,
     PhotoRequest,
 )
+from iOpenPod.app.phase_analysis import PhaseAnalysisService
 from iOpenPod.app.playback.backend import PlaybackSourceError
 from iOpenPod.app.podcasts.models import (
     PodcastIssue,
@@ -79,6 +80,11 @@ from iOpenPod.app.podcasts.models import (
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastDeviceStore
 from iOpenPod.app.services import (
+    game_download,
+    game_installation,
+    game_library,
+    game_uninstallation,
+    games,
     library_initialization,
     library_resources,
     photo_shard_resources,
@@ -92,6 +98,7 @@ from iOpenPod.app.services.genius_mixes import (
 )
 from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
+from iOpenPod.app.services.phase import capture_phase_selection, prepare_phase
 from iOpenPod.app.smart_playlist_preview import refresh_smart_playlists
 from iPodDB.library import (
     IPodLibrary,
@@ -99,6 +106,7 @@ from iPodDB.library import (
     PhotoRepresentationKind,
     PhotoThumbnailFormat,
     PlaylistKind,
+    resolve_phase_playlist,
 )
 from iPodDB.library.genius import GeniusCollectionKind, project_genius_browse
 from storage import (
@@ -288,6 +296,7 @@ class _ActiveConnection:
     library_source: IPodLibrary
     time_precondition: FilePrecondition | None = None
     sidecar_preconditions: tuple[FilePrecondition, ...] = ()
+    phase_precondition: FilePrecondition | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,6 +359,7 @@ class DeviceCoordinator:
         ithmb_cache_byte_limit: int = 16 * 1024 * 1024,
         ipod_media_scanner: IPodMediaScanner | None = None,
         genius_analysis: GeniusAnalysisService | None = None,
+        phase_analysis: PhaseAnalysisService | None = None,
         volume_presentation_enabled: bool = True,
     ) -> None:
         if ithmb_cache_byte_limit <= 0:
@@ -374,6 +384,7 @@ class DeviceCoordinator:
         self._podcast_store = PodcastDeviceStore()
         self._ipod_media_scanner = ipod_media_scanner or IPodMediaScanner()
         self._genius_analysis = genius_analysis or GeniusAnalysisService()
+        self._phase_analysis = phase_analysis or PhaseAnalysisService()
         self._recovery_observations: dict[
             str, tuple[MountedVolume, FileFingerprint]
         ] = {}
@@ -1099,6 +1110,384 @@ class DeviceCoordinator:
                     requires_persistence=False,
                 )
 
+    def load_installed_games(
+        self, expected: ActiveIPod, cancelled: threading.Event
+    ) -> game_library.GameCatalog:
+        """Read game display metadata without reserving or mutating the device."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before loading games."
+                )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Loading games was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while loading games."
+                    )
+
+        return game_library.read_game_catalog(active.session, checkpoint)
+
+    def games_unavailable_reason(self, expected: ActiveIPod) -> str:
+        """Expose capability qualification without device I/O on the GUI thread."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                return "Select an iPod before preparing game authorization."
+            if not active.record.mounted_volume.volume.capabilities.safe_for_writes:
+                return "The selected iPod is read-only."
+            try:
+                games.destination_family(active.record.device_evidence)
+            except ValueError as error:
+                return str(error)
+        return ""
+
+    def install_game_authorizations(
+        self,
+        expected: ActiveIPod,
+        cancelled: threading.Event,
+    ) -> games.GamesResult:
+        """Merge authorization bytes through an identity-bound Storage Transaction."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before game authorization."
+                )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Game authorization was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected during game authorization."
+                    )
+
+        try:
+            with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
+                checkpoint()
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (
+                        _SYSINFO_PATH,
+                        _SYSINFO_EXTENDED_PATH,
+                        _SYSINFO_AUTHORITY_PATH,
+                    )
+                )
+                metadata, _issues = _read_device_metadata(session)
+                evidence = active.record.hardware_evidence.merged_with(metadata)
+                family = games.destination_family(evidence)
+                if family != games.destination_family(active.record.device_evidence):
+                    raise DeviceChangedError("The iPod family changed after selection.")
+                guid = _read_device_guid(session, active.record.hardware_evidence)
+                if len(guid) != 8:
+                    raise DeviceChangedError(
+                        "The iPod has no unambiguous FireWire GUID."
+                    )
+                selected_guid = _read_device_guid(
+                    session, active.record.device_evidence
+                )
+                if guid != selected_guid:
+                    raise DeviceChangedError(
+                        "The iPod FireWire GUID changed after selection."
+                    )
+                source, source_guid = games.bundled_source()
+                prepared = games.prepare(
+                    session,
+                    source=source,
+                    source_guid=source_guid,
+                    destination_guid=guid,
+                    family=family,
+                    dependencies=dependencies,
+                )
+                checkpoint()
+                library_resources.recheck(session, dependencies)
+                if prepared.transaction is not None:
+                    committed = session.execute_transaction(
+                        prepared.transaction, checkpoint=checkpoint
+                    )
+                    if not committed.flush.complete:
+                        raise SyncRecoveryRequiredError(
+                            str(committed.recovery.journal_path)
+                        )
+                    _finalize_committed_transaction(
+                        session, committed.recovery.journal_path
+                    )
+                return prepared.result
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+            with self._lock:
+                if self._active is active:
+                    self._deactivate_locked()
+            raise
+
+    def install_games(
+        self,
+        expected: ActiveIPod,
+        identifiers: tuple[str, ...],
+        cancelled: threading.Event,
+        *,
+        progress: Callable[
+            [game_installation.GameInstallationProgress], None
+        ] = lambda _: None,
+    ) -> game_library.GameCatalog:
+        """Install selected Host games through one create-only transaction."""
+        phase = game_installation.GameInstallationPhase
+        report = game_installation.GameInstallationProgress
+        publication_started = False
+
+        def transaction_progress(value: TransactionProgress) -> None:
+            nonlocal publication_started
+            if value.state in {TransactionState.PUBLISHING, TransactionState.COMMITTED}:
+                publication_started = True
+            stage = (
+                phase.INSTALLING
+                if value.state is TransactionState.PUBLISHING
+                else phase.PREPARING
+            )
+            if value.state is TransactionState.COMMITTED:
+                stage = phase.VERIFYING
+            progress(report(stage, value.completed, value.total, value.path))
+
+        def transaction_activity(value: TransactionActivity) -> None:
+            progress(
+                report(
+                    phase.VERIFYING if publication_started else phase.PREPARING,
+                    value.completed,
+                    value.total or 0,
+                    value.path,
+                )
+            )
+
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before installing games."
+                )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Installing games was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while installing games."
+                    )
+
+        try:
+            progress(report(phase.PREPARING))
+            with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
+                checkpoint()
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (
+                        _SYSINFO_PATH,
+                        _SYSINFO_EXTENDED_PATH,
+                        _SYSINFO_AUTHORITY_PATH,
+                        games.AUTHORIZATION_PATH,
+                    )
+                )
+                metadata, _issues = _read_device_metadata(session)
+                evidence = active.record.hardware_evidence.merged_with(metadata)
+                family = games.destination_family(evidence)
+                if family != games.destination_family(active.record.device_evidence):
+                    raise DeviceChangedError("The iPod family changed after selection.")
+                if not session.exists(games.AUTHORIZATION_PATH):
+                    raise DeviceAccessError(
+                        "Prepare game authorization before adding games."
+                    )
+                packages = game_download.resolve_packages(expected.profile, identifiers)
+                with game_installation.prepare_installation(
+                    session,
+                    packages,
+                    dependencies=dependencies,
+                    checkpoint=checkpoint,
+                    progress=progress,
+                ) as prepared:
+                    checkpoint()
+                    library_resources.recheck(session, dependencies)
+                    game_installation.validate_destinations(
+                        session, packages, checkpoint
+                    )
+                    # Empty folders are harmless if staging is interrupted and
+                    # reusable on retry. File bytes remain fully transactional.
+                    for directory in prepared.directories:
+                        checkpoint()
+                        session.create_directory(directory)
+                    committed = session.execute_transaction(
+                        prepared.transaction,
+                        checkpoint=checkpoint,
+                        progress=transaction_progress,
+                        activity=transaction_activity,
+                    )
+                    if not committed.flush.complete:
+                        raise SyncRecoveryRequiredError(
+                            str(committed.recovery.journal_path)
+                        )
+                    progress(report(phase.FINALIZING))
+                    _finalize_committed_transaction(
+                        session, committed.recovery.journal_path
+                    )
+                return game_library.read_game_catalog(session, checkpoint)
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+            with self._lock:
+                if self._active is active:
+                    self._deactivate_locked()
+            raise
+
+    def prepare_game_files(
+        self,
+        expected: ActiveIPod,
+        cancelled: threading.Event,
+        *,
+        progress: Callable[
+            [game_installation.GameInstallationProgress], None
+        ] = lambda _: None,
+    ) -> None:
+        """Prepare the complete Host collection before exposing the game picker."""
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Preparing game files was cancelled.")
+            with self._lock:
+                if (
+                    self._active is None
+                    or self._active.active_ipod is not expected
+                    or not self._active.session.is_active
+                ):
+                    raise DeviceChangedError(
+                        "The Active iPod changed while preparing game files."
+                    )
+
+        checkpoint()
+        game_download.GameDownloadService().prepare(checkpoint, progress)
+
+    def uninstall_game(
+        self,
+        expected: ActiveIPod,
+        game: game_library.InstalledGame,
+        cancelled: threading.Event,
+        *,
+        progress: Callable[
+            [game_uninstallation.GameRemovalProgress], None
+        ] = lambda _: None,
+    ) -> game_library.GameCatalog:
+        """Remove one game's executable, data and stats with verified recovery."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before uninstalling the game."
+                )
+        if not expected.profile.capabilities.supports_games:
+            raise DeviceAccessError("This iPod does not support click-wheel games.")
+        phase = game_uninstallation.GameRemovalPhase
+        report = game_uninstallation.GameRemovalProgress
+
+        def transaction_progress(value: TransactionProgress) -> None:
+            stage = (
+                phase.REMOVING
+                if value.state is TransactionState.PUBLISHING
+                else phase.PREPARING
+            )
+            if value.state is TransactionState.COMMITTED:
+                stage = phase.VERIFYING
+            progress(report(stage, value.completed, value.total, value.path))
+
+        def transaction_activity(value: TransactionActivity) -> None:
+            progress(
+                report(phase.VERIFYING, value.completed, value.total or 0, value.path)
+            )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Uninstalling the game was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while uninstalling the game."
+                    )
+
+        try:
+            progress(report(phase.PREPARING))
+            with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
+                checkpoint()
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (
+                        _SYSINFO_PATH,
+                        _SYSINFO_EXTENDED_PATH,
+                        _SYSINFO_AUTHORITY_PATH,
+                    )
+                )
+                prepared = game_uninstallation.prepare_uninstallation(
+                    session, game, dependencies=dependencies, checkpoint=checkpoint
+                )
+                checkpoint()
+                library_resources.recheck(session, dependencies)
+                game_uninstallation.recheck_uninstallation(
+                    session, prepared, checkpoint
+                )
+                committed = session.execute_transaction(
+                    prepared.transaction,
+                    checkpoint=checkpoint,
+                    progress=transaction_progress,
+                    activity=transaction_activity,
+                )
+                if not committed.flush.complete:
+                    raise SyncRecoveryRequiredError(
+                        str(committed.recovery.journal_path)
+                    )
+                try:
+                    total = len(prepared.directories)
+                    for index, directory in enumerate(prepared.directories):
+                        checkpoint()
+                        progress(report(phase.CLEANING, index, total, directory.path))
+                        if session.exists(directory.path):
+                            session.remove_empty_directory(directory.path)
+                    progress(report(phase.CLEANING, total, total))
+                    progress(report(phase.FINALIZING))
+                    _finalize_committed_transaction(
+                        session, committed.recovery.journal_path
+                    )
+                except Exception as error:
+                    raise SyncRecoveryRequiredError(
+                        str(committed.recovery.journal_path)
+                    ) from error
+                with self._lock:
+                    if self._active is active and active.phase_precondition is not None:
+                        path = active.phase_precondition.path
+                        if any(
+                            item.path == path for item in prepared.transaction.removals
+                        ):
+                            active.phase_precondition = FilePrecondition(path, None)
+                return game_library.read_game_catalog(session, checkpoint)
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+            with self._lock:
+                if self._active is active:
+                    self._deactivate_locked()
+            raise
+
     def save_settings(
         self,
         expected: ActiveIPod,
@@ -1367,6 +1756,12 @@ class DeviceCoordinator:
                 )
             library_resources.recheck(active.session, (active.time_precondition,))
             library_resources.recheck(active.session, active.sidecar_preconditions)
+            if active.phase_precondition is not None:
+                library_resources.recheck(active.session, (active.phase_precondition,))
+            snapshot = resolve_phase_playlist(
+                snapshot,
+                next((p.playlist_id for p in snapshot.playlists if p.is_phase), 0),
+            )
             snapshot = refresh_smart_playlists(
                 snapshot,
                 checkpoint=lambda: checkpoint(
@@ -1554,6 +1949,11 @@ class DeviceCoordinator:
                     *sqlite_postprocess_preconditions,
                     active.time_precondition,
                     *mix_preconditions,
+                    *(
+                        (active.phase_precondition,)
+                        if active.phase_precondition
+                        else ()
+                    ),
                 ),
                 volume_presentation_enabled=presentation_policy.enabled,
                 consumed_sidecars=source.consumed_sidecars,
@@ -1665,6 +2065,40 @@ class DeviceCoordinator:
             if result.prepared is not None:
                 library_resources.recheck_discarded_track_media(
                     active.session, captured.discarded_track_media
+                )
+                phase_publication = prepare_phase(
+                    active.session,
+                    source.snapshot,
+                    result.prepared.snapshot,
+                    checkpoint=cancellation_checkpoint,
+                    analyzer=self._phase_analysis,
+                    media_writes=captured.media_writes,
+                    progress=lambda done, total, title: checkpoint(
+                        "resources.phase",
+                        source_text("Analyzing Phase playlist audio"),
+                        completed=done,
+                        total=total,
+                        current_item=title,
+                        unit="tracks",
+                    ),
+                )
+                if active.phase_precondition is not None and any(
+                    file.path == active.phase_precondition.path
+                    and file != active.phase_precondition
+                    for file in phase_publication.files
+                ):
+                    raise DeviceChangedError(
+                        "The Phase Library changed during preparation. Reload the iPod."
+                    )
+                captured = replace(
+                    captured,
+                    files=tuple(
+                        {
+                            file.path: file
+                            for file in (*captured.files, *phase_publication.files)
+                        }.values()
+                    ),
+                    phase_writes=phase_publication.writes,
                 )
                 original = source.serialize()
                 write = library_resources.transaction(
@@ -1842,6 +2276,11 @@ class DeviceCoordinator:
             # Construct the next authoritative source before touching the device.
             updated_source = IPodLibrary.parse(
                 prepared.itunes, device_time=active.library_source.device_time
+            ).with_phase_playlist(
+                next(
+                    (p.playlist_id for p in prepared.snapshot.playlists if p.is_phase),
+                    0,
+                )
             )
             if prepared.artwork is not None:
                 updated_source = updated_source.with_artwork(prepared.artwork)
@@ -2052,6 +2491,14 @@ class DeviceCoordinator:
                         or expected.genius_mix_state,
                     )
                     active.library_source = updated_source
+                    if active.phase_precondition is not None:
+                        path = active.phase_precondition.path
+                        active.phase_precondition = FilePrecondition(
+                            path,
+                            fingerprints.get(
+                                path, active.phase_precondition.fingerprint
+                            ),
+                        )
                     active.sidecar_preconditions = tuple(
                         FilePrecondition(
                             file.path, fingerprints.get(file.path, file.fingerprint)
@@ -2580,6 +3027,8 @@ class DeviceCoordinator:
                     sqlite=profile.capabilities.database.uses_sqlite_database,
                     sidecars=sidecars,
                 )
+                phase_id, phase_precondition = capture_phase_selection(session)
+                library = library.with_phase_playlist(phase_id)
                 if session.fingerprint(database_path) != current_fingerprint:
                     raise DeviceChangedError(
                         "The iTunesDB changed while Genius collections were loading. Reload the iPod."
@@ -2651,6 +3100,7 @@ class DeviceCoordinator:
                     library_source=library,
                     time_precondition=preferences.time_precondition,
                     sidecar_preconditions=sidecar_preconditions,
+                    phase_precondition=phase_precondition,
                 )
                 # The selection lock keeps this private connection out of the
                 # published application state until its transaction is verified.
@@ -4247,7 +4697,8 @@ def _hardware_probe_required(
         sysinfo=sysinfo,
         sysinfo_extended=extended,
         require_firmware_version=(
-            profile.capabilities.genius.mixes_minimum_firmware is not None
+            profile.capabilities.supports_games
+            or profile.capabilities.genius.mixes_minimum_firmware is not None
         ),
     )
 

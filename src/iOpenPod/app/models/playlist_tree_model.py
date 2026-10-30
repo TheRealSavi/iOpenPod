@@ -118,12 +118,18 @@ class PlaylistTreeModel(QAbstractItemModel):
         if node is None:
             return None
         playlist = node.playlist
+        if role == Qt.ItemDataRole.DisplayRole:
+            return playlist.name or self.tr("Untitled Playlist")
         if role in (
-            Qt.ItemDataRole.DisplayRole,
             Qt.ItemDataRole.ToolTipRole,
             Qt.ItemDataRole.AccessibleTextRole,
         ):
-            return playlist.name or self.tr("Untitled Playlist")
+            name = playlist.name or self.tr("Untitled Playlist")
+            return (
+                self.tr("Phase Playlist: %1").replace("%1", name)
+                if playlist.is_phase
+                else name
+            )
         if role == PlaylistRole.PLAYLIST:
             # QVariant coerces a bare Python int to signed int64. iPod Playlist
             # identities occupy uint64, so retain them inside the semantic value.
