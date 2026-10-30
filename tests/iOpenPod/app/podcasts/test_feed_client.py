@@ -68,6 +68,34 @@ def test_explicit_advisory_and_subtitle_survive_feed_normalization(
     assert episode.guid == "opaque-guid"
 
 
+@pytest.mark.parametrize(
+    "second_url",
+    (
+        "https://cdn.example.test/shared.mp3",
+        "HTTPS://CDN.example.test:443/shared.mp3#fragment",
+    ),
+)
+def test_repeated_episode_identity_is_reported_as_a_feed_error(
+    monkeypatch: pytest.MonkeyPatch,
+    second_url: str,
+) -> None:
+    payload = f"""<rss version="2.0"><channel><title>Show</title>
+    <item><guid>first</guid><title>First</title>
+    <enclosure url="https://cdn.example.test/shared.mp3" type="audio/mpeg" />
+    </item>
+    <item><guid>second</guid><title>Second</title>
+    <enclosure url="{second_url}" type="audio/mpeg" />
+    </item></channel></rss>""".encode()
+
+    def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
+        return payload, url
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+
+    with pytest.raises(PodcastFeedError, match="Episode IDs"):
+        FeedparserPodcastClient().fetch("https://example.test/feed")
+
+
 def test_directory_retains_text_and_feed_url_without_promotional_artwork(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

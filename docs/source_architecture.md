@@ -619,6 +619,15 @@ Device namespace deletion is flushed before Host originals are removed; Host
 cleanup flushes its own directory. Identity, journal, lease, path, and restoration
 checks remain required. See ADR-0134 and ADR-0180.
 
+Private Host media, content overflow, and chaptered-Album workspaces share one
+process ownership lease per resolved staging root. Each workspace keeps its own
+cleanup lifetime and a versioned marker referencing that owner. Ownership handles
+remain bounded independently of retained Track count. Startup cleanup requires an
+unlocked, validated owner and preserves malformed or missing ownership evidence;
+legacy markers retain their original locking rules. Creation and removal stay
+serialized with cleanup, and failed removal retains evidence for retry. See
+ADR-0212.
+
 Library preparation and Storage each validate at their workflow boundaries rather
 than repeating the same scan across adjacent layers. Capturing a Device file also
 returns its source fingerprint. A committed transaction returns its final verified

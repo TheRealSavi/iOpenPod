@@ -14,6 +14,13 @@ then beyond it.
 
 ## Current stage
 
+Large Syncs now bound Host staging ownership handles independently of Track count
+while retaining crash cleanup and protecting other processes' live preparations.
+Track preparation failures reach the logs, and Library DEBUG diagnostics use
+bounded samples. Windows checks retain 10,000 workspaces; complete NAS-backed
+physical Sync acceptance remains open. See
+[ADR-0212](docs/adr/0212-share-host-staging-ownership-across-workspaces.md).
+
 Playlists can designate one Phase Playlist when the game is installed, with a
 distinct sidebar marker and ordinary editing behavior. Library saves include its
 companion index and gameplay charts generated from the actual audio using

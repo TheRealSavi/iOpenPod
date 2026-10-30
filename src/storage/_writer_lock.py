@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import importlib
 import os
@@ -154,6 +155,10 @@ def _lock_file(lock_file: BinaryIO, resource_name: str) -> None:
         else:
             _posix_flock(lock_file, "LOCK_EX", "LOCK_NB")
     except OSError as error:
+        if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+            raise StorageOperationError(
+                f"Could not lock the {resource_name}: {error}"
+            ) from error
         raise DeviceBusyError(
             f"Another iOpenPod process is already using this {resource_name}"
         ) from error

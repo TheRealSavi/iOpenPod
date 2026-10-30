@@ -1198,7 +1198,7 @@ def test_bad_track_yields_safe_partial_success_without_partial_playlist(
 
 @pytest.mark.parametrize("workers", [1, 3])
 def test_preparation_releases_failed_track_working_data(
-    tmp_path: Path, workers: int
+    tmp_path: Path, workers: int, caplog: pytest.LogCaptureFixture
 ) -> None:
     class DecoderWorkingData:
         def __init__(self) -> None:
@@ -1243,6 +1243,13 @@ def test_preparation_releases_failed_track_working_data(
         # batch is still preparing, rather than retaining every traceback.
         assert max(live_after_completion) <= workers * 4, live_after_completion
         assert not any(ref() is not None for ref in retained)
+        messages = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "iOpenPod.app.sync_execution"
+        ]
+        assert len(messages) == 6
+        assert "total=24 logged=5 omitted=19" in messages[-1]
         device.assert_original()
     finally:
         if gc_enabled:
@@ -1312,7 +1319,9 @@ def test_bounded_preparation_keeps_successful_files_until_commit_and_cleans_up(
         device.coordinator.close()
 
 
-def test_changed_host_is_skipped_without_blocking_other_tracks(tmp_path: Path) -> None:
+def test_changed_host_is_skipped_without_blocking_other_tracks(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     device = build_device(tmp_path)
     try:
         request = _request(device, _host(tmp_path, "Good", "Changed"))
@@ -1322,6 +1331,12 @@ def test_changed_host_is_skipped_without_blocking_other_tracks(tmp_path: Path) -
         )
         assert result.status is SyncExecutionStatus.PARTIAL, result.issues
         assert len(result.completed) == 1
+        messages = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "iOpenPod.app.sync_execution"
+        ]
+        assert any("Changed" in message and "scan" in message for message in messages)
     finally:
         device.coordinator.close()
 

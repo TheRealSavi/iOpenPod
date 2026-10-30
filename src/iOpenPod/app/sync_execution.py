@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
@@ -131,6 +132,9 @@ from storage.content_workspace import content_workspace
 from storage.device_capture import capture_device_file_with_fingerprint
 from storage.host_input import LocalHostFile
 from storage.media_processing import MediaToolFinder, available_compute_threads
+
+logger = logging.getLogger(__name__)
+_FAILURE_LOG_LIMIT = 5
 
 _PHOTO_MEMORY_BUDGET = 2 * 1024 * 1024 * 1024
 _PODCAST_PREPARATION_WORKERS = 4
@@ -1126,6 +1130,7 @@ class SyncExecutor:
         activity_changed = False
         preparation_order = {item: index for index, item in enumerate(changes)}
         completed = 0
+        failed = 0
 
         def snapshot() -> tuple[WriteItemProgress, ...]:
             with activity_lock:
@@ -1262,6 +1267,14 @@ class SyncExecutor:
                 except PreparationCancelledError:
                     was_cancelled = True
                 except Exception as error:
+                    failed += 1
+                    if failed <= _FAILURE_LOG_LIMIT:
+                        logger.warning(
+                            "Sync Track preparation failed item=%.240s source=%.512s error=%.2048s",
+                            item.name,
+                            item.host_path,
+                            exception_text(error),
+                        )
                     issues.append(
                         WriteIssue(
                             "sync.item_failed",
@@ -1322,6 +1335,13 @@ class SyncExecutor:
                         unit="Tracks",
                         active_items=snapshot(),
                     )
+                )
+            if failed > _FAILURE_LOG_LIMIT:
+                logger.warning(
+                    "Sync Track preparation failures total=%d logged=%d omitted=%d; complete details are retained in the Sync result",
+                    failed,
+                    _FAILURE_LOG_LIMIT,
+                    failed - _FAILURE_LOG_LIMIT,
                 )
             if was_cancelled:
                 raise PreparationCancelledError
