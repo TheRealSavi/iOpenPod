@@ -17,14 +17,18 @@ exclude = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/iOpenPod", "src/device_registry", "src/iPodDB", "src/storage"]
-exclude = ["src/iOpenPod/assets/games/archives/**", "src/iOpenPod/assets/games/**/*.zip", "src/iOpenPod/assets/games/**/*.7z"]
+exclude = [
+    "src/iOpenPod/assets/games/archives/**",
+    "src/iOpenPod/assets/games/**/*.zip",
+    "src/iOpenPod/assets/games/**/*.7z",
+]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/iopenpod_launcher.py" = "iopenpod_launcher.py"
 
 [project]
 name = "iOpenPod"
-version = "2.0.17"
+version = "2.1.0"
 description = "iPod sync tool. Manage your iPod media library without iTunes."
 authors = [{ name = "John Gibbons", email = "johngibbons167@gmail.com" }]
 readme = "README.md"
