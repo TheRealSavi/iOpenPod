@@ -1234,7 +1234,9 @@ The public read contract can list times and select one exact group without
 exposing Chunks. Explicit timed assets retain references to existing groups and
 emit authored groups in ascending time order. Device Registry supplies separate
 chapter layouts; timed preparation completes the union of cover and chapter
-representations while retaining existing bytes. MHIT artwork count reflects the
+representations while retaining existing bytes. Nano 5 declares its native F1073
+layout in both roles, enabling explicit Chapter flag coordination in CDB and
+Extras without duplicating the shared pixels. MHIT artwork count reflects the
 distinct saved image times for changed relationships. Ordinary cover refresh preserves
 later groups. The Metadata Editor previews groups lazily and applies one complete
 sequence through its existing Library Draft. Its artwork selector uses current

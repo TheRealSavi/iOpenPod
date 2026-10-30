@@ -356,7 +356,14 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         display=(240, 376, True),
         gapless=True,
         cover_formats=_artwork_formats(1056, 1078, 1073, 1074),
+        # Nano 5 RetailOS 1.0.2 advertises F1073 in ChapterImageSpecs.
+        # The shared pixels still require the separate Chapter capability so
+        # explicit timelines enable the CDB/Extras artwork flag (ADR-0139).
+        chapter_formats=(
+            replace(_ARTWORK_FORMATS_BY_ID[1073], usage=ArtworkUsage.CHAPTER),
+        ),
         photo_formats=_artwork_formats(1087, 1079, 1066),
+        chapter_images=True,
         sparse_artwork=True,
         video=(640, 480, 2500, "3.0"),
         subtitles=True,

@@ -91,7 +91,11 @@ and a separate Native Chapter Index exposes firmware eligibility without changin
 editable metadata. Explicit timed artwork on chapter-capable targets enables the
 known flags when recognized named Chapter data exists; mismatched sequences are
 diagnosed without retiming them. These findings are directly verified in Classic
-120GB RetailOS 2.0.1; physical display behavior remains unverified. See
+120GB RetailOS 2.0.1. Independent nano 5 RetailOS 1.0.2 checks verify its Chapter
+flags and native F1073 format. Nano 5 now declares that Chapter format, enabling
+both known flags in CDB and Extras for explicit timelines while reusing its cover
+pixels. Physical display behavior remains unverified. See the
+[nano 5 evidence](docs/research/nano5-chapter-artwork-contract.md) and
 [ADR-0202](docs/adr/0202-adopt-native-artwork-and-chapter-semantics.md).
 
 Podcast group projection now follows the whole native marker byte. Smart Checked

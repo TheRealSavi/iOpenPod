@@ -44,10 +44,41 @@ def test_every_catalog_profile_has_a_safe_product_image_name() -> None:
         assert "\\" not in profile.product_image
 
 
-def test_only_classic_profiles_declare_the_source_supported_chapter_layouts() -> None:
+def test_only_evidenced_profiles_declare_chapter_layouts() -> None:
     classic_generations: set[str] = set()
+    nano5_models: set[str] = set()
     for profile in DEFAULT_DEVICE_REGISTRY.profiles:
         artwork = profile.capabilities.artwork
+        if profile.family == "iPod Nano" and profile.generation == "5th Gen":
+            nano5_models.add(profile.model_number)
+            assert artwork.supports_chapter_images
+            assert len(artwork.chapter_formats) == 1
+            chapter = artwork.chapter_formats[0]
+            assert (
+                chapter.format_id,
+                chapter.width,
+                chapter.height,
+                chapter.row_bytes,
+                chapter.pixel_format,
+                chapter.usage,
+            ) == (
+                1073,
+                240,
+                240,
+                480,
+                ArtworkPixelFormat.RGB565_LE,
+                ArtworkUsage.CHAPTER,
+            )
+            assert replace(chapter, usage=ArtworkUsage.COVER) == artwork.cover_format(
+                1073
+            )
+            assert tuple(f.format_id for f in artwork.cover_formats) == (
+                1056,
+                1078,
+                1073,
+                1074,
+            )
+            continue
         if profile.family != "iPod Classic":
             assert artwork.chapter_formats == ()
             continue
@@ -68,6 +99,7 @@ def test_only_classic_profiles_declare_the_source_supported_chapter_layouts() ->
         )
         assert all(f.usage is ArtworkUsage.COVER for f in artwork.cover_formats)
     assert classic_generations == {"6th Gen", "6.5th Gen", "7th Gen"}
+    assert "MC046" in nano5_models
 
 
 def test_chapter_layouts_require_support_and_the_chapter_role() -> None:
