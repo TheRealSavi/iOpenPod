@@ -24,9 +24,11 @@ successful Video emulator fixture and foo_dop both use count one with timed imag
 
 Device Registry describes chapter formats separately from ordinary cover formats.
 The Classic family uses the source-supported F1055/F1029 set, reusing existing
-pixel layouts. Nano 5 uses F1073, reusing its existing 240-by-240 cover layout
-with the Chapter artwork role. Its RetailOS 1.0.2 capability emitter and native
-Chapter flag reader are independently verified in the
+pixel layouts. Independently verified native declarations also supply Video
+5/5.5's F1028/F1029 pair, nano 3's F1055/F1029 pair, nano 4's F1071, and nano 5's
+F1073. Every entry uses the Chapter artwork role; layouts already used as covers
+remain shared. Nano 3 additionally needs the separate F1029 raster. See the
+[firmware matrix](../research/chapter-artwork-firmware-matrix.md) and
 [nano 5 investigation](../research/nano5-chapter-artwork-contract.md). Other
 profiles are not assigned inferred chapter sets. The
 Application Layer supplies these layouts to iPodDB independently of cover layouts
@@ -65,9 +67,10 @@ metadata, sentinel placement, media classification, and media files are not chan
 by this decision. Firmware playback success must be recorded separately from
 successful database preparation and publication.
 
-Nano 5 adoption enables the existing explicit-timeline Chapter flag coordination
-in both CDB and Extras. F1073 is shared between cover and Chapter roles, so this
-capability correction does not add pixels or alter the ordinary cover layouts.
-Virtual-device regressions verify saved flags, retained unknown bits, identical
-pixel bytes, and ordinary-cover flag preservation. Physical display acceptance
-remains separate from the verified native flag gates.
+The adopted Video and nano capabilities enable the existing explicit-timeline
+Chapter flag coordination, including CDB and Extras on nano 5. Virtual-device
+regressions verify saved flags, retained unknown bits, unchanged shared pixel
+bytes, and ordinary-cover flag preservation on each generation. Reapplying a
+saved nano 3 timeline adds only the missing F1029 file while preserving its
+retained cover shards and Chapter positions. Physical display acceptance remains
+separate from the verified native header and format contracts.

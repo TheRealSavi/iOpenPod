@@ -167,7 +167,7 @@ From this repository, the regression tests use synthetic bytes and a virtual
 device without requiring firmware:
 
 ```powershell
-uv run pytest tests/device_registry/test_artwork_profiles.py tests/iOpenPod/app/services/test_nano5_chapter_artwork_save.py
+uv run pytest tests/device_registry/test_artwork_profiles.py tests/iOpenPod/app/services/test_chapter_artwork_save.py
 ```
 
 The new tests failed before the catalog correction: timed output retained flags

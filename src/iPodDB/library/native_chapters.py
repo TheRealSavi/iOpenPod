@@ -1,7 +1,8 @@
-"""Read-only Classic 120GB 2.0.1 Chapter interpretation, separate from metadata.
+"""Read-only traced Chapter interpretation, separate from editable metadata.
 
-These observations describe the traced firmware, not a capability declaration for
-every iPod. Retained Chapters are never sorted, filtered, or rewritten by this view.
+Header and named-index observations cover Video, Classic, and nano 3/4/5 builds;
+they are not a capability declaration for every iPod or a complete provider model.
+Retained Chapters are never sorted, filtered, or rewritten by this view.
 """
 
 from dataclasses import dataclass
@@ -46,7 +47,7 @@ class NativeChapterIndex:
 
     @property
     def chapter_artwork_eligible(self) -> bool:
-        """Known provider gates only; this does not guarantee image delivery."""
+        """Known header prerequisites only; this does not guarantee image delivery."""
         return bool(
             self.entries
             and self.flags is not None

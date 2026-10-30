@@ -33,6 +33,7 @@ remains governed by the existing special-group preservation policy.
 
 Expose typed flags for Chapter `hedr +0x18`: mask 1 enables named-Chapter queries;
 mask 2 enables Chapter artwork. Classic imports that bit into native Track masks;
+nano 3/4 do likewise. Video's importer asserts ordinary artwork presence, while
 nano 5's SQLite Track wrapper reads it directly from Extras. Keep the raw storage field
 compatible and preserve every other bit. A read-only Native Chapter Index lives
 in optional iPod Track Details. It follows stored order, includes present name
@@ -62,8 +63,16 @@ executes both header gates and the actual atom parser in RetailOS 1.0.2. Its
 Device Profile now declares the native F1073 Chapter format under ADR-0139,
 enabling the same explicit-timeline policy in CDB and Extras. This is independent
 nano 5 evidence; it does not transfer Classic's native mask layout or selectors.
-Other models retain explicitly inferred family policy rather than a claim of new
-hardware verification.
+
+Follow-up [Video and nano 3/4 checks](../research/chapter-artwork-firmware-matrix.md#chapter-flags-checked-before-adoption)
+execute the same header masks independently. Mask 1 enables named Chapters in
+each. Mask 2 imports native Track mask `0x40` on Video and `0x840` on nano 3/4.
+Video's `0x40` is also asserted by ordinary MHIT artwork presence; this does not
+establish a separate Video Chapter-provider flag. Explicit timed authoring
+therefore enables the two known serialized header masks while retaining unknown
+bits, rather than copying any model's internal runtime masks into another format.
+These verified capabilities now use ADR-0139's existing separate-format policy.
+Uninspected models retain their previous capability policy.
 
 ## Consequences and validation
 
