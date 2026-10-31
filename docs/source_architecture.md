@@ -441,6 +441,11 @@ global settings: Storage resolves the conventional Host configuration location a
 atomically reads or replaces the file bytes, while iOpenPod owns its schema and JSON
 encoding. Storage must not become a generic wrapper around every file iOpenPod uses.
 
+`FilesystemSession.remove_empty_directory` removes one validated empty directory,
+without traversing its children or removing its parents. Application workflows may
+use it after recoverable file removal to prune their captured directories. A
+nonempty directory or link fails rather than authorizing recursive deletion.
+
 The implemented foundation uses this public flow:
 
 ```text
@@ -614,6 +619,15 @@ Device namespace deletion is flushed before Host originals are removed; Host
 cleanup flushes its own directory. Identity, journal, lease, path, and restoration
 checks remain required. See ADR-0134 and ADR-0180.
 
+Private Host media, content overflow, and chaptered-Album workspaces share one
+process ownership lease per resolved staging root. Each workspace keeps its own
+cleanup lifetime and a versioned marker referencing that owner. Ownership handles
+remain bounded independently of retained Track count. Startup cleanup requires an
+unlocked, validated owner and preserves malformed or missing ownership evidence;
+legacy markers retain their original locking rules. Creation and removal stay
+serialized with cleanup, and failed removal retains evidence for retry. See
+ADR-0212.
+
 Library preparation and Storage each validate at their workflow boundaries rather
 than repeating the same scan across adjacent layers. Capturing a Device file also
 returns its source fingerprint. A committed transaction returns its final verified
@@ -765,6 +779,30 @@ It should not contain application GUI logic.
 iPodDB does not use Storage and does not know about iOpenPod. It accepts bytes or
 generic binary streams and returns structured database data or serialized bytes.
 iOpenPod decides when to read or persist those bytes through Storage.
+
+The `ic_info` codec follows this boundary for Game Authorization Stores. It
+authenticates envelopes, transforms device-bound values, reconciles account
+sessions, and merges records in memory. Its cryptographic constants are small
+packaged data resources; firmware execution is confined to the research lab.
+The Application Layer owns the bundled source store and GUID, qualifies the
+Active iPod, and coordinates recoverable Storage publication through the Games
+workflow. See [ADR-0208](adr/0208-prepare-game-authorizations-with-a-standalone-codec.md).
+
+The Games Application Layer downloads and verifies the pinned preservation
+release, then extracts its complete collection into persistent Host storage.
+Gimme Games opens the bundled catalog only after that collection and authorization
+preparation are ready. Subsequent clicks reuse the extracted files; Add validates
+selected contents and publishes them through a Storage Transaction. Game payloads
+are excluded from application assets and release sources. See
+[ADR-0211](adr/0211-download-the-game-collection-on-demand.md).
+
+The public `iPodDB.games` contract also owns Phase Library index and gameplay
+analysis codecs. The Application Layer decodes verified audio and uses librosa
+to generate typed events, with content-checked reuse (ADR-0210). A Phase designation is part of the semantic Playlist; the
+Application Layer enforces one selection and prepares companions using final
+database identities. The normal Library Storage Transaction publishes those files
+with the databases. Installed-game discovery is shared by Games and the Playlist
+editor. See [ADR-0209](adr/0209-publish-phase-companions-with-the-library.md).
 
 ### Common Library interface
 
@@ -1196,7 +1234,12 @@ The public read contract can list times and select one exact group without
 exposing Chunks. Explicit timed assets retain references to existing groups and
 emit authored groups in ascending time order. Device Registry supplies separate
 chapter layouts; timed preparation completes the union of cover and chapter
-representations while retaining existing bytes. MHIT artwork count reflects the
+representations while retaining existing bytes. Native Chapter sets are
+F1028/F1029 for Video 5/5.5, F1055/F1029 for Classic and nano 3, F1071 for nano 4,
+and F1073 for nano 5. Overlapping cover and Chapter layouts share pixels; nano 3's
+F1029 representation is added during explicit timeline preparation. These sets
+enable the existing Chapter flag coordination, including CDB and Extras on
+nano 5. MHIT artwork count reflects the
 distinct saved image times for changed relationships. Ordinary cover refresh preserves
 later groups. The Metadata Editor previews groups lazily and applies one complete
 sequence through its existing Library Draft. Its artwork selector uses current
@@ -1994,6 +2037,10 @@ Sync and quick or manual Library saves publish those entries in the same transac
 Playlists with Live updating disabled retain saved membership. Each pass uses one
 time and the input draft's saved Playlist memberships; unsupported rules and firmware-managed Playlists remain
 preserved. No-change Sync also reaches this step. See ADR-0142.
+The request identifies evaluated retained live Smart Playlists. iPodDB reconciles
+their matching native counterparts even when only a noncanonical copy has stale
+membership, preserving per-copy occurrence metadata and blocking definition
+conflicts. Default no-op serialization remains byte-exact. See ADR-0213.
 Sync also carries an explicit database refresh intent. SQLite targets regenerate
 their companion artifacts under ADR-0147; non-SQLite targets with Tracks rebuild
 retained sort-4 Albums indexes under ADR-0148 and ADR-0194. A retained index may

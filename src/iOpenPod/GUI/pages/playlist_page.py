@@ -1,5 +1,7 @@
 """Playlist browsing and session editing without database details or device I/O."""
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QCoreApplication, QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
@@ -28,7 +30,11 @@ from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
-from iOpenPod.GUI.widgets.playlist_artwork_banner import PlaylistArtworkBanner
+from iOpenPod.GUI.widgets.playlist_artwork_banner import (
+    GeniusHeroIcon,
+    PhaseHeroWordmark,
+    PlaylistArtworkBanner,
+)
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import PlaylistKind, Track, validate_smart_playlist
@@ -55,10 +61,12 @@ class PlaylistPage(QWidget):
         *,
         source_actions: bool = True,
         genius_browse: bool = False,
+        phase_available: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("playlistsPage")
         self._workspace = workspace
+        self._phase_available = phase_available or (lambda: False)
         self._source_actions = source_actions
         self._genius_browse = genius_browse
         self._selected_id: int | None = None
@@ -143,9 +151,22 @@ class PlaylistPage(QWidget):
             LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_md
         )
         header_layout.setSpacing(LAYOUT.space_xs)
-        header_layout.addWidget(self._heading)
-        header_layout.addWidget(self._summary)
-        header_layout.addWidget(self._description)
+        title_layout = QVBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(LAYOUT.space_xs)
+        title_layout.addWidget(self._heading)
+        title_layout.addWidget(self._summary)
+        title_layout.addWidget(self._description)
+        hero_context = QHBoxLayout()
+        hero_context.setSpacing(LAYOUT.space_lg)
+        hero_context.addLayout(title_layout, 1)
+        self._phase_wordmark = PhaseHeroWordmark(theme_manager, self._banner)
+        self._phase_wordmark.hide()
+        hero_context.addWidget(self._phase_wordmark, 0, Qt.AlignmentFlag.AlignTop)
+        self._genius_icon = GeniusHeroIcon(theme_manager, self._banner)
+        self._genius_icon.hide()
+        hero_context.addWidget(self._genius_icon, 0, Qt.AlignmentFlag.AlignTop)
+        header_layout.addLayout(hero_context)
         header_layout.addLayout(actions)
 
         self._empty = QLabel(self)
@@ -256,6 +277,10 @@ class PlaylistPage(QWidget):
         self._genius_tracks = tracks
         self._refresh_genius_collection()
 
+    def refresh_phase_availability(self) -> None:
+        for dialog in self.findChildren(PlaylistEditorDialog):
+            dialog.set_phase_available(self._phase_available())
+
     def create_playlist(self, kind: object) -> None:
         if self._workspace.locked:
             return
@@ -284,6 +309,7 @@ class PlaylistPage(QWidget):
             kind,
             parent=self,
             playlists=self._workspace.playlists,
+            phase_available=self._phase_available(),
         )
         try:
             if (
@@ -300,6 +326,7 @@ class PlaylistPage(QWidget):
                 smart=dialog.smart,
                 description=dialog.description.text(),
                 sort_order=dialog.sort_order,
+                is_phase=dialog.phase.isChecked(),
             )
             self.select_playlist(playlist.playlist_id)
         except ValueError as error:
@@ -324,6 +351,7 @@ class PlaylistPage(QWidget):
             playlist,
             self,
             playlists=self._workspace.playlists,
+            phase_available=self._phase_available(),
         )
         try:
             if (
@@ -339,6 +367,7 @@ class PlaylistPage(QWidget):
                 description=dialog.description.text(),
                 smart=dialog.smart if dialog.smart != playlist.smart else None,
                 sort_order=dialog.sort_order,
+                is_phase=dialog.phase.isChecked(),
             )
         except ValueError as error:
             self._show_error(error)
@@ -423,6 +452,10 @@ class PlaylistPage(QWidget):
         if playlist is None:
             self._selected_id = None
         self._heading.setText(playlist.name if playlist else "")
+        self._phase_wordmark.setVisible(playlist is not None and playlist.is_phase)
+        self._genius_icon.setVisible(
+            playlist is not None and playlist.kind is PlaylistKind.GENIUS
+        )
         self._description.setText(playlist.description if playlist else "")
         self._description.setVisible(bool(self._description.text()))
         tracks = (
@@ -493,6 +526,7 @@ class PlaylistPage(QWidget):
             self.playlistSelected.emit(self._selected_id)
 
     def _refresh_genius_collection(self) -> None:
+        self._phase_wordmark.hide()
         collection = self._genius_collection
         tracks_by_id = {track.track_id: track for track in self._genius_tracks}
         occurrences = tuple(
@@ -508,6 +542,7 @@ class PlaylistPage(QWidget):
             playlist_positions=tuple(position for position, _track in occurrences),
         )
         self._heading.setText(collection.name if collection else self.tr("Genius"))
+        self._genius_icon.setVisible(collection is not None)
         self._description.setText(
             self.tr(
                 "Mix tracks are possible starting songs; the iPod generates the mix when you play it."

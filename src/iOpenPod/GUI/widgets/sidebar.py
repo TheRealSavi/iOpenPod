@@ -54,6 +54,7 @@ _LIBRARY = (
     _NavigationDefinition(PageId.GENRES, "grid"),
     _NavigationDefinition(PageId.TRACKS, "music"),
     _NavigationDefinition(PageId.GENIUS, "atom"),
+    _NavigationDefinition(PageId.GAMES, "games"),
     _NavigationDefinition(PageId.PHOTOS, "photo"),
     _NavigationDefinition(PageId.PODCASTS, "broadcast"),
     _NavigationDefinition(PageId.AUDIOBOOKS, "book"),
@@ -578,6 +579,7 @@ class Sidebar(QFrame):
         layout.addWidget(self._settings)
         self.set_current_page(PageId.ALBUMS)
         self.retranslate_ui()
+        self._refresh_page_visibility()
 
     def set_current_page(self, page_id: PageId) -> None:
         if page_id is not PageId.PLAYLISTS and self.playlist_tree is not None:
@@ -695,6 +697,8 @@ def _format_bytes(byte_count: int) -> str:
 
 
 def _page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
+    if page_id is PageId.GAMES:
+        return profile is not None and profile.capabilities.supports_games
     if page_id is PageId.GENIUS:
         return profile is not None and (
             profile.capabilities.genius.playlists is not FeatureSupport.UNSUPPORTED

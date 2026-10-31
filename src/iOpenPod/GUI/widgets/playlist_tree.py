@@ -54,7 +54,7 @@ from iOpenPod.GUI.widgets.themed_buttons import (
     IconButtonKind,
     NavigationButton,
 )
-from iPodDB.library import PlaylistKind
+from iPodDB.library import Playlist, PlaylistKind
 
 _SPRING_LOAD_DELAY_MS = 500
 
@@ -248,11 +248,15 @@ class _PlaylistDelegate(QStyledItemDelegate):
             PlaylistKind.FOLDER: "folder",
             PlaylistKind.GENIUS: "smart-playlist",
         }.get(kind, "playlist")
+        playlist = index.data(PlaylistRole.PLAYLIST)
+        if isinstance(playlist, Playlist) and playlist.is_phase:
+            glyph = "games"
         glyph_icon(glyph, LAYOUT.icon_size, color, view.devicePixelRatioF()).paint(
             painter, icon_rect
         )
+        label_left = icon_rect.right() + LAYOUT.space_xs
         text_rect = option.rect.adjusted(
-            icon_rect.right() + LAYOUT.space_xs, 0, -LAYOUT.control_height_compact, 0
+            label_left, 0, -LAYOUT.control_height_compact, 0
         )
         painter.setPen(color)
         painter.setFont(option.font)

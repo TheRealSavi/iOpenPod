@@ -42,6 +42,7 @@ from iPodDB.library.models import (
     TrackMetadata,
 )
 from iPodDB.library.native_chapters import NativeChapterEntry, NativeChapterIndex
+from iPodDB.library.phase import resolve_phase_playlist
 from iPodDB.library.photos import (
     IPodPhotoAlbumDetails,
     Photo,
@@ -253,6 +254,7 @@ __all__ = [
     "recover_hash72_checksum_book_material",
     "recover_hash72_material",
     "remap_playback_sidecar",
+    "resolve_phase_playlist",
     "select_photo_thumbnail",
     "smart_operators",
     "smart_playlist_references",

@@ -25,9 +25,11 @@ from iPodDB.library._playlist_datasets import (
     affected_datasets,
     is_master,
     is_podcasts,
+    is_visible,
     playlist_rows,
     structure_issues,
 )
+from iPodDB.library._playlist_projection import project_playlist
 from iPodDB.library._podcast_writing import (
     normalize_podcast_order,
     podcast_rows_need_repair,
@@ -184,6 +186,77 @@ def resolve(
                 ),
             ),
         )
+    wanted_playlists = {p.playlist_id: p for p in draft.snapshot.playlists}
+    original_playlists = {p.playlist_id: p for p in original.playlists}
+    refresh_requested: set[int] = set()
+    refresh_issues: list[WriteIssue] = []
+    for identity in draft.refresh_smart_playlists:
+        playlist = wanted_playlists.get(identity)
+        prior = original_playlists.get(identity)
+        if (
+            identity in refresh_requested
+            or prior is None
+            or prior.kind is not PlaylistKind.SMART
+            or prior.system_managed
+            or prior.smart is None
+            or not prior.smart.editable
+            or not prior.smart.live_update
+            or playlist is None
+            or playlist.kind is not PlaylistKind.SMART
+            or playlist.system_managed
+            or playlist.smart is None
+            or not playlist.smart.editable
+            or not playlist.smart.live_update
+        ):
+            refresh_issues.append(
+                WriteIssue(
+                    "draft.invalid_smart_refresh",
+                    "Membership refresh requires a retained, supported live Smart Playlist, requested once.",
+                    subject="playlist",
+                    record_id=identity,
+                )
+            )
+        else:
+            refresh_requested.add(identity)
+    known_tracks = frozenset(t.track_id for t in original.tracks)
+    refresh_ids = frozenset(
+        row.chunk.header.playlist_id
+        for kind, row in rows
+        if row.chunk.header.playlist_id in refresh_requested
+        and is_visible(kind, row.chunk.header)
+        for actual in (project_playlist(row, known_tracks, device_time),)
+        if tuple((entry.track_id, entry.position) for entry in actual.entries)
+        != tuple(
+            (entry.track_id, entry.position)
+            for entry in wanted_playlists[row.chunk.header.playlist_id].entries
+        )
+    )
+    if refresh_ids:
+        plan = replace(
+            plan,
+            changes=(
+                *plan.changes,
+                *(
+                    LibraryChange(
+                        "playlist",
+                        identity,
+                        "repair",
+                        wanted_playlists[identity].name,
+                        ("entries",),
+                    )
+                    for identity in sorted(refresh_ids)
+                    if not any(
+                        c.subject == "playlist"
+                        and c.record_id == identity
+                        and "entries" in c.fields
+                        for c in plan.changes
+                    )
+                ),
+            ),
+            issues=(*plan.issues, *refresh_issues),
+        )
+    elif refresh_issues:
+        plan = replace(plan, issues=(*plan.issues, *refresh_issues))
     issues = [*plan.issues, *source_warnings(document, original)]
     requested = draft.snapshot
     desired = requested
@@ -224,7 +297,7 @@ def resolve(
             (),
         )
     affected = affected_datasets(original, desired)
-    if repair_ids:
+    if repair_ids or refresh_ids:
         affected |= frozenset((2, 3))
     if plan.changes_itunes:
         datasets = document.find_chunks(MhsdHeader)
@@ -279,6 +352,7 @@ def resolve(
         )
         | frozenset(f.playlist_id for f in folders)
         | repair_ids
+        | refresh_ids
     )
     if draft.rebuild_album_indexes:
         for kind, row in rows:
@@ -483,6 +557,7 @@ def resolve(
         ),
         deleted_tracks=frozenset(old_tracks)
         - frozenset(t.track_id for t in desired.tracks),
+        refreshed_smart_playlists=refresh_ids,
     )
     generated_changes = compare_generated_values(requested, desired)
     resolution = LibraryResolution(

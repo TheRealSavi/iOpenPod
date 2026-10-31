@@ -142,6 +142,13 @@ def _artwork_formats(*format_ids: int) -> tuple[ArtworkFormat, ...]:
     return tuple(_ARTWORK_FORMATS_BY_ID[format_id] for format_id in format_ids)
 
 
+def _chapter_formats(*format_ids: int) -> tuple[ArtworkFormat, ...]:
+    return tuple(
+        replace(format_, usage=ArtworkUsage.CHAPTER)
+        for format_ in _artwork_formats(*format_ids)
+    )
+
+
 _NANO_7G_COVER_FORMATS = (
     _artwork_format(1010, 240, 240, 480),
     _artwork_format(1013, 50, 50, 100),
@@ -235,10 +242,7 @@ _CLASSIC_CAPABILITIES = _capabilities(
     # Classic 120GB RetailOS 2.0.1 advertises these ChapterImageSpecs and registers
     # player selectors 15/16 as F1055/F1029. Other Classics retain the established
     # family policy; this is static firmware evidence, not a live capability query.
-    chapter_formats=tuple(
-        replace(format_, usage=ArtworkUsage.CHAPTER)
-        for format_ in _artwork_formats(1055, 1029)
-    ),
+    chapter_formats=_chapter_formats(1055, 1029),
     photo_formats=_artwork_formats(1067, 1024, 1066),
     chapter_images=True,
     sparse_artwork=True,
@@ -278,7 +282,10 @@ _IPOD_4G_COLOR_CAPABILITIES = _capabilities(
 _IPOD_5G_CAPABILITIES = _capabilities(
     display=(320, 240, True),
     cover_formats=_artwork_formats(1028, 1029),
+    # Video RetailOS 1.3 declares this pair separately in ChapterImageSpecs.
+    chapter_formats=_chapter_formats(1028, 1029),
     photo_formats=_artwork_formats(1036, 1024, 1015, 1019),
+    chapter_images=True,
     # Firmware-independent Baseline output; the 640x480 mode additionally needs
     # Apple's low-complexity restrictions and firmware evidence (see media policy).
     video=(320, 240, 768, "1.3"),
@@ -327,7 +334,10 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         display=(320, 240, True),
         gapless=True,
         cover_formats=_artwork_formats(1061, 1055, 1068, 1060),
+        # Nano 3 RetailOS 1.1.3 also requires the separate F1029 Chapter raster.
+        chapter_formats=_chapter_formats(1055, 1029),
         photo_formats=_artwork_formats(1067, 1024, 1066),
+        chapter_images=True,
         sparse_artwork=True,
         video=(320, 240, 768, "1.3"),
         subtitles=True,
@@ -341,6 +351,8 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         display=(240, 320, True),
         gapless=True,
         cover_formats=_artwork_formats(1055, 1068, 1071, 1074, 1078, 1084),
+        # Nano 4 RetailOS 1.0.4 advertises its shared F1071 Chapter layout.
+        chapter_formats=_chapter_formats(1071),
         photo_formats=_artwork_formats(1024, 1066, 1079, 1083),
         chapter_images=True,
         sparse_artwork=True,
@@ -356,7 +368,12 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         display=(240, 376, True),
         gapless=True,
         cover_formats=_artwork_formats(1056, 1078, 1073, 1074),
+        # Nano 5 RetailOS 1.0.2 advertises F1073 in ChapterImageSpecs.
+        # The shared pixels still require the separate Chapter capability so
+        # explicit timelines enable the CDB/Extras artwork flag (ADR-0139).
+        chapter_formats=_chapter_formats(1073),
         photo_formats=_artwork_formats(1087, 1079, 1066),
+        chapter_images=True,
         sparse_artwork=True,
         video=(640, 480, 2500, "3.0"),
         subtitles=True,
@@ -687,7 +704,20 @@ def _profile_capabilities(
     generation: str,
     capacity: str,
 ) -> DeviceCapabilities:
-    capabilities = _CAPABILITIES_BY_IDENTITY[(family, generation)]
+    capabilities = replace(
+        _CAPABILITIES_BY_IDENTITY[(family, generation)],
+        supports_games=(
+            (family == "iPod" and generation in {"5th Gen", "5.5th Gen"})
+            or (
+                family == "iPod Classic"
+                and generation in {"6th Gen", "6.5th Gen", "7th Gen"}
+            )
+            or (
+                family == "iPod Nano"
+                and generation in {"3rd Gen", "4th Gen", "5th Gen"}
+            )
+        ),
+    )
     if family != "iPod" or generation not in {"5th Gen", "5.5th Gen"}:
         return capabilities
     high_memory = capacity in {"60GB", "80GB"} or model_number in {

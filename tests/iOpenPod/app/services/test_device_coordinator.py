@@ -14,6 +14,7 @@ from threading import Event, Thread
 import pytest
 from PIL import Image
 from tests.iOpenPod.app.media.test_photo_sync import large_photo_png
+from tests.iOpenPod.app.phase_test_support import StubPhaseAnalysis
 from tests.iPodDB.sidecars.test_sidecar_readers import counts, otg
 
 from device_registry import (
@@ -38,6 +39,8 @@ from iOpenPod.app.services.device_coordinator import (
     DeviceLibraryLoadError,
     DevicePhotoExportError,
 )
+from iOpenPod.app.services.phase import INDEX_PATH as PHASE_INDEX_PATH
+from iOpenPod.app.services.phase import MANIFEST_PATH as PHASE_MANIFEST_PATH
 from iPodDB.ArtworkDB.builder.build_ArtworkDB import (
     new_artwork_chunk,
     new_ArtworkDB,
@@ -52,6 +55,7 @@ from iPodDB.ArtworkDB.shared.chunk_defs.mhni import DEFINITION as MHNI_DEFINITIO
 from iPodDB.ArtworkDB.shared.chunk_defs.mhni import MhniHeader
 from iPodDB.ArtworkDB.shared.constants import ArtworkMhodType
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
+from iPodDB.games.phase import parse_library as parse_phase_library
 from iPodDB.iTunesDB.cdb import compress_iTunesCDB, decompress_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
@@ -61,7 +65,8 @@ from iPodDB.iTunesDB.writer.signature import (
     verify_hash72,
     verify_hashab,
 )
-from iPodDB.library import IPodLibrary, SQLiteDatabaseSet
+from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
+from iPodDB.library import IPodLibrary, Playlist, SQLiteDatabaseSet, playlist_entries
 from iPodDB.library.writing import WriteChecksum
 from iPodDB.PhotosDB.builder.build_PhotosDB import (
     new_container_mhod as new_photo_container_mhod,
@@ -676,6 +681,19 @@ def test_valid_authority_avoids_repeating_a_live_hardware_probe(
             product_serial="8P840FN62C7",
             transport_serial="000A270012345678",
         ),
+        probe_result=HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="windows_scsi",
+                    vendor="Apple",
+                    product="iPod",
+                    firmware_revision="1.62",
+                    vendor_payload=plistlib.dumps(
+                        {"ModelNumStr": "MB565", "VisibleBuildID": "2.0.1"}
+                    ),
+                ),
+            )
+        ),
     )
     coordinator = DeviceCoordinator(Storage(platform))
 
@@ -688,22 +706,29 @@ def test_valid_authority_avoids_repeating_a_live_hardware_probe(
 
 
 @pytest.mark.parametrize("cached_release", [None, "1.62"])
+@pytest.mark.parametrize("keep_stale_extended", [False, True])
 @pytest.mark.parametrize(
-    ("release", "support"),
-    [("2.0.2", FeatureSupport.UNSUPPORTED), ("2.0.4", FeatureSupport.SUPPORTED)],
+    ("model_number", "release", "support"),
+    [
+        ("MC293", "2.0.2", FeatureSupport.UNSUPPORTED),
+        ("MC293", "2.0.4", FeatureSupport.SUPPORTED),
+        ("MB565", "2.0.1", FeatureSupport.UNSUPPORTED),
+    ],
 )
 def test_selection_caches_firmware_and_reuses_it_after_reconnecting(
     tmp_path: Path,
     cached_release: str | None,
+    keep_stale_extended: bool,
+    model_number: str,
     release: str,
     support: FeatureSupport,
 ) -> None:
     platform = _ProbeCountingPlatform()
-    root = _ipod_volume(tmp_path / "classic", model_number="MC293")
-    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC293")
+    root = _ipod_volume(tmp_path / "classic", model_number=model_number)
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number(model_number)
     assert profile is not None
     payload = {
-        "ModelNumStr": "MC293",
+        "ModelNumStr": model_number,
         "SerialNumber": "TESTSERIAL7G",
         "FireWireGUID": "000A270012345678",
         "FireWireVersion": "1.62",
@@ -717,7 +742,8 @@ def test_selection_caches_firmware_and_reuses_it_after_reconnecting(
         ),
     )
     extended = plistlib.loads(legacy.sysinfo_extended)
-    extended.pop("VisibleBuildID", None)
+    if not keep_stale_extended:
+        extended.pop("VisibleBuildID", None)
     extended_bytes = plistlib.dumps(extended)
     authority = json.loads(legacy.authority)
     if cached_release is not None:
@@ -1146,6 +1172,117 @@ def test_nano_library_save_publishes_cdb_and_sqlite_as_one_generation(
         for name, data in review.result.prepared.sqlite.artifacts()
     )
     assert saved.active.library.tracks[0].title == "Late Nano"
+
+
+@pytest.mark.parametrize("nano", [False, True])
+@pytest.mark.parametrize("changed_manifest", [False, True])
+def test_phase_save_publishes_final_ids_and_charts_together(
+    tmp_path: Path, nano: bool, changed_manifest: bool
+) -> None:
+    platform = VirtualStoragePlatform()
+    name = "iTunesCDB" if nano else "iTunesDB"
+    root = _ipod_volume(
+        tmp_path / "phase",
+        model_number="MC027" if nano else "MB565",
+        database_name=name,
+    )
+    raw = parse_iTunesDB(_database_with_track(track_header_size=0x184))
+    for item in raw.find_chunks(MhitHeader):
+        raw = raw.replace_chunk(
+            item, replace(item.chunk, header=replace(item.chunk.header, media_type=1))
+        )
+    payload = write_iTunesDB(raw)
+    database = root / "iPod_Control/iTunes" / name
+    database.write_bytes(compress_iTunesCDB(payload) if nano else payload)
+    guid = bytes.fromhex("000A270012345678")
+    if nano:
+        _install_nano5_hash72_metadata(root, guid)
+        _install_sqlite_postprocess_metadata(root, ("PRAGMA main.user_version = 42;",))
+    else:
+        (root / "iPod_Control/Device/SysInfo").write_text(
+            "ModelNumStr: MB565\nFirewireGuid: 000A270012345678\n"
+        )
+    manifest = root / str(PHASE_MANIFEST_PATH)
+    manifest.parent.mkdir(parents=True)
+    manifest.write_bytes(
+        plistlib.dumps({"Name": "Phase", "Version": "1.0", "GUID": "phase"})
+    )
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(
+        Storage(platform), phase_analysis=StubPhaseAnalysis()
+    )
+    try:
+        active = coordinator.select_device(
+            coordinator.discover_devices().candidates[0].id
+        )
+        desired = replace(
+            active.library,
+            playlists=(
+                Playlist(
+                    -1,
+                    "My rhythm",
+                    entries=playlist_entries((active.library.tracks[0].track_id,)),
+                    is_phase=True,
+                ),
+            ),
+        )
+        review = coordinator.prepare_library(
+            LibraryPreparationRequest(desired, active, 1, 1), lambda _: None, Event()
+        )
+        assert review.result.prepared is not None, review.result.issues
+        assert not (root / str(PHASE_INDEX_PATH)).exists()
+        before_database = database.read_bytes()
+        if changed_manifest:
+            manifest.write_bytes(b"changed after review")
+        saved = coordinator.save_library(review, active, lambda _: None, Event())
+        if changed_manifest:
+            assert saved.active is None
+            assert database.read_bytes() == before_database
+            assert not (root / str(PHASE_INDEX_PATH)).exists()
+            return
+        assert saved.active is not None, saved.issues
+        playlist = saved.active.library.playlists[0]
+        assert playlist.is_phase
+        assert playlist.playlist_id > 0
+        index = parse_phase_library((root / str(PHASE_INDEX_PATH)).read_bytes())
+        assert index.playlist_id == playlist.playlist_id
+        assert len(index.tracks) == 1
+        track = index.tracks[0]
+        assert track.persistent_id == 0x0102030405060708
+        chart = (
+            root
+            / f"iPod_Control/GameData_RW/1D000/Phase Data/F007/{track.persistent_id:016X}"
+        )
+        assert chart.stat().st_size == track.analysis_size
+        if nano:
+            sqlite = sqlite3.connect(":memory:")
+            try:
+                assert review.result.prepared.sqlite is not None
+                sqlite.deserialize(review.result.prepared.sqlite.library)
+                pid = (
+                    playlist.playlist_id
+                    if playlist.playlist_id < 1 << 63
+                    else playlist.playlist_id - (1 << 64)
+                )
+                assert sqlite.execute(
+                    "SELECT name FROM container WHERE pid=?", (pid,)
+                ).fetchone() == ("My rhythm",)
+                sqlite.deserialize(review.result.prepared.sqlite.dynamic)
+                assert sqlite.execute(
+                    "SELECT COUNT(*) FROM container_ui WHERE container_pid=?", (pid,)
+                ).fetchone() == (1,)
+            finally:
+                sqlite.close()
+        coordinator.close()
+        coordinator = DeviceCoordinator(Storage(platform))
+        reloaded = coordinator.select_device(
+            coordinator.discover_devices().candidates[0].id
+        )
+        assert [p.playlist_id for p in reloaded.library.playlists if p.is_phase] == [
+            index.playlist_id
+        ]
+    finally:
+        coordinator.close()
 
 
 def test_nano5_recovers_missing_hashinfo_from_retained_checksum_book(

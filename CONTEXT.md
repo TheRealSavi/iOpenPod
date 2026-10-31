@@ -14,11 +14,55 @@ then beyond it.
 
 ## Current stage
 
+Automatic Smart Playlist refresh now reconciles differing saved membership in
+otherwise matching native counterparts, including when the canonical copy is
+already current. Occurrences retain each copy's own metadata; conflicting
+definitions still block publication with field-specific diagnostics. Selection,
+ordinary saves, and Sync keep automatic refresh. Synthetic and virtual iPod Video
+checks cover preservation and verification; the reported database remains
+unavailable. See
+[ADR-0213](docs/adr/0213-refresh-compatible-smart-playlist-counterparts.md).
+
+Large Syncs now bound Host staging ownership handles independently of Track count
+while retaining crash cleanup and protecting other processes' live preparations.
+Track preparation failures reach the logs, and Library DEBUG diagnostics use
+bounded samples. Windows checks retain 10,000 workspaces; complete NAS-backed
+physical Sync acceptance remains open. See
+[ADR-0212](docs/adr/0212-share-host-staging-ownership-across-workspaces.md).
+
+Playlists can designate one Phase Playlist when the game is installed, with a
+distinct sidebar marker and ordinary editing behavior. Library saves include its
+companion index and gameplay charts generated from the actual audio using
+librosa. Content-checked charts are reused on subsequent saves. Native-parser
+and virtual-device checks pass, while physical gameplay remains untested. See
+[ADR-0210](docs/adr/0210-analyze-phase-playlist-audio-with-librosa.md).
+
+Games displays installed titles, versions, and landscape covers from Games_RO.
+Background Storage reads retain one card per installation, tolerate individual
+metadata failures, and clear on Active iPod changes. See
+[IC-Info and Games](docs/ipod-games.md) for the manifest contract and read-only
+device validation.
+
+Games now prepares the bundled Classic 6.5 Game Authorization Store for an
+identified supported iPod using a standalone iPodDB codec. The explicit sidebar
+action merges account/key records, gives bundled entries precedence on conflicts,
+and preserves destination-only authorizations through a recoverable Storage
+Transaction. Firmware and emulators remain lab-only verification tools. Game
+executables are installed separately by selecting cards and pressing Add in the
+Available games dialog. Gimme Games first downloads and extracts the complete
+preservation collection onto the Host, showing progress. Later clicks reuse those
+files. The app retains the catalog and artwork while game payloads stay outside
+its assets and source distribution. Selected games publish through Storage
+without replacing existing game folders or modifying iTunesDB. See ADR-0208,
+[ADR-0211](docs/adr/0211-download-the-game-collection-on-demand.md), and
+[IC-Info and Games](docs/ipod-games.md) for supported builds, merge limits, and
+native differential evidence. Physical device publication remains untested.
+
 Play Count Sync reconciles music play counts between the Active iPod and one
 Jellyfin 10.9+ account in both directions. A Play Count Memory on the iPod
 commits in the same Storage transaction as the play counts, so every Host merges
 from one baseline and interruptions can miss plays but never double them. See
-[ADR-0208](docs/adr/0208-synchronize-jellyfin-play-counts-through-an-ipod-memory.md).
+[ADR-0214](docs/adr/0214-synchronize-jellyfin-play-counts-through-an-ipod-memory.md).
 
 Storage can resume a create-only transaction interrupted during staging through a
 new identity-bound Filesystem Session. It verifies and reuses completed stages,
@@ -53,7 +97,14 @@ and a separate Native Chapter Index exposes firmware eligibility without changin
 editable metadata. Explicit timed artwork on chapter-capable targets enables the
 known flags when recognized named Chapter data exists; mismatched sequences are
 diagnosed without retiming them. These findings are directly verified in Classic
-120GB RetailOS 2.0.1; physical display behavior remains unverified. See
+120GB RetailOS 2.0.1. Independent nano 5 RetailOS 1.0.2 checks verify its Chapter
+flags and native F1073 format. Video 5/5.5 and nano 3/4 now also declare their
+independently verified Chapter formats. Explicit timeline saves enable both known
+header masks, preserve shared cover pixels, and add nano 3's missing F1029 images.
+Nano 5 carries the flags into CDB and Extras. Ordinary covers preserve Chapter
+flags. Physical display behavior remains unverified. See the
+[firmware matrix](docs/research/chapter-artwork-firmware-matrix.md),
+[nano 5 evidence](docs/research/nano5-chapter-artwork-contract.md), and
 [ADR-0202](docs/adr/0202-adopt-native-artwork-and-chapter-semantics.md).
 
 Podcast group projection now follows the whole native marker byte. Smart Checked
@@ -1064,7 +1115,7 @@ them through narrow interfaces.
 - The Play Count Memory for Jellyfin lives on the iPod under
   `iPod_Control/iOpenPod/Integrations/`, a folder reserved for integration
   documents. The Jellyfin access token stays in the native OS keyring; global
-  settings keep only the server address, username, and device ID (ADR-0208).
+  settings keep only the server address, username, and device ID (ADR-0214).
 
 ## Core device workflow
 

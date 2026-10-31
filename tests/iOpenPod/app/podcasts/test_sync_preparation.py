@@ -7,8 +7,10 @@ import pytest
 from tests.iOpenPod.app.podcasts.podcast_test_support import active_ipod, device_episode
 
 from iOpenPod.app.models.device import ActiveIPod
+from iOpenPod.app.podcasts import feed_client
 from iOpenPod.app.podcasts.catalog import reconcile_device_podcasts
 from iOpenPod.app.podcasts.feed_client import PodcastFeedError
+from iOpenPod.app.podcasts.identity import subscription_identity
 from iOpenPod.app.podcasts.models import (
     PodcastEpisode,
     PodcastSnapshot,
@@ -81,6 +83,60 @@ def test_failed_refresh_cannot_clear_a_listened_episode() -> None:
     assert not plan.removals and not plan.additions
     assert plan.issues[0].code == "podcast.refresh_failed"
     assert coordinator.saved[0].snapshot.history[0].listened
+
+
+def test_repeated_feed_ids_preserve_episodes_while_other_shows_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, snapshot = _state()
+    retained = snapshot.subscriptions[0]
+    healthy = replace(
+        retained,
+        subscription_id=subscription_identity(
+            "https://example.test/healthy", "Healthy"
+        ),
+        feed_url="https://example.test/healthy",
+        title="Healthy",
+        episodes=(),
+    )
+    snapshot = replace(snapshot, subscriptions=(retained, healthy))
+    coordinator = _Coordinator(snapshot)
+    calls: list[str] = []
+
+    def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
+        calls.append(url)
+        item = """<item><title>Incoming</title><guid>incoming</guid>
+        <enclosure url="https://example.test/incoming.mp3" type="audio/mpeg" />
+        </item>"""
+        title = "Healthy" if url == healthy.feed_url else retained.title
+        items = item if url == healthy.feed_url else item + item
+        return (
+            f"<rss><channel><title>{title}</title>{items}</channel></rss>".encode(),
+            url,
+        )
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+
+    prepared = prepare_podcast_sync(
+        PodcastSyncRequest(snapshot),
+        source,
+        cast("DeviceCoordinator", coordinator),
+        lambda: None,
+    )
+
+    assert calls == [retained.feed_url, healthy.feed_url]
+    assert prepared.refreshed_subscription_ids == (healthy.subscription_id,)
+    assert not prepared.plan.removals
+    assert len(prepared.plan.additions) == 1
+    assert (
+        prepared.plan.additions[0].subscription.subscription_id
+        == healthy.subscription_id
+    )
+    assert prepared.state.snapshot.subscription(retained.subscription_id) == retained
+    assert prepared.state.snapshot.history == snapshot.history
+    issue = prepared.plan.issues[0]
+    assert issue.code == "podcast.refresh_failed"
+    assert retained.title in issue.message and retained.feed_url in issue.detail
 
 
 def test_manual_add_uses_captured_episode_metadata_without_feed_refresh() -> None:

@@ -24,7 +24,13 @@ successful Video emulator fixture and foo_dop both use count one with timed imag
 
 Device Registry describes chapter formats separately from ordinary cover formats.
 The Classic family uses the source-supported F1055/F1029 set, reusing existing
-pixel layouts. Other profiles are not assigned inferred chapter sets. The
+pixel layouts. Independently verified native declarations also supply Video
+5/5.5's F1028/F1029 pair, nano 3's F1055/F1029 pair, nano 4's F1071, and nano 5's
+F1073. Every entry uses the Chapter artwork role; layouts already used as covers
+remain shared. Nano 3 additionally needs the separate F1029 raster. See the
+[firmware matrix](../research/chapter-artwork-firmware-matrix.md) and
+[nano 5 investigation](../research/nano5-chapter-artwork-contract.md). Other
+profiles are not assigned inferred chapter sets. The
 Application Layer supplies these layouts to iPodDB independently of cover layouts
 and includes them when reading artwork. Existing cover definitions and shard caps
 remain unchanged.
@@ -60,3 +66,11 @@ the tested device. It cannot establish which change mattered. MHOD17 chapter
 metadata, sentinel placement, media classification, and media files are not changed
 by this decision. Firmware playback success must be recorded separately from
 successful database preparation and publication.
+
+The adopted Video and nano capabilities enable the existing explicit-timeline
+Chapter flag coordination, including CDB and Extras on nano 5. Virtual-device
+regressions verify saved flags, retained unknown bits, unchanged shared pixel
+bytes, and ordinary-cover flag preservation on each generation. Reapplying a
+saved nano 3 timeline adds only the missing F1029 file while preserving its
+retained cover shards and Chapter positions. Physical display acceptance remains
+separate from the verified native header and format contracts.

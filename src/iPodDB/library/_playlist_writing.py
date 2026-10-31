@@ -116,6 +116,10 @@ def edit_playlist(
             )
             chunk = replace(chunk, children=tuple(children))
     header = chunk.header
+    if (new.is_phase and (old is None or old != new)) or (
+        old is not None and old.is_phase != new.is_phase
+    ):
+        header = replace(header, phase_game_flag=25 if new.is_phase else 0)
     if old is None or old.parent_id != new.parent_id:
         header = replace(
             header,

@@ -61,6 +61,7 @@ normal lowercase conventions while retaining the same domain term.
 | --- | --- | --- |
 | **iPod Preferences** | The firmware-owned binary `iPod_Control/Device/Preferences` artifact, represented losslessly by iPodDB with known fields scoped to an evidenced layout. | iTunesPrefs, application settings, Device Profile |
 | **iTunesPrefs** | The binary `iPod_Control/iTunes/iTunesPrefs` artifact containing iTunes attachment, library-link, Sync, and media settings. Its companion `iTunesPrefs.plist` is a separate artifact. | iPod Preferences, application settings |
+| **Game Authorization Store** | The device-bound `iPod_Control/iTunes/IC-Info.sidb` artifact containing account sessions and addressable key records. Updating it is separate from installing game executables. | game library, iTunesDB, game files |
 | **Host Media Library** | The media collection on the Host that may be compared with an iPod Library. | PC library, source folder, local library |
 | **Host Media Scan** | The read-only Application Layer workflow that enumerates the user-selected Host Media Library folders, reuses unchanged cached metadata, resolves explicitly accepted external Playlist references, and publishes an in-memory Library Snapshot. It stops before comparison or Sync planning. | import, Sync, folder crawl |
 | **Host Media Scan Cache** | An application-owned, checksummed catalog of source path, media kind, size, modification time, inspected metadata, Track Acoustic Fingerprints, Host artwork references, and Photo Image Content Fingerprints used to avoid rereading unchanged files during a Host Media Scan. It is an optimization, never Library authority. | Host Media Library, Backup Snapshot, source of truth |
@@ -110,7 +111,7 @@ normal lowercase conventions while retaining the same domain term.
 | **Library Source** | The adapter that translates one source's records into a Library Snapshot and retains the source-specific identity and access information needed to load media, artwork, or Photo thumbnails. | database document, GUI model |
 | **Track** | One playable media item represented in a media library. | song when the item may be spoken word or video, file |
 | **Chaptered Track** | One playable Track with named time positions that let the iPod navigate sections of its media. Album conversion makes one Chaptered Track from a complete saved Music Album. | Playlist, collection, multiple Track files |
-| **Native Chapter Index** | A read-only interpretation of retained Chapter header flags and named Chapter entries using the traced Classic firmware rules. It preserves stored order and raw starts, exposes diagnostics, and remains separate from editable Chapter metadata and Host Player navigation policy. | sorted Chapters, universal playback schedule |
+| **Native Chapter Index** | A read-only interpretation of retained Chapter header flags and named Chapter entries using the traced Video, Classic, and nano 3/4/5 firmware rules. It preserves stored order and raw starts, exposes diagnostics, and remains separate from editable Chapter metadata and Host Player navigation policy. | sorted Chapters, universal playback schedule |
 | **Podcast Subscription** | A user-added or device-recovered Podcast feed retained in the Active iPod's versioned iOpenPod metadata. Its document stores show-level metadata but neither Podcast Episodes nor current device membership. | feed row, Podcast Playlist, downloaded show |
 | **Podcast Episode** | One Podcast publication identified across RSS and iTunesDB by GUID, legacy enclosure evidence, or unique same-feed title/publication evidence with compatible Episode and season numbers. Its current `on_device` state is projected from the Active iPod. | Track when the feed publication is meant, download |
 | **Podcast GUID** | An opaque publisher identifier for a Podcast Episode, stored in MHOD 15 and SQLite `podcast_info.external_guid`. It may be a URL without identifying the downloadable media. | enclosure URL, Track ID |
@@ -240,7 +241,7 @@ normal lowercase conventions while retaining the same domain term.
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **Play Count Sync** | Two-way reconciliation of music play counts between the Active iPod and one connected Jellyfin account. iPod changes publish through the Library save; the first pairing keeps the larger count and later runs add new plays from both sides (ADR-0208). | Back Sync, scrobbling |
+| **Play Count Sync** | Two-way reconciliation of music play counts between the Active iPod and one connected Jellyfin account. iPod changes publish through the Library save; the first pairing keeps the larger count and later runs add new plays from both sides (ADR-0214). | Back Sync, scrobbling |
 | **Play Count Memory** | The on-iPod document that records, per Jellyfin account and persistent Track identity, the agreed play count and the count last confirmed on each side. It lives under `iPod_Control/iOpenPod/Integrations` so every Host merges from the same baseline. | sync state, play count cursor |
 
 ## Application updates
@@ -249,6 +250,15 @@ normal lowercase conventions while retaining the same domain term.
 | --- | --- | --- |
 | **Install Channel** | The evidenced distribution source of the running iOpenPod installation, which determines its update provider. Package identity alone does not imply Microsoft Store. Python index installs can establish package ownership without recording the original index; their label identifies PyPI as the update source. | update server, platform |
 | **Update Backend** | An Application Layer adapter that checks and requests installation through one Install Channel, exposing typed outcomes and progress without native package objects. | device updater, firmware updater |
+
+## Phase
+
+| Term | Meaning | Avoid |
+| --- | --- | --- |
+| **Phase Playlist** | The one editable Playlist selected to supply music to the installed Phase game. It keeps ordinary Playlist membership, naming and editing behavior. | game folder, analysis playlist |
+| **Phase Library** | The game's companion index, containing the selected Playlist persistent ID and per-Track references to gameplay analysis files. It is separate from the iPod Library. | music database, playlist file |
+| **Phase Placeholder Analysis** | A synthetic chart with regular timed events, accepted by the inspected game parser but not derived from the music. | analyzed audio, beat detection |
+| **Phase Gameplay Analysis** | A chart derived from a Track's audio, containing timed transient and pulse events with quantized strengths for the Phase game. | audio file, playlist |
 
 ## Example dialogue
 

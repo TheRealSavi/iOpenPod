@@ -24,7 +24,10 @@ if sys.platform != "darwin":
     helper = "iOpenPod-update.exe" if sys.platform == "win32" else "iOpenPod-update"
     datas += [(str(root / "dist" / helper), "updates")]
 for package in ("iOpenPod", "device_registry", "iPodDB", "storage", "tzdata"):
-    datas += collect_data_files(package)
+    datas += collect_data_files(
+        package,
+        excludes=["assets/games/archives/**", "assets/games/**/*.zip", "assets/games/**/*.7z"],
+    )
 datas += copy_metadata("iOpenPod")
 datas += copy_metadata("keyring")
 # librosa/lazy_loader need their on-disk stubs, even when code lives in PYZ.

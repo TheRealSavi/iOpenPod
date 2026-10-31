@@ -76,6 +76,34 @@ _ORIGINAL = Playlist(10, "Road trip", entries=playlist_entries((3, 1, 1, 2)))
 _EDITABLE_KINDS = (PlaylistKind.PLAYLIST, PlaylistKind.SMART, PlaylistKind.FOLDER)
 
 
+@pytest.mark.parametrize("installed", [False, True])
+@pytest.mark.parametrize("kind", _EDITABLE_KINDS)
+def test_phase_option_requires_installed_game_and_editable_playlist(
+    installed: bool, kind: PlaylistKind
+) -> None:
+    dialog = PlaylistEditorDialog(kind, phase_available=installed)
+    try:
+        assert dialog.phase.isHidden() is (not installed or kind is PlaylistKind.FOLDER)
+        assert not dialog.phase.isChecked()
+        dialog.set_phase_available(True)
+        assert dialog.phase.isHidden() is (kind is PlaylistKind.FOLDER)
+    finally:
+        dialog.deleteLater()
+
+
+def test_existing_phase_selection_can_be_cleared_after_game_removal() -> None:
+    dialog = PlaylistEditorDialog(
+        PlaylistKind.PLAYLIST, Playlist(10, "Rhythm", is_phase=True)
+    )
+    try:
+        assert not dialog.phase.isHidden()
+        assert dialog.phase.isChecked()
+        dialog.phase.setChecked(False)
+        assert not dialog.phase.isChecked()
+    finally:
+        dialog.deleteLater()
+
+
 @dataclass(frozen=True)
 class _Browser:
     context: AppContext
@@ -212,6 +240,47 @@ def test_playlist_banner_paints_track_backed_placeholder_artwork(
     }
 
     assert sampled_colors - {background}
+
+
+def test_phase_hero_overlays_wordmark_and_clears_it_for_other_playlists(
+    browser: _Browser,
+) -> None:
+    phase = Playlist(20, "Rhythm", entries=playlist_entries((1, 2)), is_phase=True)
+    browser.context.library_workspace.load(LibrarySnapshot(_TRACKS, (_ORIGINAL, phase)))
+    browser.page.select_playlist(20)
+    APPLICATION.processEvents()
+    wordmark = browser.page.findChild(QWidget, "phaseHeroWordmark")
+    assert wordmark is not None and wordmark.isVisible()
+    assert wordmark.parentWidget() is _banner(browser.page)
+    assert wordmark.width() >= 108
+    assert (
+        wordmark.geometry().bottom()
+        < _button(browser.page, "editPlaylist").geometry().top()
+    )
+    assert _label(browser.page, "pageTitle").text() == "Rhythm"
+    image = wordmark.grab().toImage()
+    text_color = browser.context.theme_manager.tokens.text.casefold()
+    assert any(
+        image.pixelColor(x, y).name().casefold() == text_color
+        for x in range(image.width())
+        for y in range(image.height())
+    )
+    browser.page.select_playlist(10)
+    assert wordmark.isHidden()
+
+
+def test_native_genius_playlist_shows_atom_in_playlist_hero(browser: _Browser) -> None:
+    playlist = Playlist(
+        30, "Saved Genius", PlaylistKind.GENIUS, entries=playlist_entries((1, 2))
+    )
+    browser.context.library_workspace.load(
+        LibrarySnapshot(_TRACKS, (_ORIGINAL, playlist))
+    )
+    browser.page.select_playlist(30)
+    icon = browser.page.findChild(QWidget, "geniusHeroIcon")
+    assert icon is not None and icon.isVisible()
+    browser.page.select_playlist(10)
+    assert icon.isHidden()
 
 
 def test_playlist_export_button_requests_the_complete_saved_occurrence_order(

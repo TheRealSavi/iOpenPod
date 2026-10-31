@@ -8,6 +8,37 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
 _GLYPH_DIRECTORY = Path(__file__).parents[2] / "assets" / "glyphs"
+_PHASE_WORDMARK = Path(__file__).parents[2] / "assets" / "logos" / "phase.svg"
+
+
+def phase_wordmark(
+    logical_height: int, color: QColor, device_pixel_ratio: float = 1.0
+) -> QPixmap:
+    """Render the Phase lettering at its native wide aspect ratio."""
+    return _phase_wordmark_pixmap(
+        logical_height,
+        color.name(QColor.NameFormat.HexRgb),
+        round(max(1.0, float(device_pixel_ratio)), 2),
+    )
+
+
+@lru_cache(maxsize=64)
+def _phase_wordmark_pixmap(logical_height: int, color_name: str, dpr: float) -> QPixmap:
+    raw = _PHASE_WORDMARK.read_bytes().replace(
+        b"currentColor", color_name.encode("ascii")
+    )
+    renderer = QSvgRenderer(QByteArray(raw))
+    size = renderer.defaultSize()
+    height = max(1, logical_height)
+    width = round(height * size.width() / max(1, size.height()))
+    pixmap = QPixmap(max(1, round(width * dpr)), max(1, round(height * dpr)))
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer.render(painter, QRectF(0, 0, pixmap.width(), pixmap.height()))
+    painter.end()
+    pixmap.setDevicePixelRatio(dpr)
+    return pixmap
 
 
 def glyph_icon(

@@ -7,12 +7,15 @@ from pathlib import Path
 def test_application_imports_only_public_ipoddb_contracts() -> None:
     source_root = Path(__file__).resolve().parents[2] / "src" / "iOpenPod"
     # Preferences/time (ADR-0097/0098) and Genius intent/browse (ADR-0176 to 0178)
-    # have separate public contracts. Their implementation modules remain private.
+    # and games/IC-Info (ADR-0208) have separate public contracts. Their implementation
+    # modules remain private.
     public_modules = {
         "iPodDB.library",
         "iPodDB.library.genius",
         "iPodDB.preferences",
         "iPodDB.device_time",
+        "iPodDB.ic_info",
+        "iPodDB.games",
     }
     violations: list[str] = []
     for path in source_root.rglob("*.py"):

@@ -553,6 +553,28 @@ class FilesystemSession:
             self._ensure_directories(path, observation)
             self._revalidate(write=True)
 
+    def remove_empty_directory(self, path: DevicePath) -> None:
+        """Remove only the named empty directory, never its parents or files."""
+        with self._writer_lease():
+            observation = self._revalidate(write=True)
+            target = resolve_device_path(
+                self._root, path, observation.volume.capabilities, require_leaf=True
+            )
+            metadata = os.lstat(target)
+            if is_link_or_reparse(metadata) or not stat.S_ISDIR(metadata.st_mode):
+                raise UnsafeFilesystemPathError(
+                    f"Device Path is not a plain directory: {path}"
+                )
+            self._revalidate(write=True)
+            try:
+                target.rmdir()
+            except OSError as error:
+                raise StorageOperationError(
+                    f"Could not remove empty Device directory {path}: {error}"
+                ) from error
+            flush_parent_directory(target)
+            self._revalidate(write=True)
+
     def atomic_write(
         self,
         path: DevicePath,

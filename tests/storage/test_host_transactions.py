@@ -24,6 +24,51 @@ from storage import (
 from storage.testing import VirtualStoragePlatform
 
 
+@pytest.mark.parametrize("include_writes", [False, True])
+def test_publication_progress_counts_removals_and_writes_in_execution_order(
+    tmp_path: Path,
+    include_writes: bool,
+) -> None:
+    root = tmp_path / "volume"
+    root.mkdir()
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root)
+    storage = Storage(platform, transaction_recovery_directory=tmp_path / "recovery")
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        removed = (DevicePath("one.bin"), DevicePath("two.bin"))
+        for path in removed:
+            (root / str(path)).write_bytes(b"old")
+        writes = (
+            (TransactionWrite(DevicePath("new.bin"), b"new", _content(b"new")),)
+            if include_writes
+            else ()
+        )
+        plan = StorageTransaction(
+            writes,
+            tuple(
+                TransactionRemoval(path, session.fingerprint(path)) for path in removed
+            ),
+            host_recovery=True,
+        )
+        events: list[TransactionProgress] = []
+        result = session.execute_transaction(plan, progress=events.append)
+        publishing = [
+            event for event in events if event.state is TransactionState.PUBLISHING
+        ]
+        total = 2 + int(include_writes)
+        assert [event.completed for event in publishing] == list(range(total + 1))
+        assert all(event.total == total for event in publishing)
+        assert [event.path for event in publishing[1:]] == [
+            *removed,
+            *(write.path for write in writes),
+        ]
+        assert session.finalize_committed_transaction(
+            result.recovery.journal_path
+        ).complete
+
+
 @pytest.mark.parametrize("interrupt", [False, True])
 @pytest.mark.parametrize("exact_capacity", [False, True])
 def test_nearly_full_replacement_and_removal_survive_restart(

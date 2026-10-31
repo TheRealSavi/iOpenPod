@@ -150,6 +150,13 @@ class FeedparserPodcastClient:
             raise PodcastFeedError(
                 "The feed does not contain playable podcast episodes"
             )
+        if len({episode.episode_id for episode in episodes}) != len(episodes):
+            # Reject the whole refresh so ambiguous publisher entries cannot
+            # authorize retention changes or abort unrelated Host media Sync.
+            raise PodcastFeedError(
+                "The podcast feed repeats Episode IDs: multiple entries share "
+                "the same media URL."
+            )
         from iOpenPod.app.podcasts.identity import subscription_identity
 
         return PodcastSubscription(

@@ -3,13 +3,50 @@
 import os
 import subprocess
 import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from pathlib import Path
+from typing import BinaryIO
 
 import pytest
 
+from storage import host_staging
+from storage._writer_lock import _open_lock_file  # pyright: ignore[reportPrivateUsage]
 from storage.content_workspace import StagedContent, content_workspace
 from storage.host_staging import RetainedStagingDirectory, cleanup_stale_staging
 from storage.media_processing import media_workspace
+
+
+@pytest.mark.parametrize("workers", (1, 4))
+def test_retained_workspaces_keep_a_bounded_number_of_owner_descriptors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workers: int
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    opened: list[BinaryIO] = []
+    open_lock = _open_lock_file
+
+    def observe(path: Path) -> BinaryIO:
+        stream = open_lock(path)
+        opened.append(stream)
+        return stream
+
+    monkeypatch.setattr(host_staging, "_open_lock_file", observe)
+
+    def prepare(index: int) -> ExitStack:
+        with ExitStack() as resources:
+            workspace = resources.enter_context(
+                media_workspace(checkpoint=lambda: None)
+            )
+            Path(workspace.output_path(".mp3")).write_bytes(bytes([index]))
+            return resources.pop_all()
+
+    with ExitStack() as resources, ThreadPoolExecutor(max_workers=workers) as pool:
+        for lifetime in pool.map(prepare, range(48)):
+            resources.enter_context(lifetime)
+        assert sum(not stream.closed for stream in opened) <= 1
+        assert cleanup_stale_staging() == 0
+    assert all(stream.closed for stream in opened)
 
 
 @pytest.mark.parametrize("name", ("TMPDIR", "TEMP", "TMP"))
@@ -134,6 +171,133 @@ def test_cleanup_in_another_process_cannot_remove_a_live_workspace(
         )
         assert checked.stdout.strip() == "0"
         assert path.read_bytes() == b"prepared media"
+
+
+def test_closing_one_workspace_keeps_other_workspaces_owned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    first = RetainedStagingDirectory("iopenpod-chaptered-")
+    second = RetainedStagingDirectory("iopenpod-content-")
+    try:
+        path = Path(second.name) / "retained"
+        path.write_bytes(b"still in use")
+        first.cleanup()
+        checked = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from storage.host_staging import cleanup_stale_staging; "
+                "print(cleanup_stale_staging())",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+        assert checked.stdout.strip() == "0"
+        assert path.read_bytes() == b"still in use"
+    finally:
+        first.cleanup()
+        second.cleanup()
+    assert not tuple(Path(second.name).parent.glob(".iopenpod-process-*"))
+
+
+def test_crashed_shared_owner_reaps_all_workspaces_but_preserves_live_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    with media_workspace(checkpoint=lambda: None) as live:
+        path = Path(live.output_path(".mp3"))
+        path.write_bytes(b"live media")
+        script = """
+import os
+from contextlib import ExitStack
+from pathlib import Path
+from storage.media_processing import media_workspace
+with ExitStack() as resources:
+    for _ in range(4):
+        workspace = resources.enter_context(media_workspace(checkpoint=lambda: None))
+        Path(workspace.output_path('.mp3')).write_bytes(b'crashed media')
+    os._exit(17)
+"""
+        crashed = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, timeout=10, check=False
+        )
+        assert crashed.returncode == 17, crashed.stderr
+        assert cleanup_stale_staging() == 4
+        assert cleanup_stale_staging() == 0
+        assert path.read_bytes() == b"live media"
+    assert cleanup_stale_staging() == 0
+    assert not tuple(path.parent.parent.glob(".iopenpod-process-*"))
+
+
+def test_cleanup_still_recovers_legacy_workspace_markers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    directory = RetainedStagingDirectory("iopenpod-chaptered-")
+    root = Path(directory.name).parent
+    directory.cleanup()
+    legacy = root / "iopenpod-media-legacy"
+    legacy.mkdir(mode=0o700)
+    (legacy / ".iopenpod-owner").write_bytes(b"iopenpod-host-staging-v1\n")
+    (legacy / "source").write_bytes(b"abandoned media")
+    assert cleanup_stale_staging() == 1
+    assert not legacy.exists()
+
+
+def test_failed_normal_cleanup_leaves_an_unlocked_owner_for_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+    def fail_removal(_name: str, **_kwargs: object) -> None:
+        raise PermissionError("prepared file is temporarily busy")
+
+    with (
+        monkeypatch.context() as failure,
+        pytest.raises(PermissionError, match="temporarily busy"),
+    ):
+        failure.setattr(
+            tempfile.TemporaryDirectory, "_rmtree", staticmethod(fail_removal)
+        )
+        with media_workspace(checkpoint=lambda: None) as workspace:
+            path = Path(workspace.output_path(".mp3"))
+            path.write_bytes(b"prepared media")
+    assert path.exists()
+    assert cleanup_stale_staging() == 1
+    assert not path.parent.exists()
+    assert not tuple(path.parent.parent.glob(".iopenpod-process-*"))
+
+
+@pytest.mark.parametrize(
+    "owner",
+    (
+        b"../outside",
+        b".cleanup-lock",
+        b".iopenpod-process-" + b"0" * 32,
+        b".iopenpod-process-" + b"g" * 32,
+        b".iopenpod-process-" + b"0" * 32 + b"\ntrailing bytes",
+        b"\xff" * 32,
+    ),
+)
+def test_cleanup_preserves_shared_markers_without_a_valid_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, owner: bytes
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    directory = RetainedStagingDirectory("iopenpod-chaptered-")
+    root = Path(directory.name).parent
+    directory.cleanup()
+    abandoned = root / "iopenpod-media-untrusted"
+    abandoned.mkdir(mode=0o700)
+    (abandoned / ".iopenpod-owner").write_bytes(
+        b"iopenpod-host-staging-v2\n" + owner + b"\n"
+    )
+    original = abandoned / "source"
+    original.write_bytes(b"keep me")
+    assert cleanup_stale_staging() == 0
+    assert original.read_bytes() == b"keep me"
 
 
 def test_concurrent_startup_cleanup_does_not_race_workspace_creation_or_close(

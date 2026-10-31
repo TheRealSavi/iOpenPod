@@ -22,38 +22,46 @@ if TYPE_CHECKING:
 type ArtworkPainter = Callable[[QRectF], None]
 
 
-def library_card_size(font: QFont, typography: TypographyTokens) -> QSize:
+def library_card_size(
+    font: QFont, typography: TypographyTokens, *, artwork_height: int | None = None
+) -> QSize:
     """Return the shared card size without clipping Host-relative typography."""
 
     title_font, detail_font = _caption_fonts(font, typography)
     caption_height = (
         QFontMetrics(title_font).height() + QFontMetrics(detail_font).height()
     )
+    height = LAYOUT.album_artwork_size if artwork_height is None else artwork_height
     required_height = (
         LAYOUT.album_card_padding
-        + LAYOUT.album_artwork_size
+        + height
         + LAYOUT.album_caption_gap
         + caption_height
         + LAYOUT.album_card_padding
     )
     return QSize(
         LAYOUT.album_card_width,
-        max(LAYOUT.album_card_minimum_height, required_height),
+        max(
+            LAYOUT.album_card_minimum_height - LAYOUT.album_artwork_size + height,
+            required_height,
+        ),
     )
 
 
 def library_card_artwork_rect(
     option: QStyleOptionViewItem,
     typography: TypographyTokens,
+    *,
+    artwork_height: int | None = None,
 ) -> QRectF:
     """Return the shared artwork area for overlays and caller-owned painting."""
 
-    card_rect = library_card_rect(option, typography)
+    card_rect = library_card_rect(option, typography, artwork_height=artwork_height)
     return QRectF(
         card_rect.left() + LAYOUT.album_card_padding,
         card_rect.top() + LAYOUT.album_card_padding,
         LAYOUT.album_artwork_size,
-        LAYOUT.album_artwork_size,
+        LAYOUT.album_artwork_size if artwork_height is None else artwork_height,
     )
 
 
@@ -67,11 +75,14 @@ def paint_library_card(
     tokens: ThemeTokens,
     typography: TypographyTokens,
     paint_artwork: ArtworkPainter,
+    artwork_height: int | None = None,
 ) -> None:
     """Paint shared card chrome and captions around caller-provided artwork."""
 
-    card_rect = library_card_rect(option, typography)
-    artwork_rect = library_card_artwork_rect(option, typography)
+    card_rect = library_card_rect(option, typography, artwork_height=artwork_height)
+    artwork_rect = library_card_artwork_rect(
+        option, typography, artwork_height=artwork_height
+    )
     selected = bool(option.state & QStyle.StateFlag.State_Selected)
     hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
     focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
@@ -99,10 +110,14 @@ def paint_library_card(
 def library_card_rect(
     option: QStyleOptionViewItem,
     typography: TypographyTokens,
+    *,
+    artwork_height: int | None = None,
 ) -> QRectF:
     """Return the rendered card bounds within an equalized grid cell."""
 
-    card_size = library_card_size(option.font, typography)
+    card_size = library_card_size(
+        option.font, typography, artwork_height=artwork_height
+    )
     cell_rect = QRectF(option.rect)
     card_width = min(float(card_size.width()), cell_rect.width())
     card_height = min(float(card_size.height()), cell_rect.height())

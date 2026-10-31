@@ -33,8 +33,12 @@ _CHECKBOX_BORDER_WIDTH = 2.0
 def library_card_checkbox_rect(
     option: QStyleOptionViewItem,
     typography: TypographyTokens,
+    *,
+    artwork_height: int | None = None,
 ) -> QRectF:
-    artwork = library_card_artwork_rect(option, typography)
+    artwork = library_card_artwork_rect(
+        option, typography, artwork_height=artwork_height
+    )
     return QRectF(
         artwork.right() - _CHECKBOX_MARGIN - _CHECKBOX_EXTENT,
         artwork.top() + _CHECKBOX_MARGIN,
@@ -51,6 +55,7 @@ def paint_library_card_checkbox(
     typography: TypographyTokens,
     *,
     on_ipod: bool | None = None,
+    artwork_height: int | None = None,
 ) -> None:
     if on_ipod is not None:
         if on_ipod:
@@ -62,7 +67,7 @@ def paint_library_card_checkbox(
     enabled = bool(option.state & QStyle.StateFlag.State_Enabled)
     hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
     focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
-    rect = library_card_checkbox_rect(option, typography)
+    rect = library_card_checkbox_rect(option, typography, artwork_height=artwork_height)
     fill = (
         tokens.accent_hover
         if active and hovered
@@ -120,15 +125,18 @@ def handle_library_card_check_event(
     typography: TypographyTokens,
     *,
     checkbox_only: bool = True,
+    artwork_height: int | None = None,
 ) -> bool:
     if not index.flags() & Qt.ItemFlag.ItemIsUserCheckable:
         return False
     activate = False
     if isinstance(event, QMouseEvent):
         hit_rect = (
-            library_card_checkbox_rect(option, typography)
+            library_card_checkbox_rect(
+                option, typography, artwork_height=artwork_height
+            )
             if checkbox_only
-            else library_card_rect(option, typography)
+            else library_card_rect(option, typography, artwork_height=artwork_height)
         )
         activate = (
             event.type() is QEvent.Type.MouseButtonRelease

@@ -227,6 +227,7 @@ PLAYLIST_POLICY = (
             "smart",
             "description",
             "sort_order",
+            "is_phase",
         )
     ),
     # Regular membership is caller-owned; Smart matches are applied by iOpenPod;

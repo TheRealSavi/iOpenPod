@@ -426,11 +426,19 @@ class Playlist:
     description: str = ""
     sort_order: PlaylistSort = PlaylistSortOrder.DEFAULT
     system_managed: bool = field(default=False, compare=False)
+    is_phase: bool = field(default=False, kw_only=True)
     genius_seed_persistent_id: int | None = field(
         default=None, compare=False, kw_only=True
     )
 
     def __post_init__(self) -> None:
+        if self.is_phase and (
+            self.system_managed
+            or self.kind not in (PlaylistKind.PLAYLIST, PlaylistKind.SMART)
+        ):
+            raise ValueError(
+                "Only an editable music Playlist can be the Phase Playlist."
+            )
         if not isinstance(
             self.sort_order,
             PlaylistSortOrder | UnsupportedPlaylistSortOrder,

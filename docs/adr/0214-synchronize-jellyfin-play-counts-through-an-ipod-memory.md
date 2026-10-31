@@ -1,4 +1,4 @@
-# ADR-0208: Synchronize Jellyfin play counts through an iPod memory
+# ADR-0214: Synchronize Jellyfin play counts through an iPod memory
 
 - Status: Proposed
 - Date: 2026-10-29

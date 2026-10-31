@@ -276,4 +276,6 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0205: Adopt native video playback contracts](0205-adopt-native-video-playback-contracts.md)
 - [ADR-0206: Validate native lyrics publication](0206-validate-native-lyrics-publication.md)
 - [ADR-0207: Resume create-only transaction staging](0207-resume-create-only-transaction-staging.md)
-- [ADR-0208: Synchronize Jellyfin play counts through an iPod memory](0208-synchronize-jellyfin-play-counts-through-an-ipod-memory.md)
+- [ADR-0212: Share Host staging ownership across workspaces](0212-share-host-staging-ownership-across-workspaces.md)
+- [ADR-0213: Refresh compatible Smart Playlist counterparts](0213-refresh-compatible-smart-playlist-counterparts.md)
+- [ADR-0214: Synchronize Jellyfin play counts through an iPod memory](0214-synchronize-jellyfin-play-counts-through-an-ipod-memory.md)

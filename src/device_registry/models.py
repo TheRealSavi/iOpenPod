@@ -334,6 +334,7 @@ class DeviceCapabilities:
     video: VideoCapabilities
     database: DatabaseCapabilities
     genius: GeniusCapabilities = field(default_factory=GeniusCapabilities, kw_only=True)
+    supports_games: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

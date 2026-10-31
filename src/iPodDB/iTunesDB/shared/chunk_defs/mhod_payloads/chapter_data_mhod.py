@@ -59,7 +59,7 @@ class MhodChapterDataNameHeader(BinaryStruct):
 
 
 class ChapterDataFlags(IntFlag):
-    """Classic 120GB 2.0.1 `hedr` flags; other bits remain retained."""
+    """Traced Video, Classic, and nano 3/4/5 `hedr` flags; other bits are retained."""
 
     HAS_NAMED_CHAPTERS = 0x1
     HAS_CHAPTER_ARTWORK = 0x2

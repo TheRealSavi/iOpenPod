@@ -2,7 +2,7 @@
 
 import logging
 from collections import Counter, defaultdict, deque
-from dataclasses import replace
+from dataclasses import fields, replace
 
 from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk
@@ -50,6 +50,7 @@ from iPodDB.library._podcast_writing import (
 from iPodDB.library._resolved_write import ResolvedWrite
 from iPodDB.library._track_header_requirements import derived_header_requirements
 from iPodDB.library._track_writing import edit_text, edit_track
+from iPodDB.library.playlists import PlaylistKind
 from iPodDB.library.writing import (
     IdentityMapping,
     TimedArtworkAsset,
@@ -272,6 +273,17 @@ def reconcile(
     original_playlists = {p.playlist_id: p for p in original.playlists}
     wanted_playlists = {p.playlist_id: p for p in desired.playlists}
     changed_ids = resolved.changed_playlists
+    refreshed_memberships = resolved.refreshed_smart_playlists | frozenset(
+        identity
+        for identity, playlist in original_playlists.items()
+        if playlist.kind is PlaylistKind.SMART
+        and not playlist.system_managed
+        and playlist.smart is not None
+        and playlist.smart.editable
+        and playlist.smart.live_update
+        and identity in wanted_playlists
+        and playlist.entries != wanted_playlists[identity].entries
+    )
     canonical_raw = (
         {}
         if canonical is None
@@ -422,9 +434,12 @@ def reconcile(
                     reference is None
                     or replace(actual, entries=()) != replace(reference, entries=())
                     or (
-                        Counter(actual.track_ids) != Counter(reference.track_ids)
-                        if identity in podcast_ids
-                        else actual.track_ids != reference.track_ids
+                        identity not in refreshed_memberships
+                        and (
+                            Counter(actual.track_ids) != Counter(reference.track_ids)
+                            if identity in podcast_ids
+                            else actual.track_ids != reference.track_ids
+                        )
                     )
                     or bool(chunk.header.playlist_kind_flags & 1)
                     != (identity in podcast_ids)
@@ -437,13 +452,27 @@ def reconcile(
                         != canonical_occurrences.get(identity)
                     )
                 ):
+                    differences = (
+                        ("missing canonical Playlist",)
+                        if reference is None
+                        else tuple(
+                            field.name
+                            for field in fields(actual)
+                            if getattr(actual, field.name)
+                            != getattr(reference, field.name)
+                            and (
+                                field.name != "entries"
+                                or identity not in refreshed_memberships
+                            )
+                        )
+                    )
                     issues.append(
                         WriteIssue(
                             "playlist.ambiguous_mirror",
                             "The other playlist dataset disagrees with this Playlist. Its relationship cannot be rewritten safely.",
                             subject="playlist",
                             record_id=identity,
-                            detail=f"Dataset {kind}",
+                            detail=f"Dataset {kind}. Playlist {actual.name!r} ({identity}); different source fields: {', '.join(differences)}.",
                         )
                     )
                     continue
@@ -458,13 +487,17 @@ def reconcile(
                 entry_map = {
                     e.entry_id: occurrences[e.track_id].popleft()
                     for e in baseline.entries
+                    if occurrences[e.track_id]
                 }
                 wanted = replace(
                     wanted,
                     entries=actual.entries
                     if wanted.entries == baseline.entries
+                    and identity not in refreshed_memberships
                     else tuple(
-                        replace(e, entry_id=entry_map.get(e.entry_id, e.entry_id))
+                        replace(
+                            e, entry_id=entry_map.get(e.entry_id, f"new:{e.entry_id}")
+                        )
                         for e in wanted.entries
                     ),
                 )
@@ -512,9 +545,13 @@ def reconcile(
             and all(
                 replace(p, entries=()) == replace(canonical_raw[identity], entries=())
                 and (
-                    Counter(p.track_ids) == Counter(canonical_raw[identity].track_ids)
-                    if identity in podcast_ids
-                    else p.track_ids == canonical_raw[identity].track_ids
+                    identity in refreshed_memberships
+                    or (
+                        Counter(p.track_ids)
+                        == Counter(canonical_raw[identity].track_ids)
+                        if identity in podcast_ids
+                        else p.track_ids == canonical_raw[identity].track_ids
+                    )
                 )
                 for identity, p in mirror_rows.items()
             )
