@@ -63,7 +63,9 @@ def snapshot() -> LibrarySnapshot:
     )
 
 
-def test_prepare_publish_reuse_and_deselect(tmp_path: Path) -> None:
+def test_prepare_publish_reuse_and_deselect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     manifest = tmp_path / str(MANIFEST_PATH)
     manifest.parent.mkdir(parents=True)
     manifest.write_bytes(
@@ -108,6 +110,14 @@ def test_prepare_publish_reuse_and_deselect(tmp_path: Path) -> None:
         regenerated = prepare_phase(session, desired, desired, analyzer=analyzer)
         assert len(analyzer.calls) == 3
         assert regenerated.writes
+        monkeypatch.setattr(
+            StubPhaseAnalysis,
+            "identity",
+            property(lambda self: "different-source-model"),
+        )
+        upgraded = prepare_phase(session, desired, desired, analyzer=analyzer)
+        assert len(analyzer.calls) == 5
+        assert upgraded.writes
         cleared = replace(
             desired, playlists=(replace(desired.playlists[0], is_phase=False),)
         )

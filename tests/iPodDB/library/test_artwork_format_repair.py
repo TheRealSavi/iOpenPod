@@ -149,7 +149,7 @@ def test_consistent_retained_f1061_layout_accepts_new_artwork(height: int) -> No
     )
     assert result.prepared.artwork is not None
     document = parse_ArtworkDB(result.prepared.artwork)
-    expected_size = 112 * height
+    expected_size = 112 * 55
     assert {
         entry.chunk.header.image_size for entry in document.find_chunks(MhifHeader)
     } == {expected_size}
@@ -169,7 +169,7 @@ def test_consistent_retained_f1061_layout_accepts_new_artwork(height: int) -> No
         if file.relative_path == read.relative_path
     )
     pixels = read.decode(read_content(output.data, read.offset, read.length))
-    assert (pixels.width, pixels.height) == (56, height)
+    assert (pixels.width, pixels.height) == (55, 55)
 
 
 @pytest.mark.parametrize("height", [55, 56])
@@ -204,7 +204,7 @@ def test_f1061_mhni_evidence_corrects_stale_mhif_for_either_layout(
     assert result.prepared is not None, result.issues
     assert result.prepared.artwork is not None
     corrected = parse_ArtworkDB(result.prepared.artwork)
-    assert corrected.find_chunks(MhifHeader)[0].chunk.header.image_size == 112 * height
+    assert corrected.find_chunks(MhifHeader)[0].chunk.header.image_size == 112 * 55
 
 
 def test_f1061_conflicting_mhni_size_fields_still_block_preparation() -> None:

@@ -163,3 +163,52 @@ def test_local_pulse_tracks_a_tempo_change() -> None:
         intervals = np.diff(times[(times > first) & (times < last)])
         assert len(intervals) >= 10
         assert abs(float(np.median(intervals)) - period) < 0.06
+
+
+def test_pitched_phrase_keeps_continuing_drum_attacks_available() -> None:
+    rate = PHASE_SAMPLE_RATE
+    signal = np.zeros(30 * rate, dtype=np.float32)
+    rng = np.random.default_rng(7)
+    width = round(0.04 * rate)
+    drum = (rng.normal(size=width) * np.hanning(width) * 0.3).astype(np.float32)
+    drum_times = np.arange(1, 29, 0.5)
+    for time in drum_times:
+        first = round(float(time) * rate)
+        signal[first : first + width] += drum
+    melody_times = np.arange(8.23, 20, 0.8)
+    width = round(0.65 * rate)
+    ramp = round(0.03 * rate)
+    shape = np.ones(width)
+    shape[:ramp] = np.linspace(0, 1, ramp)
+    shape[-ramp:] = np.linspace(1, 0, ramp)
+    for index, time in enumerate(melody_times):
+        frequency = (330, 440, 392, 494)[index % 4]
+        note = np.sin(2 * np.pi * frequency * np.arange(width) / rate) * shape * 0.7
+        first = round(float(time) * rate)
+        signal[first : first + width] += note.astype(np.float32)
+    pcm = signal.astype("<f4").tobytes()
+    chart = analyze_phase_pcm(pcm, length_ms=30_000)
+    times = np.asarray([event.time_q16 / 65536 for event in chart.transients])
+    # Both lead and accompaniment are evidence. Native Phase owns the decision
+    # about which of these real attacks fits its difficulty and spacing rules.
+    melody = melody_times[(melody_times > 12) & (melody_times < 19)]
+    assert sum(np.min(np.abs(times - t)) < 0.1 for t in melody) >= len(melody) * 0.8
+    exposed = drum_times[(drum_times < 7) | (drum_times > 23)]
+    assert sum(np.min(np.abs(times - t)) < 0.1 for t in exposed) >= len(exposed) * 0.8
+    competing = [
+        t for t in drum_times if 12 < t < 19 and np.min(np.abs(melody_times - t)) > 0.15
+    ]
+    assert (
+        sum(np.min(np.abs(times - t)) < 0.1 for t in competing) >= len(competing) * 0.8
+    )
+    assert analyze_phase_pcm(pcm, length_ms=30_000, max_workers=1) == chart
+
+
+def test_held_tone_with_vibrato_does_not_become_repeated_taps() -> None:
+    time = np.arange(30 * PHASE_SAMPLE_RATE) / PHASE_SAMPLE_RATE
+    shape = np.clip((time - 3) / 0.1, 0, 1) * np.clip((27 - time) / 0.1, 0, 1)
+    phase = 2 * np.pi * 440 * time + 0.08 * np.sin(2 * np.pi * 5 * time)
+    pcm = (0.5 * np.sin(phase) * shape).astype("<f4").tobytes()
+    chart = analyze_phase_pcm(pcm, length_ms=30_000)
+    assert any(2.9 < event.time_q16 / 65536 < 3.2 for event in chart.transients)
+    assert not any(5 < event.time_q16 / 65536 < 25 for event in chart.transients)

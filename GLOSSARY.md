@@ -130,6 +130,7 @@ normal lowercase conventions while retaining the same domain term.
 | **Artwork Index** | The immutable iPodDB projection that maps ArtworkDB image IDs and Track database IDs to bounded iTHMB locations. | artwork cache, image dict |
 | **Artwork Display Time** | An unsigned playback-position key in milliseconds grouping an artwork image's representations. Time zero supplies the initial image. Firmware cursor transforms, asynchronous delivery, and special retained values are separate concerns; the raw key is not a guarantee of exact screen-update time. | chapter number, frame duration, transformed cursor key |
 | **iTHMB** | A device-specific image file containing packed cover or Photo pixels referenced by ArtworkDB or PhotosDB byte ranges. | thumbnail database, album-art file |
+| **Artwork Raster** | Pixel rows encoded for one device format, with visible dimensions distinct from row stride, primary read length and file allocation. F1061 has 55-by-55 visible pixels, 112-byte rows and a 6,160-byte native raster; a larger retained allocation does not enlarge its visible image. | allocated slot when visible pixels are meant, row stride as visible width |
 | **Chunk** | A tagged binary record used within an iPod database format. | block, object, node |
 | **Chunk Definition** | The immutable, header-typed binary contract for one known Chunk, including its Header Marker, extent, body kind, header sizes, fields, and allowed children. | chunk metadata, header map, parser config |
 | **Database Definition** | The one immutable, root-typed aggregate of all Chunk Definitions and MHSD dataset definitions for iTunesDB, ArtworkDB, or PhotosDB. Parsers and writers share it. | registry, parser config, writer config |
@@ -252,6 +253,8 @@ normal lowercase conventions while retaining the same domain term.
 | **Phase Library** | The game's companion index, containing the selected Playlist persistent ID and per-Track references to gameplay analysis files. It is separate from the iPod Library. | music database, playlist file |
 | **Phase Placeholder Analysis** | A synthetic chart with regular timed events, accepted by the inspected game parser but not derived from the music. | analyzed audio, beat detection |
 | **Phase Gameplay Analysis** | A chart derived from a Track's audio, containing timed transient and pulse events with quantized strengths for the Phase game. | audio file, playlist |
+| **Phase Part** | Time-aligned attack, energy, and pitch-class evidence for one source estimated by a separation model, such as vocals or guitar. It guides chart selection without defining a game lane. | instrument lane, proven instrument identity |
+| **Phase Hook** | A recurring pitch-and-rhythm phrase recognized within one Phase Part. Each occurrence retains its own observed attack times. | chorus label, copied note chart |
 
 ## Example dialogue
 

@@ -798,7 +798,12 @@ are excluded from application assets and release sources. See
 
 The public `iPodDB.games` contract also owns Phase Library index and gameplay
 analysis codecs. The Application Layer decodes verified audio and uses librosa
-to generate typed events, with content-checked reuse (ADR-0210). A Phase designation is part of the semantic Playlist; the
+to generate typed events, with content-checked reuse (ADR-0210). Full-mix pitched
+and percussive attacks remain available for native difficulty selection. An
+optional six-source provider adds estimated vocal/guitar and other Phase Parts,
+with recurring Phase Hooks guiding modest preferences (ADR-0215, ADR-0217).
+Pulse tracking and full-mix energy remain independent of those preferences.
+A Phase designation is part of the semantic Playlist; the
 Application Layer enforces one selection and prepares companions using final
 database identities. The normal Library Storage Transaction publishes those files
 with the databases. Installed-game discovery is shared by Games and the Playlist
@@ -1273,16 +1278,23 @@ zero selects the reverse Track relationship. See
 During cover preparation, iPodDB automatically reconciles conflicting MHIF image
 sizes when the fixed-size encoding, individually validated retained MHNI
 representations, and captured thumbnail ranges establish a supported layout.
-F1061 permits its known 55-row and 56-row rasters to coexist. New artwork follows
-a retained MHIF size present among those rasters, otherwise the most common size
-with the Device Profile breaking ties. Packed RGB formats with an explicit row
+Native F1061 targets author 55-by-55 visible pixels with 112-byte rows, independently
+of retained MHIF sizes. Normal saves and Sync correct evidenced legacy geometry
+through a separately verified iPodDB repair pass: genuine 56-pixel content is
+resampled into fresh shards, while correct 55-pixel content can retain a larger
+allocation. Source dependencies and untouched file prefixes stay protected.
+Missing or ambiguous sources remain unchanged with diagnostics; the same-time
+primary representations can supply replacement pixels. See
+[ADR-0218](adr/0218-author-and-repair-native-f1061-geometry.md).
+Packed RGB formats with an explicit row
 stride may have visible dimensions smaller than the validated raster without
 requiring full or exactly centered content; new images still fill the selected
 output layout. Other codecs retain their existing geometry rules. Preparation
-corrects only the affected MHIF size fields, preserves retained image bytes and
-locations, and uses the existing Storage
-Transaction without a separate confirmation. Reads and unrelated edits remain
-lossless; unverifiable layouts still block preparation. See
+corrects affected MHIF fields, and the native F1061 pass may also relocate corrected
+representations without changing old file bytes. Publication uses the existing
+Storage Transaction without a separate confirmation. Parsing and serialization
+remain lossless; preparation records the automatic repair separately from user
+metadata edits. Other unverifiable authoring layouts still block preparation. See
 [ADR-0111](adr/0111-correct-evidenced-artwork-format-sizes-during-preparation.md),
 [ADR-0124](adr/0124-accept-validated-mixed-f1061-layouts.md), and
 [ADR-0131](adr/0131-accept-bounded-visible-dimensions-in-packed-artwork.md).

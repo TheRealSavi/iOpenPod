@@ -108,7 +108,7 @@ def retained_artwork_extents(
 def _is_f1061_layout(cover: CoverFormat) -> bool:
     return (
         cover.format_id == 1061
-        and cover.width == 56
+        and cover.width in (55, 56)
         and cover.height in (55, 56)
         and cover.row_bytes == 112
         and cover.pixel_format is IthmbPixelFormat.RGB565_LE
@@ -249,7 +249,11 @@ def _validate_retained_artwork_format(
                     "Retained MHNI image sizes disagree with the target layout."
                 )
             for dimension, padding, expected in (
-                (header.image_width, header.horizontal_padding, cover.width),
+                (
+                    header.image_width,
+                    header.horizontal_padding,
+                    56 if _is_f1061_layout(cover) else cover.width,
+                ),
                 (header.image_height, header.vertical_padding, height),
             ):
                 # Packed RGB stride and size establish the raster independently
@@ -309,8 +313,8 @@ def effective_cover_format(
     retained_size: int | None,
     excluded_images: frozenset[int] = frozenset(),
 ) -> CoverFormat:
-    """Use the evidenced F1061 row count when extending an existing ArtworkDB."""
-    if artwork is None or not _is_f1061_layout(cover):
+    """Keep native geometry; infer retained rows only for legacy custom targets."""
+    if artwork is None or not _is_f1061_layout(cover) or cover.width == 55:
         return cover
     image_sizes = Counter(
         payload.child.header.image_size

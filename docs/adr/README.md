@@ -278,3 +278,8 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0207: Resume create-only transaction staging](0207-resume-create-only-transaction-staging.md)
 - [ADR-0212: Share Host staging ownership across workspaces](0212-share-host-staging-ownership-across-workspaces.md)
 - [ADR-0213: Refresh compatible Smart Playlist counterparts](0213-refresh-compatible-smart-playlist-counterparts.md)
+- [ADR-0214: Direct Phase events by acoustic passage](0214-direct-phase-events-by-acoustic-passage.md)
+- [ADR-0215: Follow Phase Parts and recurring Hooks](0215-follow-phase-parts-and-recurring-hooks.md)
+- [ADR-0216: Defer Phase analysis during device selection](0216-defer-phase-analysis-during-device-selection.md)
+- [ADR-0217: Preserve Phase evidence for native difficulty](0217-preserve-phase-evidence-for-native-difficulty.md)
+- [ADR-0218: Author and repair native F1061 geometry](0218-author-and-repair-native-f1061-geometry.md)

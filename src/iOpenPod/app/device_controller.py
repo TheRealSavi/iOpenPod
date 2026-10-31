@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
+from threading import Event
 from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, Slot
@@ -126,6 +127,7 @@ class DeviceController(QObject):
         self._read_only_operation_count = 0
         self._recovery_required = False
         self._closed = False
+        self._selection_cancelled = Event()
         self._next_token = 0
         self._active_token: int | None = None
         self._pending_automatic_selection: DeviceCandidateId | None = None
@@ -327,10 +329,13 @@ class DeviceController(QObject):
         ):
             return False
         identifier = active.candidate.id
+        self._selection_cancelled.clear()
         self._replace_active_ipod(None, force_model_reset=True)
         self._begin(
             DeviceOperation.SELECT,
-            lambda: self._coordinator.select_device(identifier),
+            lambda: self._coordinator.select_device(
+                identifier, cancelled=self._selection_cancelled
+            ),
         )
         return True
 
@@ -347,9 +352,12 @@ class DeviceController(QObject):
         self._pending_automatic_selection = None
         self._replace_active_ipod(None, force_model_reset=True)
         identifier = DeviceCandidateId(candidate_id)
+        self._selection_cancelled.clear()
         self._begin(
             DeviceOperation.SELECT,
-            lambda: self._coordinator.select_device(identifier),
+            lambda: self._coordinator.select_device(
+                identifier, cancelled=self._selection_cancelled
+            ),
         )
 
     @Slot(result=bool)
@@ -376,6 +384,7 @@ class DeviceController(QObject):
             return
         writes_were_allowed = self.device_writes_allowed
         self._closed = True
+        self._selection_cancelled.set()
         self._refresh_timer.stop()
         self._pending_automatic_selection = None
         if writes_were_allowed:

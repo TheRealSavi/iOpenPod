@@ -24,8 +24,8 @@ def test_device_profiles_assign_product_images_and_cover_formats() -> None:
     small_classic = classic.capabilities.artwork.cover_format(1061)
     assert small_classic is not None
     assert (small_classic.width, small_classic.height, small_classic.row_bytes) == (
-        56,
-        56,
+        55,
+        55,
         112,
     )
 

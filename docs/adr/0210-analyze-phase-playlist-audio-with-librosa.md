@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-30
 - Supersedes: ADR-0209's placeholder-chart generation policy
+- Transient selection policy superseded by [ADR-0214](0214-direct-phase-events-by-acoustic-passage.md)
 
 Phase saves generate gameplay analysis from each eligible Track's actual audio.
 The Application Layer owns decoding and music analysis using the existing

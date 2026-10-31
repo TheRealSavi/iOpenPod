@@ -10,8 +10,9 @@ an invented analysis record.
 
 The shared FFmpeg decoder accepts a verified incoming Host file or a validated
 device-relative music path. Its explicit demuxer and protocol restrictions match
-Genius. Phase requests complete mono float32 PCM at 22,050 Hz, capped at 1801
-seconds. Decoded duration must agree with the database within three seconds;
+Genius. Acoustic analysis requests complete mono float32 PCM at 22,050 Hz;
+instrument analysis requests stereo at 44,100 Hz and derives mono for pulse
+tracking. Both are capped at 1801 seconds. Decoded duration must agree with the database within three seconds;
 extra encoder padding is clipped at the declared duration. Non-finite samples
 and decode errors stop preparation with an error.
 
@@ -19,9 +20,10 @@ DSP uses librosa 0.11 with a 2048-sample centered STFT and 256-sample hop
 (11.61 ms). Core blocks contain 2048 frames, with 64 context frames on either
 side. HPSS uses a 31-bin median kernel and separation margins of 2. The spectral
 power sent to a 64-band mel transform combines 75% percussive and 25% full
-magnitude, retaining pitched attacks. Mel analysis begins at 20 Hz.
+magnitude, retaining pitched attacks. A second mel transform measures harmonic
+power independently for pitched attack candidates. Mel analysis begins at 20 Hz.
 
-The implementation keeps full mono PCM and compact whole-song feature vectors;
+The implementation keeps bounded full-song PCM and compact feature vectors;
 large spectrograms, HPSS intermediates and tempograms are block-local. It avoids
 allocating a whole-song tempogram. Two DSP threads process at most two spectral
 blocks at once, sharing read-only PCM. Their feature results are assembled in
@@ -35,11 +37,11 @@ joins them before returning. A running native median filter must finish before
 that worker can stop. FFmpeg remains cancellable through Storage's runner.
 
 The optional `max_workers=1` argument supports diagnosis and exact serial/parallel
-comparison; normal saves use two workers. The algorithm version remains unchanged
-because transforms, thresholds, overlap, frame order and chart events are
-unchanged. Existing cached charts remain valid.
+comparison; normal saves use two workers. The current algorithm version is
+`librosa-phase-5`; older charts regenerate on the next ordinary Phase Save/Sync.
 
-A warmed 120-second authored music fixture measured 7.19 seconds with the original
+A historical version-1 benchmark of a warmed 120-second authored music fixture
+measured 7.19 seconds with the original
 serial code and 4.41 seconds with two workers on the development Windows host
 (about 39% less DSP time). The complete chart compared exactly equal, including
 all integer timestamps and magnitudes. The profile attributed 5.9 of 6.4 seconds
@@ -52,8 +54,109 @@ still contribute to the first-track cost.
 Three mel regions cover below 250 Hz, 250 to 2000 Hz, and above 2000 Hz. Positive
 spectral-flux onset envelopes are balanced using each region's 95th percentile
 of positive strengths. Their clipped mean drives librosa onset detection with
-delta 0.1 and a minimum spacing of approximately 120 ms. Centering of the provided
+delta 0.1 and a minimum wait of approximately 60 ms. Centering of the provided
 spectrogram is accounted for without adding a second FFT-centering delay.
+
+These boundaries are iOpenPod policy. Subsequent
+[native parameter research](research/phase-parameter-semantics.md) found shipped
+analysis subbands of 80–300, 400–1500, and 2000–4500, and confirmed that band
+ordering supplies primary and alternative lane choices. The current boundaries
+and per-band scaling have not yet been revised to match that producer-intent
+evidence. The upper beat field's original producer meaning remains unresolved.
+The [consumer and lifetime audit](research/phase-beat-field-semantics.md) supports
+treating it as unused for gameplay generation in build 3168002; an optional
+diagnostic path reads and discards it. Encoding onset strength there is our
+policy, not a verified original meaning.
+
+Each acoustic family has independent band scaling and attack detection. Harmonic
+flux uses a three-bin frequency maximum filter to reduce vibrato detections.
+Harmonic candidates are gated when harmonic RMS falls below 15% of total RMS or
+0.00001. These families do not identify literal vocals, guitar, or bass.
+An additional articulation gate compares harmonic spectra four frames apart:
+cosine distance must exceed 0.02 or magnitude norm must rise by more than 8%.
+Otherwise harmonic flux is suppressed. Percussive-emphasized flux is suppressed
+only when that articulation is absent and percussive RMS is below 5% of total
+RMS. A loud held melody must not erase quieter real drums. This gate prevents
+percentile normalization from turning tiny changes in a held tone into taps.
+
+## Shared attack evidence
+
+Both acoustic families contribute their measured attacks, independently of
+instrument estimates. Their bandwise maximum, weighted by full-mix RMS, supplies
+the base magnitudes. A shared per-band 95th percentile of positive weighted
+evidence calibrates every source's encoded strengths. Per-source normalization
+is only for detection and passage scoring: it must not turn a quiet source into
+maximum-strength notes merely because those are its loudest attacks.
+
+Source detections within four frames (46.44 ms) of a mix attack annotate that
+attack at its existing timestamp. Other eligible source attacks add candidates.
+Near-coincident detections are merged; mix timings take precedence, then stronger
+source-only evidence. A selected foreground attack receives a 15% magnitude
+preference before quantization, applied once even when multiple detections support
+it. Accompaniment is not attenuated. Missing or empty source evidence cannot
+replace the base pool with an empty chart. No random switching, copied timings,
+or synthetic taps are introduced.
+
+Pulse tracking continues to use the percussive-emphasized envelope independently.
+Native Phase chooses difficulty, spacing, lanes, checkpoints, and sweeps from
+this evidence. This supersedes ADR-0214's exclusive acoustic passages and
+ADR-0215's 120 ms lead-priority gate and 60% supporting magnitudes. See
+[ADR-0217](adr/0217-preserve-phase-evidence-for-native-difficulty.md).
+
+## Instrument parts and recurring hooks
+
+When Demucs and PyTorch are installed, normal Phase saves use the six-source
+`htdemucs_6s` checkpoint, loaded by its fixed signature `5c90dfd2`. Its sources are
+vocals, guitar, bass, drums, piano, and other. These are learned estimates, not
+guaranteed labels; `other` is never relabeled guitar. The existing optional stack
+can be installed with `uv sync --locked --extra synesthesia-gpu`. Restart the
+application after installation. The first analysis downloads the approximately
+52 MiB checkpoint to the provider's Host cache. Provider absence uses acoustic
+analysis and is logged; provider failure stops preparation with its error.
+The checkpoint resolves directly through Demucs RemoteRepo, using the published
+hash-bearing filename and Torch cache. No Hugging Face model-alias lookup or
+Hugging Face credentials are required for this model.
+
+Inference runs on CUDA when available, otherwise CPU, with random shifts disabled.
+Cores contain 344 Phase frames (about four seconds), with 86 context frames on
+either side. Each block is separated, downmixed and resampled to the common
+22,050 Hz grid, then reduced to band attacks, RMS, and pitch-class evidence.
+Context is discarded before assembling the whole-song vectors. No full-song stem
+buffers are allocated or persisted. Stereo PCM itself is bounded to about 606 MiB
+at the duration limit; mono conversion and feature arrays require additional Host
+memory. A model load or current inference cannot be interrupted halfway through;
+checkpoints run before and after inference and between source measurements.
+
+Source attacks use the same articulation and vibrato suppression principles as
+the acoustic path. A source must reach 12% of the full-mix RMS and the
+absolute audibility floor to emit candidates. Its passage power share must reach
+4% to compete for focus. Scores combine square-root power share, bounded attack
+clarity, recurring-note fraction, a modest preference for vocals/guitar, and a
+continuity bonus. Eight-pulse and four-second opportunities define passages with
+a minimum two-second residence. Audible parts with eligible passage scores also
+retain their measured attacks under a sustained lead. Shared calibration and
+the bounded foreground preference described above preserve their relative
+strengths. If stereo sources survive a silent mono fold, their combined RMS and
+energy-weighted bands supply the missing mix reference; pulse events remain empty.
+
+Hook recognition compares overlapping six-note sequences, using pitch-class
+vectors just after each attack and normalized inter-attack intervals. A sequence
+must span 1–12 seconds. Matches require mean pitch similarity above 0.90, interval
+differences at most 0.045 of phrase duration, and a duration ratio from 0.75 to
+1.33. Nonoverlapping occurrences are required. A steady single-pitch pulse alone
+is rejected. Up to 128 active prototypes per source are retained, retiring the
+least recently heard so late-song material can be recognized too. This is a
+bounded heuristic: missed notes, transposition, or substantially altered phrasing
+can prevent a match. It does not infer semantic chorus/verse labels.
+
+All occurrences participate in scoring, including the first occurrence of a
+returning phrase. A recognized hook earns preference, but cannot override the
+audibility gates. Each occurrence contributes its own measured notes; no copied
+timing or invented events are added. Source spectral bands augment the shared
+evidence pool. Pulse tracking remains independent. See
+[ADR-0215](adr/0215-follow-phase-parts-and-recurring-hooks.md).
+
+## Native events
 
 Frames quieter than 1% of peak spectral RMS, or below absolute threshold 0.00001,
 cannot generate events. Beat tracking runs in local core blocks with 256 context
@@ -64,15 +167,18 @@ There are no fabricated beats in silent sections.
 | Event | iOpenPod mapping | Native representation |
 | --- | --- | --- |
 | Transient time | Detected attack frame | Absolute unsigned Q16.16 seconds after byte `0xff` |
-| Three transient strengths | Low, mid and high onset strengths | Three five-bit values packed into a u16 |
+| Three transient strengths | Energy-weighted low, mid and high attacks on a shared mix scale, with bounded foreground preference | Three five-bit values packed into a u16 |
 | Beat time | Locally tracked pulse frame | Absolute unsigned Q16.16 seconds after byte `0xff` |
 | Beat strength | Onset-envelope strength at the pulse | High four bits of a u8 |
-| Beat accent | Harmonic spectral RMS at the pulse | Low four bits of a u8 |
+| Beat accent | Full-mix spectral RMS smoothed over approximately 250 ms | Low four bits of a u8; native relative passage power |
 
 Strengths use percentile scaling, clipping and exponent 0.65 before quantization
 to 0–31 or 0–15. Timestamps stay before the declared end of the Track. The codec
 requires strictly increasing timestamps, validates magnitude bounds and limits
-each stream to 20,000 events. Silence produces two empty streams. The old
+each stream to 20,000 events. If transient evidence exceeds that ceiling, retain
+the strongest observed event in each of 20,000 equal-duration buckets. This
+preserves quieter sections rather than selecting only a song's loudest events.
+All timestamps remain measured attack times. Silence produces two empty streams. The old
 placeholder builder remains available only for research fixtures.
 
 These assignments are a new musical interpretation of the known packed fields.
@@ -81,6 +187,13 @@ not claimed to be recovered.
 
 ## Saving and reuse
 
+The automatic playback-history save during device selection preserves Phase
+companions and their captured index precondition. It does not analyze audio or
+upgrade charts. Ordinary saves and Sync perform pending analysis, including any
+membership changes from selection-time Smart Playlist refresh. Shutdown shares
+cancellation with the selection history transaction. See
+[ADR-0216](adr/0216-defer-phase-analysis-during-device-selection.md).
+
 Analysis happens during Library preparation, after final Track and Playlist IDs
 exist and before any device writes. New audio imports are analyzed from their
 prepared Host source. Existing audio is fingerprinted through Storage and those
@@ -88,15 +201,72 @@ fingerprints become transaction dependencies. Inputs are checked again after
 analysis; changing inputs fail preparation or invalidate the reviewed save.
 
 `iPod_Control/iOpenPod/phase-analysis-v1.json` stores a per-PID provenance string
-containing algorithm version, source content SHA-256, declared duration and chart
+containing algorithm version, source-provider identity, source content SHA-256, declared duration and chart
 SHA-256. The first analysis upgrades existing untracked charts, including old
 placeholders. Matching entries reuse the existing encrypted chart bytes; changed
 audio, changed duration, changed algorithm or changed chart data triggers fresh
-analysis. The metadata file retains only the current indexed tracks and is
+analysis. Provider identity includes the model signature, Demucs and Torch
+versions, CPU/CUDA backend, zero-shift policy, and mono/stereo input mode.
+Installing a provider upgrades acoustic charts; provider errors never silently
+produce charts under the wrong identity. The metadata file retains only the current indexed tracks and is
 bounded to 8 MiB. Charts, provenance, the Phase Library index and database changes
 are published together in the normal recoverable Storage Transaction.
 
 ## Verification
+
+Version 5 was iterated against the original native converter on five local music
+fixtures, with and without source estimates. All four native difficulty indices
+complete. Windows/ARM comparisons on Hard agree on exact tap records, annotation
+payloads, and marker strings for all ten inputs. The five source-assisted Hard
+tap counts change from 284/159/202/133/132 to 315/168/202/147/145. These are taps,
+not counts of all interactions; native sweep annotations remain separate.
+The [evaluation record](research/phase-algorithm-v5.md) gives fixture identities,
+iterations, and the limits of these measurements.
+
+New authored regressions cover incomplete source evidence, whole-mix energy
+changes under constant harmony, quiet-source calibration, shared-attack
+preference, and preservation of quiet sections at the codec ceiling. The mixed
+melody/drum test now requires both families to survive before native selection.
+
+Version 4 fixes a reproduced source-direction failure: adding eight sustained
+vocal attacks to 64 audible accompaniment attacks previously reduced a 16-second
+chart to eight events. Regression tests now retain the accompaniment while
+keeping vocal attacks stronger, for both drum and guitar support. This does not
+establish that every sparse-song report is fixed.
+
+The Windows research harness executes the original phrase selector translated
+to native C++, with 200 candidate-vector results matching unchanged ARM execution.
+It is a headless diagnostic, not a playable Phase port. The local *Poppies* FLAC
+produces 570 version-3 candidates and 705 version-4 candidates. The native
+constructor, checkpoint builder, and phrase-selection stage retain 377 and 378
+respectively. Later native transforms emit 282 and 284 tap records plus separate
+sweep/timing annotations. The Windows translation matches the ARM output;
+rendering, audio synchronization, and judgment remain unverified. More analysis
+records therefore do not establish substantially denser gameplay. See the
+[Windows feasibility and native-selection research](research/phase-windows-recomp-feasibility.md).
+
+Part tests cover vocal-to-guitar handoffs, recurring guitar preference over louder
+drums, timing retention under tempo variation, changed pitch-order rejection,
+steady-pulse rejection, quiet leakage, invalid evidence, provider cancellation,
+stereo decoding, and provider-identity cache invalidation.
+
+On 2026-10-30, the installed Demucs 4.1.0 / Torch 2.14.0 CUDA provider analyzed the
+first 45 seconds of Karissa Hobbs's *Let's Go Fishin'* twice. Both feature arrays
+and final chart events compared exactly equal on this Host. The resulting 123
+transients and 89 pulses were accepted by the hash-checked build-3168002 native
+parser, with decoded counts and first transient fields verified. Separation and
+charting for the two runs plus the parser probe took about 17 seconds on this Host;
+this is not a CPU or end-to-end save benchmark. The recording is the librosa
+[segmentation example](https://librosa.org/doc/0.11.0/auto_examples/plot_segmentation.html),
+licensed CC-BY-NC-SA-4.0; no recording or separated waveform is committed. The
+private reproduction script and receipt are under `.scratch/phase_v3_verify.py`
+and `.scratch/phase-v3-verification.json`. This is an integration and repeatability
+check, not a ground-truth source-identification accuracy study or gameplay test.
+
+An authored mixture retains both pitched phrases and continuing drums, with exact
+serial/parallel equality.
+A sustained-tone signal with mild vibrato retains its attack without repeated
+interior transients.
 
 Authored pulse signals test attack alignment within 90 ms, multiple spectral
 regions, silence, local tempo changes, magnitude limits and deterministic events.

@@ -278,10 +278,14 @@ class GamesController(QObject):
 
     @property
     def available(self) -> bool:
-        return not self._closed and not self.busy and not self.unavailable_reason
+        return not self.unavailable_reason
 
     @property
     def unavailable_reason(self) -> str:
+        if self._closed:
+            return self.tr("Games is shutting down.")
+        if self.busy:
+            return self.tr("Wait for the current Games operation to finish.")
         active = self._devices.active_ipod
         if active is None:
             return self.tr("Select an iPod to prepare game authorization.")

@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-08
 - Amends: ADR-0111 and ADR-0124
+- Native F1061 authoring and automatic geometry repair amended by ADR-0218.
 
 ## Context
 

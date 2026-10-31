@@ -14,6 +14,28 @@ then beyond it.
 
 ## Current stage
 
+F1061 now authors 55-by-55 visible pixels with 112-byte rows on Classic 6/6.5/7
+and nano 3, based on independent firmware checks. Normal saves and Sync repair
+evidenced legacy geometry through fresh thumbnail shards and the existing
+recoverable transaction. Larger valid allocations remain distinct from visible
+geometry; uncertain sources are preserved and reported. Video 5/5.5 use other
+cover formats. See [ADR-0218](docs/adr/0218-author-and-repair-native-f1061-geometry.md).
+
+Device selection commits playback history without regenerating Phase charts.
+Ordinary saves and Sync perform pending Phase upgrades; shutdown signals
+cancellation through selection's history save. The pinned model bypasses Hub
+alias lookup. See [ADR-0216](docs/adr/0216-defer-phase-analysis-during-device-selection.md).
+
+Phase Gameplay Analysis can now follow separated vocal, guitar, bass, drum, piano,
+and other parts when the optional audio stack is installed. Recurring pitch/rhythm
+phrases receive preference, while each performance retains its own attack timing.
+Full-mix attacks remain available under held leads, while foreground preference
+and whole-mix energy supply evidence for native difficulty selection. Acoustic
+analysis remains available without the model. A local Windows harness matches
+native ARM tap and sweep output on five music fixtures; a playable Phase port
+and physical gameplay acceptance remain unfinished.
+See [ADR-0217](docs/adr/0217-preserve-phase-evidence-for-native-difficulty.md).
+
 Automatic Smart Playlist refresh now reconciles differing saved membership in
 otherwise matching native counterparts, including when the canonical copy is
 already current. Occurrences retain each copy's own metadata; conflicting

@@ -23,6 +23,8 @@ from iOpenPod.app.device_controller import (
     DeviceOperation,
     DeviceOperationFailure,
 )
+from iOpenPod.app.library_write import PreparationCancelledError
+from iOpenPod.app.models.device import ActiveIPod, DeviceCandidateId
 from iOpenPod.app.models.track_table_model import TrackTableModel
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iPodDB.iTunesDB.builder.build_iTunesDB import (
@@ -54,6 +56,37 @@ def _application() -> QApplication:
 
 
 APPLICATION = _application()
+
+
+def test_shutdown_cancels_in_progress_device_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = DeviceCoordinator(Storage(VirtualStoragePlatform()))
+    controller = DeviceController(
+        coordinator,
+        TrackTableModel(),
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
+    )
+    entered, observed = Event(), Event()
+
+    def selection(
+        candidate_id: DeviceCandidateId, *, cancelled: Event | None = None
+    ) -> ActiveIPod:
+        entered.set()
+        if cancelled is not None and cancelled.wait(2):
+            observed.set()
+        raise PreparationCancelledError("Device loading was cancelled")
+
+    monkeypatch.setattr(coordinator, "select_device", selection)
+    try:
+        controller.select_device("cancel-test")
+        assert entered.wait(2)
+        controller.shutdown()
+        assert observed.is_set(), (
+            "Shutdown waited without signalling selection cancellation"
+        )
+    finally:
+        controller.shutdown()
 
 
 def test_startup_restoration_honors_disabled_drive_appearance(tmp_path: Path) -> None:

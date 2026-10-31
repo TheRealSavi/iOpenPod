@@ -19,7 +19,10 @@ class MhfdHeader(ChunkHeader):
 
     # Required zero on that import path (-208 otherwise); not a proven version.
     unk_mhfd_0x0c: int = cf(0x0C, "u32")
-    # The low 16 bits can be returned to an optional caller; purpose is unknown.
+    # Classic 7G imports do not compare or mask this word. Its low 16 bits can
+    # be returned beside +0x0c; known callers discard both. A format-revision
+    # interpretation remains unproven: preserve all 32 bits, including 2 vs 6.
+    # See docs/research/artwork-mhfd-0x10.md.
     unk_mhfd_0x10: int = cf(0x10, "u32")
     child_count: int = cf(0x14, "u32", counts_children=True)
     unk_mhfd_0x18: int = cf(0x18, "u32")

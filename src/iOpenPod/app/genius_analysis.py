@@ -102,10 +102,16 @@ class FFmpegGeniusPCMDecoder:
         *,
         find_tool: MediaToolFinder | None = None,
         maximum_duration_seconds: int = MAX_GENIUS_AUDIO_SECONDS,
+        sample_rate_hz: int = GENIUS_SAMPLE_RATE_HZ,
+        channels: int = 1,
     ) -> None:
         if not 0 < maximum_duration_seconds <= 1801:
             raise ValueError("Invalid acoustic decode duration limit")
-        self._max_pcm_bytes = GENIUS_SAMPLE_RATE_HZ * maximum_duration_seconds * 4
+        if sample_rate_hz not in (22_050, 44_100) or channels not in (1, 2):
+            raise ValueError("Unsupported acoustic PCM format")
+        self._sample_rate_hz = sample_rate_hz
+        self._channels = channels
+        self._max_pcm_bytes = sample_rate_hz * maximum_duration_seconds * channels * 4
         self._find_tool = find_tool or find_media_tool
         self._lookup_done = False
         self._executable: HostPath | None = None
@@ -155,9 +161,9 @@ class FFmpegGeniusPCMDecoder:
             "-sn",
             "-dn",
             "-ac",
-            "1",
+            str(self._channels),
             "-ar",
-            str(GENIUS_SAMPLE_RATE_HZ),
+            str(self._sample_rate_hz),
             "-f",
             "f32le",
             "pipe:1",

@@ -1694,6 +1694,14 @@
         <translation>Schließen Sie zuerst den aktuellen iPod-Vorgang oder die Wiederherstellung ab.</translation>
     </message>
     <message>
+        <source>Games is shutting down.</source>
+        <translation>Spiele wird beendet.</translation>
+    </message>
+    <message>
+        <source>Wait for the current Games operation to finish.</source>
+        <translation>Warten Sie, bis der aktuelle Spielvorgang abgeschlossen ist.</translation>
+    </message>
+    <message>
         <source>Preparing to uninstall {title}…</source>
         <translation>Deinstallation von {title} wird vorbereitet…</translation>
     </message>
@@ -9876,6 +9884,10 @@ Playlists: %3</translation>
         <translation>Jeder Wiedergabelisteneintrag benötigt eine eindeutige, nicht leere Kennung.</translation>
     </message>
     <message>
+        <source>Existing album artwork was corrected for this iPod.</source>
+        <translation>Vorhandene Albumcover wurden für diesen iPod korrigiert.</translation>
+    </message>
+    <message>
         <source>Export its files for manual recovery; it cannot be restored destructively.</source>
         <translation>Exportieren Sie die Dateien für eine manuelle Wiederherstellung. Dieses Backup kann nicht zum Ersetzen der iPod-Inhalte verwendet werden.</translation>
     </message>
@@ -11786,6 +11798,10 @@ Playlists: %3</translation>
     <message>
         <source>Alternate Audio</source>
         <translation>Alternatives Audio</translation>
+    </message>
+    <message>
+        <source>An existing album artwork thumbnail could not be safely corrected and was preserved.</source>
+        <translation>Ein vorhandenes Albumcover-Vorschaubild konnte nicht sicher korrigiert werden und wurde beibehalten.</translation>
     </message>
     <message>
         <source>Analyzing Phase playlist audio</source>

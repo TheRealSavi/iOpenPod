@@ -119,13 +119,16 @@ class GamesPage(QWidget):
         return page
 
     def _refresh(self) -> None:
+        unavailable_reason = self._controller.unavailable_reason
         self._header.set_title(self.tr("Games"))
         self._button.setText(self.tr("Gimme Games"))
         self._button.setEnabled(self._controller.available)
+        self._button.setToolTip(unavailable_reason)
         self._empty_title.setText(self.tr("No games on this iPod"))
         self._empty_detail.setText(self.tr("Choose games to add"))
         self._empty_add.setText(self.tr("Gimme Games"))
         self._empty_add.setEnabled(self._controller.available)
+        self._empty_add.setToolTip(unavailable_reason)
         self._status.setText(self._controller.message)
         self._status.setVisible(bool(self._controller.message))
         self._grid.setAccessibleName(self.tr("Installed games"))

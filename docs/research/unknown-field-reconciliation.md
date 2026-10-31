@@ -51,7 +51,7 @@ repeat member rename while retaining its raw-value preservation policy.
 | Smart MHOD50 `padding_0x26` | Its first byte, payload-relative `+0x0E`, influences metadata attachment. | The inherited “padding” name must not imply unused bytes; exact role is unidentified. |
 | Numeric Smart operand `+0x30..+0x43` | Inspected conversion/bound calculations leave these 20 bytes alone. | Other consumers may exist; not proof of padding. |
 | Artwork MHFD `+0x0C` | `0x080427E4` requires zero, otherwise returns -208. | Not proof that it is a version field or universally required zero. |
-| Artwork MHFD `+0x10` | Low 16 bits may be returned to an optional caller. | Output purpose remains unknown. |
+| Artwork MHFD `+0x10` | Classic 7G importers return its low 16 bits optionally; known callers discard them. Video 1.3's native writer emits 2. | Values 2/6 do not select different import behavior. A format revision remains a hypothesis; see the [focused investigation](artwork-mhfd-0x10.md). |
 | Artwork MHFD `+0x34` | Copied to runtime library `+0x9C8`; zero/nonzero selects an import-progress channel. | Complete value domain and other uses are unestablished. |
 | Artwork MHFD `+0x38` | Copied to runtime library `+0x9CC`. | No established semantic interpretation. |
 | Artwork/Photos MHII `+0x24` | The later trace identifies its ascending unsigned ordering comparator and image enumeration consumer. | Adopted as `image_order_key`; see the [MHII follow-up](mhii-image-field-followup.md), including the separate `+0x1C` and inherited rating word. |

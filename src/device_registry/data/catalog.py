@@ -110,9 +110,9 @@ _ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
     1055: _artwork_format(1055, 128, 128, 256),
     1056: _artwork_format(1056, 128, 128, 256),
     1060: _artwork_format(1060, 320, 320, 640),
-    # Original iOpenPod creates 56-row F1061 images; retained 55-row images
-    # are selected from ArtworkDB evidence during preparation.
-    1061: _artwork_format(1061, 56, 56, 112),
+    # Native Classic 6/6.5/7 and nano 3: 55 pixels plus two padding bytes per row.
+    # Legacy 56-pixel rasters are repaired separately, never used as a capability.
+    1061: _artwork_format(1061, 55, 55, 112),
     1066: _artwork_format(1066, 64, 64, 128, usage=ArtworkUsage.PHOTO_THUMBNAIL),
     1067: _artwork_format(
         1067,

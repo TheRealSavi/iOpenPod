@@ -9,8 +9,8 @@ from time import monotonic
 
 import pytest
 from PIL import Image
-from PySide6.QtCore import QPoint, QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QStandardItem, QStandardItemModel
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QHelpEvent, QStandardItem, QStandardItemModel
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QDialogButtonBox,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QStackedWidget,
+    QToolTip,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
@@ -62,6 +63,8 @@ from iOpenPod.GUI.widgets.selection_grid import SelectionGridView
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.status_controls import StatusBarControls
 from iPodDB.library import LibrarySnapshot, Track
+from iPodDB.library.creation import create_empty_library
+from iPodDB.library.writing import WriteTarget
 from storage import FileFingerprint, HardwareIdentifiers, Storage
 from storage.testing import VirtualStoragePlatform
 
@@ -151,11 +154,13 @@ def test_sidebar_opens_games_page_with_one_disabled_action_without_device() -> N
         action = page.findChild(QPushButton, "gimmeGames")
         assert action is not None
         assert action.text() == "Gimme Games" and not action.isEnabled()
+        assert action.toolTip() == "Select an iPod to prepare game authorization."
         header = page.findChild(PageHeader)
         assert header is not None and header.title_label.text() == "Games"
         assert header.findChild(QPushButton, "gimmeGames") is action
         empty_action = page.findChild(QPushButton, "gamesEmptyAdd")
         assert empty_action is not None and not empty_action.isEnabled()
+        assert empty_action.toolTip() == action.toolTip()
         assert len(page.findChildren(QPushButton)) == 2
         empty = page.findChild(QLabel, "gamesEmptyTitle")
         assert empty is not None and not empty.isVisible()
@@ -163,6 +168,103 @@ def test_sidebar_opens_games_page_with_one_disabled_action_without_device() -> N
         assert not context.games_controller.start()
     finally:
         window.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize(
+    "release,writable,reason",
+    [
+        ("1.3", True, ""),
+        ("1.3.0", True, ""),
+        ("1.3", False, "The selected iPod is read-only."),
+        ("", True, "Games requires an identified updater family and firmware release."),
+        (
+            "1.2.1",
+            True,
+            "Game authorization has not been verified for this iPod firmware release.",
+        ),
+    ],
+)
+def test_video55_games_availability_and_disabled_hover_tooltips(
+    tmp_path: Path, release: str, writable: bool, reason: str
+) -> None:
+    root = tmp_path / "device"
+    metadata = root / "iPod_Control/Device"
+    metadata.mkdir(parents=True)
+    (metadata / "SysInfo").write_text(
+        "ModelNumStr: MA450\nUpdaterFamilyID: 25\n"
+        + (f"visibleBuildID: {release}\n" if release else "")
+    )
+    library = create_empty_library(
+        "iPod", WriteTarget(database_version=0x13), supports_podcasts=True
+    )
+    assert library.prepared is not None
+    database = root / "iPod_Control/iTunes/iTunesDB"
+    database.parent.mkdir()
+    database.write_bytes(library.prepared.itunes)
+    platform = VirtualStoragePlatform()
+    platform.add_volume(
+        root,
+        writable=writable,
+        identifiers=HardwareIdentifiers(transport_serial="0011223344556677"),
+    )
+    coordinator = DeviceCoordinator(
+        Storage(platform), volume_presentation_enabled=False
+    )
+    active = coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+    context = build_context(device_coordinator=coordinator)
+    context.device_controller.finish_library_save(active)
+    page = GamesPage(context.games_controller)
+    try:
+        page.show()
+        deadline = monotonic() + 5
+        while not context.games_controller.catalog_ready and monotonic() < deadline:
+            APPLICATION.processEvents()
+            QTest.qWait(5)
+        assert context.games_controller.catalog_ready
+        assert active.profile.capabilities.supports_games
+        for name in ("gimmeGames", "gamesEmptyAdd"):
+            button = page.findChild(QPushButton, name)
+            assert button is not None and button.isVisible()
+            assert button.isEnabled() is (not reason)
+            assert button.toolTip() == reason
+            if reason:
+                point = button.rect().center()
+                event = QHelpEvent(
+                    QEvent.Type.ToolTip, point, button.mapToGlobal(point)
+                )
+                APPLICATION.sendEvent(button, event)
+                assert QToolTip.isVisible() and QToolTip.text() == reason
+                QToolTip.hideText()
+
+        context.device_controller.set_recovery_required(True)
+        for name in ("gimmeGames", "gamesEmptyAdd"):
+            button = page.findChild(QPushButton, name)
+            assert button is not None and not button.isEnabled()
+            assert (
+                button.toolTip()
+                == "Finish the current iPod operation or recovery first."
+            )
+        context.device_controller.set_recovery_required(False)
+        button = page.findChild(QPushButton, "gimmeGames")
+        assert button is not None and button.toolTip() == reason
+        assert button.isEnabled() is (not reason)
+        assert context.device_controller.begin_read_only_operation()
+        assert not button.isEnabled()
+        assert (
+            button.toolTip() == "Finish the current iPod operation or recovery first."
+        )
+        context.device_controller.finish_read_only_operation()
+        assert button.toolTip() == reason
+        context.device_controller.finish_sync_recovery(None)
+        assert not button.isEnabled()
+        assert button.toolTip() == "Select an iPod to prepare game authorization."
+        context.games_controller.shutdown()
+        assert not context.games_controller.available
+        assert context.games_controller.unavailable_reason == "Games is shutting down."
+    finally:
+        QToolTip.hideText()
+        page.close()
         context.shutdown()
 
 
@@ -398,8 +500,13 @@ def test_games_grid_loads_titles_versions_covers_and_clears_after_disconnect(
         assert empty_action.text() == "Gimme Games"
         empty_action.click()
         assert not empty_action.isEnabled() and not action.isEnabled()
+        assert (
+            empty_action.toolTip() == "Wait for the current Games operation to finish."
+        )
+        assert action.toolTip() == empty_action.toolTip()
         wait_for_games(context.games_controller)
         assert empty_action.isEnabled() and action.isEnabled()
+        assert not empty_action.toolTip() and not action.toolTip()
         assert catalog_dialog.isVisible()
         scan_started, release_scan = Event(), Event()
 

@@ -9,7 +9,6 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, cast
 
 from iOpenPod.app.phase_analysis import PhaseAnalysisService
-from iOpenPod.app.phase_audio import PHASE_ANALYSIS_VERSION
 from iPodDB.games import (
     PhaseLibrary,
     PhaseTrack,
@@ -199,7 +198,7 @@ def prepare_phase(
             audio_before = session.fingerprint(audio_path)
             files[audio_path] = FilePrecondition(audio_path, audio_before)
             audio_hash = audio_before.sha256
-        key = f"{PHASE_ANALYSIS_VERSION}:{audio_hash}:{track.length_ms}"
+        key = f"{audio_analyzer.identity}:{audio_hash}:{track.length_ms}"
         cached = cache.get(f"{pid:016X}")
         if analysis is not None and cached == f"{key}:{sha256(analysis).hexdigest()}":
             data = analysis

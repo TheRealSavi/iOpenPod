@@ -619,6 +619,7 @@ def capture(
     )
     reserved_artwork: list[str] = []
     artwork_issues: list[WriteIssue] = []
+    geometry_paths = {p.casefold() for p in plan.artwork_geometry_paths}
     if plan.requires_artwork_inventory and session.exists(_ARTWORK):
         entries = list(session.list_directory(_ARTWORK))
         listed_paths = {str(entry.path).casefold() for entry in entries}
@@ -661,12 +662,15 @@ def capture(
                 )
             # Capture appendable prefixes and any full source shards needed to
             # decode a retained frame for a missing representation.
-            if request.artwork and (
-                str(entry.path).casefold() in retained_source_paths
-                or (
-                    entry.path.parent == _ARTWORK
-                    and entry.path.name.casefold().startswith(cover_prefixes)
-                    and entry.size < plan.target.max_artwork_file_bytes
+            if str(entry.path).casefold() in geometry_paths or (
+                request.artwork
+                and (
+                    str(entry.path).casefold() in retained_source_paths
+                    or (
+                        entry.path.parent == _ARTWORK
+                        and entry.path.name.casefold().startswith(cover_prefixes)
+                        and entry.size < plan.target.max_artwork_file_bytes
+                    )
                 )
             ):
                 try:

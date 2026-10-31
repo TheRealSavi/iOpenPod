@@ -18,6 +18,7 @@ from iPodDB.iTunesDB.cdb import decompress_iTunesCDB, is_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
+from iPodDB.library._artwork_geometry import geometry_requirements
 from iPodDB.library._genius_reconciliation import reconcile_genius_playlists
 from iPodDB.library._photo_projection import project_photos
 from iPodDB.library._playlist_projection import project_playlists
@@ -458,6 +459,36 @@ class IPodLibrary:
                 )
                 for repair in self._photos_repairs
             )
+        repair_geometry, geometry_paths = geometry_requirements(
+            self._artwork_document, target
+        )
+        if repair_geometry:
+            resolved = replace(
+                resolved,
+                plan=replace(
+                    resolved.plan,
+                    changes=(
+                        *resolved.plan.changes,
+                        LibraryChange(
+                            "artwork_database",
+                            None,
+                            "repair",
+                            "Native F1061 artwork geometry",
+                            ("thumbnail_geometry",),
+                        ),
+                    ),
+                    requires_artwork_inventory=True,
+                    repair_artwork_geometry=True,
+                    artwork_geometry_paths=geometry_paths,
+                ),
+            )
+            if target.artwork_checksum is not WriteChecksum.NONE:
+                additional_issues += (
+                    WriteIssue(
+                        "target.unsupported_artwork_signature",
+                        "The ArtworkDB artifact requires an unsupported signature.",
+                    ),
+                )
         if self._artwork_repairs:
             resolved = replace(
                 resolved,
@@ -574,6 +605,14 @@ class IPodLibrary:
         """List retained group keys, including groups without a readable raster."""
         item = self._artwork_index.item_for_image_id(artwork_id)
         return item.display_times if item is not None else ()
+
+    def artwork_geometry_repairs_pending(
+        self, formats: tuple[CoverFormat, ...]
+    ) -> bool:
+        """Whether a normal save can examine legacy native artwork geometry."""
+        return geometry_requirements(
+            self._artwork_document, WriteTarget(cover_formats=formats)
+        )[0]
 
     def artwork_file_paths(self) -> tuple[str, ...]:
         """Return validated known source filenames for write-time inventory.

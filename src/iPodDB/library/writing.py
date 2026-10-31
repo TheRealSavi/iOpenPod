@@ -351,6 +351,8 @@ class LibraryWritePlan:
     resolution: LibraryResolution | None = field(default=None, kw_only=True)
     required_lyrics: tuple[int, ...] = field(default=(), kw_only=True)
     required_photos: tuple[int, ...] = field(default=(), kw_only=True)
+    repair_artwork_geometry: bool = field(default=False, kw_only=True)
+    artwork_geometry_paths: tuple[str, ...] = field(default=(), kw_only=True)
 
     @property
     def blocked(self) -> bool:

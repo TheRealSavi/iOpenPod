@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-07
 - Extends: ADR-0111 and ADR-0121
+- Native authoring and automatic geometry repair amended by ADR-0218.
 
 ## Context
 

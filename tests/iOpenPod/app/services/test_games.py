@@ -193,7 +193,17 @@ def evidence(family: int, release: str) -> DeviceEvidence:
     )
 
 
-@pytest.mark.parametrize("family,release", [(33, "2.0.1"), (34, "1.0.2"), (13, "1.3")])
+@pytest.mark.parametrize(
+    "family,release",
+    [
+        (33, "2.0.1"),
+        (34, "1.0.2"),
+        (13, "1.3"),
+        (20, "1.3"),
+        (25, "1.3"),
+        (25, "1.3.0"),
+    ],
+)
 def test_supported_build_is_qualified(family: int, release: str) -> None:
     assert games.destination_family(evidence(family, release)) == family
 
@@ -206,6 +216,7 @@ def test_supported_build_is_qualified(family: int, release: str) -> None:
         evidence(999, "1.0"),
         evidence(34, "34A20020"),
         evidence(33, "2.0.1").merged_with(evidence(34, "1.0.2")),
+        evidence(25, "1.3").merged_with(evidence(25, "1.2.1")),
     ],
 )
 def test_unverified_or_conflicting_destination_fails_closed(

@@ -98,7 +98,11 @@ from iOpenPod.app.services.genius_mixes import (
 )
 from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
-from iOpenPod.app.services.phase import capture_phase_selection, prepare_phase
+from iOpenPod.app.services.phase import (
+    PhasePublication,
+    capture_phase_selection,
+    prepare_phase,
+)
 from iOpenPod.app.smart_playlist_preview import (
     can_refresh_smart_playlist,
     refresh_smart_playlists,
@@ -1567,6 +1571,7 @@ class DeviceCoordinator:
         podcast_state: LoadedPodcastState | None = None,
         podcast_subscriptions: bool = False,
         allow_unchanged: bool = False,
+        prepare_phase_companions: bool = True,
     ) -> LibraryReview:
         """Prepare a review with private Host staging and read-only device access.
 
@@ -2080,21 +2085,29 @@ class DeviceCoordinator:
                 library_resources.recheck_discarded_track_media(
                     active.session, captured.discarded_track_media
                 )
-                phase_publication = prepare_phase(
-                    active.session,
-                    source.snapshot,
-                    result.prepared.snapshot,
-                    checkpoint=cancellation_checkpoint,
-                    analyzer=self._phase_analysis,
-                    media_writes=captured.media_writes,
-                    progress=lambda done, total, title: checkpoint(
-                        "resources.phase",
-                        source_text("Analyzing Phase playlist audio"),
-                        completed=done,
-                        total=total,
-                        current_item=title,
-                        unit="tracks",
-                    ),
+                phase_publication = (
+                    prepare_phase(
+                        active.session,
+                        source.snapshot,
+                        result.prepared.snapshot,
+                        checkpoint=cancellation_checkpoint,
+                        analyzer=self._phase_analysis,
+                        media_writes=captured.media_writes,
+                        progress=lambda done, total, title: checkpoint(
+                            "resources.phase",
+                            source_text("Analyzing Phase playlist audio"),
+                            completed=done,
+                            total=total,
+                            current_item=title,
+                            unit="tracks",
+                        ),
+                    )
+                    if prepare_phase_companions
+                    else PhasePublication(
+                        files=(active.phase_precondition,)
+                        if active.phase_precondition is not None
+                        else (),
+                    )
                 )
                 if active.phase_precondition is not None and any(
                     file.path == active.phase_precondition.path
@@ -2498,7 +2511,10 @@ class DeviceCoordinator:
                         database_fingerprint=database_fingerprint,
                         artwork_database_fingerprint=fingerprints[_ARTWORKDB_PATH],
                         photos_database_fingerprint=fingerprints[_PHOTOSDB_PATH],
-                        artwork_repairs_pending=bool(updated_source.artwork_repairs),
+                        artwork_repairs_pending=bool(updated_source.artwork_repairs)
+                        or updated_source.artwork_geometry_repairs_pending(
+                            application_cover_formats(expected.profile)
+                        ),
                         photos_repairs_pending=bool(updated_source.photos_repairs),
                         genius=updated_genius,
                         genius_mix_state=issued.genius_mix_state
@@ -2904,6 +2920,7 @@ class DeviceCoordinator:
         reconcile_metadata: bool = True,
         reconcile_sidecars: bool = True,
         initialize_missing: bool = True,
+        cancelled: threading.Event | None = None,
     ) -> ActiveIPod:
         """Commit captured sidecars before exposing the selected Library.
 
@@ -2911,6 +2928,11 @@ class DeviceCoordinator:
         kept database without immediately changing the user's recovery outcome.
         """
 
+        from iOpenPod.app.library_write import PreparationCancelledError
+
+        cancellation = cancelled if cancelled is not None else threading.Event()
+        if cancellation.is_set():
+            raise PreparationCancelledError("Device loading was cancelled.")
         with self._lock:
             self._deactivate_locked()
             record = self._records.get(candidate_id)
@@ -3078,7 +3100,10 @@ class DeviceCoordinator:
                     photos_database_fingerprint=photos_fingerprint,
                     preferences=preferences.sections,
                     settings=load_device_settings(session),
-                    artwork_repairs_pending=bool(library.artwork_repairs),
+                    artwork_repairs_pending=bool(library.artwork_repairs)
+                    or library.artwork_geometry_repairs_pending(
+                        application_cover_formats(profile)
+                    ),
                     photos_repairs_pending=bool(library.photos_repairs),
                     genius=genius,
                     genius_mix_state=load_mix_state(session),
@@ -3120,7 +3145,7 @@ class DeviceCoordinator:
                 # published application state until its transaction is verified.
                 self._active = connection
                 if reconcile_sidecars:
-                    self._commit_selected_sidecars(connection)
+                    self._commit_selected_sidecars(connection, cancellation)
                 active_ipod = connection.active_ipod
                 current = connection.record
                 self._records[candidate_id] = current
@@ -3142,7 +3167,11 @@ class DeviceCoordinator:
                 self._deactivate_locked()
                 raise
 
-    def _commit_selected_sidecars(self, active: _ActiveConnection) -> None:
+    def _commit_selected_sidecars(
+        self,
+        active: _ActiveConnection,
+        cancelled: threading.Event,
+    ) -> None:
         """Use the normal signed, verified save while selection owns the lock."""
         from iOpenPod.app.library_write import LibraryPreparationRequest
         from iPodDB.library import IssueSeverity, WriteIssue
@@ -3165,12 +3194,12 @@ class DeviceCoordinator:
             raise load_error(source.sidecar_issues)
         if not source.consumed_sidecars:
             return
-        cancelled = threading.Event()
         expected = active.active_ipod
         review = self.prepare_library(
             LibraryPreparationRequest(expected.library, expected, 0, 0),
             lambda _: None,
             cancelled,
+            prepare_phase_companions=False,
         )
         if review.result.prepared is None:
             raise load_error(review.result.issues)

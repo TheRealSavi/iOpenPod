@@ -2186,9 +2186,9 @@ def test_artworkdb_links_tracks_and_ithmb_is_decoded_only_when_requested(
     assert result is not None
     assert result.artwork_id == 64
     assert result.format_id == 1061
-    assert (result.width, result.height) == (56, 56)
+    assert (result.width, result.height) == (55, 55)
     assert result.rgb888[:3] == bytes((255, 0, 0))
-    assert result.byte_count == 56 * 56 * 3
+    assert result.byte_count == 55 * 55 * 3
 
     large = coordinator.load_artwork(ArtworkRequest(artwork_id=64, target_px=512))
     assert large is not None
@@ -2223,8 +2223,8 @@ def test_timed_artwork_metadata_is_lazy_and_reads_select_exact_groups(
         later = coordinator.load_artwork(ArtworkRequest(64, 44, display_time_ms=10000))
         missing = coordinator.load_artwork(ArtworkRequest(64, 44, display_time_ms=5000))
         assert default is not None and initial is not None and later is not None
-        assert default.rgb888 == initial.rgb888 == bytes((255, 0, 0)) * (56 * 56)
-        assert later.rgb888 == bytes((0, 0, 255)) * (56 * 56)
+        assert default.rgb888 == initial.rgb888 == bytes((255, 0, 0)) * (55 * 55)
+        assert later.rgb888 == bytes((0, 0, 255)) * (55 * 55)
         assert initial.cache_key != later.cache_key
         assert later.display_time_ms == 10000
         assert missing is None

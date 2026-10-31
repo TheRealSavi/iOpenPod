@@ -511,10 +511,17 @@ def test_changed_loaded_evidence_never_publishes_stale_totals(
             request: LibraryPreparationRequest,
             progress: Callable[[WriteProgress], None],
             cancelled: Event,
+            *,
+            prepare_phase_companions: bool = True,
         ) -> LibraryReview:
             if phase == "before_review":
                 mutate()
-            review = prepare(request, progress, cancelled)
+            review = prepare(
+                request,
+                progress,
+                cancelled,
+                prepare_phase_companions=prepare_phase_companions,
+            )
             if phase == "after_review":
                 mutate()
             return review

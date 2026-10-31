@@ -150,11 +150,7 @@ class AppContext:
         )
         device_coordinator = DeviceCoordinator(
             storage,
-            phase_analysis=PhaseAnalysisService(
-                FFmpegGeniusPCMDecoder(
-                    find_tool=media_tools.find, maximum_duration_seconds=1801
-                )
-            ),
+            phase_analysis=PhaseAnalysisService(find_tool=media_tools.find),
             genius_analysis=GeniusAnalysisService(
                 cache_file=storage.host_cache_file(
                     "iOpenPod", "genius-acoustic-v1.json"

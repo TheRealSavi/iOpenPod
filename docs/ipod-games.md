@@ -17,6 +17,9 @@ No game executable or purchase metadata is read to build the grid.
 When a successful scan finds no installed games, the page shows a centered
 message and a second **Gimme Games** button using the Podcasts empty-state layout.
 Both buttons open the same preparation/catalog workflow and share availability.
+While disabled, both buttons show the current blocking reason on hover. The
+tooltip updates with device selection, write reservations, recovery, and Games
+operations, and clears when the action becomes available.
 The empty state stays hidden until a successful scan and clears on disconnect.
 
 Manifestless auxiliary folders are skipped. Malformed metadata remains visible
@@ -213,6 +216,12 @@ updater families are 13/20/25 (Video 1.3), 24 (Classic 1.1.2), 33 (Classic 2.0.1
 35 (Classic 2.0.4), 38 (Classic 2.0.5), 26 (Nano 3 1.1.3), 31 (Nano 4 1.0.4), and
 34 (Nano 5 1.0.2). Ambiguous or different release evidence is not promoted to a
 verified profile.
+
+Video 5/5.5 firmware `1.3` (also accepted as `1.3.0`) qualifies when the strongest
+identity evidence identifies one of updater families 13, 20, or 25 and agrees on
+that release. The marketing model and the firmware shown on the iPod alone do not
+substitute for this evidence. The action also requires an Active iPod, a volume
+safe for writes, and no blocking device operation, recovery, or Games shutdown.
 
 The workflow reserves the Active iPod, runs outside the GUI thread, and captures
 the current file through Storage. Publication carries its expected fingerprint

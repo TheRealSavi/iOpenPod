@@ -38,6 +38,7 @@ from iPodDB.iTunesDB.writer.signature import (
     verify_hashab,
 )
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
+from iPodDB.library._artwork_geometry import repair_geometry
 from iPodDB.library._artwork_verification import verify_artwork
 from iPodDB.library._artwork_writing import reconcile_artwork, validated_path
 from iPodDB.library._genius_writing import (
@@ -1240,6 +1241,14 @@ def _prepare(
                 for t in checked.tracks
             ):
                 raise ValueError("Prepared MHIT Genius identities failed verification")
+        if plan.repair_artwork_geometry:
+            phase = "artwork"
+            artwork_bytes, artwork_files, geometry_issues = repair_geometry(
+                artwork_bytes, artwork_files, plan.target, resources
+            )
+            issues.extend(geometry_issues)
+            if artwork_bytes is not None:
+                checked_index = build_artwork_index(parse_ArtworkDB(artwork_bytes))
         return LibraryWriteResult(
             tuple(issues),
             PreparedLibrary(

@@ -9,7 +9,7 @@ from storage import DevicePath, FilesystemSession, HostPath
 
 class StubPhaseAnalysis(PhaseAnalysisService):
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(use_sources=False)
         self.calls: list[DevicePath | HostPath] = []
 
     def analyze(
