@@ -21,7 +21,7 @@ from iOpenPod.app.services.game_uninstallation import (
     GameRemovalPhase,
     GameRemovalProgress,
 )
-from iOpenPod.app.services.games import GamesResult
+from iOpenPod.app.services.games import GameCompatibility, GamesResult
 
 if TYPE_CHECKING:
     from iOpenPod.app.core.status import ApplicationStatus
@@ -50,12 +50,14 @@ class _Work(QRunnable):
         identifiers: tuple[str, ...] = (),
         *,
         uninstall_game: InstalledGame | None = None,
+        compatibility: GameCompatibility | None = None,
     ) -> None:
         super().__init__()
         self.coordinator = coordinator
         self.active = active
         self.identifiers = identifiers
         self.uninstall_game = uninstall_game
+        self.compatibility = compatibility
         self.preparing_files = False
         self.cancelled = threading.Event()
         self.signals = _Signals()
@@ -85,6 +87,11 @@ class _Work(QRunnable):
 
     def run(self) -> None:
         try:
+            options = (
+                {}
+                if self.compatibility is None
+                else {"compatibility": self.compatibility}
+            )
             result: GameCatalog | GamesResult
             if self.uninstall_game is not None:
                 result = self.coordinator.uninstall_game(
@@ -99,6 +106,7 @@ class _Work(QRunnable):
                     self.identifiers,
                     self.cancelled,
                     progress=self._operation_progress,
+                    **options,
                 )
             else:
                 self.preparing_files = True
@@ -107,7 +115,7 @@ class _Work(QRunnable):
                 )
                 self.preparing_files = False
                 result = self.coordinator.install_game_authorizations(
-                    self.active, self.cancelled
+                    self.active, self.cancelled, **options
                 )
         except Exception as error:
             self.signals.failed.emit(error)
@@ -162,6 +170,7 @@ class GamesController(QObject):
         self._closed = False
         self._message = ""
         self._authorization_ready = False
+        self._compatibility: GameCompatibility | None = None
         self._open_catalog = False
         self._scan_pool = QThreadPool(self)
         self._scan_pool.setMaxThreadCount(1)
@@ -272,7 +281,9 @@ class GamesController(QObject):
             return False
         if not self._devices.begin_exclusive_operation():
             return False
-        job = _Work(self._coordinator, active, identifiers)
+        job = _Work(
+            self._coordinator, active, identifiers, compatibility=self._compatibility
+        )
         self._start_job(job)
         return True
 
@@ -282,32 +293,44 @@ class GamesController(QObject):
 
     @property
     def unavailable_reason(self) -> str:
-        if self._closed:
-            return self.tr("Games is shutting down.")
-        if self.busy:
-            return self.tr("Wait for the current Games operation to finish.")
         active = self._devices.active_ipod
+        reason = ""
+        if self._closed:
+            reason = self.tr("Games is shutting down.")
+        elif self.busy:
+            reason = self.tr("Wait for the current Games operation to finish.")
+        elif active is None:
+            reason = self.tr("Select an iPod to prepare game authorization.")
+        elif not self._devices.device_writes_allowed:
+            reason = self.tr("Finish the current iPod operation or recovery first.")
         if active is None:
-            return self.tr("Select an iPod to prepare game authorization.")
-        if not self._devices.device_writes_allowed:
-            return self.tr("Finish the current iPod operation or recovery first.")
-        return self._coordinator.games_unavailable_reason(active)
+            return reason
+        return self._coordinator.games_unavailable_reason(active, blocked_reason=reason)
 
     @property
     def message(self) -> str:
         """Expose only failures; ownership preparation is otherwise silent."""
         return self._message
 
-    @Slot()
-    def start(self) -> bool:
+    @property
+    def compatibility(self) -> GameCompatibility | None:
         active = self._devices.active_ipod
-        if (
-            active is None
-            or not self.available
-            or not self._devices.begin_exclusive_operation()
-        ):
+        return None if active is None else self._coordinator.games_compatibility(active)
+
+    @Slot()
+    def start(self, *, compatibility: GameCompatibility | None = None) -> bool:
+        active = self._devices.active_ipod
+        if active is None or not self.available:
             return False
-        job = _Work(self._coordinator, active)
+        current = self.compatibility
+        if current is None or (current.warning and compatibility != current):
+            return False
+        if compatibility is not None and compatibility != current:
+            return False
+        if not self._devices.begin_exclusive_operation():
+            return False
+        self._compatibility = compatibility
+        job = _Work(self._coordinator, active, compatibility=compatibility)
         self._authorization_ready = False
         self._start_job(job)
         return True
@@ -519,6 +542,7 @@ class GamesController(QObject):
         self._message = ""
         self._authorization_ready = False
         self._status.clear(_REMOVAL_STATUS)
+        self._compatibility = None
         self._status.clear(_INSTALLATION_STATUS)
         if self._job is not None:
             self._job.cancelled.set()

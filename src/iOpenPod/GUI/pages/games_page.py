@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from iOpenPod.app.games_controller import GamesController
 from iOpenPod.GUI.dialogs.game_catalog import GameCatalogDialog
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
@@ -119,7 +120,7 @@ class GamesPage(QWidget):
         return page
 
     def _refresh(self) -> None:
-        unavailable_reason = self._controller.unavailable_reason
+        unavailable_reason = workflow_text(self._controller.unavailable_reason)
         self._header.set_title(self.tr("Games"))
         self._button.setText(self.tr("Gimme Games"))
         self._button.setEnabled(self._controller.available)
@@ -215,7 +216,35 @@ class GamesPage(QWidget):
             self._controller.uninstall(target[1])
 
     def _gimme_games(self) -> None:
-        self._controller.start()
+        if not self._controller.available:
+            return
+        target = self._controller.active_ipod
+        compatibility = self._controller.compatibility
+        if compatibility is None:
+            return
+        if not compatibility.warning:
+            self._controller.start()
+            return
+        confirmation = QMessageBox(self)
+        confirmation.setObjectName("gameCompatibilityConfirmation")
+        confirmation.setWindowTitle(self.tr("Game compatibility"))
+        confirmation.setIcon(QMessageBox.Icon.Warning)
+        confirmation.setTextFormat(Qt.TextFormat.PlainText)
+        confirmation.setText(
+            self.tr("This iPod may not be supported. Continue anyway?")
+        )
+        confirmation.setInformativeText(workflow_text(compatibility.warning))
+        proceed = confirmation.addButton(
+            self.tr("Continue anyway"), QMessageBox.ButtonRole.AcceptRole
+        )
+        confirmation.addButton(QMessageBox.StandardButton.Cancel)
+        confirmation.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        confirmation.setEscapeButton(QMessageBox.StandardButton.Cancel)
+        confirmation.exec()
+        accepted = confirmation.clickedButton() is proceed
+        confirmation.deleteLater()
+        if accepted and target is self._controller.active_ipod:
+            self._controller.start(compatibility=compatibility)
 
     def _open_game_catalog(self) -> None:
         target = self._controller.active_ipod

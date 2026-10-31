@@ -283,3 +283,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0216: Defer Phase analysis during device selection](0216-defer-phase-analysis-during-device-selection.md)
 - [ADR-0217: Preserve Phase evidence for native difficulty](0217-preserve-phase-evidence-for-native-difficulty.md)
 - [ADR-0218: Author and repair native F1061 geometry](0218-author-and-repair-native-f1061-geometry.md)
+- [ADR-0219: Confirm unverified game compatibility](0219-confirm-unverified-game-compatibility.md)

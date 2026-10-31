@@ -9,7 +9,12 @@ from threading import Event
 import pytest
 
 import iPodDB.ic_info
-from device_registry import DeviceEvidence, DeviceIdentifier, EvidenceAuthority
+from device_registry import (
+    DEFAULT_DEVICE_REGISTRY,
+    DeviceEvidence,
+    DeviceIdentifier,
+    EvidenceAuthority,
+)
 from iOpenPod.app.services import games
 from iOpenPod.app.services.device_coordinator import (
     DeviceCoordinationError,
@@ -202,10 +207,17 @@ def evidence(family: int, release: str) -> DeviceEvidence:
         (20, "1.3"),
         (25, "1.3"),
         (25, "1.3.0"),
+        (24, "1.1.2"),
+        (35, "2.0.4"),
+        (38, "2.0.5"),
+        (26, "1.1.3"),
+        (31, "1.0.4"),
     ],
 )
 def test_supported_build_is_qualified(family: int, release: str) -> None:
     assert games.destination_family(evidence(family, release)) == family
+    with pytest.raises(ValueError, match="Verified firmware for updater family"):
+        games.destination_family(evidence(family, "99.0"))
 
 
 @pytest.mark.parametrize(
@@ -224,6 +236,108 @@ def test_unverified_or_conflicting_destination_fails_closed(
 ) -> None:
     with pytest.raises(ValueError):
         games.destination_family(value)
+
+
+@pytest.mark.parametrize(
+    "value,reason,families,firmware",
+    [
+        (DeviceEvidence(), "not reported", "Not reported", "Not reported"),
+        (evidence(999, "1.3"), "not supported", "999", "1.3"),
+        (
+            evidence(25, "1.2.1"),
+            "Verified firmware for updater family 25: 1.3.",
+            "25",
+            "1.2.1",
+        ),
+        (evidence(34, "34A20020"), "could not be interpreted", "34", "34A20020"),
+        (
+            evidence(25, "1.3").merged_with(evidence(20, "1.3")),
+            "Conflicting updater families",
+            "20, 25",
+            "1.3",
+        ),
+        (
+            evidence(25, "1.3").merged_with(evidence(25, "1.2.1")),
+            "Conflicting firmware releases",
+            "25",
+            "1.2.1, 1.3",
+        ),
+    ],
+)
+def test_rejected_destination_explains_reason_and_reported_data(
+    value: DeviceEvidence, reason: str, families: str, firmware: str
+) -> None:
+    with pytest.raises(ValueError) as failure:
+        games.destination_family(value)
+    message = str(failure.value)
+    assert reason in message
+    assert f"Reported updater family: {families}" in message
+    assert f"Reported firmware: {firmware}" in message
+    if families == "999":
+        assert "13, 20, 24, 25, 26, 31, 33, 34, 35, 38" in message
+
+
+def test_diagnostics_use_the_same_evidence_authority_as_qualification() -> None:
+    lower = DeviceEvidence(
+        updater_family_ids=(
+            DeviceIdentifier(999, "cache", EvidenceAuthority.DEVICE_METADATA),
+        ),
+        firmware_versions=(
+            DeviceIdentifier("99.0", "cache", EvidenceAuthority.DEVICE_METADATA),
+        ),
+    )
+    current = evidence(25, "1.3").merged_with(lower)
+    assert games.destination_family(current) == 25
+    message = games.describe_unavailability(current, "Busy")
+    assert message == "Busy\nReported updater family: 25\nReported firmware: 1.3"
+    equivalent = evidence(25, "1.3").merged_with(evidence(25, "1.3.0"))
+    assert games.destination_family(equivalent) == 25
+
+
+@pytest.mark.parametrize(
+    "reported",
+    [
+        DeviceEvidence(),
+        evidence(999, "9.9"),
+        evidence(13, "1.3").merged_with(evidence(34, "1.0.2")),
+    ],
+)
+@pytest.mark.parametrize(
+    "family,generation,codec",
+    [
+        ("iPod", "5th Gen", 13),
+        ("iPod", "5.5th Gen", 25),
+        ("iPod Classic", "6th Gen", 24),
+        ("iPod Classic", "6.5th Gen", 33),
+        ("iPod Classic", "7th Gen", 35),
+        ("iPod Nano", "3rd Gen", 26),
+        ("iPod Nano", "4th Gen", 31),
+        ("iPod Nano", "5th Gen", 34),
+    ],
+)
+def test_confirmed_model_fallback_preserves_reported_evidence(
+    reported: DeviceEvidence, family: str, generation: str, codec: int
+) -> None:
+    profile = next(
+        p
+        for p in DEFAULT_DEVICE_REGISTRY.profiles
+        if p.family == family and p.generation == generation
+    )
+    reviewed = games.compatibility(reported, profile)
+    assert reviewed.warning and reviewed.codec_family == codec
+    assert games.execution_family(reported, profile, reviewed) == codec
+    with pytest.raises(ValueError):
+        games.execution_family(reported, profile, None)
+    with pytest.raises(ValueError, match="changed after confirmation"):
+        games.execution_family(evidence(999, "0.0"), profile, reviewed)
+
+
+def test_recognized_reported_family_takes_precedence_over_model_fallback() -> None:
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MA450")
+    assert profile is not None
+    reviewed = games.compatibility(evidence(20, "1.2.1"), profile)
+    assert reviewed.codec_family == 20 and reviewed.families == (20,)
+    assert reviewed.firmware == ("1.2.1",) and reviewed.warning
 
 
 def test_coordinator_uses_active_identity_and_storage_publication(

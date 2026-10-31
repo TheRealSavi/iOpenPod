@@ -1833,6 +1833,18 @@
         <translation>Das Spiel, sein gespeicherter Fortschritt und seine Statistiken werden von diesem iPod gelöscht.</translation>
     </message>
     <message>
+        <source>Game compatibility</source>
+        <translation>Spielkompatibilität</translation>
+    </message>
+    <message>
+        <source>This iPod may not be supported. Continue anyway?</source>
+        <translation>Dieser iPod wird möglicherweise nicht unterstützt. Trotzdem fortfahren?</translation>
+    </message>
+    <message>
+        <source>Continue anyway</source>
+        <translation>Trotzdem fortfahren</translation>
+    </message>
+    <message>
         <source>The game catalog could not be loaded: {detail}</source>
         <translation>Der Spielekatalog konnte nicht geladen werden: {detail}</translation>
     </message>
@@ -9692,6 +9704,14 @@ Playlists: %3</translation>
         <translation>iPod-Medien werden mit den gespeicherten Synchronisierungsinformationen verglichen…</translation>
     </message>
     <message>
+        <source>Conflicting firmware releases were reported; game authorization cannot choose a release.</source>
+        <translation>Es wurden widersprüchliche Firmwareversionen gemeldet; für die Spielautorisierung kann keine Version ausgewählt werden.</translation>
+    </message>
+    <message>
+        <source>Conflicting updater families were reported; game authorization cannot choose a family.</source>
+        <translation>Es wurden widersprüchliche Updater-Familien gemeldet; für die Spielautorisierung kann keine Familie ausgewählt werden.</translation>
+    </message>
+    <message>
         <source>Connect the iPod identified by this archive and try again.</source>
         <translation>Schließen Sie den zu diesem Archiv gehörenden iPod an und versuchen Sie es erneut.</translation>
     </message>
@@ -9956,6 +9976,10 @@ Playlists: %3</translation>
         <translation>Geben Sie am angegebenen Speicherort Platz frei und versuchen Sie es erneut.</translation>
     </message>
     <message>
+        <source>Game authorization is not supported for this firmware release.</source>
+        <translation>Die Spielautorisierung wird für diese Firmwareversion nicht unterstützt.</translation>
+    </message>
+    <message>
         <source>Give the Photo Album a nonempty Unicode name without null characters.</source>
         <translation>Geben Sie dem Fotoalbum einen nicht leeren Unicode-Namen ohne Nullzeichen.</translation>
     </message>
@@ -10170,6 +10194,10 @@ Playlists: %3</translation>
     <message>
         <source>No changes since the latest Backup Snapshot.</source>
         <translation>Keine Änderungen seit dem letzten Backup.</translation>
+    </message>
+    <message>
+        <source>No game authorization codec is available for this iPod model.</source>
+        <translation>Für dieses iPod-Modell ist kein Codec zur Spielautorisierung verfügbar.</translation>
     </message>
     <message>
         <source>No tag changes are needed.</source>
@@ -11820,6 +11848,10 @@ Playlists: %3</translation>
         <translation>Albumzuordnung, repräsentative Verknüpfungen, Sendungsidentitäten und gerätespezifische Wiedergabelistenreihenfolge für Podcasts normalisieren.</translation>
     </message>
     <message>
+        <source>Not reported</source>
+        <translation>Nicht gemeldet</translation>
+    </message>
+    <message>
         <source>Off (raw 0)</source>
         <translation>Aus (Rohwert 0)</translation>
     </message>
@@ -11872,6 +11904,10 @@ Playlists: %3</translation>
         <translation>Die Erstellerkennzeichnung der Phase-Wiedergabeliste fehlt.</translation>
     </message>
     <message>
+        <source>The iPod family or firmware changed after confirmation. Try again.</source>
+        <translation>Die iPod-Familie oder Firmware hat sich nach der Bestätigung geändert. Versuchen Sie es erneut.</translation>
+    </message>
+    <message>
         <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>
         <translation>Der native Kapitelindex behält die gespeicherte Reihenfolge bei und stoppt an der ersten zukünftigen Startposition. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
     </message>
@@ -11888,12 +11924,28 @@ Playlists: %3</translation>
         <translation>Der neue Genius-Starttitel stimmt nicht mit der geprüften Wiedergabeliste überein.</translation>
     </message>
     <message>
+        <source>The reported firmware release could not be interpreted.</source>
+        <translation>Die gemeldete Firmwareversion konnte nicht interpretiert werden.</translation>
+    </message>
+    <message>
         <source>The retained Chapter header disables the native named index. Editable Chapter metadata is retained.</source>
         <translation>Der vorhandene Kapitelheader deaktiviert den nativen Index benannter Kapitel. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
     </message>
     <message>
+        <source>The selected iPod is read-only.</source>
+        <translation>Der ausgewählte iPod ist schreibgeschützt.</translation>
+    </message>
+    <message>
         <source>The selected native Playlist is not a Genius Playlist.</source>
         <translation>Die ausgewählte native Wiedergabeliste ist keine Genius-Wiedergabeliste.</translation>
+    </message>
+    <message>
+        <source>The updater family or firmware release was not reported.</source>
+        <translation>Die Updater-Familie oder Firmwareversion wurde nicht gemeldet.</translation>
+    </message>
+    <message>
+        <source>This updater family is not supported for game authorization. Supported families: {families}.</source>
+        <translation>Diese Updater-Familie wird für die Spielautorisierung nicht unterstützt. Unterstützte Familien: {families}.</translation>
     </message>
     <message>
         <source>Timed artwork has no complete, recognized named Chapter header. The retained Chapter data is unchanged; Classic chapter artwork may be unavailable.</source>
@@ -12208,6 +12260,12 @@ Playlists: %3</translation>
         <translation>{count} nicht zugeordnete Elemente bleiben unverändert. Ihre Zuordnungsdetails sind weiterhin unter „Prüfen“ verfügbar.</translation>
     </message>
     <message>
+        <source>{detail}
+Continuing will try the authorization format for {model}.</source>
+        <translation>{detail}
+Beim Fortfahren wird das Autorisierungsformat für {model} versucht.</translation>
+    </message>
+    <message>
         <source>{detail} iOpenPod can no longer verify this connection; refresh after completing safe removal in the operating system.</source>
         <translation>{detail} iOpenPod kann diese Verbindung nicht mehr prüfen. Aktualisieren Sie die Ansicht, nachdem Sie das sichere Entfernen im Betriebssystem abgeschlossen haben.</translation>
     </message>
@@ -12250,6 +12308,20 @@ Playlists: %3</translation>
     <message>
         <source>{name}: the iPod file changed after scanning. Rescan the iPod before Sync.</source>
         <translation>{name}: Die iPod-Datei hat sich nach der Suche geändert. Durchsuchen Sie den iPod vor der Synchronisierung erneut.</translation>
+    </message>
+    <message>
+        <source>{reason}
+Reported updater family: {families}
+Reported firmware: {firmware}</source>
+        <translation>{reason}
+Gemeldete Updater-Familie: {families}
+Gemeldete Firmware: {firmware}</translation>
+    </message>
+    <message>
+        <source>{reason}
+Verified firmware for updater family {family}: {firmware}.</source>
+        <translation>{reason}
+Verifizierte Firmware für Updater-Familie {family}: {firmware}.</translation>
     </message>
     <message>
         <source>{title} could not be added. Refresh the Podcast and retry.</source>

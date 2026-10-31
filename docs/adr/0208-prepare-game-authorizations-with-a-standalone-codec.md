@@ -16,6 +16,8 @@ persist files. No new runtime dependency is required beyond existing PyCryptodom
 
 Games is an explicit Library sidebar action on the Active iPod. Device Registry
 evidence must identify a supported updater family and evidenced RetailOS release.
+ADR-0219 supersedes this admission requirement with explicit confirmation for
+unverified compatibility and a disclosed model-based codec fallback.
 iOpenPod captures current identity metadata and the existing authorization file,
 then publishes prepared bytes through a recoverable Storage Transaction. A
 corrupt existing file is an error, never permission to initialize a replacement.

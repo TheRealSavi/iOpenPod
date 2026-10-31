@@ -787,6 +787,11 @@ packaged data resources; firmware execution is confined to the research lab.
 The Application Layer owns the bundled source store and GUID, qualifies the
 Active iPod, and coordinates recoverable Storage publication through the Games
 workflow. See [ADR-0208](adr/0208-prepare-game-authorizations-with-a-standalone-codec.md).
+Unverified family/firmware evidence requires a user-confirmed attempt rather than
+disabling the action. The Application Layer selects a representative codec from
+the identified model when family evidence cannot select one, preserves reported
+identity, and rechecks captured values during authorization and installation.
+See [ADR-0219](adr/0219-confirm-unverified-game-compatibility.md).
 
 The Games Application Layer downloads and verifies the pinned preservation
 release, then extracts its complete collection into persistent Host storage.

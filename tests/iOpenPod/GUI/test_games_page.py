@@ -5,7 +5,7 @@ from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from threading import Event, get_ident
-from time import monotonic
+from time import monotonic, sleep
 
 import pytest
 from PIL import Image
@@ -21,8 +21,10 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QToolTip,
 )
+from tests.iOpenPod.app.services.test_game_installation import package
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
+import iPodDB.ic_info
 from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -31,6 +33,7 @@ from iOpenPod.app.models.device import (
     DeviceReadiness,
 )
 from iOpenPod.app.models.library_filter_models import AlbumFilterProxyModel
+from iOpenPod.app.services import game_download
 from iOpenPod.app.services.device_coordinator import (
     DeviceCoordinator,
     SyncRecoveryRequiredError,
@@ -85,14 +88,15 @@ def prepared_host_game_files(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(DeviceCoordinator, "prepare_game_files", prepare)
 
 
-def wait_for_games(controller: object) -> None:
+def wait_for_games(controller: object, *, timeout: float = 5) -> None:
     from iOpenPod.app.games_controller import GamesController
 
     assert isinstance(controller, GamesController)
-    deadline = monotonic() + 5
+    deadline = monotonic() + timeout
     while controller.busy and monotonic() < deadline:
         APPLICATION.processEvents()
-        QTest.qWait(5)
+        # Release Python's GIL while real Storage publication runs in the worker.
+        sleep(0.005)
     assert not controller.busy
 
 
@@ -172,27 +176,36 @@ def test_sidebar_opens_games_page_with_one_disabled_action_without_device() -> N
 
 
 @pytest.mark.parametrize(
-    "release,writable,reason",
+    "family,release,writable,reason",
     [
-        ("1.3", True, ""),
-        ("1.3.0", True, ""),
-        ("1.3", False, "The selected iPod is read-only."),
-        ("", True, "Games requires an identified updater family and firmware release."),
+        (25, "1.3", True, ""),
+        (25, "1.3.0", True, ""),
+        (25, "1.3", False, "The selected iPod is read-only."),
+        (25, "", True, "The updater family or firmware release was not reported."),
         (
+            25,
             "1.2.1",
             True,
-            "Game authorization has not been verified for this iPod firmware release.",
+            "Game authorization is not supported for this firmware release.\n"
+            "Verified firmware for updater family 25: 1.3.",
+        ),
+        (
+            999,
+            "1.3",
+            True,
+            "This updater family is not supported for game authorization. "
+            "Supported families: 13, 20, 24, 25, 26, 31, 33, 34, 35, 38.",
         ),
     ],
 )
 def test_video55_games_availability_and_disabled_hover_tooltips(
-    tmp_path: Path, release: str, writable: bool, reason: str
+    tmp_path: Path, family: int, release: str, writable: bool, reason: str
 ) -> None:
     root = tmp_path / "device"
     metadata = root / "iPod_Control/Device"
     metadata.mkdir(parents=True)
     (metadata / "SysInfo").write_text(
-        "ModelNumStr: MA450\nUpdaterFamilyID: 25\n"
+        f"ModelNumStr: MA450\nUpdaterFamilyID: {family}\n"
         + (f"visibleBuildID: {release}\n" if release else "")
     )
     library = create_empty_library(
@@ -215,6 +228,11 @@ def test_video55_games_availability_and_disabled_hover_tooltips(
     context = build_context(device_coordinator=coordinator)
     context.device_controller.finish_library_save(active)
     page = GamesPage(context.games_controller)
+    reported = (
+        f"\nReported updater family: {family}"
+        f"\nReported firmware: {release or 'Not reported'}"
+    )
+    tooltip = reason + reported if not writable else ""
     try:
         page.show()
         deadline = monotonic() + 5
@@ -226,15 +244,15 @@ def test_video55_games_availability_and_disabled_hover_tooltips(
         for name in ("gimmeGames", "gamesEmptyAdd"):
             button = page.findChild(QPushButton, name)
             assert button is not None and button.isVisible()
-            assert button.isEnabled() is (not reason)
-            assert button.toolTip() == reason
-            if reason:
+            assert button.isEnabled() is writable
+            assert button.toolTip() == tooltip
+            if not writable:
                 point = button.rect().center()
                 event = QHelpEvent(
                     QEvent.Type.ToolTip, point, button.mapToGlobal(point)
                 )
                 APPLICATION.sendEvent(button, event)
-                assert QToolTip.isVisible() and QToolTip.text() == reason
+                assert QToolTip.isVisible() and QToolTip.text() == tooltip
                 QToolTip.hideText()
 
         context.device_controller.set_recovery_required(True)
@@ -243,19 +261,20 @@ def test_video55_games_availability_and_disabled_hover_tooltips(
             assert button is not None and not button.isEnabled()
             assert (
                 button.toolTip()
-                == "Finish the current iPod operation or recovery first."
+                == "Finish the current iPod operation or recovery first." + reported
             )
         context.device_controller.set_recovery_required(False)
         button = page.findChild(QPushButton, "gimmeGames")
-        assert button is not None and button.toolTip() == reason
-        assert button.isEnabled() is (not reason)
+        assert button is not None and button.toolTip() == tooltip
+        assert button.isEnabled() is writable
         assert context.device_controller.begin_read_only_operation()
         assert not button.isEnabled()
         assert (
-            button.toolTip() == "Finish the current iPod operation or recovery first."
+            button.toolTip()
+            == "Finish the current iPod operation or recovery first." + reported
         )
         context.device_controller.finish_read_only_operation()
-        assert button.toolTip() == reason
+        assert button.toolTip() == tooltip
         context.device_controller.finish_sync_recovery(None)
         assert not button.isEnabled()
         assert button.toolTip() == "Select an iPod to prepare game authorization."
@@ -264,6 +283,168 @@ def test_video55_games_availability_and_disabled_hover_tooltips(
         assert context.games_controller.unavailable_reason == "Games is shutting down."
     finally:
         QToolTip.hideText()
+        page.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize("button_name", ["gimmeGames", "gamesEmptyAdd"])
+@pytest.mark.parametrize(
+    "family,release,answer",
+    [
+        (33, "2.0.2", "continue"),
+        (999, "2.0.1", "continue"),
+        (999, "2.0.1", "cancel"),
+        (33, "2.0.2", "escape"),
+        (33, "2.0.2", "close"),
+        (33, "2.0.2", "disconnect"),
+        (33, "2.0.2", "metadata"),
+        (33, "2.0.2", "busy"),
+        (33, "2.0.2", "install_metadata"),
+    ],
+)
+def test_game_compatibility_confirmation_controls_authorization_and_installation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    button_name: str,
+    family: int,
+    release: str,
+    answer: str,
+) -> None:
+    root = tmp_path / "device"
+    metadata = root / "iPod_Control/Device"
+    metadata.mkdir(parents=True)
+    sysinfo = metadata / "SysInfo"
+    sysinfo.write_text(
+        f"ModelNumStr: MB565\nUpdaterFamilyID: {family}\nvisibleBuildID: {release}\n"
+    )
+    platform = VirtualStoragePlatform()
+    platform.add_volume(
+        root, identifiers=HardwareIdentifiers(transport_serial="0011223344556677")
+    )
+    coordinator = DeviceCoordinator(
+        Storage(platform, transaction_recovery_directory=tmp_path / "recovery"),
+        volume_presentation_enabled=False,
+    )
+    active = coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+    context = build_context(device_coordinator=coordinator)
+    context.device_controller.finish_library_save(active)
+    controller = context.games_controller
+    page = GamesPage(controller)
+    converted: list[int] = []
+    preparations: list[ActiveIPod] = []
+    fixture_game = package(tmp_path)
+
+    def prepare(expected: ActiveIPod, _cancelled: Event, **_options: object) -> None:
+        preparations.append(expected)
+
+    def convert(
+        _source: bytes,
+        _source_guid: bytes,
+        _guid: bytes,
+        codec_family: int,
+        _existing: bytes | None,
+    ) -> iPodDB.ic_info.TransferResult:
+        converted.append(codec_family)
+        return iPodDB.ic_info.TransferResult(b"fixture authorization", 1, 0, 0)
+
+    monkeypatch.setattr(coordinator, "prepare_game_files", prepare)
+    monkeypatch.setattr(iPodDB.ic_info, "transfer_and_merge", convert)
+    monkeypatch.setattr(game_download, "resolve_packages", lambda *_: (fixture_game,))
+    observations: list[tuple[str, str, bool, Qt.TextFormat, bool]] = []
+
+    def reply() -> None:
+        dialog = APPLICATION.activeModalWidget()
+        if not isinstance(dialog, QMessageBox):
+            return
+        observations.append(
+            (
+                dialog.text(),
+                dialog.informativeText(),
+                dialog.defaultButton()
+                is dialog.button(QMessageBox.StandardButton.Cancel),
+                dialog.textFormat(),
+                bool(preparations),
+            )
+        )
+        if answer == "escape":
+            QTest.keyClick(dialog, Qt.Key.Key_Escape)
+        elif answer == "close":
+            dialog.close()
+        elif answer == "cancel":
+            dialog.button(QMessageBox.StandardButton.Cancel).click()
+        else:
+            if answer == "disconnect":
+                context.device_controller.finish_sync_recovery(None)
+            elif answer == "metadata":
+                sysinfo.write_text(
+                    "ModelNumStr: MB565\nUpdaterFamilyID: 33\nvisibleBuildID: 2.0.3\n"
+                )
+            elif answer == "busy":
+                context.device_controller.begin_read_only_operation()
+            for button in dialog.buttons():
+                if dialog.buttonRole(button) is QMessageBox.ButtonRole.AcceptRole:
+                    button.click()
+                    break
+
+    try:
+        page.show()
+        deadline = monotonic() + 5
+        while not controller.catalog_ready and monotonic() < deadline:
+            APPLICATION.processEvents()
+            QTest.qWait(5)
+        assert controller.catalog_ready and controller.available
+        assert not controller.start()  # No confirmation, no download or writes.
+        action = page.findChild(QPushButton, button_name)
+        assert action is not None and action.isEnabled()
+        QTimer.singleShot(0, reply)
+        action.click()
+        wait_for_games(controller, timeout=20)
+        assert len(observations) == 1
+        title, details, cancel_default, text_format, prepared_early = observations[0]
+        assert title == "This iPod may not be supported. Continue anyway?"
+        assert f"Reported updater family: {family}" in details
+        assert f"Reported firmware: {release}" in details
+        assert cancel_default and text_format is Qt.TextFormat.PlainText
+        assert not prepared_early
+        authorization = root / "iPod_Control/iTunes/IC-Info.sidb"
+        if answer in {"continue", "install_metadata"}:
+            assert converted == [33] and preparations == [active]
+            assert authorization.read_bytes() == b"fixture authorization"
+            assert page.findChild(GameCatalogDialog) is not None
+            if answer == "install_metadata":
+                sysinfo.write_text(
+                    "ModelNumStr: MB565\nUpdaterFamilyID: 33\nvisibleBuildID: 2.0.3\n"
+                )
+            assert controller.can_install and controller.install(("1D000",))
+            wait_for_games(controller, timeout=20)
+            if answer == "install_metadata":
+                assert "changed after confirmation" in controller.message
+                assert not (root / "iPod_Control/Games_RO/1D000").exists()
+                return
+            assert not controller.message
+            assert (
+                root / "iPod_Control/Games_RO/1D000/Executables/game.bin"
+            ).read_bytes() == b"fixture executable"
+            # A later click asks again; confirmation is not a global setting.
+            observations.clear()
+
+            def dismiss() -> None:
+                dialog = APPLICATION.activeModalWidget()
+                if dialog is not None:
+                    dialog.close()
+
+            QTimer.singleShot(0, dismiss)
+            action.click()
+            assert preparations == [active]
+        else:
+            assert not converted and not authorization.exists()
+            if answer == "metadata":
+                assert "changed after confirmation" in controller.message
+            else:
+                assert not preparations
+        if answer == "busy":
+            context.device_controller.finish_read_only_operation()
+    finally:
         page.close()
         context.shutdown()
 
@@ -501,7 +682,9 @@ def test_games_grid_loads_titles_versions_covers_and_clears_after_disconnect(
         empty_action.click()
         assert not empty_action.isEnabled() and not action.isEnabled()
         assert (
-            empty_action.toolTip() == "Wait for the current Games operation to finish."
+            empty_action.toolTip()
+            == "Wait for the current Games operation to finish.\n"
+            "Reported updater family: 33\nReported firmware: 2.0.1"
         )
         assert action.toolTip() == empty_action.toolTip()
         wait_for_games(context.games_controller)

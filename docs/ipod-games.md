@@ -20,6 +20,14 @@ Both buttons open the same preparation/catalog workflow and share availability.
 While disabled, both buttons show the current blocking reason on hover. The
 tooltip updates with device selection, write reservations, recovery, and Games
 operations, and clears when the action becomes available.
+Family and firmware compatibility do not disable the buttons. An unverified,
+missing, or conflicting value instead opens **Game compatibility** before any
+download or device write. The dialog says the iPod may not be supported, shows
+its reported updater family and firmware, and offers **Cancel** and **Continue
+anyway**. Cancel is the default; Escape and closing the dialog cancel too.
+Missing values display **Not reported**. The dialog includes the compatibility
+reason and, where known, the verified release. The same identity details accompany
+operation, recovery, and read-only blockers in disabled-button tooltips.
 The empty state stays hidden until a successful scan and clears on disconnect.
 
 Manifestless auxiliary folders are skipped. Malformed metadata remains visible
@@ -80,7 +88,7 @@ copies selected game executables and resources without modifying iTunesDB.
 
 The sidebar entry appears only for an Active iPod with native click-wheel games
 support: Video 5/5.5, Classic 6/6.5/7, and Nano 3/4/5. The action still requires
-the qualified firmware release and writable connection described below.
+the writable connection described below; unverified firmware requires confirmation.
 
 ## Game files
 
@@ -210,17 +218,42 @@ before preparation. The supplied store has 12 accounts and 199 key records;
 198 are supported type-0/1 values and one is a retained type-2 value. These are
 properties of this resource, not hardcoded parser requirements.
 
-The coordinator uses the selected connection's identity evidence, not its mount
-path or marketing generation, to choose a destination. The supported researched
-updater families are 13/20/25 (Video 1.3), 24 (Classic 1.1.2), 33 (Classic 2.0.1),
-35 (Classic 2.0.4), 38 (Classic 2.0.5), 26 (Nano 3 1.1.3), 31 (Nano 4 1.0.4), and
-34 (Nano 5 1.0.2). Ambiguous or different release evidence is not promoted to a
-verified profile.
+The coordinator normally uses the selected connection's identity evidence to
+choose a destination. All ten researched updater
+families are supported, covering Video 5/5.5, Classic 6/6.5/7, and nano 3/4/5:
+
+| Updater family | iPod group | Verified firmware |
+| --- | --- | --- |
+| 13 | Video 5/5.5 | 1.3 |
+| 20 | Video 5/5.5 | 1.3 |
+| 25 | Video 5/5.5 | 1.3 |
+| 24 | Classic | 1.1.2 |
+| 33 | Classic | 2.0.1 |
+| 35 | Classic | 2.0.4 |
+| 38 | Classic | 2.0.5 |
+| 26 | nano 3 | 1.1.3 |
+| 31 | nano 4 | 1.0.4 |
+| 34 | nano 5 | 1.0.2 |
+
+Ambiguous or different release evidence is not promoted to a verified profile.
+After **Continue anyway**, a single recognized updater family supplies the codec
+despite an unverified firmware release. If the family is missing, conflicting, or
+unrecognized, the identified Device Profile supplies a representative codec:
+Video 5 → 13, Video 5.5 → 25, Classic 6 → 24, Classic 6.5 → 33, Classic 7 → 35,
+nano 3 → 26, nano 4 → 31, and nano 5 → 34. This is a best-effort format choice,
+not a change to the reported ID or firmware. No codec is invented for other models.
+The dialog describes the model fallback when it is used.
+
+Confirmation covers preparation and subsequent Add operations for that Active
+iPod. Live metadata must still match the reviewed family/firmware values before
+each publication. Switching or disconnecting clears confirmation; each new Gimme
+Games attempt asks again. See [ADR-0219](adr/0219-confirm-unverified-game-compatibility.md).
 
 Video 5/5.5 firmware `1.3` (also accepted as `1.3.0`) qualifies when the strongest
 identity evidence identifies one of updater families 13, 20, or 25 and agrees on
 that release. The marketing model and the firmware shown on the iPod alone do not
-substitute for this evidence. The action also requires an Active iPod, a volume
+substitute for this verification. An explicitly confirmed attempt can proceed
+without verified release evidence. The action still requires an Active iPod, a volume
 safe for writes, and no blocking device operation, recovery, or Games shutdown.
 
 The workflow reserves the Active iPod, runs outside the GUI thread, and captures

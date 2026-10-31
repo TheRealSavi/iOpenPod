@@ -1139,24 +1139,39 @@ class DeviceCoordinator:
 
         return game_library.read_game_catalog(active.session, checkpoint)
 
-    def games_unavailable_reason(self, expected: ActiveIPod) -> str:
+    def games_unavailable_reason(
+        self, expected: ActiveIPod, *, blocked_reason: str = ""
+    ) -> str:
         """Expose capability qualification without device I/O on the GUI thread."""
         with self._lock:
             active = self._active
             if active is None or active.active_ipod is not expected:
                 return "Select an iPod before preparing game authorization."
+            evidence = active.record.device_evidence
+            if blocked_reason:
+                return games.describe_unavailability(evidence, blocked_reason)
             if not active.record.mounted_volume.volume.capabilities.safe_for_writes:
-                return "The selected iPod is read-only."
-            try:
-                games.destination_family(active.record.device_evidence)
-            except ValueError as error:
-                return str(error)
+                return games.describe_unavailability(
+                    evidence, source_text("The selected iPod is read-only.")
+                )
         return ""
+
+    def games_compatibility(self, expected: ActiveIPod) -> games.GameCompatibility:
+        """Capture the compatibility warning without performing device I/O."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before preparing games."
+                )
+            return games.compatibility(active.record.device_evidence, expected.profile)
 
     def install_game_authorizations(
         self,
         expected: ActiveIPod,
         cancelled: threading.Event,
+        *,
+        compatibility: games.GameCompatibility | None = None,
     ) -> games.GamesResult:
         """Merge authorization bytes through an identity-bound Storage Transaction."""
         with self._lock:
@@ -1191,8 +1206,12 @@ class DeviceCoordinator:
                 )
                 metadata, _issues = _read_device_metadata(session)
                 evidence = active.record.hardware_evidence.merged_with(metadata)
-                family = games.destination_family(evidence)
-                if family != games.destination_family(active.record.device_evidence):
+                family = games.execution_family(
+                    evidence, expected.profile, compatibility
+                )
+                if family != games.execution_family(
+                    active.record.device_evidence, expected.profile, compatibility
+                ):
                     raise DeviceChangedError("The iPod family changed after selection.")
                 guid = _read_device_guid(session, active.record.hardware_evidence)
                 if len(guid) != 8:
@@ -1243,6 +1262,7 @@ class DeviceCoordinator:
         identifiers: tuple[str, ...],
         cancelled: threading.Event,
         *,
+        compatibility: games.GameCompatibility | None = None,
         progress: Callable[
             [game_installation.GameInstallationProgress], None
         ] = lambda _: None,
@@ -1309,8 +1329,12 @@ class DeviceCoordinator:
                 )
                 metadata, _issues = _read_device_metadata(session)
                 evidence = active.record.hardware_evidence.merged_with(metadata)
-                family = games.destination_family(evidence)
-                if family != games.destination_family(active.record.device_evidence):
+                family = games.execution_family(
+                    evidence, expected.profile, compatibility
+                )
+                if family != games.execution_family(
+                    active.record.device_evidence, expected.profile, compatibility
+                ):
                     raise DeviceChangedError("The iPod family changed after selection.")
                 if not session.exists(games.AUTHORIZATION_PATH):
                     raise DeviceAccessError(

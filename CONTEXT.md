@@ -65,6 +65,12 @@ metadata failures, and clear on Active iPod changes. See
 [IC-Info and Games](docs/ipod-games.md) for the manifest contract and read-only
 device validation.
 
+Gimme Games now allows an explicit Continue anyway attempt for unverified family
+or firmware evidence. The dialog shows reported values, uses the identified model
+when a codec fallback is needed, and scopes confirmation to the current connection
+and identity values. Storage and recovery protections remain mandatory. See
+[ADR-0219](docs/adr/0219-confirm-unverified-game-compatibility.md).
+
 Games now prepares the bundled Classic 6.5 Game Authorization Store for an
 identified supported iPod using a standalone iPodDB codec. The explicit sidebar
 action merges account/key records, gives bundled entries precedence on conflicts,
