@@ -171,6 +171,7 @@ if TYPE_CHECKING:
         PreparedPhoto,
         Track,
     )
+    from storage import TransactionWrite
     from storage.content_workspace import ContentWorkspace
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,9 @@ _SYSINFO_AUTHORITY_PATH = DevicePath(
     f"iPod_Control/Device/{SYSINFO_AUTHORITY_FILENAME}"
 )
 _IPOD_CONTROL_PATH = DevicePath("iPod_Control")
+# Integration documents (such as Jellyfin play counts) live in a reserved folder,
+# so they cannot replace files other workflows own.
+_APPLICATION_ROOT = DevicePath("iPod_Control/iOpenPod/Integrations")
 _ITUNESDB_PATH = DevicePath("iPod_Control/iTunes/iTunesDB")
 _ITUNESCDB_PATH = DevicePath("iPod_Control/iTunes/iTunesCDB")
 _HASHINFO_PATH = DevicePath("iPod_Control/Device/HashInfo")
@@ -1533,6 +1537,72 @@ class DeviceCoordinator:
                 )
             return self._save_podcast_state(active, expected, state)
 
+    # Small application-owned integration documents, such as Jellyfin play counts.
+    @staticmethod
+    def _check_application_path(path: DevicePath) -> None:
+        if path == _APPLICATION_ROOT or not path.is_relative_to(_APPLICATION_ROOT):
+            raise ValueError(
+                "Application documents must be under iPod_Control/iOpenPod/Integrations."
+            )
+
+    def load_application_document(
+        self, expected: ActiveIPod, path: DevicePath, max_bytes: int
+    ) -> tuple[bytes | None, FileFingerprint | None]:
+        """Read one bounded application document and the revision to replace."""
+        self._check_application_path(path)
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before its document could be read."
+                )
+            if not active.session.exists(path):
+                return None, None
+            snapshot = active.session.read_snapshot(path, max_bytes=max_bytes)
+            return snapshot.data, snapshot.fingerprint
+
+    def save_application_document(
+        self,
+        expected: ActiveIPod,
+        path: DevicePath,
+        data: bytes,
+        before: FileFingerprint | None,
+    ) -> FileFingerprint:
+        """Atomically replace the exact revision read, bound to this Library."""
+        self._check_application_path(path)
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before its document could be saved."
+                )
+            try:
+                with self._storage.open_session(
+                    active.record.mounted_volume, access=AccessMode.READ_WRITE
+                ) as session:
+                    if not active.session.is_active:
+                        raise SessionClosedError(
+                            "The iPod disconnected before its document was saved."
+                        )
+                    self._check_sync_recovery(session)
+                    if (
+                        session.fingerprint(
+                            library_resources.database_path(expected.database_name)
+                        )
+                        != expected.database_fingerprint
+                    ):
+                        raise DeviceChangedError(
+                            "The iTunesDB changed; reload before saving."
+                        )
+                    result = session.atomic_write(
+                        path, data, expected=before, create_parents=True
+                    )
+                    session.flush()
+                    return result.fingerprint
+            except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+                self._deactivate_locked()
+                raise
+
     def _save_podcast_state(
         self,
         active: _ActiveConnection,
@@ -1567,6 +1637,7 @@ class DeviceCoordinator:
         podcast_state: LoadedPodcastState | None = None,
         podcast_subscriptions: bool = False,
         allow_unchanged: bool = False,
+        application_writes: tuple[TransactionWrite, ...] = (),
     ) -> LibraryReview:
         """Prepare a review with private Host staging and read-only device access.
 
@@ -2142,6 +2213,18 @@ class DeviceCoordinator:
                             writes=(*write.writes, *history.writes),
                             dependencies=(*write.dependencies, *history.dependencies),
                         )
+                    )
+                # Integration documents that must commit with this Library,
+                # such as the Jellyfin play count memory.
+                if application_writes:
+                    for document in application_writes:
+                        self._check_application_path(document.path)
+                    write = (
+                        StorageTransaction(
+                            writes=application_writes, dependencies=captured.files
+                        )
+                        if write is None
+                        else replace(write, writes=(*write.writes, *application_writes))
                     )
                 if write is None:
                     # Association-only Sync has no transaction to validate.

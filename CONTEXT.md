@@ -58,6 +58,12 @@ without replacing existing game folders or modifying iTunesDB. See ADR-0208,
 [IC-Info and Games](docs/ipod-games.md) for supported builds, merge limits, and
 native differential evidence. Physical device publication remains untested.
 
+Play Count Sync reconciles music play counts between the Active iPod and one
+Jellyfin 10.9+ account in both directions. A Play Count Memory on the iPod
+commits in the same Storage transaction as the play counts, so every Host merges
+from one baseline and interruptions can miss plays but never double them. See
+[ADR-0214](docs/adr/0214-synchronize-jellyfin-play-counts-through-an-ipod-memory.md).
+
 Storage can resume a create-only transaction interrupted during staging through a
 new identity-bound Filesystem Session. It verifies and reuses completed stages,
 copies missing stages, and replaces only damaged stages while retaining their
@@ -1106,6 +1112,10 @@ them through narrow interfaces.
   `iPod_Control/iOpenPod/Podcasts/`, retaining the existing `-v1.json` filenames and
   backward reads of subscription versions 1 and 2 and History version 1; other
   settings retain their own formats.
+- The Play Count Memory for Jellyfin lives on the iPod under
+  `iPod_Control/iOpenPod/Integrations/`, a folder reserved for integration
+  documents. The Jellyfin access token stays in the native OS keyring; global
+  settings keep only the server address, username, and device ID (ADR-0214).
 
 ## Core device workflow
 
@@ -1178,6 +1188,7 @@ device workflow; those operations retain their own Storage safety requirements.
 - `docs/how-media-scanning-works.md` explains first scans, cache reuse, recovery,
   and the handoff into Sync Review.
 - `docs/ipoddb-editing.md` defines the sole typed parse/edit/write workflow.
+- `docs/jellyfin.md` explains Jellyfin Play Count Sync and its Play Count Memory.
 - `docs/adr/` records durable decisions.
 - `docs/agents/` configures agent-oriented engineering workflows.
 - `.scratch/` holds private, uncommitted plans and work items.
