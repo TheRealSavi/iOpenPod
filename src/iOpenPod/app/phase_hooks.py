@@ -116,9 +116,7 @@ def direct_parts(
         mix_energy = np.sqrt(sum(part.energy**2 for part in parts))
     count = len(mix_energy)
     if mix_bands is None:
-        mix_bands = sum(
-            (part.bands * part.energy for part in parts), np.zeros((3, count))
-        ) / np.maximum(mix_energy, 1e-12)
+        mix_bands = sum((part.magnitudes for part in parts), np.zeros((3, count)))
     if mix_bands.shape != (3, count):
         raise ValueError("Phase mix evidence disagrees")
     if any(len(part.energy) != count for part in parts):
@@ -227,22 +225,21 @@ def direct_parts(
             if index == chosen or scores[index] <= 0:
                 continue
             selected.extend((int(frame), index, False) for frame in notes[index])
-    # dB novelty detects attacks, but cannot measure their audible magnitude:
-    # a quiet stem can have exactly the same dB jump as a loud one. Weight by
-    # measured energy, then use one mix-derived calibration for every source.
-    weighted_mix = mix_bands * total
-    scales = np.asarray(
-        [
-            max(float(np.percentile(row[row > 1e-10], 95)), 1e-10)
-            if np.any(row > 1e-10)
-            else 1.0
-            for row in weighted_mix
-        ]
+    # Magnitudes are measured in linear amplitude units, independently of the
+    # normalized novelty used to detect attacks. A single calibration preserves
+    # band ordering and quiet sources instead of giving each band its own gain.
+    reference_frames = [f for f in mix_onsets if 0 <= f < count and active[f]]
+    if not reference_frames:
+        reference_frames = [f for f, _, _ in selected]
+    peaks = np.max(mix_bands[:, reference_frames], axis=0)
+    positive = peaks[peaks > 1e-10]
+    amplitude_scale = (
+        max(float(np.percentile(positive, 95)), 1e-10) if positive.size else 1.0
     )
     # Preserve the mix's own timing. Source detections within 46 ms annotate
     # the same attack rather than shifting it or creating a duplicate.
     evidence = {
-        frame: weighted_mix[:, frame].copy()
+        frame: mix_bands[:, frame].copy()
         for frame in mix_onsets
         if 0 <= frame < count and active[frame]
     }
@@ -260,7 +257,7 @@ def direct_parts(
         )
         if abs(nearest - frame) > 4:
             nearest = frame
-        value = parts[source].bands[:, frame] * parts[source].energy[frame]
+        value = parts[source].magnitudes[:, frame]
         # Source evidence can fill a missing attack or identify an existing
         # mix attack as belonging to the lead. Apply preference once per event
         # below, so a stronger mix does not hide that musical preference.
@@ -269,7 +266,7 @@ def direct_parts(
         if nearest in evidence:
             evidence[nearest] = np.maximum(evidence[nearest], value)
         else:
-            evidence[nearest] = value
+            evidence[nearest] = value.copy()
     for frame in preferred:
         evidence[frame] *= _LEAD_BOOST
     # Merge close source-only detections. The anchored mix cannot be displaced.
@@ -292,10 +289,11 @@ def direct_parts(
         timestamp = round(frame * HOP * 65536 / RATE)
         if timestamp >= length_ms * 65536 // 1000:
             continue
-        strengths = tuple(
-            round(min(float(value / scale), 1) ** 0.65 * 31)
-            for value, scale in zip(evidence[frame], scales, strict=True)
-        )
+        # Compress/cap the whole attack together. Independent clipping can turn
+        # a clear primary/alternative ordering into (31, 31, 31) lane ties.
+        peak = float(np.max(evidence[frame]))
+        gain = 31 * min(peak / amplitude_scale, 1) ** 0.65 / peak if peak > 0 else 0.0
+        strengths = tuple(round(float(value) * gain) for value in evidence[frame])
         if any(strengths):
             result.append(PhaseTransient(timestamp, *strengths))
     if len(result) > 20_000:

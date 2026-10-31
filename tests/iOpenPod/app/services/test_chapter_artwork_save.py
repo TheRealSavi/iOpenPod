@@ -145,7 +145,7 @@ def test_save_coordinates_chapter_flags_only_for_explicit_timeline(
             assert not extra_files
         covers = application_cover_formats(active.profile)
         assert len(prepared.artwork_files) == len(
-            {f.format_id for f in covers} | (set(chapter_ids) if timed else set())
+            {f.format_id for f in covers} | (set(chapter_ids) if timed else set[int]())
         )
         assert database.read_bytes() == original
 

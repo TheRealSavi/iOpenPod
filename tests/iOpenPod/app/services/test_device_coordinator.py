@@ -17,8 +17,10 @@ from tests.iOpenPod.app.media.test_photo_sync import large_photo_png
 from tests.iOpenPod.app.phase_test_support import StubPhaseAnalysis
 from tests.iPodDB.sidecars.test_sidecar_readers import counts, otg
 
+import device_registry.authority as authority_module
 from device_registry import (
     DEFAULT_DEVICE_REGISTRY,
+    SYSINFO_AUTHORITY_VERSION,
     EvidenceAuthority,
     FeatureSupport,
     parse_sysinfo_extended,
@@ -699,26 +701,34 @@ def test_valid_authority_avoids_repeating_a_live_hardware_probe(
 
     candidate = coordinator.discover_devices().candidates[0]
     coordinator.select_device(candidate.id)
-    coordinator.discover_devices()
+    coordinator.discover_devices(refresh_known=False)
 
+    assert platform.probe_count == 1
+    coordinator.discover_devices()
     assert platform.probe_count == 1
     coordinator.close()
 
 
 @pytest.mark.parametrize("cached_release", [None, "1.62"])
 @pytest.mark.parametrize("keep_stale_extended", [False, True])
+@pytest.mark.parametrize("keep_firmware_marker", [False, True])
 @pytest.mark.parametrize(
     ("model_number", "release", "support"),
     [
         ("MC293", "2.0.2", FeatureSupport.UNSUPPORTED),
         ("MC293", "2.0.4", FeatureSupport.SUPPORTED),
         ("MB565", "2.0.1", FeatureSupport.UNSUPPORTED),
+        ("MA450", "1.3", FeatureSupport.UNSUPPORTED),
+        ("MA002", "1.3", FeatureSupport.UNSUPPORTED),
+        ("MA978", "1.1.3", FeatureSupport.UNSUPPORTED),
+        ("M9160", "1.4.1", FeatureSupport.UNSUPPORTED),
     ],
 )
-def test_selection_caches_firmware_and_reuses_it_after_reconnecting(
+def test_legacy_authority_recaptures_firmware_once_and_reuses_cache_after_reconnecting(
     tmp_path: Path,
     cached_release: str | None,
     keep_stale_extended: bool,
+    keep_firmware_marker: bool,
     model_number: str,
     release: str,
     support: FeatureSupport,
@@ -746,7 +756,8 @@ def test_selection_caches_firmware_and_reuses_it_after_reconnecting(
         extended.pop("VisibleBuildID", None)
     extended_bytes = plistlib.dumps(extended)
     authority = json.loads(legacy.authority)
-    if cached_release is not None:
+    authority["version"] = 1
+    if cached_release is not None and not keep_firmware_marker:
         authority["fields"]["visibleBuildID"].pop("value_kind", None)
     authority["file_hashes"]["SysInfoExtended"] = hashlib.sha256(
         extended_bytes
@@ -789,9 +800,9 @@ def test_selection_caches_firmware_and_reuses_it_after_reconnecting(
         extended = plistlib.loads(saved["SysInfoExtended"])
         assert extended["VisibleBuildID"] == release
         assert extended["FireWireVersion"] == "1.62"
-        firmware = json.loads(saved["iOpenPodSysInfoAuthority"])["fields"][
-            "visibleBuildID"
-        ]
+        repaired_authority = json.loads(saved["iOpenPodSysInfoAuthority"])
+        assert repaired_authority["version"] == SYSINFO_AUTHORITY_VERSION
+        firmware = repaired_authority["fields"]["visibleBuildID"]
         assert firmware["value"] == release
         assert firmware["authority"] == "current_hardware"
         assert firmware["source"] == "iokit"
@@ -807,6 +818,134 @@ def test_selection_caches_firmware_and_reuses_it_after_reconnecting(
         assert candidate.profile.capabilities.genius.mixes is support
         coordinator.select_device(candidate.id)
         assert {name: (device_directory / name).read_bytes() for name in saved} == saved
+    finally:
+        coordinator.close()
+
+
+@pytest.mark.parametrize("model_number", ["MA450", "M9160"])
+def test_failed_firmware_recapture_remains_eligible_for_retry(
+    tmp_path: Path,
+    model_number: str,
+) -> None:
+    platform = _ProbeCountingPlatform()
+    root = _ipod_volume(tmp_path / "ipod", model_number=model_number)
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number(model_number)
+    assert profile is not None
+    payload = {
+        "ModelNumStr": model_number,
+        "SerialNumber": "TESTSERIAL7G",
+        "FireWireGUID": "000A270012345678",
+        "VisibleBuildID": "1.62",
+    }
+    legacy = reconcile_device_metadata(
+        profile=profile,
+        evidence=parse_sysinfo_extended(
+            plistlib.dumps(payload), authority=EvidenceAuthority.CURRENT_HARDWARE
+        ),
+    )
+    authority = json.loads(legacy.authority)
+    authority["version"] = 1
+    metadata = root / "iPod_Control/Device"
+    (metadata / "SysInfo").write_bytes(legacy.sysinfo)
+    (metadata / "SysInfoExtended").write_bytes(legacy.sysinfo_extended)
+    (metadata / "iOpenPodSysInfoAuthority").write_text(json.dumps(authority))
+    payload.pop("VisibleBuildID")
+    platform.add_volume(
+        root,
+        probe_result=HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="iokit",
+                    vendor="Apple",
+                    product="iPod",
+                    vendor_payload=plistlib.dumps(payload),
+                ),
+            )
+        ),
+    )
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        coordinator.select_device(candidate.id)
+        assert platform.probe_count == 1
+        authority = json.loads((metadata / "iOpenPodSysInfoAuthority").read_bytes())
+        assert authority["version"] == SYSINFO_AUTHORITY_VERSION
+        firmware = authority["fields"]["visibleBuildID"]
+        assert firmware["authority"] == "device_metadata"
+        assert "value_kind" not in firmware
+        coordinator.discover_devices()
+        assert platform.probe_count == 2
+    finally:
+        coordinator.close()
+
+
+@pytest.mark.parametrize("invalidate", [False, True])
+def test_authority_version_controls_firmware_recapture_after_reconnect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalidate: bool,
+) -> None:
+    platform = _ProbeCountingPlatform()
+    root = _ipod_volume(tmp_path / "video", model_number="MA450")
+    coordinator = DeviceCoordinator(
+        Storage(platform), volume_presentation_enabled=False
+    )
+    try:
+        for connection, release in enumerate(("1.2.1", "1.3"), start=1):
+            if connection == 2 and invalidate:
+                monkeypatch.setattr(
+                    authority_module,
+                    "SYSINFO_AUTHORITY_VERSION",
+                    SYSINFO_AUTHORITY_VERSION + 1,
+                )
+            probe_count = connection if invalidate else 1
+            cached_release = release if invalidate else "1.2.1"
+            payload = plistlib.dumps(
+                {
+                    "ModelNumStr": "MA450",
+                    "SerialNumber": "TESTVIDEO55",
+                    "FireWireGUID": "000A270012345678",
+                    "UpdaterFamilyID": 25,
+                    "VisibleBuildID": release,
+                    "FireWireVersion": "1.62",
+                }
+            )
+            platform.add_volume(
+                root,
+                probe_result=HardwareProbeResult(
+                    observations=(
+                        HardwareProbeObservation(
+                            source="linux_scsi",
+                            vendor="Apple",
+                            product="iPod",
+                            firmware_revision="1.62",
+                            vendor_payload=payload,
+                        ),
+                    )
+                ),
+            )
+            candidate = coordinator.discover_devices(refresh_known=False).candidates[0]
+            assert platform.probe_count == probe_count
+            active = coordinator.select_device(candidate.id)
+            metadata = root / "iPod_Control/Device"
+            assert (
+                f"visibleBuildID: {cached_release}\n"
+                in (metadata / "SysInfo").read_text()
+            )
+            extended = plistlib.loads((metadata / "SysInfoExtended").read_bytes())
+            assert extended["VisibleBuildID"] == cached_release
+            assert extended["FireWireVersion"] == "1.62"
+            authority = json.loads((metadata / "iOpenPodSysInfoAuthority").read_bytes())
+            assert authority["version"] == authority_module.SYSINFO_AUTHORITY_VERSION
+            assert authority["fields"]["visibleBuildID"]["value"] == cached_release
+            assert bool(coordinator.games_compatibility(active).warning) is (
+                cached_release != "1.3"
+            )
+            coordinator.discover_devices(refresh_known=False)
+            assert platform.probe_count == probe_count
+            platform.disconnect(root)
+            assert coordinator.discover_devices(refresh_known=False).candidates == ()
+            assert coordinator.active_ipod is None
     finally:
         coordinator.close()
 

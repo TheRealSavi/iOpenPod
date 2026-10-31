@@ -1,6 +1,7 @@
 # ADR-0175: Model native Genius capabilities by firmware
 
 - Status: Accepted
+- Cache version policy extended by: [ADR-0220](0220-version-sysinfo-authority-cache-invalidation.md)
 - Date: 2026-10-24
 - Extends: ADR-0010 and ADR-0013
 

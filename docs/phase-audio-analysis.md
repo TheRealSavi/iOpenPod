@@ -38,7 +38,7 @@ that worker can stop. FFmpeg remains cancellable through Storage's runner.
 
 The optional `max_workers=1` argument supports diagnosis and exact serial/parallel
 comparison; normal saves use two workers. The current algorithm version is
-`librosa-phase-5`; older charts regenerate on the next ordinary Phase Save/Sync.
+`librosa-phase-6`; older charts regenerate on the next ordinary Phase Save/Sync.
 
 A historical version-1 benchmark of a warmed 120-second authored music fixture
 measured 7.19 seconds with the original
@@ -51,18 +51,24 @@ still contribute to the first-track cost.
 
 ## Events and strengths
 
-Three mel regions cover below 250 Hz, 250 to 2000 Hz, and above 2000 Hz. Positive
+For attack detection, three mel regions cover below 250 Hz, 250 to 2000 Hz, and above 2000 Hz. Positive
 spectral-flux onset envelopes are balanced using each region's 95th percentile
 of positive strengths. Their clipped mean drives librosa onset detection with
 delta 0.1 and a minimum wait of approximately 60 ms. Centering of the provided
 spectrogram is accounted for without adding a second FFT-centering delay.
 
-These boundaries are iOpenPod policy. Subsequent
-[native parameter research](research/phase-parameter-semantics.md) found shipped
-analysis subbands of 80–300, 400–1500, and 2000–4500, and confirmed that band
-ordering supplies primary and alternative lane choices. The current boundaries
-and per-band scaling have not yet been revised to match that producer-intent
-evidence. The upper beat field's original producer meaning remains unresolved.
+These detection regions are iOpenPod policy and no longer define the encoded
+strengths. Version 6 separately measures positive increases between consecutive
+linear STFT magnitudes, pooling their squared values within **80–300 Hz,
+400–1500 Hz, and 2000–4500 Hz**, then taking the square root and dividing by the
+FFT size. Both mix and separated sources use this same measurement. These are
+the shipped ranges, including their deliberate gaps; the original filter and
+quantizer remain unknown. The
+[native parameter research](research/phase-parameter-semantics.md) confirms that
+band ordering seeds primary and alternative lanes while their sum drives stock
+selection priority. Detection normalization must not define those lane strengths.
+
+The upper beat field's original producer meaning remains unresolved.
 The [consumer and lifetime audit](research/phase-beat-field-semantics.md) supports
 treating it as unused for gameplay generation in build 3168002; an optional
 diagnostic path reads and discards it. Encoding onset strength there is our
@@ -81,12 +87,21 @@ percentile normalization from turning tiny changes in a held tone into taps.
 
 ## Shared attack evidence
 
-Both acoustic families contribute their measured attacks, independently of
-instrument estimates. Their bandwise maximum, weighted by full-mix RMS, supplies
-the base magnitudes. A shared per-band 95th percentile of positive weighted
-evidence calibrates every source's encoded strengths. Per-source normalization
-is only for detection and passage scoring: it must not turn a quiet source into
-maximum-strength notes merely because those are its loudest attacks.
+Both acoustic families contribute their detected attacks, independently of
+instrument estimates. Full-mix linear spectral increases at those frames supply
+the base magnitudes. One 95th-percentile scale from the strongest band at each
+active mix attack calibrates all three bands and every source. If no mix attacks
+are available, selected source frames supply the calibration positions.
+Per-band normalization is only for detection and passage scoring: it must not
+turn a quiet spectral region or source into maximum-strength notes merely
+because those are its loudest attacks.
+
+For an attack vector with maximum `peak`, its encoded maximum is
+`31 * min(peak / scale, 1) ** 0.65`. Every component receives the same gain before
+rounding to five bits. Compression and saturation therefore preserve the vector's
+ratios; finite rounding can still create ties or remove very weak components.
+The native game supplies lane variation. We neither equalize lane counts nor
+assign instruments to fixed lanes. See [ADR-0221](adr/0221-preserve-phase-spectral-lane-evidence.md).
 
 Source detections within four frames (46.44 ms) of a mix attack annotate that
 attack at its existing timestamp. Other eligible source attacks add candidates.
@@ -137,7 +152,7 @@ a minimum two-second residence. Audible parts with eligible passage scores also
 retain their measured attacks under a sustained lead. Shared calibration and
 the bounded foreground preference described above preserve their relative
 strengths. If stereo sources survive a silent mono fold, their combined RMS and
-energy-weighted bands supply the missing mix reference; pulse events remain empty.
+summed linear attack magnitudes supply the missing mix reference; pulse events remain empty.
 
 Hook recognition compares overlapping six-note sequences, using pitch-class
 vectors just after each attack and normalized inter-attack intervals. A sequence
@@ -167,13 +182,14 @@ There are no fabricated beats in silent sections.
 | Event | iOpenPod mapping | Native representation |
 | --- | --- | --- |
 | Transient time | Detected attack frame | Absolute unsigned Q16.16 seconds after byte `0xff` |
-| Three transient strengths | Energy-weighted low, mid and high attacks on a shared mix scale, with bounded foreground preference | Three five-bit values packed into a u16 |
+| Three transient strengths | Linear spectral increases in the shipped bands on one shared scale, with bounded foreground preference | Three five-bit values packed into a u16; sum supplies stock priority, ordering seeds lanes |
 | Beat time | Locally tracked pulse frame | Absolute unsigned Q16.16 seconds after byte `0xff` |
-| Beat strength | Onset-envelope strength at the pulse | High four bits of a u8 |
+| Beat strength | Retained onset-envelope mapping; original producer meaning unknown | High four bits of a u8; unused for gameplay in audited build 3168002 |
 | Beat accent | Full-mix spectral RMS smoothed over approximately 250 ms | Low four bits of a u8; native relative passage power |
 
-Strengths use percentile scaling, clipping and exponent 0.65 before quantization
-to 0–31 or 0–15. Timestamps stay before the declared end of the Track. The codec
+Beat fields retain percentile scaling, clipping and exponent 0.65 before
+quantization to 0–15. Attack compression uses the shared vector gain above.
+Timestamps stay before the declared end of the Track. The codec
 requires strictly increasing timestamps, validates magnitude bounds and limits
 each stream to 20,000 events. If transient evidence exceeds that ceiling, retain
 the strongest observed event in each of 20,000 equal-duration buckets. This
@@ -213,6 +229,14 @@ bounded to 8 MiB. Charts, provenance, the Phase Library index and database chang
 are published together in the normal recoverable Storage Transaction.
 
 ## Verification
+
+Version 6 adds waveform and authored-evidence tests for shipped range gaps,
+linear amplitude scaling, primary/alternative band ordering, loud-attack
+saturation without artificial ties, and source/mix measurement consistency.
+Existing timing, tempo, hook, cancellation, quiet-passage, and publication
+regressions remain. The [version-6 evaluation](research/phase-algorithm-v6.md)
+compares native lanes, timing, tap counts and inferred foreground coverage on
+the five existing music fixtures. Headless output does not establish play feel.
 
 Version 5 was iterated against the original native converter on five local music
 fixtures, with and without source estimates. All four native difficulty indices

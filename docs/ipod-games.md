@@ -327,13 +327,14 @@ convention, boundaries and native-parser verification limits.
 
 ## Verification
 
-Game-capable devices require cached RetailOS provenance in addition to core
-identity fields before discovery may skip a live hardware probe. Legacy
-`visibleBuildID` entries copied from SCSI revisions lack the `retailos_release`
-marker and trigger a probe. Selection reconciles the actual `VisibleBuildID`
-from the live vendor payload into both SysInfo files and their authority record,
-while retaining the transport revision separately. The Classic 6.5 regression
-covers legacy `1.62` caches, correction to `2.0.1`, and reuse after reconnecting.
+SysInfo Authority version 2 invalidates older caches once for every iPod model,
+including caches with falsely marked RetailOS provenance. Selection reconciles the
+actual `VisibleBuildID` from the live vendor payload into both SysInfo files and
+their authority record, while retaining transport revisions separately. Complete,
+validated caches are then reused across refreshes and reconnects. Failed capture
+cannot certify old firmware and remains eligible for retry. Regressions cover legacy
+`1.62` caches, correction to Video 5.5 firmware `1.3`, reconnect reuse, and future
+version invalidation. See [ADR-0220](adr/0220-version-sysinfo-authority-cache-invalidation.md).
 
 Repository tests use small synthetic records and compact known-answer vectors.
 They cover bounds, exact round trips, duplicate selectors, preservation, conflict

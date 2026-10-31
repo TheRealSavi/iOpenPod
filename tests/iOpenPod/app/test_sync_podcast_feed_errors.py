@@ -9,7 +9,9 @@ from threading import Event
 import pytest
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_music_import import FIXTURES
-from tests.iOpenPod.app.test_sync_execution import _request
+from tests.iOpenPod.app.test_sync_execution import (
+    _request,  # pyright: ignore[reportPrivateUsage] - shared test fixture
+)
 
 from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,

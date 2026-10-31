@@ -282,16 +282,22 @@ def repair_geometry(
             ]
             reason = "No proven source representation is available."
             image: DecodedImage | None = None
+            source_location: ParsedChunk[MhniHeader] | None = None
             for candidate in candidates:
                 try:
                     image = pixels(candidate, formats[candidate.header.format_id])
+                    source_location = candidate
                     break
                 except ValueError as error:
                     reason = str(error)
-            if image is None:
+            if image is None or source_location is None:
                 issues.append(_deferred(row.header.image_id, reason))
                 continue
-            if candidate is location and h.image_width <= 55 and h.image_height <= 55:
+            if (
+                source_location is location
+                and h.image_width <= 55
+                and h.image_height <= 55
+            ):
                 # Extra stored rows are not visible pixels. Keep the established
                 # allocation and exact pixels; only bound the native read length.
                 header = replace(

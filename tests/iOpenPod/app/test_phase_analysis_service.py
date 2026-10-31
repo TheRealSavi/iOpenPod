@@ -8,11 +8,21 @@ import numpy as np
 import pytest
 from tests.iOpenPod.app.test_phase_audio import pulse_audio
 
+from iOpenPod.app import phase_analysis
 from iOpenPod.app.phase_analysis import PhaseAnalysisService
 from iOpenPod.app.phase_parts import PhasePart, PhasePartKind, measure_part
 from storage import HostPath, Storage
 from storage.media_processing import find_media_tool
 from storage.testing import VirtualStoragePlatform
+
+
+def test_spectral_policy_change_invalidates_analysis_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = PhaseAnalysisService(use_sources=False)
+    assert service.identity == "librosa-phase-6:acoustic:mono"
+    monkeypatch.setattr(phase_analysis, "PHASE_ANALYSIS_VERSION", "librosa-phase-5")
+    assert service.identity == "librosa-phase-5:acoustic:mono"
 
 
 @pytest.mark.parametrize("with_sources", [False, True])
@@ -73,5 +83,6 @@ class _KnownSource:
         self.formats.append((sample_rate, channels))
         mono = np.frombuffer(pcm, dtype="<f4").reshape(-1, channels).mean(axis=1)
         mono = librosa.resample(mono, orig_sr=sample_rate, target_sr=22_050)
-        bands, energy, chroma = measure_part(mono.astype(np.float32))
-        return (PhasePart(PhasePartKind.GUITAR, bands, energy, chroma),)
+        return (
+            PhasePart(PhasePartKind.GUITAR, *measure_part(mono.astype(np.float32))),
+        )

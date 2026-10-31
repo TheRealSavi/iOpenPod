@@ -52,9 +52,11 @@ the PHZ fields has been recovered. They may be development configuration retaine
 in the assets. Sample rate, filtering, windowing, channel combination, onset
 measurement, and five-bit quantization remain unproved. [String-search receipt][results].
 
-The current iOpenPod bands, below 250 Hz / 250–2000 Hz / above 2000 Hz, do not
+At the time of this investigation, iOpenPod's bands, below 250 Hz / 250–2000 Hz / above 2000 Hz, did not
 match those shipped values. This is a documented producer-policy difference,
-not a parser incompatibility. [Current analyzer](../../src/iOpenPod/app/phase_audio.py).
+not a parser incompatibility. Version 6 subsequently adopted the shipped ranges
+for encoded magnitudes, retaining the broader detection regions separately;
+see [ADR-0221](../adr/0221-preserve-phase-spectral-lane-evidence.md).
 
 ## Exact attack-magnitude behavior
 

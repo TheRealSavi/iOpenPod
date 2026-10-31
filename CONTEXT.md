@@ -32,9 +32,11 @@ phrases receive preference, while each performance retains its own attack timing
 Full-mix attacks remain available under held leads, while foreground preference
 and whole-mix energy supply evidence for native difficulty selection. Acoustic
 analysis remains available without the model. A local Windows harness matches
-native ARM tap and sweep output on five music fixtures; a playable Phase port
-and physical gameplay acceptance remain unfinished.
-See [ADR-0217](docs/adr/0217-preserve-phase-evidence-for-native-difficulty.md).
+native ARM tap and sweep output on five music fixtures. Spectral magnitudes now
+use the shipped band ranges and preserve relative band balance independently of
+attack detection. Physical gameplay acceptance remains unfinished.
+See [ADR-0217](docs/adr/0217-preserve-phase-evidence-for-native-difficulty.md) and
+[ADR-0221](docs/adr/0221-preserve-phase-spectral-lane-evidence.md).
 
 Automatic Smart Playlist refresh now reconciles differing saved membership in
 otherwise matching native counterparts, including when the canonical copy is
@@ -235,8 +237,10 @@ Classic 7G Mix support is refined from ranked RetailOS release evidence against
 2.0.3; missing or conflicting versions remain unknown. Transport revisions remain
 separate from RetailOS versions. This describes firmware capability, not an
 implemented Genius generation or Sync workflow. Reconciliation caches the release
-in both SysInfo files with recorded hardware provenance. Firmware-dependent profiles
-probe incomplete caches and reuse complete caches across connections. See ADR-0175 and the
+in both SysInfo files with recorded hardware provenance. SysInfo Authority version 2
+invalidates older caches once for every iPod model. Successful capture and selection
+repair restore cache reuse across refreshes and connections; failed capture remains
+eligible for retry. See [ADR-0220](docs/adr/0220-version-sysinfo-authority-cache-invalidation.md), ADR-0175, and the
 [capability matrix](docs/genius-capabilities.md).
 
 Affected Playlist writes create a missing flat dataset-2 counterpart for a retained

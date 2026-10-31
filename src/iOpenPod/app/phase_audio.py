@@ -13,13 +13,14 @@ from numpy.typing import NDArray
 from iPodDB.games import PhaseBeat, PhaseChart
 
 from .phase_hooks import direct_parts
+from .phase_parts import measure_band_attacks
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from .phase_parts import PhasePart
 
-PHASE_ANALYSIS_VERSION = "librosa-phase-5"
+PHASE_ANALYSIS_VERSION = "librosa-phase-6"
 PHASE_SAMPLE_RATE = 22_050
 _HOP = 256
 _FFT = 2048
@@ -86,11 +87,14 @@ def analyze_phase_pcm(
     bands = np.zeros((2, 3, frame_count), dtype=np.float64)
     energy = np.zeros(frame_count, dtype=np.float64)
     harmony = np.zeros(frame_count, dtype=np.float64)
+    magnitudes = np.zeros((3, frame_count), dtype=np.float64)
     edges = librosa.mel_frequencies(n_mels=64, fmin=20, fmax=PHASE_SAMPLE_RATE / 2)
     masks = (edges < 250, (edges >= 250) & (edges < 2000), edges >= 2000)
     stopped = Event()
 
-    def analyze_block(first: int) -> tuple[_FloatArray, _FloatArray, _FloatArray]:
+    def analyze_block(
+        first: int,
+    ) -> tuple[_FloatArray, _FloatArray, _FloatArray, _FloatArray]:
         if stopped.is_set():
             raise RuntimeError("Phase analysis stopped")
         last = min(frame_count, first + _BLOCK)
@@ -151,6 +155,7 @@ def analyze_phase_pcm(
             block_bands,
             block_energy.astype(np.float64),
             block_harmony.astype(np.float64),
+            measure_band_attacks(magnitude)[:, section],
         )
 
     # Bound admission as well as worker count: never queue a whole song's
@@ -169,11 +174,14 @@ def analyze_phase_pcm(
                         checkpoint()
                         wait((future,), timeout=0.05)
                     checkpoint()
-                    block_bands, block_energy, block_harmony = future.result()
+                    block_bands, block_energy, block_harmony, block_magnitudes = (
+                        future.result()
+                    )
                     last = first + block_energy.size
                     bands[:, :, first:last] = block_bands
                     energy[first:last] = block_energy
                     harmony[first:last] = block_harmony
+                    magnitudes[:, first:last] = block_magnitudes
         finally:
             stopped.set()
     checkpoint()
@@ -267,7 +275,7 @@ def analyze_phase_pcm(
         beats=beat_positions,
         length_ms=length_ms,
         checkpoint=checkpoint,
-        mix_bands=np.maximum(bands[0], bands[1]),
+        mix_bands=magnitudes,
         mix_energy=energy,
         mix_onsets=tuple(sorted({int(frame) for frames in onsets for frame in frames})),
     )

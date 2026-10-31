@@ -4764,7 +4764,10 @@ def _hardware_probe_required(
         sysinfo=sysinfo,
         sysinfo_extended=extended,
         require_firmware_version=(
-            profile.capabilities.supports_games
+            # An old firmware value must not be certified by metadata-only
+            # migration, including on models without firmware-gated features.
+            bool(metadata_evidence.firmware_versions)
+            or profile.capabilities.supports_games
             or profile.capabilities.genius.mixes_minimum_firmware is not None
         ),
     )

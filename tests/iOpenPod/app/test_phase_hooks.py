@@ -24,12 +24,13 @@ def part(
         bands[index % 3, frame] = 1
         end = frames[index + 1] if index + 1 < len(frames) else count
         chroma[pitches[index % len(pitches)], frame:end] = 1
-    return PhasePart(kind, bands, np.full(count, level), chroma)
+    return PhasePart(kind, bands, np.full(count, level), chroma, bands * level)
 
 
 def test_recurring_hook_matches_pitch_and_rhythm_with_expressive_timing() -> None:
     first = np.array([40, 90, 160, 220, 310, 370], dtype=np.int64)
-    second = np.round((first - first[0]) * 1.1 + 800).astype(np.int64)
+    shifted = (first.astype(np.float64) - first[0]) * 1.1 + 800
+    second = shifted.round().astype(np.int64)
     frames = np.concatenate((first, second))
     source = part(PhasePartKind.GUITAR, frames.tolist(), [0, 4, 7, 5, 4, 0])
     hooks = recognize_hooks(source, frames, checkpoint=lambda: None)
@@ -92,7 +93,9 @@ def test_vocal_exit_hands_focus_to_guitar_without_moving_attacks() -> None:
     )
     vocal_energy = vocals.energy.copy()
     vocal_energy[344:] = 0
-    vocals = PhasePart(vocals.kind, vocals.bands, vocal_energy, vocals.chroma)
+    vocals = PhasePart(
+        vocals.kind, vocals.bands, vocal_energy, vocals.chroma, vocals.magnitudes
+    )
     guitar = part(
         PhasePartKind.GUITAR,
         [380, 440, 510, 580, 740, 810, 880, 950],
@@ -132,7 +135,11 @@ def test_inaudible_leakage_and_empty_stems_cannot_generate_notes() -> None:
     assert events
     assert all(p.kind == PhasePartKind.GUITAR for p in passages)
     empty = PhasePart(
-        PhasePartKind.VOCALS, np.zeros((3, 100)), np.zeros(100), np.zeros((12, 100))
+        PhasePartKind.VOCALS,
+        np.zeros((3, 100)),
+        np.zeros(100),
+        np.zeros((12, 100)),
+        np.zeros((3, 100)),
     )
     assert not direct_parts(
         (empty,), beats=[], length_ms=16000, checkpoint=lambda: None
@@ -178,6 +185,7 @@ def test_malformed_part_evidence_is_rejected() -> None:
             np.zeros((3, 10)),
             np.full(10, np.nan),
             np.zeros((12, 10)),
+            np.zeros((3, 10)),
         )
 
 

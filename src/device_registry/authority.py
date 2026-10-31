@@ -22,6 +22,9 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 SYSINFO_AUTHORITY_FILENAME = "iOpenPodSysInfoAuthority"
+# Bump to invalidate persisted hardware provenance and trigger recapture once.
+# Version 2 invalidates caches that could contain a transport revision as firmware.
+SYSINFO_AUTHORITY_VERSION = 2
 
 _CORE_KEYS = frozenset({"pszSerialNumber", "FirewireGuid", "ModelNumStr"})
 _DERIVED_KEYS = frozenset(
@@ -89,7 +92,7 @@ def authority_covers_metadata(
     """
 
     parsed = _load_authority(authority)
-    if parsed.get("version") != 1 or not _authority_hashes_match(
+    if not _has_current_version(parsed) or not _authority_hashes_match(
         parsed,
         sysinfo=sysinfo,
         sysinfo_extended=sysinfo_extended,
@@ -144,12 +147,13 @@ def reconcile_device_metadata(
 
     Unknown SysInfo keys and SysInfoExtended plist keys are retained. Current
     hardware can correct stale device metadata, while lower-authority values cannot
-    overwrite higher-authority entries recorded by the original version-1 format.
+    overwrite higher-authority entries recorded by the current cache version.
+    Older versions retain their metadata bytes but cannot supply trusted provenance.
     """
 
     timestamp = observed_at or datetime.now(UTC).isoformat()
     old_authority = _load_authority(existing_authority)
-    hashes_match = _authority_hashes_match(
+    hashes_match = _has_current_version(old_authority) and _authority_hashes_match(
         old_authority,
         sysinfo=existing_sysinfo,
         sysinfo_extended=existing_sysinfo_extended,
@@ -234,8 +238,10 @@ def reconcile_device_metadata(
         "SysInfo": _sha256(sysinfo),
         "SysInfoExtended": _sha256(sysinfo_extended),
     }
-    files: dict[str, object] = dict(
-        _string_object_dict(old_authority.get("files")) or {}
+    files: dict[str, object] = (
+        dict(_string_object_dict(old_authority.get("files")) or {})
+        if hashes_match
+        else {}
     )
     previous_extended_file = _string_object_dict(files.get("SysInfoExtended"))
     extended_source = "device_registry"
@@ -262,7 +268,7 @@ def reconcile_device_metadata(
         }
 
     authority_document: dict[str, object] = {
-        "version": 1,
+        "version": SYSINFO_AUTHORITY_VERSION,
         "fields": authority_fields,
         "files": files,
         "file_hashes": file_hashes,
@@ -569,6 +575,11 @@ def _load_authority(content: bytes | str) -> dict[str, object]:
     except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
         return {}
     return _string_object_dict(parsed) or {}
+
+
+def _has_current_version(authority: Mapping[str, object]) -> bool:
+    version = authority.get("version")
+    return type(version) is int and version == SYSINFO_AUTHORITY_VERSION
 
 
 def _authority_hashes_match(

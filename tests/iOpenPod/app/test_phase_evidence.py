@@ -30,6 +30,7 @@ def test_incomplete_source_evidence_cannot_erase_full_mix_attacks() -> None:
         np.zeros((3, count)),
         np.zeros(count),
         np.zeros((12, count)),
+        np.zeros((3, count)),
     )
     baseline = analyze_phase_pcm(pcm, length_ms=30000)
     assisted = analyze_phase_pcm(pcm, length_ms=30000, parts=(empty,))
@@ -56,6 +57,7 @@ def test_quiet_source_attack_uses_mix_scale_and_keeps_nearby_mix_timing() -> Non
         source,
         np.full(count, 0.2),
         np.zeros((12, count)),
+        source * 0.2,
     )
     events = direct_parts(
         (part,),
@@ -83,6 +85,7 @@ def test_lead_preference_can_affect_an_attack_already_present_in_the_mix() -> No
         source,
         np.full(count, 0.3),
         np.zeros((12, count)),
+        source * 0.3,
     )
 
     def chart(parts: tuple[PhasePart, ...]) -> tuple[int, ...]:
@@ -112,6 +115,7 @@ def test_codec_capacity_preserves_quieter_sections_of_a_long_track() -> None:
     mix[0, list(frames)] = 1
     energy = np.ones(count)
     energy[: count // 2] = 0.2
+    mix *= energy
     events = direct_parts(
         (),
         beats=[],

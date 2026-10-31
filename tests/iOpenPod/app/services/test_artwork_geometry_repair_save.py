@@ -20,8 +20,8 @@ def install_legacy_geometry(device: Device) -> None:
     document = parse_ArtworkDB((device.root / path).read_bytes())
     for selection in document.find_chunks(MhiiHeader):
         row = selection.chunk
-        children = []
-        for child in row.children:
+        children = list(row.children)
+        for index, child in enumerate(row.children):
             payload = thumbnail_payload(child)
             if payload is not None:
                 location = payload.child
@@ -43,7 +43,7 @@ def install_legacy_geometry(device: Device) -> None:
                         ),
                     ),
                 )
-            children.append(child)
+            children[index] = child
         document = document.replace_chunk(
             selection, replace(row, children=tuple(children))
         )

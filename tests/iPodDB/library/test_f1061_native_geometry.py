@@ -380,8 +380,8 @@ def test_fallback_never_uses_another_display_time() -> None:
     assert before.artwork is not None
     document = parse_ArtworkDB(before.artwork)
     selected = document.find_chunks(MhiiHeader)[0]
-    children = []
-    for child in selected.chunk.children:
+    children = list(selected.chunk.children)
+    for index, child in enumerate(selected.chunk.children):
         payload = thumbnail_payload(child)
         if payload is not None and payload.child.header.format_id == 1055:
             child = replace(
@@ -394,7 +394,7 @@ def test_fallback_never_uses_another_display_time() -> None:
                     ),
                 ),
             )
-        children.append(child)
+        children[index] = child
     document = document.replace_chunk(
         selected, replace(selected.chunk, children=tuple(children))
     )

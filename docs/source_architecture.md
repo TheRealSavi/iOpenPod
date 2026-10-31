@@ -808,6 +808,9 @@ and percussive attacks remain available for native difficulty selection. An
 optional six-source provider adds estimated vocal/guitar and other Phase Parts,
 with recurring Phase Hooks guiding modest preferences (ADR-0215, ADR-0217).
 Pulse tracking and full-mix energy remain independent of those preferences.
+Detection novelty stays separate from encoded spectral magnitudes. Shipped
+frequency ranges and one shared amplitude scale preserve the band ordering that
+seeds native lane choices (ADR-0221).
 A Phase designation is part of the semantic Playlist; the
 Application Layer enforces one selection and prepares companions using final
 database identities. The normal Library Storage Transaction publishes those files
@@ -2398,10 +2401,16 @@ skipped. This bounded cache repair does not substitute for a Storage Transaction
 does not authorize Sync, deletion, or database mutation.
 
 Firmware releases are cached in both SysInfo files with recorded hardware
-provenance in SysInfo Authority. Firmware-dependent profiles require matching
-release values in the hash-verified files before skipping a hardware probe. Missing
-or inconsistent entries are read again during discovery and saved on selection;
-complete caches are reused across connections as Device Metadata (ADR-0175).
+provenance in SysInfo Authority. Cache reuse requires the current integer authority
+version, matching hashes, and hardware provenance. Version 2 invalidates older
+caches once for every iPod model. Selection saves the observed firmware through
+metadata reconciliation; discovery never writes. Metadata-only migration cannot
+upgrade invalidated provenance. Profiles with cached firmware or firmware-dependent
+capabilities require validated release evidence before skipping the probe. Successful
+repair restores cache reuse across refreshes and connections; unchanged automatic
+polling reuses the current connection's evidence. Persisted provenance is not a
+freshness guarantee, and transport revisions never substitute for missing release
+evidence. See ADR-0220, which extends ADR-0175's cache policy.
 
 `DeviceController` is the thin Qt adapter around that non-visual service. It runs
 discovery, device reads, and parsing through an owned single-worker `QThreadPool`,

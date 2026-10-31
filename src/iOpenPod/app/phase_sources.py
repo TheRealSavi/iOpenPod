@@ -96,6 +96,7 @@ class DemucsPhaseSources:
         bands = np.zeros((6, 3, count), dtype=np.float64)
         energy = np.zeros((6, count), dtype=np.float64)
         chroma = np.zeros((6, 12, count), dtype=np.float64)
+        magnitudes = np.zeros((6, 3, count), dtype=np.float64)
         # Four-second cores plus context stay below the model's training segment
         # limit. Only compact evidence is retained for the complete song.
         core, context = 344, 86
@@ -145,11 +146,12 @@ class DemucsPhaseSources:
             section = slice(first - begin, last - begin)
             for index in range(6):
                 checkpoint()
-                b, e, c = measure_part(mono[index])
+                b, e, c, m = measure_part(mono[index])
                 bands[index, :, first:last] = b[:, section]
                 energy[index, first:last] = e[section]
                 chroma[index, :, first:last] = c[:, section]
+                magnitudes[index, :, first:last] = m[:, section]
         return tuple(
-            PhasePart(kind, bands[i], energy[i], chroma[i])
+            PhasePart(kind, bands[i], energy[i], chroma[i], magnitudes[i])
             for i, kind in enumerate(kinds)
         )

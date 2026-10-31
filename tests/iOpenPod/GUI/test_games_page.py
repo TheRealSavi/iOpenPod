@@ -41,6 +41,7 @@ from iOpenPod.app.services.device_coordinator import (
 from iOpenPod.app.services.game_installation import (
     GameInstallationPhase,
     GameInstallationProgress,
+    GamePackage,
 )
 from iOpenPod.app.services.game_library import GameCatalog, InstalledGame
 from iOpenPod.app.services.game_uninstallation import (
@@ -349,7 +350,11 @@ def test_game_compatibility_confirmation_controls_authorization_and_installation
 
     monkeypatch.setattr(coordinator, "prepare_game_files", prepare)
     monkeypatch.setattr(iPodDB.ic_info, "transfer_and_merge", convert)
-    monkeypatch.setattr(game_download, "resolve_packages", lambda *_: (fixture_game,))
+
+    def resolve_packages(*_: object) -> tuple[GamePackage, ...]:
+        return (fixture_game,)
+
+    monkeypatch.setattr(game_download, "resolve_packages", resolve_packages)
     observations: list[tuple[str, str, bool, Qt.TextFormat, bool]] = []
 
     def reply() -> None:
@@ -659,9 +664,11 @@ def test_games_grid_loads_titles_versions_covers_and_clears_after_disconnect(
         empty_action = page.findChild(QPushButton, "gamesEmptyAdd")
         assert empty_title is not None and not empty_title.isVisible()
         assert empty_action is not None
-        monkeypatch.setattr(
-            coordinator, "load_installed_games", lambda *_: GameCatalog()
-        )
+
+        def load_installed_games(*_: object) -> GameCatalog:
+            return GameCatalog()
+
+        monkeypatch.setattr(coordinator, "load_installed_games", load_installed_games)
         context.games_controller.load_games(force=True)
         deadline = monotonic() + 5
         while not context.games_controller.catalog_ready and monotonic() < deadline:

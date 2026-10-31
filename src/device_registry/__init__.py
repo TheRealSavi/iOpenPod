@@ -2,6 +2,7 @@
 
 from device_registry.authority import (
     SYSINFO_AUTHORITY_FILENAME,
+    SYSINFO_AUTHORITY_VERSION,
     DeviceMetadataPlan,
     authority_covers_metadata,
     reconcile_device_metadata,
@@ -40,6 +41,7 @@ DEFAULT_DEVICE_REGISTRY = DeviceRegistry(DEFAULT_CATALOG)
 __all__ = [
     "DEFAULT_DEVICE_REGISTRY",
     "SYSINFO_AUTHORITY_FILENAME",
+    "SYSINFO_AUTHORITY_VERSION",
     "ArtworkCapabilities",
     "ArtworkFormat",
     "ArtworkPixelFormat",

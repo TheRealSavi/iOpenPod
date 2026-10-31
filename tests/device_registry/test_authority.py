@@ -8,6 +8,7 @@ import pytest
 
 from device_registry import (
     DEFAULT_DEVICE_REGISTRY,
+    SYSINFO_AUTHORITY_VERSION,
     DeviceEvidence,
     DeviceIdentifier,
     EvidenceAuthority,
@@ -134,7 +135,10 @@ def test_firmware_cache_requires_hardware_provenance_and_consistent_files(
     )
 
 
-def test_rewriting_a_legacy_cache_does_not_validate_its_firmware_version() -> None:
+@pytest.mark.parametrize("invalidate_version", [False, True])
+def test_rewriting_a_legacy_cache_does_not_validate_its_firmware_version(
+    invalidate_version: bool,
+) -> None:
     profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC293")
     assert profile is not None
     plan = reconcile_device_metadata(
@@ -150,7 +154,10 @@ def test_rewriting_a_legacy_cache_does_not_validate_its_firmware_version() -> No
         ),
     )
     legacy_authority = json.loads(plan.authority)
-    legacy_authority["fields"]["visibleBuildID"].pop("value_kind")
+    if invalidate_version:
+        legacy_authority["version"] = SYSINFO_AUTHORITY_VERSION - 1
+    else:
+        legacy_authority["fields"]["visibleBuildID"].pop("value_kind")
     cached_only = reconcile_device_metadata(
         profile=profile,
         evidence=parse_sysinfo_extended(plan.sysinfo_extended),
@@ -158,11 +165,39 @@ def test_rewriting_a_legacy_cache_does_not_validate_its_firmware_version() -> No
         existing_sysinfo_extended=plan.sysinfo_extended,
         existing_authority=json.dumps(legacy_authority).encode(),
     )
+    rewritten_authority = json.loads(cached_only.authority)
+    assert rewritten_authority["version"] == SYSINFO_AUTHORITY_VERSION
+    if invalidate_version:
+        firmware = rewritten_authority["fields"]["visibleBuildID"]
+        assert firmware["authority"] == "device_metadata"
+        assert "value_kind" not in firmware
     assert not authority_covers_metadata(
         cached_only.authority,
         sysinfo=cached_only.sysinfo,
         sysinfo_extended=cached_only.sysinfo_extended,
         require_firmware_version=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "version", [None, 1, SYSINFO_AUTHORITY_VERSION + 1, "2", 2.0, False]
+)
+def test_cache_requires_the_current_integer_authority_version(version: object) -> None:
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC293")
+    assert profile is not None
+    plan = reconcile_device_metadata(profile=profile, evidence=_classic_7_hardware())
+    assert authority_covers_metadata(
+        plan.authority, sysinfo=plan.sysinfo, sysinfo_extended=plan.sysinfo_extended
+    )
+    authority = json.loads(plan.authority)
+    if version is None:
+        authority.pop("version")
+    else:
+        authority["version"] = version
+    assert not authority_covers_metadata(
+        json.dumps(authority),
+        sysinfo=plan.sysinfo,
+        sysinfo_extended=plan.sysinfo_extended,
     )
 
 
@@ -230,7 +265,7 @@ def test_reconciliation_builds_original_compatible_metadata_and_authority() -> N
     assert extended["usb_pid"] == 0x1261
 
     authority = json.loads(plan.authority)
-    assert authority["version"] == 1
+    assert authority["version"] == SYSINFO_AUTHORITY_VERSION
     assert authority["fields"]["pszSerialNumber"]["source"] == "windows_scsi"
     assert set(authority["file_hashes"]) == {"SysInfo", "SysInfoExtended"}
     assert authority_covers_metadata(

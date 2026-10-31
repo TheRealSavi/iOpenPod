@@ -255,6 +255,7 @@ def test_failed_normal_cleanup_leaves_an_unlocked_owner_for_retry(
     def fail_removal(_name: str, **_kwargs: object) -> None:
         raise PermissionError("prepared file is temporarily busy")
 
+    path: Path | None = None
     with (
         monkeypatch.context() as failure,
         pytest.raises(PermissionError, match="temporarily busy"),
@@ -265,7 +266,7 @@ def test_failed_normal_cleanup_leaves_an_unlocked_owner_for_retry(
         with media_workspace(checkpoint=lambda: None) as workspace:
             path = Path(workspace.output_path(".mp3"))
             path.write_bytes(b"prepared media")
-    assert path.exists()
+    assert path is not None and path.exists()
     assert cleanup_stale_staging() == 1
     assert not path.parent.exists()
     assert not tuple(path.parent.parent.glob(".iopenpod-process-*"))

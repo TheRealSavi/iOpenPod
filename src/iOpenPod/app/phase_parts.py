@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -14,6 +14,29 @@ if TYPE_CHECKING:
 RATE = 22_050
 HOP = 256
 FFT = 2048
+PHASE_BANDS_HZ = ((80, 300), (400, 1500), (2000, 4500))
+
+
+def measure_band_attacks(magnitude: NDArray[np.floating[Any]]) -> NDArray[np.float64]:
+    """Linear spectral increases in the shipped subbands, on one amplitude scale.
+
+    Detection uses log-mel novelty separately. Neither the original producer's
+    filter nor its quantizer is recovered; this is our measurement policy.
+    """
+    frequencies = np.fft.rfftfreq(FFT, 1 / RATE)
+    increase = np.maximum(np.diff(magnitude, axis=1, prepend=magnitude[:, :1]), 0)
+    return np.asarray(
+        [
+            np.sqrt(
+                np.sum(
+                    increase[(frequencies >= low) & (frequencies <= high)] ** 2, axis=0
+                )
+            )
+            / FFT
+            for low, high in PHASE_BANDS_HZ
+        ],
+        dtype=np.float64,
+    )
 
 
 class PhasePartKind(StrEnum):
@@ -27,10 +50,13 @@ class PhasePartKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PhasePart:
+    """Detection novelty (`bands`) and linear attack `magnitudes` stay distinct."""
+
     kind: PhasePartKind
     bands: NDArray[np.float64]
     energy: NDArray[np.float64]
     chroma: NDArray[np.float64]
+    magnitudes: NDArray[np.float64]
 
     def __post_init__(self) -> None:
         count = self.energy.size
@@ -39,24 +65,31 @@ class PhasePart:
             or self.energy.shape != (count,)
             or self.bands.shape != (3, count)
             or self.chroma.shape != (12, count)
+            or self.magnitudes.shape != (3, count)
             or any(
                 not np.isfinite(a).all() or np.any(a < 0)
-                for a in (self.bands, self.energy, self.chroma)
+                for a in (self.bands, self.energy, self.chroma, self.magnitudes)
             )
         ):
             raise ValueError("Invalid Phase source evidence")
-        for array in (self.bands, self.energy, self.chroma):
+        for array in (self.bands, self.energy, self.chroma, self.magnitudes):
             array.flags.writeable = False
 
 
 def measure_part(
     samples: NDArray[np.float32],
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]
+]:
     """Measure one bounded separated waveform, at the common Phase frame grid."""
     import librosa
 
     api: Any = librosa
-    magnitude = np.abs(api.stft(samples, n_fft=FFT, hop_length=HOP))
+    # Float32 PCM produces a complex64 STFT and float32 magnitudes. Narrow the
+    # dynamic librosa boundary before NumPy overloads propagate unknown types.
+    magnitude = cast(
+        "NDArray[np.float32]", np.abs(api.stft(samples, n_fft=FFT, hop_length=HOP))
+    )
     power = magnitude**2
     energy = np.sqrt(np.mean(power, axis=0)) / FFT
     mel = api.feature.melspectrogram(S=power, sr=RATE, n_fft=FFT, n_mels=64, fmin=20)
@@ -92,4 +125,4 @@ def measure_part(
     for pitch in range(12):
         chroma[pitch] = np.sum(power[valid][classes == pitch], axis=0)
     chroma /= np.maximum(np.linalg.norm(chroma, axis=0), 1e-12)
-    return bands, energy.astype(np.float64), chroma
+    return bands, energy.astype(np.float64), chroma, measure_band_attacks(magnitude)
