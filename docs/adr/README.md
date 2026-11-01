@@ -286,3 +286,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0219: Confirm unverified game compatibility](0219-confirm-unverified-game-compatibility.md)
 - [ADR-0220: Version SysInfo Authority cache invalidation](0220-version-sysinfo-authority-cache-invalidation.md)
 - [ADR-0221: Preserve Phase spectral lane evidence](0221-preserve-phase-spectral-lane-evidence.md)
+- [ADR-0222: Anchor Phase attacks to percussion](0222-anchor-phase-attacks-to-percussion.md)

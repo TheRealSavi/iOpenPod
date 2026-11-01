@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-31
 - Supersedes: ADR-0214's exclusive family selection and ADR-0215's magnitude policy
+- Close-attack priority superseded by: [ADR-0222](0222-anchor-phase-attacks-to-percussion.md)
 
 Phase Gameplay Analysis supplies a shared pool of measured attacks. The native
 game owns difficulty, spacing, lanes, checkpoints, and sweep construction. Native

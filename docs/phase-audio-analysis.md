@@ -38,7 +38,7 @@ that worker can stop. FFmpeg remains cancellable through Storage's runner.
 
 The optional `max_workers=1` argument supports diagnosis and exact serial/parallel
 comparison; normal saves use two workers. The current algorithm version is
-`librosa-phase-6`; older charts regenerate on the next ordinary Phase Save/Sync.
+`librosa-phase-7`; older charts regenerate on the next ordinary Phase Save/Sync.
 
 A historical version-1 benchmark of a warmed 120-second authored music fixture
 measured 7.19 seconds with the original
@@ -103,12 +103,22 @@ ratios; finite rounding can still create ties or remove very weak components.
 The native game supplies lane variation. We neither equalize lane counts nor
 assign instruments to fixed lanes. See [ADR-0221](adr/0221-preserve-phase-spectral-lane-evidence.md).
 
-Source detections within four frames (46.44 ms) of a mix attack annotate that
-attack at its existing timestamp. Other eligible source attacks add candidates.
-Near-coincident detections are merged; mix timings take precedence, then stronger
-source-only evidence. A selected foreground attack receives a 15% magnitude
-preference before quantization, applied once even when multiple detections support
-it. Accompaniment is not attenuated. Missing or empty source evidence cannot
+Melodic source detections within four frames (46.44 ms) of a mix attack annotate
+that attack at its existing timestamp. Drum detections match acoustic percussion
+within the same window; otherwise they retain their own measured time. Other
+eligible source attacks add candidates. Near-coincident detections are merged
+with percussion taking priority, then mix timing, then stronger source evidence.
+This prevents an earlier syllable or guitar attack from displacing a drum hit.
+There is no snapping to a beat grid or averaging of attack times.
+
+Percussion receives a 50% magnitude preference before quantization. A selected
+melodic foreground receives 15%. These gains apply once to the whole vector and
+never stack on the same attack. Acoustic percussion qualifies when HPSS supplies
+at least half the summed linear attack magnitude in the shipped bands at a
+detected percussive-family onset. This distinguishes measured percussion from
+the pitched attacks also present in that family's detection envelope. Source
+drums retain the existing audibility and passage-power gates. Accompaniment is
+not attenuated. Missing or empty source evidence cannot
 replace the base pool with an empty chart. No random switching, copied timings,
 or synthetic taps are introduced.
 
@@ -116,7 +126,8 @@ Pulse tracking continues to use the percussive-emphasized envelope independently
 Native Phase chooses difficulty, spacing, lanes, checkpoints, and sweeps from
 this evidence. This supersedes ADR-0214's exclusive acoustic passages and
 ADR-0215's 120 ms lead-priority gate and 60% supporting magnitudes. See
-[ADR-0217](adr/0217-preserve-phase-evidence-for-native-difficulty.md).
+[ADR-0217](adr/0217-preserve-phase-evidence-for-native-difficulty.md) and
+[ADR-0222](adr/0222-anchor-phase-attacks-to-percussion.md).
 
 ## Instrument parts and recurring hooks
 
@@ -146,8 +157,10 @@ Source attacks use the same articulation and vibrato suppression principles as
 the acoustic path. A source must reach 12% of the full-mix RMS and the
 absolute audibility floor to emit candidates. Its passage power share must reach
 4% to compete for focus. Scores combine square-root power share, bounded attack
-clarity, recurring-note fraction, a modest preference for vocals/guitar, and a
-continuity bonus. Eight-pulse and four-second opportunities define passages with
+clarity, recurring-note fraction, and a continuity bonus. An eligible drum part
+with at least two attacks anchors the passage; otherwise the highest score
+chooses the foreground. There is no vocal/guitar label bonus. Eight-pulse and
+four-second opportunities define passages with
 a minimum two-second residence. Audible parts with eligible passage scores also
 retain their measured attacks under a sustained lead. Shared calibration and
 the bounded foreground preference described above preserve their relative
@@ -230,6 +243,13 @@ are published together in the normal recoverable Storage Transaction.
 
 ## Verification
 
+Version 7 adds regressions for melodic anticipations around drum hits, acoustic
+and separated percussion priority, shared-vector magnitude preference, drum
+breaks, and inaudible drum leakage. The
+[version-7 evaluation](research/phase-algorithm-v7.md) compares native output on
+the five locally available *softscars* tracks. Native timing and source matches
+remain proxies; physical gameplay is the acceptance test for perceived feel.
+
 Version 6 adds waveform and authored-evidence tests for shipped range gaps,
 linear amplitude scaling, primary/alternative band ordering, loud-attack
 saturation without artificial ties, and source/mix measurement consistency.
@@ -269,8 +289,8 @@ rendering, audio synchronization, and judgment remain unverified. More analysis
 records therefore do not establish substantially denser gameplay. See the
 [Windows feasibility and native-selection research](research/phase-windows-recomp-feasibility.md).
 
-Part tests cover vocal-to-guitar handoffs, recurring guitar preference over louder
-drums, timing retention under tempo variation, changed pitch-order rejection,
+Part tests cover vocal-to-guitar handoffs, percussion anchoring under recurring
+guitar hooks, timing retention under tempo variation, changed pitch-order rejection,
 steady-pulse rejection, quiet leakage, invalid evidence, provider cancellation,
 stereo decoding, and provider-identity cache invalidation.
 

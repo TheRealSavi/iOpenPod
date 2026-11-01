@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     from .phase_parts import PhasePart
 
-PHASE_ANALYSIS_VERSION = "librosa-phase-6"
+PHASE_ANALYSIS_VERSION = "librosa-phase-7"
 PHASE_SAMPLE_RATE = 22_050
 _HOP = 256
 _FFT = 2048
@@ -88,13 +88,14 @@ def analyze_phase_pcm(
     energy = np.zeros(frame_count, dtype=np.float64)
     harmony = np.zeros(frame_count, dtype=np.float64)
     magnitudes = np.zeros((3, frame_count), dtype=np.float64)
+    percussion_attacks = np.zeros(frame_count, dtype=np.float64)
     edges = librosa.mel_frequencies(n_mels=64, fmin=20, fmax=PHASE_SAMPLE_RATE / 2)
     masks = (edges < 250, (edges >= 250) & (edges < 2000), edges >= 2000)
     stopped = Event()
 
     def analyze_block(
         first: int,
-    ) -> tuple[_FloatArray, _FloatArray, _FloatArray, _FloatArray]:
+    ) -> tuple[_FloatArray, _FloatArray, _FloatArray, _FloatArray, _FloatArray]:
         if stopped.is_set():
             raise RuntimeError("Phase analysis stopped")
         last = min(frame_count, first + _BLOCK)
@@ -156,6 +157,7 @@ def analyze_phase_pcm(
             block_energy.astype(np.float64),
             block_harmony.astype(np.float64),
             measure_band_attacks(magnitude)[:, section],
+            measure_band_attacks(percussive)[:, section].sum(axis=0),
         )
 
     # Bound admission as well as worker count: never queue a whole song's
@@ -174,14 +176,19 @@ def analyze_phase_pcm(
                         checkpoint()
                         wait((future,), timeout=0.05)
                     checkpoint()
-                    block_bands, block_energy, block_harmony, block_magnitudes = (
-                        future.result()
-                    )
+                    (
+                        block_bands,
+                        block_energy,
+                        block_harmony,
+                        block_magnitudes,
+                        block_percussion,
+                    ) = future.result()
                     last = first + block_energy.size
                     bands[:, :, first:last] = block_bands
                     energy[first:last] = block_energy
                     harmony[first:last] = block_harmony
                     magnitudes[:, first:last] = block_magnitudes
+                    percussion_attacks[first:last] = block_percussion
         finally:
             stopped.set()
     checkpoint()
@@ -278,5 +285,14 @@ def analyze_phase_pcm(
         mix_bands=magnitudes,
         mix_energy=energy,
         mix_onsets=tuple(sorted({int(frame) for frames in onsets for frame in frames})),
+        # The detection envelope includes pitched attacks. Only give acoustic
+        # percussion priority when HPSS supplies at least half the measured
+        # attack magnitude; normalized novelty alone is not that evidence.
+        percussive_onsets=tuple(
+            int(frame)
+            for frame in onsets[0]
+            if percussion_attacks[frame]
+            >= max(float(magnitudes[:, frame].sum()) * 0.5, 1e-10)
+        ),
     )
     return PhaseChart(directed, tuple(beats))

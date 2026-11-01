@@ -26,9 +26,11 @@ Ordinary saves and Sync perform pending Phase upgrades; shutdown signals
 cancellation through selection's history save. The pinned model bypasses Hub
 alias lookup. See [ADR-0216](docs/adr/0216-defer-phase-analysis-during-device-selection.md).
 
-Phase Gameplay Analysis can now follow separated vocal, guitar, bass, drum, piano,
-and other parts when the optional audio stack is installed. Recurring pitch/rhythm
-phrases receive preference, while each performance retains its own attack timing.
+Phase Gameplay Analysis favors audible percussion, preserving measured drum
+timing when nearby vocal or guitar attacks compete. Melodic phrases remain
+available and carry passages without an eligible drum pattern. The optional audio
+stack supplies separated vocal, guitar, bass, drum, piano, and other evidence.
+See [ADR-0222](docs/adr/0222-anchor-phase-attacks-to-percussion.md).
 Full-mix attacks remain available under held leads, while foreground preference
 and whole-mix energy supply evidence for native difficulty selection. Acoustic
 analysis remains available without the model. A local Windows harness matches

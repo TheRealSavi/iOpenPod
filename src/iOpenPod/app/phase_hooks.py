@@ -13,6 +13,7 @@ from iPodDB.games import PhaseTransient
 from .phase_parts import HOP, RATE, PhasePart, PhasePartKind
 
 _LEAD_BOOST = 1.15
+_PERCUSSION_BOOST = 1.5
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -59,7 +60,7 @@ def recognize_hooks(
         pitches /= np.maximum(np.linalg.norm(pitches, axis=1, keepdims=True), 1e-12)
         rhythm = np.diff(frames).astype(np.float64) / duration
         if (
-            np.mean(np.sum(pitches[1:] * pitches[:-1], axis=1)) > 0.98
+            np.mean(np.sum(pitches[1:] * pitches[:-1], axis=1, dtype=np.float64)) > 0.98
             and np.std(rhythm) < 0.035
         ):
             continue
@@ -72,7 +73,9 @@ def recognize_hooks(
                 continue
             if float(np.max(np.abs(rhythm - old_rhythm))) > 0.045:
                 continue
-            similarity = float(np.mean(np.sum(pitches * old_pitch, axis=1)))
+            similarity = float(
+                np.mean(np.sum(pitches * old_pitch, axis=1, dtype=np.float64))
+            )
             if similarity > best:
                 best, match = similarity, index
         occurrence = tuple(int(frame) for frame in frames)
@@ -104,6 +107,7 @@ def direct_parts(
     mix_bands: NDArray[np.float64] | None = None,
     mix_energy: NDArray[np.float64] | None = None,
     mix_onsets: tuple[int, ...] = (),
+    percussive_onsets: tuple[int, ...] = (),
 ) -> tuple[PhaseTransient, ...]:
     """Rank audible evidence on one mix scale; parts never replace the mix."""
     import librosa
@@ -123,6 +127,9 @@ def direct_parts(
         raise ValueError("Phase source timelines disagree")
     total = mix_energy
     active = total > max(float(np.max(total)) * 0.01, 1e-5)
+    percussion = {
+        frame for frame in percussive_onsets if 0 <= frame < count and active[frame]
+    }
     envelopes: list[NDArray[np.float64]] = []
     onsets: list[NDArray[np.int64]] = []
     recurring: list[set[int]] = []
@@ -181,7 +188,7 @@ def direct_parts(
         power = np.asarray([np.sum(part.energy[first:last] ** 2) for part in parts])
         shares = power / max(float(np.sum(power)), 1e-12)
         scores = np.zeros(len(parts))
-        for index, part in enumerate(parts):
+        for index in range(len(parts)):
             if len(notes[index]) < 1 or shares[index] < 0.04:
                 continue
             # Prominence, clear attacks, and a recognizable returning phrase.
@@ -189,16 +196,8 @@ def direct_parts(
             repeat = sum(
                 int(frame) in recurring[index] for frame in notes[index]
             ) / len(notes[index])
-            lead = (
-                0.12
-                if part.kind in (PhasePartKind.VOCALS, PhasePartKind.GUITAR)
-                else 0.0
-            )
             scores[index] = (
-                float(np.sqrt(shares[index]))
-                + min(clarity, 1) * 0.15
-                + repeat * 0.35
-                + lead
+                float(np.sqrt(shares[index])) + min(clarity, 1) * 0.15 + repeat * 0.35
             )
             if previous == index:
                 scores[index] += 0.10
@@ -206,6 +205,16 @@ def direct_parts(
             previous = None
             continue
         chosen = int(np.argmax(scores))
+        # An audible drum pattern anchors the passage even under a recurring
+        # melody. A lone hit does not seize focus for the whole passage.
+        for index, part in enumerate(parts):
+            if (
+                part.kind == PhasePartKind.DRUMS
+                and scores[index] > 0
+                and len(notes[index]) >= 2
+            ):
+                chosen = index
+                break
         previous = chosen
         primary = notes[chosen]
         report(
@@ -236,8 +245,8 @@ def direct_parts(
     amplitude_scale = (
         max(float(np.percentile(positive, 95)), 1e-10) if positive.size else 1.0
     )
-    # Preserve the mix's own timing. Source detections within 46 ms annotate
-    # the same attack rather than shifting it or creating a duplicate.
+    # Melodic sources annotate the mix. Drums anchor to measured acoustic
+    # percussion when available, otherwise retain their own observed timing.
     evidence = {
         frame: mix_bands[:, frame].copy()
         for frame in mix_onsets
@@ -245,11 +254,14 @@ def direct_parts(
     }
     anchors = np.asarray(sorted(evidence), dtype=np.int64)
     anchor_set = set(evidence)
+    percussion_anchors = np.asarray(sorted(percussion), dtype=np.int64)
     preferred: set[int] = set()
     for frame, source, primary_note in selected:
         checkpoint()
-        position = int(np.searchsorted(anchors, frame))
-        neighbors = anchors[max(0, position - 1) : position + 1]
+        is_drum = parts[source].kind == PhasePartKind.DRUMS
+        targets = percussion_anchors if is_drum else anchors
+        position = int(np.searchsorted(targets, frame))
+        neighbors = targets[max(0, position - 1) : position + 1]
         nearest = (
             int(neighbors[np.argmin(np.abs(neighbors - frame))])
             if neighbors.size
@@ -263,22 +275,30 @@ def direct_parts(
         # below, so a stronger mix does not hide that musical preference.
         if primary_note:
             preferred.add(nearest)
+        if is_drum:
+            percussion.add(nearest)
         if nearest in evidence:
             evidence[nearest] = np.maximum(evidence[nearest], value)
         else:
             evidence[nearest] = value.copy()
-    for frame in preferred:
-        evidence[frame] *= _LEAD_BOOST
-    # Merge close source-only detections. The anchored mix cannot be displaced.
+    for frame in preferred | percussion:
+        if frame in evidence:
+            evidence[frame] *= _PERCUSSION_BOOST if frame in percussion else _LEAD_BOOST
+    # Within the existing duplicate window, measured percussion wins over a
+    # melodic anticipation or late syllable. Never snap to an inferred beat.
     retained: list[int] = []
     for frame in sorted(evidence):
         checkpoint()
         if retained and frame - retained[-1] <= 4:
             previous_frame = retained[-1]
-            if previous_frame not in anchor_set and (
-                frame in anchor_set
-                or float(np.sum(evidence[frame]))
-                > float(np.sum(evidence[previous_frame]))
+            if (frame in percussion and previous_frame not in percussion) or (
+                (frame in percussion) == (previous_frame in percussion)
+                and previous_frame not in anchor_set
+                and (
+                    frame in anchor_set
+                    or float(np.sum(evidence[frame]))
+                    > float(np.sum(evidence[previous_frame]))
+                )
             ):
                 retained[-1] = frame
         else:

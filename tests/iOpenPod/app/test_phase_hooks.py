@@ -55,7 +55,7 @@ def test_a_steady_single_pitch_pulse_is_not_a_hook() -> None:
     assert not recognize_hooks(source, frames, checkpoint=lambda: None)
 
 
-def test_returning_guitar_hook_can_take_focus_over_louder_drums() -> None:
+def test_returning_guitar_hook_preserves_drums_as_the_passage_anchor() -> None:
     guitar = part(
         PhasePartKind.GUITAR,
         [40, 90, 160, 220, 310, 370, 840, 890, 960, 1020, 1110, 1170],
@@ -71,14 +71,7 @@ def test_returning_guitar_hook_can_take_focus_over_louder_drums() -> None:
         checkpoint=lambda: None,
         report=passages.append,
     )
-    assert passages[0].kind == PhasePartKind.GUITAR
-    assert passages[0].recurring_notes >= 3
-    assert any(
-        p.kind == PhasePartKind.GUITAR
-        and p.first_frame > 600
-        and p.recurring_notes >= 3
-        for p in passages
-    )
+    assert all(p.kind == PhasePartKind.DRUMS for p in passages)
     times = [e.time_q16 * 22050 / (65536 * 256) for e in events]
     assert all(
         min(abs(t - frame) for t in times) < 1
@@ -117,6 +110,42 @@ def test_vocal_exit_hands_focus_to_guitar_without_moving_attacks() -> None:
     assert [e.time_q16 for e in events] == [
         round(f * 256 * 65536 / 22050) for f in expected
     ]
+
+
+@pytest.mark.parametrize("drum_level", [0.01, 0.65])
+def test_drum_break_and_inaudible_drums_leave_melody_available(
+    drum_level: float,
+) -> None:
+    count = 1035
+    drums = part(
+        PhasePartKind.DRUMS,
+        [40, 100, 160, 220, 280],
+        [0],
+        count=count,
+        level=drum_level,
+    )
+    guitar_frames = list(range(60, 1000, 60))
+    guitar = part(
+        PhasePartKind.GUITAR,
+        guitar_frames,
+        [0, 4, 7, 5],
+        count=count,
+        level=0.7,
+    )
+    passages: list[PhasePassage] = []
+    events = direct_parts(
+        (drums, guitar),
+        beats=[],
+        length_ms=12000,
+        checkpoint=lambda: None,
+        report=passages.append,
+    )
+    assert passages[0].kind == (
+        PhasePartKind.DRUMS if drum_level == 0.65 else PhasePartKind.GUITAR
+    )
+    assert all(p.kind == PhasePartKind.GUITAR for p in passages[1:])
+    times = {event.time_q16 for event in events}
+    assert all(round(f * 256 * 65536 / 22050) in times for f in guitar_frames)
 
 
 def test_inaudible_leakage_and_empty_stems_cannot_generate_notes() -> None:
@@ -164,7 +193,12 @@ def test_sustained_lead_preserves_audible_supporting_attacks(
         checkpoint=lambda: None,
         report=passages.append,
     )
-    assert all(p.kind == PhasePartKind.VOCALS for p in passages)
+    expected_kind = (
+        PhasePartKind.DRUMS
+        if support_kind == PhasePartKind.DRUMS
+        else PhasePartKind.VOCALS
+    )
+    assert all(p.kind == expected_kind for p in passages)
     assert [e.time_q16 for e in events] == [
         round(frame * 256 * 65536 / 22050) for frame in frames
     ]
@@ -175,7 +209,8 @@ def test_sustained_lead_preserves_audible_supporting_attacks(
     support_strengths = [
         e.low + e.mid + e.high for e in events if e.time_q16 not in lead_times
     ]
-    assert min(lead_strengths) > max(support_strengths)
+    if support_kind != PhasePartKind.DRUMS:
+        assert min(lead_strengths) > max(support_strengths)
 
 
 def test_malformed_part_evidence_is_rejected() -> None:

@@ -3,10 +3,70 @@
 from itertools import pairwise
 
 import numpy as np
+import pytest
 
 from iOpenPod.app.phase_audio import PHASE_SAMPLE_RATE, analyze_phase_pcm
 from iOpenPod.app.phase_hooks import direct_parts
 from iOpenPod.app.phase_parts import PhasePart, PhasePartKind
+
+
+@pytest.mark.parametrize("offset", [-3, 3])
+@pytest.mark.parametrize("separated", [False, True])
+def test_nearby_melody_cannot_displace_a_measured_drum_attack(
+    offset: int,
+    separated: bool,
+) -> None:
+    count = 400
+    drum_frames = [40, 140, 240]
+    melody_frames = [frame + offset for frame in drum_frames]
+    mix = np.zeros((3, count))
+    mix[1, melody_frames] = 1
+    mix[0, drum_frames] = 0.6
+    novelty = np.zeros_like(mix)
+    novelty[0, drum_frames] = 1
+    drums = PhasePart(
+        PhasePartKind.DRUMS,
+        novelty,
+        np.full(count, 0.5),
+        np.zeros((12, count)),
+        novelty * 0.6,
+    )
+    events = direct_parts(
+        (drums,) if separated else (),
+        beats=[],
+        length_ms=5000,
+        checkpoint=lambda: None,
+        mix_bands=mix,
+        mix_energy=np.ones(count),
+        mix_onsets=tuple(sorted(drum_frames + melody_frames)),
+        percussive_onsets=() if separated else tuple(drum_frames),
+    )
+    assert [e.time_q16 for e in events] == [
+        round(frame * 256 * 65536 / 22050) for frame in drum_frames
+    ]
+    assert all(e.low > e.mid for e in events)
+
+
+def test_percussion_priority_preserves_spectral_balance_and_other_attacks() -> None:
+    count = 400
+    mix = np.zeros((3, count))
+    mix[:, [40, 90]] = np.array([0.4, 0.2, 0.1])[:, None]
+    mix[:, 240] = [1.0, 0.5, 0.25]
+    events = direct_parts(
+        (),
+        beats=[],
+        length_ms=5000,
+        checkpoint=lambda: None,
+        mix_bands=mix,
+        mix_energy=np.ones(count),
+        mix_onsets=(40, 90, 240),
+        percussive_onsets=(40,),
+    )
+    assert len(events) == 3
+    assert events[0].low > events[1].low
+    assert events[0].mid > events[1].mid
+    assert events[0].high > events[1].high
+    assert all(e.low > e.mid > e.high for e in events)
 
 
 def music_with_energy_change() -> bytes:

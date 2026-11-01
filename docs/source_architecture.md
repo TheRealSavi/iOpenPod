@@ -806,7 +806,9 @@ analysis codecs. The Application Layer decodes verified audio and uses librosa
 to generate typed events, with content-checked reuse (ADR-0210). Full-mix pitched
 and percussive attacks remain available for native difficulty selection. An
 optional six-source provider adds estimated vocal/guitar and other Phase Parts,
-with recurring Phase Hooks guiding modest preferences (ADR-0215, ADR-0217).
+with recurring Phase Hooks guiding melodic preferences (ADR-0215, ADR-0217).
+Audible percussion anchors competing attacks and receives a bounded magnitude
+preference; melodic evidence remains available through drum breaks (ADR-0222).
 Pulse tracking and full-mix energy remain independent of those preferences.
 Detection novelty stays separate from encoded spectral magnitudes. Shipped
 frequency ranges and one shared amplitude scale preserve the band ordering that

@@ -20,7 +20,7 @@ def test_spectral_policy_change_invalidates_analysis_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = PhaseAnalysisService(use_sources=False)
-    assert service.identity == "librosa-phase-6:acoustic:mono"
+    assert service.identity == "librosa-phase-7:acoustic:mono"
     monkeypatch.setattr(phase_analysis, "PHASE_ANALYSIS_VERSION", "librosa-phase-5")
     assert service.identity == "librosa-phase-5:acoustic:mono"
 
