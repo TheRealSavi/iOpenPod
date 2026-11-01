@@ -27,6 +27,10 @@ from iOpenPod.app.media.transcoding import (
     TranscodeQuality,
     TranscodeSettings,
     VideoEncoding,
+    _damage_warnings,  # pyright: ignore[reportPrivateUsage]
+    _decode_error_warnings,  # pyright: ignore[reportPrivateUsage]
+    _is_decode_failure,  # pyright: ignore[reportPrivateUsage]
+    _retry_skipping_damage,  # pyright: ignore[reportPrivateUsage]
     compatible_audio,
     compatible_video,
     enrich_source_metadata,
@@ -625,3 +629,217 @@ def test_m4b_content_activates_spoken_settings_before_transcoding(
         assert prepared.encoding in (AudioEncoding.AAC, AudioEncoding.MP3)
         assert prepared.inspection.audio_streams[0].channels == 1
         assert prepared.was_transcoded
+
+
+def damaged_source(
+    tmp_path: Path, filename: str, *, fraction: float = 0.12
+) -> HostPath:
+    """Overwrite a stretch of frames so packets fail to decode, as a scratched
+    rip or a bad copy does. Players skip the damage; so must preparation."""
+    host = source(tmp_path, filename)
+    path = Path(host.path)
+    data = bytearray(path.read_bytes())
+    start = int(len(data) * 0.6)
+    length = int(len(data) * fraction)
+    data[start : start + length] = bytes(length)
+    path.write_bytes(bytes(data))
+    return host
+
+
+def test_decode_error_warnings_summarize_skipped_packets() -> None:
+    stderr = (
+        b"[mp3float @ 0x55d] Header missing\n"
+        b"[aist#0:0/mp3 @ 0x55e] [dec:mp3float @ 0x55f] Error submitting packet "
+        b"to decoder: Invalid data found when processing input\n"
+        b"[aist#0:0/mp3 @ 0x55e] [dec:mp3float @ 0x55f] Error submitting packet "
+        b"to decoder: Invalid data found when processing input\n"
+    )
+    (warning,) = _decode_error_warnings(stderr)
+    assert warning.startswith(
+        "Skipped 2 damaged packets in the source (Header missing)"
+    )
+    assert "Replace the source file" in warning
+    assert _decode_error_warnings(b"") == ()
+    assert _decode_error_warnings(b"[flac @ 0x1] unrelated notice\n") == ()
+
+
+def test_decode_error_warnings_quote_the_codec_not_structural_info_lines() -> None:
+    # Sound Check runs verification at info level, so stream and input
+    # descriptions precede the codec's complaint and must not be quoted.
+    stderr = (
+        b"[in#0 @ 0x1] Format mp3 detected only with low score of 1\n"
+        b"Input #0, mp3, from '/home/user/Music/track.mp3':\n"
+        b"  Duration: 00:03:00.00, start: 0.000000, bitrate: 128 kb/s\n"
+        b"[flac @ 0x2] invalid sync code\n"
+        b"[flac @ 0x2] invalid frame header\n"
+        b"[flac @ 0x2] decode_frame() failed\n"
+        b"[aist#0:0/flac @ 0x3] [dec:flac @ 0x4] Decoding error: Invalid data "
+        b"found when processing input\n"
+        b"[Parsed_ebur128_0 @ 0x5] Summary:\n"
+    )
+    (warning,) = _decode_error_warnings(stderr)
+    assert warning.startswith(
+        "Skipped 1 damaged packet in the source (invalid sync code)"
+    )
+    assert "/home/user" not in warning
+
+
+def test_demuxer_errors_are_not_treated_as_skippable_packets() -> None:
+    # A corrupt container also says "Invalid data found", but without a decoder
+    # context; it must keep failing strictly rather than earning a lenient pass.
+    demux = MediaToolError(
+        "media.tool_failed",
+        "ffmpeg failed (exit 183): [in#0 @ 0x1] Error during demuxing: Invalid "
+        "data found when processing input",
+    )
+    decode = MediaToolError(
+        "media.tool_failed",
+        "ffmpeg failed (exit 183): [mp3float @ 0x1] Header missing\n"
+        "[aist#0:0/mp3 @ 0x2] [dec:mp3float @ 0x3] Error submitting packet to "
+        "decoder: Invalid data found when processing input",
+    )
+    assert not _is_decode_failure(demux)
+    assert _is_decode_failure(decode)
+    assert _decode_error_warnings(str(demux).encode()) == ()
+
+
+def test_ffmpeg_6_decode_errors_are_recognized_without_a_decoder_context() -> None:
+    older = MediaToolError(
+        "media.tool_failed",
+        "ffmpeg failed (exit 69): [mp3float @ 0x1] Header missing\n"
+        "Error while decoding stream #0:0: Invalid data found when processing input",
+    )
+    assert _is_decode_failure(older)
+    stderr = (
+        b"[mp3float @ 0x1] Header missing\n"
+        b"Error while decoding stream #0:0: Invalid data found when processing input\n"
+        b"[mp3float @ 0x1] Header missing\n"
+        b"Error while decoding stream #0:0: Invalid data found when processing input\n"
+    )
+    (warning,) = _decode_error_warnings(stderr)
+    assert warning.startswith(
+        "Skipped 2 damaged packets in the source (Header missing)"
+    )
+
+
+def test_a_successful_retry_always_carries_a_damage_warning() -> None:
+    (fallback,) = _damage_warnings(b"")
+    assert fallback.startswith("Skipped damaged packets in the source")
+    (parsed,) = _damage_warnings(
+        b"[aist#0:0/mp3 @ 0x2] [dec:mp3float @ 0x3] Error submitting packet to "
+        b"decoder: Invalid data found when processing input\n"
+    )
+    assert parsed.startswith("Skipped 1 damaged packet")
+
+
+def test_lenient_retry_blames_the_source_only_for_decode_failures() -> None:
+    def failing(code: str, message: str) -> Callable[[], None]:
+        def run() -> None:
+            raise MediaToolError(code, message)
+
+        return run
+
+    for code, message in (
+        ("media.tool_output_limit", "Media tool diagnostics exceeded the safety limit"),
+        (
+            "media.tool_failed",
+            "ffmpeg failed (exit 1): [aist#0:0/aac @ 0x1] [dec:aac @ 0x2] Decoding "
+            "error: Invalid data found when processing input",
+        ),
+        (
+            "media.tool_failed",
+            "ffmpeg failed (exit 1): Output file is empty, nothing was encoded",
+        ),
+    ):
+        with pytest.raises(MediaInspectionError) as damaged:
+            _retry_skipping_damage(failing(code, message))
+        assert damaged.value.code == "media.source_damaged"
+
+    workspace_full = failing(
+        "media.tool_failed", "ffmpeg failed (exit 1): No space left on device"
+    )
+    with pytest.raises(MediaToolError) as unrelated:
+        _retry_skipping_damage(workspace_full)
+    assert "No space left" in str(unrelated.value)
+    assert _retry_skipping_damage(lambda: "ok") == "ok"
+
+
+@pytest.mark.parametrize("retranscode_lossy", [False, True])
+def test_damaged_source_packet_is_skipped_with_a_warning(
+    tmp_path: Path,
+    profile: DeviceProfile,
+    transcoder: MediaTranscoder,
+    retranscode_lossy: bool,
+) -> None:
+    original = damaged_source(tmp_path, "tone.mp3")
+    with transcoder.prepare(
+        original,
+        profile,
+        TranscodeSettings(retranscode_lossy=retranscode_lossy),
+        checkpoint=lambda: None,
+    ) as result:
+        assert result.was_transcoded is retranscode_lossy
+        if not retranscode_lossy:
+            assert Path(result.source).read_bytes() == Path(original).read_bytes()
+    damage = [warning for warning in result.warnings if "damaged" in warning]
+    assert len(damage) == 1
+    assert damage[0].startswith("Skipped ")
+    assert "damaged packet" in damage[0]
+
+
+def test_heavily_damaged_copy_is_refused_rather_than_written(
+    tmp_path: Path, profile: DeviceProfile, transcoder: MediaTranscoder
+) -> None:
+    # The bundled fixtures last 0.25 s, inside the duration tolerance, so a longer
+    # Track is encoded here and 40% of its frames are destroyed.
+    path = tmp_path / "long.mp3"
+    encoded = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=44100:duration=6",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if encoded.returncode != 0:
+        pytest.skip("This FFmpeg build has no MP3 encoder for the damaged fixture")
+    data = bytearray(path.read_bytes())
+    start = len(data) // 2
+    length = int(len(data) * 0.4)
+    data[start : start + length] = bytes(length)
+    path.write_bytes(bytes(data))
+
+    with (
+        pytest.raises(MediaInspectionError) as error,
+        transcoder.prepare(
+            HostPath(path), profile, TranscodeSettings(), checkpoint=lambda: None
+        ),
+    ):
+        pass
+    assert error.value.code == "media.source_damaged"
+    assert "too damaged" in str(error.value)
+
+
+def test_undamaged_source_reports_no_skipped_packets(
+    tmp_path: Path, profile: DeviceProfile, transcoder: MediaTranscoder
+) -> None:
+    with transcoder.prepare(
+        source(tmp_path, "tone.mp3"),
+        profile,
+        TranscodeSettings(retranscode_lossy=True),
+        checkpoint=lambda: None,
+    ) as result:
+        assert result.was_transcoded
+    assert not any("damaged" in warning for warning in result.warnings)
