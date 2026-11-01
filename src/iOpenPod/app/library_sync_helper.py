@@ -173,6 +173,9 @@ class IPodImageFingerprint:
 class IPodMediaScanIssue:
     subject: str
     detail: str
+    # False for problems with the scan itself, such as its Host analysis cache,
+    # so the GUI does not present them as unavailable media.
+    concerns_media: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -638,7 +641,9 @@ class IPodMediaScanner:
                 cache.load()
             except (OSError, StorageError, ValueError, FpcalcError) as error:
                 issues.append(
-                    IPodMediaScanIssue("Host iPod analysis cache", str(error))
+                    IPodMediaScanIssue(
+                        "Host iPod analysis cache", str(error), concerns_media=False
+                    )
                 )
 
         def save_cache(*, force: bool = False) -> None:
@@ -649,7 +654,9 @@ class IPodMediaScanner:
                 except (OSError, StorageError, ValueError, FpcalcError) as error:
                     cache_writable = False
                     issues.append(
-                        IPodMediaScanIssue("Host iPod analysis cache", str(error))
+                        IPodMediaScanIssue(
+                            "Host iPod analysis cache", str(error), concerns_media=False
+                        )
                     )
 
         def remember(record: IPodAnalysisRecord) -> None:

@@ -62,17 +62,22 @@ class HostScanIssues(QFrame):
         self.retranslate_ui()
 
     def retranslate_ui(self) -> None:
+        media_issues = any(issue.concerns_media for issue in self._issues)
         self._summary.setText(
-            self.tr("Scan issues: {count}. Some media may be unavailable.").format(
-                count=len(self._issues)
-            )
+            (
+                self.tr("Scan issues: {count}. Some media may be unavailable.")
+                if media_issues
+                else self.tr(
+                    "Scan issues: {count}. The scan's own cache had a problem; media is unaffected."
+                )
+            ).format(count=len(self._issues))
         )
         self._toggle.setText(self.tr("Show details"))
         lines: list[str] = []
         for issue in self._issues[:50]:
             subject = (
                 str(issue.path)
-                if isinstance(issue, HostMediaScanIssue)
+                if isinstance(issue, HostMediaScanIssue) and issue.concerns_media
                 else workflow_text(issue.subject)
             )
             lines.append(f"{subject[:500]}\n{workflow_text(issue.detail)[:1500]}")

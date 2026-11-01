@@ -409,7 +409,8 @@ The GUI first opens a modal folder dialog that stages Host Media Library folders
 their recursive, per-media-type scan settings. Explicit selections may use symbolic
 links. A per-folder Follow symbolic links option, disabled by default, also permits
 discovered links; cycle detection and shared observations prevent duplicate work.
-Scan issues remain visible in Select Media and Review. See ADR-0132.
+Scan issues remain visible in Select Media and Review, including a Host Media Scan
+Cache that could not be saved and would force a full reanalysis next time. See ADR-0132.
 Host media can also reside on ordinary Windows UNC shares or mapped network
 drives. Mounted network filesystems on POSIX remain supported. Storage retains
 source validation and per-file preparation; users need not copy their entire

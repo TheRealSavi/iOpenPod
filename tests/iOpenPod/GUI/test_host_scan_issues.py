@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QLabel, QPlainTextEdit
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
 from iOpenPod.app.display_text import source_text
-from iOpenPod.app.host_media_library import HostMediaScanIssue
+from iOpenPod.app.host_media_library import CACHE_ISSUE_SUBJECT, HostMediaScanIssue
 from iOpenPod.app.library_sync_helper import IPodMediaScanIssue
 from iOpenPod.GUI.widgets.host_scan_issues import HostScanIssues
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
@@ -72,3 +72,50 @@ def test_scan_issues_include_ipod_subjects_and_plain_text(tmp_path: Path) -> Non
         panel.close()
         panel.deleteLater()
         APPLICATION.processEvents()
+
+
+def test_cache_issue_is_named_as_the_cache_and_not_as_lost_media(
+    tmp_path: Path,
+) -> None:
+    panel = HostScanIssues()
+    try:
+        panel.load(
+            (
+                HostMediaScanIssue(
+                    HostPath(tmp_path / "cache.json"),
+                    "New scan results could not be saved",
+                    subject=CACHE_ISSUE_SUBJECT,
+                ),
+            )
+        )
+        summary = panel.findChild(QLabel)
+        details = panel.findChild(QPlainTextEdit)
+        assert summary is not None and details is not None
+        assert "media is unaffected" in summary.text()
+        assert "may be unavailable" not in summary.text()
+        assert details.toPlainText().startswith(f"{CACHE_ISSUE_SUBJECT}\n")
+
+        panel.load(
+            (
+                IPodMediaScanIssue(
+                    "Host iPod analysis cache",
+                    "Cache unavailable",
+                    concerns_media=False,
+                ),
+            )
+        )
+        assert "media is unaffected" in summary.text()
+
+        panel.load(
+            (
+                HostMediaScanIssue(HostPath(tmp_path / "host.mp3"), "Host unavailable"),
+                HostMediaScanIssue(
+                    HostPath(tmp_path / "cache.json"),
+                    "New scan results could not be saved",
+                    subject=CACHE_ISSUE_SUBJECT,
+                ),
+            )
+        )
+        assert "may be unavailable" in summary.text() and "2" in summary.text()
+    finally:
+        panel.close()

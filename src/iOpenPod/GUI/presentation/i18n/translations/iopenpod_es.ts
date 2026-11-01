@@ -2092,6 +2092,10 @@
         <translation>Problemas del análisis: {count}. Es posible que algunos archivos multimedia no estén disponibles.</translation>
     </message>
     <message>
+        <source>Scan issues: {count}. The scan&apos;s own cache had a problem; media is unaffected.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Show details</source>
         <translation>Mostrar detalles</translation>
     </message>
@@ -10194,6 +10198,14 @@ Playlists: %3</translation>
     <message>
         <source>New Playlists require an established counterpart dataset; the existing playlist datasets disagree.</source>
         <translation>Las nuevas listas requieren un conjunto de datos correspondiente establecido; los conjuntos de datos de listas existentes no coinciden.</translation>
+    </message>
+    <message>
+        <source>New scan results could not be encoded for the cache at {path}: {error} Files inspected this time will be inspected and fingerprinted again on the next scan. Media is unaffected; please report this issue.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>New scan results could not be saved to {path}: {error} Files inspected this time will be inspected and fingerprinted again on the next scan. Make that folder writable and check its free space, then scan again.</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>No changes since the latest Backup Snapshot.</source>
