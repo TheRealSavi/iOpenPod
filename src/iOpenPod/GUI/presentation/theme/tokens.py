@@ -539,6 +539,38 @@ ORCHID_TOKENS = ThemeTokens(
     artwork_ink="#F4EDF5",
 )
 
+# Black and ember surfaces with the orange light of the Tech reference image.
+TECH_TOKENS = ThemeTokens(
+    window="#030303",
+    surface="#100D0B",
+    surface_alt="#1A1410",
+    surface_hover="#281A12",
+    surface_pressed="#322015",
+    surface_selected="#35170D",
+    text="#FFF4E8",
+    text_secondary="#CDBBAD",
+    text_disabled="#8C796B",
+    border="#493025",
+    border_strong="#89644D",
+    accent="#FF7900",
+    accent_hover="#FFA329",
+    accent_pressed="#EB5A16",
+    accent_ink="#160A02",
+    focus="#FFB83E",
+    scrollbar="#89644D",
+    scrollbar_hover="#BD8B65",
+    danger="#FF655C",
+    warning="#FFC247",
+    success="#8ACB8A",
+    artwork_blue="#304453",
+    artwork_green="#3F4E35",
+    artwork_gold="#75501C",
+    artwork_coral="#78321E",
+    artwork_violet="#503749",
+    artwork_slate="#493B32",
+    artwork_ink="#FFF4E8",
+)
+
 _THEME_TOKENS: dict[Theme, ThemeTokens] = {
     LightTheme.PORCELAIN: LIGHT_TOKENS,
     LightTheme.CATPPUCCIN_LATTE: CATPPUCCIN_LATTE_TOKENS,
@@ -552,6 +584,7 @@ _THEME_TOKENS: dict[Theme, ThemeTokens] = {
     DarkTheme.GRAVITY: GRAVITY_TOKENS,
     DarkTheme.NORTHERN_LIGHTS: NORTHERN_LIGHTS_TOKENS,
     DarkTheme.ORCHID: ORCHID_TOKENS,
+    DarkTheme.TECH: TECH_TOKENS,
 }
 
 

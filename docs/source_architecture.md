@@ -3036,7 +3036,7 @@ exact-theme setting, so Auto/System mode selects the configured palette for each
 family without conflating Host appearance with palette identity. Light choices are
 Porcelain, Catppuccin Latte, Dune Plover, and Sea Glass. Dark choices are Slate,
 Original iOpenPod, Catppuccin Frappé, Catppuccin Macchiato, Catppuccin Mocha, Gravity,
-Northern Lights, and Orchid. Porcelain and Slate remain the defaults. The Original
+Northern Lights, Orchid, and Tech. Porcelain and Slate remain the defaults. The Original
 iOpenPod palettes are translated into fixed semantic tokens with contrast-safe
 interaction states; they do not require a runtime theme catalog or the Original
 project.

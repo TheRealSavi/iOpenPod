@@ -138,6 +138,14 @@ of each palette's supporting colors. Every palette consumes the same metrics,
 typography, palette builder, stylesheet renderer, and Colorful Mode recipes; no
 Original iOpenPod files are loaded at runtime.
 
+### Tech
+
+Tech is an additional Dark theme inspired by orange-red light against a black
+background. Its near-black canvas (`#030303`) and warm content surface (`#100D0B`)
+carry bright orange accents (`#FF7900`), amber hover and focus states, ember-red
+selection surfaces, and warm white text. It uses the same semantic tokens and
+contrast floors as the other themes, without decorative background imagery.
+
 ## Metrics
 
 All spatial values are Qt logical pixels. Qt maps them to physical pixels for the

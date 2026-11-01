@@ -854,6 +854,7 @@ class SettingsPage(QWidget):
             self.tr("Northern Lights"), DarkTheme.NORTHERN_LIGHTS.value
         )
         self._dark_theme_combo.addItem(self.tr("Orchid"), DarkTheme.ORCHID.value)
+        self._dark_theme_combo.addItem(self.tr("Tech"), DarkTheme.TECH.value)
         self._colorful_mode_combo.clear()
         self._colorful_mode_combo.addItem(self.tr("Off"), False)
         self._colorful_mode_combo.addItem(self.tr("On"), True)

@@ -204,6 +204,7 @@ def test_every_exact_theme_updates_the_live_application(theme: Theme) -> None:
         (LightTheme.CATPPUCCIN_LATTE, DarkTheme.CATPPUCCIN_MOCHA),
         (LightTheme.DUNE_PLOVER, DarkTheme.GRAVITY),
         (LightTheme.SEA_GLASS, DarkTheme.ORCHID),
+        (LightTheme.PORCELAIN, DarkTheme.TECH),
     ),
 )
 def test_system_appearance_uses_the_saved_exact_themes(

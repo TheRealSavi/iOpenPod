@@ -73,6 +73,7 @@ class DarkTheme(StrEnum):
     GRAVITY = "gravity"
     NORTHERN_LIGHTS = "northern-lights"
     ORCHID = "orchid"
+    TECH = "tech"
 
 
 @dataclass(frozen=True, slots=True)

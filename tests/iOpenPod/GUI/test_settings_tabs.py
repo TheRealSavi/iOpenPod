@@ -194,6 +194,7 @@ def test_appearance_lists_and_applies_every_theme_without_retranslation_reset(
             "Gravity",
             "Northern Lights",
             "Orchid",
+            "Tech",
         ]
         for theme in (*LightTheme, *DarkTheme):
             if isinstance(theme, LightTheme):
@@ -220,7 +221,7 @@ def test_appearance_lists_and_applies_every_theme_without_retranslation_reset(
             assert control.currentData() == theme.value
             assert changes.count() == 0
         assert light.currentData() == LightTheme.SEA_GLASS.value
-        assert dark.currentData() == DarkTheme.ORCHID.value
+        assert dark.currentData() == DarkTheme.TECH.value
     finally:
         page.close()
 

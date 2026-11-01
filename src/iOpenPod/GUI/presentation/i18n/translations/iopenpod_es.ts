@@ -6262,6 +6262,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Orchid</translation>
     </message>
     <message>
+        <source>Tech</source>
+        <translation>Tech</translation>
+    </message>
+    <message>
         <source>Off</source>
         <translation>Desactivado</translation>
     </message>
