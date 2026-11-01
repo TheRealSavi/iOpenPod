@@ -290,8 +290,10 @@ semantic opaque surfaces, and the ribbon has no decorative animation.
 The Podcast browser uses a compact show header and virtualized, cover-led Episode
 tiles. Title and artwork lead; date, duration, and nonstandard Episode type provide
 the scan line. Selection reveals additional metadata without expanding every row.
-Show Sync controls sit below the Episode list, alongside selection-only batch
-actions. Discovery uses publisher-feed covers with title, author, and brief metadata;
+Show Sync controls sit at the left of the fixed-height header's action row, beside
+the show artwork; Website, Refresh Show, and Unsubscribe sit at the right. Artwork
+and buttons share a bottom edge. Selection-only batch actions remain below the
+Episode list. Discovery uses publisher-feed covers with title, author, and brief metadata;
 the direct-RSS form opens on request. Image failures retain device/show fallbacks
 and deterministic placeholders. Full descriptions do not appear on hover. All
 surfaces use shared semantic tokens and native

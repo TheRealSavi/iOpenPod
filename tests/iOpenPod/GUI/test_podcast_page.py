@@ -377,7 +377,7 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
 
     try:
         assert controller.refresh_calls == []
-        page.resize(1180, 900)
+        page.resize(1440, 900)
         page.show()
         APPLICATION.processEvents()
         assert controller.refresh_calls == [None]
@@ -426,6 +426,9 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         directory_results = page.findChild(QListView, "podcastDirectoryResults")
         show_description = page.findChild(ElidedLabel, "podcastShowDescription")
         hero = page.findChild(QFrame, "podcastHero")
+        sync_show = page.findChild(QPushButton, "podcastSyncShow")
+        sync_settings = page.findChild(QPushButton, "podcastSyncSettings")
+        website = page.findChild(QPushButton, "podcastShowWebsite")
         refresh_show = page.findChild(QPushButton, "podcastRefreshShow")
         unsubscribe = page.findChild(QPushButton, "podcastUnsubscribe")
         toolbar = page.findChild(QFrame, "podcastsToolbar")
@@ -446,6 +449,13 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         assert artwork_stack.currentWidget() is page.findChild(ArtworkView)
         assert show_description is not None
         assert hero is not None
+        assert sync_show is not None and sync_settings is not None
+        assert website is not None
+        assert all(
+            hero.isAncestorOf(button)
+            for button in (sync_show, sync_settings, website, refresh_show, unsubscribe)
+            if button is not None
+        )
         assert refresh_show is not None
         assert unsubscribe is not None
         assert isinstance(toolbar, PageHeader)
@@ -529,9 +539,21 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         assert hero.height() == 208
         artwork_origin = artwork_stack.mapTo(hero, QPoint())
         assert artwork_origin.x() == 24
-        assert artwork_origin.y() - hero.contentsRect().top() == 24
+        assert artwork_stack.width() == artwork_stack.height() == 158
         refresh_origin = refresh_show.mapTo(hero, QPoint())
         unsubscribe_origin = unsubscribe.mapTo(hero, QPoint())
+        sync_origin = sync_show.mapTo(hero, QPoint())
+        settings_origin = sync_settings.mapTo(hero, QPoint())
+        assert sync_origin.y() == settings_origin.y() == refresh_origin.y()
+        assert sync_origin.x() < settings_origin.x() < refresh_origin.x()
+        assert sync_origin.x() == show_description.mapTo(hero, QPoint()).x()
+        assert (
+            artwork_origin.y() + artwork_stack.height()
+            == sync_origin.y() + sync_show.height()
+            == settings_origin.y() + sync_settings.height()
+            == refresh_origin.y() + refresh_show.height()
+            == unsubscribe_origin.y() + unsubscribe.height()
+        )
         assert refresh_origin.y() == unsubscribe_origin.y()
         assert refresh_origin.x() < unsubscribe_origin.x()
         assert (

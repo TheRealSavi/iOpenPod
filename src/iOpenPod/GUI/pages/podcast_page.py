@@ -73,7 +73,7 @@ from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
 _PODCAST_HERO_HEIGHT = 208
-_PODCAST_HERO_ARTWORK = 144
+_PODCAST_HERO_ARTWORK = 158
 _PODCAST_DESCRIPTION_LINES = 2
 _STATUS_SOURCE = "podcasts"
 
@@ -304,6 +304,10 @@ class PodcastPage(QWidget):
         show_copy.addWidget(self._show_meta)
         show_copy.addWidget(self._show_description)
         show_copy.addStretch(1)
+        self._sync_show = ActionButton(parent=hero)
+        self._sync_show.setObjectName("podcastSyncShow")
+        self._sync_settings = ActionButton(parent=hero)
+        self._sync_settings.setObjectName("podcastSyncSettings")
         self._refresh_show = ActionButton(parent=hero)
         self._refresh_show.setObjectName("podcastRefreshShow")
         self._show_website = ActionButton(parent=hero)
@@ -312,6 +316,8 @@ class PodcastPage(QWidget):
         self._unsubscribe.setObjectName("podcastUnsubscribe")
         hero_actions = QHBoxLayout()
         hero_actions.setSpacing(LAYOUT.space_xs)
+        hero_actions.addWidget(self._sync_show)
+        hero_actions.addWidget(self._sync_settings)
         hero_actions.addStretch(1)
         hero_actions.addWidget(self._show_website)
         hero_actions.addWidget(self._refresh_show)
@@ -330,7 +336,7 @@ class PodcastPage(QWidget):
             0,
             2,
             1,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
         )
         hero_layout.addLayout(show_copy, 0, 1)
         hero_layout.addLayout(hero_actions, 1, 1)
@@ -440,17 +446,11 @@ class PodcastPage(QWidget):
             parent=episodes_section, kind=ActionButtonKind.DANGER
         )
         self._remove_episodes.setObjectName("podcastRemoveEpisodes")
-        self._sync_show = ActionButton(parent=episodes_section)
-        self._sync_show.setObjectName("podcastSyncShow")
-        self._sync_settings = ActionButton(parent=episodes_section)
-        self._sync_settings.setObjectName("podcastSyncSettings")
         episode_actions = QHBoxLayout()
         episode_actions.setSpacing(LAYOUT.space_xs)
         episode_actions.addWidget(self._add_episodes)
         episode_actions.addWidget(self._remove_episodes)
         episode_actions.addStretch(1)
-        episode_actions.addWidget(self._sync_show)
-        episode_actions.addWidget(self._sync_settings)
         episodes_layout.setSpacing(LAYOUT.space_sm)
         episodes_layout.addLayout(episode_heading)
         episodes_layout.addWidget(self._episodes, 1)

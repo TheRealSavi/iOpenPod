@@ -13,8 +13,11 @@ def test_explicit_line_breaks_receive_two_complete_lines(line_break: str) -> Non
     text = f"A short show description.{line_break}©MWMH"
     label.setText(text)
     try:
-        line_height = QFontMetrics(label.font()).lineSpacing()
-        for width in (300, 900):
+        label.ensurePolished()
+        metrics = QFontMetrics(label.font())
+        line_height = metrics.lineSpacing()
+        required_width = metrics.horizontalAdvance("A short show description.") + 8
+        for width in (required_width, required_width + 600):
             label.resize(width, label.heightForWidth(width))
             label.show()
             APPLICATION.processEvents()

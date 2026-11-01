@@ -34,7 +34,9 @@ Episode tiles. Dates, duration, and nonstandard Episode types remain visible;
 selection reveals additional author and Episode metadata. Long titles wrap and
 descriptions are bounded. Full descriptions do not appear on hover; Episode
 descriptions remain available to accessibility clients.
-Batch actions appear with selection, and show Sync controls sit below the list.
+Batch actions appear with selection below the list. Show Sync controls sit at the
+left of the fixed-height header's action row, with Website, Refresh Show, and
+Unsubscribe at the right. The enlarged show artwork shares the buttons' bottom edge.
 
 Discovery pairs show covers with title, publisher, and brief category/count metadata.
 The direct-RSS form opens on request. Loading, empty, and failed searches have an
