@@ -15,7 +15,15 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QImage, QPainter, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QDesktopServices,
+    QFontMetrics,
+    QImage,
+    QPainter,
+    QPixmap,
+)
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -532,6 +540,9 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
             == 24
         )
         assert show_description.maximum_lines == 2
+        assert show_description.contentsRect().height() >= (
+            QFontMetrics(show_description.font()).lineSpacing() * 2
+        )
         assert show_description.is_elided
         assert not show_description.toolTip()
         assert show_shelf.model().rowCount() == 2
@@ -738,6 +749,7 @@ def test_publisher_metadata_and_links_are_available_in_the_podcast_browser(
         "Show",
         SubscriptionSource.USER,
         categories=("Technology", "Education"),
+        description="A short show description.",
         copyright="Copyright Studio",
         website_url="https://publisher.test/show",
         show_type=PodcastShowType.SERIAL,
@@ -781,6 +793,28 @@ def test_publisher_metadata_and_links_are_available_in_the_podcast_browser(
             and "Serial" in meta.text()
         )
         assert description is not None and "Copyright Studio" in description.text()
+        assert description.heightForWidth(description.width()) == (
+            QFontMetrics(description.font()).lineSpacing() * 2
+        )
+        assert description.contentsRect().height() >= description.heightForWidth(
+            description.width()
+        )
+        assert not description.is_elided
+        description.setStyleSheet("font-size: 16pt")
+        hero = page.findChild(QFrame, "podcastHero")
+        assert hero is not None
+        for width in (1180, 1440):
+            page.resize(width, 900)
+            APPLICATION.processEvents()
+            assert description.maximumHeight() == (
+                QFontMetrics(description.font()).lineSpacing() * 2
+            )
+            assert hero.minimumHeight() == hero.maximumHeight() == hero.height() == 208
+            assert (
+                description.contentsRect().height()
+                >= QFontMetrics(description.font()).lineSpacing()
+            )
+            assert description.is_elided
         assert website is not None and website.isVisible()
         website.click()
         assert opened == [subscription.website_url]

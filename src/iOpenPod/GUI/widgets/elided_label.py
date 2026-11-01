@@ -145,6 +145,9 @@ def _layout_lines(
 ) -> tuple[tuple[str, ...], bool]:
     if not text:
         return (), False
+    # QTextLayout lays out one paragraph; use explicit line separators so its
+    # measured lines agree with the individual lines painted below.
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\u2028")
     layout = QTextLayout(text, font)
     option = QTextOption()
     option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)

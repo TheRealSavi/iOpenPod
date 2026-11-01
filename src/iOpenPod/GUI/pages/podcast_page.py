@@ -72,7 +72,7 @@ from iOpenPod.GUI.widgets.podcast_artwork import (
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
-_PODCAST_HERO_MAX_HEIGHT = 208
+_PODCAST_HERO_HEIGHT = 208
 _PODCAST_HERO_ARTWORK = 144
 _PODCAST_DESCRIPTION_LINES = 2
 _STATUS_SOURCE = "podcasts"
@@ -252,7 +252,7 @@ class PodcastPage(QWidget):
 
         hero = QFrame(detail)
         hero.setObjectName("podcastHero")
-        hero.setFixedHeight(_PODCAST_HERO_MAX_HEIGHT)
+        hero.setFixedHeight(_PODCAST_HERO_HEIGHT)
         self._show_artwork_stack = QStackedWidget(hero)
         self._show_artwork_stack.setObjectName("podcastShowArtworkStack")
         self._show_artwork_stack.setFixedSize(
