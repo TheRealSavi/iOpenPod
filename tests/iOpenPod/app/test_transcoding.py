@@ -19,6 +19,13 @@ from device_registry import DEFAULT_DEVICE_REGISTRY
 from device_registry.data.catalog import DEFAULT_CATALOG
 from iOpenPod.app.artwork_policy import rockbox_artwork
 from iOpenPod.app.media import MediaInspectionError, MediaInspector, MediaTag
+from iOpenPod.app.media.decode_damage import (
+    damage_warnings,
+    decode_error_warnings,
+    is_decode_failure,
+    is_skipped_packet,
+    retry_skipping_damage,
+)
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.media.transcoding import (
     BitrateMode,
@@ -27,10 +34,6 @@ from iOpenPod.app.media.transcoding import (
     TranscodeQuality,
     TranscodeSettings,
     VideoEncoding,
-    _damage_warnings,  # pyright: ignore[reportPrivateUsage]
-    _decode_error_warnings,  # pyright: ignore[reportPrivateUsage]
-    _is_decode_failure,  # pyright: ignore[reportPrivateUsage]
-    _retry_skipping_damage,  # pyright: ignore[reportPrivateUsage]
     compatible_audio,
     compatible_video,
     enrich_source_metadata,
@@ -654,13 +657,13 @@ def test_decode_error_warnings_summarize_skipped_packets() -> None:
         b"[aist#0:0/mp3 @ 0x55e] [dec:mp3float @ 0x55f] Error submitting packet "
         b"to decoder: Invalid data found when processing input\n"
     )
-    (warning,) = _decode_error_warnings(stderr)
+    (warning,) = decode_error_warnings(stderr)
     assert warning.startswith(
         "Skipped 2 damaged packets in the source (Header missing)"
     )
     assert "Replace the source file" in warning
-    assert _decode_error_warnings(b"") == ()
-    assert _decode_error_warnings(b"[flac @ 0x1] unrelated notice\n") == ()
+    assert decode_error_warnings(b"") == ()
+    assert decode_error_warnings(b"[flac @ 0x1] unrelated notice\n") == ()
 
 
 def test_decode_error_warnings_quote_the_codec_not_structural_info_lines() -> None:
@@ -677,7 +680,7 @@ def test_decode_error_warnings_quote_the_codec_not_structural_info_lines() -> No
         b"found when processing input\n"
         b"[Parsed_ebur128_0 @ 0x5] Summary:\n"
     )
-    (warning,) = _decode_error_warnings(stderr)
+    (warning,) = decode_error_warnings(stderr)
     assert warning.startswith(
         "Skipped 1 damaged packet in the source (invalid sync code)"
     )
@@ -698,9 +701,9 @@ def test_demuxer_errors_are_not_treated_as_skippable_packets() -> None:
         "[aist#0:0/mp3 @ 0x2] [dec:mp3float @ 0x3] Error submitting packet to "
         "decoder: Invalid data found when processing input",
     )
-    assert not _is_decode_failure(demux)
-    assert _is_decode_failure(decode)
-    assert _decode_error_warnings(str(demux).encode()) == ()
+    assert not is_decode_failure(demux)
+    assert is_decode_failure(decode)
+    assert decode_error_warnings(str(demux).encode()) == ()
 
 
 def test_ffmpeg_6_decode_errors_are_recognized_without_a_decoder_context() -> None:
@@ -709,23 +712,63 @@ def test_ffmpeg_6_decode_errors_are_recognized_without_a_decoder_context() -> No
         "ffmpeg failed (exit 69): [mp3float @ 0x1] Header missing\n"
         "Error while decoding stream #0:0: Invalid data found when processing input",
     )
-    assert _is_decode_failure(older)
+    assert is_decode_failure(older)
     stderr = (
         b"[mp3float @ 0x1] Header missing\n"
         b"Error while decoding stream #0:0: Invalid data found when processing input\n"
         b"[mp3float @ 0x1] Header missing\n"
         b"Error while decoding stream #0:0: Invalid data found when processing input\n"
     )
-    (warning,) = _decode_error_warnings(stderr)
+    (warning,) = decode_error_warnings(stderr)
     assert warning.startswith(
         "Skipped 2 damaged packets in the source (Header missing)"
     )
 
 
+@pytest.mark.parametrize(
+    ("line", "skipped"),
+    [
+        # FFmpeg 7 tags the decoder.
+        (
+            b"[aist#0:0/mp3 @ 0x2] [dec:mp3float @ 0x3] Error submitting packet to "
+            b"decoder: Invalid data found when processing input",
+            True,
+        ),
+        # FFmpeg 6 names the stream.
+        (
+            b"Error while decoding stream #0:0: Invalid data found when processing input",
+            True,
+        ),
+        (
+            b"Error while decoding stream #12:3:Invalid data found when processing input",
+            True,
+        ),
+        # The container, not a decoder, rejected the data.
+        (
+            b"[in#0 @ 0x1] Error during demuxing: Invalid data found when processing input",
+            False,
+        ),
+        (b"[mp3 @ 0x1] Invalid data found when processing input", False),
+        # A stream reference that is not FFmpeg's "#input:stream" form.
+        (
+            b"Error while decoding stream #a:b: Invalid data found when processing input",
+            False,
+        ),
+        # The decoder tag appears, but the complaint is something else.
+        (b"[dec:aac @ 0x2] Decoding error: Input buffer exhausted", False),
+        (b"[flac @ 0x1] Header missing", False),
+    ],
+)
+def test_is_skipped_packet_classifies_one_diagnostic_line(
+    line: bytes, skipped: bool
+) -> None:
+    assert is_skipped_packet(line) is skipped
+
+
 def test_a_successful_retry_always_carries_a_damage_warning() -> None:
-    (fallback,) = _damage_warnings(b"")
+    (fallback,) = damage_warnings(b"")
     assert fallback.startswith("Skipped damaged packets in the source")
-    (parsed,) = _damage_warnings(
+    (parsed,) = damage_warnings(
         b"[aist#0:0/mp3 @ 0x2] [dec:mp3float @ 0x3] Error submitting packet to "
         b"decoder: Invalid data found when processing input\n"
     )
@@ -752,16 +795,16 @@ def test_lenient_retry_blames_the_source_only_for_decode_failures() -> None:
         ),
     ):
         with pytest.raises(MediaInspectionError) as damaged:
-            _retry_skipping_damage(failing(code, message))
+            retry_skipping_damage(failing(code, message))
         assert damaged.value.code == "media.source_damaged"
 
     workspace_full = failing(
         "media.tool_failed", "ffmpeg failed (exit 1): No space left on device"
     )
     with pytest.raises(MediaToolError) as unrelated:
-        _retry_skipping_damage(workspace_full)
+        retry_skipping_damage(workspace_full)
     assert "No space left" in str(unrelated.value)
-    assert _retry_skipping_damage(lambda: "ok") == "ok"
+    assert retry_skipping_damage(lambda: "ok") == "ok"
 
 
 @pytest.mark.parametrize("retranscode_lossy", [False, True])

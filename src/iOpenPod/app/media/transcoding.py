@@ -15,6 +15,12 @@ import mutagen
 from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.media.captions import verify_captions
 from iOpenPod.app.media.chapters import imported_chapters
+from iOpenPod.app.media.decode_damage import (
+    SOURCE_DAMAGED_MESSAGE,
+    damage_warnings,
+    is_decode_failure,
+    retry_skipping_damage,
+)
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.lyrics import embedded_lyrics
 from iOpenPod.app.media.models import StreamKind
@@ -1214,14 +1220,14 @@ class MediaTranscoder:
                 try:
                     convert(strict=True)
                 except MediaToolError as error:
-                    if not _is_decode_failure(error):
+                    if not is_decode_failure(error):
                         raise
                     # Only undecodable source packets earn a second pass. Encoder,
                     # muxer and filter errors still fail the Track immediately.
                     # The strict attempt may have left a partial output behind.
                     Path(output_path.path).unlink(missing_ok=True)
-                    decode_warnings = _damage_warnings(
-                        _retry_skipping_damage(lambda: convert(strict=False)).stderr
+                    decode_warnings = damage_warnings(
+                        retry_skipping_damage(lambda: convert(strict=False)).stderr
                     )
                 report(
                     MediaPreparationPhase.INSPECTING, "Inspecting the converted media"
@@ -1453,12 +1459,12 @@ class MediaTranscoder:
                 if (
                     plan.requires_transcode
                     or result.video_streams
-                    or not _is_decode_failure(error)
+                    or not is_decode_failure(error)
                 ):
                     raise
                 # The copy keeps the user's damaged packets. Decode it as players
                 # do, then refuse a copy whose playable audio is measurably short.
-                verification_output, decoded_seconds = _retry_skipping_damage(
+                verification_output, decoded_seconds = retry_skipping_damage(
                     lambda: verify(strict=False)
                 )
                 source_seconds = _duration(selected)
@@ -1470,9 +1476,9 @@ class MediaTranscoder:
                 ):
                     raise MediaInspectionError(
                         "media.source_damaged",
-                        _SOURCE_DAMAGED_MESSAGE,
+                        SOURCE_DAMAGED_MESSAGE,
                     ) from error
-                decode_warnings = _damage_warnings(verification_output.stderr)
+                decode_warnings = damage_warnings(verification_output.stderr)
             gain: float | None = None
             warnings = (
                 *plan.warnings,
@@ -1481,6 +1487,10 @@ class MediaTranscoder:
                 *decode_warnings,
             )
             if measure_sound_check:
+                # The ebur128 filter prints integrated loudness as "I: -14.2 LUFS";
+                # the last such line is the whole-track figure. Sound Check aims
+                # at -16.5 LUFS, and anything at or below -70 LUFS is the filter's
+                # silence gate rather than a measurement.
                 measurements = re.findall(
                     rb"I:\s*(-?\d+(?:\.\d+)?)\s+LUFS", verification_output.stderr
                 )
@@ -1526,7 +1536,7 @@ def _input_arguments(
     ``strict`` aborts on the first error, which is the normal mode. A retry
     after a decode failure drops it so damaged source packets are skipped, as
     ordinary players do; ``repeat`` keeps FFmpeg from collapsing identical
-    diagnostics so ``_decode_error_warnings`` can count the skipped packets.
+    diagnostics so ``decode_error_warnings`` can count the skipped packets.
     """
     level = "info" if info else "error"
     return (
@@ -1547,108 +1557,6 @@ def _input_arguments(
         str(threads),
         "-i",
         str(source),
-    )
-
-
-# A decoder reporting AVERROR_INVALIDDATA: one undecodable source packet. FFmpeg 7
-# names the decoder context; FFmpeg 6 names the stream. Demuxer and container
-# errors carry the same text without either and must keep failing strictly.
-_SKIPPED_PACKET = re.compile(
-    rb"(?:\[dec:[^\]]*\][^\n]*|Error while decoding stream #\d+:\d+:\s*)"
-    rb"Invalid data found when processing input"
-)
-# A lenient pass that decoded nothing at all.
-_NOTHING_DECODED = re.compile(rb"Output file is empty|nothing was encoded")
-_DECODER_CONTEXT = re.compile(rb"^(?:\[[^\]]*\]\s*)+")
-# Stream, input and output contexts describe structure, not a codec's complaint.
-_STRUCTURAL_CONTEXTS = (
-    b"[in#",
-    b"[out#",
-    b"[aist#",
-    b"[vist#",
-    b"[sist#",
-    b"[dec:",
-    b"[enc:",
-)
-_SOURCE_DAMAGED_MESSAGE = (
-    "The source is too damaged to play completely: its decodable audio is shorter "
-    "than the file reports. Repair or replace the source file; this item was not "
-    "written to the iPod."
-)
-
-
-def _is_decode_failure(error: MediaToolError) -> bool:
-    """Whether a strict FFmpeg run stopped on an undecodable source packet."""
-    return error.code == "media.tool_failed" and (
-        _SKIPPED_PACKET.search(str(error).encode("utf-8", errors="replace")) is not None
-    )
-
-
-def _retry_skipping_damage[T](run: Callable[[], T]) -> T:
-    """Run the lenient second pass after a confirmed decode failure.
-
-    A pass that floods the diagnostics, still stops on undecodable packets, or
-    decodes nothing names the source as too damaged. Any other failure, such as
-    an encoder fault or a full Host workspace, keeps its own diagnosis.
-    """
-    try:
-        return run()
-    except MediaToolError as error:
-        if error.code == "media.tool_output_limit":
-            raise MediaInspectionError(
-                "media.source_damaged", _SOURCE_DAMAGED_MESSAGE
-            ) from error
-        if error.code == "media.tool_failed":
-            detail = str(error).encode("utf-8", errors="replace")
-            if _SKIPPED_PACKET.search(detail) or _NOTHING_DECODED.search(detail):
-                raise MediaInspectionError(
-                    "media.source_damaged", _SOURCE_DAMAGED_MESSAGE
-                ) from error
-        raise
-
-
-def _damage_warnings(stderr: bytes) -> tuple[str, ...]:
-    """Warn about a lenient pass even when its diagnostics could not be parsed.
-
-    The strict pass already proved the source has undecodable packets, so a
-    successful retry must never be reported as a clean conversion.
-    """
-    return _decode_error_warnings(stderr) or (
-        "Skipped damaged packets in the source. Playback may glitch briefly at "
-        "that point. Replace the source file to remove the damage.",
-    )
-
-
-def _decode_error_warnings(stderr: bytes) -> tuple[str, ...]:
-    """Summarize the source packets FFmpeg skipped during a lenient pass.
-
-    The lenient pass logs with ``repeat`` so every skipped packet keeps its own
-    decoder line. The codec's own lines immediately before the first skip, such
-    as ``Header missing`` or ``invalid sync code``, explain the damage; the
-    first is quoted.
-    """
-    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    skips = [index for index, line in enumerate(lines) if _SKIPPED_PACKET.search(line)]
-    if not skips:
-        return ()
-    explanation = b""
-    index = skips[0] - 1
-    while index >= 0:
-        line = lines[index]
-        if not line.startswith(b"[") or line.startswith(_STRUCTURAL_CONTEXTS):
-            break
-        explanation = _DECODER_CONTEXT.sub(b"", line)
-        index -= 1
-    detail = (
-        f" ({explanation.decode('utf-8', errors='replace')[:120]})"
-        if explanation
-        else ""
-    )
-    skipped = len(skips)
-    packets = "packet" if skipped == 1 else "packets"
-    return (
-        f"Skipped {skipped} damaged {packets} in the source{detail}. Playback may "
-        "glitch briefly at that point. Replace the source file to remove the damage.",
     )
 
 
