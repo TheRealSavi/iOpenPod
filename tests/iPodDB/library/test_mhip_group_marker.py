@@ -93,7 +93,8 @@ def test_noncanonical_groups_survive_supported_edits(
         if item.chunk.raw_header[0x11]
     }
     noop = source.prepare(source.analyze(source.begin_draft()))
-    assert noop.prepared and noop.prepared.itunes == original
+    assert noop.prepared is not None, noop.issues
+    assert source.serialize().itunes == original
     playlist = source.snapshot.playlists[0]
     first, second = playlist.entries
     desired = replace(

@@ -156,7 +156,8 @@ def test_explicit_repair_orders_rows_and_preserves_occurrence_metadata(
         decompress_iTunesCDB(original).logical_bytes if compressed else original
     )
     noop = source.prepare(source.analyze(source.begin_draft()))
-    assert noop.prepared and noop.prepared.itunes == original
+    assert noop.prepared is not None, noop.issues
+    assert source.serialize().itunes == original
 
     plan = source.analyze(
         source.begin_draft(repair_podcast_links=True),
@@ -197,10 +198,18 @@ def test_explicit_repair_orders_rows_and_preserves_occurrence_metadata(
     if not compressed:
         before_flat = rows(before, 2)[1].find_chunks(MhipHeader)
         after_flat = rows(checked, 2)[1].find_chunks(MhipHeader)
-        assert [s.chunk.header.track_id for s in after_flat] == [2, 1]
-        assert [
-            (c.raw_header, c.raw_body) for s in after_flat for c in s.chunk.children
-        ] == [(c.raw_header, c.raw_body) for s in before_flat for c in s.chunk.children]
+        assert [s.chunk.header.track_id for s in after_flat] == [1, 2]
+        assert {
+            s.chunk.header.track_id: [
+                (c.raw_header, c.raw_body) for c in s.chunk.children
+            ]
+            for s in after_flat
+        } == {
+            s.chunk.header.track_id: [
+                (c.raw_header, c.raw_body) for c in s.chunk.children
+            ]
+            for s in before_flat
+        }
     episode_ids = [
         s.chunk.header.group_id
         for s in rows(checked, 3)[1].find_chunks(MhipHeader)
@@ -267,7 +276,7 @@ def test_numbering_exhaustion_withholds_candidate() -> None:
 
 
 @pytest.mark.parametrize("first_position", (8808, 0))
-def test_position_only_repair_preserves_flat_values_and_all_row_headers(
+def test_position_only_repair_uses_dataset3_values_and_preserves_row_headers(
     first_position: int,
 ) -> None:
     document = parse_iTunesDB(numbering_source("ordered").serialize().itunes)
@@ -300,7 +309,8 @@ def test_position_only_repair_preserves_flat_values_and_all_row_headers(
     source = IPodLibrary(write_iTunesDB(document))
     original = source.serialize().itunes
     noop = source.prepare(source.analyze(source.begin_draft()))
-    assert noop.prepared and noop.prepared.itunes == original
+    assert noop.prepared is not None, noop.issues
+    assert source.serialize().itunes == original
     plan = source.analyze(source.begin_draft(repair_podcast_links=True))
     assert any(change.action == "repair" for change in plan.changes)
     result = source.prepare(plan)
@@ -310,7 +320,9 @@ def test_position_only_repair_preserves_flat_values_and_all_row_headers(
     for kind in (2, 3):
         before = rows(document, kind)[1].find_chunks(MhipHeader)
         after = rows(checked, kind)[1].find_chunks(MhipHeader)
-        assert [s.chunk.header for s in after] == [s.chunk.header for s in before]
+        assert {s.chunk.header.mhip_persistent_id: s.chunk.header for s in after} == {
+            s.chunk.header.mhip_persistent_id: s.chunk.header for s in before
+        }
         for occurrence in after:
             item = occurrence.chunk
             if item.header.track_id:
@@ -318,7 +330,7 @@ def test_position_only_repair_preserves_flat_values_and_all_row_headers(
                     c.prefix.position
                     for c in item.children
                     if isinstance(c.prefix, MhodPlaylistPositionPrefix)
-                ] == [expected[item.header.track_id]]
+                ] == [item.header.group_id]
     reopened = IPodLibrary(result.prepared.itunes)
     again = reopened.prepare(
         reopened.analyze(reopened.begin_draft(repair_podcast_links=True))

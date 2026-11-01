@@ -32,6 +32,7 @@ from iPodDB.library._playlist_datasets import (
     is_visible,
     playlist_rows,
 )
+from iPodDB.library._playlist_mirroring import synchronize_counterparts
 from iPodDB.library._playlist_projection import project_playlist
 from iPodDB.library._playlist_writing import (
     edit_playlist,
@@ -74,6 +75,7 @@ def reconcile(
     issues: list[WriteIssue],
     device_time: TimeConversion = 0,
 ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
+    document = synchronize_counterparts(document)
     source_document = document
     original, desired = resolved.original, resolved.desired
     logger.debug(
@@ -712,4 +714,4 @@ def reconcile(
         for draft_id, native_id in mapping.items()
         if draft_id != native_id
     )
-    return document, mappings
+    return synchronize_counterparts(document), mappings

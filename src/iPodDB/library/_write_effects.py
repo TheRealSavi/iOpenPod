@@ -200,6 +200,15 @@ def describe_effects(
                 change.record_id,
                 "Allocate native identities and metadata for the generated record.",
             )
+    if any("playlist_counterparts" in c.fields for c in plan.changes):
+        effect(
+            "playlist.reconcile",
+            "library",
+            None,
+            "Make dataset 2 match the Playlists in dataset 3, retaining flat Podcast entries.",
+            ("playlist_counterparts",),
+            2,
+        )
     for identity in sorted(changed):
         effect(
             "playlist.counterparts",

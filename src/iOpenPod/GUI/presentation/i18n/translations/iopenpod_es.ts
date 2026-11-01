@@ -10124,6 +10124,10 @@ Playlists: %3</translation>
         <translation>Mantener el recorrido nativo de álbumes del tipo de orden 36 y las posiciones de la lista principal.</translation>
     </message>
     <message>
+        <source>Make dataset 2 match the Playlists in dataset 3, retaining flat Podcast entries.</source>
+        <translation>Hacer que el conjunto de datos 2 coincida con las listas de reproducción del conjunto de datos 3, manteniendo las entradas de pódcast sin agrupar.</translation>
+    </message>
+    <message>
         <source>Manual</source>
         <translation>Manual</translation>
     </message>
@@ -11862,6 +11866,10 @@ Playlists: %3</translation>
     <message>
         <source>On (raw {value})</source>
         <translation>Activado (valor sin procesar: {value})</translation>
+    </message>
+    <message>
+        <source>Playlist datasets do not match the authoritative dataset 3.</source>
+        <translation>Los conjuntos de datos de listas de reproducción no coinciden con el conjunto de datos 3 de referencia.</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved. {detail}</source>

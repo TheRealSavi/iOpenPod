@@ -4,6 +4,7 @@ from collections import Counter
 from dataclasses import replace
 
 from iPodDB.device_time import TimeConversion, unix_to_mac
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
@@ -36,6 +37,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
+from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library._album_index import master_tracks, verify_album_index
 from iPodDB.library._hierarchy import folder_hierarchy
 from iPodDB.library._index_verification import verify_index
@@ -47,6 +49,10 @@ from iPodDB.library._playlist_datasets import (
     missing_podcast_companion,
     playlist_rows,
     structure_issues,
+)
+from iPodDB.library._playlist_mirroring import (
+    counterparts_match,
+    synchronize_counterparts,
 )
 from iPodDB.library._playlist_projection import project_playlist
 from iPodDB.library._projection import project_tracks
@@ -108,6 +114,17 @@ def verify_playlists(
     sqlite: bool = False,
     refreshed_smart_playlists: frozenset[int] = frozenset(),
 ) -> tuple[WriteIssue, ...]:
+    # Reconciliation explicitly replaces conflicting dataset-2 relationships.
+    # Retention checks use that reviewed baseline; dataset 3 stays byte-retained.
+    mirrored = synchronize_counterparts(
+        original,
+        create_missing=any(
+            s.chunk.header.dataset_type == 2 for s in checked.find_chunks(MhsdHeader)
+        ),
+    )
+    if mirrored is not original:
+        original_bytes = write_iTunesDB(mirrored)
+        original = parse_iTunesDB(original_bytes)
     issues = list(
         structure_issues(
             checked,
@@ -186,6 +203,12 @@ def verify_playlists(
         )
 
     kinds = [s.chunk.header.dataset_type for s in checked.find_chunks(MhsdHeader)]
+    if not counterparts_match(checked):
+        fail(
+            "playlist_mirror",
+            "Playlist datasets do not match the authoritative dataset 3.",
+            2,
+        )
     missing_podcasts = missing_podcast_companion(original)
     if (
         affected_datasets(before, desired).intersection((2, 3))

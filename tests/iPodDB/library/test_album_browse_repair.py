@@ -512,7 +512,9 @@ def test_rebuild_rejects_ambiguous_native_structures(
     )
     assert result.prepared is None
     issues = [i for i in result.issues if i.code == "library.album_rebuild_ambiguous"]
-    assert len(issues) == 1
+    assert len(issues) == (
+        2 if malformation in ("missing_member", "duplicate_member") else 1
+    )
     assert issues[0].message == (
         "Album index rebuilding requires complete, unambiguous Master Playlist membership."
         if malformation in ("missing_member", "duplicate_member")

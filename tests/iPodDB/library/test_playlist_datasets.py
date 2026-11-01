@@ -42,6 +42,7 @@ from iPodDB.library import (
     SmartRuleGroup,
     _write_preparation,
 )
+from iPodDB.library._playlist_mirroring import counterparts_match
 from iPodDB.library._reconcile import reconcile
 from iPodDB.library._resolved_write import ResolvedWrite
 from iPodDB.library.models import LibrarySnapshot
@@ -281,7 +282,7 @@ def test_new_playlist_completes_podcast_counterparts_and_preserves_existing_rows
     original = parse_iTunesDB(original_bytes)
     noop = source.prepare(source.analyze(source.begin_draft()))
     assert noop.prepared is not None, noop.issues
-    assert noop.prepared.itunes == original_bytes
+    assert (noop.prepared.itunes == original_bytes) == with_flat_counterpart
     smart = (
         SmartPlaylist(
             rules=SmartRuleGroup(
@@ -378,19 +379,21 @@ def test_new_playlist_completes_podcast_counterparts_and_preserves_existing_rows
         )
     assert plan.resolution is not None
     companion_effects = [
-        e for e in plan.resolution.effects if e.code == "playlist.companion"
+        e for e in plan.resolution.effects if e.code == "playlist.reconcile"
     ]
     assert len(companion_effects) == (0 if with_flat_counterpart else 1)
     if companion_effects:
-        assert companion_effects[0].record_id == 10
+        assert companion_effects[0].record_id is None
         assert companion_effects[0].dataset == 2
         assert companion_effects[0].causes
     assert source.serialize().itunes == original_bytes
 
 
 @pytest.mark.parametrize("mismatch", ["missing", "conflicting"])
-def test_dataset3_only_podcasts_does_not_exempt_ordinary_playlist_mirrors(
+@pytest.mark.parametrize("edit_existing", [False, True])
+def test_dataset3_only_podcasts_reconciles_ordinary_counterparts_during_additions(
     mismatch: str,
+    edit_existing: bool,
 ) -> None:
     source = populated_podcasts()
     document = parse_iTunesDB(source.serialize().itunes)
@@ -421,13 +424,21 @@ def test_dataset3_only_podcasts_does_not_exempt_ordinary_playlist_mirrors(
     desired = replace(
         source.snapshot,
         playlists=(
-            *source.snapshot.playlists,
+            *(
+                replace(p, name="Edited")
+                if edit_existing and p.playlist_id == 20
+                else p
+                for p in source.snapshot.playlists
+            ),
             Playlist(-1, "New", PlaylistKind.PLAYLIST),
         ),
     )
     result = source.prepare(source.analyze(source.begin_draft(desired)))
-    assert result.prepared is None
-    assert any(issue.code == "playlist.ambiguous_mirror" for issue in result.issues)
+    assert result.prepared is not None, result.issues
+    checked = parse_iTunesDB(result.prepared.itunes)
+    assert counterparts_match(checked)
+    flat_rows = {s.chunk.header.playlist_id: s.chunk for s in rows(checked, 2)}
+    assert 10 in flat_rows and 20 in flat_rows
 
 
 @pytest.mark.parametrize("missing_dataset", [False, True])
@@ -482,9 +493,9 @@ def test_new_podcast_counterpart_receives_edits_in_the_same_write(
     ("corruption", "code"),
     [
         ("missing", "playlist_missing_mirror"),
-        ("group", "podcast_dataset"),
-        ("row_id", "podcast_row_mirror"),
-        ("position", "podcast_position_mirror"),
+        ("group", "playlist_mirror"),
+        ("row_id", "playlist_mirror"),
+        ("position", "playlist_mirror"),
     ],
 )
 def test_verification_rejects_a_missing_or_invalid_new_podcast_counterpart(
@@ -827,7 +838,7 @@ def test_fixed_original_playlist_chunks_roundtrip_exactly(name: str) -> None:
     assert result.prepared.itunes == bytes(data)
 
 
-def test_distinct_podcast_mirror_order_survives_a_rename() -> None:
+def test_distinct_podcast_mirror_order_is_reconciled_during_a_rename() -> None:
     source = podcast_source()
     desired = replace(
         source.snapshot,
@@ -866,7 +877,7 @@ def test_distinct_podcast_mirror_order_survives_a_rename() -> None:
     output = parse_iTunesDB(result.prepared.itunes)
     assert tuple(
         s.chunk.header.track_id for s in rows(output, 2)[1].find_chunks(MhipHeader)
-    ) == (1, 2, 1)
+    ) == (1, 1, 2)
     assert result.prepared.snapshot.playlists[0].track_ids == (1, 1, 2)
 
 

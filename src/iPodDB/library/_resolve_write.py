@@ -29,6 +29,10 @@ from iPodDB.library._playlist_datasets import (
     playlist_rows,
     structure_issues,
 )
+from iPodDB.library._playlist_mirroring import (
+    counterparts_match,
+    synchronize_counterparts,
+)
 from iPodDB.library._playlist_projection import project_playlist
 from iPodDB.library._podcast_writing import (
     normalize_podcast_order,
@@ -51,7 +55,7 @@ from iPodDB.library.writing import (
 from iPodDB.shared.chunk import DatabaseDocument
 
 PRESERVATION = (
-    "Unchanged semantic values retain their native representation and Unknown Data.",
+    "Dataset 2 follows authoritative dataset 3; other unchanged semantic values retain their native representation and Unknown Data.",
     "Unrelated datasets, photo data, and retained artwork byte ranges remain intact.",
     "Retained Playlist occurrences keep their private metadata.",
     "Unsupported untouched Smart rules and saved membership remain unchanged.",
@@ -130,6 +134,11 @@ def resolve(
     source_revision: str,
     device_time: DeviceTimeContext,
 ) -> ResolvedWrite:
+    captured_document = document
+    document = synchronize_counterparts(document)
+    mirror_repair = document is not captured_document or not counterparts_match(
+        document
+    )
     rows = playlist_rows(document)
     plan = analyze(
         source_revision,
@@ -149,6 +158,20 @@ def resolve(
             for kind, row in rows
         ),
     )
+    if mirror_repair:
+        plan = replace(
+            plan,
+            changes=(
+                *plan.changes,
+                LibraryChange(
+                    "library",
+                    None,
+                    "repair",
+                    "Playlist counterparts",
+                    ("playlist_counterparts",),
+                ),
+            ),
+        )
     repair_ids = frozenset(
         row.chunk.header.playlist_id
         for kind, row in rows
@@ -297,7 +320,7 @@ def resolve(
             (),
         )
     affected = affected_datasets(original, desired)
-    if repair_ids or refresh_ids:
+    if repair_ids or refresh_ids or mirror_repair:
         affected |= frozenset((2, 3))
     if plan.changes_itunes:
         datasets = document.find_chunks(MhsdHeader)
@@ -462,7 +485,7 @@ def resolve(
             for index in indexes
         )
     native_tracks = document.find_chunks(MhitHeader)
-    native_playlists = document.find_chunks(MhypHeader)
+    native_playlists = captured_document.find_chunks(MhypHeader)
     track_ids: dict[int, int] = {}
     playlist_ids: dict[int, int] = {}
     persistent_ids = {

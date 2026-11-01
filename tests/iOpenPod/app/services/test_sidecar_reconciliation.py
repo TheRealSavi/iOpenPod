@@ -39,6 +39,7 @@ from iPodDB.library import (
     WriteResources,
     _write_preparation,
 )
+from iPodDB.library._playlist_mirroring import counterparts_match
 from iPodDB.library._playlist_writing import position_item
 from iPodDB.library._smart_writing import smart_chunks
 from iPodDB.shared.chunk import DatabaseDocument, chunk_as
@@ -124,12 +125,14 @@ def _smart_metadata_bytes(data: bytes) -> tuple[tuple[bytes, ...], ...]:
     )
 
 
-def test_stale_smart_copy_stays_byte_exact_without_refresh_intent() -> None:
+def test_stale_smart_copy_is_reconciled_without_refresh_intent() -> None:
     original = _saved_smart_playlists("membership", canonical_members=(1,))
     source = IPodLibrary(original)
     result = source.prepare(source.analyze(source.begin_draft()))
     assert result.prepared is not None, result.issues
-    assert result.prepared.itunes == original
+    assert counterparts_match(parse_iTunesDB(result.prepared.itunes))
+    assert result.prepared.snapshot == source.snapshot
+    assert source.serialize().itunes == original
 
 
 @pytest.mark.parametrize("identities", [(10, 10), (-1,), (1000,)])
@@ -293,7 +296,7 @@ def test_selection_refreshes_smart_playlists_and_adds_otg(
 
 
 @pytest.mark.parametrize("mismatch", ["name", "rules"])
-def test_selection_blocks_conflicting_smart_definitions_without_consuming_evidence(
+def test_selection_reconciles_conflicting_smart_definitions_and_commits_evidence(
     tmp_path: Path, mismatch: str
 ) -> None:
     device = build_device(tmp_path, model="MA450")
@@ -305,19 +308,19 @@ def test_selection_blocks_conflicting_smart_definitions_without_consuming_eviden
         for name, data in files.items():
             (directory / name).write_bytes(data)
         candidate_id = device.active.candidate.id
-        with pytest.raises(
-            DeviceLibraryLoadError, match="dataset disagrees"
-        ) as failure:
-            device.coordinator.select_device(candidate_id)
-        assert (
-            f"different source fields: {'smart' if mismatch == 'rules' else 'name'}"
-            in str(failure.value)
+        selected = device.coordinator.select_device(candidate_id)
+        assert selected.library.tracks[0].play_count == 3
+        assert selected.library.playlists[0].track_ids == (1,)
+        committed = (directory / "iTunesDB").read_bytes()
+        assert counterparts_match(parse_iTunesDB(committed))
+        canonical_metadata = _smart_metadata_bytes(original)[0]
+        assert _smart_metadata_bytes(committed) == (
+            canonical_metadata,
+            canonical_metadata,
         )
-        assert device.coordinator.active_ipod is None
-        assert (directory / "iTunesDB").read_bytes() == original
         for name, data in files.items():
-            assert (directory / name).read_bytes() == data
-            assert not (directory / (name + ".bak")).exists()
+            assert not (directory / name).exists()
+            assert (directory / (name + ".bak")).read_bytes() == data
     finally:
         device.coordinator.close()
 

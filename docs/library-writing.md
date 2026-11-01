@@ -747,14 +747,15 @@ prefixes against the captured inventory's sizes and hashes. Replacing an image
 selection may append new image data; it must not relocate retained images or
 silently overwrite uncaptured source thumbnail files.
 
-Affected existing dataset mirrors keep their own metadata and occurrences, including
-duplicate Tracks. Empty Master-only mirrors accept the first Playlist. A source
-with only dataset 3 gains a flat dataset 2 companion for affected edits; conflicting
-existing counterparts block additions. When dataset 2 exists but lacks the special
-Podcasts Playlist, affected writes create its flat counterpart from retained
-dataset-3 metadata before checking completeness. Existing counterparts remain
-intact, and ordinary Playlists still require established counterparts; see
-[ADR-0174](adr/0174-create-missing-flat-podcasts-counterparts.md).
+Dataset 3 is authoritative for Playlist relationships. Every preparation makes
+existing dataset 2 agree: missing rows are created, conflicts corrected, extra
+rows removed, and order aligned. Matching records and surviving occurrence metadata
+remain retained. Podcast Episodes are grouped in dataset 3 and flat in dataset 2.
+Repairs appear in Review even without other edits; nested Smart references and
+folder changes use the same policy. Output verification rejects any remaining
+counterpart disagreement. Pure serialization retains the original bytes.
+Whole-dataset creation keeps the existing target policy. See
+[ADR-0223](adr/0223-reconcile-playlist-datasets-from-dataset3.md).
 New Playlists carry native identity mirrors
 and the Original writer's display preferences. Master membership, known browse
 indexes, album/artist/composer links, folder child rules and aggregates, and podcast
@@ -875,9 +876,9 @@ The semantic writer does not evaluate Smart Playlists or firmware category rules
 The Application Layer refreshes supported Smart Playlists with Live updating enabled
 before submission. It supplies explicit refresh intent for retained live Smart
 Playlists so iPodDB can update stale native counterparts even when the canonical
-copy is already current. Matching definitions permit differing saved membership;
-conflicting definitions or metadata still block the write. Each copy retains its
-own surviving occurrence metadata. See
+copy is already current. Dataset-2 definitions, metadata, and membership now
+follow authoritative dataset 3 (ADR-0223). Each copy retains its own surviving
+occurrence metadata. This extends
 [ADR-0213](adr/0213-refresh-compatible-smart-playlist-counterparts.md). Dataset 5
 retains its native category fields and metadata, including categories that carry a
 Master flag. Ambiguous affected relationships block preparation; unrelated source

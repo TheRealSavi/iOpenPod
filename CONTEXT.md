@@ -14,6 +14,14 @@ then beyond it.
 
 ## Current stage
 
+Library preparation now makes dataset 2 agree with authoritative dataset 3.
+Missing, extra, conflicting, and reordered Playlists are reconciled for every
+write, including repair-only preparations. Podcast Episodes remain grouped in
+dataset 3 and flat in dataset 2. Pure serialization retains the original bytes.
+Synthetic and virtual-device checks cover the change; the reported database and
+physical firmware acceptance remain unavailable. See
+[ADR-0223](docs/adr/0223-reconcile-playlist-datasets-from-dataset3.md).
+
 F1061 now authors 55-by-55 visible pixels with 112-byte rows on Classic 6/6.5/7
 and nano 3, based on independent firmware checks. Normal saves and Sync repair
 evidenced legacy geometry through fresh thumbnail shards and the existing
@@ -43,7 +51,7 @@ See [ADR-0217](docs/adr/0217-preserve-phase-evidence-for-native-difficulty.md) a
 Automatic Smart Playlist refresh now reconciles differing saved membership in
 otherwise matching native counterparts, including when the canonical copy is
 already current. Occurrences retain each copy's own metadata; conflicting
-definitions still block publication with field-specific diagnostics. Selection,
+dataset-2 definitions now follow dataset 3 under ADR-0223. Selection,
 ordinary saves, and Sync keep automatic refresh. Synthetic and virtual iPod Video
 checks cover preservation and verification; the reported database remains
 unavailable. See

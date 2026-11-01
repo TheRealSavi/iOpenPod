@@ -10124,6 +10124,10 @@ Playlists: %3</translation>
         <translation>Die originale Albumreihenfolge des Sortiertyps 36 und Positionen der Hauptwiedergabeliste beibehalten.</translation>
     </message>
     <message>
+        <source>Make dataset 2 match the Playlists in dataset 3, retaining flat Podcast entries.</source>
+        <translation>Datenbestand 2 an die Wiedergabelisten in Datenbestand 3 angleichen und flache Podcast-Einträge beibehalten.</translation>
+    </message>
+    <message>
         <source>Manual</source>
         <translation>Manuell</translation>
     </message>
@@ -11862,6 +11866,10 @@ Playlists: %3</translation>
     <message>
         <source>On (raw {value})</source>
         <translation>Ein (Rohwert {value})</translation>
+    </message>
+    <message>
+        <source>Playlist datasets do not match the authoritative dataset 3.</source>
+        <translation>Die Wiedergabelisten-Datenbestände stimmen nicht mit dem maßgeblichen Datenbestand 3 überein.</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved. {detail}</source>

@@ -40,6 +40,7 @@ from iPodDB.iTunesDB.writer.signature import sign_hash58
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library import IPodLibrary, Playlist, PlaylistEntry, PlaylistKind
 from iPodDB.library._identities import allocate
+from iPodDB.library._playlist_mirroring import counterparts_match
 from iPodDB.library.writing import (
     IssueSeverity,
     WriteChecksum,
@@ -64,15 +65,19 @@ def test_hash58_matches_captured_original_project_vectors() -> None:
         assert signed[0x32:0x46] == data[0x32:0x46]
 
 
-def test_original_both_database_fixtures_prepare_exactly() -> None:
+def test_original_fixture_serializes_exactly_and_preparation_reconciles_playlists() -> (
+    None
+):
     itunes = base64.b64decode((FIXTURES / "iTunesDB/original-empty.b64").read_bytes())
     artwork = base64.b64decode(
         (FIXTURES / "ArtworkDB/original-with-unknown-data.b64").read_bytes()
     )
     source = IPodLibrary(itunes).with_artwork(artwork)
+    assert (source.serialize().itunes, source.serialize().artwork) == (itunes, artwork)
     result = source.prepare(source.analyze(source.begin_draft()))
     assert result.prepared is not None, result.issues
-    assert (result.prepared.itunes, result.prepared.artwork) == (itunes, artwork)
+    assert result.prepared.artwork == artwork
+    assert counterparts_match(parse_iTunesDB(result.prepared.itunes))
 
 
 def test_short_root_noop_and_contextual_packing_failure() -> None:

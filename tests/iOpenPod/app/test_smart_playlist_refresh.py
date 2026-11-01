@@ -24,6 +24,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
     MhodSmartRawRuleData,
     MhodSmartRulesPayload,
 )
+from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
@@ -315,6 +316,90 @@ def _saved_memberships(device: Device) -> dict[str, tuple[int, ...]]:
         (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
     )
     return {playlist.name: playlist.track_ids for playlist in source.snapshot.playlists}
+
+
+def test_nano4_saves_new_smart_playlist_with_an_unpaired_existing_playlist(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path, model="MB598", host_recovery=True)
+    try:
+        first = device.active.library.tracks[0]
+        _seed(
+            device,
+            (
+                _smart(
+                    10,
+                    SmartRule(SmartField.TITLE, SmartOperator.IS, first.title),
+                    first.track_id,
+                ),
+            ),
+        )
+        identity = next(
+            p.playlist_id
+            for p in device.active.library.playlists
+            if p.name == "Smart 10"
+        )
+        device.coordinator.close()
+        database = device.root / "iPod_Control/iTunes/iTunesDB"
+        document = parse_iTunesDB(database.read_bytes())
+        dataset = next(
+            s
+            for s in document.find_chunks(MhsdHeader)
+            if s.chunk.header.dataset_type == 2
+        )
+        container = dataset.chunk.children[0]
+        document = document.replace_chunk(
+            dataset,
+            replace(
+                dataset.chunk,
+                children=(
+                    replace(
+                        container,
+                        children=tuple(
+                            c
+                            for c in container.children
+                            if not isinstance(c.header, MhypHeader)
+                            or c.header.playlist_id != identity
+                        ),
+                    ),
+                ),
+            ),
+        )
+        database.write_bytes(write_iTunesDB(document))
+        device.coordinator.select_device(
+            device.coordinator.discover_devices().candidates[0].id
+        )
+        before = database.read_bytes()
+        snapshot = device.active.library
+        review = device.prepare(
+            replace(
+                snapshot,
+                playlists=(
+                    *snapshot.playlists,
+                    _smart(
+                        -1, SmartRule(SmartField.TITLE, SmartOperator.IS, first.title)
+                    ),
+                ),
+            )
+        )
+        assert review.result.prepared is not None, review.result.issues
+        assert database.read_bytes() == before
+        saved = device.save(review)
+        assert saved.active is not None, saved.issues
+        added = next(p for p in saved.active.library.playlists if p.name == "Smart -1")
+        assert added.track_ids == (
+            first.track_id,
+        )  # The ordinary save still evaluates rules.
+        checked = parse_iTunesDB(database.read_bytes())
+        for dataset in checked.find_chunks(MhsdHeader):
+            kind = dataset.chunk.header.dataset_type
+            if kind not in (2, 3):
+                continue
+            ids = {s.chunk.header.playlist_id for s in dataset.find_chunks(MhypHeader)}
+            assert added.playlist_id in ids
+            assert identity in ids
+    finally:
+        device.coordinator.close()
 
 
 def test_invalid_refresh_blocks_publication_and_retains_saved_membership(

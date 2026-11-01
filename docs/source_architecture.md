@@ -865,6 +865,10 @@ Caller-owned readable content and output buffers allow bounded hashing and range
 reads while Storage manages private Host files for overflow beyond preparation
 memory budgets. Small resources and the default iPodDB buffers remain in memory.
 See [ADR-0117](adr/0117-spill-prepared-library-content-to-host-storage.md).
+Dataset 3 is authoritative for Playlist relationships. Library preparation makes
+dataset 2 agree before and after requested edits, preserving flat Podcast Episodes
+there. Repairs appear in Review even without semantic edits; reparsed output must
+match before publication (ADR-0223).
 The Application Layer exposes background Review Changes with revision checks,
 grouped diagnostics, and cancellation. Physical Sync remains separate. See
 [Library contract](library-contract.md), [Library writing](library-writing.md),
@@ -2061,8 +2065,9 @@ time and the input draft's saved Playlist memberships; unsupported rules and fir
 preserved. No-change Sync also reaches this step. See ADR-0142.
 The request identifies evaluated retained live Smart Playlists. iPodDB reconciles
 their matching native counterparts even when only a noncanonical copy has stale
-membership, preserving per-copy occurrence metadata and blocking definition
-conflicts. Default no-op serialization remains byte-exact. See ADR-0213.
+membership, preserving per-copy occurrence metadata (ADR-0213). Dataset-2
+definition conflicts follow dataset 3 under ADR-0223. Pure serialization remains
+byte-exact; preparation reports and reconciles counterpart differences.
 Sync also carries an explicit database refresh intent. SQLite targets regenerate
 their companion artifacts under ADR-0147; non-SQLite targets with Tracks rebuild
 retained sort-4 Albums indexes under ADR-0148 and ADR-0194. A retained index may
