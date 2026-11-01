@@ -163,14 +163,15 @@ def test_invalid_subscription_documents_fail_closed(payload: bytes) -> None:
         decode_subscriptions(payload)
 
 
-def test_subscription_settings_round_trip_in_version_three() -> None:
+@pytest.mark.parametrize("episode_slots", (0, 7, 50))
+def test_subscription_settings_round_trip_in_version_three(episode_slots: int) -> None:
     subscription = PodcastSubscription(
         "show",
         "https://example.test/feed",
         "Show",
         SubscriptionSource.USER,
         sync_settings=PodcastSyncSettings(
-            episode_slots=7,
+            episode_slots=episode_slots,
             fill_mode=PodcastFillMode.NEXT,
             clear_when_listened=False,
             clear_older_than=PodcastClearAge.WEEK,
@@ -195,7 +196,7 @@ def test_version_one_subscriptions_receive_original_defaults() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     (
-        ("episode_slots", 0),
+        ("episode_slots", -1),
         ("episode_slots", 51),
         ("episode_slots", True),
         ("episode_slots", 1.5),

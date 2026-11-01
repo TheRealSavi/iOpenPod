@@ -869,6 +869,9 @@ album once across all its members. Explicit title/feed changes can split shows;
 ordinary saves do not merge separate source albums. See ADR-0165.
 Episode slots are an automatic filling target;
 manual additions may exceed it. Episode count alone never authorizes removal.
+Setting the target to zero disables automatic feed refresh, filling, clearing,
+replacement, and retained-cover repair during Sync for that Podcast Subscription;
+manual Episode additions and removals remain available.
 Both Newest and Next clear by listened state or time on the iPod. Newest replaces
 only clear-eligible Episodes with newer publications. Next starts after the furthest listened
 publication, or with the oldest available Episode when no listened publication is

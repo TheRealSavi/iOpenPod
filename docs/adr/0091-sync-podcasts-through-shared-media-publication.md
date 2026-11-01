@@ -2,6 +2,8 @@
 
 > ADR-0149 amends native GUID/metadata authoring, neutral downloaded identity
 > records, show-link repair, and embedded chapter-picture import.
+> The 2026-11-01 amendment below extends the slot range to 0–50 and defines zero
+> as disabling automatic Podcast Sync for that Subscription.
 
 - Status: Accepted
 - Date: 2026-09-27
@@ -117,3 +119,16 @@ RSS image falls back to a usable cover embedded in the original download, then t
 the show's publisher cover. This changes the earlier embedded-first import policy
 without changing the bounded artwork loader, shared preparation budget, or verified
 publication. Existing on-device covers remain preserved during ordinary Sync.
+
+## Amendment: zero slots disable automatic Podcast Sync (2026-11-01)
+
+At the user's request, Episode slots now range from 0 to 50, with the existing
+default of 3. Zero disables the Subscription's automatic feed refresh, Episode
+selection, clearing, replacements, and retained-cover repair during every Sync
+entry point. Existing Episodes remain on the iPod, including listened and aged
+Episodes. Explicit additions and removals remain available. Raising the target
+above zero resumes the saved retention policy. Listening History still reconciles
+observed device facts independently of automatic media management.
+
+The existing Subscription document version stores zero without a format change.
+Older readers that only accept 1–50 fail closed on that value.

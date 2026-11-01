@@ -96,6 +96,8 @@ def plan_podcast_sync(
     if request.automatic:
         for identity in scoped:
             managed_subscription = subscriptions[identity]
+            if managed_subscription.sync_settings.episode_slots == 0:
+                continue
             current = _current_episodes(managed_subscription, tracks)
             if current is None:
                 issues.append(

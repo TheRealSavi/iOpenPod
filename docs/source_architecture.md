@@ -2214,6 +2214,9 @@ transaction preconditions, so changed source media cannot publish stale pixels.
 See ADR-0152 and ADR-0153.
 
 Episode slots limit automatic filling, not manual additions or retained membership.
+The range is 0–50. Zero disables that Subscription's automatic Sync feed refresh,
+filling, clearing, replacements, and retained-cover repair; explicit Episode
+additions and removals remain available. Observed Listening History still reconciles.
 Both fill modes clear by listened state or time on the iPod. Newest fills vacancies
 or replaces clear-eligible Episodes with newer publications; durable chronology of
 automatic clears prevents later older backfill. Next starts after the furthest

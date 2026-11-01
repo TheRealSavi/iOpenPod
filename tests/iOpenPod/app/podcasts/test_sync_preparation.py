@@ -15,9 +15,10 @@ from iOpenPod.app.podcasts.models import (
     PodcastEpisode,
     PodcastSnapshot,
     PodcastSubscription,
+    PodcastSyncSettings,
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastStateRevision
-from iOpenPod.app.podcasts.sync import PodcastSyncRequest
+from iOpenPod.app.podcasts.sync import PodcastSyncPlan, PodcastSyncRequest
 from iOpenPod.app.podcasts.sync_preparation import (
     prepare_podcast_sync,
     state_after_podcast_sync,
@@ -85,6 +86,34 @@ def test_failed_refresh_cannot_clear_a_listened_episode() -> None:
     assert coordinator.saved[0].snapshot.history[0].listened
 
 
+@pytest.mark.parametrize("scoped", (False, True))
+def test_saved_zero_slots_skip_sync_feed_refresh_and_artwork_repairs(
+    scoped: bool,
+) -> None:
+    source, captured = _state()
+    subscription = captured.subscriptions[0]
+    disabled = replace(subscription, sync_settings=PodcastSyncSettings(episode_slots=0))
+    coordinator = _Coordinator(replace(captured, subscriptions=(disabled,)))
+    feeds = _Feeds()
+
+    prepared = prepare_podcast_sync(
+        PodcastSyncRequest(
+            captured,
+            subscription_ids=(subscription.subscription_id,) if scoped else None,
+        ),
+        source,
+        cast("DeviceCoordinator", coordinator),
+        lambda: None,
+        feeds=feeds,
+    )
+
+    assert feeds.calls == 0
+    assert prepared.plan == PodcastSyncPlan()
+    assert prepared.refreshed_subscription_ids == ()
+    assert prepared.state.snapshot.subscriptions[0].sync_settings.episode_slots == 0
+    assert coordinator.saved[0].snapshot.history[0].listened
+
+
 def test_repeated_feed_ids_preserve_episodes_while_other_shows_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -139,8 +168,20 @@ def test_repeated_feed_ids_preserve_episodes_while_other_shows_refresh(
     assert retained.title in issue.message and retained.feed_url in issue.detail
 
 
-def test_manual_add_uses_captured_episode_metadata_without_feed_refresh() -> None:
+@pytest.mark.parametrize("episode_slots", (0, 3))
+def test_manual_add_uses_captured_episode_metadata_without_feed_refresh(
+    episode_slots: int,
+) -> None:
     source, snapshot = _state()
+    snapshot = replace(
+        snapshot,
+        subscriptions=(
+            replace(
+                snapshot.subscriptions[0],
+                sync_settings=PodcastSyncSettings(episode_slots=episode_slots),
+            ),
+        ),
+    )
     subscription = snapshot.subscriptions[0]
     episode = PodcastEpisode(
         "new", title="New", enclosure_url="https://example.test/new.mp3"
@@ -170,8 +211,20 @@ def test_manual_add_uses_captured_episode_metadata_without_feed_refresh() -> Non
     assert not plan.removals
 
 
-def test_manual_remove_preserves_history_without_refreshing_feed() -> None:
+@pytest.mark.parametrize("episode_slots", (0, 3))
+def test_manual_remove_preserves_history_without_refreshing_feed(
+    episode_slots: int,
+) -> None:
     source, snapshot = _state()
+    snapshot = replace(
+        snapshot,
+        subscriptions=(
+            replace(
+                snapshot.subscriptions[0],
+                sync_settings=PodcastSyncSettings(episode_slots=episode_slots),
+            ),
+        ),
+    )
     subscription = snapshot.subscriptions[0]
     coordinator = _Coordinator(snapshot)
     feeds = _Feeds()
@@ -274,6 +327,46 @@ def test_only_requested_subscription_is_refreshed() -> None:
     )
     plan = prepared.plan
     assert feeds.calls == 1 and not plan.removals
+
+
+def test_disabled_subscription_does_not_block_other_shows() -> None:
+    source, snapshot = _state()
+    disabled = replace(
+        snapshot.subscriptions[0], sync_settings=PodcastSyncSettings(episode_slots=0)
+    )
+    healthy = replace(
+        disabled,
+        subscription_id=subscription_identity(
+            "https://example.test/healthy", "Healthy"
+        ),
+        feed_url="https://example.test/healthy",
+        title="Healthy",
+        episodes=(),
+        sync_settings=PodcastSyncSettings(),
+    )
+    incoming = PodcastEpisode(
+        "new", title="New", enclosure_url="https://example.test/new.mp3"
+    )
+    feeds = _Feeds(replace(healthy, episodes=(incoming,)))
+    snapshot = replace(snapshot, subscriptions=(disabled, healthy))
+
+    prepared = prepare_podcast_sync(
+        PodcastSyncRequest(snapshot),
+        source,
+        cast("DeviceCoordinator", _Coordinator(snapshot)),
+        lambda: None,
+        feeds=feeds,
+    )
+
+    assert feeds.calls == 1
+    assert prepared.refreshed_subscription_ids == (healthy.subscription_id,)
+    assert len(prepared.plan.additions) == 1
+    assert (
+        prepared.plan.additions[0].subscription.subscription_id
+        == healthy.subscription_id
+    )
+    assert prepared.plan.additions[0].episode == incoming
+    assert not prepared.plan.removals and not prepared.plan.issues
 
 
 def test_automatic_clear_history_only_stages_for_actual_podcast_removals() -> None:

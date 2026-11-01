@@ -24,7 +24,9 @@ def patch_version(offset: int) -> str:
 
 
 CURRENT_VERSION = str(_PROJECT_VERSION)
-PREVIOUS_VERSION = patch_version(-1)
-OLDER_VERSION = patch_version(-2)
+# Synthetic installed releases need only be stable and older than the project.
+# Fixed versions keep minor/major releases with patch zero collectable.
+PREVIOUS_VERSION = "0.0.2"
+OLDER_VERSION = "0.0.1"
 NEXT_VERSION = patch_version(1)
 NEXT_MINOR_VERSION = f"{_PROJECT_VERSION.major}.{_PROJECT_VERSION.minor + 1}.0"

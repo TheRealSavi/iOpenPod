@@ -96,6 +96,8 @@ def prepare_podcast_sync(
                     )
                 )
                 continue
+            if subscription.sync_settings.episode_slots == 0:
+                continue
             try:
                 fetched = client.fetch(subscription.feed_url)
             except PodcastFeedError as error:

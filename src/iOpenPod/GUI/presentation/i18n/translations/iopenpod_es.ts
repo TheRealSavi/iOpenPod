@@ -5622,6 +5622,10 @@ Usa Editar para revisar sus reglas.</translation>
 <context>
     <name>PodcastSyncSettingsDialog</name>
     <message>
+        <source>Automatic sync is disabled for this podcast. You can still add or remove episodes yourself.</source>
+        <translation>La sincronización automática está desactivada para este pódcast. Puedes seguir añadiendo o eliminando episodios manualmente.</translation>
+    </message>
+    <message>
         <source>Podcast Sync Settings</source>
         <translation>Ajustes de sincronización de pódcast</translation>
     </message>

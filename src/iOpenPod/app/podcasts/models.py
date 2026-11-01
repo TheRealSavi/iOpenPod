@@ -102,7 +102,7 @@ class PodcastClearMethod(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PodcastSyncSettings:
-    """Per-show retention policy matching the Original iOpenPod controls."""
+    """Per-show retention policy; zero slots disable automatic Podcast Sync."""
 
     episode_slots: int = 3
     fill_mode: PodcastFillMode = PodcastFillMode.NEWEST
@@ -113,8 +113,8 @@ class PodcastSyncSettings:
     def __post_init__(self) -> None:
         if type(self.episode_slots) is not int:
             raise ValueError("Podcast episode slots must be an integer")
-        if not 1 <= self.episode_slots <= 50:
-            raise ValueError("Podcast episode slots must be between 1 and 50")
+        if not 0 <= self.episode_slots <= 50:
+            raise ValueError("Podcast episode slots must be between 0 and 50")
         if type(self.fill_mode) is not PodcastFillMode:
             raise ValueError("Podcast fill mode must be a supported value")
         if type(self.clear_when_listened) is not bool:

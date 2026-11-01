@@ -1064,7 +1064,7 @@ def test_podcast_sync_settings_retain_policy_and_explain_age_selection() -> None
         age = dialog.findChild(QComboBox, "podcastSyncClearAge")
         method = dialog.findChild(QComboBox, "podcastSyncClearMethod")
         listened = dialog.findChild(QCheckBox, "podcastSyncClearListened")
-        assert slots is not None and (slots.minimum(), slots.maximum()) == (1, 50)
+        assert slots is not None and (slots.minimum(), slots.maximum()) == (0, 50)
         assert slots.accessibleName() == "Episodes to keep"
         assert slots.text() == "12 episodes"
         assert "extra episodes yourself" in slots.toolTip()
@@ -1107,7 +1107,33 @@ def test_podcast_sync_settings_retain_policy_and_explain_age_selection() -> None
             fill_mode=PodcastFillMode.NEXT,
             clear_older_than=PodcastClearAge.IMMEDIATE,
         )
+        slots.setValue(0)
+        assert slots.text() == "0 episodes"
+        assert dialog.selected_settings.episode_slots == 0
+        assert all(not control.isEnabled() for control in (fill, age, method, listened))
+        explanation = " ".join(label.text() for label in descriptions)
+        assert "Automatic sync is disabled for this podcast" in explanation
+        slots.setValue(12)
+        assert all(control.isEnabled() for control in (fill, age, method, listened))
+        assert dialog.selected_settings == PodcastSyncSettings(
+            episode_slots=12,
+            fill_mode=PodcastFillMode.NEXT,
+            clear_older_than=PodcastClearAge.IMMEDIATE,
+        )
         assert not dialog.grab().isNull()
+    finally:
+        dialog.close()
+
+
+def test_podcast_sync_settings_open_with_zero_slots() -> None:
+    settings = PodcastSyncSettings(episode_slots=0)
+    dialog = PodcastSyncSettingsDialog("Example Podcast", settings)
+    try:
+        assert dialog.selected_settings == settings
+        slots = dialog.findChild(QSpinBox, "podcastSyncEpisodeSlots")
+        fill = dialog.findChild(QComboBox, "podcastSyncFillMode")
+        assert slots is not None and slots.value() == 0
+        assert fill is not None and not fill.isEnabled()
     finally:
         dialog.close()
 
