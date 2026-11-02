@@ -331,5 +331,10 @@ Thanks to [dotm5](https://github.com/dotm5) and their
 [Genius-Mix-Research](https://github.com/dotm5/Genius-Mix-Research) repository for
 helping us understand native Genius Data.
 
+Thanks to [Olsro](https://github.com/Olsro) for organizing and preserving iPod
+click wheel games through the
+[iPod Clickwheel Games Preservation Project](https://github.com/Olsro/ipodclickwheelgamespreservationproject).
+iOpenPod's game binary downloads are sourced from this repository.
+
 Independent software, not affiliated with or endorsed by Apple Inc. iPod and
 iTunes are trademarks of Apple Inc.

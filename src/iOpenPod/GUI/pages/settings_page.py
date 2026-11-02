@@ -778,6 +778,9 @@ class SettingsPage(QWidget):
                 "and the references this project learned from.</p>"
                 "<p>Thanks to {dotm5} and their {genius_research} repository "
                 "for helping us understand native Genius Data.</p>"
+                "<p>Thanks to {olsro} for organizing and preserving iPod click wheel "
+                "games through the {games_preservation}. "
+                "iOpenPod's game binary downloads are sourced from this repository.</p>"
                 "<p>Application icon by DJShott, used with permission.</p>"
             ).format(
                 license='<a href="https://www.gnu.org/licenses/gpl-3.0.html">'
@@ -790,6 +793,11 @@ class SettingsPage(QWidget):
                 genius_research=(
                     '<a href="https://github.com/dotm5/Genius-Mix-Research">'
                     "Genius-Mix-Research</a>"
+                ),
+                olsro='<a href="https://github.com/Olsro">Olsro</a>',
+                games_preservation=(
+                    '<a href="https://github.com/Olsro/ipodclickwheelgamespreservationproject">'
+                    "iPod Clickwheel Games Preservation Project</a>"
                 ),
             )
         )
