@@ -123,13 +123,13 @@ def damage_warnings(stderr: bytes) -> tuple[str, ...]:
     The strict pass already proved the source has undecodable packets, so a
     successful retry must never be reported as a clean conversion.
     """
-    return decode_error_warnings(stderr) or (
+    return _decode_error_warnings(stderr) or (
         "Skipped damaged packets in the source. Playback may glitch briefly at "
         "that point. Replace the source file to remove the damage.",
     )
 
 
-def decode_error_warnings(stderr: bytes) -> tuple[str, ...]:
+def _decode_error_warnings(stderr: bytes) -> tuple[str, ...]:
     """Summarize the source packets FFmpeg skipped during a lenient pass.
 
     The lenient pass logs with ``repeat`` so every skipped packet keeps its own

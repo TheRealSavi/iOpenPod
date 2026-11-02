@@ -1536,7 +1536,7 @@ def _input_arguments(
     ``strict`` aborts on the first error, which is the normal mode. A retry
     after a decode failure drops it so damaged source packets are skipped, as
     ordinary players do; ``repeat`` keeps FFmpeg from collapsing identical
-    diagnostics so ``decode_error_warnings`` can count the skipped packets.
+    diagnostics so ``damage_warnings`` can count the skipped packets.
     """
     level = "info" if info else "error"
     return (
