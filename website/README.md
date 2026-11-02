@@ -235,9 +235,10 @@ image and to the corresponding source, support, and license pages.
 
 ## Refresh screenshots
 
-The current set contains ten user-provided Windows screenshots captured on
-2026-10-03. They show a personal iPod and media library, including actual album
-artwork and photos. These are not the synthetic store-kit captures.
+The current set contains twelve user-provided Windows screenshots: ten captured
+on 2026-10-03 and two showing Games and the Phase Playlist captured on 2026-11-02.
+They show a personal iPod and media library, including actual album artwork and
+photos. These are not the synthetic store-kit captures.
 
 Use descriptive asset names and lossless WebP encoding (method 6). Keep each
 complete capture at its original dimensions; do not resize it, draw replacement
@@ -256,9 +257,12 @@ UI, or add fake window frames. Set the matching width and height on each
 | `Screenshot 2026-10-03 082750.png` | `screenshots/iop2/backups.webp` |
 | `Screenshot 2026-10-03 082816.png` | `screenshots/iop2/smart-playlist.webp` |
 | `Screenshot 2026-10-03 083318.png` | `screenshots/iop2/photo-albums.webp` |
+| `Screenshot 2026-11-02 102848.png` | `screenshots/iop2/click-wheel-games.webp` |
+| `Screenshot 2026-11-02 102901.png` | `screenshots/iop2/phase-playlist.webp` |
 
 Record the capture date, source, dimensions, encoding, and input/output SHA-256
 hashes in `screenshots/iop2/manifest.json`. Inspect every image after conversion.
+Per-image capture dates and sources override the manifest defaults for later additions.
 Use the same assets in the homepage and root README, and keep their alternative
 text and captions accurate. The social preview uses `album-library.webp`.
 The separate synthetic capture script remains available for store-kit work; it

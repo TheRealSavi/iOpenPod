@@ -135,6 +135,10 @@ Homebrew, or a supported Linux package manager.
 * **Playlists and Smart Playlists.** Arrange tracks, organize playlist folders,
   and create rule-based selections.
 
+* **Click wheel games and Phase.** Install the full preserved game collection
+  without a virtual machine, and create a Phase Playlist with audio analysis
+  generated from your music.
+
 * **Automatic media conversion.** Convert audio and video when needed and prepare
   artwork for your iPod model. Choose how incoming media is encoded in Settings.
 
@@ -167,6 +171,35 @@ and save those edits together. Sync always has its own selection and review flow
 | ![Smart Playlist editor with rules for music released before 2000](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/smart-playlist.webp) | ![Backups page with saved Backup Snapshots and restore actions for the selected iPod](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/backups.webp) |
 
 ![Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/audio-transcoding-settings.webp)
+
+## Click wheel games and Phase
+
+### Install click wheel games without a virtual machine
+
+Start with one click on **Gimme Games** in the Games page. iOpenPod downloads
+the full preserved click wheel game collection and prepares game authorization
+for your iPod. Choose **Select all → Add** to install the collection, or pick
+individual games. No virtual machine is required.
+
+The first download needs an internet connection; later visits reuse the files
+on your computer. Game compatibility depends on your iPod model and firmware.
+
+![Games page showing installed click wheel games and the Gimme Games button](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/click-wheel-games.webp)
+
+### Make a Phase Playlist from your music
+
+With Phase installed, create a Phase Playlist or mark an existing playlist with
+**Use as the Phase Playlist**. Add your songs and save. iOpenPod generates the
+audio analysis the game uses to turn your music into gameplay, and reuses matching
+analysis on later saves.
+
+The analyzer detects beats and musical attacks, with an emphasis on audible
+percussion. With the optional music analysis model installed, it also separates
+estimated vocals, drums, guitar, bass, piano, and other sounds, and recognizes
+recurring musical phrases. These help it follow the rhythm and prominent parts
+of a song. Acoustic analysis works without the optional model. Audio decoding requires FFmpeg and FFprobe.
+
+![Phase Playlist with its game icon, track list, and Phase banner](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/phase-playlist.webp)
 
 ## How to use
 

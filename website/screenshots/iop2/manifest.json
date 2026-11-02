@@ -102,6 +102,30 @@
       "sha256": "c69f818d1a4c0d3cc1c1e6a6d210b6fa1187eb3ae28378b202667a2081e4142b",
       "capture_file": "Screenshot 2026-10-03 083318.png",
       "capture_sha256": "5ec10219f13cbfa6284a9315aa66f6e095a9063db389f123ebbdcd506baca63e"
+    },
+    {
+      "file": "click-wheel-games.webp",
+      "caption": "Games page showing installed click wheel games and the Gimme Games button",
+      "captured_on": "2026-11-02",
+      "source": "User-provided Windows screenshot from Desktop, showing a personal iPod and media library.",
+      "width": 1741,
+      "height": 1048,
+      "bytes": 1157108,
+      "sha256": "3008c94b62338241c3dd94ef51400ba6eb8070758f75b0949fc2e9c694302597",
+      "capture_file": "Screenshot 2026-11-02 102848.png",
+      "capture_sha256": "0cdc88dba6af2ac2550c41715694d970c7263abfb56ad84b4dbd27b121e0a123"
+    },
+    {
+      "file": "phase-playlist.webp",
+      "caption": "Phase Playlist with its game icon, track list, and Phase banner",
+      "captured_on": "2026-11-02",
+      "source": "User-provided Windows screenshot from Desktop, showing a personal iPod and media library.",
+      "width": 1741,
+      "height": 1048,
+      "bytes": 232134,
+      "sha256": "a6b5b83419af999a1b434766fb79b28d4d31496edd411c76920e6a0e1388a15e",
+      "capture_file": "Screenshot 2026-11-02 102901.png",
+      "capture_sha256": "cb9ea1bdc7a3443dc3b9dc5929c0a8ae78e7df6845d24256c4952771f467d3f3"
     }
   ]
 }

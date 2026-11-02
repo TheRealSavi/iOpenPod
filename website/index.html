@@ -27,6 +27,7 @@ permalink: /
   <nav class="page-index container" aria-label="On this page">
     <a href="#why-iopenpod">Why iOpenPod</a>
     <a href="#tour">Features</a>
+    <a href="#games">Games and Phase</a>
     <a href="#compatibility">Supported iPods</a>
     <a href="#install">Downloads</a>
     <a href="#migration">Moving from iTunes</a>
@@ -120,6 +121,27 @@ permalink: /
       <div><dt>Recovery</dt><dd>If a write is interrupted, the app provides recovery instructions. Backup Snapshots are optional and controlled by you.</dd></div>
       <div><dt>Settings</dt><dd>Choose light, dark, or system appearance, and set your media conversion preferences.</dd></div>
     </dl>
+  </section>
+
+  <section class="collection-section container" id="games" aria-labelledby="games-heading">
+    <div class="section-intro">
+      <h2 id="games-heading">Click wheel games and Phase</h2>
+    </div>
+    <div class="collection-grid">
+      <div>
+        {% include product-shot.html file="click-wheel-games.webp" width=1741 height=1048 alt="Games page showing installed click wheel games and the Gimme Games button" caption="Games page showing installed click wheel games and the Gimme Games button." %}
+        <h3>Install click wheel games without a virtual machine</h3>
+        <p>Start with one click on <strong>Gimme Games</strong>. iOpenPod downloads the full preserved click wheel game collection and prepares game authorization for your iPod. Choose <strong>Select all → Add</strong> to install the collection, or pick individual games. No virtual machine is required.</p>
+        <p>The first download needs an internet connection; later visits reuse the files on your computer. Game compatibility depends on your iPod model and firmware. </p>
+      </div>
+      <div>
+        {% include product-shot.html file="phase-playlist.webp" width=1741 height=1048 alt="Phase Playlist with its game icon, track list, and Phase banner" caption="Phase Playlist with its game icon, track list, and Phase banner." %}
+        <h3>Make a Phase Playlist from your music</h3>
+        <p>With Phase installed, create a Phase Playlist or mark an existing playlist with <strong>Use as the Phase Playlist</strong>. Add your songs and save. iOpenPod generates the audio analysis the game uses for gameplay, and reuses matching analysis on later saves.</p>
+        <p>The analyzer detects beats and musical attacks, with an emphasis on audible percussion. An optional music analysis model separates estimated vocals and instruments and recognizes recurring musical phrases, helping it follow the rhythm and prominent parts of a song. </p>
+        <p>Acoustic analysis works without the optional model. Audio decoding requires FFmpeg and FFprobe.</p>
+      </div>
+    </div>
   </section>
 
   <section class="compatibility-section container" id="compatibility" aria-labelledby="compatibility-heading">

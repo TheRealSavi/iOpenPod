@@ -120,7 +120,7 @@ async function saveReport(error) {
             assert(await page.locator(".intro [data-screenshot-trigger]").isVisible(), "The introduction must show the app screenshot");
             const pageIndex = page.getByRole("navigation", { name: "On this page" });
             assert.deepEqual(await pageIndex.getByRole("link").evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
-              ["#why-iopenpod", "#tour", "#compatibility", "#install", "#migration", "#faq"], "The page index must reach the main product information");
+              ["#why-iopenpod", "#tour", "#games", "#compatibility", "#install", "#migration", "#faq"], "The page index must reach the main product information");
             await pageIndex.getByRole("link", { name: "Features", exact: true }).click();
             assert.equal(new URL(page.url()).hash, "#tour");
           }
