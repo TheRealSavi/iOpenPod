@@ -29,9 +29,21 @@ _INVALID_DATA = b"Invalid data found when processing input"
 # FFmpeg 7 tags decoder diagnostics, for example:
 # "[aist#0:0/mp3 @ 0x2] [dec:mp3float @ 0x3] Error submitting packet to decoder: Invalid data ..."
 _DECODER_TAG = b"[dec:"
-# FFmpeg 6 names the stream instead:
+# FFmpeg 6.0's lenient pass names the stream instead:
 # "Error while decoding stream #0:0: Invalid data found when processing input"
 _STREAM_DECODE_ERROR = b"Error while decoding stream #"
+# FFmpeg 6.1 uses the input stream context without a nested [dec:] tag.
+_INPUT_STREAM_TAGS = (b"[aist#", b"[vist#")
+_DECODE_ERRORS = (b"Error submitting packet to decoder:", b"Decoding error:")
+# FFmpeg 6.0 exits under -xerror before logging the stream-level error. These
+# codec-specific messages identify damaged MP3/FLAC frames, not container faults.
+# Keep this fallback separate from packet counting: several codec lines can
+# describe one packet. Unknown codec-only errors continue to fail closed.
+_LEGACY_FRAME_ERRORS = (
+    (b"[mp3float @", b"Header missing"),
+    (b"[mp3 @", b"Header missing"),
+    (b"[flac @", b"invalid frame header"),
+)
 # A lenient pass that produced no output decoded nothing at all.
 _NOTHING_DECODED = (b"Output file is empty", b"nothing was encoded")
 # Stream, input and output contexts describe structure, not a codec's complaint.
@@ -59,6 +71,11 @@ def is_skipped_packet(line: bytes) -> bool:
     tag = line.find(_DECODER_TAG)
     if tag != -1 and b"]" in line[tag:phrase]:
         return True
+    for prefix in _INPUT_STREAM_TAGS:
+        tag = line.find(prefix)
+        close = line.find(b"]", tag) if tag != -1 else -1
+        if close != -1 and line[close + 1 : phrase].strip() in _DECODE_ERRORS:
+            return True
     marker = line.find(_STREAM_DECODE_ERROR)
     if marker == -1:
         return False
@@ -89,9 +106,18 @@ def _without_contexts(line: bytes) -> bytes:
 
 def is_decode_failure(error: MediaToolError) -> bool:
     """Whether a strict FFmpeg run stopped on an undecodable source packet."""
-    return error.code == "media.tool_failed" and _mentions_skipped_packet(
-        str(error).encode("utf-8", errors="replace")
-    )
+    if error.code != "media.tool_failed":
+        return False
+    diagnostics = str(error).encode("utf-8", errors="replace")
+    if _mentions_skipped_packet(diagnostics):
+        return True
+    for line in diagnostics.splitlines():
+        for context, message in _LEGACY_FRAME_ERRORS:
+            tag = line.find(context)
+            close = line.find(b"]", tag) if tag != -1 else -1
+            if close != -1 and line[close + 1 :].lstrip().startswith(message):
+                return True
+    return False
 
 
 def retry_skipping_damage[T](run: Callable[[], T]) -> T:

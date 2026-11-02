@@ -1512,8 +1512,8 @@ Artwork extraction streams the enclosing media, and FFprobe diagnostics alone do
 not reject successful structured output. See ADR-0084.
 FFmpeg runs strictly first; only an undecodable source packet earns a lenient
 second pass whose skipped packets become a Track warning. Converted output must
-match the source duration, a byte-exact copy must decode for its reported length,
-and iOpenPod's own encoder output is always verified strictly.
+match the source duration, copied audio (including stream-copy remuxes) must decode
+for its reported length, and iOpenPod's own encoder output is always verified strictly.
 
 Host path validation applies trailing-period, trailing-space, and reserved-name
 restrictions only on Windows. POSIX album folders such as `Kendrick Lamar/DAMN.`

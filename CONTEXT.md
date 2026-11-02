@@ -548,9 +548,9 @@ reports all concurrent Tracks with separate phase progress measured from FFmpeg'
 output time and speed, and groups repeated informational conversion notices.
 When a source Track stops decoding on a damaged packet, preparation decodes it
 again the way players do, skipping the damage, and reports the skipped packets as a
-Track warning. Converted output must still match the source duration, a byte-exact
-copy must still play for its reported length, and verification of iOpenPod's own
-encoder output remains strict.
+Track warning. Converted output must still match the source duration, copied audio
+(including stream-copy remuxes) must still play for its reported length, and
+verification of iOpenPod's own encoder output remains strict.
 Device selection immediately commits captured Play Counts, iTunesStats,
 PlayCounts.plist, and On-The-Go Playlists before exposing the Active iPod. The
 verified Storage Transaction archives consumed files as inactive `.bak` companions

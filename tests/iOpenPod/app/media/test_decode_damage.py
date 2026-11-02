@@ -42,6 +42,20 @@ if TYPE_CHECKING:
             b"Error while decoding stream #12:3:Invalid data found when processing input",
             True,
         ),
+        # FFmpeg 6.1 uses the input-stream context without a nested decoder tag.
+        (
+            b"[aist#0:0/mp3 @ 0x2] Error submitting packet to decoder: Invalid "
+            b"data found when processing input",
+            True,
+        ),
+        (
+            b"[aist#0:0/flac @ 0x2] Decoding error: Invalid data found when processing input",
+            True,
+        ),
+        (
+            b"[aist#0:0/mp3 @ 0x2] Error during demuxing: Invalid data found when processing input",
+            False,
+        ),
         # The container, not a decoder, rejected the data.
         (
             b"[in#0 @ 0x1] Error during demuxing: Invalid data found when processing input",
@@ -125,6 +139,47 @@ def test_ffmpeg_6_decode_errors_are_recognized_without_a_decoder_context() -> No
     assert warning.startswith(
         "Skipped 2 damaged packets in the source (Header missing)"
     )
+
+
+@pytest.mark.parametrize(
+    "diagnostics",
+    [
+        "[mp3float @ 0x1] Header missing",
+        "[mp3 @ 0x1] Header missing",
+        "[flac @ 0x1] invalid sync code\n"
+        "[flac @ 0x1] invalid frame header\n"
+        "[flac @ 0x1] decode_frame() failed",
+    ],
+)
+def test_ffmpeg_60_strict_decode_failure_uses_codec_diagnostics(
+    diagnostics: str,
+) -> None:
+    # In 6.0, -xerror exits before "Error while decoding stream" is logged.
+    error = MediaToolError(
+        "media.tool_failed", f"ffmpeg failed (exit 1): {diagnostics}"
+    )
+    assert is_decode_failure(error)
+    # Codec explanations do not independently count packets in a lenient run.
+    assert not any(
+        is_skipped_packet(line) for line in diagnostics.encode().splitlines()
+    )
+
+
+@pytest.mark.parametrize(
+    "diagnostics",
+    [
+        "[mp3 @ 0x1] Failed to read frame size: Could not seek to 1026.",
+        "[flac @ 0x1] invalid metadata block",
+        "[mp3float @ 0x1] Could not allocate memory",
+        # FLAC uses this generic footer for allocation failures too.
+        "[flac @ 0x1] decode_frame() failed",
+        "[in#0 @ 0x1] Header missing",
+    ],
+)
+def test_legacy_diagnostics_do_not_admit_container_or_resource_failures(
+    diagnostics: str,
+) -> None:
+    assert not is_decode_failure(MediaToolError("media.tool_failed", diagnostics))
 
 
 def test_demuxer_errors_are_not_treated_as_skippable_packets() -> None:

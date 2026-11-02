@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from fractions import Fraction
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 import mutagen
@@ -164,6 +163,7 @@ class TranscodePlan:
     warnings: tuple[str, ...] = ()
     video_muxer: Literal["ipod", "mov"] = "ipod"
     subtitle_conversions: tuple[SubtitleConversion, ...] = ()
+    copies_audio: bool = False
 
     @property
     def requires_transcode(self) -> bool:
@@ -461,6 +461,7 @@ def resolve_transcode(
             rate,
             channels,
             tuple(warnings),
+            copies_audio=True,
         )
     arguments: tuple[str, ...]
     if (
@@ -1225,7 +1226,7 @@ class MediaTranscoder:
                     # Only undecodable source packets earn a second pass. Encoder,
                     # muxer and filter errors still fail the Track immediately.
                     # The strict attempt may have left a partial output behind.
-                    Path(output_path.path).unlink(missing_ok=True)
+                    workspace.discard_output(output_path)
                     decode_warnings = damage_warnings(
                         retry_skipping_damage(lambda: convert(strict=False)).stderr
                     )
@@ -1454,10 +1455,11 @@ class MediaTranscoder:
             try:
                 verification_output, _ = verify(strict=True)
             except MediaToolError as error:
-                # Only an audio-only copy may skip damage: the null muxer reports
+                # Only copied source audio may skip damage, including remuxes.
+                # Encoded output stays strict. The null muxer reports
                 # the longest stream, so a video copy could hide missing audio.
                 if (
-                    plan.requires_transcode
+                    not plan.copies_audio
                     or result.video_streams
                     or not is_decode_failure(error)
                 ):
