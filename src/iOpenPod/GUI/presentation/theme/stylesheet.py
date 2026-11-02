@@ -2639,7 +2639,6 @@ QLabel#normalizationBadge {{
     font-weight: 600;
 }}
 
-QFrame#normalizationOverview,
 QFrame#normalizationEmpty {{
     background-color: {tokens.surface};
     border: 1px solid {tokens.border};
@@ -2648,10 +2647,6 @@ QFrame#normalizationEmpty {{
 
 QLabel#normalizationStatus {{
     color: {tokens.text_secondary};
-}}
-
-QLabel#normalizationWarnings {{
-    color: {tokens.warning};
 }}
 
 QTableView#normalizationChanges {{

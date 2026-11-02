@@ -1,4 +1,4 @@
-"""Friendly normalization review and the automatically refreshed Sidebar badge."""
+"""Normalization review and the automatically refreshed Sidebar badge."""
 
 from collections.abc import Callable
 from threading import Event
@@ -46,7 +46,7 @@ def test_preview_explains_empty_values_filters_and_the_full_apply_scope() -> Non
         _wait(lambda: not controller.scanning)
         assert dialog.model.rowCount() == 3
         assert any(
-            label.text() == "Tag changes: 3 · Tracks: 1"
+            label.text() == "Showing 3 of 3 changes. Applying includes all 3 changes."
             for label in dialog.findChildren(QLabel)
         )
         values = [dialog.model.index(i, 2).data() for i in range(3)]
@@ -78,7 +78,7 @@ def test_preview_explains_empty_values_filters_and_the_full_apply_scope() -> Non
         dialog.start(TagProfile())
         _wait(lambda: not controller.scanning)
         assert any(
-            label.text() == "All tidy" and label.isVisible()
+            label.text() == "No changes needed" and label.isVisible()
             for label in dialog.findChildren(QLabel)
         )
     finally:
@@ -198,7 +198,7 @@ def test_closing_a_busy_preview_preserves_the_shared_scan_and_reports_failures(
         apply = dialog.findChild(QPushButton, "applyNormalization")
         assert apply is not None and not apply.isEnabled()
         assert any(
-            label.text() == "Finding the finishing touches" and label.isVisible()
+            label.text() == "Checking tags…" and label.isVisible()
             for label in dialog.findChildren(QLabel)
         )
         dialog.close()
@@ -211,7 +211,7 @@ def test_closing_a_busy_preview_preserves_the_shared_scan_and_reports_failures(
             assert controller.pending_count == 0 and controller.suggestion is None
             dialog.show()
             assert any(
-                label.text() == "We couldn't check your tags" and label.isVisible()
+                label.text() == "Tag scan failed" and label.isVisible()
                 for label in dialog.findChildren(QLabel)
             )
         else:

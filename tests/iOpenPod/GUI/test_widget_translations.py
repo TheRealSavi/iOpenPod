@@ -229,30 +229,24 @@ def test_normalizer_apply_and_result_counts_use_numerus(count: int) -> None:
         controller.shutdown()
 
 
-def test_normalizer_profile_warnings_retain_and_translate_their_source_copy() -> None:
+def test_normalizer_omits_profile_notes_and_overview() -> None:
     tracks = (Track(1, "Song", "Artist", "Album", 1000),)
     workspace = LibraryWorkspace()
     workspace.load(LibrarySnapshot(tracks))
     controller = TagNormalizationController(workspace)
     controller.tracks = tracks
     controller.suggestion = normalize_tags(tracks, TagProfile(has_cover_flow=True))
-    assert all(
-        isinstance(warning, SourceText) for warning in controller.suggestion.warnings
-    )
-    translator = _Translator()
-    assert APPLICATION.installTranslator(translator)
+    assert controller.suggestion.warnings
     dialog = TagNormalizerDialog(controller)
     try:
         dialog.show()
         controller.changed.emit()
-        warning = dialog.findChild(QLabel, "normalizationWarnings")
-        assert warning is not None
-        assert warning.text() == (
-            "Album-Interpret bleibt erhalten.\n"
-            "Cover Flow berücksichtigt Unterschiede bei Interpret und Album."
-        )
+        assert dialog.findChild(QWidget, "normalizationOverview") is None
+        assert dialog.findChild(QLabel, "normalizationWarnings") is None
+        texts = {label.text() for label in dialog.findChildren(QLabel)}
+        assert not any("tidying" in text or "Tailored to" in text for text in texts)
+        assert not any(str(note) in texts for note in controller.suggestion.warnings)
     finally:
-        APPLICATION.removeTranslator(translator)
         dialog.close()
         controller.shutdown()
 

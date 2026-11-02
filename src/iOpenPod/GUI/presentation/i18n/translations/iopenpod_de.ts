@@ -8065,10 +8065,6 @@ Playlists: %3</translation>
         <translation>iPod-Metadaten vereinheitlichen</translation>
     </message>
     <message>
-        <source>A little tidying for your Library. Keep names, album grouping, and sorting consistent on your iPod.</source>
-        <translation>Etwas Ordnung für Ihre Mediathek. Halten Sie Namen, Albumgruppierung und Sortierung auf Ihrem iPod einheitlich.</translation>
-    </message>
-    <message>
         <source>Track, artist, album, or tag value…</source>
         <translation>Titel, Künstler, Album oder Metadatenwert…</translation>
     </message>
@@ -8112,26 +8108,6 @@ Playlists: %3</translation>
         <source>Checking…</source>
         <translation>Wird geprüft…</translation>
     </message>
-    <message>
-        <source>Checking your Library…</source>
-        <translation>Ihre Mediathek wird geprüft…</translation>
-    </message>
-    <message>
-        <source>Tag changes: %1 · Tracks: %2</source>
-        <translation>Metadatenänderungen: %1 · Titel: %2</translation>
-    </message>
-    <message>
-        <source>Your tags are in good shape</source>
-        <translation>Ihre Metadaten sind in Ordnung</translation>
-    </message>
-    <message>
-        <source>Consistent tags, easier browsing</source>
-        <translation>Einheitliche Metadaten erleichtern das Stöbern</translation>
-    </message>
-    <message>
-        <source>Tailored to %1</source>
-        <translation>Auf %1 abgestimmt</translation>
-    </message>
     <message numerus="yes">
         <source>Apply all %Ln change(s)</source>
         <translation>
@@ -8159,60 +8135,56 @@ Playlists: %3</translation>
         </translation>
     </message>
     <message>
-        <source>Finding the finishing touches</source>
-        <translation>Letzte Verbesserungen werden gesucht</translation>
+        <source>Checking tags…</source>
+        <translation>Metadaten werden geprüft…</translation>
     </message>
     <message>
-        <source>Checking names, album grouping, and sort tags. You can keep browsing while we work.</source>
-        <translation>Namen, Albumgruppierung und Sortierangaben werden geprüft. Sie können währenddessen weiter stöbern.</translation>
+        <source>Checking names, album grouping, and sort tags.</source>
+        <translation>Namen, Albumgruppierung und Sortierangaben werden geprüft.</translation>
     </message>
     <message>
         <source>No matching changes</source>
         <translation>Keine passenden Änderungen</translation>
     </message>
     <message>
-        <source>Try another search or clear the filters to see every suggestion.</source>
-        <translation>Versuchen Sie eine andere Suche oder setzen Sie die Filter zurück, um alle Vorschläge anzuzeigen.</translation>
+        <source>Change the search or clear the filters to show all changes.</source>
+        <translation>Ändern Sie die Suche oder setzen Sie die Filter zurück, um alle Änderungen anzuzeigen.</translation>
     </message>
     <message>
-        <source>All tidy</source>
-        <translation>Alles aufgeräumt</translation>
+        <source>No changes needed</source>
+        <translation>Keine Änderungen erforderlich</translation>
     </message>
     <message>
-        <source>No tag changes are needed.</source>
-        <translation>Keine Metadatenänderungen erforderlich.</translation>
-    </message>
-    <message>
-        <source>Your Library is busy</source>
-        <translation>Ihre Mediathek ist beschäftigt</translation>
+        <source>Library in use</source>
+        <translation>Mediathek wird verwendet</translation>
     </message>
     <message>
         <source>Wait for the current operation to finish before checking tags.</source>
         <translation>Warten Sie, bis der aktuelle Vorgang abgeschlossen ist, bevor Sie die Metadaten prüfen.</translation>
     </message>
     <message>
-        <source>Choose an iPod to get started</source>
-        <translation>Wählen Sie einen iPod aus, um zu beginnen</translation>
+        <source>No iPod selected</source>
+        <translation>Kein iPod ausgewählt</translation>
     </message>
     <message>
-        <source>Load its Library to check for suggested tag changes.</source>
-        <translation>Laden Sie seine Mediathek, um vorgeschlagene Metadatenänderungen zu prüfen.</translation>
+        <source>Select an iPod and load its Library to check tags.</source>
+        <translation>Wählen Sie einen iPod aus und laden Sie seine Mediathek, um die Metadaten zu prüfen.</translation>
     </message>
     <message>
-        <source>We couldn&apos;t check your tags</source>
-        <translation>Ihre Metadaten konnten nicht geprüft werden</translation>
+        <source>Tag scan failed</source>
+        <translation>Metadatenprüfung fehlgeschlagen</translation>
     </message>
     <message>
         <source>Try scanning again.</source>
         <translation>Versuchen Sie die Suche erneut.</translation>
     </message>
     <message>
-        <source>Ready for a fresh look</source>
-        <translation>Bereit für eine neue Prüfung</translation>
+        <source>Ready to scan</source>
+        <translation>Bereit zur Prüfung</translation>
     </message>
     <message>
-        <source>Scan your Library to preview suggested tag changes.</source>
-        <translation>Durchsuchen Sie Ihre Mediathek, um vorgeschlagene Metadatenänderungen anzusehen.</translation>
+        <source>Scan the Library to review suggested tag changes.</source>
+        <translation>Prüfen Sie die Mediathek, um vorgeschlagene Metadatenänderungen anzuzeigen.</translation>
     </message>
 </context>
 <context>
