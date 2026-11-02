@@ -15,6 +15,7 @@ from iOpenPod.app.core.settings.definitions import (
     COLORFUL_MODE,
     DRAFT_ALL_CHANGES,
     IPOD_LIBRARY_VIEW_MODE,
+    ITUNES_107_ARTWORK,
     LAST_SELECTED_IPOD_VOLUME_ID,
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
     MANAGE_VOLUME_PRESENTATION,
@@ -252,6 +253,8 @@ def test_json_store_immediately_persists_typed_settings_through_storage(
     first.set_global(APPEARANCE_LIGHT_THEME, LightTheme.PORCELAIN.value)
     first.set_global(APPEARANCE_DARK_THEME, DarkTheme.ORIGINAL.value)
     first.set_global(COLORFUL_MODE, True)
+    assert first.get(ITUNES_107_ARTWORK) is False
+    first.set_global(ITUNES_107_ARTWORK, True)
     first.set_global(DRAFT_ALL_CHANGES, True)
     first.set_global(MANAGE_VOLUME_PRESENTATION, False)
     first.set_global(IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.WHOLE_PAGE_TABLE.value)
@@ -269,6 +272,7 @@ def test_json_store_immediately_persists_typed_settings_through_storage(
     assert second.get(APPEARANCE_LIGHT_THEME) == LightTheme.PORCELAIN.value
     assert second.get(APPEARANCE_DARK_THEME) == DarkTheme.ORIGINAL.value
     assert second.get(COLORFUL_MODE) is True
+    assert second.get(ITUNES_107_ARTWORK) is True
     assert second.get(DRAFT_ALL_CHANGES) is True
     assert second.get(MANAGE_VOLUME_PRESENTATION) is False
     assert (
@@ -281,6 +285,7 @@ def test_json_store_immediately_persists_typed_settings_through_storage(
     assert json.loads(settings_path.read_text(encoding="utf-8")) == {
         "appearance/player-position": "bottom",
         "appearance/colorful-mode": True,
+        "appearance/itunes-107-artwork": True,
         "appearance/dark-theme": "original",
         "appearance/light-theme": "porcelain",
         "appearance/theme": "dark",

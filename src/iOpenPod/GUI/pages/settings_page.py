@@ -32,6 +32,7 @@ from iOpenPod.app.core.settings.definitions import (
     BACKUP_LOCATION,
     DRAFT_ALL_CHANGES,
     IPOD_LIBRARY_VIEW_MODE,
+    ITUNES_107_ARTWORK,
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
     MANAGE_VOLUME_PRESENTATION,
     MAX_BACKUPS,
@@ -147,6 +148,9 @@ class SettingsPage(QWidget):
             self._colorful_mode_combo,
             self,
         )
+        self._itunes_artwork_combo = AppComboBox(self)
+        self._itunes_artwork_combo.setObjectName("itunes107ArtworkCombo")
+        self._itunes_artwork_row = SettingRow("", "", self._itunes_artwork_combo, self)
         self._track_title_bar_combo = AppComboBox(self)
         self._track_title_bar_combo.setObjectName("trackTitleBarStyleCombo")
         self._track_title_bar_row = SettingRow(
@@ -212,6 +216,7 @@ class SettingsPage(QWidget):
         appearance.add_row(self._light_theme_row)
         appearance.add_row(self._dark_theme_row)
         appearance.add_row(self._colorful_mode_row)
+        appearance.add_row(self._itunes_artwork_row)
         appearance.add_row(self._track_title_bar_row)
         appearance.add_row(self._player_position_row)
         appearance.add_row(self._language_row)
@@ -431,6 +436,9 @@ class SettingsPage(QWidget):
         self._colorful_mode_combo.currentIndexChanged.connect(
             self._colorful_mode_selected
         )
+        self._itunes_artwork_combo.currentIndexChanged.connect(
+            self._itunes_artwork_selected
+        )
         self._player_position_combo.currentIndexChanged.connect(
             self._player_position_selected
         )
@@ -592,6 +600,12 @@ class SettingsPage(QWidget):
             self.tr(
                 "Tint collection-card backgrounds and the Track-list title bar "
                 "from their image."
+            ),
+        )
+        self._itunes_artwork_row.set_copy(
+            self.tr("iTunes 10.7 Style artwork"),
+            self.tr(
+                "Use classic angled device artwork where available, including managed iPod drive icons."
             ),
         )
         self._player_position_row.set_copy(
@@ -821,6 +835,7 @@ class SettingsPage(QWidget):
                 self._light_theme_combo,
                 self._dark_theme_combo,
                 self._colorful_mode_combo,
+                self._itunes_artwork_combo,
                 self._track_title_bar_combo,
             )
         )
@@ -866,6 +881,10 @@ class SettingsPage(QWidget):
         self._colorful_mode_combo.clear()
         self._colorful_mode_combo.addItem(self.tr("Off"), False)
         self._colorful_mode_combo.addItem(self.tr("On"), True)
+        self._itunes_artwork_combo.clear()
+        self._itunes_artwork_combo.addItem(self.tr("Off"), False)
+        self._itunes_artwork_combo.addItem(self.tr("On"), True)
+        self._sync_itunes_artwork(self._settings.get(ITUNES_107_ARTWORK))
         self._track_title_bar_combo.clear()
         self._track_title_bar_combo.addItem(
             self.tr("Flat"), TrackTitleBarStyle.FLAT.value
@@ -952,6 +971,18 @@ class SettingsPage(QWidget):
         self._volume_presentation_combo.addItem(self.tr("On"), True)
         self._sync_volume_presentation(self._settings.get(MANAGE_VOLUME_PRESENTATION))
         del blocker
+
+    def _sync_itunes_artwork(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self._itunes_artwork_combo)
+        self._itunes_artwork_combo.setCurrentIndex(
+            self._itunes_artwork_combo.findData(enabled)
+        )
+        del blocker
+
+    def _itunes_artwork_selected(self, index: int) -> None:
+        value = self._itunes_artwork_combo.itemData(index)
+        if isinstance(value, bool):
+            self._settings.set_global(ITUNES_107_ARTWORK, value)
 
     def _sync_volume_presentation(self, enabled: bool) -> None:
         blocker = QSignalBlocker(self._volume_presentation_combo)
@@ -1113,6 +1144,8 @@ class SettingsPage(QWidget):
             self._sync_draft_all_changes(value)
         elif key == MANAGE_VOLUME_PRESENTATION.key and isinstance(value, bool):
             self._sync_volume_presentation(value)
+        elif key == ITUNES_107_ARTWORK.key and isinstance(value, bool):
+            self._sync_itunes_artwork(value)
         elif key == PLAYER_POSITION.key and isinstance(value, str):
             self._sync_player_position_selection(value)
         elif key == BACKUP_LOCATION.key and isinstance(value, str):

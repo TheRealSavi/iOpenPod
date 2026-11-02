@@ -27,6 +27,7 @@ from iOpenPod.GUI.presentation.i18n.text import (
     track_count_text,
 )
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
+from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -74,8 +75,13 @@ _VIDEO_PAGES = frozenset(
 
 
 class _DeviceIcon(QLabel):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, theme: ThemeManager | None = None
+    ) -> None:
         super().__init__(parent)
+        self._theme = theme
+        if theme is not None:
+            theme.deviceArtworkChanged.connect(self._refresh_icon)
         self.setObjectName("deviceIcon")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFixedSize(
@@ -105,6 +111,7 @@ class _DeviceIcon(QLabel):
                 self._image_name,
                 LAYOUT.sidebar_device_image_size,
                 self.devicePixelRatioF(),
+                itunes_107=self._theme is not None and self._theme.itunes_107_artwork,
             )
         )
 
@@ -115,7 +122,9 @@ class DeviceCard(QFrame):
     chooseRequested = Signal()
     ejectRequested = Signal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, theme: ThemeManager | None = None
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("deviceCard")
         self._active_ipod: ActiveIPod | None = None
@@ -125,7 +134,7 @@ class DeviceCard(QFrame):
         self._workspace: LibraryWorkspace | None = None
         self._rename_revision: EditRevision | None = None
 
-        self._icon = _DeviceIcon(self)
+        self._icon = _DeviceIcon(self, theme=theme)
         self._name = QPushButton(self)
         self._name.setObjectName("deviceName")
         self._name.clicked.connect(self.start_rename)
@@ -477,6 +486,7 @@ class Sidebar(QFrame):
         parent: QWidget | None = None,
         *,
         playlists: LibraryWorkspace | None = None,
+        theme: ThemeManager | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("appSidebar")
@@ -489,7 +499,7 @@ class Sidebar(QFrame):
         self._has_genius_data = False
         self._normalization_count = 0
 
-        self._device_card = DeviceCard(self)
+        self._device_card = DeviceCard(self, theme=theme)
         if playlists is not None:
             self._device_card.set_workspace(playlists)
         self._device_card.chooseRequested.connect(self.chooseDeviceRequested.emit)

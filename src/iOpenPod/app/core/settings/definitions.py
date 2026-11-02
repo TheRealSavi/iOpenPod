@@ -176,6 +176,12 @@ COLORFUL_MODE = SettingDefinition[bool](
     default=False,
 )
 
+ITUNES_107_ARTWORK = SettingDefinition[bool](
+    key="appearance/itunes-107-artwork",
+    value_type=bool,
+    default=False,
+)
+
 TRACK_TITLE_BAR_STYLE = SettingDefinition[str](
     key="appearance/track-title-bar-style",
     value_type=str,

@@ -183,7 +183,7 @@ class MainWindow(QMainWindow):
         )
         self._normalizer_dialog = TagNormalizerDialog(self._normalization, self)
         self._normalizer_dialog.finished.connect(self._normalizer_closed)
-        self._device_picker = DevicePickerDialog(self)
+        self._device_picker = DevicePickerDialog(self, theme=context.theme_manager)
         self._export_controller = LibraryExportController(
             context.device_coordinator,
             context.device_controller,
@@ -294,6 +294,7 @@ class MainWindow(QMainWindow):
         self._sidebar = Sidebar(
             body,
             playlists=context.library_workspace,
+            theme=context.theme_manager,
         )
         self._normalization.changed.connect(self._normalization_changed)
         self._library_review = LibraryReviewDialog(

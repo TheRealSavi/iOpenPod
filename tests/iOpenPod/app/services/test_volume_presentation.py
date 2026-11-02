@@ -8,9 +8,10 @@ from pathlib import Path
 from threading import Event, Thread
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageOps
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 
+from iOpenPod.app.core.device_artwork import device_artwork_path
 from iOpenPod.app.library_write import LibraryPreparationRequest, WriteProgress
 from iOpenPod.app.models.device import DeviceCandidateIssueCode
 from iOpenPod.app.services import volume_presentation
@@ -38,6 +39,90 @@ _COMPANIONS = (
     "iPod_Control/iOpenPod/volume-icon.png",
     "iPod_Control/iOpenPod/volume-icon.ico",
 )
+
+
+@pytest.mark.parametrize("publish_by", ["selection", "rename"])
+def test_style_changes_all_volume_icon_formats_through_storage(
+    tmp_path: Path, publish_by: str
+) -> None:
+    device = bare_device(tmp_path)
+    paths = (_COMPANIONS[3], _COMPANIONS[4], _COMPANIONS[5])
+    try:
+        standard = {path: (device.root / path).read_bytes() for path in paths}
+        device.coordinator.set_itunes_107_artwork(True)
+        assert {path: (device.root / path).read_bytes() for path in paths} == standard
+        if publish_by == "selection":
+            device.coordinator.select_device(device.active.candidate.id)
+        else:
+            saved = device.save(
+                device.prepare(
+                    replace(device.active.library, device_name="Angled iPod")
+                )
+            )
+            assert saved.active is not None, saved.issues
+        for path in paths:
+            data = (device.root / path).read_bytes()
+            assert data != standard[path]
+            with (
+                Image.open(BytesIO(data)) as image,
+                Image.open(BytesIO(standard[path])) as original_image,
+            ):
+                image.load()
+                assert image.size == original_image.size
+        # PNG output preserves the selected artwork (centered on the standard canvas).
+        source_path = device_artwork_path(
+            device.active.profile.product_image, itunes_107=True
+        )
+        with (
+            Image.open(source_path) as source,
+            Image.open(device.root / paths[1]) as published,
+        ):
+            expected = Image.new("RGBA", (512, 512))
+            scaled = ImageOps.contain(source.convert("RGBA"), (512, 512))
+            expected.paste(
+                scaled, ((512 - scaled.width) // 2, (512 - scaled.height) // 2)
+            )
+            assert published.convert("RGBA").tobytes() == expected.tobytes()
+        device.coordinator.set_itunes_107_artwork(False)
+        device.coordinator.select_device(device.active.candidate.id)
+        assert {path: (device.root / path).read_bytes() for path in paths} == standard
+    finally:
+        device.coordinator.close()
+
+
+def test_style_change_retires_review_without_bypassing_drive_management(
+    tmp_path: Path,
+) -> None:
+    device = bare_device(tmp_path)
+    try:
+        desired = replace(device.active.library, device_name="Renamed")
+        review = device.prepare(desired)
+        device.coordinator.set_itunes_107_artwork(True)
+        rejected = device.save(review)
+        assert rejected.active is None
+        assert any(issue.code == "save.stale" for issue in rejected.issues)
+        original = {name: (device.root / name).read_bytes() for name in _COMPANIONS}
+        device.coordinator.set_volume_presentation_enabled(False)
+        device.coordinator.select_device(device.active.candidate.id)
+        saved = device.save(device.prepare(desired))
+        assert saved.active is not None, saved.issues
+        assert {
+            name: (device.root / name).read_bytes() for name in _COMPANIONS
+        } == original
+    finally:
+        device.coordinator.close()
+
+
+def test_volume_icon_generation_uses_same_model_fallback(tmp_path: Path) -> None:
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path)
+    storage = Storage(platform)
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        standard = volume_presentation.capture(session, "iPod", "iPod18A-Blue.png")
+        angled = volume_presentation.capture(
+            session, "iPod", "iPod18A-Blue.png", itunes_107=True
+        )
+    assert angled.writes == standard.writes
 
 
 @pytest.mark.parametrize("host_identity_changed", [False, True])

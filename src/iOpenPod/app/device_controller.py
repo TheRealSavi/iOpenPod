@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, cast
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, Slot
 
 from iOpenPod.app.core.settings.definitions import (
+    ITUNES_107_ARTWORK,
     LAST_SELECTED_IPOD_VOLUME_ID,
     MANAGE_VOLUME_PRESENTATION,
 )
@@ -117,6 +118,7 @@ class DeviceController(QObject):
         coordinator.set_volume_presentation_enabled(
             settings.get(MANAGE_VOLUME_PRESENTATION)
         )
+        coordinator.set_itunes_107_artwork(settings.get(ITUNES_107_ARTWORK))
         settings.settingChanged.connect(self._setting_changed)
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(1)
@@ -174,6 +176,8 @@ class DeviceController(QObject):
     def _setting_changed(self, key: str, value: object) -> None:
         if key == MANAGE_VOLUME_PRESENTATION.key and isinstance(value, bool):
             self._coordinator.set_volume_presentation_enabled(value)
+        elif key == ITUNES_107_ARTWORK.key and isinstance(value, bool):
+            self._coordinator.set_itunes_107_artwork(value)
 
     @property
     def discovery(self) -> DeviceDiscovery:

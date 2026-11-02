@@ -309,6 +309,7 @@ class _ActiveConnection:
 @dataclass(frozen=True, slots=True)
 class _VolumePresentationPolicy:
     enabled: bool
+    itunes_107_artwork: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,7 +410,17 @@ class DeviceCoordinator:
         """Retire older policies without making the GUI wait for device I/O."""
         with self._presentation_policy_lock:
             if self._presentation_policy.enabled != enabled:
-                self._presentation_policy = _VolumePresentationPolicy(enabled)
+                self._presentation_policy = replace(
+                    self._presentation_policy, enabled=enabled
+                )
+
+    def set_itunes_107_artwork(self, enabled: bool) -> None:
+        """Capture the artwork choice with each Volume presentation policy."""
+        with self._presentation_policy_lock:
+            if self._presentation_policy.itunes_107_artwork != enabled:
+                self._presentation_policy = replace(
+                    self._presentation_policy, itunes_107_artwork=enabled
+                )
 
     @property
     def sync_cleanup_path(self) -> str:
@@ -1999,6 +2010,7 @@ class DeviceCoordinator:
                     ),
                 ),
                 volume_presentation_enabled=presentation_policy.enabled,
+                itunes_107_artwork=presentation_policy.itunes_107_artwork,
                 consumed_sidecars=source.consumed_sidecars,
                 loaded_sidecars=active.sidecar_preconditions,
             )
@@ -3333,7 +3345,8 @@ class DeviceCoordinator:
         self, record: _CandidateRecord, active: ActiveIPod
     ) -> tuple[DeviceCandidateIssue, ...]:
         """Provision only the selected iPod, with its saved name as a dependency."""
-        if not self.volume_presentation_enabled:
+        policy = self._current_presentation_policy()
+        if not policy.enabled:
             return ()
         if not record.mounted_volume.volume.capabilities.safe_for_writes:
             return (
@@ -3347,7 +3360,10 @@ class DeviceCoordinator:
                 record.mounted_volume, access=AccessMode.READ_WRITE
             ) as session:
                 presentation = volume_presentation.capture(
-                    session, active.library.device_name, active.profile.product_image
+                    session,
+                    active.library.device_name,
+                    active.profile.product_image,
+                    itunes_107=policy.itunes_107_artwork,
                 )
                 if presentation.writes:
                     changed = {write.path for write in presentation.writes}

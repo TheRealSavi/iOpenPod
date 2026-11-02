@@ -6094,6 +6094,14 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Colorea el fondo de las tarjetas de colecciones y la barra de título de la lista de pistas a partir de su imagen.</translation>
     </message>
     <message>
+        <source>iTunes 10.7 Style artwork</source>
+        <translation>Imágenes de dispositivos al estilo de iTunes 10.7</translation>
+    </message>
+    <message>
+        <source>Use classic angled device artwork where available, including managed iPod drive icons.</source>
+        <translation>Usar imágenes clásicas de dispositivos en perspectiva cuando estén disponibles, también para los iconos de unidad del iPod gestionados.</translation>
+    </message>
+    <message>
         <source>Player position</source>
         <translation>Posición del reproductor</translation>
     </message>
@@ -6195,7 +6203,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>&lt;p&gt;iOpenPod is free software under {license}. You may modify and redistribute it under those terms. It comes without any warranty.&lt;/p&gt;&lt;p&gt;Special thanks to {hashab} for the HASHAB WebAssembly implementation used by iOpenPod.&lt;/p&gt;&lt;p&gt;An honorary thank-you to the {libgpod} and {gtkpod} contributors for their pioneering iPod support, documentation, and the references this project learned from.&lt;/p&gt;&lt;p&gt;Thanks to {dotm5} and their {genius_research} repository for helping us understand native Genius Data.&lt;/p&gt;&lt;p&gt;Application icon by DJShott, used with permission.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;iOpenPod es software libre bajo {license}. Puedes modificarlo y redistribuirlo según sus condiciones. Se ofrece sin ninguna garantía.&lt;/p&gt;&lt;p&gt;Agradecimiento especial a {hashab} por la implementación de HASHAB en WebAssembly que usa iOpenPod.&lt;/p&gt;&lt;p&gt;Un reconocimiento a los colaboradores de {libgpod} y {gtkpod} por su trabajo pionero con el iPod, su documentación y las referencias de las que este proyecto ha aprendido.&lt;/p&gt;&lt;p&gt;Gracias a {dotm5} y a su repositorio {genius_research} por ayudarnos a comprender los datos nativos de Genius.&lt;/p&gt;&lt;p&gt;Icono de la aplicación creado por DJShott, usado con permiso.&lt;/p&gt;</translation>
+        <translation type="vanished">&lt;p&gt;iOpenPod es software libre bajo {license}. Puedes modificarlo y redistribuirlo según sus condiciones. Se ofrece sin ninguna garantía.&lt;/p&gt;&lt;p&gt;Agradecimiento especial a {hashab} por la implementación de HASHAB en WebAssembly que usa iOpenPod.&lt;/p&gt;&lt;p&gt;Un reconocimiento a los colaboradores de {libgpod} y {gtkpod} por su trabajo pionero con el iPod, su documentación y las referencias de las que este proyecto ha aprendido.&lt;/p&gt;&lt;p&gt;Gracias a {dotm5} y a su repositorio {genius_research} por ayudarnos a comprender los datos nativos de Genius.&lt;/p&gt;&lt;p&gt;Icono de la aplicación creado por DJShott, usado con permiso.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>GPLv3 or later</source>
@@ -6460,6 +6468,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Select and copy this path if the folder does not open.</source>
         <translation>Seleccione y copie esta ruta si la carpeta no se abre.</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;iOpenPod is free software under {license}. You may modify and redistribute it under those terms. It comes without any warranty.&lt;/p&gt;&lt;p&gt;Special thanks to {hashab} for the HASHAB WebAssembly implementation used by iOpenPod.&lt;/p&gt;&lt;p&gt;An honorary thank-you to the {libgpod} and {gtkpod} contributors for their pioneering iPod support, documentation, and the references this project learned from.&lt;/p&gt;&lt;p&gt;Thanks to {dotm5} and their {genius_research} repository for helping us understand native Genius Data.&lt;/p&gt;&lt;p&gt;Thanks to {olsro} for organizing and preserving iPod click wheel games through the {games_preservation}. iOpenPod&apos;s game binary downloads are sourced from this repository.&lt;/p&gt;&lt;p&gt;Application icon by DJShott, used with permission.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;iOpenPod es software libre bajo {license}. Puedes modificarlo y redistribuirlo según sus condiciones. Se ofrece sin ninguna garantía.&lt;/p&gt;&lt;p&gt;Agradecimiento especial a {hashab} por la implementación de HASHAB en WebAssembly que usa iOpenPod.&lt;/p&gt;&lt;p&gt;Un reconocimiento a los colaboradores de {libgpod} y {gtkpod} por su trabajo pionero con el iPod, su documentación y las referencias de las que este proyecto ha aprendido.&lt;/p&gt;&lt;p&gt;Gracias a {dotm5} y a su repositorio {genius_research} por ayudarnos a comprender los datos nativos de Genius.&lt;/p&gt;&lt;p&gt;Gracias a {olsro} por organizar y preservar los juegos de iPod con rueda de clic a través de {games_preservation}. iOpenPod descarga los archivos binarios de los juegos desde este repositorio.&lt;/p&gt;&lt;p&gt;Icono de la aplicación creado por DJShott, usado con permiso.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Open this folder manually: %1</source>

@@ -12,6 +12,7 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, 
 
 from iOpenPod.app.core.settings.definitions import (
     DRAFT_ALL_CHANGES,
+    ITUNES_107_ARTWORK,
     MANAGE_VOLUME_PRESENTATION,
     ROCKBOX_METADATA_SUPPORT,
 )
@@ -161,7 +162,11 @@ class LibraryWriteController(QObject):
 
     @Slot(str, object)
     def _setting_changed(self, key: str, _value: object) -> None:
-        if key in (MANAGE_VOLUME_PRESENTATION.key, ROCKBOX_METADATA_SUPPORT.key):
+        if key in (
+            MANAGE_VOLUME_PRESENTATION.key,
+            ROCKBOX_METADATA_SUPPORT.key,
+            ITUNES_107_ARTWORK.key,
+        ):
             # An executing transaction finishes under its captured policy. All
             # other attempts must be prepared again with the new preference.
             if self.state is not PreparationState.SAVING:

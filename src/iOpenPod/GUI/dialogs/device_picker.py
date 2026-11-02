@@ -31,6 +31,8 @@ from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 if TYPE_CHECKING:
     from PySide6.QtGui import QHideEvent, QShowEvent
 
+    from iOpenPod.GUI.presentation.theme.manager import ThemeManager
+
 _CANDIDATE_ID_ROLE = Qt.ItemDataRole.UserRole.value
 
 
@@ -41,8 +43,13 @@ class DevicePickerDialog(QDialog):
     deviceSelected = Signal(str)
     visibilityChanged = Signal(bool)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, theme: ThemeManager | None = None
+    ) -> None:
         super().__init__(parent)
+        self._theme = theme
+        if theme is not None:
+            theme.deviceArtworkChanged.connect(self._artwork_changed)
         self.setObjectName("devicePicker")
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setMinimumSize(520, 400)
@@ -124,6 +131,9 @@ class DevicePickerDialog(QDialog):
         self._discovery = discovery
         self._refresh_candidates(selected_id)
 
+    def _artwork_changed(self) -> None:
+        self._refresh_candidates(self._selected_candidate_id())
+
     def set_busy(self, busy: bool) -> None:
         self._busy = busy
         self._refresh.setEnabled(not busy)
@@ -196,6 +206,8 @@ class DevicePickerDialog(QDialog):
                     image_name,
                     LAYOUT.device_picker_image_size,
                     self.devicePixelRatioF(),
+                    itunes_107=self._theme is not None
+                    and self._theme.itunes_107_artwork,
                 )
             )
             item.setData(_CANDIDATE_ID_ROLE, candidate.id.value)

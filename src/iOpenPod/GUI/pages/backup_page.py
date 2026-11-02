@@ -144,8 +144,13 @@ def _terminal_outcome(value: object) -> BackupTerminalOutcome | None:
 
 
 class _BackupDeviceArt(QLabel):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, theme: ThemeManager | None = None
+    ) -> None:
         super().__init__(parent)
+        self._theme = theme
+        if theme is not None:
+            theme.deviceArtworkChanged.connect(self._refresh)
         self._image_name = "iPodGeneric.png"
         self.setObjectName("backupDeviceArt")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -172,6 +177,7 @@ class _BackupDeviceArt(QLabel):
                 self._image_name,
                 _DEVICE_ART_SIZE,
                 self.devicePixelRatioF(),
+                itunes_107=self._theme is not None and self._theme.itunes_107_artwork,
             )
         )
 
@@ -484,7 +490,7 @@ class BackupPage(QWidget):
     def _build_empty(self) -> QWidget:
         page = QWidget(self)
         page.setObjectName("backupEmptyPage")
-        art = _BackupDeviceArt(page)
+        art = _BackupDeviceArt(page, theme=self._theme_manager)
         self._empty_title = QLabel(self.tr("Your first backup starts here"), page)
         self._empty_title.setObjectName("backupEmptyTitle")
         self._empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -548,7 +554,7 @@ class BackupPage(QWidget):
         detail.setObjectName("backupDetail")
         hero = QFrame(detail)
         hero.setObjectName("backupHero")
-        self._device_art = _BackupDeviceArt(hero)
+        self._device_art = _BackupDeviceArt(hero, theme=self._theme_manager)
         self._device_name = QLabel(hero)
         self._device_name.setObjectName("backupDeviceName")
         self._device_name.setTextFormat(Qt.TextFormat.PlainText)

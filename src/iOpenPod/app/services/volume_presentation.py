@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps
 
+from iOpenPod.app.core.device_artwork import device_artwork_path
 from storage import (
     DevicePath,
     FileContent,
@@ -23,7 +24,6 @@ from storage import (
 if TYPE_CHECKING:
     from storage import FilesystemSession
 
-_IMAGE_DIRECTORY = Path(__file__).parents[2] / "assets" / "ipod_images"
 _ICON = "iPod_Control/iOpenPod/volume-icon"
 _MAX_FILE_BYTES = 4 * 1024 * 1024
 
@@ -35,12 +35,12 @@ class VolumePresentation:
 
 
 @lru_cache(maxsize=32)
-def _icons(product_image: str) -> tuple[tuple[str, bytes], ...]:
+def _icons(
+    product_image: str, itunes_107: bool = False
+) -> tuple[tuple[str, bytes], ...]:
     if Path(product_image).name != product_image or not product_image.endswith(".png"):
         raise ValueError("Invalid packaged iPod image name")
-    source_path = _IMAGE_DIRECTORY / product_image
-    if not source_path.is_file():
-        source_path = _IMAGE_DIRECTORY / "iPodGeneric.png"
+    source_path = device_artwork_path(product_image, itunes_107=itunes_107)
     with Image.open(source_path) as source:
         scaled = ImageOps.contain(source.convert("RGBA"), (512, 512))
         canvas = Image.new("RGBA", (512, 512))
@@ -116,7 +116,11 @@ def _merge(
 
 
 def capture(
-    session: FilesystemSession, name: str, product_image: str
+    session: FilesystemSession,
+    name: str,
+    product_image: str,
+    *,
+    itunes_107: bool = False,
 ) -> VolumePresentation:
     """Read bounded, validated paths and plan changes without performing any writes."""
     if "\x00" in name:
@@ -165,7 +169,7 @@ def capture(
                 )
             )
 
-    for path, data in _icons(product_image):
+    for path, data in _icons(product_image, itunes_107):
         prepare(path, data)
     windows = {"icon": _ICON.replace("/", "\\") + ".ico"}
     linux = {"IconFile": _ICON + ".png"}

@@ -345,6 +345,7 @@ def capture(
     source_artwork_file_paths: Callable[[], tuple[str, ...]] | None = None,
     additional_preconditions: tuple[FilePrecondition, ...] = (),
     volume_presentation_enabled: bool = True,
+    itunes_107_artwork: bool = False,
     consumed_sidecars: tuple[PlaybackSidecar, ...] = (),
     loaded_sidecars: tuple[FilePrecondition, ...] = (),
 ) -> CapturedLibraryResources:
@@ -431,7 +432,10 @@ def capture(
         and request.snapshot.device_name != request.source.library.device_name
     ):
         presentation = volume_presentation.capture(
-            session, request.snapshot.device_name, request.source.profile.product_image
+            session,
+            request.snapshot.device_name,
+            request.source.profile.product_image,
+            itunes_107=itunes_107_artwork,
         )
         files.extend(presentation.files)
         presentation_writes = presentation.writes

@@ -26,7 +26,17 @@ selection or saved rename; changing the setting alone does not write to the iPod
 | macOS Finder | Root `.VolumeIcon.icns` supplies the icon. When running on macOS, Storage enables the root's custom icon flag. Finder's volume name comes from the native filesystem label. There is no equivalent portable name file. |
 
 All icon files are generated from the existing Device Profile image, with a generic
-iPod image if the packaged image is unavailable. Companion files are provisioned
+iPod image if the packaged image is unavailable. **Settings → Appearance → iTunes
+10.7 Style artwork** defaults off. When enabled, both application device images
+and managed drive icons prefer the matching PNG in `assets/ipod_images/107/`,
+then the standard model image in `assets/ipod_images/`. A missing model uses the
+selected style's generic image, falling back to the standard generic image.
+Visible application images refresh immediately. Drive icons update at the next
+selection or saved rename while **Manage iPod drive appearance** is enabled;
+the artwork toggle alone does not write to the iPod. Changing style retires pending
+Library reviews; executing transactions retain their captured style.
+
+Companion files are provisioned
 for all platforms regardless of the current Host. No executable or AutoPlay actions
 are added. Unrelated existing companion settings, including Dolphin view settings,
 are preserved. Existing text must be UTF-8 or BOM-marked UTF-16 to be updated safely.
