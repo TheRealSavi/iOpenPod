@@ -368,6 +368,45 @@ def test_stream_transform_edits_only_private_copy_and_hashes_final_bytes(
     assert not Path(output.snapshot).exists()
 
 
+def test_discard_output_preserves_sources_and_other_workspaces(tmp_path: Path) -> None:
+    source = tmp_path / "source.mp3"
+    source.write_bytes(b"original")
+    with (
+        media_workspace(checkpoint=lambda: None) as workspace,
+        media_workspace(checkpoint=lambda: None) as other,
+    ):
+        captured = workspace.capture(HostPath(source))
+        output = workspace.output_path(".mp3")
+        foreign = other.output_path(".mp3")
+        Path(output).write_bytes(b"partial")
+        Path(foreign).write_bytes(b"unrelated")
+        for protected in (HostPath(source), captured.snapshot, foreign):
+            with pytest.raises(ValueError, match="workspace's output"):
+                workspace.discard_output(protected)
+        workspace.discard_output(output)
+        workspace.discard_output(output)  # A failed tool may not create output.
+        assert not Path(output).exists()
+        assert Path(captured.snapshot).read_bytes() == b"original"
+        assert Path(foreign).read_bytes() == b"unrelated"
+        assert source.read_bytes() == b"original"
+
+
+def test_discard_output_observes_cancellation() -> None:
+    cancelled = False
+
+    def checkpoint() -> None:
+        if cancelled:
+            raise InterruptedError("cancelled")
+
+    with media_workspace(checkpoint=checkpoint) as workspace:
+        output = workspace.output_path(".mp3")
+        Path(output).write_bytes(b"partial")
+        cancelled = True
+        with pytest.raises(InterruptedError, match="cancelled"):
+            workspace.discard_output(output)
+        assert Path(output).read_bytes() == b"partial"
+
+
 def test_tool_input_remains_seekable_and_preserves_selected_source(
     tmp_path: Path,
 ) -> None:

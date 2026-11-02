@@ -14,6 +14,12 @@ import mutagen
 from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.media.captions import verify_captions
 from iOpenPod.app.media.chapters import imported_chapters
+from iOpenPod.app.media.decode_damage import (
+    SOURCE_DAMAGED_MESSAGE,
+    damage_warnings,
+    is_decode_failure,
+    retry_skipping_damage,
+)
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.lyrics import embedded_lyrics
 from iOpenPod.app.media.models import StreamKind
@@ -59,7 +65,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.media.models import MediaInspection, MediaStream
     from iPodDB.library import ArtworkPixels, Track
     from storage import FileFingerprint, HostPath
-    from storage.media_processing import MediaToolProgress
+    from storage.media_processing import MediaToolProgress, ToolOutput
 
 
 class _MutagenReader(Protocol):
@@ -157,6 +163,7 @@ class TranscodePlan:
     warnings: tuple[str, ...] = ()
     video_muxer: Literal["ipod", "mov"] = "ipod"
     subtitle_conversions: tuple[SubtitleConversion, ...] = ()
+    copies_audio: bool = False
 
     @property
     def requires_transcode(self) -> bool:
@@ -454,6 +461,7 @@ def resolve_transcode(
             rate,
             channels,
             tuple(warnings),
+            copies_audio=True,
         )
     arguments: tuple[str, ...]
     if (
@@ -1103,6 +1111,7 @@ class MediaTranscoder:
                             )
             output_path = captured.snapshot
             subtitle_warnings: tuple[str, ...] = ()
+            decode_warnings: tuple[str, ...] = ()
             source_captions = tuple(
                 s
                 for s in selected.streams
@@ -1173,35 +1182,54 @@ class MediaTranscoder:
                     if metadata is not None
                     else ()
                 )
-                run_media_tool(
-                    tools.ffmpeg,
-                    (
-                        *_input_arguments(captured.snapshot, self.threads_per_job),
-                        *subtitle_inputs,
-                        "-progress",
-                        "pipe:1",
-                        "-stats_period",
-                        "0.5",
-                        *args,
-                        "-map_metadata",
-                        "0" if rockbox_metadata else "-1",
-                        "-map_chapters",
-                        "0",
-                        *tags,
-                        "-threads",
-                        str(self.threads_per_job),
-                        *_container_arguments(plan.encoding, plan.video_muxer),
-                        str(output_path),
-                    ),
-                    checkpoint=checkpoint,
-                    timeout_seconds=max(120, float(observed.duration_seconds or 0) * 4),
-                    progress=lambda sample: report(
-                        MediaPreparationPhase.CONVERTING,
-                        conversion_message,
-                        sample,
-                        _duration(selected),
-                    ),
-                )
+
+                def convert(*, strict: bool) -> ToolOutput:
+                    return run_media_tool(
+                        tools.ffmpeg,
+                        (
+                            *_input_arguments(
+                                captured.snapshot, self.threads_per_job, strict=strict
+                            ),
+                            *subtitle_inputs,
+                            "-progress",
+                            "pipe:1",
+                            "-stats_period",
+                            "0.5",
+                            *args,
+                            "-map_metadata",
+                            "0" if rockbox_metadata else "-1",
+                            "-map_chapters",
+                            "0",
+                            *tags,
+                            "-threads",
+                            str(self.threads_per_job),
+                            *_container_arguments(plan.encoding, plan.video_muxer),
+                            str(output_path),
+                        ),
+                        checkpoint=checkpoint,
+                        timeout_seconds=max(
+                            120, float(observed.duration_seconds or 0) * 4
+                        ),
+                        progress=lambda sample: report(
+                            MediaPreparationPhase.CONVERTING,
+                            conversion_message,
+                            sample,
+                            _duration(selected),
+                        ),
+                    )
+
+                try:
+                    convert(strict=True)
+                except MediaToolError as error:
+                    if not is_decode_failure(error):
+                        raise
+                    # Only undecodable source packets earn a second pass. Encoder,
+                    # muxer and filter errors still fail the Track immediately.
+                    # The strict attempt may have left a partial output behind.
+                    workspace.discard_output(output_path)
+                    decode_warnings = damage_warnings(
+                        retry_skipping_damage(lambda: convert(strict=False)).stderr
+                    )
                 report(
                     MediaPreparationPhase.INSPECTING, "Inspecting the converted media"
                 )
@@ -1386,34 +1414,85 @@ class MediaTranscoder:
                     "-filter:a:0" if len(result.audio_streams) > 1 else "-af",
                     "ebur128=framelog=verbose",
                 )
-            verification_output = run_media_tool(
-                tools.ffmpeg,
-                (
-                    *_input_arguments(
-                        output_path, self.threads_per_job, info=measure_sound_check
+
+            def verify(*, strict: bool) -> tuple[ToolOutput, float | None]:
+                decoded: list[float | None] = [None]
+
+                def on_progress(sample: MediaToolProgress) -> None:
+                    if sample.processed_seconds is not None:
+                        decoded[0] = sample.processed_seconds
+                    report(
+                        MediaPreparationPhase.VERIFYING,
+                        verification_message,
+                        sample,
+                        _duration(result),
+                    )
+
+                output = run_media_tool(
+                    tools.ffmpeg,
+                    (
+                        *_input_arguments(
+                            output_path,
+                            self.threads_per_job,
+                            info=measure_sound_check,
+                            strict=strict,
+                        ),
+                        "-progress",
+                        "pipe:1",
+                        "-stats_period",
+                        "0.5",
+                        *verification,
+                        "-f",
+                        "null",
+                        "-",
                     ),
-                    "-progress",
-                    "pipe:1",
-                    "-stats_period",
-                    "0.5",
-                    *verification,
-                    "-xerror",
-                    "-f",
-                    "null",
-                    "-",
-                ),
-                checkpoint=checkpoint,
-                timeout_seconds=max(120, float(result.duration_seconds or 0) * 2),
-                progress=lambda sample: report(
-                    MediaPreparationPhase.VERIFYING,
-                    verification_message,
-                    sample,
-                    _duration(result),
-                ),
-            )
+                    checkpoint=checkpoint,
+                    timeout_seconds=max(120, float(result.duration_seconds or 0) * 2),
+                    progress=on_progress,
+                )
+                return output, decoded[0]
+
+            try:
+                verification_output, _ = verify(strict=True)
+            except MediaToolError as error:
+                # Only copied source audio may skip damage, including remuxes.
+                # Encoded output stays strict. The null muxer reports
+                # the longest stream, so a video copy could hide missing audio.
+                if (
+                    not plan.copies_audio
+                    or result.video_streams
+                    or not is_decode_failure(error)
+                ):
+                    raise
+                # The copy keeps the user's damaged packets. Decode it as players
+                # do, then refuse a copy whose playable audio is measurably short.
+                verification_output, decoded_seconds = retry_skipping_damage(
+                    lambda: verify(strict=False)
+                )
+                source_seconds = _duration(selected)
+                if (
+                    source_seconds is None
+                    or decoded_seconds is None
+                    or float(source_seconds) - decoded_seconds
+                    > max(0.25, float(source_seconds) * 0.001)
+                ):
+                    raise MediaInspectionError(
+                        "media.source_damaged",
+                        SOURCE_DAMAGED_MESSAGE,
+                    ) from error
+                decode_warnings = damage_warnings(verification_output.stderr)
             gain: float | None = None
-            warnings = (*plan.warnings, *subtitle_warnings, *caption_warnings)
+            warnings = (
+                *plan.warnings,
+                *subtitle_warnings,
+                *caption_warnings,
+                *decode_warnings,
+            )
             if measure_sound_check:
+                # The ebur128 filter prints integrated loudness as "I: -14.2 LUFS";
+                # the last such line is the whole-track figure. Sound Check aims
+                # at -16.5 LUFS, and anything at or below -70 LUFS is the filter's
+                # silence gate rather than a measurement.
                 measurements = re.findall(
                     rb"I:\s*(-?\d+(?:\.\d+)?)\s+LUFS", verification_output.stderr
                 )
@@ -1448,15 +1527,27 @@ class MediaTranscoder:
 
 
 def _input_arguments(
-    source: HostPath, threads: int, *, info: bool = False
+    source: HostPath,
+    threads: int,
+    *,
+    info: bool = False,
+    strict: bool = True,
 ) -> tuple[str, ...]:
+    """Build FFmpeg's bounded input options.
+
+    ``strict`` aborts on the first error, which is the normal mode. A retry
+    after a decode failure drops it so damaged source packets are skipped, as
+    ordinary players do; ``repeat`` keeps FFmpeg from collapsing identical
+    diagnostics so ``damage_warnings`` can count the skipped packets.
+    """
+    level = "info" if info else "error"
     return (
         "-hide_banner",
         "-nostdin",
         "-nostats",
-        "-xerror",
+        *(("-xerror",) if strict else ()),
         "-v",
-        "info" if info else "error",
+        level if strict else f"repeat+{level}",
         "-n",
         "-protocol_whitelist",
         "file,pipe",

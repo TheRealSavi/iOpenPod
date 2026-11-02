@@ -464,6 +464,17 @@ class MediaWorkspace:
             raise ValueError("Only this workspace's private input can be discarded")
         path.unlink()
 
+    def discard_output(self, output: HostPath) -> None:
+        """Remove failed tool output before retrying in this private workspace."""
+        path = Path(output)
+        if (
+            path.parent != self._directory
+            or re.fullmatch(r"processed\.[a-z0-9]{1,8}", path.name) is None
+        ):
+            raise ValueError("Only this workspace's output can be discarded")
+        self._checkpoint()
+        path.unlink(missing_ok=True)
+
     def transform_stream(
         self, source: HostPath, transform: Callable[[BinaryIO], None]
     ) -> CapturedHostFile:

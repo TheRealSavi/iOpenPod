@@ -20,6 +20,7 @@ from device_registry.data.catalog import DEFAULT_CATALOG
 from iOpenPod.app.artwork_policy import rockbox_artwork
 from iOpenPod.app.media import MediaInspectionError, MediaInspector, MediaTag
 from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
+from iOpenPod.app.media.stream_selection import MediaStreamSelection
 from iOpenPod.app.media.transcoding import (
     BitrateMode,
     LossyEncoder,
@@ -35,12 +36,13 @@ from iOpenPod.app.media.transcoding import (
 from iPodDB.library import ArtworkPixels, AudioEncoding, MediaKind, Track, TrackMetadata
 from storage import HostPath, capture_host_file
 from storage.host_tools import find_host_executable
-from storage.media_processing import MediaToolError
+from storage.media_processing import MediaToolError, MediaWorkspace
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from device_registry import DeviceProfile
+    from storage import CapturedHostFile
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "media"
 
@@ -625,3 +627,140 @@ def test_m4b_content_activates_spoken_settings_before_transcoding(
         assert prepared.encoding in (AudioEncoding.AAC, AudioEncoding.MP3)
         assert prepared.inspection.audio_streams[0].channels == 1
         assert prepared.was_transcoded
+
+
+def damaged_source(
+    tmp_path: Path, filename: str, *, fraction: float = 0.12
+) -> HostPath:
+    """Overwrite a stretch of frames so packets fail to decode, as a scratched
+    rip or a bad copy does. Players skip the damage; so must preparation."""
+    host = source(tmp_path, filename)
+    path = Path(host.path)
+    data = bytearray(path.read_bytes())
+    start = int(len(data) * 0.6)
+    length = int(len(data) * fraction)
+    data[start : start + length] = bytes(length)
+    path.write_bytes(bytes(data))
+    return host
+
+
+@pytest.mark.parametrize("retranscode_lossy", [False, True])
+@pytest.mark.parametrize("select_audio", [False, True])
+def test_damaged_source_packet_is_skipped_with_a_warning(
+    tmp_path: Path,
+    profile: DeviceProfile,
+    transcoder: MediaTranscoder,
+    retranscode_lossy: bool,
+    select_audio: bool,
+) -> None:
+    original = damaged_source(tmp_path, "tone.mp3")
+    observed = MediaInspector().inspect(original, checkpoint=lambda: None)
+    selection = (
+        MediaStreamSelection(None, observed.audio_streams[0]) if select_audio else None
+    )
+    with transcoder.prepare(
+        original,
+        profile,
+        TranscodeSettings(retranscode_lossy=retranscode_lossy),
+        checkpoint=lambda: None,
+        stream_selection=selection,
+    ) as result:
+        assert result.was_transcoded is (retranscode_lossy or select_audio)
+        if not retranscode_lossy and not select_audio:
+            assert Path(result.source).read_bytes() == Path(original).read_bytes()
+    damage = [warning for warning in result.warnings if "damaged" in warning]
+    assert len(damage) == 1
+    assert damage[0].startswith("Skipped ")
+    assert "damaged packet" in damage[0]
+
+
+def test_heavily_damaged_copy_is_refused_rather_than_written(
+    tmp_path: Path, profile: DeviceProfile, transcoder: MediaTranscoder
+) -> None:
+    # The bundled fixtures last 0.25 s, inside the duration tolerance, so a longer
+    # Track is encoded here and 40% of its frames are destroyed.
+    path = tmp_path / "long.mp3"
+    encoded = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=44100:duration=6",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if encoded.returncode != 0:
+        pytest.skip("This FFmpeg build has no MP3 encoder for the damaged fixture")
+    data = bytearray(path.read_bytes())
+    start = len(data) // 2
+    length = int(len(data) * 0.4)
+    data[start : start + length] = bytes(length)
+    path.write_bytes(bytes(data))
+
+    with (
+        pytest.raises(MediaInspectionError) as error,
+        transcoder.prepare(
+            HostPath(path), profile, TranscodeSettings(), checkpoint=lambda: None
+        ),
+    ):
+        pass
+    assert error.value.code == "media.source_damaged"
+    assert "too damaged" in str(error.value)
+
+
+def test_undamaged_source_reports_no_skipped_packets(
+    tmp_path: Path, profile: DeviceProfile, transcoder: MediaTranscoder
+) -> None:
+    with transcoder.prepare(
+        source(tmp_path, "tone.mp3"),
+        profile,
+        TranscodeSettings(retranscode_lossy=True),
+        checkpoint=lambda: None,
+    ) as result:
+        assert result.was_transcoded
+    assert not any("damaged" in warning for warning in result.warnings)
+
+
+def test_damaged_encoder_output_is_never_retried_leniently(
+    tmp_path: Path,
+    profile: DeviceProfile,
+    transcoder: MediaTranscoder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tools = transcoder.preflight(checkpoint=lambda: None)
+    if "libmp3lame" not in tools.encoders:
+        pytest.skip("This FFmpeg build has no MP3 encoder")
+    damaged = damaged_source(tmp_path, "tone.mp3")
+    damaged_bytes = Path(damaged).read_bytes()
+    original_inspect = MediaWorkspace.inspect_output
+
+    def corrupt_output(workspace: MediaWorkspace, output: HostPath) -> CapturedHostFile:
+        # Simulate a successful encoder emitting the same bad packet that source
+        # recovery accepts. Verification must still reject our own encoded output.
+        Path(output).write_bytes(damaged_bytes)
+        return original_inspect(workspace, output)
+
+    monkeypatch.setattr(MediaWorkspace, "inspect_output", corrupt_output)
+    original = source(tmp_path, "tone.mp3")
+    with (
+        pytest.raises(MediaToolError, match="Header missing"),
+        transcoder.prepare(
+            original,
+            profile,
+            TranscodeSettings(retranscode_lossy=True, lossy_encoder=LossyEncoder.MP3),
+            checkpoint=lambda: None,
+            tools=tools,
+        ),
+    ):
+        pass
