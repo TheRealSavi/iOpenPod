@@ -555,14 +555,6 @@
         <translation>iPod wiederherstellen</translation>
     </message>
     <message>
-        <source>Your first backup starts here</source>
-        <translation>Hier beginnt Ihr erstes Backup</translation>
-    </message>
-    <message>
-        <source>Connect your iPod to save a copy you can restore later. Have backups from Original iOpenPod? Choose Import Backups.</source>
-        <translation>Schließen Sie Ihren iPod an, um eine Kopie für eine spätere Wiederherstellung zu sichern. Haben Sie Backups aus Original iOpenPod? Wählen Sie „Backups importieren“.</translation>
-    </message>
-    <message>
         <source>Back Up Now</source>
         <translation>Jetzt sichern</translation>
     </message>
@@ -613,10 +605,6 @@
         <translation>iPod</translation>
     </message>
     <message>
-        <source>Save a copy of your iPod to come back to later.</source>
-        <translation>Sichern Sie eine Kopie Ihres iPods, die Sie später wiederherstellen können.</translation>
-    </message>
-    <message>
         <source>Connect this iPod to back it up or restore a saved backup.</source>
         <translation>Schließen Sie diesen iPod an, um ihn zu sichern oder ein gespeichertes Backup wiederherzustellen.</translation>
     </message>
@@ -639,14 +627,6 @@
     <message>
         <source>You&apos;ll be asked to confirm this backup belongs to your iPod.</source>
         <translation>Sie werden gebeten zu bestätigen, dass dieses Backup zu Ihrem iPod gehört.</translation>
-    </message>
-    <message>
-        <source>No backups yet. Make your first copy with Back Up Now.</source>
-        <translation>Noch keine Backups vorhanden. Erstellen Sie Ihre erste Kopie mit „Jetzt sichern“.</translation>
-    </message>
-    <message>
-        <source>No backups yet. Connect this iPod to make your first copy.</source>
-        <translation>Noch keine Backups vorhanden. Schließen Sie diesen iPod an, um Ihre erste Kopie zu erstellen.</translation>
     </message>
     <message>
         <source>Restore an Imported Backup?</source>
@@ -744,6 +724,30 @@
     <message>
         <source>Could Not Open Backup Folder</source>
         <translation>Backup-Ordner konnte nicht geöffnet werden</translation>
+    </message>
+    <message>
+        <source>No backups found</source>
+        <translation>Keine Backups gefunden</translation>
+    </message>
+    <message>
+        <source>No backups are saved in this location. Use Import Backups to import an Original iOpenPod archive.</source>
+        <translation>An diesem Speicherort sind keine Backups gespeichert. Verwenden Sie „Backups importieren“, um ein Archiv aus Original iOpenPod zu importieren.</translation>
+    </message>
+    <message>
+        <source>This iPod is connected.</source>
+        <translation>Dieser iPod ist verbunden.</translation>
+    </message>
+    <message>
+        <source>No backups saved for this iPod.</source>
+        <translation>Für diesen iPod sind keine Backups gespeichert.</translation>
+    </message>
+    <message>
+        <source>Loading backups…</source>
+        <translation>Backups werden geladen…</translation>
+    </message>
+    <message>
+        <source>Unable to load backups. Select Refresh to try again.</source>
+        <translation>Backups konnten nicht geladen werden. Wählen Sie „Aktualisieren“, um es erneut zu versuchen.</translation>
     </message>
 </context>
 <context>
