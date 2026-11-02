@@ -327,6 +327,9 @@ features. See [LICENSE](https://github.com/TheRealSavi/iOpenPod/blob/main/LICENS
 credits, including HASHAB, libgpod, and gtkpod research. The application icon has
 separate permission terms documented with its assets.
 
+Special thanks to [Dylan Staley (@dstaley)](https://github.com/dstaley/hashab)
+for the HASHAB WebAssembly implementation used by iOpenPod.
+
 Thanks to [dotm5](https://github.com/dotm5) and their
 [Genius-Mix-Research](https://github.com/dotm5/Genius-Mix-Research) repository for
 helping us understand native Genius Data.
