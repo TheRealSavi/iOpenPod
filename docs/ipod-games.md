@@ -309,6 +309,10 @@ Library review/save publishes it to the iPod.
 
 Saving prepares the Phase Library index and content-checked analysis files using
 final persistent IDs, alongside the database changes in one Storage Transaction.
+Empty or undersized existing indexes are rebuilt during that save, with their
+original bytes retained by transaction recovery. Phase Library indexes have no
+application-imposed size or Track-count cap. Other unsupported index layouts remain
+protected from replacement; see [ADR-0224](adr/0224-rebuild-undersized-phase-indexes.md).
 Eligible music lasts 30 through 1800 whole seconds. Duplicate occurrences share
 an analysis file, and other tracks remain in the Playlist without generated
 charts. Librosa detects musical attacks and locally tracked pulses from the

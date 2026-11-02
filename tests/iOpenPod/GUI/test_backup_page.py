@@ -919,13 +919,15 @@ def test_failed_initial_inventory_can_retry_without_showing_empty_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     page, controller = build_backup_page(tmp_path, defer_inventory=True)
-    monkeypatch.setattr(page, "_show_backup_message", lambda _message: None)
+    messages: list[BackupMessage] = []
+    monkeypatch.setattr(page, "_show_backup_message", messages.append)
     try:
         page.show()
         APPLICATION.processEvents()
         controller.operationFailed.emit(
             BackupOperationFailure(BackupOperation.REFRESH, "Unavailable", "OSError")
         )
+        assert messages
         loading = page.findChild(QLabel, "backupLoadingPage")
         assert loading is not None and loading.isVisible()
         assert loading.text() == "Unable to load backups. Select Refresh to try again."

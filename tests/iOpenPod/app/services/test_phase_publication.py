@@ -15,7 +15,7 @@ from iOpenPod.app.services.phase import (
     capture_phase_selection,
     prepare_phase,
 )
-from iPodDB.games import PhaseLibrary, build_phase_library
+from iPodDB.games import PhaseLibrary, PhaseTrack, build_phase_library
 from iPodDB.games.phase import parse_library
 from iPodDB.library import (
     LibrarySnapshot,
@@ -63,8 +63,11 @@ def snapshot() -> LibrarySnapshot:
     )
 
 
+@pytest.mark.parametrize(
+    "original", [None, b"", b"mhfd" + bytes(303)], ids=["missing", "empty", "short"]
+)
 def test_prepare_publish_reuse_and_deselect(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, original: bytes | None
 ) -> None:
     manifest = tmp_path / str(MANIFEST_PATH)
     manifest.parent.mkdir(parents=True)
@@ -76,6 +79,10 @@ def test_prepare_publish_reuse_and_deselect(
     storage = Storage(platform)
     desired = snapshot()
     analyzer = StubPhaseAnalysis()
+    index_path = tmp_path / str(INDEX_PATH)
+    if original is not None:
+        index_path.parent.mkdir(parents=True)
+        index_path.write_bytes(original)
     for track in desired.tracks:
         media = tmp_path / track.metadata.location
         media.parent.mkdir(parents=True, exist_ok=True)
@@ -87,7 +94,12 @@ def test_prepare_publish_reuse_and_deselect(
             session, LibrarySnapshot(), desired, analyzer=analyzer
         )
         assert len(publication.writes) == 4
-        assert not (tmp_path / str(INDEX_PATH)).exists()
+        if original is None:
+            assert not index_path.exists()
+        else:
+            assert index_path.read_bytes() == original
+            index_write = next(w for w in publication.writes if w.path == INDEX_PATH)
+            assert index_write.expected == session.fingerprint(INDEX_PATH)
         changed = {w.path for w in publication.writes}
         transaction = StorageTransaction(
             publication.writes,
@@ -177,6 +189,37 @@ def test_selection_capture_reads_full_id_and_extended_header(tmp_path: Path) -> 
         assert before.fingerprint == session.fingerprint(INDEX_PATH)
         path.write_bytes(b"invalid index")
         assert capture_phase_selection(session)[0] is None
+
+
+def test_large_index_can_be_loaded_and_prepared(tmp_path: Path) -> None:
+    count = (8 * 1024 * 1024 - 0x134) // 0x4C + 1
+    original = build_phase_library(
+        PhaseLibrary(123, tuple(PhaseTrack(i + 1, 7, 154) for i in range(count)))
+    )
+    path = tmp_path / str(INDEX_PATH)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(original)
+    manifest = tmp_path / str(MANIFEST_PATH)
+    manifest.parent.mkdir(parents=True)
+    manifest.write_bytes(
+        plistlib.dumps({"Name": "Phase", "Version": "1.0", "GUID": "phase"})
+    )
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path)
+    storage = Storage(platform)
+    selected = LibrarySnapshot(playlists=(Playlist(123, "Phase", is_phase=True),))
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        pid, captured = capture_phase_selection(session)
+        assert pid == 123
+        assert captured.fingerprint == session.fingerprint(INDEX_PATH)
+        publication = prepare_phase(
+            session, selected, selected, analyzer=StubPhaseAnalysis()
+        )
+        replacement = next(w for w in publication.writes if w.path == INDEX_PATH)
+        assert replacement.expected == captured.fingerprint
+        assert isinstance(replacement.source, bytes)
+        assert parse_library(replacement.source) == PhaseLibrary(123)
+        assert path.read_bytes() == original
 
 
 def test_incoming_audio_is_analyzed_before_it_exists_on_device(tmp_path: Path) -> None:

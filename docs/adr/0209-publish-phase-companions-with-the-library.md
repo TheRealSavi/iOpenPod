@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-30
 - Chart generation policy superseded by [ADR-0210](0210-analyze-phase-playlist-audio-with-librosa.md).
+- Undersized-index rejection superseded by [ADR-0224](0224-rebuild-undersized-phase-indexes.md).
 
 A Phase Playlist remains an ordinary editable Playlist or Smart Playlist, with
 one explicit selection per Library Workspace. Selecting another clears the prior

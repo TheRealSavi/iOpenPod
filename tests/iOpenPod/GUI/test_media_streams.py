@@ -1,5 +1,6 @@
 """Stream choices remain responsive and separate from committed Sync intent."""
 
+import shutil
 import time
 from collections.abc import Callable
 from dataclasses import replace
@@ -65,12 +66,27 @@ def source(path: Path) -> HostMediaSource:
     )
 
 
+@pytest.fixture
+def media_inspector() -> MediaInspector:
+    # Keep Host PATH discovery outside the asynchronous UI deadline. The worker
+    # still runs real FFprobe inspection against each test's generated media.
+    executable = shutil.which("ffprobe")
+    if executable is None:
+        pytest.skip("Stream inspection requires FFprobe")
+    return MediaInspector(HostPath(Path(executable).absolute()))
+
+
 def test_dialog_applies_nondefault_choices_and_can_restore_automatic(
     multiple_streams: Path,
     profile: DeviceProfile,
+    media_inspector: MediaInspector,
 ) -> None:
     dialog = MediaStreamsDialog(
-        source(multiple_streams), "Multi-stream movie", profile, None
+        source(multiple_streams),
+        "Multi-stream movie",
+        profile,
+        None,
+        inspector=media_inspector,
     )
     try:
         dialog.show()
@@ -119,7 +135,9 @@ def test_dialog_applies_nondefault_choices_and_can_restore_automatic(
         assert dialog.result() == dialog.DialogCode.Accepted
     finally:
         dialog.close()
-    restored = MediaStreamsDialog(source(multiple_streams), "Movie", profile, choice)
+    restored = MediaStreamsDialog(
+        source(multiple_streams), "Movie", profile, choice, inspector=media_inspector
+    )
     try:
         restored.show()
         wait_for(restored.automatic.isEnabled)
@@ -177,9 +195,11 @@ def test_unsupported_subtitle_is_visible_but_cannot_be_selected(
 
 
 def test_primary_audio_changes_cannot_duplicate_the_alternate(
-    multiple_streams: Path, profile: DeviceProfile
+    multiple_streams: Path, profile: DeviceProfile, media_inspector: MediaInspector
 ) -> None:
-    dialog = MediaStreamsDialog(source(multiple_streams), "Movie", profile, None)
+    dialog = MediaStreamsDialog(
+        source(multiple_streams), "Movie", profile, None, inspector=media_inspector
+    )
     try:
         dialog.show()
         wait_for(dialog.automatic.isEnabled)
@@ -302,8 +322,11 @@ def test_legacy_text_subtitles_are_available_and_selected_when_choosing_streams(
 def test_language_change_preserves_pending_stream_choices(
     multiple_streams: Path,
     profile: DeviceProfile,
+    media_inspector: MediaInspector,
 ) -> None:
-    dialog = MediaStreamsDialog(source(multiple_streams), "Movie", profile, None)
+    dialog = MediaStreamsDialog(
+        source(multiple_streams), "Movie", profile, None, inspector=media_inspector
+    )
     translator = QTranslator()
     catalog = (
         Path(__file__).resolve().parents[3]
@@ -450,11 +473,13 @@ def test_workspace_stages_dialog_choices_in_review(
 
 
 def test_stale_saved_choice_can_be_corrected(
-    video: Path, profile: DeviceProfile
+    video: Path, profile: DeviceProfile, media_inspector: MediaInspector
 ) -> None:
-    metadata = MediaInspector().scan_metadata(HostPath(video), checkpoint=lambda: None)
+    metadata = media_inspector.scan_metadata(HostPath(video), checkpoint=lambda: None)
     stale = MediaStreamSelection(replace(metadata.video_streams[0], index=99), None)
-    dialog = MediaStreamsDialog(source(video), "Movie", profile, stale)
+    dialog = MediaStreamsDialog(
+        source(video), "Movie", profile, stale, inspector=media_inspector
+    )
     try:
         dialog.show()
         wait_for(dialog.automatic.isEnabled)
@@ -471,7 +496,7 @@ def test_stale_saved_choice_can_be_corrected(
 
 
 def test_failed_save_keeps_dialog_open_for_retry(
-    video: Path, profile: DeviceProfile
+    video: Path, profile: DeviceProfile, media_inspector: MediaInspector
 ) -> None:
     attempts = 0
 
@@ -482,7 +507,12 @@ def test_failed_save_keeps_dialog_open_for_retry(
             raise OSError("Disk full")
 
     dialog = MediaStreamsDialog(
-        source(video), "Movie", profile, None, save_selection=save
+        source(video),
+        "Movie",
+        profile,
+        None,
+        inspector=media_inspector,
+        save_selection=save,
     )
     try:
         dialog.show()

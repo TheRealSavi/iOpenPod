@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import cast
 from xml.parsers.expat import ExpatError
 
+from iPodDB.games.phase import (
+    IncompletePhaseLibraryError as IncompletePhaseLibraryError,
+)
 from iPodDB.games.phase import PhaseBeat, PhaseChart, PhaseTransient
 from iPodDB.games.phase import (
     PhaseLibrary as PhaseLibrary,
@@ -29,6 +32,7 @@ from iPodDB.games.phase import read_playlist_id as read_phase_playlist_id
 
 __all__ = [
     "GameMetadata",
+    "IncompletePhaseLibraryError",
     "PhaseBeat",
     "PhaseChart",
     "PhaseLibrary",

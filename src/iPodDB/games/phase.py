@@ -46,6 +46,10 @@ class PhaseLibrary:
     tracks: tuple[PhaseTrack, ...] = ()
 
 
+class IncompletePhaseLibraryError(ValueError):
+    """The index is too short to contain the required Phase Library headers."""
+
+
 @dataclass(frozen=True, slots=True)
 class PhaseTransient:
     time_q16: int
@@ -133,8 +137,6 @@ def build_library(library: PhaseLibrary) -> bytes:
         raise ValueError("Phase playlist persistent ID must fit uint64.")
     if not library.playlist_id and library.tracks:
         raise ValueError("An unselected Phase Library must have no tracks.")
-    if len(library.tracks) > 100_000:
-        raise ValueError("Too many Phase tracks.")
     seen: set[int] = set()
     root = bytearray(0x74)
     root[:4] = b"mhfd"
@@ -174,10 +176,10 @@ def parse_library(data: bytes) -> PhaseLibrary:
     Exact re-encoding is required: an extended index must be preserved until its
     additional fields have a lossless editing implementation.
     """
-    if len(data) < 0x134 or len(data) > 8 * 1024 * 1024:
-        raise ValueError("Unsupported Phase Library size.")
+    if len(data) < 0x134:
+        raise IncompletePhaseLibraryError("Unsupported Phase Library size.")
     count = struct.unpack_from("<I", data, 0xE0)[0]
-    if count > 100_000 or len(data) != 0x134 + count * 0x4C:
+    if len(data) != 0x134 + count * 0x4C:
         raise ValueError("Unsupported Phase Library record layout.")
     result = PhaseLibrary(
         struct.unpack_from("<Q", data, 0x24)[0],
@@ -195,7 +197,6 @@ def read_playlist_id(data: bytes) -> int:
     """Read selection from the index header without requiring an editable layout."""
     if (
         len(data) < 0x134
-        or len(data) > 8 * 1024 * 1024
         or data[:4] != b"mhfd"
         or struct.unpack_from("<I", data, 4)[0] != 0x78
         or struct.unpack_from("<Q", data, 0x14)[0] != len(data)

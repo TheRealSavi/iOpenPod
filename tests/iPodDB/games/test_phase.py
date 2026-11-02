@@ -12,6 +12,7 @@ from Crypto.PublicKey import RSA
 from tests.iPodDB.library.test_writing import library
 
 from iPodDB.games import (
+    IncompletePhaseLibraryError,
     PhaseBeat,
     PhaseChart,
     PhaseTransient,
@@ -55,6 +56,28 @@ def test_index_native_offsets_and_lossless_roundtrip() -> None:
     changed[0x40] = 1
     with pytest.raises(ValueError, match="losslessly"):
         parse_library(bytes(changed))
+
+
+@pytest.mark.parametrize("size", [0, 1, 307])
+def test_short_index_has_a_specific_recoverable_error(size: int) -> None:
+    with pytest.raises(IncompletePhaseLibraryError):
+        parse_library(bytes(size))
+
+
+@pytest.mark.parametrize("size", [308, 8 * 1024 * 1024 + 1])
+def test_other_invalid_indexes_are_not_classified_as_incomplete(size: int) -> None:
+    with pytest.raises(ValueError) as error:
+        parse_library(bytes(size))
+    assert not isinstance(error.value, IncompletePhaseLibraryError)
+
+
+@pytest.mark.parametrize("count", [100_001, (8 * 1024 * 1024 - 0x134) // 0x4C + 1])
+def test_large_indexes_roundtrip_without_application_size_caps(count: int) -> None:
+    library = PhaseLibrary(123, tuple(PhaseTrack(i + 1, 7, 154) for i in range(count)))
+    encoded = build_library(library)
+    assert len(encoded) == 0x134 + count * 0x4C
+    assert phase.read_playlist_id(encoded) == 123
+    assert parse_library(encoded) == library
 
 
 @pytest.mark.parametrize("length_ms", [30_000, 180_000, 1_800_999])

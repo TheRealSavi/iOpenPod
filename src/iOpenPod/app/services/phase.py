@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 
 from iOpenPod.app.phase_analysis import PhaseAnalysisService
 from iPodDB.games import (
+    IncompletePhaseLibraryError,
     PhaseLibrary,
     PhaseTrack,
     build_phase_library,
@@ -62,7 +63,7 @@ def capture_phase_selection(
 ) -> tuple[int | None, FilePrecondition]:
     if not session.exists(INDEX_PATH):
         return None, FilePrecondition(INDEX_PATH, None)
-    snapshot = session.read_snapshot(INDEX_PATH, max_bytes=8 * 1024 * 1024)
+    snapshot = session.read_snapshot(INDEX_PATH)
     try:
         playlist_id = read_phase_playlist_id(snapshot.data)
     except ValueError:
@@ -93,7 +94,7 @@ def prepare_phase(
     files: dict[DevicePath, FilePrecondition] = {}
     writes: list[TransactionWrite] = []
 
-    def read(path: DevicePath, limit: int) -> bytes | None:
+    def read(path: DevicePath, limit: int | None) -> bytes | None:
         checkpoint()
         if not session.exists(path):
             files[path] = FilePrecondition(path, None)
@@ -114,10 +115,15 @@ def prepare_phase(
                 )
             )
 
-    original = read(INDEX_PATH, 8 * 1024 * 1024)
-    existing = (
-        parse_phase_library(original) if original is not None else PhaseLibrary(0)
-    )
+    original = read(INDEX_PATH, None)
+    try:
+        existing = (
+            parse_phase_library(original) if original is not None else PhaseLibrary(0)
+        )
+    except IncompletePhaseLibraryError:
+        # Rebuild short indexes at commit, retaining the original fingerprint and
+        # bytes for Storage's conflict checks and recoverable replacement.
+        existing = PhaseLibrary(0)
     if not selected:
         publish(INDEX_PATH, build_phase_library(PhaseLibrary(0)), original)
         return PhasePublication(tuple(files.values()), tuple(writes))
