@@ -1041,10 +1041,15 @@ def test_inline_device_name_commits_on_return_and_cancels_on_escape() -> None:
 def test_table_and_grid_menus_resolve_full_selection_and_keep_playlist_occurrences(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def add_again(
+        existing: tuple[int, ...], tracks: tuple[int, ...], parent: QWidget
+    ) -> tuple[int, ...]:
+        return tracks
+
     monkeypatch.setattr(
         track_actions,
         "choose_playlist_additions",
-        lambda existing, tracks, parent: tracks,
+        add_again,
     )
     context = build_context()
     playlist = Playlist(10, "Duplicates", entries=playlist_entries((1, 2, 1)))

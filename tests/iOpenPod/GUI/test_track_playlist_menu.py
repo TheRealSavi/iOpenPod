@@ -62,10 +62,15 @@ def test_destinations_filter_and_nest_playlists_with_only_leaf_actions(
     destination_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def add_again(
+        existing: tuple[int, ...], tracks: tuple[int, ...], parent: QWidget
+    ) -> tuple[int, ...]:
+        return tracks
+
     monkeypatch.setattr(
         track_actions,
         "choose_playlist_additions",
-        lambda existing, tracks, parent: tracks,
+        add_again,
     )
     source = (
         Playlist(22, "Coast", parent_id=11, entries=playlist_entries((1,))),
