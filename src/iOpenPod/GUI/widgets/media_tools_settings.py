@@ -33,6 +33,7 @@ _ENCODERS = (
 class MediaToolsSettings(QWidget):
     setupRequested = Signal()
     checkRequested = Signal()
+    phaseSetupRequested = Signal()
 
     def __init__(
         self, parent: QWidget | None = None, *, settings: SettingsService | None = None
@@ -118,6 +119,10 @@ class MediaToolsSettings(QWidget):
         buttons.addWidget(self._install)
         buttons.addStretch(1)
         layout.addLayout(buttons)
+        self._phase_setup = ActionButton(parent=self)
+        self._phase_setup.setObjectName("setupPhaseAnalysis")
+        self._phase_setup.clicked.connect(self.phaseSetupRequested.emit)
+        layout.addWidget(self._phase_setup)
         if settings is not None:
             settings.settingChanged.connect(self._path_changed)
         self.retranslate_ui()
@@ -188,6 +193,7 @@ class MediaToolsSettings(QWidget):
         self.retranslate_ui()
 
     def retranslate_ui(self) -> None:
+        self._phase_setup.setText(self.tr("Set Up Phase Analysis…"))
         self._title.setText(self.tr("Media Tools"))
         self._check.setText(self.tr("Check Again"))
         self._install.setText(self.tr("Set Up Media Tools"))

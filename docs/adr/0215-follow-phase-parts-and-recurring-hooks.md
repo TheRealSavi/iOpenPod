@@ -5,6 +5,7 @@
 - Extends: ADR-0214
 - Selection and magnitude policy superseded by: [ADR-0217](0217-preserve-phase-evidence-for-native-difficulty.md)
 - Vocal/guitar preference superseded by: [ADR-0222](0222-anchor-phase-attacks-to-percussion.md)
+- Provider failure policy superseded by: [ADR-0225](0225-install-optional-phase-analysis-with-safe-fallbacks.md)
 
 Phase uses the existing optional Demucs/PyTorch stack to estimate vocals, guitar,
 bass, drums, piano, and other sources. The pinned six-source checkpoint signature

@@ -29,7 +29,27 @@ The `packaging` dependency group locks PyInstaller and Hatchling separately from
 runtime dependencies. Build on each target OS and architecture; PyInstaller does
 not cross-compile. Use a fresh environment without the optional `synesthesia-gpu`
 extra. The native baseline includes ordinary analysis but excludes Demucs, Torch,
-and Torchaudio; optional GPU analysis needs a separate packaging/size decision.
+and Torchaudio. Optional Phase analysis is installed after an explicit request in
+Settings, into an isolated Host environment rather than the executable. The frozen
+bundle includes its worker and shared `phase_sources.py`, `phase_parts.py` and
+`phase_activity.py` source resources. Setup selects a platform-compatible CPU/CUDA stack and verifies
+real inference before activation. Acoustic analysis remains available on optional
+failure. See [ADR-0225](adr/0225-install-optional-phase-analysis-with-safe-fallbacks.md).
+
+Every native release smoke test generates a Phase chart from authored audio and
+serializes it to the game's format, using the included acoustic analyzer. The
+worker's Python entry point and shared source modules are explicitly copied into
+the bundle because ordinary resource collection excludes Python files.
+To test a previously installed optional runtime from a frozen executable, run
+`iOpenPod --smoke-test --smoke-test-phase-runtime PATH_TO_PHASE_ANALYSIS`.
+This checks a standalone request and two requests sharing one preparation worker
+through the actual child-process boundary, including cleanup;
+use an installation with its model already downloaded for offline checks.
+`--smoke-test-report PATH` records failures when the executable has no console.
+The manual release workflow also offers `verify_phase_runtime`, which downloads
+and tests optional analysis in each native candidate through
+`scripts/check_phase_distribution.py`. This is opt-in because each runner needs
+several gigabytes of downloads and disk space; acoustic checks always run.
 
 On Windows the builder limits DLL discovery to Python and Windows system paths.
 Before `freeze`, run `uv run --locked python -m scripts.build_windows_sndfile` to

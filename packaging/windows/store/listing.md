@@ -20,6 +20,8 @@ Browse and export supported iPod photos, manage Photo Albums, and keep local Bac
 
 Browse podcast subscriptions, find shows through Apple's public podcast directory, and refresh RSS feeds and artwork. Internet access is needed for these features. Your local media library is not uploaded to the developer.
 
+Create a Phase Playlist with audio analysis generated from your music. Acoustic analysis is included. Settings offers an optional Download and Install action for local instrument analysis; it downloads private Python, analysis libraries and a model and can use several gigabytes. Optional failures retain acoustic analysis. Phase must be installed on a compatible iPod, and audio decoding uses your configured FFmpeg executable.
+
 iOpenPod targets filesystem-accessible iPod classic, mini, and nano families. Features depend on the device. iPod touch, iPhone, and iPod shuffle are not supported by this release. Your iPod must already be readable and writable in Windows; no filesystem drivers are included. DRM-protected media is not supported.
 
 All features are free. Optional donations through Ko-fi support development and do not unlock features. Microsoft is not the fundraiser or sponsor. No iOpenPod account is required.

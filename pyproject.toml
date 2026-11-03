@@ -68,6 +68,7 @@ dependencies = [
     "pyobjc-framework-mediaplayer>=12.1,<13 ; sys_platform == 'darwin'",
     "pyside6==6.9.3 ; sys_platform == 'darwin'",
     "pyside6>=6.11.2 ; sys_platform != 'darwin'",
+    "scipy>=1.15,<2",
     "tqdm>=4.70.0",
     "tzdata>=2026.2",
     "wasmtime>=36,<39",

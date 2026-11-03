@@ -30,6 +30,11 @@ for package in ("iOpenPod", "device_registry", "iPodDB", "storage", "tzdata"):
     )
 datas += copy_metadata("iOpenPod")
 datas += copy_metadata("keyring")
+# collect_data_files excludes Python source. The isolated runtime needs its
+# entry point and shared analysis modules on disk, outside the frozen PYZ.
+for source in ("assets/phase_runtime/worker.py", "app/phase_sources.py", "app/phase_parts.py", "app/phase_activity.py"):
+    relative = Path("iOpenPod") / source
+    datas += [(str(root / "src" / relative), str(relative.parent))]
 # librosa/lazy_loader need their on-disk stubs, even when code lives in PYZ.
 datas += collect_data_files(
     "librosa", include_py_files=True,
@@ -44,6 +49,7 @@ binaries = collect_dynamic_libs(
 hiddenimports = collect_submodules("librosa") + collect_submodules("tzdata") + collect_submodules("keyring.backends") + [
     "iOpenPod.app.synesthesia.dsp",
     "iOpenPod.app.synesthesia.enrichment",
+    "scipy.signal",
     "Crypto.PublicKey._ed25519",
     "Crypto.PublicKey._ed448",
 ]

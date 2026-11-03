@@ -62,6 +62,7 @@ from iOpenPod.app.library_write import WriteProgress
 from iOpenPod.app.library_write_controller import PreparationState
 from iOpenPod.app.media_tools_controller import MediaToolsController
 from iOpenPod.app.models.device import ActiveIPod, DeviceDiscovery
+from iOpenPod.app.phase_runtime_controller import PhaseRuntimeController
 from iOpenPod.app.photo_controller import PhotoLoadFailure
 from iOpenPod.app.playback.backend import PlaybackFailure
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
@@ -92,6 +93,7 @@ from iOpenPod.GUI.dialogs.media_folders import (
     MediaFolderSettingsDialog,
 )
 from iOpenPod.GUI.dialogs.media_tools_setup import MediaToolsSetupDialog
+from iOpenPod.GUI.dialogs.phase_runtime_setup import PhaseRuntimeSetupDialog
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
 from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
@@ -424,6 +426,11 @@ class MainWindow(QMainWindow):
             self, find_tool=context.find_media_tool
         )
         self._media_tools_dialog = MediaToolsSetupDialog(self._media_tools, self)
+        self._phase_runtime = PhaseRuntimeController(self)
+        self._phase_runtime_dialog = PhaseRuntimeSetupDialog(self._phase_runtime, self)
+        self._settings_page.phaseAnalysisSetupRequested.connect(
+            self._phase_runtime_dialog.open
+        )
         self._media_tools_prompt_pending = False
         self._media_tools.checked.connect(self._media_tools_checked)
         self._media_tools.changed.connect(self._media_tools_status_changed)
@@ -1201,6 +1208,7 @@ class MainWindow(QMainWindow):
         self.close_app_updates()
         self._host_drop.shutdown()
         self._media_tools.shutdown()
+        self._phase_runtime.shutdown()
         self._scrobbling.shutdown()
         self._exit_synesthesia_fullscreen()
         self._sync_controller.shutdown()

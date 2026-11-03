@@ -1497,6 +1497,18 @@
         <source>{hours}h {minutes}m</source>
         <translation>{hours}h {minutes}m</translation>
     </message>
+    <message>
+        <source>ETA: ~{duration}</source>
+        <translation>Tiempo restante: ~{duration}</translation>
+    </message>
+    <message>
+        <source>Finishing…</source>
+        <translation>Finalizando…</translation>
+    </message>
+    <message>
+        <source>ETA: estimating…</source>
+        <translation>Estimando tiempo…</translation>
+    </message>
 </context>
 <context>
     <name>ExternalPlaylistFilesDialog</name>
@@ -3024,6 +3036,10 @@
         <translation>Todos los archivos (*)</translation>
     </message>
     <message>
+        <source>Set Up Phase Analysis…</source>
+        <translation>Configurar análisis de Phase…</translation>
+    </message>
+    <message>
         <source>Media Tools</source>
         <translation>Herramientas multimedia</translation>
     </message>
@@ -3712,6 +3728,45 @@
     <message>
         <source>Genius</source>
         <translation>Genius</translation>
+    </message>
+</context>
+<context>
+    <name>PhaseRuntimeSetupDialog</name>
+    <message>
+        <source>Set Up Phase Analysis</source>
+        <translation>Configurar análisis de Phase</translation>
+    </message>
+    <message>
+        <source>Acoustic analysis is included with iOpenPod. Optional instrument analysis can help Phase follow vocals, instruments, and recurring musical phrases.
+
+Download it here to use it on this computer. Setup needs internet access, and the download and installed files can use several gigabytes of disk space. Acoustic analysis remains available if you skip or cancel setup.</source>
+        <translation>iOpenPod incluye el análisis acústico. El análisis opcional de instrumentos puede ayudar a Phase a seguir las voces, los instrumentos y las frases musicales recurrentes.
+
+Descárgalo aquí para usarlo en este equipo. La instalación necesita acceso a internet, y la descarga y los archivos instalados pueden ocupar varios gigabytes de espacio. El análisis acústico sigue disponible si omites o cancelas la instalación.</translation>
+    </message>
+    <message>
+        <source>Setup error details</source>
+        <translation>Detalles del error de instalación</translation>
+    </message>
+    <message>
+        <source>Download and Reinstall</source>
+        <translation>Descargar y reinstalar</translation>
+    </message>
+    <message>
+        <source>Acoustic analysis is included with iOpenPod. Optional instrument analysis can help Phase follow vocals, instruments, and recurring musical phrases.
+
+Choose Download and Install to download Python, analysis libraries, and the model into iOpenPod&apos;s user-data folder. Downloads and installed files can use several gigabytes. Setup does not replace your system Python or change FFmpeg settings. The existing analyzer remains available if you skip or cancel setup.</source>
+        <translation type="vanished">iOpenPod incluye análisis acústico. El análisis de instrumentos opcional puede ayudar a Phase a seguir las voces, los instrumentos y las frases musicales recurrentes.
+
+Elige Descargar e instalar para descargar Python, las bibliotecas de análisis y el modelo en la carpeta de datos de usuario de iOpenPod. Las descargas y los archivos instalados pueden ocupar varios gigabytes. La configuración no sustituye el Python del sistema ni cambia los ajustes de FFmpeg. El análisis existente sigue disponible si omites o cancelas la configuración.</translation>
+    </message>
+    <message>
+        <source>Download and Install</source>
+        <translation>Descargar e instalar</translation>
+    </message>
+    <message>
+        <source>Cancel Setup</source>
+        <translation>Cancelar configuración</translation>
     </message>
 </context>
 <context>
@@ -9516,12 +9571,20 @@ Playlists: %3</translation>
         <translation>Las condiciones booleanas no aceptan un valor.</translation>
     </message>
     <message>
+        <source>Building gameplay analysis · CPU</source>
+        <translation>Creando análisis del juego · CPU</translation>
+    </message>
+    <message>
         <source>Building the Host Media Library…</source>
         <translation>Creando la biblioteca de medios del equipo…</translation>
     </message>
     <message>
         <source>Cancellation arrived after publication began. Sync finished and verified the selected changes to keep the iPod Library consistent.</source>
         <translation>La cancelación llegó después de empezar a guardar. La sincronización terminó y verificó los cambios seleccionados para mantener la coherencia de la biblioteca del iPod.</translation>
+    </message>
+    <message>
+        <source>Cancelling setup…</source>
+        <translation>Cancelando configuración…</translation>
     </message>
     <message>
         <source>Caption alarm controls may not work on this iPod. Original caption commands are retained.</source>
@@ -9692,6 +9755,10 @@ Playlists: %3</translation>
         <translation>Limpiando archivos verificados de recuperación de la sincronización…</translation>
     </message>
     <message>
+        <source>Combining musical evidence · CPU</source>
+        <translation>Combinando datos musicales · CPU</translation>
+    </message>
+    <message>
         <source>Committed Library files: {completed} of {total}</source>
         <translation>Archivos de biblioteca guardados: {completed} de {total}</translation>
     </message>
@@ -9820,8 +9887,16 @@ Playlists: %3</translation>
         <translation>Cambio al horario de verano</translation>
     </message>
     <message>
+        <source>Decoding audio with FFmpeg · CPU</source>
+        <translation>Decodificando audio con FFmpeg · CPU</translation>
+    </message>
+    <message>
         <source>Deleting obsolete Track files.</source>
         <translation>Eliminando archivos de pistas obsoletos.</translation>
+    </message>
+    <message>
+        <source>Demucs htdemucs_6s</source>
+        <translation>Demucs htdemucs_6s</translation>
     </message>
     <message>
         <source>Derive firmware membership, flags, or representable values from the requested edit.</source>
@@ -9846,6 +9921,18 @@ Playlists: %3</translation>
     <message>
         <source>Downloading Podcast Episode…</source>
         <translation>Descargando episodio de pódcast…</translation>
+    </message>
+    <message>
+        <source>Downloading and installing the analysis libraries…</source>
+        <translation>Descargando e instalando las bibliotecas de análisis…</translation>
+    </message>
+    <message>
+        <source>Downloading the model and testing instrument analysis…</source>
+        <translation>Descargando el modelo y probando el análisis de instrumentos…</translation>
+    </message>
+    <message>
+        <source>Downloading the verified setup tool…</source>
+        <translation>Descargando la herramienta de configuración verificada…</translation>
     </message>
     <message>
         <source>Downloading {title}…</source>
@@ -9948,6 +10035,10 @@ Playlists: %3</translation>
         <translation>Calculando la huella de la imagen {index} de {total} del iPod…</translation>
     </message>
     <message>
+        <source>Finishing analysis</source>
+        <translation>Finalizando análisis</translation>
+    </message>
+    <message>
         <source>Flatpak</source>
         <translation>Flatpak</translation>
     </message>
@@ -9970,6 +10061,10 @@ Playlists: %3</translation>
     <message>
         <source>Free space at the reported location and retry.</source>
         <translation>Libera espacio en la ubicación indicada y vuelve a intentarlo.</translation>
+    </message>
+    <message>
+        <source>GPU setup could not finish. Retrying with CPU analysis…</source>
+        <translation>No se pudo completar la instalación para GPU. Reintentando con el análisis por CPU…</translation>
     </message>
     <message>
         <source>Game authorization is not supported for this firmware release.</source>
@@ -10010,6 +10105,26 @@ Playlists: %3</translation>
     <message>
         <source>Inspecting the converted media</source>
         <translation>Revisando los medios convertidos</translation>
+    </message>
+    <message>
+        <source>Installing a private Python runtime…</source>
+        <translation>Instalando un entorno privado de Python…</translation>
+    </message>
+    <message>
+        <source>Instrument analysis is installed. Acoustic analysis remains available as a fallback.</source>
+        <translation>El análisis de instrumentos está instalado. El análisis acústico sigue disponible como alternativa.</translation>
+    </message>
+    <message>
+        <source>Instrument analysis is ready for the next Phase save or Sync.</source>
+        <translation>El análisis de instrumentos está listo para el próximo guardado de Phase o la próxima sincronización.</translation>
+    </message>
+    <message>
+        <source>Instrument analysis is ready. Acoustic analysis remains available as a fallback.</source>
+        <translation>El análisis de instrumentos está listo. El análisis acústico sigue disponible como alternativa.</translation>
+    </message>
+    <message>
+        <source>Instrument analysis setup is unavailable on this system. Acoustic analysis remains available.</source>
+        <translation>El análisis de instrumentos no se puede instalar en este sistema. El análisis acústico sigue disponible.</translation>
     </message>
     <message>
         <source>Keep in iTunes source list</source>
@@ -10078,6 +10193,10 @@ Playlists: %3</translation>
     <message>
         <source>Linux needs the bundled 61-iopenpod.rules identity rule before iOpenPod can verify this model. Install it in /etc/udev/rules.d, reload udev rules, then reconnect the iPod.</source>
         <translation>Linux necesita la regla de identidad 61-iopenpod.rules incluida para que iOpenPod pueda verificar este modelo. Instálala en /etc/udev/rules.d, recarga las reglas de udev y vuelve a conectar el iPod.</translation>
+    </message>
+    <message>
+        <source>Loading Demucs htdemucs_6s</source>
+        <translation>Cargando Demucs htdemucs_6s</translation>
     </message>
     <message>
         <source>Lyrics cannot be verified for this iPod&apos;s native player: {reason} The full lyrics and source file were not truncated.</source>
@@ -10780,6 +10899,10 @@ Playlists: %3</translation>
         <translation>Reutilizando archivo sin cambios {index} de {total}…</translation>
     </message>
     <message>
+        <source>Reusing verified analysis</source>
+        <translation>Reutilizando análisis verificado</translation>
+    </message>
+    <message>
         <source>Review the application log, then try again.</source>
         <translation>Revisa el registro de la aplicación y vuelve a intentarlo.</translation>
     </message>
@@ -10924,12 +11047,20 @@ Playlists: %3</translation>
         <translation>Podcasts seleccionados</translation>
     </message>
     <message>
+        <source>Selecting hardware</source>
+        <translation>Seleccionando hardware</translation>
+    </message>
+    <message>
         <source>Serializing database artifacts</source>
         <translation>Serializando archivos de bases de datos</translation>
     </message>
     <message>
         <source>Settings were verified, but the device flush was incomplete. Safe-eject the iPod before unplugging.</source>
         <translation>La configuración se verificó, pero no se confirmó la escritura completa en el dispositivo. Expulsa el iPod de forma segura antes de desconectarlo.</translation>
+    </message>
+    <message>
+        <source>Setup could not finish. Acoustic analysis remains available.</source>
+        <translation>No se pudo completar la instalación. El análisis acústico sigue disponible.</translation>
     </message>
     <message>
         <source>Shared Photo files have conflicting captured content.</source>
@@ -11314,6 +11445,18 @@ Playlists: %3</translation>
     <message>
         <source>The existing helper could not be read and was left unchanged; media analysis will continue without its cached Sync history: {error}</source>
         <translation>No se pudo leer el índice auxiliar existente y se dejó sin cambios; el análisis multimedia continuará sin su historial de sincronización almacenado en caché: {error}</translation>
+    </message>
+    <message>
+        <source>Acoustic analysis · librosa · CPU</source>
+        <translation>Análisis acústico · librosa · CPU</translation>
+    </message>
+    <message>
+        <source>Phase · {detail} · {completed}/{total} tracks</source>
+        <translation>Phase · {detail} · {completed}/{total} pistas</translation>
+    </message>
+    <message>
+        <source>Reading and checking audio</source>
+        <translation>Leyendo y comprobando audio</translation>
     </message>
     <message>
         <source>The existing helper is invalid: {error}</source>
@@ -11808,6 +11951,10 @@ Playlists: %3</translation>
         <translation>No se pudo preparar un fotograma de {name}. El episodio se puede sincronizar sin carátula.</translation>
     </message>
     <message>
+        <source>Acoustic analysis is included. Optional instrument analysis can be installed here.</source>
+        <translation>Se incluye análisis acústico. Aquí puedes instalar el análisis de instrumentos opcional.</translation>
+    </message>
+    <message>
         <source>Album index rebuilding requires complete, unambiguous Master Playlist membership.</source>
         <translation>La reconstrucción del índice de álbumes requiere entradas completas e inequívocas en la lista principal.</translation>
     </message>
@@ -11833,7 +11980,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Analyzing Phase playlist audio</source>
-        <translation>Analizando el audio de la lista de reproducción de Phase</translation>
+        <translation type="vanished">Analizando el audio de la lista de reproducción de Phase</translation>
     </message>
     <message>
         <source>Another selected Host Playlist uses this iPod Playlist. Choose a different target or uncheck one.</source>
@@ -11900,8 +12047,22 @@ Playlists: %3</translation>
         <translation>Los ajustes de pódcasts no se conservaron ni se inicializaron a partir de los valores predeterminados capturados.</translation>
     </message>
     <message>
+        <source>Preparing optional analysis setup…</source>
+        <translation>Preparando la configuración del análisis opcional…</translation>
+    </message>
+    <message>
         <source>Remove the Genius Playlist emptied by Track deletion.</source>
         <translation>Elimina la lista de reproducción Genius que ha quedado vacía al eliminar pistas.</translation>
+    </message>
+    <message>
+        <source>Setup cancelled. Acoustic analysis remains available.</source>
+        <translation>Configuración cancelada. El análisis acústico sigue disponible.</translation>
+    </message>
+    <message>
+        <source>Setup could not finish: {error}
+Acoustic analysis remains available.</source>
+        <translation type="vanished">No se pudo completar la configuración: {error}
+El análisis acústico sigue disponible.</translation>
     </message>
     <message>
         <source>The Phase Playlist producer marker is missing.</source>
@@ -11918,6 +12079,10 @@ Playlists: %3</translation>
     <message>
         <source>The native Chapter index selects the last eligible duplicate start. Editable Chapter metadata is retained.</source>
         <translation>El índice nativo de capítulos selecciona la última entrada aplicable con la misma posición de inicio. Se conservan los metadatos editables de capítulos.</translation>
+    </message>
+    <message>
+        <source>The previous instrument analysis setup needs attention. Acoustic analysis remains available.</source>
+        <translation>La instalación anterior del análisis de instrumentos necesita atención. El análisis acústico sigue disponible.</translation>
     </message>
     <message>
         <source>The referenced artwork item is absent. A reverse-owner image is not substituted; the raw artwork reference is preserved.</source>
@@ -12042,6 +12207,10 @@ Playlists: %3</translation>
     <message>
         <source>Verifying Library files and recovery copies…</source>
         <translation>Verificando archivos de biblioteca y copias de recuperación…</translation>
+    </message>
+    <message>
+        <source>Verifying audio</source>
+        <translation>Verificando audio</translation>
     </message>
     <message>
         <source>Verifying files on the iPod before completing recovery…</source>
@@ -12276,6 +12445,14 @@ Al continuar, se intentará usar el formato de autorización de {model}.</transl
     <message>
         <source>{device_name} requires confirmation before restore.</source>
         <translation>{device_name} requiere confirmación antes de restaurar.</translation>
+    </message>
+    <message>
+        <source>{method} + librosa · CPU</source>
+        <translation>{method} + librosa · CPU</translation>
+    </message>
+    <message>
+        <source>{method} · {hardware}</source>
+        <translation>{method} · {hardware}</translation>
     </message>
     <message>
         <source>{name} changed during preparation and was skipped. Rescan this source before retrying.</source>

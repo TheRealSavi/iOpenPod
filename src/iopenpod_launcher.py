@@ -37,6 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--smoke-test-phase-runtime",
+        type=Path,
+        help="Also test an already-installed optional Phase runtime at this path.",
+    )
+
+    parser.add_argument(
         "--json-from-itdb",
         nargs=2,
         metavar=("ITDB_PATH", "OUTPUT_PATH"),
@@ -59,10 +65,14 @@ def main(
     args = parser.parse_args(argv)
     if args.smoke_test_report and not args.smoke_test:
         parser.error("--smoke-test-report requires --smoke-test")
+    if args.smoke_test_phase_runtime and not args.smoke_test:
+        parser.error("--smoke-test-phase-runtime requires --smoke-test")
 
     if args.smoke_test:
         try:
             check_runtime()
+            if args.smoke_test_phase_runtime:
+                check_phase_worker(args.smoke_test_phase_runtime)
         except Exception:
             report = traceback.format_exc()
             result = 1
@@ -255,6 +265,15 @@ def check_runtime() -> None:
     app = QApplication.instance() or QApplication([])
     assert not application_icon().isNull(), "Application icon missing"
     resources = files("iOpenPod")
+    for relative in (
+        "assets/phase_runtime/worker.py",
+        "app/phase_sources.py",
+        "app/phase_parts.py",
+        "app/phase_activity.py",
+    ):
+        assert resources.joinpath(relative).read_bytes(), (
+            "Phase worker resource missing"
+        )
     image = resources.joinpath("assets/ipod_images/iPodGeneric.png").read_bytes()
     assert not QImage.fromData(image).isNull(), "Device image missing"
     glyph = resources.joinpath("assets/glyphs/music.svg").read_bytes()
@@ -273,8 +292,52 @@ def check_runtime() -> None:
     # and alternate GUI exclusions must not remove the actual analysis runtime.
     harmonic, percussive = librosa.decompose.hpss(np.ones((32, 16), dtype=np.float32))
     assert harmonic.shape == percussive.shape == (32, 16)
+    # Exercise the complete acoustic fallback, including beat tracking, lane
+    # evidence and native serialization. No model, network or media tool needed.
+    from iOpenPod.app.phase_audio import analyze_phase_pcm
+    from iPodDB.games import build_phase_analysis
+
+    rate = 22_050
+    times = np.arange(30 * rate, dtype=np.float32) / rate
+    pulses = np.exp(-30 * np.remainder(times, 0.5))
+    waveform = pulses * (
+        0.3 * np.sin(2 * np.pi * 110 * times)
+        + 0.2 * np.sin(2 * np.pi * 880 * times)
+        + 0.1 * np.sin(2 * np.pi * 3520 * times)
+    )
+    chart = analyze_phase_pcm(waveform.astype("<f4").tobytes(), length_ms=30_000)
+    assert chart.transients and chart.beats, "Phase acoustic analysis missing"
+    assert build_phase_analysis(chart).startswith(b"pha\x02"), "Phase encoding missing"
     check_playback_runtime()
     app.processEvents()
+
+
+def check_phase_worker(root: Path) -> None:
+    """Exercise bundled worker resources with an explicitly selected installation."""
+    from contextlib import closing
+
+    import numpy as np
+
+    from iOpenPod.app.phase_runtime import ManagedPhaseSources
+
+    source = ManagedPhaseSources.installed(root)
+    if source is None:
+        raise ValueError("No optional Phase runtime is installed at the supplied path")
+    times = np.arange(44_100 * 2, dtype=np.float32) / 44_100
+    mono = 0.1 * np.sin(2 * np.pi * 440 * times)
+    pcm = np.column_stack((mono, mono)).astype("<f4").tobytes()
+    parts = source.analyze(pcm, sample_rate=44_100, channels=2, checkpoint=lambda: None)
+    assert len(parts) == 6, "Phase worker returned incomplete instrument evidence"
+    # Exercise the retained model and its request protocol from the frozen app,
+    # as well as the standalone/installation-check path above.
+    with closing(source.for_analysis()) as job:
+        for frequency in (440, 660):
+            mono = 0.1 * np.sin(2 * np.pi * frequency * times)
+            pcm = np.column_stack((mono, mono)).astype("<f4").tobytes()
+            parts = job.analyze(
+                pcm, sample_rate=44_100, channels=2, checkpoint=lambda: None
+            )
+            assert len(parts) == 6, "Phase job worker returned incomplete evidence"
 
 
 if __name__ == "__main__":

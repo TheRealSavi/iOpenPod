@@ -197,7 +197,10 @@ The analyzer detects beats and musical attacks, with an emphasis on audible
 percussion. With the optional music analysis model installed, it also separates
 estimated vocals, drums, guitar, bass, piano, and other sounds, and recognizes
 recurring musical phrases. These help it follow the rhythm and prominent parts
-of a song. Acoustic analysis works without the optional model. Audio decoding requires FFmpeg and FFprobe.
+of a song. Acoustic analysis works without the optional model. Use **Settings →
+Media Tools → Set Up Phase Analysis** to download optional instrument analysis;
+setup can use several gigabytes. If optional analysis cannot run, iOpenPod uses
+acoustic analysis. Audio decoding uses your configured FFmpeg executable.
 
 ![Phase Playlist with its game icon, track list, and Phase banner](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/phase-playlist.webp)
 

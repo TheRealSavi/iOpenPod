@@ -3,40 +3,40 @@
 from __future__ import annotations
 
 from threading import Barrier, Event, Lock, get_ident
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
+from iOpenPod.app import phase_audio
 from iOpenPod.app.phase_audio import PHASE_SAMPLE_RATE, analyze_phase_pcm
+from iOpenPod.app.phase_hpss import separate_magnitude
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from numpy.typing import NDArray
 
 
 def test_spectral_blocks_overlap_and_checkpoints_stay_on_coordinator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import librosa
-
     pcm, _ = pulse_audio()
     expected = analyze_phase_pcm(pcm, length_ms=30_000, max_workers=1)
-    original = cast(
-        "Callable[..., tuple[np.ndarray, np.ndarray]]", librosa.decompose.hpss
-    )
+    original = separate_magnitude
     rendezvous = Barrier(2)
     owner = get_ident()
     workers: set[int] = set()
 
-    def overlapping(*args: object, **kwargs: object) -> tuple[np.ndarray, np.ndarray]:
+    def overlapping(
+        magnitude: NDArray[np.float32],
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
         workers.add(get_ident())
         rendezvous.wait(timeout=5)
-        return original(*args, **kwargs)
+        return original(magnitude)
 
     def checkpoint() -> None:
         assert get_ident() == owner
 
-    monkeypatch.setattr(librosa.decompose, "hpss", overlapping)
+    monkeypatch.setattr(phase_audio, "separate_magnitude", overlapping)
     assert analyze_phase_pcm(pcm, length_ms=30_000, checkpoint=checkpoint) == expected
     assert len(workers) == 2
 
@@ -44,8 +44,6 @@ def test_spectral_blocks_overlap_and_checkpoints_stay_on_coordinator(
 def test_cancellation_during_parallel_work_drains_workers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import librosa
-
     pcm, _ = pulse_audio()
     started, release = Event(), Event()
     lock = Lock()
@@ -73,7 +71,7 @@ def test_cancellation_during_parallel_work_drains_workers(
             release.set()
             raise RuntimeError("user cancellation")
 
-    monkeypatch.setattr(librosa.decompose, "hpss", blocked)
+    monkeypatch.setattr(phase_audio, "separate_magnitude", blocked)
     with pytest.raises(RuntimeError, match="user cancellation"):
         analyze_phase_pcm(pcm * 4, length_ms=120_000, checkpoint=checkpoint)
     assert not active
@@ -81,15 +79,13 @@ def test_cancellation_during_parallel_work_drains_workers(
 
 
 def test_parallel_worker_failure_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
-    import librosa
-
     pcm, _ = pulse_audio()
 
     def fail(*args: object, **kwargs: object) -> None:
         del args, kwargs
         raise ValueError("invalid spectral block")
 
-    monkeypatch.setattr(librosa.decompose, "hpss", fail)
+    monkeypatch.setattr(phase_audio, "separate_magnitude", fail)
     with pytest.raises(ValueError, match="invalid spectral block"):
         analyze_phase_pcm(pcm, length_ms=30_000)
 
@@ -129,14 +125,15 @@ def test_onsets_follow_audio_attacks_beats_keep_pulse_and_silence_has_no_events(
     assert analyze_phase_pcm(pcm, length_ms=30_000, max_workers=1) == chart
 
 
-def test_silence_invalid_samples_duration_and_cancellation() -> None:
+@pytest.mark.parametrize("invalid_index", [100, 25 * PHASE_SAMPLE_RATE])
+def test_silence_invalid_samples_duration_and_cancellation(invalid_index: int) -> None:
     pcm = np.zeros(30 * PHASE_SAMPLE_RATE, dtype="<f4").tobytes()
     chart = analyze_phase_pcm(pcm, length_ms=30_000)
     assert not chart.transients and not chart.beats
     with pytest.raises(ValueError, match="duration"):
         analyze_phase_pcm(pcm[:400], length_ms=30_000)
     corrupted = np.zeros(30 * PHASE_SAMPLE_RATE, dtype="<f4")
-    corrupted[100] = np.nan
+    corrupted[invalid_index] = np.nan
     with pytest.raises(ValueError, match="non-finite"):
         analyze_phase_pcm(corrupted.tobytes(), length_ms=30_000)
 

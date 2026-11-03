@@ -113,6 +113,19 @@ def test_spec_collects_wasmtime_at_its_runtime_relative_path(
     def inspect_analysis(*args: object, **kwargs: Any) -> None:
         expected = (str(library), str(Path("wasmtime") / Path(relative).parent))
         assert expected in kwargs["binaries"], "Wasmtime's runtime library is missing"
+        for source in (
+            "iOpenPod/assets/phase_runtime/worker.py",
+            "iOpenPod/app/phase_sources.py",
+            "iOpenPod/app/phase_parts.py",
+            "iOpenPod/app/phase_activity.py",
+        ):
+            expected_source = (
+                str(package_app.ROOT / "src" / source),
+                str(Path(source).parent),
+            )
+            assert expected_source in kwargs["datas"], (
+                "The isolated Phase runtime needs source files outside the PYZ"
+            )
         raise CollectionCompleteError
 
     with pytest.raises(CollectionCompleteError):

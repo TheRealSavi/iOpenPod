@@ -289,3 +289,8 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0222: Anchor Phase attacks to percussion](0222-anchor-phase-attacks-to-percussion.md)
 - [ADR-0223: Reconcile Playlist datasets from dataset 3](0223-reconcile-playlist-datasets-from-dataset3.md)
 - [ADR-0224: Rebuild undersized Phase indexes](0224-rebuild-undersized-phase-indexes.md)
+- [ADR-0225: Install optional Phase analysis with safe fallbacks](0225-install-optional-phase-analysis-with-safe-fallbacks.md)
+- [ADR-0226: Reuse Phase analysis work without changing gameplay](0226-reuse-phase-analysis-work-without-changing-gameplay.md)
+- [ADR-0227: Prefetch bounded Phase audio inputs](0227-prefetch-bounded-phase-audio-inputs.md)
+- [ADR-0228: Overlap Phase mix and source analysis](0228-overlap-phase-mix-and-source-analysis.md)
+- [ADR-0229: Report Phase activity and stage ETA](0229-report-phase-activity-and-stage-eta.md)

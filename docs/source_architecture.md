@@ -807,6 +807,32 @@ to generate typed events, with content-checked reuse (ADR-0210). Full-mix pitche
 and percussive attacks remain available for native difficulty selection. An
 optional six-source provider adds estimated vocal/guitar and other Phase Parts,
 with recurring Phase Hooks guiding melodic preferences (ADR-0215, ADR-0217).
+An explicit Settings setup can install an isolated optional Python runtime in
+Host user data. Its child worker consumes temporary PCM and returns validated
+Phase Parts, without device access. Optional failures retry on CPU or retain
+acoustic analysis; provenance records the actual producer after analysis.
+Cancellation and Storage failures still stop preparation. See ADR-0225.
+One preparation retains its isolated worker and loaded model until completion or
+failure; standalone calls still release their worker after one request. Storage
+owns the process and its stdin lifetime pipe, which also ends a worker after
+parent-process loss. CUDA inference can overlap one bounded CPU feature block,
+while CPU and MPS remain serial. See ADR-0226.
+One preparation-owned reader captures up to five upcoming compressed inputs on
+the Host while the current Track is analyzed. Count and retained-byte limits bound
+staging; oversized inputs and Host capacity failures retain direct device reads.
+The capture supplies the initial source fingerprint. Full post-analysis checks
+remain serialized with copies and transaction preconditions remain mandatory.
+Caller callbacks stay on the coordinator. See ADR-0227.
+Whole-mix measurement can run concurrently with confirmed CUDA source analysis
+for the same Track. Immutable compact evidence meets source Parts only in final
+chart selection. CPU/PCM bounds retain serial execution on constrained inputs;
+managed capability comes from validated live responses, not installation receipts.
+Only the preparation caller invokes application callbacks or changes fallback
+identity. Cancellation joins all mix work. See ADR-0228.
+Phase activity and audio-duration ETA snapshots follow the preparation caller
+through Library write progress to shared status controls. Optional request-scoped
+worker telemetry identifies the live backend without granting scheduling or
+publication authority. The estimate covers this preparation stage only. See ADR-0229.
 Audible percussion anchors competing attacks and receives a bounded magnitude
 preference; melodic evidence remains available through drum breaks (ADR-0222).
 Pulse tracking and full-mix energy remain independent of those preferences.

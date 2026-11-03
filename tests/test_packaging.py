@@ -79,6 +79,21 @@ def test_version_and_smoke_test_do_not_initialize_settings_or_devices(
     assert calls == [True]
 
 
+def test_optional_runtime_check_requires_an_explicit_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checked: list[Path] = []
+    monkeypatch.setattr(entrypoint, "check_runtime", lambda: None)
+    monkeypatch.setattr(entrypoint, "check_phase_worker", checked.append)
+    assert entrypoint.main(["--smoke-test"]) == 0
+    assert checked == []
+    assert (
+        entrypoint.main(["--smoke-test", "--smoke-test-phase-runtime", str(tmp_path)])
+        == 0
+    )
+    assert checked == [tmp_path]
+
+
 def test_frozen_launch_preserves_user_path_even_with_old_private_tools(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -705,7 +720,10 @@ def test_windows_store_identity_is_not_replaced(
     assert len(calls) == expected_calls
 
 
-def test_smoke_report_requires_smoke_mode() -> None:
+@pytest.mark.parametrize(
+    "option", ["--smoke-test-report", "--smoke-test-phase-runtime"]
+)
+def test_smoke_report_requires_smoke_mode(option: str) -> None:
     with pytest.raises(SystemExit) as result:
-        entrypoint.main(["--smoke-test-report", "unused.txt"])
+        entrypoint.main([option, "unused.txt"])
     assert result.value.code == 2

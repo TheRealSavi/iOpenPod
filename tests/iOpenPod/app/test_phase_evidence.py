@@ -106,6 +106,16 @@ def test_beat_power_follows_percussive_energy_even_with_constant_harmony() -> No
     assert np.median(loud) >= np.median(quiet) + 3
 
 
+def test_uniform_audio_gain_preserves_relative_phase_evidence() -> None:
+    # Native selection uses relative spectral strengths and section power.
+    # Turning down an audible recording must not turn either into a density knob.
+    pcm = music_with_energy_change()
+    quieter = (np.frombuffer(pcm, dtype="<f4") * 0.25).astype("<f4").tobytes()
+    reference = analyze_phase_pcm(pcm, length_ms=30_000)
+    assert reference.transients and reference.beats
+    assert analyze_phase_pcm(quieter, length_ms=30_000) == reference
+
+
 def test_quiet_source_attack_uses_mix_scale_and_keeps_nearby_mix_timing() -> None:
     count = 400
     mix = np.zeros((3, count))

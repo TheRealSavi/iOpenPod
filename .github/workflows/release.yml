@@ -7,6 +7,10 @@ on:
         description: "Publish to GitHub and PyPI (on main, creates v<pyproject version> after checks pass)"
         type: boolean
         default: false
+      verify_phase_runtime:
+        description: "Download optional Phase analysis and test it in every native candidate"
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
   pull_request:
@@ -17,12 +21,14 @@ on:
       - "scripts/update_feed.py"
       - "scripts/publish_update_feed.py"
       - "src/iOpenPod/app/updates/**"
+      - "src/iOpenPod/app/phase_*.py"
       - "src/iopenpod_update_helper.py"
       - "src/storage/host_installation.py"
       - "src/storage/host_usage.py"
       - "src/storage/platform/host_install_windows.py"
       - ".github/workflows/update-feed.yml"
       - "scripts/check_wheel.py"
+      - "scripts/check_phase_distribution.py"
       - "scripts/check_windows_bundle.py"
       - "scripts/check_macos_bundle.py"
       - "scripts/sync_macos_build.py"
@@ -153,6 +159,18 @@ jobs:
           executable="$PWD/dist/iOpenPod/iOpenPod"
           cd "$RUNNER_TEMP"
           "$executable" --smoke-test
+      - name: Check optional Phase analysis in each native candidate
+        # Optional model acceptance is explicitly selected because it downloads
+        # several gigabytes for each native platform. Acoustic smoke runs always.
+        if: inputs.verify_phase_runtime
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) executable="dist/iOpenPod.exe" ;;
+            macOS) executable="dist/iOpenPod.app/Contents/MacOS/iOpenPod" ;;
+            Linux) executable="dist/iOpenPod/iOpenPod" ;;
+          esac
+          uv run --no-sync python scripts/check_phase_distribution.py "$executable" --root "$RUNNER_TEMP/iopenpod-phase-analysis"
       - name: Archive candidate with SHA-256
         run: uv run --no-sync python scripts/package_app.py archive
       - name: Check macOS drag-to-Applications disk image

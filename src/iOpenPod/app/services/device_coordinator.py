@@ -2129,13 +2129,16 @@ class DeviceCoordinator:
                         checkpoint=cancellation_checkpoint,
                         analyzer=self._phase_analysis,
                         media_writes=captured.media_writes,
-                        progress=lambda done, total, title: checkpoint(
-                            "resources.phase",
-                            source_text("Analyzing Phase playlist audio"),
-                            completed=done,
-                            total=total,
-                            current_item=title,
-                            unit="tracks",
+                        analysis_progress=lambda value: progress(
+                            WriteProgress(
+                                "resources.phase",
+                                value.message,
+                                completed=value.completed,
+                                total=value.total,
+                                current_item=value.title,
+                                unit="tracks",
+                                eta=value.eta,
+                            )
                         ),
                     )
                     if prepare_phase_companions

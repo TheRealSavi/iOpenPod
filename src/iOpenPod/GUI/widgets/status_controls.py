@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.core.status import ApplicationStatus, StatusMessage, StatusProgress
+from iOpenPod.GUI.presentation.eta import compact_eta_text, eta_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 _PROGRESS_SCALE = 10_000
@@ -34,6 +35,11 @@ class StatusControls(QWidget):
         self.warning.setTextFormat(Qt.TextFormat.PlainText)
         self.warning.hide()
         layout.addWidget(self.warning)
+        self.eta = QLabel(self)
+        self.eta.setObjectName("sharedStatusEta")
+        self.eta.setTextFormat(Qt.TextFormat.PlainText)
+        self.eta.hide()
+        layout.addWidget(self.eta)
         self.progress = QProgressBar(self)
         self.progress.setObjectName("sharedStatusProgress")
         self.progress.setFormat("%p%")
@@ -53,6 +59,11 @@ class StatusControls(QWidget):
         progress = value.progress if value is not None else None
         action = value.action if value is not None else None
         warning = value.safety_warning if value is not None else ""
+        estimate = progress.eta if progress is not None else None
+        self.eta.setText(compact_eta_text(estimate) if estimate is not None else "")
+        self.eta.setToolTip(eta_text(estimate) if estimate is not None else "")
+        self.eta.setAccessibleName(self.eta.toolTip())
+        self.eta.setVisible(bool(self.eta.text()))
         self.warning.setText(warning)
         self.warning.setVisible(bool(warning))
         if progress is None:

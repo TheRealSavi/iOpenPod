@@ -469,7 +469,20 @@ class FilesystemSession:
         self._revalidate()
         return FileSnapshot(data=data, fingerprint=fingerprint)
 
-    def fingerprint(self, path: DevicePath) -> FileFingerprint:
+    def fingerprint(
+        self,
+        path: DevicePath,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+    ) -> FileFingerprint:
+        """Hash a stable file, checking optional cancellation between read chunks."""
+
+        def checked() -> None:
+            self._assert_active()
+            if checkpoint is not None:
+                checkpoint()
+
+        checked()
         observation = self._revalidate()
         target = resolve_device_path(
             self._root,
@@ -481,9 +494,10 @@ class FilesystemSession:
             target,
             collect_data=False,
             max_bytes=None,
-            assert_active=self._assert_active,
+            assert_active=checked,
         )
         self._revalidate()
+        checked()
         return fingerprint
 
     def modified_time_matches(self, actual_ns: int, expected_ns: int) -> bool:

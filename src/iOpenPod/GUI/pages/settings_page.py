@@ -86,6 +86,7 @@ class SettingsPage(QWidget):
 
     mediaToolsRequested = Signal()
     mediaToolsCheckRequested = Signal()
+    phaseAnalysisSetupRequested = Signal()
     appUpdatesRequested = Signal()
     chooseIPodRequested = Signal()
 
@@ -350,6 +351,9 @@ class SettingsPage(QWidget):
         self._media_tools = MediaToolsSettings(self, settings=settings)
         self._media_tools.setupRequested.connect(self.mediaToolsRequested.emit)
         self._media_tools.checkRequested.connect(self.mediaToolsCheckRequested.emit)
+        self._media_tools.phaseSetupRequested.connect(
+            self.phaseAnalysisSetupRequested.emit
+        )
         self._sync_settings = SyncSettings(settings, self, editor=self._editor)
         self._appearance_tab = self._add_tab(
             "appearanceSettingsScroll",

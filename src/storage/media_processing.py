@@ -162,6 +162,7 @@ def run_media_tool(
     max_output_bytes: int = 4 * 1024 * 1024,
     max_stderr_bytes: int | None = None,
     low_priority: bool = False,
+    keep_stdin_open: bool = False,
     check: bool = True,
     input_file: HostPath | None = None,
     arguments_after_input: tuple[str, ...] = (),
@@ -176,6 +177,9 @@ def run_media_tool(
     Records are bounded individually and callbacks run on the calling thread during
     processing, with the final sample drained after exit. Progress stdout is
     consumed rather than returned.
+
+    ``keep_stdin_open`` retains an unwritten pipe until cleanup. A persistent
+    child can observe EOF on that pipe when this process exits unexpectedly.
 
     The input handle remains open until the child is reaped. On Windows its file
     and ancestor handles prevent replacement; POSIX passes the verified descriptor
@@ -206,6 +210,7 @@ def run_media_tool(
                 max_output_bytes=max_output_bytes,
                 max_stderr_bytes=max_stderr_bytes,
                 low_priority=low_priority,
+                keep_stdin_open=keep_stdin_open,
                 check=check,
                 inherited_fds=inherited_fds,
                 progress=progress,
@@ -218,6 +223,7 @@ def run_media_tool(
         max_output_bytes=max_output_bytes,
         max_stderr_bytes=max_stderr_bytes,
         low_priority=low_priority,
+        keep_stdin_open=keep_stdin_open,
         check=check,
         inherited_fds=(),
         progress=progress,
@@ -233,6 +239,7 @@ def _run_media_tool(
     max_output_bytes: int,
     max_stderr_bytes: int | None,
     low_priority: bool,
+    keep_stdin_open: bool,
     check: bool,
     inherited_fds: tuple[int, ...],
     progress: Callable[[MediaToolProgress], None] | None,
@@ -243,7 +250,7 @@ def _run_media_tool(
     try:
         process = subprocess.Popen(
             [os.fspath(executable), *arguments],
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE if keep_stdin_open else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             creationflags=flags,
@@ -289,6 +296,8 @@ def _run_media_tool(
             with suppress(subprocess.TimeoutExpired):
                 process.wait(timeout=0.05)
     finally:
+        if keep_stdin_open and process.stdin is not None:
+            process.stdin.close()
         if process.poll() is None:
             process.kill()
         process.wait()

@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     import threading
     from collections.abc import Callable
 
+    from iOpenPod.app.core.eta import EtaEstimate
     from iOpenPod.app.media.importing import LibraryMediaSource
     from iOpenPod.app.media.progress import MediaPreparationProgress
     from iOpenPod.app.models.device import ActiveIPod
@@ -105,6 +106,9 @@ class WriteProgress:
     ``active_items`` is the complete immutable snapshot of currently admitted
     per-item preparations. It excludes waiting and finished items; measurements
     describe each item's current phase rather than readiness for publication.
+
+    ``eta`` is an optional caller-timed estimate for this stage alone; its work
+    units may be weighted independently of the visible item counts.
     """
 
     phase: str
@@ -114,6 +118,7 @@ class WriteProgress:
     current_item: str = ""
     unit: str = ""
     active_items: tuple[WriteItemProgress, ...] = field(default=(), kw_only=True)
+    eta: EtaEstimate | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

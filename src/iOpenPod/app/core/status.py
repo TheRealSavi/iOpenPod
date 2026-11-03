@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QTimer, Signal
+
+if TYPE_CHECKING:
+    from iOpenPod.app.core.eta import EtaEstimate
 
 _ROTATION_INTERVAL_MS = 4_000
 
@@ -22,11 +26,16 @@ class StatusMessage:
 
 @dataclass(frozen=True, slots=True)
 class StatusProgress:
-    """Completed work out of a total; zero total means indeterminate progress."""
+    """Stage counters and an optional producer-timed estimate for the same stage.
+
+    Zero total means indeterminate progress. ETA work units may differ from the
+    displayed counters, for example audio duration versus completed Tracks.
+    """
 
     current: int = 0
     total: int = 0
     detail: str = ""
+    eta: EtaEstimate | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         if self.current < 0 or self.total < 0:

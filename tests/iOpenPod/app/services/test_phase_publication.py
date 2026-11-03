@@ -1,5 +1,6 @@
 """Phase companion preparation and publication on a virtual device."""
 
+import json
 import plistlib
 from dataclasses import replace
 from hashlib import sha256
@@ -10,6 +11,7 @@ from tests.iOpenPod.app.phase_test_support import StubPhaseAnalysis
 
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.services.phase import (
+    CACHE_PATH,
     INDEX_PATH,
     MANIFEST_PATH,
     capture_phase_selection,
@@ -160,6 +162,44 @@ def test_workspace_selects_only_one_and_preserves_membership() -> None:
         workspace.create(PlaylistKind.FOLDER, "Folder", is_phase=True)
 
 
+@pytest.mark.parametrize("invalid_cache", [False, True])
+def test_preparation_closes_its_analyzer_on_success_and_validation_failure(
+    tmp_path: Path, invalid_cache: bool
+) -> None:
+    closed: list[bool] = []
+
+    class OwnedAnalysis(StubPhaseAnalysis):
+        def close(self) -> None:
+            closed.append(True)
+
+    manifest = tmp_path / str(MANIFEST_PATH)
+    manifest.parent.mkdir(parents=True)
+    manifest.write_bytes(
+        plistlib.dumps({"Name": "Phase", "Version": "1.0", "GUID": "phase"})
+    )
+    cache = tmp_path / str(CACHE_PATH)
+    if invalid_cache:
+        cache.parent.mkdir(parents=True)
+        cache.write_bytes(b"[]")
+    desired = snapshot()
+    for track in desired.tracks:
+        media = tmp_path / track.metadata.location
+        media.parent.mkdir(parents=True, exist_ok=True)
+        media.write_bytes(b"verified input")
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path)
+    storage = Storage(platform)
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        if invalid_cache:
+            with pytest.raises(ValueError, match="analysis cache"):
+                prepare_phase(
+                    session, LibrarySnapshot(), desired, analyzer=OwnedAnalysis()
+                )
+        else:
+            prepare_phase(session, LibrarySnapshot(), desired, analyzer=OwnedAnalysis())
+    assert closed == [True]
+
+
 def test_no_phase_does_not_need_device_files_and_missing_game_blocks(
     tmp_path: Path,
 ) -> None:
@@ -271,3 +311,42 @@ def test_incoming_audio_is_analyzed_before_it_exists_on_device(tmp_path: Path) -
                 analyzer=analyzer,
                 media_writes=(incoming,),
             )
+
+
+def test_cache_records_the_analyzer_that_actually_succeeded(tmp_path: Path) -> None:
+    class FallbackAnalysis(StubPhaseAnalysis):
+        backend = "preferred-accelerator"
+
+        @property
+        def identity(self) -> str:
+            return self.backend
+
+        def analyze(self, *args: object, **kwargs: object) -> bytes:
+            self.backend = "actual-acoustic-fallback"
+            return b"pha\x02" + bytes(128)
+
+    manifest = tmp_path / str(MANIFEST_PATH)
+    manifest.parent.mkdir(parents=True)
+    manifest.write_bytes(
+        plistlib.dumps({"Name": "Phase", "Version": "1.0", "GUID": "phase"})
+    )
+    desired = snapshot()
+    for track in desired.tracks:
+        media = tmp_path / track.metadata.location
+        media.parent.mkdir(parents=True, exist_ok=True)
+        media.write_bytes(b"verified audio")
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path)
+    storage = Storage(platform)
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        publication = prepare_phase(
+            session, LibrarySnapshot(), desired, analyzer=FallbackAnalysis()
+        )
+    provenance = next(
+        write.source for write in publication.writes if write.path == CACHE_PATH
+    )
+    assert isinstance(provenance, bytes)
+    values = json.loads(provenance)
+    assert values and all(
+        value.startswith("actual-acoustic-fallback:") for value in values.values()
+    )

@@ -79,6 +79,21 @@ loading incompatible application libraries, which can otherwise cause startup
 errors such as `undefined symbol: mpg123_open_handle64`. The same child environment
 is used for version checks, file inspection, and media processing.
 
+## Optional Phase analysis
+
+**Settings > Media Tools > Set Up Phase Analysis > Download and Install** installs
+an optional instrument-analysis runtime in iOpenPod's Host user-data folder.
+It downloads private Python, libraries and a model; allow several gigabytes.
+Nothing is downloaded merely by opening the dialog. The standard app already
+includes acoustic analysis, which remains available if setup is skipped or fails.
+
+Setup chooses packages for the Host platform and tests actual inference before
+activating them. Available acceleration can retry on CPU, then use acoustic
+analysis if the optional provider fails. The next Phase save or Sync sees a
+successful installation without restarting iOpenPod. FFmpeg remains independently
+selected through its Path Override and automatic discovery. See
+[Phase analysis](phase-audio-analysis.md) for behavior and validation limits.
+
 ## Channel evidence and validation
 
 Channel names and package contents were checked on 2026-10-01 against the

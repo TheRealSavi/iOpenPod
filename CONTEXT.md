@@ -14,6 +14,37 @@ then beyond it.
 
 ## Current stage
 
+Phase preparation reports its current method, live CPU/CUDA/MPS backend and GPU
+name when available. A stage ETA beside the status-bar progress indicator learns
+from completed audio duration. See
+[ADR-0229](docs/adr/0229-report-phase-activity-and-stage-eta.md).
+
+Phase can measure whole-mix acoustics while confirmed CUDA source analysis runs
+for the same Track, then combine the evidence using unchanged musical rules.
+Resource limits, live runtime capability and caller-owned cancellation retain the
+serial fallback. See [ADR-0228](docs/adr/0228-overlap-phase-mix-and-source-analysis.md).
+
+Phase preparation copies up to five upcoming compressed songs to bounded Host
+staging while the current Track is analyzed. Captures supply the initial content
+hash; full source checks and transaction preconditions remain required. Large
+inputs and Host capacity failures retain direct device reads. See
+[ADR-0227](docs/adr/0227-prefetch-bounded-phase-audio-inputs.md).
+
+Phase analysis reuses feature calculations and retains the downloaded model for
+one preparation. CUDA inference overlaps bounded CPU feature work; CPU and MPS
+keep the serial path. Preparation exit and parent-process loss release the worker,
+and failures retain acoustic analysis. Musical parameters stay at version 7.
+See [ADR-0226](docs/adr/0226-reuse-phase-analysis-work-without-changing-gameplay.md)
+for lifetime, compatibility and evaluation limits.
+
+Phase can explicitly install an isolated optional analysis runtime from Settings
+without changing the bundled application or its FFmpeg selection. Available GPU
+analysis retries on CPU; optional failures retain acoustic analysis, with cache
+provenance identifying the analyzer that actually succeeded. Unsafe or undecodable
+inputs still stop preparation. See
+[ADR-0225](docs/adr/0225-install-optional-phase-analysis-with-safe-fallbacks.md)
+for Windows evidence and remaining Mac/Linux, Store and gameplay acceptance.
+
 Library preparation now makes dataset 2 agree with authoritative dataset 3.
 Missing, extra, conflicting, and reordered Playlists are reconciled for every
 write, including repair-only preparations. Podcast Episodes remain grouped in

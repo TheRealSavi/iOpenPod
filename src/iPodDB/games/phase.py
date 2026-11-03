@@ -52,6 +52,12 @@ class IncompletePhaseLibraryError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class PhaseTransient:
+    """Candidate attack: Q16.16 seconds and three five-bit spectral magnitudes.
+
+    Their sum supplies stock selection priority; their ordering seeds primary
+    and alternative lanes. They are neither instrument IDs nor fixed lane masks.
+    """
+
     time_q16: int
     low: int
     mid: int
@@ -60,6 +66,13 @@ class PhaseTransient:
 
 @dataclass(frozen=True, slots=True)
 class PhaseBeat:
+    """Pulse time and two independent four-bit fields from the native format.
+
+    ``accent`` is the low nibble used for relative section power. ``strength``
+    is the high nibble, unused for gameplay generation in audited build 3168002;
+    its original producer meaning is unresolved. Names retain codec compatibility.
+    """
+
     time_q16: int
     strength: int
     accent: int

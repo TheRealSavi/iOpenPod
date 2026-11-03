@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -16,6 +17,34 @@ HOP = 256
 FFT = 2048
 PHASE_BANDS_HZ = ((80, 300), (400, 1500), (2000, 4500))
 
+_FREQUENCIES = np.fft.rfftfreq(FFT, 1 / RATE)
+_ATTACK_MASKS: tuple[NDArray[np.bool_], ...] = tuple(
+    np.greater_equal(_FREQUENCIES, low) & np.less_equal(_FREQUENCIES, high)
+    for low, high in PHASE_BANDS_HZ
+)
+_CHROMA_VALID: NDArray[np.bool_] = (_FREQUENCIES >= 65) & (_FREQUENCIES <= 4000)
+_CHROMA_CLASSES = (
+    np.round(69 + 12 * np.log2(_FREQUENCIES[_CHROMA_VALID] / 440)).astype(int) % 12
+)
+_CHROMA_MASKS: tuple[NDArray[np.bool_], ...] = tuple(
+    np.equal(_CHROMA_CLASSES, pitch) for pitch in range(12)
+)
+_FREQUENCIES.flags.writeable = False
+_CHROMA_CLASSES.flags.writeable = False
+for _lookup in (*_ATTACK_MASKS, _CHROMA_VALID, *_CHROMA_MASKS):
+    _lookup.flags.writeable = False
+
+
+@lru_cache(maxsize=1)
+def _mel_band_masks() -> tuple[NDArray[np.bool_], ...]:
+    import librosa
+
+    edges = librosa.mel_frequencies(n_mels=64, fmin=20, fmax=RATE / 2)
+    masks = (edges < 250, (edges >= 250) & (edges < 2000), edges >= 2000)
+    for mask in masks:
+        mask.flags.writeable = False
+    return masks
+
 
 def measure_band_attacks(magnitude: NDArray[np.floating[Any]]) -> NDArray[np.float64]:
     """Linear spectral increases in the shipped subbands, on one amplitude scale.
@@ -23,20 +52,12 @@ def measure_band_attacks(magnitude: NDArray[np.floating[Any]]) -> NDArray[np.flo
     Detection uses log-mel novelty separately. Neither the original producer's
     filter nor its quantizer is recovered; this is our measurement policy.
     """
-    frequencies = np.fft.rfftfreq(FFT, 1 / RATE)
-    increase = np.maximum(np.diff(magnitude, axis=1, prepend=magnitude[:, :1]), 0)
-    return np.asarray(
-        [
-            np.sqrt(
-                np.sum(
-                    increase[(frequencies >= low) & (frequencies <= high)] ** 2, axis=0
-                )
-            )
-            / FFT
-            for low, high in PHASE_BANDS_HZ
-        ],
-        dtype=np.float64,
-    )
+    values: list[NDArray[np.floating[Any]]] = []
+    for mask in _ATTACK_MASKS:
+        band = magnitude[mask]
+        increase = np.maximum(np.diff(band, axis=1, prepend=band[:, :1]), 0)
+        values.append(np.sqrt(np.sum(increase**2, axis=0)) / FFT)
+    return np.asarray(values, dtype=np.float64)
 
 
 class PhasePartKind(StrEnum):
@@ -94,8 +115,7 @@ def measure_part(
     energy = np.sqrt(np.mean(power, axis=0)) / FFT
     mel = api.feature.melspectrogram(S=power, sr=RATE, n_fft=FFT, n_mels=64, fmin=20)
     log_mel = api.power_to_db(mel, ref=1.0, top_db=80.0)
-    edges = api.mel_frequencies(n_mels=64, fmin=20, fmax=RATE / 2)
-    masks = (edges < 250, (edges >= 250) & (edges < 2000), edges >= 2000)
+    masks = _mel_band_masks()
     bands = np.asarray(
         [
             api.onset.onset_strength(
@@ -118,11 +138,10 @@ def measure_part(
     bands[:, ~((1 - similarity > 0.02) | (norm > old_norm * 1.08))] = 0
     # Direct FFT-to-pitch-class pooling avoids per-block tuning estimation and
     # keeps recurring phrase descriptors consistent across separation blocks.
-    frequencies = np.fft.rfftfreq(FFT, 1 / RATE)
-    valid = (frequencies >= 65) & (frequencies <= 4000)
-    classes = np.round(69 + 12 * np.log2(frequencies[valid] / 440)).astype(int) % 12
+    valid_power = power[_CHROMA_VALID]
     chroma = np.zeros((12, power.shape[1]), dtype=np.float64)
-    for pitch in range(12):
-        chroma[pitch] = np.sum(power[valid][classes == pitch], axis=0)
+    for pitch, mask in enumerate(_CHROMA_MASKS):
+        chroma[pitch] = np.sum(valid_power[mask], axis=0)
+    del valid_power
     chroma /= np.maximum(np.linalg.norm(chroma, axis=0), 1e-12)
     return bands, energy.astype(np.float64), chroma, measure_band_attacks(magnitude)

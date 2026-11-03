@@ -34,6 +34,7 @@ def library_write_status(
             max(0, progress.completed or 0) if measured else 0,
             progress.total if measured and progress.total is not None else 0,
             progress.current_item,
+            eta=progress.eta,
         )
     warning = (
         QCoreApplication.translate("LibraryWriteStatus", "Do not disconnect your iPod")

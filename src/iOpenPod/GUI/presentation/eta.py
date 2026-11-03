@@ -59,3 +59,19 @@ def _duration(seconds: float) -> str:
     return QCoreApplication.translate("Eta", "{hours}h {minutes}m").format(
         hours=hours, minutes=minutes
     )
+
+
+def compact_eta_text(estimate: EtaEstimate) -> str:
+    """Short status-bar label; the tooltip carries the full stage/range wording."""
+    if estimate.state is EtaState.ESTIMATING:
+        assert estimate.remaining_seconds is not None
+        return QCoreApplication.translate("Eta", "ETA: ~{duration}").format(
+            duration=_duration(estimate.remaining_seconds)
+        )
+    if estimate.state is EtaState.COMPLETE:
+        return QCoreApplication.translate("Eta", "Finishing…")
+    if estimate.state is EtaState.PAUSED:
+        return QCoreApplication.translate("Eta", "Paused")
+    if estimate.state is EtaState.UNKNOWN_TOTAL:
+        return ""
+    return QCoreApplication.translate("Eta", "ETA: estimating…")
