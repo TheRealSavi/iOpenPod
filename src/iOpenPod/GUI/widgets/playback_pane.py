@@ -664,7 +664,10 @@ class PlaybackPane(QFrame):
                 placeholder = self.tr("Lyrics could not be loaded for this track.")
             case LyricsState.READY:
                 placeholder = self.tr("No lyrics available for this track.")
-        self._lyrics_text.setPlaceholderText(placeholder)
+        if self._lyrics_text.placeholderText() != placeholder:
+            self._lyrics_text.setPlaceholderText(placeholder)
+            # Qt can skip repainting when an already-visible placeholder changes.
+            self._lyrics_text.viewport().update()
 
     def _refresh_states(self) -> None:
         queue_count = self._controller.queue_model.rowCount()
