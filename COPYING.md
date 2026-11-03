@@ -39,6 +39,21 @@ terms or grant rights to third-party trademarks.
 The Genius Mix pictograms are Tabler Icons distributed under the MIT license
 retained beside the SVGs in `src/iOpenPod/assets/glyphs/genius-mixes/`.
 
+## Preserved click wheel games
+
+The GPL grant does not cover third-party game executables, game artwork, or the
+bundled Game Authorization Store material. Games downloaded from the iPod
+Clickwheel Games Preservation Project retain their respective rights holders'
+rights. The upstream repository's MIT notice is retained in
+`LICENSES/Olsro-ipodclickwheelgamespreservationproject.txt`; it is not evidence
+that game publishers licensed their games under MIT.
+
+Preservation, commercial unavailability, attribution, and upstream hosting do
+not themselves establish permission to copy or redistribute those materials.
+The [license review](docs/research/click-wheel-games-license-review.md) records
+the evidence and unresolved download, artwork, and authorization questions.
+Neither this notice nor the application license supplies missing permissions.
+
 ## Free distribution and support
 
 iOpenPod is offered for free. Voluntary donations support development and are not

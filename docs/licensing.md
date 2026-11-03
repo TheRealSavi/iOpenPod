@@ -58,6 +58,16 @@ them.
    let us relicense third-party GPL code. Qt highlights store-distribution issues
    in its [open-source obligations](https://www.qt.io/development/open-source-lgpl-obligations).
 
+## Preserved games and authorization material
+
+The [click wheel games license review](research/click-wheel-games-license-review.md)
+separates Olsro's MIT repository license from rights in the game binaries,
+bundled cover artwork, and Game Authorization Store. The upstream notice is
+retained with the project license files. Compliance with that notice does not
+establish publisher permission or resolve access-control law. These materials
+and the download workflow remain unresolved under the provenance requirement
+above; ADR-0208 and ADR-0211 describe implementation, not legal clearance.
+
 ## Windows audit materials
 
 The native bundle includes `licenses/upstream/`, copied from

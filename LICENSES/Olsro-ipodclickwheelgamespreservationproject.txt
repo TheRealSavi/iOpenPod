@@ -1,0 +1,37 @@
+iPod Clickwheel Games Preservation Project - upstream license notice
+
+Project: https://github.com/Olsro/ipodclickwheelgamespreservationproject
+Reviewed revision: 173fa133b67860475c89a7b22bbb04744a630672 (version16)
+License source:
+https://github.com/Olsro/ipodclickwheelgamespreservationproject/blob/173fa133b67860475c89a7b22bbb04744a630672/LICENSE
+Reviewed: 2026-11-03
+
+This notice preserves the upstream repository license for material its authors
+have authority to license. It does not establish a license from the rights
+holders of commercial game binaries, game artwork, or authorization material.
+Those materials are not relicensed under iOpenPod's GPL grant. The inclusion of
+this notice does not imply upstream endorsement or resolve those rights.
+
+The upstream license text follows unchanged:
+
+MIT License
+
+Copyright (c) 2024 Olsro
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

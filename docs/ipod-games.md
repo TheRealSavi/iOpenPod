@@ -1,5 +1,10 @@
 # IC-Info and Games
 
+The [license review](research/click-wheel-games-license-review.md) records the
+upstream MIT grant and the separate, unresolved rights questions for downloaded
+games, bundled artwork, and Game Authorization Store material. Technical
+authorization and content verification do not establish copyright permission.
+
 ## Installed games
 
 The Games page displays a responsive grid read from the Active iPod's

@@ -37,6 +37,22 @@ offering it for future iOpenPod updates. It is used with permission; the creator
 statement and asset-specific scope are preserved in
 [`DJShott-icon.txt`](src/iOpenPod/assets/icons/DJShott-icon.txt).
 
+## Olsro — iPod Clickwheel Games Preservation Project
+
+Thanks to [Olsro](https://github.com/Olsro) and the project's contributors for
+organizing and preserving iPod click wheel games through the
+[iPod Clickwheel Games Preservation Project](https://github.com/Olsro/ipodclickwheelgamespreservationproject).
+iOpenPod downloads its game collection from that project's version16 release.
+
+The upstream MIT notice is retained in
+[`Olsro-ipodclickwheelgamespreservationproject.txt`](LICENSES/Olsro-ipodclickwheelgamespreservationproject.txt).
+It records the repository's license, not permission from the games' rights holders.
+The commercial games, their artwork, and Game Authorization Store material are
+not relicensed under iOpenPod's GPL grant. See the
+[license review](docs/research/click-wheel-games-license-review.md) for the scope
+of the upstream grant and unresolved rights questions. Credit does not imply
+endorsement by Olsro, contributors, Apple, or game publishers.
+
 ## The wider community
 
 The macOS standalone updater uses [Sparkle](https://sparkle-project.org/). Its full
