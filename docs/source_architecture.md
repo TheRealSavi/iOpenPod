@@ -820,9 +820,13 @@ while CPU and MPS remain serial. See ADR-0226.
 One preparation-owned reader captures up to five upcoming compressed inputs on
 the Host while the current Track is analyzed. Count and retained-byte limits bound
 staging; oversized inputs and Host capacity failures retain direct device reads.
-The capture supplies the initial source fingerprint. Full post-analysis checks
-remain serialized with copies and transaction preconditions remain mandatory.
-Caller callbacks stay on the coordinator. See ADR-0227.
+The capture supplies the initial source fingerprint. Persisted Phase metadata
+receipts bind content provenance to source/chart paths and filesystem identities.
+Matching receipts exclude retained inputs from audio reads, analysis and transaction
+content dependencies. Membership or ordering changes rebuild only the companion
+index; fresh analysis retains full source hashes and transaction preconditions.
+Legacy or damaged receipts fall back to content verification. Device reads stay
+serialized and caller callbacks stay on the coordinator. See ADR-0227 and ADR-0232.
 Whole-mix measurement can run concurrently with confirmed CUDA source analysis
 for the same Track. Immutable compact evidence meets source Parts only in final
 chart selection. CPU/PCM bounds retain serial execution on constrained inputs;

@@ -44,7 +44,9 @@ rather than another whole decoded song.
 One background reader copies up to five upcoming compressed songs to private Host
 staging while the current song is analyzed. The current copy plus queued copies
 share a 256 MiB retained-content limit. Copying computes the initial content hash;
-the original device file is still fully checked after analysis or chart reuse.
+the original device file is still fully checked after fresh analysis. Matching
+metadata receipts bypass the audio queue entirely. Content-cache candidates without
+matching metadata use a full audio hash before reuse (ADR-0232).
 Full-file checks take priority over starting another copy. Large files and Host
 disk-full/quota errors use the serial device path. Prepared incoming Host audio
 keeps its existing verification. See [ADR-0227](adr/0227-prefetch-bounded-phase-audio-inputs.md)
@@ -282,9 +284,14 @@ cancellation with the selection history transaction. See
 
 Analysis happens during Library preparation, after final Track and Playlist IDs
 exist and before any device writes. New audio imports are analyzed from their
-prepared Host source. Existing audio is fingerprinted through Storage and those
-fingerprints become transaction dependencies. Inputs are checked again after
-analysis; changing inputs fail preparation or invalidate the reviewed save.
+prepared Host source. Audio needing analysis or content validation is fingerprinted
+through Storage and those fingerprints become transaction dependencies. Inputs are
+checked again after analysis; changing inputs fail preparation or invalidate the
+reviewed save. Unchanged retained inputs use persisted metadata receipts and are
+excluded from repeated content reads and transaction hashes. Metadata checks use
+size, modification time, device number and inode; they do not detect external edits
+that preserve all those fields. See
+[ADR-0232](adr/0232-cache-phase-input-metadata-across-library-saves.md).
 
 `iPod_Control/iOpenPod/phase-analysis-v1.json` stores a per-PID provenance string
 containing algorithm version, source-provider identity, source content SHA-256, declared duration and chart
@@ -297,6 +304,14 @@ Installing a provider upgrades acoustic charts; provider errors never silently
 produce charts under the wrong identity. The metadata file retains only the current indexed tracks and is
 bounded to 8 MiB. Charts, provenance, the Phase Library index and database changes
 are published together in the normal recoverable Storage Transaction.
+
+`iPod_Control/iOpenPod/phase-validation-v1.json` binds that provenance to the audio
+and chart filesystem identities. A matching entry needs metadata checks only.
+Old caches receive one content-validation pass; newly published charts receive
+one small chart read on the following save to record their final identity.
+Unrelated Playlist edits and Track-title edits do not invalidate charts. Phase
+selection, membership and ordering rebuild the companion index from reusable
+records. Only inputs needing content work contribute to the analysis progress/ETA.
 
 ## Verification
 

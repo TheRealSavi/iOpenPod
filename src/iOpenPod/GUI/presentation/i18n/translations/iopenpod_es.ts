@@ -4590,6 +4590,25 @@ Elige Descargar e instalar para descargar Python, las bibliotecas de análisis y
     </message>
 </context>
 <context>
+    <name>PlaylistDuplicates</name>
+    <message>
+        <source>Songs already in playlist</source>
+        <translation>Pistas ya incluidas en la lista de reproducción</translation>
+    </message>
+    <message>
+        <source>Some songs are already in this playlist, would you like to add those again, or skip them?</source>
+        <translation>Algunas pistas ya están en esta lista de reproducción. ¿Quieres volver a añadirlas u omitirlas?</translation>
+    </message>
+    <message>
+        <source>Add Again</source>
+        <translation>Volver a añadir</translation>
+    </message>
+    <message>
+        <source>Skip</source>
+        <translation>Omitir</translation>
+    </message>
+</context>
+<context>
     <name>PlaylistEditorDialog</name>
     <message>
         <source>Playlist</source>

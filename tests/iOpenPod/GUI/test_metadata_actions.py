@@ -1038,9 +1038,14 @@ def test_inline_device_name_commits_on_return_and_cancels_on_escape() -> None:
         context.shutdown()
 
 
-def test_table_and_grid_menus_resolve_full_selection_and_keep_playlist_occurrences() -> (
-    None
-):
+def test_table_and_grid_menus_resolve_full_selection_and_keep_playlist_occurrences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        track_actions,
+        "choose_playlist_additions",
+        lambda existing, tracks, parent: tracks,
+    )
     context = build_context()
     playlist = Playlist(10, "Duplicates", entries=playlist_entries((1, 2, 1)))
     context.library_workspace.load(LibrarySnapshot(_TRACKS, (playlist,)))

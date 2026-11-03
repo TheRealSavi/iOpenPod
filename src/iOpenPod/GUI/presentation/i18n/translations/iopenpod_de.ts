@@ -4590,6 +4590,25 @@ Wählen Sie „Herunterladen und installieren“, um Python, Analysebibliotheken
     </message>
 </context>
 <context>
+    <name>PlaylistDuplicates</name>
+    <message>
+        <source>Songs already in playlist</source>
+        <translation>Titel bereits in der Wiedergabeliste</translation>
+    </message>
+    <message>
+        <source>Some songs are already in this playlist, would you like to add those again, or skip them?</source>
+        <translation>Einige Titel sind bereits in dieser Wiedergabeliste. Möchten Sie diese erneut hinzufügen oder überspringen?</translation>
+    </message>
+    <message>
+        <source>Add Again</source>
+        <translation>Erneut hinzufügen</translation>
+    </message>
+    <message>
+        <source>Skip</source>
+        <translation>Überspringen</translation>
+    </message>
+</context>
+<context>
     <name>PlaylistEditorDialog</name>
     <message>
         <source>Playlist</source>

@@ -295,3 +295,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0228: Overlap Phase mix and source analysis](0228-overlap-phase-mix-and-source-analysis.md)
 - [ADR-0229: Report Phase activity and stage ETA](0229-report-phase-activity-and-stage-eta.md)
 - [ADR-0230: Project Device Summary from committed Library state](0230-project-device-summary-from-committed-library-state.md)
+- [ADR-0231: Avoid Phase captures for content-checked cache hits](0231-avoid-phase-captures-for-content-checked-cache-hits.md)
+- [ADR-0232: Cache Phase input metadata across Library saves](0232-cache-phase-input-metadata-across-library-saves.md)

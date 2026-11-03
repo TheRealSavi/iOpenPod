@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 from hashlib import sha256
+from os import utime
 from pathlib import Path
 from threading import Event, get_ident
 
@@ -23,13 +24,17 @@ from iPodDB.games import (
 from iPodDB.library import LibrarySnapshot, Playlist, Track, playlist_entries
 from iPodDB.library.models import IPodTrackDetails, TrackMetadata
 from storage import (
+    AccessMode,
     CopyResult,
     DevicePath,
     FileContent,
+    FileFingerprint,
+    FilePreconditionError,
     FilesystemSession,
     HostPath,
     SessionInvalidatedError,
     Storage,
+    StorageTransaction,
     TransactionWrite,
 )
 from storage.testing import VirtualStoragePlatform
@@ -270,6 +275,139 @@ def test_prefetch_preserves_fifo_payloads_and_publishes_exact_analyzer_bytes(
     assert analyzer.closed == [True]
     captures.assert_cleaned()
     assert not (tmp_path / str(INDEX_PATH)).exists()
+
+
+def test_unrelated_playlist_save_does_not_read_phase_audio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage, desired = device(tmp_path, 2)
+    analyzer = ReadingAnalysis()
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        publication = prepare_phase(
+            session, LibrarySnapshot(), desired, analyzer=analyzer
+        )
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        changed = {write.path for write in publication.writes}
+        session.execute_transaction(
+            StorageTransaction(
+                publication.writes,
+                (),
+                tuple(item for item in publication.files if item.path not in changed),
+            )
+        )
+        captures = Captures(monkeypatch)
+        fingerprints: list[DevicePath] = []
+        original_fingerprint = FilesystemSession.fingerprint
+
+        def fingerprint(
+            current: FilesystemSession,
+            path: DevicePath,
+            *,
+            checkpoint: Callable[[], None] | None = None,
+        ) -> FileFingerprint:
+            fingerprints.append(path)
+            return original_fingerprint(current, path, checkpoint=checkpoint)
+
+        monkeypatch.setattr(FilesystemSession, "fingerprint", fingerprint)
+        unrelated = replace(
+            desired, playlists=(*desired.playlists, Playlist(102, "Unrelated"))
+        )
+        again = prepare_phase(session, desired, unrelated, analyzer=analyzer)
+        assert len(analyzer.calls) == 2
+        assert {
+            "host_copies": len(captures.started),
+            "audio_hashes": len(fingerprints),
+        } == {"host_copies": 0, "audio_hashes": 0}
+        for track in desired.tracks:
+            path = DevicePath(track.metadata.location)
+            assert all(item.path != path for item in again.files)
+
+
+@pytest.mark.parametrize("change", ["audio", "chart", "missing_chart", "duration"])
+def test_cached_playlist_reanalyzes_changed_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    storage, desired = device(tmp_path, 2)
+    analyzer = StubPhaseAnalysis()
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        publication = prepare_phase(
+            session, LibrarySnapshot(), desired, analyzer=analyzer
+        )
+        changed = {write.path for write in publication.writes}
+        session.execute_transaction(
+            StorageTransaction(
+                publication.writes,
+                (),
+                tuple(item for item in publication.files if item.path not in changed),
+            )
+        )
+        if change == "audio":
+            path = tmp_path / desired.tracks[0].metadata.location
+            original_stat = path.stat()
+            payload = path.read_bytes()
+            path.write_bytes(payload[:-1] + b"9")
+            utime(
+                path,
+                ns=(
+                    original_stat.st_atime_ns,
+                    original_stat.st_mtime_ns + 2_000_000_000,
+                ),
+            )
+        elif change in ("chart", "missing_chart"):
+            path = tmp_path / str(publication.writes[0].path)
+            if change == "missing_chart":
+                path.unlink()
+            else:
+                payload = path.read_bytes()
+                path.write_bytes(payload[:-1] + bytes([payload[-1] ^ 1]))
+        else:
+            desired = replace(
+                desired,
+                tracks=(
+                    replace(desired.tracks[0], length_ms=31_000),
+                    desired.tracks[1],
+                ),
+            )
+        captures = Captures(monkeypatch)
+        again = prepare_phase(session, desired, desired, analyzer=analyzer)
+        assert len(analyzer.calls) == 3
+        assert again.writes
+        assert desired.tracks[1].metadata.location not in {
+            str(path) for path in captures.started
+        }
+        assert len(captures.started) == (1 if change in ("audio", "duration") else 0)
+
+
+def test_new_analysis_retains_content_checked_transaction_dependency(
+    tmp_path: Path,
+) -> None:
+    storage, desired = device(tmp_path, 1)
+    analyzer = StubPhaseAnalysis()
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        publication = prepare_phase(
+            session, LibrarySnapshot(), desired, analyzer=analyzer
+        )
+        path = tmp_path / desired.tracks[0].metadata.location
+        observed = path.stat()
+        payload = path.read_bytes()
+        path.write_bytes(payload[:-1] + b"9")
+        utime(path, ns=(observed.st_atime_ns, observed.st_mtime_ns))
+        write = TransactionWrite(
+            DevicePath("saved-library"),
+            b"new",
+            FileContent(3, sha256(b"new").hexdigest()),
+        )
+        with pytest.raises(FilePreconditionError):
+            session.execute_transaction(
+                StorageTransaction((write,), (), publication.files)
+            )
+        assert not (tmp_path / "saved-library").exists()
 
 
 def test_prefetch_retains_only_current_and_five_upcoming_inputs(

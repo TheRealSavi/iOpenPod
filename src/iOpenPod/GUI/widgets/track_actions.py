@@ -54,6 +54,7 @@ from iOpenPod.app.models.track_table_model import TrackRole
 from iOpenPod.app.track_conversion import podcast_conversion_needed
 from iOpenPod.app.track_playback_policy import requires_track_playback_policy
 from iOpenPod.GUI.dialogs.metadata_editor import MetadataEditorDialog
+from iOpenPod.GUI.dialogs.playlist_duplicates import choose_playlist_additions
 from iOpenPod.GUI.dialogs.playlist_editor import PlaylistEditorDialog
 from iOpenPod.GUI.presentation.i18n.text import remove_tracks_text
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
@@ -689,9 +690,15 @@ class TrackActions(QObject):
             raise ValueError(
                 self.tr("The destination Playlist is no longer available.")
             )
-        self.workspace.set_tracks(
-            playlist_id, (*playlist.track_ids, *(t.track_id for t in selection.tracks))
+        additions = choose_playlist_additions(
+            playlist.track_ids,
+            tuple(t.track_id for t in selection.tracks),
+            self.window,
         )
+        if not additions:
+            return
+        self._require(selection)
+        self.workspace.set_tracks(playlist_id, (*playlist.track_ids, *additions))
 
     def new_playlist(self, selection: TrackSelection) -> None:
         self._require(selection)

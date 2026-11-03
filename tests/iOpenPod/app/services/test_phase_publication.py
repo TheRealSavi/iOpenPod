@@ -10,6 +10,7 @@ import pytest
 from tests.iOpenPod.app.phase_test_support import StubPhaseAnalysis
 
 from iOpenPod.app.library_workspace import LibraryWorkspace
+from iOpenPod.app.phase_cache import VALIDATION_PATH
 from iOpenPod.app.services.phase import (
     CACHE_PATH,
     INDEX_PATH,
@@ -95,7 +96,7 @@ def test_prepare_publish_reuse_and_deselect(
         publication = prepare_phase(
             session, LibrarySnapshot(), desired, analyzer=analyzer
         )
-        assert len(publication.writes) == 4
+        assert len(publication.writes) == 5
         if original is None:
             assert not index_path.exists()
         else:
@@ -117,7 +118,7 @@ def test_prepare_publish_reuse_and_deselect(
         ]
         assert len(analyzer.calls) == 2
         again = prepare_phase(session, desired, desired, analyzer=analyzer)
-        assert not again.writes
+        assert {write.path for write in again.writes} == {VALIDATION_PATH}
         assert len(analyzer.calls) == 2
         media = tmp_path / desired.tracks[1].metadata.location
         media.write_bytes(b"replacement audio")
@@ -299,7 +300,7 @@ def test_incoming_audio_is_analyzed_before_it_exists_on_device(tmp_path: Path) -
             analyzer=analyzer,
             media_writes=(incoming,),
         )
-        assert len(prepared.writes) == 3  # chart, provenance, index
+        assert len(prepared.writes) == 4  # chart, provenance, validation, index
         assert analyzer.calls == [HostPath(host)]
         assert not (root / track.metadata.location).exists()
         host.write_bytes(b"changed Host audio")

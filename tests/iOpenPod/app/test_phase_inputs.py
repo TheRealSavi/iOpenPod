@@ -4,6 +4,7 @@ import errno
 import time
 from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, contextmanager, suppress
+from hashlib import sha256
 from pathlib import Path
 from threading import Event, get_ident
 from typing import TYPE_CHECKING
@@ -17,6 +18,7 @@ from storage import (
     FileFingerprint,
     FilesystemSession,
     HostPath,
+    SessionInvalidatedError,
     Storage,
     StorageOperationError,
 )
@@ -350,6 +352,67 @@ def test_no_device_inputs_create_neither_workspace_nor_reader(
     ):
         inputs.checkpoint()
         assert inputs.worker is None
+
+
+@pytest.mark.parametrize("interrupt", ["cancel", "disconnect"])
+def test_cached_audio_hashing_stops_and_joins_reader_on_interruption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupt: str
+) -> None:
+    storage, paths = device(tmp_path, monkeypatch, (8,))
+    hashing, stopped = Event(), Event()
+    caller = get_ident()
+    original = FilesystemSession.fingerprint
+    workers: list[Future[None]] = []
+    copies = Copies(monkeypatch)
+
+    def fingerprint(
+        session: FilesystemSession,
+        path: DevicePath,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+    ) -> FileFingerprint:
+        assert get_ident() != caller
+        assert checkpoint is not None
+        hashing.set()
+        deadline = time.monotonic() + 3
+        try:
+            while time.monotonic() < deadline:
+                checkpoint()
+                time.sleep(0.005)
+            pytest.fail("Interrupted cached audio hash did not stop")
+        finally:
+            stopped.set()
+        return original(session, path, checkpoint=checkpoint)
+
+    monkeypatch.setattr(FilesystemSession, "fingerprint", fingerprint)
+    with storage.open_session(storage.discover().volumes[0]) as session:
+
+        def checkpoint() -> None:
+            assert get_ident() == caller
+            if hashing.is_set():
+                if interrupt == "cancel":
+                    raise InterruptedError("Cancelled cache validation")
+                session.invalidate("Disconnected during cache validation")
+
+        expected = (
+            InterruptedError if interrupt == "cancel" else SessionInvalidatedError
+        )
+        with (
+            pytest.raises(expected),
+            phase_inputs.prefetch_phase_inputs(
+                session,
+                paths,
+                checkpoint=checkpoint,
+                reuse_hashes={paths[0]: sha256(bytes([1]) * 8).hexdigest()},
+            ) as inputs,
+        ):
+            assert inputs.worker is not None
+            workers.append(inputs.worker)
+            with inputs.capture(paths[0]):
+                pytest.fail("Interrupted cache validation yielded audio")
+    assert stopped.is_set()
+    assert workers[0].done()
+    assert not copies.started
 
 
 @pytest.mark.parametrize("primary_kind", ["cancel", "analysis", "none"])

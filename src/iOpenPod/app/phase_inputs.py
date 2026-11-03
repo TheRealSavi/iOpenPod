@@ -12,12 +12,18 @@ from pathlib import Path
 from threading import Condition, Event, Lock
 from typing import TYPE_CHECKING
 
-from storage import DevicePath, HostPath, SessionInvalidatedError, StorageOperationError
+from storage import (
+    DevicePath,
+    FileIdentity,
+    HostPath,
+    SessionInvalidatedError,
+    StorageOperationError,
+)
 from storage.host_input import LocalHostFile
 from storage.host_staging import staging_directory
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import Callable, Generator, Mapping
 
     from storage import FileFingerprint, FilesystemSession
 
@@ -142,17 +148,30 @@ class PhaseInputs:
             self._direct = False
             self._condition.notify_all()
 
-    def read(self, paths: tuple[DevicePath, ...]) -> None:
+    def read(
+        self, paths: tuple[DevicePath, ...], reuse_hashes: Mapping[DevicePath, str]
+    ) -> None:
         copy_enabled = self._directory is not None
         try:
             for index, path in enumerate(paths):
                 self._worker_checkpoint()
                 with self._device_io():
                     identity = self._session.file_identity(path)
-                direct = not copy_enabled or identity.size > _RETAINED_BYTES
+                fingerprint: FileFingerprint | None = None
+                if expected := reuse_hashes.get(path):
+                    with self._device_io():
+                        checked = self._session.fingerprint(
+                            path, checkpoint=self._worker_checkpoint
+                        )
+                    if checked.sha256 == expected:
+                        fingerprint = checked
+                direct = (
+                    fingerprint is not None
+                    or not copy_enabled
+                    or identity.size > _RETAINED_BYTES
+                )
                 size = 0 if direct else identity.size
                 source: HostPath | DevicePath = path
-                fingerprint: FileFingerprint | None = None
                 observed: LocalHostFile | None = None
                 if not direct:
                     self._reserve(size, direct=False)
@@ -186,10 +205,11 @@ class PhaseInputs:
                 if direct:
                     size = 0
                     self._reserve(0, direct=True)
-                    with self._device_io():
-                        fingerprint = self._session.fingerprint(
-                            path, checkpoint=self._worker_checkpoint
-                        )
+                    if fingerprint is None:
+                        with self._device_io():
+                            fingerprint = self._session.fingerprint(
+                                path, checkpoint=self._worker_checkpoint
+                            )
                 assert fingerprint is not None
                 if (
                     fingerprint.size,
@@ -212,7 +232,9 @@ class PhaseInputs:
             return
 
     @contextmanager
-    def capture(self, path: DevicePath) -> Generator[PhaseInput]:
+    def capture(
+        self, path: DevicePath, *, reuse_sha256: str | None = None
+    ) -> Generator[PhaseInput]:
         while True:
             self.checkpoint()
             with self._condition:
@@ -235,8 +257,23 @@ class PhaseInputs:
             if captured.observed is not None:
                 captured.observed.validate()
             with self._device_io(foreground=True):
-                current = self._session.fingerprint(path, checkpoint=self.checkpoint)
-            if current != captured.input.fingerprint:
+                before = captured.input.fingerprint
+                if (
+                    isinstance(captured.input.source, DevicePath)
+                    and before.sha256 == reuse_sha256
+                ):
+                    # No decoding occurred: the full hash already established
+                    # reuse. Keep the content fingerprint as a transaction
+                    # precondition; only a cheap identity check is needed here.
+                    unchanged = self._session.file_identity(path) == FileIdentity(
+                        before.size, before.modified_ns, before.device, before.inode
+                    )
+                else:
+                    unchanged = (
+                        self._session.fingerprint(path, checkpoint=self.checkpoint)
+                        == before
+                    )
+            if not unchanged:
                 raise ValueError("Phase audio changed during analysis.")
             failed = False
         finally:
@@ -268,6 +305,7 @@ def prefetch_phase_inputs(
     paths: tuple[DevicePath, ...],
     *,
     checkpoint: Callable[[], None],
+    reuse_hashes: Mapping[DevicePath, str] | None = None,
 ) -> Generator[PhaseInputs]:
     with ExitStack() as lifetime:
         directory: Path | None = None
@@ -282,7 +320,7 @@ def prefetch_phase_inputs(
             worker = lifetime.enter_context(
                 ThreadPoolExecutor(max_workers=1, thread_name_prefix="phase-input")
             )
-            inputs.worker = worker.submit(inputs.read, paths)
+            inputs.worker = worker.submit(inputs.read, paths, dict(reuse_hashes or {}))
         try:
             yield inputs
         except BaseException:

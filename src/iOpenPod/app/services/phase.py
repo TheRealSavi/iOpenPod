@@ -11,6 +11,15 @@ from typing import TYPE_CHECKING, cast
 
 from iOpenPod.app.phase_activity import PhaseActivity, PhaseStage
 from iOpenPod.app.phase_analysis import PhaseAnalysisService
+from iOpenPod.app.phase_cache import (
+    CACHE_LIMIT,
+    VALIDATION_PATH,
+    PhaseCacheEntry,
+    decode_validation,
+    encode_validation,
+    fingerprint_identity,
+    reuse_entry,
+)
 from iOpenPod.app.phase_inputs import prefetch_phase_inputs
 from iOpenPod.app.phase_progress import PhaseProgress, PhaseProgressReporter
 from iPodDB.games import (
@@ -85,6 +94,16 @@ def _eligible_tracks(
             seen.add(pid)
             selected.append((completed, track))
     return tuple(selected)
+
+
+def _cached_audio_hash(cached: str | None, identity: str, length_ms: int) -> str | None:
+    if cached is None:
+        return None
+    # Provider identities contain colons; the final three fields do not.
+    fields = cached.rsplit(":", 3)
+    if len(fields) == 4 and fields[0] == identity and fields[2] == str(length_ms):
+        return fields[1]
+    return None
 
 
 def capture_phase_selection(
@@ -182,13 +201,57 @@ def prepare_phase(
                 raise ValueError("Invalid Phase analysis cache records.")
             cache = cast("dict[str, str]", decoded)
         updated_cache = dict(cache)
+        validation_bytes = read(VALIDATION_PATH, CACHE_LIMIT)
+        validation = decode_validation(validation_bytes)
+        updated_validation: dict[str, PhaseCacheEntry] = {}
         incoming = {w.path: w for w in media_writes}
         retained = {t.persistent_id: t for t in existing.tracks}
         records: list[PhaseTrack] = []
         unique_ids = tuple(dict.fromkeys(playlist.track_ids))
         eligible = _eligible_tracks(desired, unique_ids)
+        identity = audio_analyzer.identity if eligible else ""
+        reuse_hashes: dict[DevicePath, str] = {}
+        reused: dict[int, PhaseTrack] = {}
+        for _, track in eligible:
+            checkpoint()
+            assert track.ipod is not None
+            pid = track.ipod.db_track_id
+            pid_key = f"{pid:016X}"
+            audio_path = DevicePath(track.metadata.location)
+            cached = cache.get(pid_key)
+            cached_hash = _cached_audio_hash(cached, identity, track.length_ms)
+            if cached_hash is not None:
+                reuse_hashes[audio_path] = cached_hash
+            entry = validation.get(pid_key)
+            record = retained.get(pid)
+            if (
+                cached_hash is None
+                or entry is None
+                or record is None
+                or audio_path in incoming
+                or entry.provenance != cached
+                or entry.audio_path != str(audio_path)
+                or entry.audio is None
+            ):
+                continue
+            path = DevicePath(f"{_GAME}/{phase_analysis_relative_path(record)}")
+            refreshed = reuse_entry(
+                session,
+                entry,
+                audio_path=audio_path,
+                chart_path=path,
+                chart_size=record.analysis_size,
+            )
+            if refreshed is not None:
+                reused[pid] = record
+                updated_validation[pid_key] = refreshed
+        pending = tuple(
+            (completed, track)
+            for completed, track in eligible
+            if track.ipod is not None and track.ipod.db_track_id not in reused
+        )
         reporter = PhaseProgressReporter(
-            tuple(track.length_ms for _, track in eligible), analysis_progress
+            tuple(track.length_ms for _, track in pending), analysis_progress
         )
         current_title = ""
         activity = PhaseActivity(PhaseStage.CAPTURING)
@@ -200,23 +263,28 @@ def prepare_phase(
                 current_title, audio_analyzer.activity if analyzing else activity
             )
 
-        reporter.emit(current_title, activity)
+        if pending:
+            reporter.emit(current_title, activity)
         inputs = input_lifetime.enter_context(
             prefetch_phase_inputs(
                 session,
                 tuple(
                     DevicePath(track.metadata.location)
-                    for _, track in eligible
+                    for _, track in pending
                     if DevicePath(track.metadata.location) not in incoming
                 ),
                 checkpoint=report_checkpoint,
+                reuse_hashes=reuse_hashes,
             )
         )
         for completed, track in eligible:
+            assert track.ipod is not None
+            if track.ipod.db_track_id in reused:
+                records.append(reused[track.ipod.db_track_id])
+                continue
             current_title = track.title
             activity = PhaseActivity(PhaseStage.CAPTURING)
             inputs.checkpoint()
-            assert track.ipod is not None
             pid = track.ipod.db_track_id
             progress(completed, len(unique_ids), track.title)
             record = retained.get(pid, PhaseTrack(pid, 7, 1))
@@ -229,6 +297,15 @@ def prepare_phase(
                     raise ValueError(
                         f"Phase analysis size disagrees with its index: {path}"
                     )
+            cached = cache.get(f"{pid:016X}")
+            reusable_hash = _cached_audio_hash(
+                cached, audio_analyzer.identity, track.length_ms
+            )
+            if analysis is None or cached != (
+                f"{audio_analyzer.identity}:{reusable_hash}:{track.length_ms}:"
+                f"{sha256(analysis).hexdigest()}"
+            ):
+                reusable_hash = None
             with ExitStack() as capture:
                 audio_path = DevicePath(track.metadata.location)
                 source: HostPath | DevicePath
@@ -250,13 +327,14 @@ def prepare_phase(
                             "Prepared Phase audio changed before analysis."
                         )
                 else:
-                    prepared = capture.enter_context(inputs.capture(audio_path))
+                    prepared = capture.enter_context(
+                        inputs.capture(audio_path, reuse_sha256=reusable_hash)
+                    )
                     source = prepared.source
                     audio_before = prepared.fingerprint
                     files[audio_path] = FilePrecondition(audio_path, audio_before)
                     audio_hash = audio_before.sha256
                 key = f"{audio_analyzer.identity}:{audio_hash}:{track.length_ms}"
-                cached = cache.get(f"{pid:016X}")
                 if (
                     analysis is not None
                     and cached == f"{key}:{sha256(analysis).hexdigest()}"
@@ -292,10 +370,22 @@ def prepare_phase(
                             "Prepared Phase audio changed during analysis."
                         )
                 updated_cache[f"{pid:016X}"] = f"{key}:{sha256(data).hexdigest()}"
+                updated_validation[f"{pid:016X}"] = PhaseCacheEntry(
+                    updated_cache[f"{pid:016X}"],
+                    str(audio_path),
+                    fingerprint_identity(files[audio_path].fingerprint)
+                    if supplied is None
+                    else None,
+                    str(path),
+                    fingerprint_identity(files[path].fingerprint)
+                    if data == analysis
+                    else None,
+                )
                 records.append(PhaseTrack(pid, record.shard, len(data)))
             reporter.complete_track()
         progress(len(unique_ids), len(unique_ids), "")
-        reporter.emit("", PhaseActivity(PhaseStage.FINALIZING))
+        if pending:
+            reporter.emit("", PhaseActivity(PhaseStage.FINALIZING))
         # Keep metadata bounded to this playlist; unused chart files remain untouched.
         retained_ids = {f"{record.persistent_id:016X}" for record in records}
         updated_cache = {k: v for k, v in updated_cache.items() if k in retained_ids}
@@ -303,6 +393,9 @@ def prepare_phase(
         if len(cache_data) > 8 * 1024 * 1024:
             raise ValueError("Phase analysis cache exceeds its supported size.")
         publish(CACHE_PATH, cache_data, cached_bytes)
+        publish(
+            VALIDATION_PATH, encode_validation(updated_validation), validation_bytes
+        )
         publish(
             INDEX_PATH,
             build_phase_library(PhaseLibrary(playlist.playlist_id, tuple(records))),

@@ -14,6 +14,13 @@ then beyond it.
 
 ## Current stage
 
+Unrelated Library edits reuse Phase charts through persisted source/chart metadata
+and content provenance, without audio scans or retained-media transaction hashes.
+Phase membership and ordering changes update the companion index incrementally;
+new or changed analysis retains full verification. Legacy caches need one content
+validation pass to establish metadata receipts. See
+[ADR-0232](docs/adr/0232-cache-phase-input-metadata-across-library-saves.md).
+
 The sidebar device information opens a Device Summary with a large device portrait,
 observed firmware and serial details, and color-coded capacity estimates from the
 committed Library, plus Games from captured file sizes across Games_RO,

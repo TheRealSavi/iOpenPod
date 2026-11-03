@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.library_drag import TrackSelectionMimeData
 from iOpenPod.app.models.playlist_tree_model import PlaylistRole, PlaylistTreeModel
+from iOpenPod.GUI.dialogs.playlist_duplicates import choose_playlist_additions
 from iOpenPod.GUI.presentation.icons import glyph_icon
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -355,8 +356,19 @@ class _PlaylistView(QTreeView):
         ):
             model = self.model()
             target = self.indexAt(event.position().toPoint())
-            if model.dropMimeData(
-                data,
+            if not model.canDropMimeData(data, Qt.DropAction.CopyAction, -1, 0, target):
+                event.ignore()
+                return
+            playlist = target.data(PlaylistRole.PLAYLIST)
+            assert isinstance(playlist, Playlist)
+            additions = choose_playlist_additions(
+                playlist.track_ids, data.track_ids, self
+            )
+            if additions is None or not data.belongs_to(self._workspace):
+                event.ignore()
+                return
+            if not additions or model.dropMimeData(
+                TrackSelectionMimeData(self._workspace, additions),
                 Qt.DropAction.CopyAction,
                 -1,
                 0,
