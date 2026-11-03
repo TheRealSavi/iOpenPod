@@ -165,5 +165,6 @@
     {{ content }}
   <script src="{{ '/theme.js' | relative_url }}?v={{ asset_version }}" defer></script>
   <script src="{{ '/screenshot-viewer.js' | relative_url }}?v={{ asset_version }}" defer></script>
+  {% if page.native_download_links %}<script src="{{ '/download-links.js' | relative_url }}?v={{ asset_version }}" defer></script>{% endif %}
 </body>
 </html>

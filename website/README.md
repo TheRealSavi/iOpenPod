@@ -70,9 +70,14 @@ migration, and questions. Keep headings descriptive
 and copy practical: name the action or feature and explain any relevant limit.
 Use modest type, ordinary links, and compact spacing throughout the site.
 
-Development support appears with the community links near the end of the page.
-That invitation, Donate in the navigation, and the footer support link share
-`donation_url` in `_config.yml`. A small invitation to star the project sits beside
+Development support has a filled **Support on Ko-fi** button in the shared header
+and a dedicated invitation after the download notes. The invitation uses John's
+developer voice, a warm surface, and a clear action, separate from setup copy.
+`_includes/support-link.html` owns the shared button; all support links use
+`donation_url` in `_config.yml`. Support colors are semantic tokens with light and
+dark variants. These are ordinary links to Ko-fi; checkout and payment states
+belong there. Keep keyboard focus visible and touch targets at least 44 px.
+A small invitation to star the project sits beside
 the installation notes, with a Shields.io image showing the repository's star
 count. The badge and prompt link directly to `repository_url`; no extra script is
 needed. On smaller screens, the invitation follows the notes.
@@ -81,6 +86,7 @@ needed. On smaller screens, the invitation follows the notes.
 contains the scoped IOP2 layout and consumes the existing `site.css` foundation.
 The layout loads the readable CSS, `theme.js`, and `screenshot-viewer.js` directly;
 older `.min.*` assets are retained but are no longer runtime inputs.
+The homepage also loads `download-links.js` to resolve the current native installers.
 
 The shared layout loads `tokens.css` before `site.css`, then `theme.css` and
 `iop2.css`. Every local stylesheet and script URL includes the same Jekyll build
@@ -124,6 +130,7 @@ viewer against that preview:
 ```shell
 node tests/website/screenshot-viewer.cjs http://127.0.0.1:4000/iOpenPod/
 node tests/website/navigation.cjs http://127.0.0.1:4000/iOpenPod/
+node tests/website/download-links.cjs http://127.0.0.1:4000/iOpenPod/
 ```
 
 This checks every screenshot in both themes, mobile and desktop sizes, keyboard
@@ -131,6 +138,9 @@ focus, zoom, all dismissal methods, unwanted downloads, and logo pixel density.
 Navigation checks cover all content pages, responsive header links, rounded images,
 single-line control labels, the in-page index, and synchronized theme controls
 with keyboard activation and saved preferences.
+Download checks mock GitHub's API and cover platform selection, partial releases,
+failed requests, invalid destinations, JavaScript-disabled navigation, and the
+absence of automatic downloads. They do not download release binaries.
 
 ## Migration and FAQ content
 
@@ -190,6 +200,24 @@ releases do not require link edits. Asset filenames currently include a release
 number, so links open the latest release page and instructions identify each
 platform's filename ending. Do not construct `/releases/latest/download/` links
 unless a matching stable asset name is actually published.
+
+When the homepage download section enters the viewport, `download-links.js` makes
+one unauthenticated request to GitHub's latest-release API. For each channel's
+`asset_suffix`, it uses the single uploaded, nonempty matching asset's
+`browser_download_url`, restricted to this repository's HTTPS release downloads.
+It updates that link and its `direct_label`; users still choose their platform
+and explicitly click to download. Mac links select DMGs, never Sparkle archives.
+This adds no package dependency, credentials, persistent storage, or tracking.
+The tradeoff is reliance on a public API with rate limits. Network failures,
+timeouts, malformed or ambiguous results, missing platforms, and disabled
+JavaScript preserve the ordinary release-page links. Store and PyPI links are
+unchanged. Never treat an API failure as an unavailable release.
+
+The Games installation and Phase Playlist guides use the existing guide layout,
+catalog, screenshots, sitemap, and breadcrumb markup. Link them from the homepage
+and each other. Keep their narrower game-compatible model list distinct from
+general music-library support. The download-area Ko-fi invitation is optional;
+it must not gate an installation or imply a paid version of the app.
 
 Use “latest” in the README and website instead of naming or pinning an iOpenPod
 version, including in installation commands and structured data. OS and Python

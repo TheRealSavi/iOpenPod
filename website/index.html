@@ -1,10 +1,11 @@
 ---
 title: iOpenPod — Free iPod manager for Windows, Mac & Linux
-description: Manage and sync your iPod without iTunes. iOpenPod is free and open source for Windows, macOS, and Linux, with playlists, artwork, conversion, and backups.
+description: Free iPod software for Windows, Mac, and Linux. Sync music without iTunes, manage playlists and artwork, and install click wheel games without a virtual machine.
 og_title: iOpenPod — Manage your iPod without iTunes
-og_description: A free, open-source iPod manager for Windows, macOS, and Linux. Browse your library, choose your music, and review changes before syncing.
+og_description: Manage music and install click wheel games without a virtual machine. iOpenPod is free and open source for Windows, macOS, and Linux.
 body_class: iop2-page home-page
 include_faq_schema: true
+native_download_links: true
 permalink: /
 ---
 {% include product-nav.html %}
@@ -13,9 +14,10 @@ permalink: /
     <div class="intro-title">
       <h1>Manage your iPod without iTunes</h1>
       <p class="intro-description">iOpenPod lets you add music to your iPod, edit track information, and organize playlists. It’s free and open source, for Windows, macOS, and Linux.</p>
-      <p class="intro-description">It also handles podcasts, photos, Genius Mixes, movies, and subtitles. FLAC audio and MP4 video are converted as needed during sync, so you don’t have to convert your files in another app.</p>
+      <p class="intro-description">Install click wheel games without a virtual machine, or make a Phase Playlist from your own music. Sync your podcasts, movies & TV shows, photos, and audiobooks.</p>
       <div class="intro-actions">
         <a class="intro-download" href="#install">Download iOpenPod</a>
+        <a href="{{ '/guides/install-ipod-click-wheel-games/' | relative_url }}">Games setup guide</a>
       </div>
     </div>
     <div class="intro-visual">
@@ -38,9 +40,9 @@ permalink: /
     <h2 id="why-heading">Why iOpenPod</h2>
     <div class="project-background-layout">
       <div class="project-background-copy">
-        <p>I’ve spent two years reverse engineering iPods, researching their formats, and testing how different models behave. I care about these devices and want them to be easy to use.</p>
-        <p>iOpenPod is an ongoing project with extensive testing behind it. It wasn’t blindly generated in a week. The <a href="{{ site.source_url }}">code, research, and development history</a> are open for anyone to inspect.</p>
-        <p>My aim is to make iOpenPod the only third-party sync tool you need, and one you can trust with your library.</p>
+        <p>I’ve spent two years reverse engineering iPods, researching their file formats, and testing how different models behave. I care about these devices and want them to be easy to use.</p>
+        <p>iOpenPod is an ongoing project with extensive testing behind it. It builds from older projects like libgpod, and has discovered countless problems and filled gaps in its system. It wasn’t blindly generated in a week. The <a href="{{ site.source_url }}">code, research, and development history</a> are open for anyone to inspector use in their own project.</p>
+        <p>My aim is to make iOpenPod the only third-party sync tool you need, and one you can trust with your library. It makes using your iPod easy, and allows power users to set it up how they want.</p>
         <p class="project-author">John Gibbons, iOpenPod developer</p>
       </div>
       <figure class="workbench-photo">
@@ -55,7 +57,7 @@ permalink: /
   <section class="sync-band" id="tour" aria-labelledby="sync-heading">
     <div class="container">
       <div class="section-intro">
-        <h2 id="sync-heading">Choose what goes on your iPod</h2>
+        <h2 id="sync-heading">How it works</h2>
         <p>Select music from your computer, then review the changes before syncing.</p>
       </div>
       <div class="sync-showcase">
@@ -84,8 +86,7 @@ permalink: /
           {% include product-shot.html file="audio-transcoding-settings.webp" width=1486 height=993 alt="Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media" caption="Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media." %}
           <div class="sync-showcase-copy">
             <h3>Convert audio during sync</h3>
-            <p>Convert FLAC and other supported formats to audio your iPod can play. Choose the encoder and bitrate in Settings.</p>
-            <p class="tool-note">Conversion requires FFmpeg and FFprobe, installed separately. Optional Chromaprint matching can recognize the same recording in different formats. <a href="{{ '/guides/flac-to-ipod/' | relative_url }}">About FLAC conversion</a>.</p>
+            <p>Convert FLAC and other iPod unsupported formats to audio your iPod can play automatically. Choose the encoder and bitrate in Settings.</p>
           </div>
         </div>
       </div>
@@ -99,7 +100,7 @@ permalink: /
     <div class="collection-grid">
       <div>
         {% include product-shot.html file="smart-playlist.webp" width=1487 height=991 alt="Smart Playlist editor with rules for music released before 2000" caption="Smart Playlist editor with rules for music released before 2000." %}
-        <h3>Playlists and Smart Playlists</h3><p>Arrange tracks by hand, organize playlists in folders, or create Smart Playlists using rules.</p>
+        <h3>Playlists and Smart Playlists</h3><p>Arrange tracks manually, organize playlists into folders, create Smart Playlists using rules, simply by dragging and dropping.</p>
       </div>
       <div>
         {% include product-shot.html file="photo-albums.webp" width=1480 height=988 alt="Photo Library with the Manage Albums dialog and selected photo inspector" caption="Photo Library with the Manage Albums dialog and selected photo inspector." %}
@@ -107,11 +108,11 @@ permalink: /
       </div>
       <div>
         {% include product-shot.html file="track-metadata.webp" width=1484 height=989 alt="Edit Track dialog with title, artist, album, genre, composer, and track metadata" caption="Edit Track dialog with title, artist, album, genre, composer, and track metadata." %}
-        <h3>Edit track information</h3><p>Update titles, artists, albums, genres, and other metadata.</p>
+        <h3>Edit track information</h3><p>Update titles, artists, albums, genres, and other metadata, with optional automatic fixing of common issues that cause albums to split and display strangely on the iPod.</p>
       </div>
       <div>
         {% include product-shot.html file="backups.webp" width=1486 height=993 alt="Backups page with saved Backup Snapshots and restore actions for the selected iPod" caption="Backups page with saved Backup Snapshots and restore actions for the selected iPod." %}
-        <h3>Backup and restore</h3><p>Create Backup Snapshots on your computer, browse saved copies, and restore one when needed.</p>
+        <h3>Backup and restore</h3><p>Create Backup Snapshots on your computer, and restore one if needed.</p>
       </div>
     </div>
     <dl class="capability-list">
@@ -132,7 +133,7 @@ permalink: /
         {% include product-shot.html file="click-wheel-games.webp" width=1741 height=1048 alt="Games page showing installed click wheel games and the Install Games button" caption="Games page showing installed click wheel games and the Install Games button." %}
         <h3>Install click wheel games without a virtual machine</h3>
         <p>Start with one click on <strong>Install Games</strong>. iOpenPod downloads the full preserved click wheel game collection and prepares game authorization for your iPod. Choose <strong>Select all → Add</strong> to install the collection, or pick individual games. No virtual machine is required.</p>
-        <p>The first download needs an internet connection; later visits reuse the files on your computer. Game compatibility depends on your iPod model and firmware. </p>
+        <p>The first download needs an internet connection; later visits reuse the files on your computer. Game compatibility depends on your iPod model and firmware. <a href="{{ '/guides/install-ipod-click-wheel-games/' | relative_url }}">Check game compatibility and follow the installation steps</a>.</p>
       </div>
       <div>
         {% include product-shot.html file="phase-playlist.webp" width=1741 height=1048 alt="Phase Playlist with its game icon, track list, and Phase banner" caption="Phase Playlist with its game icon, track list, and Phase banner." %}
@@ -140,6 +141,7 @@ permalink: /
         <p>With Phase installed, create a Phase Playlist or mark an existing playlist with <strong>Use as the Phase Playlist</strong>. Add your songs and save. iOpenPod generates the audio analysis the game uses for gameplay, and reuses matching analysis on later saves.</p>
         <p>The analyzer detects beats and musical attacks, with an emphasis on audible percussion. An optional music analysis model separates estimated vocals and instruments and recognizes recurring musical phrases, helping it follow the rhythm and prominent parts of a song. </p>
         <p>Acoustic analysis works without the optional model. Use <strong>Settings → Media Tools → Set Up Phase Analysis</strong> to download instrument analysis; setup can use several gigabytes. Optional failures use acoustic analysis. Audio decoding uses your configured FFmpeg executable.</p>
+        <p><a href="{{ '/guides/phase-playlist-ipod/' | relative_url }}">Add your music to Phase, step by step</a>.</p>
       </div>
     </div>
   </section>
@@ -163,7 +165,7 @@ permalink: /
     <div class="container">
       <div class="section-intro">
         <h2 id="download-heading">Download iOpenPod</h2>
-        <p>Choose a download for your computer. Windows, macOS, and Linux downloads include Python. FFmpeg and FFprobe are installed separately for media inspection and conversion.</p>
+        <p>Choose a download for your computer.</p>
       </div>
       <div class="download-platforms">
         {% for platform in site.data.distribution.platforms %}
@@ -202,6 +204,16 @@ permalink: /
           </a>
         </div>
       </div>
+      <section class="support-callout" id="support" aria-labelledby="support-heading">
+        <div class="support-callout-copy">
+          <h2 id="support-heading">Help keep iPods playing.</h2>
+          <p>I’m John, the developer behind iOpenPod. If it’s helped you enjoy your iPod again, a tip helps me put more time into new features, fixes, and testing.</p>
+        </div>
+        <div class="support-callout-action">
+          {% include support-link.html %}
+          <p>Free to use. Supported by you.</p>
+        </div>
+      </section>
     </div>
   </section>
   <section class="migration-section container" id="migration" aria-labelledby="migration-heading">
@@ -223,8 +235,8 @@ permalink: /
         <p>iOpenPod is free software for Windows, macOS, and Linux under GPL-3.0-or-later. Get a <a href="#install">native download</a>, <a href="#platform-python">install from PyPI with uv</a>, or install the Windows app from Microsoft Store. Mac App Store, Flathub, and Snap Store remain planned.</p>
       </div>
       <div>
-        <h3>Other managers’ settings</h3>
-        <p>Use the media folders on your computer as the source for syncing. Direct import of another manager’s database or settings is not promised.</p>
+        <h3>Backed by years of research</h3>
+        <p>Get more from your iPod with music, video, photos, Smart Playlists, Genius Mixes, click wheel games, and Phase. Years of research and reverse engineering bring these features together in one free, open-source app.</p>
       </div>
     </div>
     <a class="text-link migration-help" href="{{ '/guides/sync-ipod-without-itunes/' | relative_url }}">Sync without iTunes</a>
@@ -233,7 +245,7 @@ permalink: /
   <section class="guides-section container" aria-labelledby="guides-heading">
     <div class="section-intro">
       <h2 id="guides-heading">Guides and troubleshooting</h2>
-      <p>Instructions for your first sync, plus help with common Finder, Podcasts, and iTunes problems.</p>
+      <p>Install click wheel games, build a Phase Playlist, or prepare your first Sync. Find help with common Finder, Podcasts, and iTunes problems.</p>
     </div>
     <ul class="guide-links">
       {% assign featured_guides = site.data.guides | where: 'featured', true %}

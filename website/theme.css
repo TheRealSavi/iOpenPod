@@ -25,6 +25,10 @@ html[data-theme="dark"] {
   --color-error: oklch(0.71161 0.18122 22.84);
   --color-overlay: oklch(0.225 0.008 250 / 76%);
   --color-shadow: oklch(0 0 0 / 42%);
+  --color-support: oklch(0.78 0.13 23);
+  --color-support-hover: oklch(0.84 0.10 23);
+  --color-support-ink: oklch(0.20 0.008 250);
+  --color-support-surface: oklch(0.29 0.025 24);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -47,6 +51,10 @@ html[data-theme="dark"] {
     --color-error: oklch(0.71161 0.18122 22.84);
     --color-overlay: oklch(0.225 0.008 250 / 76%);
     --color-shadow: oklch(0 0 0 / 42%);
+    --color-support: oklch(0.78 0.13 23);
+    --color-support-hover: oklch(0.84 0.10 23);
+    --color-support-ink: oklch(0.20 0.008 250);
+    --color-support-surface: oklch(0.29 0.025 24);
   }
 }
 

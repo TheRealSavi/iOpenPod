@@ -1,8 +1,8 @@
 ---
 layout: guide
-title: Free iPod manager for Windows, Mac & Linux | iOpenPod
+title: Download iOpenPod — Windows, Mac & Linux setup
 description: Choose an iOpenPod download for Windows, Apple Silicon, Intel Mac, or Linux. Compare installation routes and requirements for managing an iPod without iTunes.
-heading: iPod management on Windows, macOS, and Linux
+heading: Choose your iOpenPod download
 lead: iOpenPod is a free, open-source iPod manager for Windows, macOS, and Linux. Native downloads include the application runtime, so you do not need to install Python separately.
 breadcrumb_title: Windows, Mac & Linux
 body_class: iop2-page guide-page
@@ -28,7 +28,8 @@ configuration in the repository as an available store release.
 
 ## Windows: portable download or Microsoft Store
 
-The native ZIP contains `iOpenPod.exe`. Extract it to a writable folder on a fixed
+Get the [Windows download]({{ '/#platform-windows' | relative_url }}) or use
+Microsoft Store. The native ZIP contains `iOpenPod.exe`. Extract it to a writable folder on a fixed
 NTFS drive and keep its filename so the updater can replace it. The Microsoft
 Store route installs and updates through the Store.
 
@@ -38,7 +39,7 @@ for the current filename and recommended location, or visit the
 
 ## Mac: select the DMG for your processor
 
-Choose the Apple Silicon or Intel DMG, drag iOpenPod into Applications, and run
+Choose the [Apple Silicon or Intel DMG]({{ '/#platform-macos' | relative_url }}), drag iOpenPod into Applications, and run
 that installed copy. The ZIP archives labeled `sparkle-update` are for the updater,
 not manual first installation.
 
@@ -50,7 +51,7 @@ completed acceptance testing.
 
 ## Linux: check the runtime before downloading
 
-The native Linux app needs glibc 2.39 or later and a working desktop graphics and
+The [Linux x64 download]({{ '/#platform-linux' | relative_url }}) needs glibc 2.39 or later and a working desktop graphics and
 audio environment. Compatibility with older distributions is not established.
 Keep the complete extracted application folder together and use its top-level
 launcher; its supporting files are part of the installation.

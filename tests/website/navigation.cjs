@@ -41,6 +41,9 @@ async function saveReport(error) {
   try {
     for (const colorScheme of ["light", "dark"]) {
       const context = await browser.newContext({ colorScheme, reducedMotion: "reduce" });
+      // Download resolution has dedicated tests; never spend live API quota here.
+      await context.route("https://api.github.com/repos/TheRealSavi/iOpenPod/releases/latest", (route) =>
+        route.fulfill({ status: 503, contentType: "application/json", body: "{}" }));
       const page = await context.newPage();
       for (const route of ["", "install-help/", "guides/", ...guideRoutes]) {
         for (const width of [320, 375, 414, 768, 1280, 1920]) {
@@ -60,7 +63,7 @@ async function saveReport(error) {
             const boxes = controls.map((control) => control.getBoundingClientRect());
             return boxes.every((box, index) => box.x >= 0 && box.right <= innerWidth && box.height >= 44 &&
               boxes.slice(index + 1).every((other) => box.right <= other.x || other.right <= box.x || box.bottom <= other.y || other.bottom <= box.y));
-          }), "Header controls must have usable targets without overlapping or overflowing");
+          }), `${testCase}: header controls must have usable targets without overlapping or overflowing`);
           assert(await page.locator("img").evaluateAll((images) => images.every((image) => parseFloat(getComputedStyle(image).borderTopLeftRadius) > 0)), "All images should have rounded corners");
           assert(await page.locator(".product-nav a, .product-nav button, .footer-links a, .footer-links button, .channel-link, .intro-actions a, .page-index a").evaluateAll((controls) => controls.every((control) => {
             const walker = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);

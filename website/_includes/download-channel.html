@@ -12,7 +12,7 @@
   </div>
   <script type="module" src="https://get.microsoft.com/badge/ms-store-badge.bundled.js"></script>
   {% else %}
-  <a class="channel-link" href="{{ channel_url | escape }}">{{ include.channel.label }}</a>
+  <a class="channel-link" href="{{ channel_url | escape }}"{% if include.channel.asset_suffix %} data-release-asset-suffix="{{ include.channel.asset_suffix | escape }}" data-direct-label="{{ include.channel.direct_label | escape }}"{% endif %}>{{ include.channel.label }}</a>
   {% endif %}
   {% else %}
   <span class="channel-status">Planned</span>
