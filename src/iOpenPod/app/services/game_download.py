@@ -477,7 +477,7 @@ class GameDownloadService:
         ):
             raise ValueError("Select compatible, available games without duplicates.")
         if not self._ready():
-            raise ValueError("Prepare the game files with Gimme Games first.")
+            raise ValueError("Prepare the game files with Install Games first.")
         return tuple(
             GamePackage(
                 offered[value.casefold()].directory,

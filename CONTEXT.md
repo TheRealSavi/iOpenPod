@@ -14,6 +14,15 @@ then beyond it.
 
 ## Current stage
 
+The sidebar device information opens a Device Summary with a large device portrait,
+observed firmware and serial details, and color-coded capacity estimates from the
+committed Library, plus Games from captured file sizes across Games_RO,
+GameData_RW, and GameStats_WO, and Album artwork from the entire Artwork folder.
+Games is pink and Album artwork is cyan. Other retains unclassified used space; inconsistent metadata
+falls back to observed used/free capacity. Restore iPod remains disabled beside
+“Coming soon”. See
+[ADR-0230](docs/adr/0230-project-device-summary-from-committed-library-state.md).
+
 Phase preparation reports its current method, live CPU/CUDA/MPS backend and GPU
 name when available. A stage ETA beside the status-bar progress indicator learns
 from completed audio duration. See
@@ -108,7 +117,7 @@ metadata failures, and clear on Active iPod changes. See
 [IC-Info and Games](docs/ipod-games.md) for the manifest contract and read-only
 device validation.
 
-Gimme Games now allows an explicit Continue anyway attempt for unverified family
+Install Games now allows an explicit Continue anyway attempt for unverified family
 or firmware evidence. The dialog shows reported values, uses the identified model
 when a codec fallback is needed, and scopes confirmation to the current connection
 and identity values. Storage and recovery protections remain mandatory. See
@@ -120,7 +129,7 @@ action merges account/key records, gives bundled entries precedence on conflicts
 and preserves destination-only authorizations through a recoverable Storage
 Transaction. Firmware and emulators remain lab-only verification tools. Game
 executables are installed separately by selecting cards and pressing Add in the
-Available games dialog. Gimme Games first downloads and extracts the complete
+Available games dialog. Install Games first downloads and extracts the complete
 preservation collection onto the Host, showing progress. Later clicks reuse those
 files. The app retains the catalog and artwork while game payloads stay outside
 its assets and source distribution. Selected games publish through Storage

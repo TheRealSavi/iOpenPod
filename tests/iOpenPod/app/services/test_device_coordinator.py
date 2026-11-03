@@ -90,6 +90,7 @@ from iPodDB.SQLiteDB.checksum import build_locations_cbk, verify_locations_cbk
 from iPodDB.SQLiteDB.database import build_sqlite_databases
 from storage import (
     AccessMode,
+    DeviceEntry,
     DevicePath,
     FileRangeSnapshot,
     FileSnapshot,
@@ -2979,6 +2980,153 @@ def test_invalidated_session_during_artwork_read_aborts_selection(
         coordinator.select_device(candidate.id)
 
     assert coordinator.active_ipod is None
+
+
+@pytest.mark.parametrize(
+    ("sysinfo_values", "extended_values", "firmware", "serial"),
+    (
+        (
+            "visibleBuildID: 2.0.1\npszSerialNumber: 8P840FN62C7\n",
+            {"VisibleBuildID": "2.0.1", "SerialNumber": "8p840fn62c7"},
+            "2.0.1",
+            "8P840FN62C7",
+        ),
+        ("", {}, "", ""),
+        (
+            "FireWireVersion: 1.62\nFirewireGuid: 000A270012345678\n",
+            {"BuildID": "9.0.1", "scsi_revision": "1.62"},
+            "",
+            "",
+        ),
+        (
+            "visibleBuildID: Unknown\npszSerialNumber: Unknown\n",
+            {},
+            "",
+            "",
+        ),
+        (
+            "visibleBuildID: 2.0.1\npszSerialNumber: 8P840FN62C7\n",
+            {"VisibleBuildID": "2.0.4", "SerialNumber": "ABCD12342C7"},
+            "",
+            "",
+        ),
+    ),
+)
+@pytest.mark.parametrize("reconcile", [False, True])
+def test_device_summary_identity_uses_observed_unambiguous_metadata(
+    tmp_path: Path,
+    sysinfo_values: str,
+    extended_values: dict[str, str],
+    firmware: str,
+    serial: str,
+    reconcile: bool,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    metadata = root / "iPod_Control/Device"
+    (metadata / "SysInfo").write_text(
+        f"ModelNumStr: MB565\n{sysinfo_values}", encoding="utf-8"
+    )
+    (metadata / "SysInfoExtended").write_bytes(plistlib.dumps(extended_values))
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        active = coordinator.select_device(
+            candidate.id, reconcile_metadata=reconcile, reconcile_sidecars=False
+        )
+
+        assert active.firmware_version == firmware
+        assert active.serial_number == serial
+    finally:
+        coordinator.close()
+
+
+def test_device_summary_identity_prefers_live_hardware_over_stale_metadata(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    metadata = root / "iPod_Control/Device"
+    (metadata / "SysInfo").write_text(
+        "ModelNumStr: MB565\nvisibleBuildID: 2.0.0\npszSerialNumber: ABCD12342C7\n",
+        encoding="utf-8",
+    )
+    platform.add_volume(
+        root,
+        identifiers=HardwareIdentifiers(
+            usb_vendor_id=0x05AC,
+            usb_product_id=0x1261,
+            product_serial="8P840FN62C7",
+            transport_serial="000A270012345678",
+        ),
+        probe_result=HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="windows_scsi",
+                    vendor="Apple",
+                    product="iPod",
+                    firmware_revision="1.62",
+                    vendor_payload=plistlib.dumps(
+                        {"ModelNumStr": "MB565", "VisibleBuildID": "2.0.1"}
+                    ),
+                ),
+            )
+        ),
+    )
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        active = coordinator.select_device(
+            candidate.id, reconcile_metadata=False, reconcile_sidecars=False
+        )
+
+        assert active.firmware_version == "2.0.1"
+        assert active.serial_number == "8P840FN62C7"
+    finally:
+        coordinator.close()
+
+
+@pytest.mark.parametrize("unreadable", ["", "GameData_RW", "Artwork"])
+def test_selection_captures_folder_storage_without_blocking_library_on_read_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unreadable: str
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    for folder, size in (("Games_RO", 100), ("GameData_RW", 20), ("GameStats_WO", 3)):
+        directory = root / "iPod_Control" / folder / "nested"
+        directory.mkdir(parents=True)
+        (directory / "unknown.bin").write_bytes(b"x" * size)
+    artwork = root / "iPod_Control/Artwork"
+    artwork.mkdir()
+    (artwork / "unrecognized.bin").write_bytes(b"unused artwork bytes")
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(Storage(platform))
+    list_directory = FilesystemSession.list_directory
+
+    def maybe_unreadable(
+        session: FilesystemSession, path: DevicePath
+    ) -> tuple[DeviceEntry, ...]:
+        if unreadable and str(path) == f"iPod_Control/{unreadable}":
+            raise StorageOperationError("Folder data unavailable")
+        return list_directory(session, path)
+
+    monkeypatch.setattr(FilesystemSession, "list_directory", maybe_unreadable)
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        active = coordinator.select_device(
+            candidate.id, reconcile_metadata=False, reconcile_sidecars=False
+        )
+
+        assert active.game_storage_bytes == (
+            None if unreadable == "GameData_RW" else 123
+        )
+        assert active.album_artwork_storage_bytes == (
+            None if unreadable == "Artwork" else len(b"unused artwork bytes")
+        )
+        assert active.library.tracks
+    finally:
+        coordinator.close()
 
 
 def _ipod_volume(

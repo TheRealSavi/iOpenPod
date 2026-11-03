@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+from iOpenPod.GUI.widgets.star_rating import StarRating
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
@@ -571,6 +572,20 @@ class _RuleRow(QWidget):
             self.upper.setText(
                 _rule_value_text(rule.field, rule.upper_value, rule.operator)
             )
+        self.rating = StarRating(
+            rule.value
+            if rule.field is SmartField.RATING and isinstance(rule.value, int)
+            else 0,
+            self,
+        )
+        self.rating.setAccessibleName(self.tr("Rule rating"))
+        self.upper_rating = StarRating(
+            rule.upper_value
+            if rule.field is SmartField.RATING and isinstance(rule.upper_value, int)
+            else 0,
+            self,
+        )
+        self.upper_rating.setAccessibleName(self.tr("Upper rule rating"))
         self.period_unit = AppComboBox(self)
         self.period_unit.setAccessibleName(self.tr("Rule time unit"))
         for name, factor in _PERIOD_UNITS:
@@ -601,6 +616,8 @@ class _RuleRow(QWidget):
         layout.addWidget(self.value, 5)
         layout.addWidget(self.choice, 5)
         layout.addWidget(self.upper, 5)
+        layout.addWidget(self.rating, 5)
+        layout.addWidget(self.upper_rating, 5)
         layout.addWidget(self.period_unit)
         layout.addWidget(self.remove)
         self.field.currentIndexChanged.connect(self._field_changed)
@@ -654,9 +671,14 @@ class _RuleRow(QWidget):
         self.choice.setCurrentIndex(index if index >= 0 else 0)
 
     def _operator_changed(self) -> None:
-        kind = smart_value_kind(SmartField(self.field.currentData()))
+        field = SmartField(self.field.currentData())
+        kind = smart_value_kind(field)
+        rating = field is SmartField.RATING
         choice = kind in (SmartValueKind.CHOICE, SmartValueKind.PLAYLIST)
-        self.value.setVisible(kind is not SmartValueKind.BOOLEAN and not choice)
+        self.value.setVisible(
+            kind is not SmartValueKind.BOOLEAN and not choice and not rating
+        )
+        self.rating.setVisible(rating)
         self.choice.setVisible(choice)
         relative = self.operator.currentData() in (
             SmartOperator.IN_LAST.value,
@@ -671,9 +693,9 @@ class _RuleRow(QWidget):
             else self.tr("Value")
         )
         self.value.setToolTip(self.value.placeholderText())
-        self.upper.setVisible(
-            self.operator.currentData() == SmartOperator.BETWEEN.value
-        )
+        between = self.operator.currentData() == SmartOperator.BETWEEN.value
+        self.upper.setVisible(between and not rating)
+        self.upper_rating.setVisible(between and rating)
 
     def rule(self) -> SmartRule:
         field = SmartField(self.field.currentData())
@@ -685,7 +707,12 @@ class _RuleRow(QWidget):
             self.upper.text().strip() if operator is SmartOperator.BETWEEN else None
         )
         kind = smart_value_kind(field)
-        if kind is SmartValueKind.BOOLEAN:
+        if field is SmartField.RATING:
+            value = self.rating.rating
+            upper = (
+                self.upper_rating.rating if operator is SmartOperator.BETWEEN else None
+            )
+        elif kind is SmartValueKind.BOOLEAN:
             value = 0
         elif kind is SmartValueKind.CHOICE:
             value = (
@@ -701,8 +728,6 @@ class _RuleRow(QWidget):
         elif kind is not SmartValueKind.TEXT:
 
             def number(text: str | int) -> int:
-                if field is SmartField.RATING:
-                    return self._rating(text)
                 if operator in (SmartOperator.IN_LAST, SmartOperator.NOT_IN_LAST):
                     try:
                         seconds = Decimal(text) * int(self.period_unit.currentData())
@@ -749,21 +774,6 @@ class _RuleRow(QWidget):
         )
         assert upper is None or isinstance(upper, str | int)
         return SmartRule(field, operator, value, upper)
-
-    def _rating(self, text: str | int) -> int:
-        try:
-            rating = Decimal(text) * 20
-            if (
-                not rating.is_finite()
-                or not 0 <= rating <= 100
-                or rating != rating.to_integral_value()
-            ):
-                raise ValueError
-            return int(rating)
-        except (DecimalException, ValueError):
-            raise ValueError(
-                self.tr("Use a rating between 0 and 5 stars, in steps of 0.05.")
-            ) from None
 
 
 class _RuleGroupEditor(QWidget):

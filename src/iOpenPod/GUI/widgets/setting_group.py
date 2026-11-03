@@ -96,7 +96,12 @@ class SettingRow(QWidget):
         self._description.setVisible(bool(description))
         self._update_minimum_height()
 
-    def set_scope_hint(self, text: str) -> None:
+    def set_scope_hint(self, text: str, *, warning: bool = False) -> None:
         self._scope_hint.setText(text)
+        if self._scope_hint.property("warning") != warning:
+            self._scope_hint.setProperty("warning", warning)
+            style = self._scope_hint.style()
+            style.unpolish(self._scope_hint)
+            style.polish(self._scope_hint)
         self._scope_hint.setVisible(bool(text))
         self._update_minimum_height()

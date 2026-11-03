@@ -100,6 +100,7 @@ from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.backup_page import BackupPage
 from iOpenPod.GUI.pages.collection_page import CollectionPage
+from iOpenPod.GUI.pages.device_summary import DeviceSummaryPage
 from iOpenPod.GUI.pages.games_page import GamesPage
 from iOpenPod.GUI.pages.genius_page import GeniusPage
 from iOpenPod.GUI.pages.library_page import LibraryPage
@@ -444,6 +445,12 @@ class MainWindow(QMainWindow):
         self._scrobbling.changed.connect(self._scrobbling_changed)
         self._sidebar.set_scrobble_available(self._scrobbling.can_scrobble)
         self._settings_page.set_active_ipod(context.device_controller.active_ipod)
+        self._device_summary_page = DeviceSummaryPage(
+            self._pages, theme=context.theme_manager
+        )
+        self._device_summary_page.set_active_ipod(context.device_controller.active_ipod)
+        self._refresh_device_summary()
+        context.library_workspace.changed.connect(self._refresh_device_summary)
         self._backup_page = BackupPage(
             context.backup_controller,
             context.device_controller,
@@ -520,6 +527,7 @@ class MainWindow(QMainWindow):
         exit_fullscreen.setAutoRepeat(False)
         exit_fullscreen.activated.connect(self._exit_synesthesia_fullscreen)
         self._page_widgets: dict[PageId, QWidget] = {
+            PageId.DEVICE_SUMMARY: self._device_summary_page,
             PageId.ALBUMS: self._library_page,
             PageId.ARTISTS: artists_page,
             PageId.GENRES: genres_page,
@@ -560,6 +568,7 @@ class MainWindow(QMainWindow):
         self._pages.addWidget(self._backup_page)
         self._pages.addWidget(self._synesthesia_page)
         self._pages.addWidget(self._settings_page)
+        self._pages.addWidget(self._device_summary_page)
 
         library_layout.addWidget(self._sidebar)
         library_layout.addWidget(self._pages, stretch=1)
@@ -1632,6 +1641,10 @@ class MainWindow(QMainWindow):
         )
         self.retranslate_ui()
 
+    def _refresh_device_summary(self) -> None:
+        workspace = self._context.library_workspace
+        self._device_summary_page.set_device_name(workspace.device_name)
+
     def _library_replaced(self) -> None:
         self._context.playback_controller.clear_session()
         self.retranslate_ui()
@@ -1677,6 +1690,7 @@ class MainWindow(QMainWindow):
             self._workspaces.currentWidget() is self._library_browser
             and self._current_page_id()
             not in (
+                PageId.DEVICE_SUMMARY,
                 PageId.SETTINGS,
                 PageId.BACKUPS,
                 PageId.SYNESTHESIA,
@@ -2113,6 +2127,8 @@ class MainWindow(QMainWindow):
     def _active_ipod_changed(self, value: object) -> None:
         active_ipod = value if isinstance(value, ActiveIPod) else None
         self._settings_page.set_active_ipod(active_ipod)
+        self._device_summary_page.set_active_ipod(active_ipod)
+        self._refresh_device_summary()
         self._genius_page.set_active_ipod(active_ipod)
         sync_was_visible = self._workspaces.currentWidget() is self._sync_workspace
         retain_sync = (

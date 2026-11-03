@@ -795,7 +795,7 @@ See [ADR-0219](adr/0219-confirm-unverified-game-compatibility.md).
 
 The Games Application Layer downloads and verifies the pinned preservation
 release, then extracts its complete collection into persistent Host storage.
-Gimme Games opens the bundled catalog only after that collection and authorization
+Install Games opens the bundled catalog only after that collection and authorization
 preparation are ready. Subsequent clicks reuse the extracted files; Add validates
 selected contents and publishes them through a Storage Transaction. Game payloads
 are excluded from application assets and release sources. See
@@ -2873,12 +2873,29 @@ PhotoPage
 TracksPage
 PlaylistsPage
 PodcastsPage
-DevicePage
+DeviceSummaryPage
 BackupPage
 SettingsPage
 ```
 
 Pages should primarily compose reusable widgets and connect them to application models/services.
+
+`DeviceSummaryPage` projects the Active iPod's profile, committed Library Snapshot,
+captured firmware and product serial, and Volume capacity without device I/O.
+Firmware and serial fields prefer current hardware evidence and withhold equally
+authoritative conflicts or missing observations. The sidebar device information
+opens it while its existing buttons retain their actions. A shared storage widget
+presents typed Application Layer category estimates, keeps unclassified usage in
+Other, and falls back to used/free capacity when metadata is inconsistent. Photo
+estimates count stored representation ranges rather than source sizes. Games uses
+the regular-file sizes captured through Storage at selection from Games_RO,
+GameData_RW, and GameStats_WO; missing folders are empty and failed measurements
+leave usage in Other. Album artwork similarly counts the entire Artwork folder,
+including its database and unused thumbnail bytes. Games uses pink and Album
+artwork uses cyan through shared theme tokens. No file-content reads or
+page-triggered scans occur. The page
+uses the shared theme and device artwork; Restore iPod remains disabled with no
+operation attached. See ADR-0230.
 
 Avoid rebuilding the same visual patterns independently on every page.
 

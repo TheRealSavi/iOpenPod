@@ -9,6 +9,7 @@ from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication
 class PageId(StrEnum):
     """Stable route identifiers; labels remain localizable presentation data."""
 
+    DEVICE_SUMMARY = "device-summary"
     ALBUMS = "albums"
     ARTISTS = "artists"
     GENRES = "genres"
@@ -32,6 +33,7 @@ class PageId(StrEnum):
 _PAGE_LABEL_SOURCES = cast(
     "dict[PageId, str]",
     {
+        PageId.DEVICE_SUMMARY: QT_TRANSLATE_NOOP("Navigation", "Device Summary"),
         PageId.ALBUMS: QT_TRANSLATE_NOOP("Navigation", "Albums"),
         PageId.ARTISTS: QT_TRANSLATE_NOOP("Navigation", "Artists"),
         PageId.GENRES: QT_TRANSLATE_NOOP("Navigation", "Genres"),

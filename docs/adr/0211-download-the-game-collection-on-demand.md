@@ -5,7 +5,7 @@
 
 Game executables must stay outside the application distribution and Git source.
 Keep the small catalog, its artwork, and a pinned release/content index in assets.
-Gimme Games downloads the complete version16 `iPod.Games.Files.7z` release asset,
+Install Games downloads the complete version16 `iPod.Games.Files.7z` release asset,
 shows progress, and extracts the whole collection into persistent Host storage
 before opening the browser. This follows the requested download-once workflow;
 there is no per-game download or ZIP reconstruction when adding games.

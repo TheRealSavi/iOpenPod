@@ -156,13 +156,13 @@ def test_sidebar_opens_games_page_with_one_disabled_action_without_device() -> N
         assert pages is not None and isinstance(pages.currentWidget(), GamesPage)
         page = pages.currentWidget()
         assert page is not None
-        action = page.findChild(QPushButton, "gimmeGames")
+        action = page.findChild(QPushButton, "installGames")
         assert action is not None
-        assert action.text() == "Gimme Games" and not action.isEnabled()
+        assert action.text() == "Install Games" and not action.isEnabled()
         assert action.toolTip() == "Select an iPod to prepare game authorization."
         header = page.findChild(PageHeader)
         assert header is not None and header.title_label.text() == "Games"
-        assert header.findChild(QPushButton, "gimmeGames") is action
+        assert header.findChild(QPushButton, "installGames") is action
         empty_action = page.findChild(QPushButton, "gamesEmptyAdd")
         assert empty_action is not None and not empty_action.isEnabled()
         assert empty_action.toolTip() == action.toolTip()
@@ -242,7 +242,7 @@ def test_video55_games_availability_and_disabled_hover_tooltips(
             QTest.qWait(5)
         assert context.games_controller.catalog_ready
         assert active.profile.capabilities.supports_games
-        for name in ("gimmeGames", "gamesEmptyAdd"):
+        for name in ("installGames", "gamesEmptyAdd"):
             button = page.findChild(QPushButton, name)
             assert button is not None and button.isVisible()
             assert button.isEnabled() is writable
@@ -257,7 +257,7 @@ def test_video55_games_availability_and_disabled_hover_tooltips(
                 QToolTip.hideText()
 
         context.device_controller.set_recovery_required(True)
-        for name in ("gimmeGames", "gamesEmptyAdd"):
+        for name in ("installGames", "gamesEmptyAdd"):
             button = page.findChild(QPushButton, name)
             assert button is not None and not button.isEnabled()
             assert (
@@ -265,7 +265,7 @@ def test_video55_games_availability_and_disabled_hover_tooltips(
                 == "Finish the current iPod operation or recovery first." + reported
             )
         context.device_controller.set_recovery_required(False)
-        button = page.findChild(QPushButton, "gimmeGames")
+        button = page.findChild(QPushButton, "installGames")
         assert button is not None and button.toolTip() == tooltip
         assert button.isEnabled() is writable
         assert context.device_controller.begin_read_only_operation()
@@ -288,7 +288,7 @@ def test_video55_games_availability_and_disabled_hover_tooltips(
         context.shutdown()
 
 
-@pytest.mark.parametrize("button_name", ["gimmeGames", "gamesEmptyAdd"])
+@pytest.mark.parametrize("button_name", ["installGames", "gamesEmptyAdd"])
 @pytest.mark.parametrize(
     "family,release,answer",
     [
@@ -624,7 +624,7 @@ def test_games_grid_loads_titles_versions_covers_and_clears_after_disconnect(
                 InstalledGame("new", "New game", "1.0"),
             ),
         )
-        action = page.findChild(QPushButton, "gimmeGames")
+        action = page.findChild(QPushButton, "installGames")
         assert action is not None
         action.click()
         wait_for_games(context.games_controller)
@@ -685,7 +685,7 @@ def test_games_grid_loads_titles_versions_covers_and_clears_after_disconnect(
             empty_detail.width()
         )
         assert empty_action.isVisible() and empty_action.isEnabled()
-        assert empty_action.text() == "Gimme Games"
+        assert empty_action.text() == "Install Games"
         empty_action.click()
         assert not empty_action.isEnabled() and not action.isEnabled()
         assert (
@@ -948,7 +948,7 @@ def test_game_context_menu_uninstalls_clicked_item_off_gui_thread(
         assert context.games_controller.can_uninstall
         assert (
             not context.games_controller.can_install
-        )  # No Gimme Games/authorization prerequisite.
+        )  # No Install Games/authorization prerequisite.
         grid = page.findChild(SelectionGridView, "gamesGrid")
         menu = page.findChild(QMenu, "gameContextMenu")
         action = page.findChild(QAction, "uninstallGame")
@@ -1319,7 +1319,7 @@ def test_checked_games_install_in_background_and_refresh_both_grids(
     try:
         page.show()
         settle()
-        button = page.findChild(QPushButton, "gimmeGames")
+        button = page.findChild(QPushButton, "installGames")
         assert button is not None
         button.click()
         settle()
@@ -1407,7 +1407,7 @@ def test_catalog_dismissal_retains_native_window(dismiss: str) -> None:
 
 
 @pytest.mark.parametrize("failure", [False, True])
-def test_gimme_games_prepares_host_files_with_progress_before_authorization_and_browser(
+def test_install_games_prepares_host_files_with_progress_before_authorization_and_browser(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: bool
 ) -> None:
     root = tmp_path / "device"
@@ -1458,7 +1458,7 @@ def test_gimme_games_prepares_host_files_with_progress_before_authorization_and_
     context.status.messageChanged.connect(messages.append)
     try:
         page.show()
-        button = page.findChild(QPushButton, "gimmeGames")
+        button = page.findChild(QPushButton, "installGames")
         assert button is not None and button.isEnabled()
         button.click()
         assert started.wait(5)
@@ -1537,7 +1537,7 @@ def test_games_runs_off_gui_thread_and_releases_device_reservation(
 
     monkeypatch.setattr(coordinator, "install_game_authorizations", install)
     try:
-        button = page.findChild(QPushButton, "gimmeGames")
+        button = page.findChild(QPushButton, "installGames")
         assert button is not None and button.isEnabled()
         button.click()
         assert started.wait(5)

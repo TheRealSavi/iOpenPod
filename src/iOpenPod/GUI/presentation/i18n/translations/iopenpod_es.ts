@@ -1214,6 +1214,10 @@
         <translation>No hay ningún iPod activo cargado.</translation>
     </message>
     <message>
+        <source>Open device summary</source>
+        <translation>Abrir resumen del dispositivo</translation>
+    </message>
+    <message>
         <source>Storage</source>
         <translation>Almacenamiento</translation>
     </message>
@@ -1434,6 +1438,77 @@
     <message>
         <source>Device access could not be prepared.</source>
         <translation>No se pudo preparar el acceso al dispositivo.</translation>
+    </message>
+</context>
+<context>
+    <name>DeviceSummaryPage</name>
+    <message>
+        <source>Summary</source>
+        <translation>Resumen</translation>
+    </message>
+    <message>
+        <source>Restore iPod</source>
+        <translation>Restaurar iPod</translation>
+    </message>
+    <message>
+        <source>Coming soon</source>
+        <translation>Próximamente</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>Nombre</translation>
+    </message>
+    <message>
+        <source>Capacity</source>
+        <translation>Capacidad</translation>
+    </message>
+    <message>
+        <source>Software version</source>
+        <translation>Versión de software</translation>
+    </message>
+    <message>
+        <source>Serial number</source>
+        <translation>Número de serie</translation>
+    </message>
+    <message>
+        <source>Model number</source>
+        <translation>Número de modelo</translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation>Modelo</translation>
+    </message>
+    <message>
+        <source>Color</source>
+        <translation>Color</translation>
+    </message>
+    <message>
+        <source>Tracks</source>
+        <translation type="vanished">Pistas</translation>
+    </message>
+    <message>
+        <source>Playlists</source>
+        <translation type="vanished">Listas de reproducción</translation>
+    </message>
+    <message>
+        <source>Library format</source>
+        <translation type="vanished">Formato de la biblioteca</translation>
+    </message>
+    <message>
+        <source>No Active iPod</source>
+        <translation>Sin iPod activo</translation>
+    </message>
+    <message>
+        <source>Choose an iPod from the sidebar to see its details.</source>
+        <translation>Elige un iPod en la barra lateral para ver sus detalles.</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>No disponible</translation>
+    </message>
+    <message>
+        <source>iPod</source>
+        <translation>iPod</translation>
     </message>
 </context>
 <context>
@@ -1821,8 +1896,8 @@
         <translation>Juegos</translation>
     </message>
     <message>
-        <source>Gimme Games</source>
-        <translation>Dame juegos</translation>
+        <source>Install Games</source>
+        <translation>Instalar juegos</translation>
     </message>
     <message>
         <source>No games on this iPod</source>
@@ -3657,6 +3732,10 @@
 </context>
 <context>
     <name>Navigation</name>
+    <message>
+        <source>Device Summary</source>
+        <translation>Resumen del dispositivo</translation>
+    </message>
     <message>
         <source>Albums</source>
         <translation>Álbumes</translation>
@@ -5860,15 +5939,15 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Override for this iPod · Host: %1</source>
-        <translation>Valor para este iPod · Host: %1</translation>
+        <translation type="vanished">Valor para este iPod · Host: %1</translation>
     </message>
     <message>
         <source>Following Host changes automatically</source>
         <translation>Sigue automáticamente los cambios del Host</translation>
     </message>
     <message>
-        <source>The Active iPod has its own override.</source>
-        <translation>El iPod activo tiene su propio valor.</translation>
+        <source>The Active iPod has its own override. Set to: %1.</source>
+        <translation>El iPod activo tiene su propio valor. Configurado en: %1.</translation>
     </message>
 </context>
 <context>
@@ -6604,6 +6683,17 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
 </context>
 <context>
+    <name>StarRating</name>
+    <message>
+        <source>Click a star to set the rating; click the selected star to clear</source>
+        <translation>Haz clic en una estrella para fijar la valoración; vuelve a hacer clic en la estrella seleccionada para borrarla</translation>
+    </message>
+    <message>
+        <source>%1 of 5 stars</source>
+        <translation>%1 de 5 estrellas</translation>
+    </message>
+</context>
+<context>
     <name>StatusListButton</name>
     <message>
         <source>Active statuses (%1)</source>
@@ -6620,6 +6710,89 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Close statuses</source>
         <translation>Cerrar estados</translation>
+    </message>
+</context>
+<context>
+    <name>StorageBreakdown</name>
+    <message>
+        <source>Storage</source>
+        <translation>Almacenamiento</translation>
+    </message>
+    <message>
+        <source>Storage by category</source>
+        <translation>Almacenamiento por categoría</translation>
+    </message>
+    <message>
+        <source>Capacity unavailable</source>
+        <translation>Capacidad no disponible</translation>
+    </message>
+    <message>
+        <source>Storage details appear when an iPod is loaded.</source>
+        <translation>Los detalles de almacenamiento aparecen al cargar un iPod.</translation>
+    </message>
+    <message>
+        <source>This iPod&apos;s storage capacity is unavailable.</source>
+        <translation>La capacidad de almacenamiento de este iPod no está disponible.</translation>
+    </message>
+    <message>
+        <source>%1 free of %2</source>
+        <translation>%1 libres de %2</translation>
+    </message>
+    <message>
+        <source>Music</source>
+        <translation>Música</translation>
+    </message>
+    <message>
+        <source>Videos</source>
+        <translation>Vídeos</translation>
+    </message>
+    <message>
+        <source>Podcasts</source>
+        <translation>Pódcast</translation>
+    </message>
+    <message>
+        <source>Audiobooks</source>
+        <translation>Audiolibros</translation>
+    </message>
+    <message>
+        <source>Photos</source>
+        <translation>Fotos</translation>
+    </message>
+    <message>
+        <source>Games</source>
+        <translation>Juegos</translation>
+    </message>
+    <message>
+        <source>Album artwork</source>
+        <translation>Portada del álbum</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Otros</translation>
+    </message>
+    <message>
+        <source>Free</source>
+        <translation>Libre</translation>
+    </message>
+    <message>
+        <source>Category sizes are unavailable because content sizes exceed used storage.</source>
+        <translation>Los tamaños por categoría no están disponibles porque los tamaños de los archivos registrados superan el espacio utilizado.</translation>
+    </message>
+    <message>
+        <source>Media sizes are estimated from the saved library. Games and Album artwork use captured folder sizes. Other includes remaining databases and unclassified files.</source>
+        <translation>Los tamaños de los medios se estiman a partir de la biblioteca guardada. Juegos y Portada del álbum usan los tamaños de las carpetas registrados. Otros incluye las demás bases de datos y los archivos sin clasificar.</translation>
+    </message>
+    <message>
+        <source>Media sizes are estimated from the saved library; Games uses captured file sizes. Other includes artwork, databases, and unclassified files.</source>
+        <translation type="vanished">Los tamaños de los medios se estiman a partir de la biblioteca guardada; Juegos usa los tamaños de archivo registrados. Otros incluye portadas, bases de datos y archivos sin clasificar.</translation>
+    </message>
+    <message>
+        <source>Category sizes are unavailable because library sizes exceed used storage.</source>
+        <translation type="vanished">Los tamaños por categoría no están disponibles porque los tamaños de los archivos de la biblioteca superan el espacio utilizado.</translation>
+    </message>
+    <message>
+        <source>Category sizes are estimated from the saved library. Other includes artwork, databases, and unclassified files.</source>
+        <translation type="vanished">Los tamaños por categoría se estiman a partir de la biblioteca guardada. Otros incluye portadas, bases de datos y archivos sin clasificar.</translation>
     </message>
 </context>
 <context>
@@ -12924,6 +13097,14 @@ Reiniciar iOpenPod no borra las propiedades ya guardadas en la caché de udev. E
         <translation>Valor superior</translation>
     </message>
     <message>
+        <source>Rule rating</source>
+        <translation>Valoración de la regla</translation>
+    </message>
+    <message>
+        <source>Upper rule rating</source>
+        <translation>Valoración superior de la regla</translation>
+    </message>
+    <message>
         <source>Rule time unit</source>
         <translation>Unidad de tiempo de la regla</translation>
     </message>
@@ -12965,7 +13146,7 @@ Reiniciar iOpenPod no borra las propiedades ya guardadas en la caché de udev. E
     </message>
     <message>
         <source>Use a rating between 0 and 5 stars, in steps of 0.05.</source>
-        <translation>Usa una valoración entre 0 y 5 estrellas, en pasos de 0,05.</translation>
+        <translation type="vanished">Usa una valoración entre 0 y 5 estrellas, en pasos de 0,05.</translation>
     </message>
 </context>
 <context>

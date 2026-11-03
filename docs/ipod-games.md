@@ -15,7 +15,7 @@ JPEG cover; the observed 320×240 covers retain their landscape aspect ratio.
 No game executable or purchase metadata is read to build the grid.
 
 When a successful scan finds no installed games, the page shows a centered
-message and a second **Gimme Games** button using the Podcasts empty-state layout.
+message and a second **Install Games** button using the Podcasts empty-state layout.
 Both buttons open the same preparation/catalog workflow and share availability.
 While disabled, both buttons show the current blocking reason on hover. The
 tooltip updates with device selection, write reservations, recovery, and Games
@@ -43,7 +43,7 @@ variants, asynchronous loading, missing covers, and stale results after disconne
 
 ## Authorization preparation
 
-Pressing **Gimme Games** prepares the complete game collection on the Host, then
+Pressing **Install Games** prepares the complete game collection on the Host, then
 runs the existing IC-Info preparation/merge and opens an **Available games**
 dialog from the bundled `game-catalog.json`. Its artwork,
 titles, versions, card painting, and equalized layout use the same grid as installed
@@ -81,7 +81,7 @@ Each click still runs preparation with the normal device write reservation.
 Changing the Active iPod discards the retained dialog and starts fresh for the
 new connection.
 
-The Library sidebar's Games page provides one **Gimme Games** action. It prepares
+The Library sidebar's Games page provides one **Install Games** action. It prepares
 the bundled Classic 6.5 IC-Info.sidb for the Active iPod and merges its account/key
 records with an existing authorization store. The dialog's separate **Add** action
 copies selected game executables and resources without modifying iTunesDB.
@@ -109,7 +109,7 @@ The app bundles `game-catalog.json` with artwork and the small
 `game-downloads.json` release/content index. Game ZIPs, the old `SHA256SUMS`, and
 executable payloads are absent from the assets and excluded from release builds.
 
-On the first Gimme Games click, the Application Layer downloads the complete
+On the first Install Games click, the Application Layer downloads the complete
 [version16 preservation release](https://github.com/Olsro/ipodclickwheelgamespreservationproject/releases/tag/version16)
 asset `iPod.Games.Files.7z` (1,800,542,124 bytes). The shared status bar shows
 byte progress during download and extraction. The source SHA-256 and all 56
@@ -175,7 +175,7 @@ folder under `iPod_Control/Games_RO`, plus the corresponding folders under
 `iPod_Control/GameData_RW` and `iPod_Control/GameStats_WO`. Saved progress and
 statistics in those game folders are included. Shared parent directories, sibling
 games, iTunesDB, and IC-Info.sidb are preserved. Removal does not require first
-pressing Gimme Games or preparing authorizations.
+pressing Install Games or preparing authorizations.
 
 Uninstall first opens a warning naming the game and explaining that its saved
 progress and statistics will also be deleted. **Cancel** is the default and Escape
@@ -246,7 +246,7 @@ The dialog describes the model fallback when it is used.
 
 Confirmation covers preparation and subsequent Add operations for that Active
 iPod. Live metadata must still match the reviewed family/firmware values before
-each publication. Switching or disconnecting clears confirmation; each new Gimme
+each publication. Switching or disconnecting clears confirmation; each new Install
 Games attempt asks again. See [ADR-0219](adr/0219-confirm-unverified-game-compatibility.md).
 
 Video 5/5.5 firmware `1.3` (also accepted as `1.3.0`) qualifies when the strongest

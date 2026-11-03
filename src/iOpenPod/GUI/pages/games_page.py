@@ -47,8 +47,8 @@ class GamesPage(QWidget):
         self._controller = controller
         self._header = PageHeader(self)
         self._button = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
-        self._button.setObjectName("gimmeGames")
-        self._button.clicked.connect(self._gimme_games)
+        self._button.setObjectName("installGames")
+        self._button.clicked.connect(self._install_games)
         self._theme_manager = theme_manager
         self._dialog: GameCatalogDialog | None = None
         self._dialog_target: ActiveIPod | None = None
@@ -102,7 +102,7 @@ class GamesPage(QWidget):
         self._empty_detail.setWordWrap(True)
         self._empty_add = ActionButton(parent=page, kind=ActionButtonKind.PRIMARY)
         self._empty_add.setObjectName("gamesEmptyAdd")
-        self._empty_add.clicked.connect(self._gimme_games)
+        self._empty_add.clicked.connect(self._install_games)
         layout = QVBoxLayout(page)
         layout.setContentsMargins(
             LAYOUT.space_3xl,
@@ -122,12 +122,12 @@ class GamesPage(QWidget):
     def _refresh(self) -> None:
         unavailable_reason = workflow_text(self._controller.unavailable_reason)
         self._header.set_title(self.tr("Games"))
-        self._button.setText(self.tr("Gimme Games"))
+        self._button.setText(self.tr("Install Games"))
         self._button.setEnabled(self._controller.available)
         self._button.setToolTip(unavailable_reason)
         self._empty_title.setText(self.tr("No games on this iPod"))
         self._empty_detail.setText(self.tr("Choose games to add"))
-        self._empty_add.setText(self.tr("Gimme Games"))
+        self._empty_add.setText(self.tr("Install Games"))
         self._empty_add.setEnabled(self._controller.available)
         self._empty_add.setToolTip(unavailable_reason)
         self._status.setText(self._controller.message)
@@ -215,7 +215,7 @@ class GamesPage(QWidget):
         if accepted and target[0] is self._controller.active_ipod:
             self._controller.uninstall(target[1])
 
-    def _gimme_games(self) -> None:
+    def _install_games(self) -> None:
         if not self._controller.available:
             return
         target = self._controller.active_ipod

@@ -5,6 +5,7 @@ from types import TracebackType
 
 import pytest
 from PySide6.QtCore import QAbstractAnimation, QEvent, QPropertyAnimation, Qt
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea, QTabWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
@@ -128,10 +129,31 @@ def test_host_values_are_separate_and_unset_tracks_future_host_changes(
     try:
         _category(page, "syncSettingsScroll")
         assert control.currentData() is True
+        row = control.parentWidget()
+        assert row is not None
+        hint = next(
+            label
+            for label in row.findChildren(QLabel)
+            if label.text() == "The Active iPod has its own override. Set to: Off."
+        )
+        for mode in (AppearanceMode.LIGHT, AppearanceMode.DARK):
+            context.theme_manager.set_mode(mode)
+            APPLICATION.processEvents()
+            assert hint.font().bold()
+            assert hint.palette().color(QPalette.ColorRole.WindowText) == QColor(
+                context.theme_manager.tokens.warning
+            )
         _switch(page, True)
+        assert hint.isHidden() and hint.text() == ""
+        assert not hint.font().bold()
+        assert hint.palette().color(QPalette.ColorRole.WindowText) == QColor(
+            context.theme_manager.tokens.text_secondary
+        )
         assert control.currentData() is False
         assert control.itemText(0) == "Use Host · On"
         control.setCurrentIndex(0)
+        assert hint.isVisible()
+        assert hint.text() == "Following Host changes automatically"
         assert context.settings.source(COMPUTE_SOUND_CHECK) is SettingSource.GLOBAL
         assert context.settings.get(COMPUTE_SOUND_CHECK) is True
         _switch(page, False)
@@ -146,6 +168,9 @@ def test_host_values_are_separate_and_unset_tracks_future_host_changes(
         control.setCurrentIndex(control.findData(True))
         assert context.settings.get(COMPUTE_SOUND_CHECK) is False
         assert context.settings.get_global(COMPUTE_SOUND_CHECK) is True
+        assert hint.text() == "The Active iPod has its own override. Set to: Off."
+        context.settings.set_device(COMPUTE_SOUND_CHECK, True)
+        assert hint.text() == "The Active iPod has its own override. Set to: On."
     finally:
         page.close()
 

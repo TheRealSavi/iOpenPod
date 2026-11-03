@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 from PySide6.QtCore import QPoint, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
@@ -48,6 +49,7 @@ from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.playlist_artwork_banner import PlaylistArtworkBanner
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.sidebar import Sidebar
+from iOpenPod.GUI.widgets.star_rating import StarRating
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import (
@@ -700,23 +702,118 @@ def test_rating_editor_uses_stars_and_converts_to_exact_shared_rating() -> None:
     )
     dialog = PlaylistEditorDialog(PlaylistKind.SMART, original)
     try:
-        values = [
-            line
+        dialog.show()
+        APPLICATION.processEvents()
+        rating = next(
+            widget
+            for widget in dialog.findChildren(StarRating)
+            if widget.accessibleName() == "Rule rating"
+        )
+        assert rating.isVisible()
+        assert rating.rating == 81
+        assert rating.text() == "★★★★☆"
+        assert all(
+            not line.isVisible()
             for line in dialog.findChildren(QLineEdit)
-            if line.accessibleName() == "Rule value"
-        ]
-        assert len(values) == 1
-        assert values[0].text() == "4.05"
-        values[0].setText("4.5")
+            if line.accessibleName() in ("Rule value", "Upper rule value")
+        )
+        QTest.mouseClick(rating, Qt.MouseButton.LeftButton, pos=rating.rect().center())
 
         dialog.accept()
 
         assert dialog.result() == QDialog.DialogCode.Accepted
         assert dialog.smart is not None
         assert dialog.smart.rules.rules == (
-            SmartRule(SmartField.RATING, SmartOperator.GREATER_THAN, 90),
+            SmartRule(SmartField.RATING, SmartOperator.GREATER_THAN, 60),
         )
     finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_rating_range_edits_both_bounds_with_stars() -> None:
+    original = Playlist(
+        10,
+        "Favorites",
+        PlaylistKind.SMART,
+        smart=SmartPlaylist(
+            rules=SmartRuleGroup(
+                rules=(SmartRule(SmartField.RATING, SmartOperator.BETWEEN, 1, 99),)
+            )
+        ),
+    )
+    dialog = PlaylistEditorDialog(PlaylistKind.SMART, original)
+    try:
+        dialog.show()
+        APPLICATION.processEvents()
+        lower, upper = dialog.findChildren(StarRating)
+        assert lower.isVisible() and upper.isVisible()
+        assert (lower.rating, upper.rating) == (1, 99)
+        QTest.keyClick(lower, Qt.Key.Key_2)
+        QTest.keyClick(upper, Qt.Key.Key_4)
+        dialog.accept()
+
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        assert dialog.smart is not None
+        assert dialog.smart.rules.rules == (
+            SmartRule(SmartField.RATING, SmartOperator.BETWEEN, 40, 80),
+        )
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_switching_rule_field_and_operator_shows_relevant_rating_controls() -> None:
+    original = Playlist(
+        10,
+        "Favorites",
+        PlaylistKind.SMART,
+        smart=SmartPlaylist(
+            rules=SmartRuleGroup(
+                rules=(SmartRule(SmartField.ARTIST, SmartOperator.IS, "Artist"),)
+            )
+        ),
+    )
+    dialog = PlaylistEditorDialog(PlaylistKind.SMART, original)
+    try:
+        dialog.show()
+        APPLICATION.processEvents()
+        field = next(
+            combo
+            for combo in dialog.findChildren(AppComboBox)
+            if combo.accessibleName() == "Rule field"
+        )
+        operator = next(
+            combo
+            for combo in dialog.findChildren(AppComboBox)
+            if combo.accessibleName() == "Rule condition"
+        )
+        lower, upper = dialog.findChildren(StarRating)
+        assert not lower.isVisible() and not upper.isVisible()
+
+        field.setCurrentIndex(field.findData(SmartField.RATING.value))
+        assert lower.isVisible() and not upper.isVisible()
+        operator.setCurrentIndex(operator.findData(SmartOperator.BETWEEN.value))
+        assert lower.isVisible() and upper.isVisible()
+        operator.setCurrentIndex(operator.findData(SmartOperator.IS.value))
+        assert lower.isVisible() and not upper.isVisible()
+        field.setCurrentIndex(field.findData(SmartField.YEAR.value))
+        assert not lower.isVisible() and not upper.isVisible()
+        value = next(
+            line
+            for line in dialog.findChildren(QLineEdit)
+            if line.accessibleName() == "Rule value"
+        )
+        assert value.isVisible()
+        value.setText("2026")
+        dialog.accept()
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        assert dialog.smart is not None
+        assert dialog.smart.rules.rules == (
+            SmartRule(SmartField.YEAR, SmartOperator.IS, 2026),
+        )
+    finally:
+        dialog.close()
         dialog.deleteLater()
 
 

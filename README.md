@@ -176,7 +176,7 @@ and save those edits together. Sync always has its own selection and review flow
 
 ### Install click wheel games without a virtual machine
 
-Start with one click on **Gimme Games** in the Games page. iOpenPod downloads
+Start with one click on **Install Games** in the Games page. iOpenPod downloads
 the full preserved click wheel game collection and prepares game authorization
 for your iPod. Choose **Select all → Add** to install the collection, or pick
 individual games. No virtual machine is required.
@@ -184,7 +184,7 @@ individual games. No virtual machine is required.
 The first download needs an internet connection; later visits reuse the files
 on your computer. Game compatibility depends on your iPod model and firmware.
 
-![Games page showing installed click wheel games and the Gimme Games button](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/click-wheel-games.webp)
+![Games page showing installed click wheel games and the Install Games button](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/click-wheel-games.webp)
 
 ### Make a Phase Playlist from your music
 

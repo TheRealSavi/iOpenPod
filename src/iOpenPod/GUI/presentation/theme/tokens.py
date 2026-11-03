@@ -38,6 +38,10 @@ class LayoutTokens:
     sidebar_device_image_size: int = 44
     device_picker_image_size: int = 52
     device_picker_row_height: int = 64
+    device_summary_image_size: int = 224
+    device_summary_identity_width: int = 640
+    device_summary_border_width: int = 1
+    device_storage_bar_height: int = 18
     scrollbar_extent: int = 10
     scrollbar_handle_minimum: int = 36
     radius_control: int = 8
@@ -144,6 +148,8 @@ class ThemeTokens:
     artwork_violet: str
     artwork_slate: str
     artwork_ink: str
+    storage_games: str
+    storage_album_artwork: str
 
 
 LAYOUT = LayoutTokens()
@@ -193,6 +199,8 @@ LIGHT_TOKENS = ThemeTokens(
     artwork_violet="#B9ACD8",
     artwork_slate="#9BAABA",
     artwork_ink="#34485D",
+    storage_games="#DDA5C2",
+    storage_album_artwork="#8BC9D2",
 )
 
 DARK_TOKENS = ThemeTokens(
@@ -224,6 +232,8 @@ DARK_TOKENS = ThemeTokens(
     artwork_violet="#584B78",
     artwork_slate="#415166",
     artwork_ink="#D7E6F5",
+    storage_games="#75445F",
+    storage_album_artwork="#2F656E",
 )
 
 ORIGINAL_DARK_TOKENS = ThemeTokens(
@@ -255,6 +265,8 @@ ORIGINAL_DARK_TOKENS = ThemeTokens(
     artwork_violet="#5D507F",
     artwork_slate="#46566C",
     artwork_ink="#DFE8F3",
+    storage_games="#7B4867",
+    storage_album_artwork="#336A74",
 )
 
 
@@ -289,6 +301,8 @@ CATPPUCCIN_LATTE_TOKENS = ThemeTokens(
     artwork_violet="#C1A3EF",
     artwork_slate="#C3C5D0",
     artwork_ink="#474A63",
+    storage_games="#DCA9CA",
+    storage_album_artwork="#8BCDD2",
 )
 
 CATPPUCCIN_FRAPPE_TOKENS = ThemeTokens(
@@ -320,6 +334,8 @@ CATPPUCCIN_FRAPPE_TOKENS = ThemeTokens(
     artwork_violet="#615779",
     artwork_slate="#42465A",
     artwork_ink="#C6D0F5",
+    storage_games="#6F5769",
+    storage_album_artwork="#4F686E",
 )
 
 CATPPUCCIN_MACCHIATO_TOKENS = ThemeTokens(
@@ -351,6 +367,8 @@ CATPPUCCIN_MACCHIATO_TOKENS = ThemeTokens(
     artwork_violet="#574E76",
     artwork_slate="#373B50",
     artwork_ink="#CAD3F5",
+    storage_games="#694F63",
+    storage_album_artwork="#446369",
 )
 
 CATPPUCCIN_MOCHA_TOKENS = ThemeTokens(
@@ -382,6 +400,8 @@ CATPPUCCIN_MOCHA_TOKENS = ThemeTokens(
     artwork_violet="#554A6E",
     artwork_slate="#323445",
     artwork_ink="#CDD6F4",
+    storage_games="#664C5F",
+    storage_album_artwork="#3D5E64",
 )
 
 DUNE_PLOVER_TOKENS = ThemeTokens(
@@ -413,6 +433,8 @@ DUNE_PLOVER_TOKENS = ThemeTokens(
     artwork_violet="#C3BCC7",
     artwork_slate="#CFC4AE",
     artwork_ink="#3D392B",
+    storage_games="#D0B6BF",
+    storage_album_artwork="#ABC4BF",
 )
 
 SEA_GLASS_TOKENS = ThemeTokens(
@@ -444,6 +466,8 @@ SEA_GLASS_TOKENS = ThemeTokens(
     artwork_violet="#B9B8DA",
     artwork_slate="#B3C7CA",
     artwork_ink="#19363D",
+    storage_games="#CCACBE",
+    storage_album_artwork="#8FC6C8",
 )
 
 GRAVITY_TOKENS = ThemeTokens(
@@ -475,6 +499,8 @@ GRAVITY_TOKENS = ThemeTokens(
     artwork_violet="#404863",
     artwork_slate="#2D4254",
     artwork_ink="#F2F7FB",
+    storage_games="#594554",
+    storage_album_artwork="#2F565F",
 )
 
 NORTHERN_LIGHTS_TOKENS = ThemeTokens(
@@ -506,6 +532,8 @@ NORTHERN_LIGHTS_TOKENS = ThemeTokens(
     artwork_violet="#434871",
     artwork_slate="#2D4759",
     artwork_ink="#E4F3F5",
+    storage_games="#5F4559",
+    storage_album_artwork="#2F5D65",
 )
 
 ORCHID_TOKENS = ThemeTokens(
@@ -537,6 +565,8 @@ ORCHID_TOKENS = ThemeTokens(
     artwork_violet="#564665",
     artwork_slate="#483F51",
     artwork_ink="#F4EDF5",
+    storage_games="#67465E",
+    storage_album_artwork="#405B60",
 )
 
 # Black and ember surfaces with the orange light of the Tech reference image.
@@ -569,6 +599,8 @@ TECH_TOKENS = ThemeTokens(
     artwork_violet="#503749",
     artwork_slate="#493B32",
     artwork_ink="#FFF4E8",
+    storage_games="#653C50",
+    storage_album_artwork="#2E5359",
 )
 
 _THEME_TOKENS: dict[Theme, ThemeTokens] = {

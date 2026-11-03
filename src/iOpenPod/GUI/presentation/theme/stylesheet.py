@@ -176,6 +176,11 @@ QLabel#placeholderNote {{
     color: {tokens.text_secondary};
 }}
 
+QLabel#settingDescription[warning="true"] {{
+    color: {tokens.warning};
+    font-weight: 700;
+}}
+
 QLabel#pageMeta,
 QLabel#deviceSearchStatus,
 QLabel#playbackEmptyDetail,
@@ -1185,13 +1190,32 @@ QLabel#playerTrackTitle {{
     font-size: {typography.heading_pt:g}pt;
 }}
 
-QLabel#playerRating {{
+QLabel#playerRating,
+QLabel#starRating {{
     color: {tokens.warning};
     font-size: {typography.heading_pt:g}pt;
 }}
 
-QLabel#playerRating[ratingHover="true"] {{
+QLabel#playerRating[ratingHover="true"],
+QLabel#starRating[ratingHover="true"],
+QLabel#starRating:focus {{
     color: {tokens.accent_hover};
+}}
+
+QLabel#starRating {{
+    min-height: {LAYOUT.control_height}px;
+    padding: 0 {LAYOUT.space_sm}px;
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border_strong};
+    border-radius: {LAYOUT.radius_control}px;
+}}
+
+QLabel#starRating:hover {{
+    border-color: {tokens.text_secondary};
+}}
+
+QLabel#starRating:focus {{
+    border-color: {tokens.focus};
 }}
 
 QFrame#playerBar {{
@@ -1373,6 +1397,68 @@ QFrame#deviceCard {{
     background-color: {tokens.window};
     border: 1px solid {tokens.border};
     border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QFrame#deviceCard[summaryAvailable="true"][summaryHovered="true"] {{
+    background-color: {tokens.surface_hover};
+    border-color: {tokens.border_strong};
+}}
+
+QFrame#deviceCard[summarySelected="true"] {{
+    background-color: {tokens.surface_selected};
+    border-color: {tokens.accent};
+}}
+
+QFrame#deviceCard[summaryAvailable="true"]:focus {{
+    border-color: {tokens.focus};
+}}
+
+QWidget#deviceSummaryPage,
+QWidget#deviceSummaryCanvas,
+QScrollArea#deviceSummaryScroll {{
+    background-color: {tokens.surface};
+    color: {tokens.text};
+}}
+
+QLabel#deviceSummaryEmptyTitle {{
+    font-family: "{typography.display}";
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#deviceSummaryModel,
+QLabel#deviceRestoreComingSoon,
+QLabel#deviceStorageCapacity,
+QLabel#deviceStorageNote {{
+    color: {tokens.text_secondary};
+}}
+
+QLabel#deviceStorageNote,
+QLabel#deviceStorageLegend {{
+    font-size: {typography.small_pt:g}pt;
+}}
+
+QLabel[deviceSummaryValue="true"] {{
+    font-weight: 400;
+}}
+
+QLabel#deviceSummaryFieldLabel {{
+    color: {tokens.text};
+    font-size: {typography.body_pt:g}pt;
+    font-weight: 600;
+}}
+
+QFrame#deviceRestoreRow,
+QFrame#deviceSummarySurface {{
+    background-color: {tokens.window};
+    border: {LAYOUT.device_summary_border_width}px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QFrame#deviceStorageBreakdown {{
+    background-color: {tokens.window};
+    border: none;
+    border-top: 1px solid {tokens.border};
 }}
 
 QPushButton#deviceName {{

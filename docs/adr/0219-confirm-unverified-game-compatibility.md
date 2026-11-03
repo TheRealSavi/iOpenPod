@@ -4,7 +4,7 @@
 - Date: 2026-10-31
 
 At the user's request, a family or firmware mismatch warns instead of disabling
-Gimme Games. Before preparation, show the actual reported values and offer Cancel
+Install Games. Before preparation, show the actual reported values and offer Cancel
 or Continue anyway. This supersedes ADR-0208's requirement for a verified release
 as a prerequisite to every game publication; it does not expand verified support.
 

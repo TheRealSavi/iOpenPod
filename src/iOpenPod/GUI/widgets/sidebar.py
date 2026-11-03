@@ -2,8 +2,10 @@
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QEvent, QLocale, QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QLocale, QObject, QPoint, Qt, Signal
+from PySide6.QtGui import QCursor, QHoverEvent, QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QButtonGroup,
     QFrame,
     QHBoxLayout,
@@ -121,12 +123,18 @@ class DeviceCard(QFrame):
 
     chooseRequested = Signal()
     ejectRequested = Signal()
+    summaryRequested = Signal()
 
     def __init__(
         self, parent: QWidget | None = None, *, theme: ThemeManager | None = None
     ) -> None:
         super().__init__(parent)
         self.setObjectName("deviceCard")
+        self.setProperty("summaryAvailable", False)
+        self.setProperty("summarySelected", False)
+        self.setProperty("summaryHovered", False)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self._summary_pressed = False
         self._active_ipod: ActiveIPod | None = None
         self._discovery = DeviceDiscovery(candidates=())
         self._busy = False
@@ -251,7 +259,91 @@ class DeviceCard(QFrame):
         layout.addLayout(database_labels)
         layout.addWidget(self._database)
         layout.addWidget(self._choose)
+        for widget in (
+            self._icon,
+            self._model,
+            self._summary,
+            self._storage_label,
+            self._storage_value,
+            self._storage,
+            self._database_label,
+            self._database_value,
+            self._database,
+        ):
+            widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.retranslate_ui()
+
+    def set_summary_selected(self, selected: bool) -> None:
+        self._set_summary_property("summarySelected", selected)
+
+    def _set_summary_property(self, name: str, value: bool) -> None:
+        if self.property(name) == value:
+            return
+        self.setProperty(name, value)
+        style = self.style()
+        style.unpolish(self)
+        style.polish(self)
+        self.update()
+
+    def _summary_target(self, position: QPoint) -> bool:
+        if self._active_ipod is None or not self.rect().contains(position):
+            return False
+        child = self.childAt(position)
+        while child is not None and child is not self:
+            if isinstance(child, (QAbstractButton, QLineEdit)):
+                return False
+            child = child.parentWidget()
+        return True
+
+    def event(self, event: QEvent) -> bool:
+        if isinstance(event, QHoverEvent) and event.type() in {
+            QEvent.Type.HoverEnter,
+            QEvent.Type.HoverMove,
+        }:
+            # Qt keeps a parent hovered over its children. Use the same hit test
+            # as summary clicks so embedded actions retain their own hover state.
+            self._set_summary_property(
+                "summaryHovered", self._summary_target(event.position().toPoint())
+            )
+        elif event.type() == QEvent.Type.HoverLeave:
+            self._set_summary_property("summaryHovered", False)
+        return super().event(event)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        self._summary_pressed = (
+            event.button() == Qt.MouseButton.LeftButton
+            and self._summary_target(event.position().toPoint())
+        )
+        if self._summary_pressed:
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        activate = (
+            self._summary_pressed
+            and event.button() == Qt.MouseButton.LeftButton
+            and self._summary_target(event.position().toPoint())
+        )
+        self._summary_pressed = False
+        if activate:
+            self.summaryRequested.emit()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if (
+            self.hasFocus()
+            and self._active_ipod is not None
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space)
+        ):
+            if not event.isAutoRepeat():
+                self.summaryRequested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def set_discovery(self, discovery: DeviceDiscovery) -> None:
         self._discovery = discovery
@@ -259,6 +351,7 @@ class DeviceCard(QFrame):
 
     def set_active_ipod(self, active_ipod: ActiveIPod | None) -> None:
         self._cancel_rename()
+        self._summary_pressed = False
         self._active_ipod = active_ipod
         self._refresh_state()
 
@@ -272,6 +365,7 @@ class DeviceCard(QFrame):
         self._refresh_state()
 
     def retranslate_ui(self) -> None:
+        self.setAccessibleName(self.tr("Open device summary"))
         self._storage_label.setText(self.tr("Storage"))
         self._storage.setAccessibleName(self.tr("Storage"))
         self._database_label.setText(self.tr("Database"))
@@ -292,6 +386,21 @@ class DeviceCard(QFrame):
 
     def _refresh_state(self) -> None:
         active = self._active_ipod
+        self._set_summary_property("summaryAvailable", active is not None)
+        self._set_summary_property(
+            "summaryHovered",
+            self.underMouse()
+            and self._summary_target(self.mapFromGlobal(QCursor.pos())),
+        )
+        self.setFocusPolicy(
+            Qt.FocusPolicy.StrongFocus if active is not None else Qt.FocusPolicy.NoFocus
+        )
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor
+            if active is not None
+            else Qt.CursorShape.ArrowCursor
+        )
+        self.setToolTip(self.tr("Open device summary") if active is not None else "")
         if active is None:
             self._cancel_rename()
             self._name.setEnabled(False)
@@ -462,12 +571,14 @@ class DeviceCard(QFrame):
         return self._name.text()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if watched is self._name_edit and event.type() == QEvent.Type.KeyPress:
-            from PySide6.QtGui import QKeyEvent
-
-            if isinstance(event, QKeyEvent) and event.key() == Qt.Key.Key_Escape:
-                self._cancel_rename()
-                return True
+        if (
+            watched is self._name_edit
+            and event.type() == QEvent.Type.KeyPress
+            and isinstance(event, QKeyEvent)
+            and event.key() == Qt.Key.Key_Escape
+        ):
+            self._cancel_rename()
+            return True
         return super().eventFilter(watched, event)
 
 
@@ -504,6 +615,9 @@ class Sidebar(QFrame):
             self._device_card.set_workspace(playlists)
         self._device_card.chooseRequested.connect(self.chooseDeviceRequested.emit)
         self._device_card.ejectRequested.connect(self.ejectRequested.emit)
+        self._device_card.summaryRequested.connect(
+            lambda: self.pageRequested.emit(PageId.DEVICE_SUMMARY.value)
+        )
         self._sync = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
         self._sync.setObjectName("syncWithHost")
         self._sync.setEnabled(False)
@@ -592,6 +706,7 @@ class Sidebar(QFrame):
         self._refresh_page_visibility()
 
     def set_current_page(self, page_id: PageId) -> None:
+        self._device_card.set_summary_selected(page_id is PageId.DEVICE_SUMMARY)
         if page_id is not PageId.PLAYLISTS and self.playlist_tree is not None:
             self.playlist_tree.clear_selection()
         self._button_group.setExclusive(False)

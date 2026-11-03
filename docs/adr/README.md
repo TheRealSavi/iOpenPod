@@ -294,3 +294,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0227: Prefetch bounded Phase audio inputs](0227-prefetch-bounded-phase-audio-inputs.md)
 - [ADR-0228: Overlap Phase mix and source analysis](0228-overlap-phase-mix-and-source-analysis.md)
 - [ADR-0229: Report Phase activity and stage ETA](0229-report-phase-activity-and-stage-eta.md)
+- [ADR-0230: Project Device Summary from committed Library state](0230-project-device-summary-from-committed-library-state.md)

@@ -71,7 +71,7 @@ class ScopedSettingBinding[Value](QObject):
         settings = self._editor.settings
         definition = self._definition
         # Observe effective values so device selection notifies runtime consumers too.
-        settings.get(definition)
+        effective = settings.get(definition)
         host = settings.get_global(definition)
         value = self._editor.get(definition)
         overridden = (
@@ -98,14 +98,17 @@ class ScopedSettingBinding[Value](QObject):
         self._set_enabled(not self._editor.device or settings.device_writable)
         hint = ""
         if self._editor.device:
-            hint = (
-                self.tr("Override for this iPod · Host: %1").replace("%1", host_label)
-                if overridden
-                else self.tr("Following Host changes automatically")
-            )
+            if not overridden:
+                hint = self.tr("Following Host changes automatically")
         elif overridden:
-            hint = self.tr("The Active iPod has its own override.")
-        self._row.set_scope_hint(hint)
+            device_label = next(
+                (label for label, item in self._choices if item == effective),
+                str(effective),
+            )
+            hint = self.tr("The Active iPod has its own override. Set to: %1.").replace(
+                "%1", device_label
+            )
+        self._row.set_scope_hint(hint, warning=not self._editor.device and overridden)
         del blocker
 
     def _set_enabled(self, enabled: bool) -> None:

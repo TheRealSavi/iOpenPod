@@ -142,6 +142,10 @@ class ActiveIPod:
     photos_repairs_pending: bool = False
     genius: GeniusBrowse = field(default_factory=GeniusBrowse)
     genius_mix_state: MixState = field(default_factory=MixState)
+    firmware_version: str = ""
+    serial_number: str = ""
+    game_storage_bytes: int | None = None
+    album_artwork_storage_bytes: int | None = None
 
     @property
     def display_name(self) -> str:

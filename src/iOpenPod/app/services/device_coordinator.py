@@ -90,6 +90,11 @@ from iOpenPod.app.services import (
     photo_shard_resources,
     volume_presentation,
 )
+from iOpenPod.app.services.device_storage import (
+    ALBUM_ARTWORK_STORAGE_ROOTS,
+    GAME_STORAGE_ROOTS,
+    capture_folder_storage_bytes,
+)
 from iOpenPod.app.services.genius_browse import capture_genius_browse
 from iOpenPod.app.services.genius_mixes import (
     load_mix_state,
@@ -2979,6 +2984,9 @@ class DeviceCoordinator:
                 raise DeviceCandidateNotFoundError(
                     "This device is no longer connected. Refresh the Device Picker."
                 )
+            # Metadata reconciliation may normalize disagreeing files. Preserve
+            # captured evidence so that does not silently resolve a display conflict.
+            summary_evidence = record.device_evidence
             record = replace(
                 record,
                 candidate=replace(
@@ -3129,6 +3137,33 @@ class DeviceCoordinator:
                             ),
                         ),
                     )
+                summary_evidence = summary_evidence.merged_with(current.device_evidence)
+
+                def storage_checkpoint() -> None:
+                    if cancellation.is_set():
+                        raise PreparationCancelledError("Device loading was cancelled.")
+
+                def capture_storage(roots: tuple[DevicePath, ...]) -> int | None:
+                    try:
+                        return capture_folder_storage_bytes(
+                            session, roots, storage_checkpoint
+                        )
+                    except (
+                        MountInspectionError,
+                        SessionClosedError,
+                        SessionInvalidatedError,
+                    ):
+                        raise
+                    except StorageError as error:
+                        logger.warning(
+                            "Could not measure storage in %s: %s", roots, error
+                        )
+                        return None
+
+                game_storage_bytes = capture_storage(GAME_STORAGE_ROOTS)
+                album_artwork_storage_bytes = capture_storage(
+                    ALBUM_ARTWORK_STORAGE_ROOTS
+                )
                 active_ipod = ActiveIPod(
                     candidate=current.candidate,
                     profile=profile,
@@ -3146,6 +3181,15 @@ class DeviceCoordinator:
                     photos_repairs_pending=bool(library.photos_repairs),
                     genius=genius,
                     genius_mix_state=load_mix_state(session),
+                    firmware_version=_summary_identifier(
+                        summary_evidence.firmware_versions
+                    ),
+                    serial_number=_summary_identifier(
+                        summary_evidence.product_serials,
+                        normalize=_valid_apple_product_serial,
+                    ),
+                    game_storage_bytes=game_storage_bytes,
+                    album_artwork_storage_bytes=album_artwork_storage_bytes,
                 )
                 if reconcile_metadata:
                     presentation_issues = self._reconcile_volume_presentation(
@@ -5001,6 +5045,34 @@ def _valid_apple_product_serial(value: str) -> str:
     if not re.fullmatch(r"[A-Z0-9]{11,12}", serial, flags=re.ASCII):
         return ""
     return serial
+
+
+def _summary_identifier(
+    identifiers: tuple[DeviceIdentifier[str], ...],
+    *,
+    normalize: Callable[[str], str] = str.strip,
+) -> str:
+    """Present one observed value without guessing through equally ranked conflicts.
+
+    Model-table derivations are not observations of this iPod. RetailOS firmware
+    and product serials are passed separately; transport revisions and GUIDs must
+    never substitute for either value on Device Summary.
+    """
+
+    observed = tuple(
+        (value, item.authority)
+        for item in identifiers
+        if item.authority > EvidenceAuthority.DERIVED
+        and (value := normalize(item.value))
+        and value.casefold() not in {"unknown", "unavailable", "n/a", "none"}
+    )
+    if not observed:
+        return ""
+    authority = max(level for _, level in observed)
+    values = {
+        value.casefold(): value for value, level in observed if level == authority
+    }
+    return next(iter(values.values())) if len(values) == 1 else ""
 
 
 def _read_device_metadata(
