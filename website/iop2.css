@@ -1502,3 +1502,103 @@ html {
     padding-block: var(--space-2xl) var(--space-xl);
   }
 }
+
+/* Hallmark · component: support invitation · theme: existing iOpenPod with warm support accent
+ * pre-emit critique: P4 H5 E4 S5 R5 V4 · ordinary links; checkout states belong to Ko-fi
+ */
+.support-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: var(--control-hit);
+  max-width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border: var(--rule-hair) solid var(--color-support);
+  border-radius: var(--radius-input);
+  background: var(--color-support);
+  color: var(--color-support-ink);
+  font-size: var(--text-sm);
+  font-weight: var(--display-weight);
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.support-button svg {
+  flex: none;
+  width: var(--text-md);
+  height: var(--text-md);
+}
+
+.product-nav-actions .support-button {
+  font-weight: var(--display-weight);
+}
+
+.support-button:focus-visible {
+  outline: var(--rule-focus) solid var(--color-ink);
+  outline-offset: var(--space-2xs);
+}
+
+@media (hover: hover) {
+  .support-button:hover {
+    background: var(--color-support-hover);
+    border-color: var(--color-support-hover);
+    color: var(--color-support-ink);
+    text-decoration: none;
+  }
+}
+
+.support-button:active {
+  background: var(--color-support-hover);
+  border-color: var(--color-support-hover);
+  color: var(--color-support-ink);
+  transform: translateY(1px);
+}
+
+.support-callout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-lg) var(--space-xl);
+  margin-top: var(--space-xl);
+  padding: var(--space-lg);
+  border-radius: var(--radius-card);
+  background: var(--color-support-surface);
+  color: var(--color-ink);
+}
+
+.support-callout h2 {
+  max-width: none;
+  font-size: var(--text-section);
+  line-height: 1.25;
+}
+
+.support-callout-copy > p {
+  max-width: 55ch;
+  margin-top: var(--space-sm);
+  font-size: var(--text-base);
+  line-height: 1.65;
+}
+
+.support-callout-action {
+  display: grid;
+  gap: var(--space-sm);
+  justify-items: start;
+}
+
+.support-callout-action > p {
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+}
+
+@media (min-width: 60rem) {
+  .support-callout {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--space-xl);
+  }
+
+  .support-callout-action {
+    justify-items: center;
+  }
+}

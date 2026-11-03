@@ -11,7 +11,7 @@
       "name": "Windows",
       "target": "Windows 10 / 11 · x64",
       "channels": [
-        {"id": "windows-binary", "name": "GitHub download", "format": "Windows x86_64 ZIP · standalone executable · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Windows release"},
+        {"id": "windows-binary", "name": "GitHub download", "format": "Windows x86_64 ZIP · standalone executable · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Windows release", "asset_suffix": "Windows-x86_64.zip", "direct_label": "Download Windows ZIP"},
         {"id": "microsoft-store", "name": "Microsoft Store", "format": "Install and update through the Store", "status": "available", "url": "https://apps.microsoft.com/detail/9P2LXCHHWLG9", "product_id": "9P2LXCHHWLG9", "label": "Get it from Microsoft Store"}
       ]
     },
@@ -20,8 +20,8 @@
       "name": "macOS",
       "target": "Apple Silicon & Intel",
       "channels": [
-        {"id": "macos-arm64", "name": "GitHub download · Apple Silicon", "format": "macOS arm64 DMG · drag to Applications · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Apple Silicon release"},
-        {"id": "macos-x64", "name": "GitHub download · Intel", "format": "macOS x86_64 DMG · drag to Applications · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Intel Mac release"},
+        {"id": "macos-arm64", "name": "GitHub download · Apple Silicon", "format": "macOS arm64 DMG · drag to Applications · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Apple Silicon release", "asset_suffix": "macOS-arm64.dmg", "direct_label": "Download Apple Silicon DMG"},
+        {"id": "macos-x64", "name": "GitHub download · Intel", "format": "macOS x86_64 DMG · drag to Applications · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Intel Mac release", "asset_suffix": "macOS-x86_64.dmg", "direct_label": "Download Intel Mac DMG"},
         {"id": "mac-app-store", "name": "Mac App Store", "format": "Install and update through the App Store", "status": "planned", "url": null, "label": "Mac App Store"}
       ]
     },
@@ -30,7 +30,7 @@
       "name": "Linux",
       "target": "x64 desktop · glibc 2.39+",
       "channels": [
-        {"id": "linux-binary", "name": "GitHub download", "format": "Linux x86_64 tar.gz · complete app folder · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Linux release"},
+        {"id": "linux-binary", "name": "GitHub download", "format": "Linux x86_64 tar.gz · complete app folder · in-app updates", "status": "available", "url": "https://github.com/TheRealSavi/iOpenPod/releases/latest", "label": "Latest Linux release", "asset_suffix": "Linux-x86_64.tar.gz", "direct_label": "Download Linux archive"},
         {"id": "flathub", "name": "Flathub", "format": "Flatpak package", "status": "planned", "url": null, "label": "Flathub"},
         {"id": "snap-store", "name": "Snap Store", "format": "Snap package", "status": "planned", "url": null, "label": "Snap Store"}
       ]

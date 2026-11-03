@@ -19,6 +19,10 @@
   --color-error: oklch(0.58613 0.19891 23.53);
   --color-overlay: oklch(1 0 0 / 72%);
   --color-shadow: oklch(0 0 0 / 12%);
+  --color-support: oklch(0.48 0.17 23);
+  --color-support-hover: oklch(0.40 0.14 23);
+  --color-support-ink: oklch(0.985 0.002 250);
+  --color-support-surface: oklch(0.955 0.018 24);
 
   --font-display: "Manrope", "Aptos", sans-serif;
   --font-body: "Inter", "Aptos", sans-serif;

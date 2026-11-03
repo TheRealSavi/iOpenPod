@@ -1,5 +1,19 @@
 [
   {
+    "url": "/guides/install-ipod-click-wheel-games/",
+    "title": "Install click wheel games without a VM",
+    "group": "start",
+    "featured": true,
+    "description": "Check your iPod Video, Classic, or nano model, download the collection, and choose games to install."
+  },
+  {
+    "url": "/guides/phase-playlist-ipod/",
+    "title": "Play your own music in Phase",
+    "group": "start",
+    "featured": true,
+    "description": "Create a Phase Playlist, add songs, and let iOpenPod prepare their gameplay analysis."
+  },
+  {
     "url": "/guides/sync-ipod-without-itunes/",
     "title": "Sync an iPod without iTunes",
     "group": "start",
