@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-03
 - Extends: ADR-0020, ADR-0126, and ADR-0230
+- Dropdown interaction policy superseded by [ADR-0234](0234-unify-desktop-navigation-dropdowns.md).
 
 ## Context
 
@@ -38,8 +39,11 @@ the Active iPod's existing capability policy. Audio, Video, Playlists, and
 Maintenance also open on pointer hover, switch as the pointer crosses their
 headings, and allow a short grace period before dismissing on departure. Clicking
 these headings has no effect on selection or menu visibility, even when a popup
-owns the mouse events. Menu items remain clickable, and keyboard access remains
-available. Ordinary hover handling
+owns the mouse events. As clarified on 2026-11-04, these headings are containers:
+they have no selected state and accept neither Tab nor click focus. Menu items
+remain clickable and keyboard-operable once open. Opening Playlists must preserve
+the current page and Playlist selection, including after a Library reload; initial
+popup focus must not implicitly select the tree's first item. Ordinary hover handling
 does not intercept Track drags or close nested Playlist menus.
 
 The Playlists popup has a New control above the existing `PlaylistTree`. It reuses

@@ -1058,11 +1058,19 @@
     </message>
     <message>
         <source>Open device summary</source>
-        <translation>Geräteübersicht öffnen</translation>
+        <translation type="vanished">Geräteübersicht öffnen</translation>
     </message>
     <message>
         <source>Choose iPod…</source>
-        <translation>iPod auswählen…</translation>
+        <translation type="vanished">iPod auswählen…</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>Gerät</translation>
+    </message>
+    <message>
+        <source>Device actions</source>
+        <translation>Geräteaktionen</translation>
     </message>
     <message>
         <source>Select an Active iPod before Sync.</source>
@@ -2248,6 +2256,13 @@
     <message>
         <source>Showing the first 50 scan issues.</source>
         <translation>Die ersten 50 Scan-Probleme werden angezeigt.</translation>
+    </message>
+</context>
+<context>
+    <name>HoverDropdownGroup</name>
+    <message>
+        <source>Opens a menu. Use arrow keys to move, Enter to activate, and Escape to close.</source>
+        <translation>Öffnet ein Menü. Navigieren Sie mit den Pfeiltasten, aktivieren Sie einen Eintrag mit der Eingabetaste und schließen Sie das Menü mit Escape.</translation>
     </message>
 </context>
 <context>

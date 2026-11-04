@@ -16,9 +16,13 @@ then beyond it.
 
 The Library setting **Navigation style** chooses Sidebar (the default) or Compact
 top bar immediately. The compact strip centers Audio, Video, Playlists, Photos,
-and Games, with Device Summary and Sync on the left and Maintenance and Settings
-on the right. Audio, Video, Playlists, and Maintenance open on hover; clicking
-their headings has no effect.
+and Games, with Device and Sync on the left and Maintenance and Settings on the
+right. Device, Audio, Video, Playlists, and Maintenance share one hover dropdown
+implementation. Tab focuses headings; click or Enter/Space/Down opens and highlights
+the first enabled item. Arrows move the highlight, Enter activates, and Escape
+closes. Hover and keyboard highlighting preserve the current page and Playlist
+selection. Device Summary is the first Device menu item. See
+[ADR-0234](docs/adr/0234-unify-desktop-navigation-dropdowns.md).
 Both styles share routes, device capability rules, and Playlist editing.
 Dragging Tracks over Playlists opens its menu; hovering over Playlist
 Folders expands them before a drop onto a regular Playlist. See

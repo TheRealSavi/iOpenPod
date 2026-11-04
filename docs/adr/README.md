@@ -298,3 +298,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0231: Avoid Phase captures for content-checked cache hits](0231-avoid-phase-captures-for-content-checked-cache-hits.md)
 - [ADR-0232: Cache Phase input metadata across Library saves](0232-cache-phase-input-metadata-across-library-saves.md)
 - [ADR-0233: Share navigation behavior between shell styles](0233-share-navigation-behavior-between-shell-styles.md)
+- [ADR-0234: Unify desktop navigation dropdowns](0234-unify-desktop-navigation-dropdowns.md)

@@ -3,7 +3,7 @@
 import pytest
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QStackedWidget, QWidget
+from PySide6.QtWidgets import QPushButton, QStackedWidget, QTreeView, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import (
     APPLICATION,
     build_context,
@@ -20,9 +20,50 @@ from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.compact_top_bar import CompactTopBar
+from iOpenPod.GUI.widgets.hover_dropdown import HoverDropdown
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iPodDB.library import LibrarySnapshot, Playlist
+
+
+def test_compact_playlist_highlighting_never_navigates_until_activation() -> None:
+    context = build_context()
+    context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.COMPACT_TOP_BAR.value)
+    window = MainWindow(context, auto_discover=False)
+    try:
+        window.show()
+        APPLICATION.processEvents()
+        context.library_workspace.load(
+            LibrarySnapshot(playlists=(Playlist(1, "First"), Playlist(2, "Second")))
+        )
+        bar = window.findChild(CompactTopBar)
+        pages = window.findChild(QStackedWidget, "pageStack")
+        assert bar is not None and pages is not None
+        bar.pageRequested.emit(PageId.ARTISTS.value)
+        current = pages.currentWidget()
+        button = bar.findChild(QPushButton, "compactPlaylists")
+        assert button is not None
+        popup = button.findChild(HoverDropdown)
+        assert popup is not None
+        QTest.keyClick(button, Qt.Key.Key_Return)
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_End)
+        assert isinstance(popup.focusWidget(), QTreeView)
+        assert pages.currentWidget() is current
+        assert bar.playlist_tree.current_playlist_id is None
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Escape)
+        assert pages.currentWidget() is current
+        QTest.keyClick(button, Qt.Key.Key_Return)
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_End)
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Return)
+        page = pages.currentWidget()
+        assert isinstance(page, PlaylistPage)
+        assert page.selected_playlist_id == 2
+        assert not popup.isVisible()
+    finally:
+        window.close()
+        context.shutdown()
+        window.deleteLater()
+        APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
 
 
 @pytest.mark.parametrize("position", list(PlayerPosition))

@@ -202,6 +202,11 @@ QTreeView#playlistTree {{
     selection-color: {tokens.accent};
 }}
 
+QTreeView#playlistTree[dropdownView="true"] {{
+    selection-background-color: {tokens.accent};
+    selection-color: {tokens.accent_ink};
+}}
+
 QPushButton#playlistSectionToggle {{
     padding-right: {LAYOUT.control_height_compact + LAYOUT.icon_button_size}px;
     border-color: transparent;
@@ -1385,35 +1390,47 @@ QFrame#compactTopBar {{
     border-bottom: 1px solid {tokens.border};
 }}
 
-QFrame#compactPlaylistPopup,
-QFrame#compactDeviceHoverMenu {{
+QFrame[hoverDropdown="true"] {{
     color: {tokens.text};
     background-color: {tokens.surface};
     border: 1px solid {tokens.border_strong};
     border-radius: {LAYOUT.radius_control}px;
 }}
 
-QToolButton[deviceMenuAction="true"] {{
+QToolButton[dropdownItem="true"],
+QToolButton[dropdownItem="true"]:checked {{
     color: {tokens.text};
     background-color: transparent;
     border: 1px solid transparent;
     border-radius: {LAYOUT.radius_control}px;
     min-height: {LAYOUT.control_height_compact}px;
-    padding: 0 {LAYOUT.space_xs}px;
+    padding: 0 {LAYOUT.control_height_compact}px 0 {LAYOUT.space_xs}px;
     text-align: left;
 }}
 
-QToolButton[deviceMenuAction="true"]:hover,
-QToolButton[deviceMenuAction="true"]:focus {{
-    background-color: {tokens.surface_hover};
+QToolButton[dropdownItem="true"][dropdownActive="true"] {{
+    color: {tokens.accent_ink};
+    background-color: {tokens.accent};
 }}
 
-QToolButton[deviceMenuAction="true"]:pressed {{
-    background-color: {tokens.surface_pressed};
+QToolButton[dropdownItem="true"]:focus {{
+    border-color: {tokens.focus};
 }}
 
-QToolButton[deviceMenuAction="true"]:disabled {{
+QToolButton[dropdownItem="true"]:pressed {{
+    color: {tokens.accent_ink};
+    background-color: {tokens.accent_pressed};
+}}
+
+QToolButton[dropdownItem="true"]:disabled {{
     color: {tokens.text_disabled};
+    background-color: transparent;
+}}
+
+QToolButton[dropdownItem="true"]::menu-indicator {{
+    image: none;
+    width: 0px;
+    height: 0px;
 }}
 
 QScrollArea#compactPlaylistScroll,
@@ -1772,21 +1789,57 @@ QPushButton[kind="quiet"]:disabled {{
     border-color: transparent;
 }}
 
-QPushButton[compactNavigation="true"] {{
+QPushButton[compactNavigation="true"],
+QPushButton[compactNavigation="true"]:hover,
+QPushButton[compactNavigation="true"]:checked,
+QPushButton[compactNavigation="true"]:focus,
+QPushButton[compactNavigation="true"]:pressed {{
     min-height: {LAYOUT.control_height_compact - 4}px;
     padding: 0 {LAYOUT.space_xs}px;
     text-align: center;
+    color: {tokens.text};
+    font-weight: 700;
+    border: 1px solid transparent;
+    border-radius: {(LAYOUT.control_height_compact - 4) // 2}px;
 }}
 
-QPushButton[compactNavigation="true"]:checked {{
-    color: {tokens.accent};
-    background-color: {tokens.surface_selected};
+QPushButton[compactNavigation="true"]:hover {{
+    background-color: {tokens.surface_hover};
+}}
+
+QPushButton[dropdownTrigger="true"],
+QPushButton[dropdownTrigger="true"]:hover {{
+    background-color: transparent;
+}}
+
+QPushButton[dropdownTrigger="true"][dropdownHovered="true"] {{
+    background-color: {tokens.surface_hover};
+}}
+
+/* An inset well: shadow above, soft fill below, and a light lower lip. */
+QPushButton[compactNavigation="true"]:checked,
+QPushButton[compactNavigation="true"]:focus,
+QPushButton[compactNavigation="true"]:pressed,
+QPushButton[dropdownTrigger="true"][dropdownOpen="true"] {{
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {_darker(tokens.surface_alt, 118)},
+        stop:0.35 {_darker(tokens.surface_alt, 104)},
+        stop:1 {tokens.surface_alt});
+    border-color: {_darker(tokens.surface_alt, 112)};
+    border-top-color: {_darker(tokens.surface_alt, 135)};
+    border-bottom-color: {_lighter(tokens.surface, 120)};
+}}
+
+QPushButton[compactNavigation="true"]:pressed {{
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {_darker(tokens.surface_alt, 130)},
+        stop:1 {_darker(tokens.surface_alt, 108)});
+}}
+
+QPushButton[compactNavigation="true"]:disabled {{
+    color: {tokens.text_disabled};
+    background-color: transparent;
     border-color: transparent;
-    font-weight: 600;
-}}
-
-QPushButton[compactNavigation="true"]:focus {{
-    border-color: {tokens.focus};
 }}
 
 QPushButton[kind="danger"] {{

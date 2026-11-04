@@ -2666,13 +2666,28 @@ The Host-only Library setting **Navigation style** switches immediately between
 `Sidebar` and `CompactTopBar`, retaining the current page and selected Playlist.
 Both consume the same routes, Device Capabilities, action availability, and Library
 Workspace. The compact strip centers Audio, Video, Playlists, Photos, and Games;
-its left side opens Device Summary from the device image and starts Sync with
-Host, while Maintenance and Settings sit on the right. Unsupported media entries
-follow the same visibility policy as the sidebar. Audio, Video, Playlists, and
-Maintenance open on hover, switching between menus as the pointer moves across
-the headings and allowing a short grace period to reach menu items. Clicking a
-heading does not select it, open its menu, or dismiss an open menu. Menu items
-remain clickable, and keyboard access remains available.
+its left side opens Device actions and starts Sync with Host, while Maintenance and
+Settings sit on the right. Unsupported media entries follow the same visibility
+policy as the sidebar. `HoverDropdown` and `HoverDropdownGroup` own the same popup
+surface, positioning, hover timing, exclusivity, dismissal, focus return, and
+keyboard policy for Device, Audio, Video, Playlists, and Maintenance. Content
+supplies action rows and an optional native tree view. Device Summary is the first
+Device action; the image opens its menu like every other heading.
+
+Tab focuses headings without opening them. Click, Enter, Space, or Down opens the
+first enabled item; Up opens the last. Up/Down and Home/End move the active highlight;
+Enter/Space activate. Left/Right switch headings unless navigating a folder or
+submenu. Escape returns focus to the heading, and Tab/Shift+Tab close and continue
+through the main window's controls. Hover opens without activation and permits a
+short grace period on departure. Keyboard-open menus remain open with the pointer
+elsewhere. Nested menus stay usable, while outside clicks, deactivation, movement,
+and context changes dismiss the complete dropdown. Open headings, hover, keyboard
+focus, and pressed state have separate theme rules. Current destinations have a
+checkmark, distinct from the active item highlight. See ADR-0234.
+
+The compact `PlaylistTree` uses activation-only selection: moving the current index
+with the pointer or keyboard does not emit a Library navigation intent. Clicking
+or activating a row commits the selection. The Sidebar keeps its existing behavior.
 
 The Playlists popup reuses `PlaylistTree`, including nested Playlist Folders,
 creation, editing, reordering, and membership drops. A valid Track drag opens the

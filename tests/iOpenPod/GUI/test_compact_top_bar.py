@@ -1,9 +1,10 @@
 """Compact navigation preserves Library actions and real Playlist drop targets."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTranslator
 from PySide6.QtGui import (
     QCursor,
     QDragEnterEvent,
@@ -15,9 +16,9 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
-    QMenu,
     QPushButton,
     QScrollArea,
+    QStyle,
     QToolButton,
     QTreeView,
     QWidget,
@@ -40,6 +41,7 @@ from iOpenPod.app.models.playlist_tree_model import PlaylistTreeModel
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.widgets.compact_top_bar import CompactTopBar
+from iOpenPod.GUI.widgets.hover_dropdown import HoverDropdown
 from iPodDB.library import LibrarySnapshot, Playlist, PlaylistKind, Track
 from storage import FileFingerprint
 
@@ -97,17 +99,390 @@ def _popup(bar: CompactTopBar) -> QFrame:
     return popup
 
 
-def test_compact_menus_route_the_requested_sections_and_actions() -> None:
+def _hover_playlists(bar: CompactTopBar) -> None:
+    QTest.mouseMove(bar, QPoint(1, 1))
+    button = _button(bar, "compactPlaylists")
+    QTest.mouseMove(button, button.rect().center())
+    APPLICATION.processEvents()
+
+
+_DROPDOWNS = (
+    "compactDeviceSummary",
+    "compactAudio",
+    "compactVideo",
+    "compactPlaylists",
+    "compactMaintenance",
+)
+
+
+def _dropdown(bar: CompactTopBar, name: str) -> HoverDropdown:
+    popup = _button(bar, name).findChild(HoverDropdown)
+    assert popup is not None
+    return popup
+
+
+def _show(bar: CompactTopBar) -> None:
+    bar.resize(1200, bar.sizeHint().height())
+    bar.show()
+    bar.activateWindow()
+    APPLICATION.processEvents()
+    QTest.mouseMove(bar, QPoint(1, 1))
+    for name in _DROPDOWNS:
+        _dropdown(bar, name).hide()
+
+
+def test_compact_navigation_is_centered_in_a_thin_strip() -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    try:
+        _show(bar)
+        center = bar.findChild(QWidget, "compactNavigation")
+        assert center is not None
+        assert abs(center.geometry().center().x() - bar.rect().center().x()) <= 1
+        assert bar.height() < 60
+    finally:
+        bar.close()
+
+
+@pytest.mark.parametrize(
+    "language,device_label", [("de", "Gerät"), ("es", "Dispositivo")]
+)
+def test_dropdown_accessibility_retranslates_without_changing_selection(
+    language: str, device_label: str
+) -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    translator = QTranslator()
+    catalog = (
+        Path(__file__).resolve().parents[3]
+        / "src/iOpenPod/GUI/presentation/i18n/translations"
+        / f"iopenpod_{language}.qm"
+    )
+    assert translator.load(str(catalog))
+    original = _button(bar, "compactAudio").accessibleDescription()
+    bar.playlist_tree.select_playlist(3)
+    try:
+        APPLICATION.installTranslator(translator)
+        APPLICATION.sendEvent(bar, QEvent(QEvent.Type.LanguageChange))
+        assert _button(bar, "compactDeviceSummary").accessibleName() == device_label
+        descriptions = {
+            _button(bar, name).accessibleDescription() for name in _DROPDOWNS
+        }
+        assert len(descriptions) == 1 and original not in descriptions
+        assert bar.playlist_tree.current_playlist_id == 3
+    finally:
+        APPLICATION.removeTranslator(translator)
+        bar.close()
+
+
+@pytest.mark.parametrize("name", _DROPDOWNS)
+def test_all_dropdowns_share_hover_without_activation(name: str) -> None:
+    workspace = _workspace()
+    bar = CompactTopBar(playlists=workspace)
+    bar.set_active_ipod(_active_ipod())
+    requested: list[object] = []
+    bar.pageRequested.connect(requested.append)
+    bar.playlist_tree.selected.connect(requested.append)
+    try:
+        _show(bar)
+        workspace.load(workspace.snapshot)
+        button = _button(bar, name)
+        QTest.mouseMove(button, button.rect().center())
+        popup = _dropdown(bar, name)
+        assert popup.isVisible()
+        assert button.property("dropdownOpen") is True
+        assert not button.isChecked()
+        assert requested == []
+        QTest.mouseMove(popup, popup.mapFromGlobal(bar.mapToGlobal(QPoint(1, 1))))
+        QTest.qWait(220)
+        assert not popup.isVisible()
+        assert button.property("dropdownOpen") is False
+        assert button.property("dropdownHovered") is False
+        assert not button.underMouse()
+    finally:
+        bar.close()
+
+
+@pytest.mark.parametrize("name", _DROPDOWNS)
+@pytest.mark.parametrize("key", [Qt.Key.Key_Return, Qt.Key.Key_Space, Qt.Key.Key_Down])
+def test_keyboard_opens_and_highlights_without_invoking(name: str, key: Qt.Key) -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    requested: list[object] = []
+    bar.pageRequested.connect(requested.append)
+    bar.playlist_tree.selected.connect(requested.append)
+    try:
+        _show(bar)
+        button = _button(bar, name)
+        button.setFocus()
+        assert button.focusPolicy() == Qt.FocusPolicy.StrongFocus
+        QTest.keyClick(button, key)
+        popup = _dropdown(bar, name)
+        assert popup.isVisible() and requested == []
+        first = next(
+            row
+            for row in popup.findChildren(QToolButton)
+            if row.property("dropdownItem") and row.isVisible() and row.isEnabled()
+        )
+        assert popup.focusWidget() is first
+        assert first.property("dropdownActive") is True
+        QTest.keyClick(first, Qt.Key.Key_Escape)
+        assert not popup.isVisible()
+        assert button.hasFocus()
+        assert requested == []
+    finally:
+        bar.close()
+
+
+@pytest.mark.parametrize("name", _DROPDOWNS)
+def test_clicking_heading_opens_first_item_without_invoking(name: str) -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    requested: list[object] = []
+    bar.pageRequested.connect(requested.append)
+    bar.playlist_tree.selected.connect(requested.append)
+    try:
+        _show(bar)
+        button = _button(bar, name)
+        QTest.mouseMove(button, button.rect().center())
+        popup = _dropdown(bar, name)
+        # Real popups receive heading clicks after grabbing the pointer.
+        point = popup.mapFromGlobal(button.mapToGlobal(button.rect().center()))
+        QTest.mouseClick(popup, Qt.MouseButton.LeftButton, pos=point)
+        assert popup.isVisible() and requested == []
+        assert isinstance(popup.focusWidget(), QToolButton)
+        assert popup.focusWidget().property("dropdownActive") is True
+    finally:
+        bar.close()
+
+
+@pytest.mark.parametrize("name", [n for n in _DROPDOWNS if n != "compactPlaylists"])
+def test_action_navigation_skips_disabled_and_only_enter_activates(name: str) -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    requested: list[object] = []
+    bar.pageRequested.connect(requested.append)
+    bar.chooseDeviceRequested.connect(lambda: requested.append("choose"))
+    try:
+        _show(bar)
+        button = _button(bar, name)
+        QTest.keyClick(button, Qt.Key.Key_Down)
+        popup = _dropdown(bar, name)
+        enabled = [a for a in popup.actions() if a.isVisible() and a.isEnabled()]
+        assert len(enabled) >= 2
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Down)
+        focused = popup.focusWidget()
+        assert (
+            isinstance(focused, QToolButton) and focused.defaultAction() is enabled[1]
+        )
+        assert requested == []
+        QTest.keyClick(focused, Qt.Key.Key_Up)
+        assert requested == []
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Return)
+        assert len(requested) == 1
+        assert not popup.isVisible()
+    finally:
+        bar.close()
+
+
+def test_playlist_keyboard_highlight_is_not_library_selection() -> None:
+    workspace = _workspace()
+    bar = CompactTopBar(playlists=workspace)
+    selected: list[object] = []
+    bar.playlist_tree.selected.connect(selected.append)
+    try:
+        _show(bar)
+        workspace.load(workspace.snapshot)
+        button = _button(bar, "compactPlaylists")
+        QTest.keyClick(button, Qt.Key.Key_Down)
+        popup = _dropdown(bar, "compactPlaylists")
+        view = popup.findChild(QTreeView, "playlistTree")
+        assert view is not None
+        model = view.model()
+        assert isinstance(model, PlaylistTreeModel)
+        # New, then the first Playlist Folder, then its child.
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Down)
+        assert view.currentIndex() == model.index_for_id(1)
+        QTest.keyClick(view, Qt.Key.Key_Right)
+        assert view.isExpanded(model.index_for_id(1))
+        QTest.keyClick(view, Qt.Key.Key_Down)
+        assert view.currentIndex() == model.index_for_id(2)
+        before_activation = bar.playlist_tree.current_playlist_id
+        assert selected == [] and before_activation is None
+        QTest.keyClick(view, Qt.Key.Key_Return)
+        assert selected == [2]
+        assert bar.playlist_tree.current_playlist_id == 2
+        assert not popup.isVisible()
+        assert button.hasFocus()
+        # Cancellation after highlighting another item preserves the committed choice.
+        QTest.keyClick(button, Qt.Key.Key_Down)
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_End)
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Escape)
+        assert selected == [2] and bar.playlist_tree.current_playlist_id == 2
+    finally:
+        bar.close()
+
+
+def test_pointer_click_commits_playlist_and_dismisses() -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    selected: list[object] = []
+    bar.playlist_tree.selected.connect(selected.append)
+    try:
+        _show(bar)
+        _hover_playlists(bar)
+        popup = _popup(bar)
+        view = popup.findChild(QTreeView, "playlistTree")
+        assert view is not None
+        model = view.model()
+        assert isinstance(model, PlaylistTreeModel)
+        point = view.visualRect(model.index_for_id(3)).center()
+        QTest.mouseMove(view.viewport(), point)
+        assert selected == []
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+        assert selected == [3] and not popup.isVisible()
+    finally:
+        bar.close()
+
+
+def test_pointer_and_keyboard_switch_across_all_five_dropdowns() -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    try:
+        _show(bar)
+        first = _button(bar, _DROPDOWNS[0])
+        QTest.keyClick(first, Qt.Key.Key_Down)
+        for name in _DROPDOWNS[1:]:
+            active = next(
+                _dropdown(bar, n) for n in _DROPDOWNS if _dropdown(bar, n).isVisible()
+            )
+            # Left/right switches headings; move off New's submenu first.
+            if active is _dropdown(bar, "compactPlaylists"):
+                QTest.keyClick(active.focusWidget(), Qt.Key.Key_End)
+            QTest.keyClick(active.focusWidget(), Qt.Key.Key_Right)
+            assert _dropdown(bar, name).isVisible()
+        for name in reversed(_DROPDOWNS):
+            active = next(
+                _dropdown(bar, n) for n in _DROPDOWNS if _dropdown(bar, n).isVisible()
+            )
+            button = _button(bar, name)
+            QTest.mouseMove(
+                active, active.mapFromGlobal(button.mapToGlobal(button.rect().center()))
+            )
+            assert _dropdown(bar, name).isVisible()
+            assert sum(_dropdown(bar, n).isVisible() for n in _DROPDOWNS) == 1
+            assert all(
+                not _button(bar, other).underMouse()
+                for other in _DROPDOWNS
+                if other != name
+            )
+    finally:
+        bar.close()
+
+
+def test_tab_focuses_headings_and_exits_open_menu_to_next_control() -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    try:
+        _show(bar)
+        sync = _button(bar, "compactSyncWithHost")
+        sync.setFocus()
+        QTest.keyClick(sync, Qt.Key.Key_Tab)
+        audio = _button(bar, "compactAudio")
+        assert audio.hasFocus() and not _dropdown(bar, "compactAudio").isVisible()
+        QTest.keyClick(audio, Qt.Key.Key_Return)
+        popup = _dropdown(bar, "compactAudio")
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Tab)
+        assert not popup.isVisible() and _button(bar, "compactVideo").hasFocus()
+    finally:
+        bar.close()
+
+
+@pytest.mark.parametrize("name", _DROPDOWNS)
+@pytest.mark.parametrize(
+    "dismiss",
+    ["leave", "escape", "outside", "hide", "disconnect", "deactivate", "move"],
+)
+def test_shared_dropdown_dismissal(name: str, dismiss: str) -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    try:
+        _show(bar)
+        button = _button(bar, name)
+        QTest.mouseMove(button, button.rect().center())
+        popup = _dropdown(bar, name)
+        assert popup.isVisible()
+        outside = popup.mapFromGlobal(bar.mapToGlobal(QPoint(1, 1)))
+        if dismiss == "leave":
+            QTest.mouseMove(popup, outside)
+        elif dismiss == "escape":
+            QTest.keyClick(popup, Qt.Key.Key_Escape)
+        elif dismiss == "outside":
+            QTest.mouseClick(popup, Qt.MouseButton.LeftButton, pos=outside)
+        elif dismiss == "hide":
+            bar.hide()
+        elif dismiss == "disconnect":
+            bar.set_active_ipod(None)
+        elif dismiss == "move":
+            bar.move(bar.pos() + QPoint(10, 10))
+        else:
+            APPLICATION.sendEvent(bar, QEvent(QEvent.Type.ApplicationDeactivate))
+        QTest.qWait(220)
+        assert not popup.isVisible()
+        assert button.property("dropdownOpen") is False
+    finally:
+        bar.close()
+
+
+def test_playlist_new_submenu_keeps_parent_open_and_escape_returns_to_parent() -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    created: list[object] = []
+    bar.playlist_tree.createRequested.connect(created.append)
+    try:
+        _show(bar)
+        QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Down)
+        popup = _dropdown(bar, "compactPlaylists")
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Return)
+        menu = bar.playlist_tree.creation_menu
+        assert menu.isVisible() and popup.isVisible()
+        QTest.qWait(220)
+        assert popup.isVisible()
+        QTest.keyClick(menu, Qt.Key.Key_Escape)
+        assert not menu.isVisible() and popup.isVisible()
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Return)
+        QTest.keyClick(menu, Qt.Key.Key_Return)
+        assert created == [PlaylistKind.PLAYLIST] and not popup.isVisible()
+    finally:
+        bar.close()
+
+
+def test_submenu_click_uses_same_explicit_activation_as_keyboard() -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    try:
+        _show(bar)
+        QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Down)
+        popup = _dropdown(bar, "compactPlaylists")
+        row = popup.findChild(QToolButton, "compactNewPlaylist")
+        assert row is not None
+        menu = bar.playlist_tree.creation_menu
+        QTest.mousePress(row, Qt.MouseButton.LeftButton)
+        QTest.qWait(
+            row.style().styleHint(QStyle.StyleHint.SH_ToolButton_PopupDelay) + 50
+        )
+        assert not menu.isVisible()
+        QTest.mouseRelease(row, Qt.MouseButton.LeftButton)
+        assert menu.isVisible() and popup.isVisible()
+        assert menu.activeAction() is menu.actions()[0]
+        assert menu.y() == row.mapToGlobal(QPoint()).y()
+    finally:
+        bar.close()
+
+
+def test_routes_availability_and_current_page_markers() -> None:
     bar = CompactTopBar(playlists=_workspace())
     bar.set_active_ipod(_active_ipod())
     requested: list[str] = []
-    synced: list[bool] = []
-    scrobbled: list[bool] = []
     bar.pageRequested.connect(requested.append)
-    bar.syncRequested.connect(lambda: synced.append(True))
-    bar.scrobbleRequested.connect(lambda: scrobbled.append(True))
     try:
-        for name, expected in (
+        for name, labels in (
             (
                 "compactAudio",
                 [
@@ -122,346 +497,169 @@ def test_compact_menus_route_the_requested_sections_and_actions() -> None:
             ),
             ("compactVideo", ["Movies", "TV Shows", "Music Videos", "Videos"]),
         ):
-            menu = _button(bar, name).menu()
-            assert [action.text() for action in menu.actions()] == expected
-            for action in menu.actions():
+            popup = _dropdown(bar, name)
+            assert [a.text() for a in popup.actions()] == labels
+            for action in popup.actions():
                 action.trigger()
                 assert requested[-1] == action.data()
-        menu = _button(bar, "compactMaintenance").menu()
-        assert [action.text() for action in menu.actions() if action.isVisible()] == [
-            "Backups",
-            "Normalize Tags",
-            "Scrobble Now",
-        ]
-        assert not menu.actions()[2].isEnabled()
-        bar.set_scrobble_available(True)
-        menu.actions()[2].trigger()
-        assert scrobbled == [True]
         for name, page in (
-            ("compactDeviceSummary", PageId.DEVICE_SUMMARY),
             ("compactPhotos", PageId.PHOTOS),
             ("compactGames", PageId.GAMES),
             ("compactSettings", PageId.SETTINGS),
         ):
             _button(bar, name).click()
             assert requested[-1] == page.value
-        _button(bar, "compactSyncWithHost").click()
-        assert synced == [True]
         bar.set_current_page(PageId.TRACKS)
-        assert _button(bar, "compactAudio").isChecked()
-        assert not _button(bar, "compactVideo").isChecked()
+        assert [
+            a.data() for a in _dropdown(bar, "compactAudio").actions() if a.isChecked()
+        ] == [PageId.TRACKS.value]
+        device = _dropdown(bar, "compactDeviceSummary")
+        assert not device.actions()[1].isEnabled()
+        bar.set_eject_available(True)
+        assert device.actions()[1].isEnabled()
+        bar.set_device_busy(True)
+        assert not device.actions()[2].isEnabled()
         bar.set_review_visible(True)
         bar.set_review_available(True)
-        assert menu.actions()[-1].isVisible() and menu.actions()[-1].isEnabled()
-    finally:
-        bar.close()
-
-
-def test_compact_bar_keeps_device_capability_and_availability_gates() -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    choose: list[bool] = []
-    bar.chooseDeviceRequested.connect(lambda: choose.append(True))
-    try:
-        assert not _button(bar, "compactSyncWithHost").isEnabled()
-        _button(bar, "compactDeviceSummary").click()
-        assert choose == [True]
-        bar.set_device_busy(True)
-        assert not _button(bar, "compactDeviceSummary").isEnabled()
+        assert _dropdown(bar, "compactMaintenance").actions()[-1].isEnabled()
         active = _active_ipod()
         profile = next(
-            profile
-            for profile in DEFAULT_DEVICE_REGISTRY.profiles
-            if not profile.capabilities.video.supported
-            and not profile.capabilities.artwork.supports_photos
-            and not profile.capabilities.supports_games
+            p
+            for p in DEFAULT_DEVICE_REGISTRY.profiles
+            if not p.capabilities.video.supported
+            and not p.capabilities.artwork.supports_photos
+            and not p.capabilities.supports_games
         )
         bar.set_active_ipod(replace(active, profile=profile))
         assert _button(bar, "compactVideo").isHidden()
         assert _button(bar, "compactPhotos").isHidden()
         assert _button(bar, "compactGames").isHidden()
-        assert not bar.page_available(PageId.MOVIES)
-        assert _button(bar, "compactSyncWithHost").isEnabled()
     finally:
         bar.close()
 
 
-def test_compact_navigation_is_centered_in_a_thin_strip() -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
+def test_empty_or_locked_playlists_have_correct_keyboard_targets() -> None:
+    workspace = LibraryWorkspace()
+    bar = CompactTopBar(playlists=workspace)
     try:
-        bar.resize(1200, bar.sizeHint().height())
-        bar.show()
-        APPLICATION.processEvents()
-        center = bar.findChild(QWidget, "compactNavigation")
-        assert center is not None
-        assert abs(center.geometry().center().x() - bar.rect().center().x()) <= 1
-        assert bar.height() < 60
-    finally:
-        bar.close()
-
-
-def test_device_actions_are_available_from_the_keyboard() -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
-    choose: list[bool] = []
-    eject: list[bool] = []
-    bar.chooseDeviceRequested.connect(lambda: choose.append(True))
-    bar.ejectRequested.connect(lambda: eject.append(True))
-    try:
-        bar.show()
-        device = _button(bar, "compactDeviceSummary")
-        device.setFocus()
-        QTest.keyClick(device, Qt.Key.Key_F10, Qt.KeyboardModifier.ShiftModifier)
-        menu = device.findChild(QMenu)
-        assert menu is not None and menu.isVisible()
-        assert [action.text() for action in menu.actions()] == [
-            "Eject",
-            "Choose Device",
-        ]
-        assert not menu.actions()[0].isEnabled()
-        menu.actions()[1].trigger()
-        assert choose == [True]
-        menu.hide()
-        bar.set_eject_available(True)
-        QTest.keyClick(device, Qt.Key.Key_Menu)
-        assert menu.isVisible() and menu.actions()[0].isEnabled()
-        menu.actions()[0].trigger()
-        assert eject == [True]
-    finally:
-        bar.close()
-
-
-def test_cancelled_menu_and_outside_click_preserve_current_navigation() -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
-    bar.set_current_page(PageId.TRACKS)
-    try:
-        bar.show()
-        for name in ("compactAudio", "compactVideo"):
-            button = _button(bar, name)
-            QTest.mouseMove(button, button.rect().center())
-            assert button.menu().isVisible()
-            QTest.keyClick(button.menu(), Qt.Key.Key_Escape)
-            assert _button(bar, "compactAudio").isChecked()
-            assert not _button(bar, "compactVideo").isChecked()
-        QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Space)
-        assert _popup(bar).isVisible()
-        QTest.mouseClick(bar, Qt.MouseButton.LeftButton, pos=QPoint(1, 1))
-        assert not _popup(bar).isVisible()
-    finally:
-        bar.close()
-
-
-def _hover_device(bar: CompactTopBar) -> QFrame:
-    QTest.mouseMove(bar, QPoint(bar.width() // 2, bar.height() - 1))
-    device = _button(bar, "compactDeviceSummary")
-    QTest.mouseMove(device, device.rect().center())
-    APPLICATION.processEvents()
-    menu = bar.findChild(QFrame, "compactDeviceHoverMenu")
-    assert menu is not None and menu.isVisible()
-    return menu
-
-
-_DROPDOWNS = (
-    "compactAudio",
-    "compactVideo",
-    "compactPlaylists",
-    "compactMaintenance",
-)
-
-
-def _dropdown(bar: CompactTopBar, name: str) -> QWidget:
-    return _popup(bar) if name == "compactPlaylists" else _button(bar, name).menu()
-
-
-@pytest.mark.parametrize("name", _DROPDOWNS)
-@pytest.mark.parametrize("opened", [False, True])
-def test_dropdown_heading_clicks_do_nothing(name: str, opened: bool) -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
-    bar.set_current_page(PageId.TRACKS)
-    requested: list[str] = []
-    clicked: list[bool] = []
-    bar.pageRequested.connect(requested.append)
-    try:
-        bar.resize(1200, bar.sizeHint().height())
-        bar.show()
-        QTest.mouseMove(bar, QPoint(1, 1))
-        button = _button(bar, name)
-        button.clicked.connect(clicked.append)
-        QTest.mouseMove(button, button.rect().center())
-        popup = _dropdown(bar, name)
+        _show(bar)
+        QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Down)
+        popup = _dropdown(bar, "compactPlaylists")
+        assert popup.focusWidget() is popup
+        QTest.keyClick(popup, Qt.Key.Key_Down)
+        QTest.keyClick(popup, Qt.Key.Key_Return)
         assert popup.isVisible()
-        if not opened:
-            QTest.keyClick(popup, Qt.Key.Key_Escape)
-            assert not popup.isVisible()
-        checked = [_button(bar, item).isChecked() for item in _DROPDOWNS]
-        receivers = (button, popup) if opened else (button,)
-        for receiver in receivers:
-            position = receiver.mapFromGlobal(
-                button.mapToGlobal(button.rect().center())
-            )
-            for mouse_button in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
-                QTest.mousePress(receiver, mouse_button, pos=position)
-                assert not button.isDown()
-                QTest.mouseRelease(receiver, mouse_button, pos=position)
-                QTest.mouseDClick(receiver, mouse_button, pos=position)
-                QTest.mouseRelease(receiver, mouse_button, pos=position)
-                APPLICATION.processEvents()
-                assert popup.isVisible() is opened
-                assert [
-                    _button(bar, item).isChecked() for item in _DROPDOWNS
-                ] == checked
-                assert requested == [] and clicked == []
+        popup.hide()
+        workspace.load(_workspace().snapshot)
+        workspace.set_locked(True)
+        QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Down)
+        assert isinstance(popup.focusWidget(), QTreeView)
+        assert not popup.actions()[0].isEnabled()
     finally:
         bar.close()
 
 
 @pytest.mark.parametrize("name", _DROPDOWNS)
-def test_navigation_dropdown_opens_on_hover_and_keeps_items_reachable(
-    name: str,
+def test_keyboard_menu_keeps_focus_with_pointer_elsewhere(name: str) -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    try:
+        _show(bar)
+        QTest.keyClick(_button(bar, name), Qt.Key.Key_Up)
+        popup = _dropdown(bar, name)
+        last = popup.focusWidget()
+        QTest.qWait(220)
+        assert popup.isVisible() and popup.focusWidget() is last
+        QTest.keyClick(last, Qt.Key.Key_Home)
+        assert isinstance(popup.focusWidget(), QToolButton)
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_End)
+        assert popup.focusWidget() is last
+    finally:
+        bar.close()
+
+
+def test_cancelled_heading_press_does_not_leave_pressed_state() -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    try:
+        _show(bar)
+        button = _button(bar, "compactAudio")
+        QTest.mouseMove(button, button.rect().center())
+        popup = _dropdown(bar, "compactAudio")
+        point = popup.mapFromGlobal(button.mapToGlobal(button.rect().center()))
+        QTest.mousePress(popup, Qt.MouseButton.LeftButton, pos=point)
+        assert button.isDown()
+        QTest.mouseRelease(popup, Qt.MouseButton.LeftButton, pos=QPoint(1, 1))
+        assert not button.isDown()
+    finally:
+        bar.close()
+
+
+def test_nested_menu_outside_click_closes_the_whole_dropdown() -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    try:
+        _show(bar)
+        QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Return)
+        popup = _dropdown(bar, "compactPlaylists")
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_Return)
+        menu = bar.playlist_tree.creation_menu
+        assert menu.isVisible()
+        outside = menu.mapFromGlobal(bar.mapToGlobal(QPoint(1, 1)))
+        QTest.mouseClick(menu, Qt.MouseButton.LeftButton, pos=outside)
+        assert not menu.isVisible() and not popup.isVisible()
+    finally:
+        bar.close()
+
+
+@pytest.mark.parametrize("change", ["disable", "hide"])
+def test_active_action_becoming_unavailable_moves_keyboard_highlight(
+    change: str,
 ) -> None:
     bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
-    requested: list[str] = []
-    bar.pageRequested.connect(requested.append)
     try:
-        bar.resize(1200, bar.sizeHint().height())
-        bar.show()
-        QTest.mouseMove(bar, QPoint(1, 1))
-        button = _button(bar, name)
-        QTest.mouseMove(button, button.rect().center())
-        APPLICATION.processEvents()
-        popup = _dropdown(bar, name)
-        assert popup.isVisible() and requested == []
-        assert _button(bar, "compactAudio").isChecked()
-        if isinstance(popup, QMenu):
-            action = popup.actions()[0]
-            point = popup.actionGeometry(action).center()
-            QTest.mouseMove(popup, point)
-            QTest.qWait(220)
-            assert popup.isVisible()
-            QTest.mouseClick(popup, Qt.MouseButton.LeftButton, pos=point)
-            assert requested == [action.data()]
-            assert not popup.isVisible()
+        _show(bar)
+        QTest.keyClick(_button(bar, "compactAudio"), Qt.Key.Key_Return)
+        popup = _dropdown(bar, "compactAudio")
+        old = popup.actions()[0]
+        if change == "disable":
+            old.setEnabled(False)
         else:
-            view = popup.findChild(QTreeView, "playlistTree")
-            assert view is not None
-            QTest.mouseMove(view.viewport(), view.viewport().rect().center())
-            QTest.qWait(220)
-            assert popup.isVisible()
+            old.setVisible(False)
+        focused = popup.focusWidget()
+        assert isinstance(focused, QToolButton)
+        assert focused.defaultAction() is popup.actions()[1]
     finally:
         bar.close()
 
 
-def test_hover_switches_between_dropdowns_while_a_popup_owns_mouse_events() -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
+def test_long_playlist_menu_scrolls_to_keyboard_highlight_without_selection() -> None:
+    workspace = _workspace()
+    workspace.load(
+        LibrarySnapshot(playlists=tuple(Playlist(i, f"Mix {i:03}") for i in range(100)))
+    )
+    bar = CompactTopBar(playlists=workspace)
+    selected: list[object] = []
+    bar.playlist_tree.selected.connect(selected.append)
     try:
-        bar.resize(1200, bar.sizeHint().height())
-        bar.show()
-        QTest.mouseMove(bar, QPoint(1, 1))
-        audio = _button(bar, "compactAudio")
-        QTest.mouseMove(audio, audio.rect().center())
-        previous = _dropdown(bar, "compactAudio")
-        assert previous.isVisible()
-        for name in (*_DROPDOWNS[1:], "compactAudio"):
-            button = _button(bar, name)
-            # Qt delivers outside-pointer events to the open popup, not the bar.
-            position = previous.mapFromGlobal(
-                button.mapToGlobal(button.rect().center())
-            )
-            QTest.mouseMove(previous, position)
-            APPLICATION.processEvents()
-            popup = _dropdown(bar, name)
-            assert popup.isVisible() and not previous.isVisible()
-            previous = popup
-    finally:
-        bar.close()
-
-
-@pytest.mark.parametrize("name", _DROPDOWNS)
-@pytest.mark.parametrize("dismiss", ["leave", "escape", "hide", "disconnect"])
-def test_hover_navigation_menus_dismiss_without_reopening(
-    name: str, dismiss: str
-) -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
-    try:
-        bar.resize(1200, bar.sizeHint().height())
-        bar.show()
-        QTest.mouseMove(bar, QPoint(1, 1))
-        button = _button(bar, name)
-        QTest.mouseMove(button, button.rect().center())
-        popup = _dropdown(bar, name)
-        assert popup.isVisible()
-        if dismiss == "leave":
-            QTest.mouseMove(popup, popup.mapFromGlobal(bar.mapToGlobal(QPoint(1, 1))))
-        elif dismiss == "escape":
-            QTest.keyClick(popup, Qt.Key.Key_Escape)
-        elif dismiss == "hide":
-            bar.hide()
-        else:
-            bar.set_active_ipod(None)
+        _show(bar)
+        QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Return)
+        popup = _dropdown(bar, "compactPlaylists")
+        QTest.keyClick(popup.focusWidget(), Qt.Key.Key_End)
         APPLICATION.processEvents()
-        QTest.qWait(220)
-        assert not popup.isVisible()
+        view = popup.findChild(QTreeView, "playlistTree")
+        scroll = popup.findChild(QScrollArea, "compactPlaylistScroll")
+        assert view is not None and scroll is not None
+        point = view.viewport().mapTo(
+            scroll.viewport(), view.visualRect(view.currentIndex()).center()
+        )
+        assert scroll.viewport().rect().contains(point)
+        assert popup.height() <= 420 and selected == []
+        QTest.keyClick(view, Qt.Key.Key_Return)
+        assert selected == [99]
     finally:
         bar.close()
 
 
-def test_hover_playlist_menu_keeps_its_new_submenu_open() -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    try:
-        bar.resize(1200, bar.sizeHint().height())
-        bar.show()
-        QTest.mouseMove(bar, QPoint(1, 1))
-        button = _button(bar, "compactPlaylists")
-        QTest.mouseMove(button, button.rect().center())
-        popup = _popup(bar)
-        new = _button(bar, "compactNewPlaylist")
-        new.menu().popup(popup.mapToGlobal(QPoint(popup.width(), 0)))
-        QTest.mouseMove(new.menu(), new.menu().rect().bottomRight() - QPoint(3, 3))
-        QTest.qWait(220)
-        assert new.menu().isVisible() and popup.isVisible()
-        QTest.keyClick(new.menu(), Qt.Key.Key_Escape)
-        assert not new.menu().isVisible() and popup.isVisible()
-        new.menu().popup(new.mapToGlobal(QPoint(0, new.height())))
-        audio = _button(bar, "compactAudio")
-        point = new.menu().mapFromGlobal(audio.mapToGlobal(audio.rect().center()))
-        QTest.mouseMove(new.menu(), point)
-        assert audio.menu().isVisible()
-        assert not popup.isVisible() and not new.menu().isVisible()
-    finally:
-        bar.close()
-
-
-@pytest.mark.parametrize("name", _DROPDOWNS)
-def test_keyboard_dropdown_stays_open_with_the_pointer_elsewhere(name: str) -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
-    visible: list[bool] = []
-    try:
-        bar.resize(1200, bar.sizeHint().height())
-        bar.show()
-        QTest.mouseMove(bar, QPoint(1, 1))
-        button = _button(bar, name)
-        popup = _dropdown(bar, name)
-        button.setFocus()
-
-        def check_and_close() -> None:
-            visible.append(popup.isVisible())
-            popup.hide()
-
-        QTimer.singleShot(260, bar, check_and_close)
-        QTest.keyClick(button, Qt.Key.Key_Space)
-        QTest.qWait(280)
-        assert visible == [True]
-    finally:
-        bar.close()
-
-
-def test_normal_hover_never_interrupts_a_playlist_drag(
+def test_normal_hover_does_not_interrupt_playlist_drag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = _workspace()
@@ -469,168 +667,22 @@ def test_normal_hover_never_interrupts_a_playlist_drag(
     bar.set_active_ipod(_active_ipod())
     monkeypatch.setattr(QApplication, "mouseButtons", lambda: Qt.MouseButton.LeftButton)
     try:
-        bar.resize(1200, bar.sizeHint().height())
-        bar.show()
+        _show(bar)
         button = _button(bar, "compactPlaylists")
         data = TrackSelectionMimeData(workspace, (10,))
         APPLICATION.sendEvent(button, _enter(button.rect().center(), data))
         QTest.qWait(550)
-        popup = _popup(bar)
+        popup = _dropdown(bar, "compactPlaylists")
         assert popup.isVisible() and popup.windowType() == Qt.WindowType.Tool
         for name in _DROPDOWNS:
             target = _button(bar, name)
             QTest.mouseMove(target, target.rect().center())
-            QTest.qWait(220)
-            assert popup.isVisible() and popup.windowType() == Qt.WindowType.Tool
+            assert popup.isVisible()
             assert all(
                 not _dropdown(bar, other).isVisible()
                 for other in _DROPDOWNS
                 if other != "compactPlaylists"
             )
-    finally:
-        bar.close()
-
-
-def test_device_hover_keeps_direct_image_click_available() -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
-    requested: list[str] = []
-    bar.pageRequested.connect(requested.append)
-    try:
-        bar.resize(960, bar.sizeHint().height())
-        bar.show()
-        menu = _hover_device(bar)
-        assert QApplication.activePopupWidget() is None
-        assert QWidget.mouseGrabber() is None
-        assert requested == []
-        device = _button(bar, "compactDeviceSummary")
-        QTest.mouseClick(device, Qt.MouseButton.LeftButton)
-        assert requested == [PageId.DEVICE_SUMMARY.value]
-        assert not menu.isVisible()
-    finally:
-        bar.close()
-
-
-def test_device_hover_actions_keep_gates_and_are_reachable() -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
-    requested: list[str] = []
-    bar.ejectRequested.connect(lambda: requested.append("eject"))
-    bar.chooseDeviceRequested.connect(lambda: requested.append("choose"))
-    try:
-        bar.resize(960, bar.sizeHint().height())
-        bar.show()
-        menu = _hover_device(bar)
-        eject, choose = menu.findChildren(QToolButton)
-        assert [eject.text(), choose.text()] == ["Eject", "Choose Device"]
-        assert not eject.isEnabled() and choose.isEnabled()
-        bar.set_eject_available(True)
-        QTest.mouseMove(eject, eject.rect().center())
-        QTest.qWait(220)
-        assert menu.isVisible() and eject.isEnabled()
-        QTest.mouseClick(eject, Qt.MouseButton.LeftButton)
-        assert requested == ["eject"] and not menu.isVisible()
-        _hover_device(bar)
-        QTest.mouseClick(choose, Qt.MouseButton.LeftButton)
-        assert requested == ["eject", "choose"] and not menu.isVisible()
-        _hover_device(bar)
-        bar.set_device_busy(True)
-        assert not choose.isEnabled()
-        QTest.mouseClick(choose, Qt.MouseButton.LeftButton)
-        assert requested == ["eject", "choose"]
-    finally:
-        bar.close()
-
-
-@pytest.mark.parametrize(
-    "dismiss",
-    ["leave", "escape", "outside", "hide", "move", "disconnect", "deactivate"],
-)
-def test_device_hover_menu_dismisses_with_its_context(dismiss: str) -> None:
-    bar = CompactTopBar(playlists=_workspace())
-    bar.set_active_ipod(_active_ipod())
-    try:
-        bar.resize(960, bar.sizeHint().height())
-        bar.show()
-        menu = _hover_device(bar)
-        if dismiss == "leave":
-            QTest.mouseMove(bar, QPoint(bar.width() // 2, bar.height() - 1))
-            QTest.qWait(220)
-        elif dismiss == "escape":
-            QTest.keyClick(bar, Qt.Key.Key_Escape)
-        elif dismiss == "outside":
-            QTest.mouseClick(bar, Qt.MouseButton.LeftButton, pos=QPoint(1, 1))
-        elif dismiss == "hide":
-            bar.hide()
-        elif dismiss == "move":
-            bar.move(bar.pos() + QPoint(10, 10))
-        elif dismiss == "disconnect":
-            bar.set_active_ipod(None)
-        else:
-            APPLICATION.sendEvent(bar, QEvent(QEvent.Type.ApplicationDeactivate))
-        assert not menu.isVisible()
-    finally:
-        bar.close()
-
-
-def test_playlist_popup_keeps_creation_folder_browsing_and_bounded_scrolling() -> None:
-    workspace = _workspace()
-    bar = CompactTopBar(playlists=workspace)
-    created: list[PlaylistKind] = []
-    bar.playlist_tree.createRequested.connect(created.append)
-    try:
-        bar.resize(1200, bar.sizeHint().height())
-        bar.show()
-        _button(bar, "compactPlaylists").click()
-        APPLICATION.processEvents()
-        popup = _popup(bar)
-        view = popup.findChild(QTreeView, "playlistTree")
-        assert view is not None and popup.isVisible()
-        assert popup.height() < 200
-        model = view.model()
-        assert isinstance(model, PlaylistTreeModel)
-        toggle = popup.findChild(QPushButton, "playlistSectionToggle")
-        assert toggle is not None and toggle.isHidden()
-        new = _button(bar, "compactNewPlaylist")
-        assert new.text() == "New" and new.isEnabled()
-        assert len(new.menu().actions()) == 3
-        # A folder click selects its page but leaves the menu available to expand.
-        QTest.mouseClick(
-            view.viewport(),
-            Qt.MouseButton.LeftButton,
-            pos=view.visualRect(model.index_for_id(1)).center(),
-        )
-        assert popup.isVisible()
-        # Programmatic selection from the shell does not dismiss the popup.
-        bar.playlist_tree.select_playlist(2)
-        assert popup.isVisible()
-        QTest.keyClick(view, Qt.Key.Key_Return)
-        assert not popup.isVisible()
-        _button(bar, "compactPlaylists").click()
-        new.menu().actions()[0].trigger()
-        assert created == [PlaylistKind.PLAYLIST]
-        assert not popup.isVisible()
-        workspace.load(
-            LibrarySnapshot(
-                playlists=tuple(Playlist(i, f"Mix {i}") for i in range(100))
-            )
-        )
-        _button(bar, "compactPlaylists").click()
-        APPLICATION.processEvents()
-        bar.playlist_tree.select_playlist(99)
-        APPLICATION.processEvents()
-        scroll = popup.findChild(QScrollArea, "compactPlaylistScroll")
-        assert scroll is not None and scroll.verticalScrollBar().maximum() > 0
-        point = view.viewport().mapTo(
-            scroll.viewport(), view.visualRect(view.currentIndex()).center()
-        )
-        assert scroll.viewport().rect().contains(point)
-        assert popup.height() <= 420
-        QTest.keyClick(view, Qt.Key.Key_Escape)
-        assert not popup.isVisible()
-        _button(bar, "compactPlaylists").click()
-        workspace.set_locked(True)
-        assert not new.isEnabled()
     finally:
         bar.close()
 
@@ -832,7 +884,7 @@ def test_small_themed_popup_has_no_unnecessary_scrollbar(mode: AppearanceMode) -
     bar = CompactTopBar(playlists=_workspace(), theme=theme)
     try:
         bar.show()
-        _button(bar, "compactPlaylists").click()
+        _hover_playlists(bar)
         APPLICATION.processEvents()
         popup = _popup(bar)
         scroll = popup.findChild(QScrollArea, "compactPlaylistScroll")
@@ -842,6 +894,39 @@ def test_small_themed_popup_has_no_unnecessary_scrollbar(mode: AppearanceMode) -
         APPLICATION.processEvents()
         assert scroll.verticalScrollBar().maximum() == 0
         assert popup.height() < 200
+    finally:
+        bar.close()
+        theme.close()
+
+
+@pytest.mark.parametrize("name", _DROPDOWNS)
+@pytest.mark.parametrize("mode", [AppearanceMode.LIGHT, AppearanceMode.DARK])
+def test_dropdown_heading_restores_idle_appearance_after_leaving(
+    name: str,
+    mode: AppearanceMode,
+) -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    theme = ThemeManager(APPLICATION, settings)
+    theme.set_mode(mode)
+    bar = CompactTopBar(playlists=_workspace(), theme=theme)
+    bar.set_active_ipod(_active_ipod())
+    try:
+        bar.resize(1200, bar.sizeHint().height())
+        bar.show()
+        bar.activateWindow()
+        APPLICATION.processEvents()
+        QTest.mouseMove(bar, QPoint(1, 1))
+        QTest.qWait(220)
+        button = _button(bar, name)
+        idle = button.grab().toImage()
+        QTest.mouseMove(button, button.rect().center())
+        popup = _dropdown(bar, name)
+        assert popup.isVisible()
+        QTest.mouseMove(popup, popup.mapFromGlobal(bar.mapToGlobal(QPoint(1, 1))))
+        QTest.qWait(220)
+        assert not popup.isVisible()
+        assert not button.underMouse()
+        assert button.grab().toImage() == idle
     finally:
         bar.close()
         theme.close()
