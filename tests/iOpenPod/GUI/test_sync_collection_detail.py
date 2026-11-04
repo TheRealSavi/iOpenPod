@@ -163,7 +163,9 @@ def test_stream_button_opens_chooser_from_collection(
     parent.setCurrentWidget(page)
     APPLICATION.processEvents()
     grid = page.findChild(
-        AlbumGridView if page_id is PageId.ALBUMS else CollectionGridView
+        AlbumGridView
+        if page_id in (PageId.ALBUMS, PageId.MUSIC_VIDEOS)
+        else CollectionGridView
     )
     assert isinstance(grid, AlbumGridView | CollectionGridView)
     _click_card(grid, title)
@@ -194,7 +196,9 @@ def test_card_opens_full_page_with_search_and_stable_sync_selection(
     parent.setCurrentWidget(page)
     APPLICATION.processEvents()
     grid = page.findChild(
-        AlbumGridView if page_id is PageId.ALBUMS else CollectionGridView
+        AlbumGridView
+        if page_id in (PageId.ALBUMS, PageId.MUSIC_VIDEOS)
+        else CollectionGridView
     )
     detail = page.findChild(CollectionDetailPage)
     table = page.findChild(TrackTable)

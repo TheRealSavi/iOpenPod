@@ -68,20 +68,22 @@ def context() -> Iterator[AppContext]:
 def _page(context: AppContext, page_id: PageId) -> LibraryPage | CollectionPage:
     provider = ArtworkPixmapProvider(context.artwork_controller)
     page: LibraryPage | CollectionPage
-    if page_id is PageId.ALBUMS:
+    if page_id in (PageId.ALBUMS, PageId.MUSIC_VIDEOS):
         page = LibraryPage(
             context.track_model,
-            context.album_model,
+            context.album_model
+            if page_id is PageId.ALBUMS
+            else context.music_video_model,
             context.settings,
             context.theme_manager,
             provider,
+            page_id=page_id,
         )
     else:
         collections = {
             PageId.ARTISTS: context.artist_model,
             PageId.GENRES: context.genre_model,
             PageId.TV_SHOWS: context.tv_show_model,
-            PageId.MUSIC_VIDEOS: context.music_video_model,
         }
         page = CollectionPage(
             context.track_model,
@@ -129,8 +131,11 @@ def _ids(table: TrackTable) -> set[int]:
     }
 
 
-def test_default_album_view_opens_inline_details(context: AppContext) -> None:
-    page = _page(context, PageId.ALBUMS)
+@pytest.mark.parametrize("page_id", (PageId.ALBUMS, PageId.MUSIC_VIDEOS))
+def test_default_album_view_opens_inline_details(
+    context: AppContext, page_id: PageId
+) -> None:
+    page = _page(context, page_id)
     try:
         grid = page.findChild(AlbumGridView)
         panel = page.findChild(InlineAlbumPanel)
@@ -140,7 +145,9 @@ def test_default_album_view_opens_inline_details(context: AppContext) -> None:
         _click(grid, "Album A")
         QTest.qWait(250)
         assert panel.isVisible() and not table.isVisible()
-        assert panel.track_view.model().index(0, 0).data(TrackRole.TRACK_ID) == 1
+        assert panel.track_view.model().index(0, 0).data(TrackRole.TRACK_ID) == (
+            1 if page_id is PageId.ALBUMS else 21
+        )
     finally:
         page.close()
 
@@ -168,7 +175,9 @@ def test_saved_and_live_modes_keep_table_search_navigation_and_activation(
         )
     page = _page(context, page_id)
     grid = page.findChild(
-        AlbumGridView if page_id is PageId.ALBUMS else CollectionGridView
+        AlbumGridView
+        if page_id in (PageId.ALBUMS, PageId.MUSIC_VIDEOS)
+        else CollectionGridView
     )
     table = page.findChild(TrackTable)
     toolbar = page.findChild(LibraryToolbar)
@@ -300,7 +309,7 @@ def test_settings_offer_exact_modes_and_preserve_choice_on_retranslation(
 
 @pytest.mark.parametrize(
     "page_id",
-    (PageId.ARTISTS, PageId.GENRES, PageId.TV_SHOWS, PageId.MUSIC_VIDEOS),
+    (PageId.TV_SHOWS,),
 )
 def test_itunes_11_keeps_split_table_for_other_collection_views(
     context: AppContext, page_id: PageId

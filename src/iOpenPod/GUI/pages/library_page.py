@@ -16,6 +16,7 @@ from iOpenPod.app.models.library_filter_models import (
 from iOpenPod.app.models.selection_grouping import SelectionGroupingProxyModel
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackTableModel
 from iOpenPod.GUI.delegates.selection_group_delegate import SelectionGroupDelegate
+from iOpenPod.GUI.navigation import PageId, page_label
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
@@ -24,7 +25,6 @@ from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
 from iOpenPod.GUI.widgets.library_content import LibraryContent
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar, SortOption
 from iOpenPod.GUI.widgets.track_table import TrackTable
-from iPodDB.library import MediaKind
 
 
 class LibraryPage(QWidget):
@@ -47,8 +47,12 @@ class LibraryPage(QWidget):
         *,
         selection_mode: bool = False,
         follow_ipod_view_mode: bool = True,
+        page_id: PageId = PageId.ALBUMS,
+        table_id: str = "albums-tracks",
     ) -> None:
         super().__init__(parent)
+        self._page_id = page_id
+        self.setObjectName(f"{page_id.value}Page")
         self._selected_album: AlbumSummary | None = None
         self._album_query = ""
         self._selection_mode = selection_mode
@@ -60,16 +64,21 @@ class LibraryPage(QWidget):
             else None
         )
         self._track_proxy = TrackFilterProxyModel(tracks, self)
-        self._track_proxy.set_media_kinds((MediaKind.MUSIC,))
+        self._track_proxy.set_media_kinds((albums.media_kind,))
 
         self._toolbar = LibraryToolbar(self)
+        if page_id is not PageId.ALBUMS:
+            self._toolbar.set_namespace(page_id.value)
         self._configure_toolbar()
         self._grid = AlbumGridView(
             self._album_proxy,
             theme_manager,
             artwork_provider,
             self,
+            page_id=page_id,
         )
+        if page_id is not PageId.ALBUMS:
+            self._grid.setObjectName(f"{page_id.value}AlbumGrid")
         if self._album_grouping is not None:
             album_delegate = self._grid.itemDelegate()
             self._grid.setModel(self._album_grouping)
@@ -81,7 +90,7 @@ class LibraryPage(QWidget):
             settings,
             theme_manager,
             artwork_provider,
-            "albums-tracks",
+            table_id,
             self,
             default_sort_column=TrackColumn.ALBUM,
         )
@@ -125,7 +134,14 @@ class LibraryPage(QWidget):
             selection_mode=selection_mode,
             follow_ipod_view_mode=follow_ipod_view_mode,
             supports_inline_albums=True,
-            splitter_setting=LIBRARY_SPLITTER_STATE,
+            splitter_name=(
+                "librarySplitter"
+                if page_id is PageId.ALBUMS
+                else f"{page_id.value}LibrarySplitter"
+            ),
+            splitter_setting=LIBRARY_SPLITTER_STATE
+            if page_id is PageId.ALBUMS
+            else None,
         )
         layout.addWidget(self._content, 1)
         self._content.backRequested.connect(self._show_browser)
@@ -259,8 +275,14 @@ class LibraryPage(QWidget):
 
     def _configure_toolbar(self) -> None:
         self._toolbar.configure(
-            grid_title=self.tr("Albums"),
-            grid_search_label=self.tr("Search Albums"),
+            grid_title=self.tr("Albums")
+            if self._page_id is PageId.ALBUMS
+            else page_label(self._page_id),
+            grid_search_label=(
+                self.tr("Search Albums")
+                if self._page_id is PageId.ALBUMS
+                else self.tr("Search %1").replace("%1", page_label(self._page_id))
+            ),
             supports_list=False,
             supports_selection_grouping=self._selection_mode,
             sort_accessible_name=self.tr("Sort albums"),

@@ -50,11 +50,13 @@ from iOpenPod.app.core.settings.definitions import (
     IPOD_LIBRARY_VIEW_MODE,
     LIBRARY_SPLITTER_STATE,
     MAX_BACKUPS,
+    NAVIGATION_STYLE,
     PLAYER_POSITION,
     AppearanceMode,
     DarkTheme,
     IPodLibraryViewMode,
     LightTheme,
+    NavigationStyle,
     PlayerPosition,
 )
 from iOpenPod.app.core.status import StatusAction, StatusProgress
@@ -907,6 +909,7 @@ def test_colorful_mode_tints_album_card_fill_selection_and_track_header(
 
 def test_library_views_use_virtualized_model_view_primitives() -> None:
     context = _context()
+    context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
     context.settings.set_global(
         IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
     )
@@ -989,6 +992,9 @@ def test_library_grids_equalize_cells_without_churning_model_state() -> None:
 
 def test_artist_album_grid_does_not_collapse_at_exact_fit_widths() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(100))
     window = MainWindow(context, auto_discover=False)
 
@@ -1047,6 +1053,11 @@ def test_artist_album_grid_does_not_collapse_at_exact_fit_widths() -> None:
 
 def test_large_artist_album_grid_reflows_in_the_resize_event_turn() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
+    # Exercise the narrow viewport sizes using the Sidebar shell.
+    context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
     context.track_model.replace_tracks(_tracks(10_000))
     window = MainWindow(context, auto_discover=False)
 
@@ -1474,6 +1485,9 @@ def test_library_toolbar_titles_share_the_albums_heading_style() -> None:
 
 def test_collection_sort_options_are_page_specific_and_drive_the_grid() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(
         (
             Track(1, "One", "Alpha", "Only", 1, genre="Ambient"),
@@ -1510,8 +1524,8 @@ def test_collection_sort_options_are_page_specific_and_drive_the_grid() -> None:
         ),
         PageId.MUSIC_VIDEOS: (
             ("Album title", "title"),
-            ("Most videos", "track_count"),
-            ("Longest duration", "duration"),
+            ("Artist", "artist"),
+            ("Year", "year"),
             ("", None),
             ("Ascending", "__sort_ascending__"),
             ("Descending", "__sort_descending__"),
@@ -1615,6 +1629,9 @@ def test_collection_list_view_filters_album_grid_without_becoming_tracks(
     prefix: str,
 ) -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(40))
     window = MainWindow(context, auto_discover=False)
 
@@ -1777,6 +1794,9 @@ def test_player_clears_on_a_whole_library_snapshot_with_reused_track_ids() -> No
 
 def test_view_mode_selector_is_inset_within_the_browser_header() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     window = MainWindow(context, auto_discover=False)
 
     try:

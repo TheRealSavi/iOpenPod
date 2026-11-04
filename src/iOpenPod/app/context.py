@@ -47,6 +47,7 @@ from iOpenPod.app.synesthesia import SynesthesiaController, WholeTrackMusicAnaly
 from iOpenPod.app.synesthesia.audio import FFmpegDecoder
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
+from iPodDB.library import MediaKind
 from storage import Storage
 from storage.host_files import application_config_file
 from storage.media_processing import MediaToolFinder
@@ -77,7 +78,7 @@ class AppContext:
     artist_model: CollectionListModel
     genre_model: CollectionListModel
     tv_show_model: CollectionListModel
-    music_video_model: CollectionListModel
+    music_video_model: AlbumListModel
     settings: SettingsService
     theme_manager: ThemeManager
     i18n_manager: I18nManager
@@ -143,10 +144,10 @@ class AppContext:
             CollectionKind.TV_SHOW,
             application,
         )
-        music_video_model = CollectionListModel(
+        music_video_model = AlbumListModel(
             track_model,
-            CollectionKind.MUSIC_VIDEO_ALBUM,
             application,
+            media_kind=MediaKind.MUSIC_VIDEO,
         )
         device_coordinator = DeviceCoordinator(
             storage,

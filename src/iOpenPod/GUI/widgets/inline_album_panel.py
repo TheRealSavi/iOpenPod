@@ -78,6 +78,7 @@ class _AlbumTracksModel(QAbstractTableModel):
         super().__init__(parent)
         self.tracks: tuple[Track, ...] = ()
         self.columns = 1
+        self.show_rating = True
 
     def set_tracks(self, tracks: tuple[Track, ...], columns: int) -> None:
         if tracks == self.tracks and columns == self.columns:
@@ -119,7 +120,7 @@ class _AlbumTracksModel(QAbstractTableModel):
                 for column in (
                     TrackColumn.NUMBER,
                     TrackColumn.TITLE,
-                    TrackColumn.RATING,
+                    *((TrackColumn.RATING,) if self.show_rating else ()),
                     TrackColumn.TIME,
                 )
             )
@@ -206,7 +207,9 @@ class _TrackDelegate(QStyledItemDelegate):
             metrics.horizontalAdvance("00:00"), metrics.horizontalAdvance(time)
         )
         stars = "★" * min(5, max(0, round(track.rating / 20)))
-        rating_width = metrics.horizontalAdvance("★★★★★") + gap
+        rating_width = (
+            metrics.horizontalAdvance("★★★★★") + gap if not self._panel.stacked else 0
+        )
         number = str(track.track_number) if track.track_number else ""
         number_rect = QRect(rect.left(), rect.top(), number_width, rect.height())
         time_rect = QRect(
@@ -239,7 +242,8 @@ class _TrackDelegate(QStyledItemDelegate):
             ),
         )
         painter.setFont(option.font)
-        painter.drawText(rating_rect, align | Qt.AlignmentFlag.AlignRight, stars)
+        if not self._panel.stacked:
+            painter.drawText(rating_rect, align | Qt.AlignmentFlag.AlignRight, stars)
         painter.drawText(time_rect, align | Qt.AlignmentFlag.AlignRight, time)
         if option.state & QStyle.StateFlag.State_HasFocus:
             pen = QPen(ink)
@@ -268,8 +272,13 @@ class InlineAlbumPanel(QWidget):
         theme_manager: ThemeManager,
         artwork_provider: ArtworkPixmapProvider,
         parent: QWidget | None = None,
+        *,
+        stacked: bool = False,
+        show_album_artist: bool = False,
     ) -> None:
         super().__init__(parent)
+        self.stacked = stacked
+        self._show_album_artist = show_album_artist
         self.setObjectName("inlineAlbumPanel")
         self._proxy = proxy
         self._theme_manager = theme_manager
@@ -280,6 +289,15 @@ class InlineAlbumPanel(QWidget):
         self.ink = QColor(theme_manager.tokens.text)
         self._title = QLabel(self)
         self._artist = QLabel(self)
+        self._year = QLabel(self) if stacked else None
+        if self._year is not None:
+            self._year.setObjectName("albumSectionYear")
+            self._year.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+        self._title.setObjectName(
+            "albumSectionTitle" if stacked else "inlineAlbumTitle"
+        )
         for label in (self._title, self._artist):
             label.setTextFormat(Qt.TextFormat.PlainText)
         self._close = QToolButton(self)
@@ -294,6 +312,7 @@ class InlineAlbumPanel(QWidget):
         self._queue.clicked.connect(self._queue_album)
         self._cover = ArtworkView(theme_manager, artwork_provider, self)
         self._model = _AlbumTracksModel(self)
+        self._model.show_rating = not stacked
         self._tracks = _AlbumTracksView(theme_manager, artwork_provider, self)
         self._tracks.setObjectName("inlineAlbumTracks")
         self._tracks.setModel(self._model)
@@ -324,13 +343,27 @@ class InlineAlbumPanel(QWidget):
         for button in (self._play, self._play_next, self._queue):
             button.installEventFilter(self)
         for signal in (
-            proxy.modelReset,
-            proxy.rowsInserted,
-            proxy.rowsRemoved,
-            proxy.dataChanged,
-            proxy.layoutChanged,
+            ()
+            if stacked
+            else (
+                proxy.modelReset,
+                proxy.rowsInserted,
+                proxy.rowsRemoved,
+                proxy.dataChanged,
+                proxy.layoutChanged,
+            )
         ):
             signal.connect(self._refresh_tracks)
+        for widget in (
+            self._artist,
+            self._close,
+            self._play,
+            self._play_next,
+            self._queue,
+        ):
+            widget.setVisible(
+                not stacked or (widget is self._artist and show_album_artist)
+            )
         theme_manager.effectiveThemeChanged.connect(self._refresh_colors)
         artwork_provider.artworkChanged.connect(self._artwork_changed)
         artwork_provider.cleared.connect(self._refresh_colors)
@@ -346,11 +379,16 @@ class InlineAlbumPanel(QWidget):
     def row_height(self) -> int:
         return max(28, self._tracks.fontMetrics().height() + LAYOUT.space_xs)
 
-    def set_context(self, summary: AlbumSummary) -> None:
+    def set_context(
+        self, summary: AlbumSummary, tracks: tuple[Track, ...] | None = None
+    ) -> None:
         self._summary = summary
         self._cover.set_seed(summary.artwork_seed)
         self._cover.set_artwork_id(summary.artwork_id)
-        self._refresh_tracks()
+        if tracks is None:
+            self._refresh_tracks()
+        else:
+            self._replace_tracks(tracks, 2)
         self._refresh_colors()
         self._arrange()
 
@@ -361,12 +399,24 @@ class InlineAlbumPanel(QWidget):
         self.update()
 
     def preferred_height(self, width: int) -> int:
+        if self.stacked:
+            return self.section_height(len(self._model.tracks))
         _, columns, cover_size, compact = self._dimensions(width)
         rows = min(_MAX_VISIBLE_ROWS, ceil(len(self._model.tracks) / columns))
         body_height = max(self.row_height, rows * self.row_height)
         if not compact:
             body_height = max(body_height, cover_size)
         return self._body_top(compact) + body_height + LAYOUT.space_lg
+
+    def section_height(self, track_count: int) -> int:
+        return 2 * LAYOUT.space_lg + max(
+            _COMPACT_COVER_SIZE
+            if self._show_album_artist
+            else LAYOUT.album_artwork_size,
+            self._title.fontMetrics().height()
+            + LAYOUT.space_sm
+            + max(1, ceil(track_count / 2)) * self.row_height,
+        )
 
     def selected_tracks(self) -> tuple[Track, ...]:
         return self._tracks.selected_tracks()
@@ -426,6 +476,16 @@ class InlineAlbumPanel(QWidget):
 
     def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
+        if self.stacked:
+            painter.fillRect(self.rect(), self._fill)
+            painter.setPen(QColor(self._theme_manager.tokens.border))
+            painter.drawLine(
+                LAYOUT.space_lg,
+                self.height() - 1,
+                self.width() - LAYOUT.space_lg,
+                self.height() - 1,
+            )
+            return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(
             QRect(0, _POINTER_HEIGHT, self.width(), self.height()), self._fill
@@ -470,6 +530,9 @@ class InlineAlbumPanel(QWidget):
 
     def _arrange(self) -> None:
         if not hasattr(self, "_tracks"):
+            return
+        if self.stacked:
+            self._arrange_section()
             return
         width, columns, cover_size, compact = self._dimensions(self.width())
         self._replace_tracks(self._model.tracks, columns)
@@ -532,6 +595,70 @@ class InlineAlbumPanel(QWidget):
             ),
         )
 
+    def _arrange_section(self) -> None:
+        assert self._year is not None
+        margin = LAYOUT.space_lg
+        cover = (
+            _COMPACT_COVER_SIZE
+            if self._show_album_artist
+            else min(LAYOUT.album_artwork_size, max(64, self.width() // 5))
+        )
+        width = max(1, self.width() - 3 * margin - cover)
+        content_left = 2 * margin + cover
+        title_height = self._title.fontMetrics().height()
+        year_width = (
+            self._year.fontMetrics().horizontalAdvance("0000") + LAYOUT.space_md
+        )
+        self._title.setGeometry(
+            content_left, margin, max(1, width - year_width), title_height
+        )
+        self._year.setGeometry(
+            content_left + width - year_width, margin, year_width, title_height
+        )
+        if self._summary is not None:
+            title = self._summary.title or QCoreApplication.translate(
+                "LibraryLabels", "Unknown Album"
+            )
+            if self._show_album_artist:
+                artist = self._summary.artist or QCoreApplication.translate(
+                    "LibraryLabels", "Unknown Artist"
+                )
+                byline = self.tr("by %1").replace("%1", artist)
+                available = max(1, width - year_width)
+                title_width = min(
+                    self._title.fontMetrics().horizontalAdvance(title)
+                    + LAYOUT.space_xs,
+                    available * 2 // 3,
+                )
+                self._title.resize(title_width, title_height)
+                self._artist.setGeometry(
+                    content_left + title_width,
+                    margin,
+                    max(1, available - title_width),
+                    title_height,
+                )
+                self._artist.setText(
+                    self._artist.fontMetrics().elidedText(
+                        byline, Qt.TextElideMode.ElideRight, self._artist.width()
+                    )
+                )
+                self._artist.setAccessibleName(byline)
+            self._title.setText(
+                self._title.fontMetrics().elidedText(
+                    title, Qt.TextElideMode.ElideRight, self._title.width()
+                )
+            )
+            self._title.setAccessibleName(title)
+            self._year.setText(str(self._summary.year) if self._summary.year else "")
+        self._cover.setGeometry(margin, margin, cover, cover)
+        self._tracks.verticalHeader().setDefaultSectionSize(self.row_height)
+        self._tracks.setGeometry(
+            content_left,
+            margin + title_height + LAYOUT.space_sm,
+            width,
+            max(1, self._model.rowCount()) * self.row_height,
+        )
+
     def _refresh_tracks(self, *_args: object) -> None:
         if self._summary is None:
             return
@@ -588,8 +715,8 @@ class InlineAlbumPanel(QWidget):
             )
         )
         self._fill = (
-            QColor(tokens.surface_alt)
-            if color is None
+            QColor(tokens.surface if self.stacked else tokens.surface_alt)
+            if color is None or self.stacked
             else colorful_card_fill(color, tokens, emphasized=True)
         )
         self.ink = QColor(tokens.text)
@@ -599,8 +726,12 @@ class InlineAlbumPanel(QWidget):
             f"color: {ink}; background: transparent; font-size: {typography.album_card_title_pt:g}pt; font-weight: 700;"
         )
         self._artist.setStyleSheet(
-            f"color: {ink}; background: transparent; font-size: {typography.album_card_detail_pt:g}pt; font-weight: 400;"
+            f"color: {tokens.text_secondary if self.stacked else ink}; background: transparent; font-size: {typography.album_card_detail_pt:g}pt; font-weight: 400;"
         )
+        if self._year is not None:
+            self._year.setStyleSheet(
+                f"color: {tokens.text_secondary}; background: transparent; font-size: {typography.album_card_detail_pt:g}pt;"
+            )
         self._tracks.setStyleSheet(
             f"QTableView {{ color: {ink}; background: transparent; border: none; font-size: {typography.body_pt:g}pt; font-weight: 400; }} QTableView::item {{ background: transparent; }}"
         )

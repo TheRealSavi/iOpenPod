@@ -251,7 +251,7 @@ MANAGE_VOLUME_PRESENTATION = SettingDefinition[bool](
 NAVIGATION_STYLE = SettingDefinition[str](
     key="library/navigation-style",
     value_type=str,
-    default=NavigationStyle.SIDEBAR.value,
+    default=NavigationStyle.COMPACT_TOP_BAR.value,
     validator=_one_of(*(style.value for style in NavigationStyle)),
 )
 

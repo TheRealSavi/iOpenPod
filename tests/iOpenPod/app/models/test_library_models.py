@@ -99,6 +99,31 @@ def test_library_proxies_sort_cached_model_values() -> None:
     assert first_size >= last_size
 
 
+def test_album_projections_keep_audio_and_music_video_membership_separate() -> None:
+    tracks = TrackTableModel()
+    audio_albums = AlbumListModel(tracks)
+    video_albums = AlbumListModel(tracks, media_kind=MediaKind.MUSIC_VIDEO)
+    audio = Track(1, "Audio", "Artist", "Shared Album", 1000, artwork_id=10)
+    video = Track(
+        2,
+        "Video",
+        "Artist",
+        "Shared Album",
+        2000,
+        artwork_id=20,
+        media_types=(MediaType.MUSIC_VIDEO,),
+    )
+    tracks.replace_tracks((audio, video))
+    for model, track in ((audio_albums, audio), (video_albums, video)):
+        summary = model.album_at(0)
+        assert model.rowCount() == 1 and summary is not None
+        assert summary.track_ids == (track.track_id,)
+        assert summary.artwork_id == track.artwork_id
+        assert summary.duration_ms == track.length_ms
+    tracks.replace_tracks((audio,))
+    assert video_albums.rowCount() == 0 and audio_albums.rowCount() == 1
+
+
 def test_track_table_exposes_the_full_optional_metadata_projection() -> None:
     model = TrackTableModel()
     model.replace_tracks(

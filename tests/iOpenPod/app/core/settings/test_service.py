@@ -169,20 +169,22 @@ def test_ipod_view_mode_defaults_and_rejects_invalid_values() -> None:
 def test_navigation_style_defaults_validates_and_remains_a_host_preference() -> None:
     store = GlobalSettingsStore()
     service = _service(store)
-    assert service.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.COMPACT_TOP_BAR.value
     store.set(NAVIGATION_STYLE.key, "unknown")
-    assert service.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.COMPACT_TOP_BAR.value
     with pytest.raises(ValueError, match=NAVIGATION_STYLE.key):
         service.set_global(NAVIGATION_STYLE, "unknown")
 
-    service.set_global(NAVIGATION_STYLE, NavigationStyle.COMPACT_TOP_BAR.value)
-    service.load_device("one", {NAVIGATION_STYLE.key: NavigationStyle.SIDEBAR.value})
-    assert service.get(NAVIGATION_STYLE) == NavigationStyle.COMPACT_TOP_BAR.value
+    service.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
+    service.load_device(
+        "one", {NAVIGATION_STYLE.key: NavigationStyle.COMPACT_TOP_BAR.value}
+    )
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
     assert service.source(NAVIGATION_STYLE) is SettingSource.GLOBAL
     with pytest.raises(ValueError, match="not device-overridable"):
         service.set_device(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
     service.reset_global(NAVIGATION_STYLE)
-    assert service.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.COMPACT_TOP_BAR.value
 
 
 @pytest.mark.parametrize("style", NavigationStyle)

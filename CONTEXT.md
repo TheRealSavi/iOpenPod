@@ -14,8 +14,8 @@ then beyond it.
 
 ## Current stage
 
-The Library setting **Navigation style** chooses Sidebar (the default) or Compact
-top bar immediately. The compact strip centers Audio, Video, Playlists, Photos,
+The Library setting **Navigation style** chooses Compact top bar (the default) or
+Sidebar immediately. The compact strip centers Audio, Video, Playlists, Photos,
 and Games, with Device and Sync on the left and Maintenance and Settings on the
 right. Device, Audio, Video, Playlists, and Maintenance share one hover dropdown
 implementation. Tab focuses headings; click or Enter/Space/Down opens and highlights
@@ -561,8 +561,16 @@ own search. Back returns to the retained browser; these Sync pages have no split
 Track pane. The **iPod Library View Mode** setting also offers this shared
 presentation in the iPod browser as **Whole Page Table**, without Sync Selection
 controls. **iTunes 11 style** opens an album-colored Track list with artwork beneath
-the selected row of the Albums grid, pushing later rows down. Other views retain
-the split table. **iTunes 11 style** is the default. Changes apply immediately,
+the selected row of the Albums grid, pushing later rows down. Artists and Genres
+use a source list beside a collection heading, playback/queue controls, and stacked
+Albums with two columns of Tracks. Covers sit on the left; Genres use smaller
+covers and an Album Artist byline. These rows omit ratings. See ADR-0235.
+Music Videos uses the same single-cover artwork, Album cards, and layout policy
+as Albums, scoped to Music Video Tracks. See ADR-0237. TV Shows retains the split
+table. Movies defaults to artwork/title
+cards with a grid/list toggle for its existing table, independently of this setting.
+Single clicks select Movies without opening details or playback. See ADR-0236.
+**iTunes 11 style** is the default. Changes apply immediately,
 persist across restarts, and support individual iPod overrides. See ADR-0072 and
 ADR-0126. Review derives an
 immutable selected Sync Plan in collapsible change groups; iPod-only removal

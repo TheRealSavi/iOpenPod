@@ -8,10 +8,11 @@ from iOpenPod.app.models.album_list_model import AlbumRole, AlbumSummary
 from iOpenPod.app.models.library_filter_models import AlbumFilterProxyModel
 from iOpenPod.app.models.track_order import album_track_sort_key
 from iOpenPod.GUI.delegates.album_card_delegate import AlbumCardDelegate
+from iOpenPod.GUI.navigation import PageId, page_label
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.widgets.library_drag_grid import LibraryDragGridView
-from iPodDB.library import MediaKind, Track
+from iPodDB.library import Track
 
 
 class AlbumGridView(LibraryDragGridView):
@@ -23,10 +24,13 @@ class AlbumGridView(LibraryDragGridView):
         theme_manager: ThemeManager,
         artwork_provider: ArtworkPixmapProvider,
         parent: QWidget | None = None,
+        *,
+        page_id: PageId = PageId.ALBUMS,
     ) -> None:
         super().__init__(theme_manager, parent)
+        self._page_id = page_id
         self.setObjectName("albumGrid")
-        self.setAccessibleName(self.tr("Albums"))
+        self.setAccessibleName(page_label(page_id))
         self.setModel(model)
         self.setItemDelegate(AlbumCardDelegate(theme_manager, artwork_provider, self))
         self.synchronize_item_size()
@@ -60,9 +64,8 @@ class AlbumGridView(LibraryDragGridView):
             sorted(
                 (
                     track
-                    for track in workspace.tracks
-                    if track.media_kind is MediaKind.MUSIC
-                    and track.album_key == summary.key
+                    for track_id in summary.track_ids
+                    if (track := workspace.track(track_id)) is not None
                 ),
                 key=album_track_sort_key,
             )
@@ -82,5 +85,5 @@ class AlbumGridView(LibraryDragGridView):
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
-            self.setAccessibleName(self.tr("Albums"))
+            self.setAccessibleName(page_label(self._page_id))
         super().changeEvent(event)

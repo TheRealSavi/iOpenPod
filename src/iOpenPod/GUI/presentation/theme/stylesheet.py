@@ -145,6 +145,7 @@ QStackedWidget#syncLibraryStack {{
 }}
 
 QLabel#pageTitle,
+QLabel#collectionAlbumTitle,
 QLabel#gamesEmptyTitle {{
     color: {tokens.text};
     font-family: "{typography.display}";
@@ -1381,6 +1382,11 @@ QFrame#appSidebar {{
     background-color: {tokens.surface};
     border: none;
     border-right: 1px solid {tokens.border};
+}}
+
+QWidget#collectionAlbumList,
+QWidget#collectionAlbumBody {{
+    background-color: {tokens.surface};
 }}
 
 QFrame#compactTopBar {{

@@ -39,7 +39,7 @@ from iOpenPod.app.synesthesia import (
 )
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
-from iPodDB.library import Track
+from iPodDB.library import MediaKind, Track
 from storage import Storage
 from storage.testing import VirtualStoragePlatform
 
@@ -68,9 +68,9 @@ def build_context(
     artist_model = CollectionListModel(track_model, CollectionKind.ARTIST)
     genre_model = CollectionListModel(track_model, CollectionKind.GENRE)
     tv_show_model = CollectionListModel(track_model, CollectionKind.TV_SHOW)
-    music_video_model = CollectionListModel(
+    music_video_model = AlbumListModel(
         track_model,
-        CollectionKind.MUSIC_VIDEO_ALBUM,
+        media_kind=MediaKind.MUSIC_VIDEO,
     )
     theme_manager = ThemeManager(APPLICATION, settings)
     i18n_manager = I18nManager(APPLICATION, settings)

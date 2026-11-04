@@ -52,7 +52,7 @@
     <name>AlbumGridView</name>
     <message>
         <source>Albums</source>
-        <translation>Alben</translation>
+        <translation type="vanished">Alben</translation>
     </message>
 </context>
 <context>
@@ -927,6 +927,21 @@
     <message>
         <source>%1 selected</source>
         <translation>%1 ausgewählt</translation>
+    </message>
+</context>
+<context>
+    <name>CollectionAlbumList</name>
+    <message>
+        <source>Play</source>
+        <translation>Wiedergeben</translation>
+    </message>
+    <message>
+        <source>Add to top of queue</source>
+        <translation>An den Anfang der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Add to bottom of queue</source>
+        <translation>Ans Ende der Warteschlange hinzufügen</translation>
     </message>
 </context>
 <context>
@@ -2306,6 +2321,10 @@
         <translation>Album ans Ende der Warteschlange hinzufügen</translation>
     </message>
     <message>
+        <source>by %1</source>
+        <translation>von %1</translation>
+    </message>
+    <message>
         <source>Close album</source>
         <translation>Album schließen</translation>
     </message>
@@ -2369,6 +2388,10 @@
     <message>
         <source>Search Albums</source>
         <translation>Alben suchen</translation>
+    </message>
+    <message>
+        <source>Search %1</source>
+        <translation>%1 durchsuchen</translation>
     </message>
     <message>
         <source>Sort albums</source>

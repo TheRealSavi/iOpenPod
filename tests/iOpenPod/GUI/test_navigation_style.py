@@ -1,7 +1,7 @@
 """Navigation style changes preserve the Library shell's current workflow."""
 
 import pytest
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QPushButton, QStackedWidget, QTreeView, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import (
@@ -84,14 +84,14 @@ def test_navigation_style_applies_immediately_and_keeps_current_page(
         shell = window.findChild(QWidget, "appShell")
         assert sidebar is not None and top_bar is not None and combo is not None
         assert pages is not None and player is not None and shell is not None
-        assert sidebar.isVisible() and not top_bar.isVisible()
-        sidebar.pageRequested.emit(PageId.SETTINGS.value)
+        assert top_bar.isVisible() and not sidebar.isVisible()
+        top_bar.pageRequested.emit(PageId.SETTINGS.value)
         current = pages.currentWidget()
 
-        combo.setCurrentIndex(combo.findData(NavigationStyle.COMPACT_TOP_BAR.value))
+        combo.setCurrentIndex(combo.findData(NavigationStyle.SIDEBAR.value))
         APPLICATION.processEvents()
-        assert context.settings.get(NAVIGATION_STYLE) == "compact-top-bar"
-        assert top_bar.isVisible() and not sidebar.isVisible()
+        assert context.settings.get(NAVIGATION_STYLE) == "sidebar"
+        assert sidebar.isVisible() and not top_bar.isVisible()
         assert pages.currentWidget() is current
         assert top_bar.width() == shell.width()
         assert top_bar.height() < 60
@@ -101,11 +101,11 @@ def test_navigation_style_applies_immediately_and_keeps_current_page(
             0 if position is PlayerPosition.TOP else layout.count() - 1
         )
 
-        top_bar.pageRequested.emit(PageId.ARTISTS.value)
+        sidebar.pageRequested.emit(PageId.ARTISTS.value)
         assert pages.currentWidget() is not current
         current = pages.currentWidget()
         context.settings.reset_global(NAVIGATION_STYLE)
-        assert sidebar.isVisible() and not top_bar.isVisible()
+        assert top_bar.isVisible() and not sidebar.isVisible()
         assert pages.currentWidget() is current
     finally:
         window.close()
@@ -151,6 +151,9 @@ def test_style_changed_during_fullscreen_is_applied_when_shell_returns() -> None
         window.show()
         window.activateWindow()
         APPLICATION.processEvents()
+        # Leave any heading under the inherited cursor before using window shortcuts.
+        QTest.mouseMove(window, QPoint(1, 1))
+        QTest.qWait(220)
         top_bar = window.findChild(CompactTopBar)
         sidebar = window.findChild(Sidebar)
         assert top_bar is not None and sidebar is not None
@@ -160,7 +163,7 @@ def test_style_changed_during_fullscreen_is_applied_when_shell_returns() -> None
         APPLICATION.processEvents()
         assert window.isFullScreen()
         assert not top_bar.isVisible() and not sidebar.isVisible()
-        context.settings.reset_global(NAVIGATION_STYLE)
+        context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
         assert not top_bar.isVisible() and not sidebar.isVisible()
         QTest.keyClick(window, Qt.Key.Key_Escape)
         APPLICATION.processEvents()
@@ -177,6 +180,7 @@ def test_both_navigation_styles_share_playlist_selection_without_resetting_page(
     None
 ):
     context = build_context()
+    context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
     context.library_workspace.load(
         LibrarySnapshot(playlists=(Playlist(1, "First"), Playlist(2, "Second")))
     )

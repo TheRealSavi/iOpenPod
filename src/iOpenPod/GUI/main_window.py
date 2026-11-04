@@ -396,6 +396,7 @@ class MainWindow(QMainWindow):
             "movies",
             (MediaKind.MOVIE,),
             self._pages,
+            show_grid=True,
         )
         tv_shows_page = CollectionPage(
             context.track_model,
@@ -407,7 +408,7 @@ class MainWindow(QMainWindow):
             table_id="tv-shows-tracks",
             parent=self._pages,
         )
-        music_videos_page = CollectionPage(
+        music_videos_page = LibraryPage(
             context.track_model,
             context.music_video_model,
             context.settings,
@@ -664,11 +665,18 @@ class MainWindow(QMainWindow):
             self._track_actions.install(
                 table, double_click=table is not self._genius_page.track_table
             )
+        from iOpenPod.GUI.widgets.track_grid import TrackGridView
+
+        for track_grid in self._library_browser.findChildren(TrackGridView):
+            track_grid.set_library_workspace(context.library_workspace)
+            self._track_actions.install(track_grid)
         from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
 
         for panel in self._library_browser.findChildren(InlineAlbumPanel):
             panel.set_library_workspace(context.library_workspace)
             self._track_actions.install(panel.track_view)
+        for collection_page in self._library_browser.findChildren(CollectionPage):
+            collection_page.albumPanelCreated.connect(self._install_album_section)
         for grid in (
             *self._library_browser.findChildren(AlbumGridView),
             *self._library_browser.findChildren(CollectionGridView),
@@ -968,12 +976,19 @@ class MainWindow(QMainWindow):
             if isinstance(page, TrackPage):
                 page.select_track(record_id)
 
+    def _install_album_section(self, value: object) -> None:
+        from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
+
+        if isinstance(value, InlineAlbumPanel):
+            value.set_library_workspace(self._context.library_workspace)
+            self._track_actions.install(value.track_view)
+
     def _connect_playback(self) -> None:
         controller = self._context.playback_controller
         for page in self._library_pages:
             if isinstance(page, PodcastPage):
                 page.trackActivated.connect(controller.enqueue)
-            if isinstance(page, (GeniusPage, LibraryPage)):
+            if isinstance(page, (GeniusPage, LibraryPage, CollectionPage)):
                 page.playRequested.connect(controller.play_now)
                 page.queueRequested.connect(self._queue_group_tracks)
                 page.playNextRequested.connect(controller.play_next)

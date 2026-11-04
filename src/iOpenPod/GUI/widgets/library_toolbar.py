@@ -42,6 +42,7 @@ class LibraryToolbar(PageHeader):
         self._grid_search_label = ""
         self._list_search_label = ""
         self._supports_list = True
+        self._allow_view_switch = True
         self._supports_search = True
         self._supports_selection_grouping = False
         self._sort_accessible_name = ""
@@ -159,6 +160,10 @@ class LibraryToolbar(PageHeader):
         self._view_switch.sync_selection()
         self._refresh_mode_copy()
 
+    def set_view_switch_visible(self, visible: bool) -> None:
+        self._allow_view_switch = visible
+        self._refresh_mode_copy()
+
     def set_selection_grouping(self, enabled: bool) -> None:
         self._selection_grouping.setChecked(enabled)
 
@@ -236,7 +241,7 @@ class LibraryToolbar(PageHeader):
         self._search.setAccessibleName(search_label)
         self._sort.setVisible(bool(self._sort_options))
         self._selection_grouping.setVisible(self._supports_selection_grouping)
-        self._view_switch.setVisible(self._supports_list)
+        self._view_switch.setVisible(self._supports_list and self._allow_view_switch)
         self._search.setVisible(self._supports_search)
 
 

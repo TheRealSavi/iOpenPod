@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-04
-- Supersedes: ADR-0233's dropdown interaction policy
+- Supersedes: ADR-0233's dropdown interaction policy and default navigation style
 
 ## Context
 
@@ -12,6 +12,9 @@ did not provide a complete desktop navigation model. The requested replacement
 allows keyboard access while keeping highlighting distinct from activation.
 
 ## Decision
+
+Compact top bar is the default Navigation style. Existing saved preferences remain
+authoritative, and Sidebar remains available in Library settings.
 
 All five compact navigation dropdowns use `HoverDropdown` and one
 `HoverDropdownGroup`. The group owns trigger events, popup exclusivity, placement,

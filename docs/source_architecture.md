@@ -1644,8 +1644,26 @@ reuse the existing browser and Track table, preserving their models and iPod
 actions. Sync Selection controls remain exclusive to Select Media, whose layout
 does not follow this setting. iTunes 11 style inserts an album-colored Track list
 below the selected Album's grid row and pushes subsequent rows down. It displays
-Track number, title, rating, and duration with artwork on the right; other Library
-views retain Split Table. The choice uses the existing Host settings and individual
+Track number, title, rating, and duration with artwork on the right. Artists and
+Genres instead use list-only browsing and `CollectionAlbumList`: a collection
+heading, counts, playback/queue intents, and lazily materialized Album sections.
+The sections reuse `InlineAlbumPanel` Track selection, activation, and drag behavior
+with two columns, no rating, a title and year, and artwork on the left. Genres add
+an Album Artist byline and use smaller artwork. Existing Track actions bind to each
+materialized section. Only Tracks matching the selected collection enter the rows
+and header actions. TV Shows retains Split Table. See ADR-0235.
+Music Videos reuses `LibraryPage` and its Album grid, single-cover artwork,
+sorting, search, and inline/detail layouts. Its `AlbumListModel` has an explicit
+Music Video scope, also used by the page's Track filter. Album actions and drags
+resolve the summary's Track identities so matching audio Album names cannot cross
+that scope. Host browsing and Select Media share these Album components while
+retaining their own presentation and selection policy. See ADR-0237.
+Movies opts into `TrackPage`'s grid/list toggle, defaulting to artwork/title cards
+in `TrackGridView`. Its existing table and grid share a filtered Track model and
+search, retaining selection when switching. Single clicks only select cards;
+explicit actions use the shared Track action and drag bindings. This presentation
+is independent of the Library View Mode setting. See ADR-0236.
+The choice uses the existing Host settings and individual
 iPod overrides, and applies immediately. See ADR-0126 for setting precedence.
 
 When an Active iPod is available, the pre-Sync workflow then runs an iPod Media Scan.
@@ -2664,6 +2682,7 @@ The GUI should remain a consumer of application state and services rather than t
 
 The Host-only Library setting **Navigation style** switches immediately between
 `Sidebar` and `CompactTopBar`, retaining the current page and selected Playlist.
+`CompactTopBar` is the default; saved navigation preferences remain authoritative.
 Both consume the same routes, Device Capabilities, action availability, and Library
 Workspace. The compact strip centers Audio, Video, Playlists, Photos, and Games;
 its left side opens Device actions and starts Sync with Host, while Maintenance and

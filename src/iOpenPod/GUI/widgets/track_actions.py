@@ -63,7 +63,6 @@ from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import (
     ContentAdvisory,
-    MediaKind,
     MetadataValue,
     PlaylistKind,
     PlaylistSortOrder,
@@ -343,10 +342,9 @@ class TrackActions(QObject):
                     tracks.extend(
                         sorted(
                             (
-                                t
-                                for t in self.workspace.tracks
-                                if t.media_kind is MediaKind.MUSIC
-                                and t.album_key == summary.key
+                                track
+                                for track_id in summary.track_ids
+                                if (track := self.workspace.track(track_id)) is not None
                             ),
                             key=album_track_sort_key,
                         )

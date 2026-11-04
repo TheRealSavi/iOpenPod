@@ -82,10 +82,10 @@ class HostLibraryBrowser:
             CollectionKind.TV_SHOW,
             parent,
         )
-        self.music_video_model = CollectionListModel(
+        self.music_video_model = AlbumListModel(
             self.track_model,
-            CollectionKind.MUSIC_VIDEO_ALBUM,
             parent,
+            media_kind=MediaKind.MUSIC_VIDEO,
         )
         if selection is not None:
             self.track_model.set_sync_selection(selection)
@@ -183,7 +183,7 @@ class HostLibraryBrowser:
             selection_mode=selection is not None,
             follow_ipod_view_mode=False,
         )
-        music_videos = CollectionPage(
+        music_videos = LibraryPage(
             self.track_model,
             self.music_video_model,
             settings,

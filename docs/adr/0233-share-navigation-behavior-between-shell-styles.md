@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-03
 - Extends: ADR-0020, ADR-0126, and ADR-0230
-- Dropdown interaction policy superseded by [ADR-0234](0234-unify-desktop-navigation-dropdowns.md).
+- Dropdown interaction policy and default navigation style superseded by [ADR-0234](0234-unify-desktop-navigation-dropdowns.md).
 
 ## Context
 

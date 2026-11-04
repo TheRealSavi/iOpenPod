@@ -50,7 +50,7 @@ def test_pointer_drag_uses_standard_preview_and_all_library_drop_targets(
         window.resize(1600, 950)
         window.show()
         QTest.qWait(50)
-        page = window.findChild(LibraryPage)
+        page = window.findChild(LibraryPage, "albumsPage")
         assert page is not None
         grid = page.findChild(AlbumGridView)
         panel = page.findChild(InlineAlbumPanel)

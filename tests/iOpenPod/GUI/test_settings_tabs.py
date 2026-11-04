@@ -464,13 +464,10 @@ def test_navigation_style_is_saved_and_retranslated_without_extra_writes(
             "Sidebar",
             "Compact top bar",
         ]
-        assert combo.currentData() == NavigationStyle.SIDEBAR.value
+        assert combo.currentData() == NavigationStyle.COMPACT_TOP_BAR.value
         changes = QSignalSpy(context.settings.settingChanged)
-        combo.setCurrentIndex(combo.findData(NavigationStyle.COMPACT_TOP_BAR.value))
-        assert (
-            context.settings.get(NAVIGATION_STYLE)
-            == NavigationStyle.COMPACT_TOP_BAR.value
-        )
+        combo.setCurrentIndex(combo.findData(NavigationStyle.SIDEBAR.value))
+        assert context.settings.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
         assert changes.count() == 1
 
         def translate(_page: SettingsPage, text: str) -> str:
@@ -478,11 +475,13 @@ def test_navigation_style_is_saved_and_retranslated_without_extra_writes(
 
         monkeypatch.setattr(SettingsPage, "tr", translate)
         APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
-        assert combo.currentData() == NavigationStyle.COMPACT_TOP_BAR.value
-        assert combo.currentText() == "Translated Compact top bar"
-        assert changes.count() == 1
-        context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
         assert combo.currentData() == NavigationStyle.SIDEBAR.value
+        assert combo.currentText() == "Translated Sidebar"
+        assert changes.count() == 1
+        context.settings.set_global(
+            NAVIGATION_STYLE, NavigationStyle.COMPACT_TOP_BAR.value
+        )
+        assert combo.currentData() == NavigationStyle.COMPACT_TOP_BAR.value
     finally:
         page.close()
 

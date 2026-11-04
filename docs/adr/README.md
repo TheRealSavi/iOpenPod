@@ -299,3 +299,6 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0232: Cache Phase input metadata across Library saves](0232-cache-phase-input-metadata-across-library-saves.md)
 - [ADR-0233: Share navigation behavior between shell styles](0233-share-navigation-behavior-between-shell-styles.md)
 - [ADR-0234: Unify desktop navigation dropdowns](0234-unify-desktop-navigation-dropdowns.md)
+- [ADR-0235: Browse Artists and Genres as Album sections](0235-browse-artists-and-genres-as-album-sections.md)
+- [ADR-0236: Browse Movies with an independent grid toggle](0236-browse-movies-with-an-independent-grid-toggle.md)
+- [ADR-0237: Share Album browsing with Music Videos](0237-share-album-browsing-with-music-videos.md)

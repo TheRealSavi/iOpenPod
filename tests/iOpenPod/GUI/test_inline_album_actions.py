@@ -40,7 +40,7 @@ def test_inline_cells_keep_context_selection_and_ordered_playback() -> None:
         window.resize(1600, 950)
         window.show()
         QTest.qWait(50)
-        page = window.findChild(LibraryPage)
+        page = window.findChild(LibraryPage, "albumsPage")
         assert page is not None
         grid = page.findChild(AlbumGridView)
         panel = page.findChild(InlineAlbumPanel)
@@ -111,7 +111,7 @@ def test_album_buttons_play_or_queue_the_complete_album(
         window.resize(1600, 950)
         window.show()
         QTest.qWait(50)
-        page = window.findChild(LibraryPage)
+        page = window.findChild(LibraryPage, "albumsPage")
         assert page is not None
         grid = page.findChild(AlbumGridView)
         panel = page.findChild(InlineAlbumPanel)
@@ -169,11 +169,14 @@ def test_physical_shortcuts_use_the_focused_album_or_inline_track(focus: str) ->
         window.show()
         window.activateWindow()
         QTest.qWait(50)
-        page = window.findChild(LibraryPage)
+        page = window.findChild(LibraryPage, "albumsPage")
         assert page is not None
         grid = page.findChild(AlbumGridView)
         panel = page.findChild(InlineAlbumPanel)
         assert grid is not None and panel is not None
+        QTest.mouseMove(
+            grid.viewport(), grid.visualRect(grid.model().index(0, 0)).center()
+        )
         QTest.mouseClick(
             grid.viewport(),
             Qt.MouseButton.LeftButton,
