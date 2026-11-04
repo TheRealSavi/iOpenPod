@@ -7515,6 +7515,10 @@ Playlists: %3</translation>
         <translation>Das Wiederherstellungsprotokoll wird abgeschlossen und die aktuelle Mediathek neu geladen. Lassen Sie den iPod angeschlossen.</translation>
     </message>
     <message>
+        <source>Save Sync report…</source>
+        <translation>Synchronisierungsbericht speichern…</translation>
+    </message>
+    <message>
         <source>Cancel Sync</source>
         <translation>Synchronisierung abbrechen</translation>
     </message>
@@ -7736,6 +7740,18 @@ Playlists: %3</translation>
     <message>
         <source>Technical details</source>
         <translation>Technische Details</translation>
+    </message>
+    <message>
+        <source>Save Sync report</source>
+        <translation>Synchronisierungsbericht speichern</translation>
+    </message>
+    <message>
+        <source>Text files (*.txt);;All files (*)</source>
+        <translation>Textdateien (*.txt);;Alle Dateien (*)</translation>
+    </message>
+    <message>
+        <source>Sync report could not be saved</source>
+        <translation>Der Synchronisierungsbericht konnte nicht gespeichert werden</translation>
     </message>
     <message>
         <source>Completed: %1</source>

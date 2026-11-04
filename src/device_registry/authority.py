@@ -10,7 +10,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 from xml.parsers.expat import ExpatError
 
-from device_registry.identifiers import normalize_model_number, normalize_serial
+from device_registry.identifiers import (
+    has_apple_serial_format,
+    normalize_model_number,
+    normalize_serial,
+)
 from device_registry.models import (
     DeviceEvidence,
     DeviceIdentifier,
@@ -418,6 +422,8 @@ def _serial_resolves_to_profile(value: str, profile: DeviceProfile) -> bool:
     from device_registry.data.catalog import DEFAULT_CATALOG
 
     serial = normalize_serial(value)
+    if not has_apple_serial_format(serial):
+        return False
     matches = tuple(
         definition
         for definition in DEFAULT_CATALOG.serial_suffixes

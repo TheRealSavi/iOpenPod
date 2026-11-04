@@ -7515,6 +7515,10 @@ Playlists: %3</translation>
         <translation>Cerrando el registro de recuperación y cargando de nuevo la biblioteca actual. Mantén el iPod conectado.</translation>
     </message>
     <message>
+        <source>Save Sync report…</source>
+        <translation>Guardar informe de sincronización…</translation>
+    </message>
+    <message>
         <source>Cancel Sync</source>
         <translation>Cancelar sincronización</translation>
     </message>
@@ -7736,6 +7740,18 @@ Playlists: %3</translation>
     <message>
         <source>Technical details</source>
         <translation>Detalles técnicos</translation>
+    </message>
+    <message>
+        <source>Save Sync report</source>
+        <translation>Guardar informe de sincronización</translation>
+    </message>
+    <message>
+        <source>Text files (*.txt);;All files (*)</source>
+        <translation>Archivos de texto (*.txt);;Todos los archivos (*)</translation>
+    </message>
+    <message>
+        <source>Sync report could not be saved</source>
+        <translation>No se pudo guardar el informe de sincronización</translation>
     </message>
     <message>
         <source>Completed: %1</source>

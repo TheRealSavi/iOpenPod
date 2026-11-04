@@ -3216,12 +3216,18 @@ def test_short_filename_appearing_after_review_is_never_overwritten(
         device.coordinator.close()
 
 
-def test_library_retry_reports_each_track_error_once_with_readable_context(
+@pytest.mark.parametrize("with_good_track", [False, True])
+@pytest.mark.parametrize("update", [False, True])
+@pytest.mark.parametrize("normalize", [False, True])
+def test_invalid_metadata_is_skipped_with_readable_context(
     tmp_path: Path,
+    with_good_track: bool,
+    update: bool,
+    normalize: bool,
 ) -> None:
     device = build_device(tmp_path)
     try:
-        host = _host(tmp_path, "Invalid year")
+        host = _host(tmp_path, "Invalid year", *(("Good",) if with_good_track else ()))
         path = tmp_path / "cover.png"
         Image.new("RGB", (64, 64), "blue").save(path)
         observed = LocalHostFile.observe(HostPath(path))
@@ -3229,7 +3235,10 @@ def test_library_retry_reports_each_track_error_once_with_readable_context(
             host,
             snapshot=replace(
                 host.snapshot,
-                tracks=(replace(host.snapshot.tracks[0], year=2**32, artwork_id=123),),
+                tracks=(
+                    replace(host.snapshot.tracks[0], year=2**32, artwork_id=123),
+                    *host.snapshot.tracks[1:],
+                ),
             ),
             artwork_sources=(
                 HostMediaArtworkSource(
@@ -3242,16 +3251,123 @@ def test_library_retry_reports_each_track_error_once_with_readable_context(
                 ),
             ),
         )
-        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
-            _request(device, host), lambda _: None, Event()
+        request = _request(device, host, update=update)
+        request = replace(
+            request, options=replace(request.options, normalize_tags=normalize)
         )
-        assert result.status is SyncExecutionStatus.FAILED
+        original = request.source.library.tracks[0]
+        original_bytes = (device.root / original.metadata.location).read_bytes()
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is (
+            SyncExecutionStatus.PARTIAL
+            if with_good_track
+            else SyncExecutionStatus.FAILED
+        ), result.issues
         failures = [i for i in result.issues if i.code == "track.invalid_value"]
         assert len(failures) == 1, result.issues
         assert "Invalid year" in failures[0].detail
         assert "Album" in failures[0].detail
         assert failures[0].artifact
-        device.assert_original()
+        assert failures[0].artifact == str(host.sources[0].path)
+        assert len(result.completed) == int(with_good_track)
+        assert (device.root / original.metadata.location).read_bytes() == original_bytes
+        if with_good_track:
+            assert result.active is not None and result.helper is not None
+            titles = {track.title for track in result.active.library.tracks}
+            assert "Good" in titles and "Invalid year" not in titles
+            retained = next(
+                entry
+                for entry in result.helper.tracks
+                if str(entry.path) == original.metadata.location
+            )
+            assert retained.sync == request.ipod.tracks[0].sync
+        else:
+            device.assert_original()
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("problem", ["metadata", "missing_source"])
+@pytest.mark.parametrize("normalize", [False, True])
+def test_failed_metadata_only_update_keeps_old_track_and_saves_valid_tracks(
+    tmp_path: Path, problem: str, normalize: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _host(tmp_path, "Bad update", "Good", playlists=True)
+        if problem == "metadata":
+            host = replace(
+                host,
+                snapshot=replace(
+                    host.snapshot,
+                    tracks=(
+                        replace(host.snapshot.tracks[0], year=2**32),
+                        *host.snapshot.tracks[1:],
+                    ),
+                ),
+            )
+        request = _request(device, host, update=True)
+        acoustic = host.sources[0].acoustic_fingerprint
+        assert acoustic is not None
+        ipod = replace(
+            request.ipod,
+            tracks=(
+                replace(
+                    request.ipod.tracks[0],
+                    acoustic_fingerprint=acoustic,
+                ),
+                *request.ipod.tracks[1:],
+            ),
+        )
+        comparison = prepare_sync_plan(host, ipod, request.source.library)
+        request = replace(
+            request,
+            ipod=ipod,
+            plan=replace(
+                comparison,
+                items=tuple(
+                    item
+                    for item in comparison.items
+                    if item.action is not SyncPlanAction.REMOVE
+                ),
+            ),
+            options=replace(request.options, normalize_tags=normalize),
+        )
+        update = next(
+            item for item in request.plan.items if item.action is SyncPlanAction.UPDATE
+        )
+        assert update.metadata_changed and not update.audio_payload_changed
+        original = request.source.library.tracks[0]
+        original_bytes = (device.root / original.metadata.location).read_bytes()
+        if problem == "missing_source":
+            Path(host.sources[0].path.path).unlink()
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.PARTIAL, result.issues
+        assert result.active is not None and result.helper is not None
+        assert len(result.completed) == 1
+        assert result.completed[0].name == "Good"
+        retained = next(
+            track
+            for track in result.active.library.tracks
+            if track.track_id == original.track_id
+        )
+        assert retained.title == original.title and retained.year == original.year
+        assert (device.root / original.metadata.location).read_bytes() == original_bytes
+        provenance = next(
+            record
+            for record in result.helper.tracks
+            if str(record.path) == original.metadata.location
+        )
+        assert provenance.sync == ipod.tracks[0].sync
+        assert any(
+            issue.code == "sync.item_failed"
+            and issue.artifact == str(host.sources[0].path)
+            for issue in result.issues
+        )
     finally:
         device.coordinator.close()
 

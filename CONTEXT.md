@@ -586,7 +586,10 @@ candidates start unchecked. Review can exclude individual actions or whole group
 without changing desired Host membership. Sync Selected validates that plan, checks
 required media tools, prepares compatible media on the Host, and builds an isolated
 Library Draft. Failed independent items are reported and excluded while successful
-items can still commit. The verified Library and media publish through Storage;
+items can still commit. Incoming Track metadata and metadata-only source failures
+are checked per item; skipped Updates preserve the existing iPod copy. The result
+screen offers **Save Sync report** with every reported source and error reason,
+including entries omitted from compact message previews. The verified Library and media publish through Storage;
 successful Sync Details follow the commit. Cancellation and interrupted publication
 have explicit cleanup/recovery results. See ADR-0065 through ADR-0067, ADR-0070,
 and ADR-0076. Playlist Review has individual choices, visible iPod targets, and

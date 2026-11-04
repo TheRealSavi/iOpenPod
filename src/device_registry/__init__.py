@@ -8,6 +8,7 @@ from device_registry.authority import (
     reconcile_device_metadata,
 )
 from device_registry.data.catalog import DEFAULT_CATALOG
+from device_registry.identifiers import normalize_product_serial
 from device_registry.metadata import parse_sysinfo, parse_sysinfo_extended
 from device_registry.models import (
     ArtworkCapabilities,
@@ -68,6 +69,7 @@ __all__ = [
     "UsbIdentifier",
     "VideoCapabilities",
     "authority_covers_metadata",
+    "normalize_product_serial",
     "parse_sysinfo",
     "parse_sysinfo_extended",
     "reconcile_device_metadata",

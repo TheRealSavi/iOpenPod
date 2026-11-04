@@ -81,7 +81,7 @@ def test_early_ipod_usb_and_serial_evidence_remain_bounded() -> None:
         DeviceEvidence(
             product_serials=(
                 _text_identifier(
-                    "U123456LG6",
+                    "U0123456LG6",
                     source="host product serial",
                     authority=EvidenceAuthority.CURRENT_HARDWARE,
                 ),

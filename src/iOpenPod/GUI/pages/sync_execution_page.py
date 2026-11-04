@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Literal
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QStackedWidget,
@@ -17,6 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app.display_text import exception_text
+from iOpenPod.app.sync_diagnostics import save_sync_report
 from iOpenPod.app.sync_execution import SyncExecutionResult, SyncExecutionStatus
 from iOpenPod.GUI.presentation.i18n.text import english_count_fallback, item_count_text
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
@@ -30,6 +35,7 @@ from iOpenPod.GUI.widgets.sync_result import (
 )
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iPodDB.library import IssueSeverity
+from storage import StorageError
 
 if TYPE_CHECKING:
     from iOpenPod.app.library_write import WriteProgress
@@ -58,6 +64,7 @@ class SyncExecutionPage(QWidget):
         super().__init__(parent)
         self.setObjectName("syncExecutionPage")
         self._result: SyncExecutionResult | None = None
+        self._report_text = ""
         self._cancel_requested = False
         self._genius_skip_requested = False
         self._cancel_notice = False
@@ -138,6 +145,10 @@ class SyncExecutionPage(QWidget):
         self._done.setObjectName("finishSyncExecution")
         self._done.clicked.connect(self.exitRequested.emit)
         self._done.hide()
+        self._save_report = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
+        self._save_report.setObjectName("saveSyncReport")
+        self._save_report.clicked.connect(self._save_sync_report)
+        self._save_report.hide()
         self._recover = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
         self._recover.setObjectName("recoverSyncExecution")
         self._recover.clicked.connect(self.recoveryRequested.emit)
@@ -148,6 +159,7 @@ class SyncExecutionPage(QWidget):
         self._keep.hide()
         actions = QHBoxLayout()
         actions.addStretch()
+        actions.addWidget(self._save_report)
         actions.addWidget(self._skip_genius)
         actions.addWidget(self._cancel)
         actions.addWidget(self._recover)
@@ -218,6 +230,8 @@ class SyncExecutionPage(QWidget):
         self.resultVisibilityChanged.emit()
 
     def begin(self) -> None:
+        self._save_report.hide()
+        self._report_text = ""
         self._phase_started = self._last_progress = monotonic()
         self._progress_phase = ""
         self._elapsed.clear()
@@ -399,6 +413,7 @@ class SyncExecutionPage(QWidget):
         self._cancel.hide()
         self._skip_genius.hide()
         self._done.show()
+        self._save_report.show()
         self._recover.setVisible(
             result.status is SyncExecutionStatus.RECOVERY_REQUIRED
             or (
@@ -411,6 +426,7 @@ class SyncExecutionPage(QWidget):
         self.retranslate_ui()
 
     def begin_recovery(self, *, cleanup: bool = False) -> None:
+        self._save_report.hide()
         self._skip_genius.hide()
         self._views.setCurrentWidget(self._running_view)
         self._recovery_mode = "cleanup" if cleanup else "restore"
@@ -457,6 +473,7 @@ class SyncExecutionPage(QWidget):
         self._render_recovery()
 
     def retranslate_ui(self) -> None:
+        self._save_report.setText(self.tr("Save Sync report…"))
         self._cancel.setText(self.tr("Cancel Sync"))
         self._skip_genius.setText(self.tr("Skip for this Sync"))
         self._done.setText(self.tr("Return to Library"))
@@ -678,6 +695,30 @@ class SyncExecutionPage(QWidget):
             "\n\n".join(lines),
             self.tr("Technical details"),
         )
+        self._report_text = "\n\n".join(
+            part for part in (title, description, detail, *lines) if part
+        )
+
+    def _save_sync_report(self) -> None:
+        if not self._report_text:
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            self.tr("Save Sync report"),
+            "iOpenPod-sync-report.txt",
+            self.tr("Text files (*.txt);;All files (*)"),
+        )
+        if not filename:
+            return
+        try:
+            save_sync_report(Path(filename), self._report_text)
+        except (OSError, ValueError, StorageError) as error:
+            dialog = QMessageBox(self)
+            dialog.setIcon(QMessageBox.Icon.Warning)
+            dialog.setWindowTitle(self.tr("Sync report could not be saved"))
+            dialog.setTextFormat(Qt.TextFormat.PlainText)
+            dialog.setText(exception_text(error))
+            dialog.exec()
 
     def _issue_reference(self, issue: WriteIssue) -> str:
         if issue.artifact:

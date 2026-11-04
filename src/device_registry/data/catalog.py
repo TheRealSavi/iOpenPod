@@ -494,6 +494,9 @@ _MODEL_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
     ("M9805", "iPod Mini", "2nd Gen", "6GB", "Pink"),
     ("M9806", "iPod Mini", "2nd Gen", "4GB", "Green"),
     ("M9807", "iPod Mini", "2nd Gen", "6GB", "Green"),
+    # HP variants: docs/research/hp-ipod-mini-identification.md.
+    ("MP5001", "iPod Mini", "2nd Gen", "4GB", "Silver"),
+    ("MP5002", "iPod Mini", "2nd Gen", "6GB", "Silver"),
     # iPod Nano 1st generation
     ("MA004", "iPod Nano", "1st Gen", "2GB", "White"),
     ("MA005", "iPod Nano", "1st Gen", "4GB", "White"),

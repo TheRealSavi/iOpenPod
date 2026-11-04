@@ -1,11 +1,15 @@
 """Sync outcomes expose actual diagnostics, cancellation, and recovery actions."""
 
+from pathlib import Path
+
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -27,6 +31,67 @@ from iOpenPod.app.sync_plan import (
 from iOpenPod.GUI.pages.sync_execution_page import SyncExecutionPage
 from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
 from iPodDB.library import IssueSeverity, Track, WriteIssue
+from storage import AtomicHostFile
+
+
+@pytest.mark.parametrize("outcome", ["saved", "cancelled", "write_error"])
+def test_save_sync_report_keeps_every_file_and_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    page = SyncExecutionPage()
+    destination = tmp_path / "sync-report.txt"
+    destination.write_text("Previous report", encoding="utf-8")
+    errors: list[str] = []
+
+    def choose(*args: object, **kwargs: object) -> tuple[str, str]:
+        return ("" if outcome == "cancelled" else str(destination), "")
+
+    def show_error(dialog: QMessageBox) -> int:
+        errors.append(dialog.text())
+        return 0
+
+    def fail_replace(file: AtomicHostFile, data: bytes) -> None:
+        raise PermissionError("Report destination is read-only")
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", choose)
+    monkeypatch.setattr(QMessageBox, "exec", show_error)
+    if outcome == "write_error":
+        monkeypatch.setattr(AtomicHostFile, "replace_bytes", fail_replace)
+    try:
+        button = page.findChild(QPushButton, "saveSyncReport")
+        assert button is not None and button.isHidden()
+        issues = tuple(
+            WriteIssue(
+                "sync.item_failed",
+                "Track skipped",
+                detail="Unreadable audio frames — damaged source",
+                artifact=f"/Music/Épisode {index}.m4a",
+            )
+            for index in range(12)
+        )
+        page.show_result(
+            SyncExecutionResult(SyncExecutionStatus.PARTIAL, issues=issues)
+        )
+        assert not button.isHidden()
+        button.click()
+        text = destination.read_text(encoding="utf-8")
+        if outcome == "saved":
+            assert "Sync partially completed" in text
+            assert "Unreadable audio frames — damaged source" in text
+            assert all(issue.artifact in text for issue in issues)
+            assert "sync.item_failed" in text
+        else:
+            assert text == "Previous report"
+        assert errors == (
+            ["Report destination is read-only"] if outcome == "write_error" else []
+        )
+        title = page.findChild(QLabel, "syncResultTitle")
+        assert title is not None and title.text() == "Sync partially completed"
+        page.begin()
+        assert button.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
 
 
 def test_genius_skip_is_available_only_during_analysis_and_resets_each_sync() -> None:

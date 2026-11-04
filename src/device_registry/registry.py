@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from device_registry.genius import refine_genius_capabilities
 from device_registry.identifiers import (
     format_usb_identifier,
+    has_apple_serial_format,
     normalize_model_number,
     normalize_serial,
 )
@@ -237,6 +238,8 @@ class DeviceRegistry:
 
     def _profile_for_product_serial(self, serial: str) -> DeviceProfile | None:
         normalized = normalize_serial(serial)
+        if not has_apple_serial_format(normalized):
+            return None
         for length in self._serial_suffix_lengths:
             if len(normalized) < length:
                 continue

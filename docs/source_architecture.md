@@ -1812,6 +1812,13 @@ iPod clears the comparison. Sync Selected reserves the clean Library Workspace,
 captures transcoder and Sync settings, revalidates the selected plan and source
 facts, and prepares media concurrently on the Host. Independent preparation
 failures retain existing device media while other selected changes may proceed.
+Incoming Tracks pass iPodDB's per-Track metadata validation before entering the
+shared Library Draft. Metadata-only Updates validate changed fields and current
+Host source facts independently. Invalid items retain their Host path, readable
+Track context and validation reasons in the result; failed replacements retain
+their device media and successful Sync Details. Cancellation, disconnected
+Filesystem Sessions, shared Library validation and publication failures still
+follow the existing stop/recovery contract.
 An isolated Library Draft carries successful media, Photo, artwork, and Playlist
 changes into the existing issued Library Review and ordered Storage Transaction.
 The Library Sync Helper is updated only after verified publication. Device writes
@@ -1843,7 +1850,11 @@ the progress steps with a dedicated result screen showing the actual Sync outcom
 saved change counts, and messages grouped as errors, warnings, and information.
 Warnings alone do not change a successful outcome. Technical details retain diagnostic
 codes and every affected item reference. Restore Previous Library, Retry Cleanup,
-and Keep Current Contents remain available when the result requires them. Pending recovery survives
+and Keep Current Contents remain available when the result requires them.
+**Save Sync report** exports the complete displayed outcome and diagnostics as
+UTF-8 text through Storage's atomic Host-file writer, including all references
+hidden by compact message previews. Cancelling export or failing to save the
+report leaves the Sync outcome intact. Pending recovery survives
 restarts in device journals, with no Host setting. Discovery lists affected iPods
 without preventing selection of other devices. Selecting an affected iPod requires
 a restore-or-keep choice before metadata repair or Library loading. Recovery can

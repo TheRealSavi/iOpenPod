@@ -2,9 +2,16 @@
 
 from collections.abc import Iterable
 from dataclasses import replace
+from pathlib import Path
 
 from iOpenPod.app.display_text import source_text
 from iPodDB.library import Track, WriteIssue
+from storage import AtomicHostFile
+
+
+def save_sync_report(path: Path, text: str) -> None:
+    """Save the complete displayed outcome through Storage's atomic Host writer."""
+    AtomicHostFile(path).replace_bytes((text.rstrip() + "\n").encode("utf-8"))
 
 
 def describe_track_issues(
