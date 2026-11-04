@@ -28,7 +28,7 @@ exclude = [
 
 [project]
 name = "iOpenPod"
-version = "2.1.1"
+version = "2.1.2"
 description = "iPod sync tool. Manage your iPod media library without iTunes."
 authors = [{ name = "John Gibbons", email = "johngibbons167@gmail.com" }]
 readme = "README.md"
