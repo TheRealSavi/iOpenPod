@@ -41,6 +41,8 @@ class LayoutTokens:
     device_summary_image_size: int = 224
     device_summary_identity_width: int = 640
     device_summary_border_width: int = 1
+    start_logo_size: int = 160
+    start_action_width: int = 200
     device_storage_bar_height: int = 18
     scrollbar_extent: int = 10
     scrollbar_handle_minimum: int = 36

@@ -17,7 +17,11 @@ from tests.iOpenPod.GUI.application_shell_test_support import (
 )
 
 from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
-from iOpenPod.app.core.settings.definitions import AppearanceMode
+from iOpenPod.app.core.settings.definitions import (
+    NAVIGATION_STYLE,
+    AppearanceMode,
+    NavigationStyle,
+)
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -28,6 +32,7 @@ from iOpenPod.app.models.device import (
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.device_summary import DeviceSummaryPage
+from iOpenPod.GUI.pages.start_page import StartPage
 from iOpenPod.GUI.widgets.sidebar import DeviceCard, Sidebar
 from iPodDB.library import LibrarySnapshot
 from storage import FileFingerprint
@@ -259,6 +264,7 @@ def test_shell_routes_card_to_summary_and_clears_selection_on_library_navigation
     None
 ):
     context = build_context()
+    context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
     window = MainWindow(context, auto_discover=False)
     try:
         window.show()
@@ -284,7 +290,7 @@ def test_shell_routes_card_to_summary_and_clears_selection_on_library_navigation
         QTest.mouseClick(card, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
         context.device_controller.activeIPodChanged.emit(None)
         assert card.property("summaryAvailable") is False
-        assert pages.currentWidget() is page
+        assert isinstance(pages.currentWidget(), StartPage)
         assert name.text() == "No Active iPod"
     finally:
         window.close()

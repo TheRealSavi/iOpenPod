@@ -11,6 +11,7 @@ from device_registry import DeviceProfile, FeatureSupport
 class PageId(StrEnum):
     """Stable route identifiers; labels remain localizable presentation data."""
 
+    START = "start"
     DEVICE_SUMMARY = "device-summary"
     ALBUMS = "albums"
     ARTISTS = "artists"
@@ -59,6 +60,7 @@ def page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
 _PAGE_LABEL_SOURCES = cast(
     "dict[PageId, str]",
     {
+        PageId.START: QT_TRANSLATE_NOOP("Navigation", "Welcome"),
         PageId.DEVICE_SUMMARY: QT_TRANSLATE_NOOP("Navigation", "Device Summary"),
         PageId.ALBUMS: QT_TRANSLATE_NOOP("Navigation", "Albums"),
         PageId.ARTISTS: QT_TRANSLATE_NOOP("Navigation", "Artists"),

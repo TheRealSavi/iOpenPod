@@ -4,7 +4,11 @@ import pytest
 from PySide6.QtCore import QItemSelectionModel, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QLineEdit, QToolButton
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.application_shell_test_support import (
+    APPLICATION,
+    build_context,
+    show_albums,
+)
 
 from iOpenPod.app.core.settings.definitions import (
     IPOD_LIBRARY_VIEW_MODE,
@@ -36,6 +40,7 @@ def test_inline_cells_keep_context_selection_and_ordered_playback() -> None:
         LIBRARY_DOUBLE_CLICK_SHORTCUT, LibraryDoubleClickShortcut.PLAY_NOW.value
     )
     window = MainWindow(context, auto_discover=False)
+    show_albums(window)
     try:
         window.resize(1600, 950)
         window.show()
@@ -107,6 +112,7 @@ def test_album_buttons_play_or_queue_the_complete_album(
         IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value
     )
     window = MainWindow(context, auto_discover=False)
+    show_albums(window)
     try:
         window.resize(1600, 950)
         window.show()
@@ -164,6 +170,7 @@ def test_physical_shortcuts_use_the_focused_album_or_inline_track(focus: str) ->
         IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value
     )
     window = MainWindow(context, auto_discover=False)
+    show_albums(window)
     try:
         window.resize(1600, 950)
         window.show()

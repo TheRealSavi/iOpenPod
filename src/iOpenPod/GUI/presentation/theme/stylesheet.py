@@ -145,6 +145,7 @@ QStackedWidget#syncLibraryStack {{
 }}
 
 QLabel#pageTitle,
+QLabel#startTitle,
 QLabel#collectionAlbumTitle,
 QLabel#gamesEmptyTitle {{
     color: {tokens.text};
@@ -1493,7 +1494,14 @@ QLabel#deviceSummaryEmptyTitle {{
     font-weight: 700;
 }}
 
+QPushButton#startChooseDevice {{
+    min-height: {LAYOUT.control_height_large}px;
+    max-height: {LAYOUT.control_height_large}px;
+    min-width: {LAYOUT.start_action_width}px;
+}}
+
 QLabel#deviceSummaryModel,
+QLabel#startDescription,
 QLabel#deviceRestoreComingSoon,
 QLabel#deviceStorageCapacity,
 QLabel#deviceStorageNote {{

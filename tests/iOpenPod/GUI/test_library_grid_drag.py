@@ -6,7 +6,11 @@ from PySide6.QtCore import QItemSelectionModel, QMimeData, QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent, QPixmap
 from PySide6.QtWidgets import QAbstractItemView, QListView
 from pytest import MonkeyPatch
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.application_shell_test_support import (
+    APPLICATION,
+    build_context,
+    show_albums,
+)
 
 from iOpenPod.app.models.album_list_model import AlbumRole, AlbumSummary
 from iOpenPod.app.models.collection_list_model import (
@@ -195,6 +199,7 @@ def test_grid_box_selection_requires_shift_drag() -> None:
     context.library_workspace.load(LibrarySnapshot(_TRACKS))
     context.track_model.replace_tracks(_TRACKS)
     window = MainWindow(context, auto_discover=False)
+    show_albums(window)
 
     try:
         window.resize(1_000, 800)

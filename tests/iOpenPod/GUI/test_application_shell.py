@@ -93,6 +93,7 @@ from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.search_field import SearchField
+from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.status_controls import StatusBarControls
 from iOpenPod.GUI.widgets.status_list import StatusListButton
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -495,6 +496,9 @@ def test_shell_contains_persistent_player_sidebar_and_all_routes() -> None:
     window = MainWindow(context, auto_discover=False)
 
     try:
+        sidebar = window.findChild(Sidebar)
+        assert sidebar is not None
+        sidebar.pageRequested.emit(PageId.ALBUMS.value)
         window.show()
         APPLICATION.processEvents()
 
@@ -830,6 +834,9 @@ def test_colorful_mode_tints_album_card_fill_selection_and_track_header(
     window = MainWindow(context, auto_discover=False)
 
     try:
+        sidebar = window.findChild(Sidebar)
+        assert sidebar is not None
+        sidebar.pageRequested.emit(PageId.ALBUMS.value)
         provider = window.findChild(ArtworkPixmapProvider)
         grid = window.findChild(AlbumGridView, "albumGrid")
         splitter = window.findChild(LibrarySplitter, "librarySplitter")
@@ -917,6 +924,9 @@ def test_library_views_use_virtualized_model_view_primitives() -> None:
     window = MainWindow(context, auto_discover=False)
 
     try:
+        sidebar = window.findChild(Sidebar)
+        assert sidebar is not None
+        sidebar.pageRequested.emit(PageId.ALBUMS.value)
         window.show()
         APPLICATION.processEvents()
 
@@ -1902,6 +1912,9 @@ def test_legacy_splitter_state_cannot_collapse_track_title_bar() -> None:
     window = MainWindow(context, auto_discover=False)
 
     try:
+        sidebar = window.findChild(Sidebar)
+        assert sidebar is not None
+        sidebar.pageRequested.emit(PageId.ALBUMS.value)
         window.show()
         APPLICATION.processEvents()
 

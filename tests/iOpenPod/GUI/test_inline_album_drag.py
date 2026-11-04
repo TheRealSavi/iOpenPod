@@ -5,7 +5,11 @@ from PySide6.QtCore import QEvent, QItemSelectionModel, QModelIndex, QPoint, QPo
 from PySide6.QtGui import QDrag, QDropEvent, QMouseEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractItemView, QApplication
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.application_shell_test_support import (
+    APPLICATION,
+    build_context,
+    show_albums,
+)
 
 from iOpenPod.app.core.settings.definitions import (
     IPOD_LIBRARY_VIEW_MODE,
@@ -38,6 +42,7 @@ def test_pointer_drag_uses_standard_preview_and_all_library_drop_targets(
         IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value
     )
     window = MainWindow(context, auto_discover=False)
+    show_albums(window)
     drags: list[QDrag] = []
 
     def record_drag(drag: QDrag, action: Qt.DropAction) -> Qt.DropAction:

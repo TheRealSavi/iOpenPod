@@ -49,13 +49,22 @@ class _WaylandWindowIconEngine(QIconEngine):
         return QPixmap.fromImage(image, Qt.ImageConversionFlag.NoFormatConversion)
 
 
-def application_icon() -> QIcon:
-    """Return the native window icon, including the known Qt Wayland workaround."""
-
+def _source_icon() -> QIcon:
     directory = Path(__file__).parents[2] / "assets" / "icons"
     icon = QIcon()
     for size in (16, 24, 32, 48, 64, 128, 256):
         icon.addFile(str(directory / f"icon-{size}.png"))
+    return icon
+
+
+def application_pixmap(logical_size: int, device_pixel_ratio: float) -> QPixmap:
+    """Render the app logo inside widgets without native window-icon workarounds."""
+    return _source_icon().pixmap(QSize(logical_size, logical_size), device_pixel_ratio)
+
+
+def application_icon() -> QIcon:
+    """Return the native window icon, including the known Qt Wayland workaround."""
+    icon = _source_icon()
     if (
         QGuiApplication.platformName().startswith("wayland")
         and qVersion() in _STRAIGHT_ALPHA_WAYLAND_VERSIONS

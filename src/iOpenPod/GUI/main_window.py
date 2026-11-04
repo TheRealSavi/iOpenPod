@@ -111,6 +111,7 @@ from iOpenPod.GUI.pages.photo_page import PhotoPage
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
 from iOpenPod.GUI.pages.podcast_page import PodcastPage
 from iOpenPod.GUI.pages.settings_page import SettingsPage
+from iOpenPod.GUI.pages.start_page import StartPage
 from iOpenPod.GUI.pages.synesthesia_page import SynesthesiaPage
 from iOpenPod.GUI.pages.track_page import TrackPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
@@ -544,7 +545,13 @@ class MainWindow(QMainWindow):
         )
         exit_fullscreen.setAutoRepeat(False)
         exit_fullscreen.activated.connect(self._exit_synesthesia_fullscreen)
+        self._start_page = StartPage(self._pages)
+        self._start_page.chooseDeviceRequested.connect(self._open_device_picker)
+        self._start_page.set_busy(
+            context.device_controller.busy and not context.device_controller.searching
+        )
         self._page_widgets: dict[PageId, QWidget] = {
+            PageId.START: self._start_page,
             PageId.DEVICE_SUMMARY: self._device_summary_page,
             PageId.ALBUMS: self._library_page,
             PageId.ARTISTS: artists_page,
@@ -587,6 +594,7 @@ class MainWindow(QMainWindow):
         self._pages.addWidget(self._synesthesia_page)
         self._pages.addWidget(self._settings_page)
         self._pages.addWidget(self._device_summary_page)
+        self._pages.addWidget(self._start_page)
 
         library_layout.addWidget(self._sidebar)
         library_layout.addWidget(self._pages, stretch=1)
@@ -766,7 +774,11 @@ class MainWindow(QMainWindow):
         if geometry.isEmpty() or not self.restoreGeometry(geometry):
             self.resize(1360, 820)
 
-        self._show_page(PageId.ALBUMS.value)
+        self._show_page(
+            PageId.START.value
+            if context.device_controller.active_ipod is None
+            else PageId.ALBUMS.value
+        )
         for navigation in self._navigation_surfaces:
             navigation.set_device_discovery(context.device_controller.discovery)
             navigation.set_active_ipod(context.device_controller.active_ipod)
@@ -2219,11 +2231,16 @@ class MainWindow(QMainWindow):
             navigation.set_active_ipod(active_ipod)
         self._monitor_normalization(active_ipod)
         current = self._current_page_id()
-        if not self._sidebar.page_available(current):
+        if active_ipod is None:
+            self._show_page(PageId.START.value)
+        elif current is PageId.START or not self._sidebar.page_available(current):
             self._show_page(PageId.ALBUMS.value)
         self.retranslate_ui()
 
     def _device_busy_changed(self, busy: bool) -> None:
+        self._start_page.set_busy(
+            busy and not self._context.device_controller.searching
+        )
         self._device_summary_page.set_busy(
             busy and not self._context.device_controller.searching
         )

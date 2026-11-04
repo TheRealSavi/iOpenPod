@@ -3896,6 +3896,10 @@
 <context>
     <name>Navigation</name>
     <message>
+        <source>Welcome</source>
+        <translation>Bienvenido</translation>
+    </message>
+    <message>
         <source>Device Summary</source>
         <translation>Resumen del dispositivo</translation>
     </message>
@@ -6901,6 +6905,21 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>%1 of 5 stars</source>
         <translation>%1 de 5 estrellas</translation>
+    </message>
+</context>
+<context>
+    <name>StartPage</name>
+    <message>
+        <source>Choose Device</source>
+        <translation>Elegir dispositivo</translation>
+    </message>
+    <message>
+        <source>Welcome to iOpenPod</source>
+        <translation>Bienvenido a iOpenPod</translation>
+    </message>
+    <message>
+        <source>Connect your iPod, then click Choose Device to get started.</source>
+        <translation>Conecta tu iPod y haz clic en Elegir dispositivo para empezar.</translation>
     </message>
 </context>
 <context>
