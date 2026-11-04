@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-28
 - Amends: ADR-0075
+- Amended: 2026-11-04 to allow automatic conversion on the private iPod copy
 
 Classic 120GB RetailOS 2.0.1 provides an exact database-to-player lyrics trace.
 MHIT `+0xB0` bit zero becomes runtime TrackRecord `+0x8F` bit four. The Library
@@ -35,10 +36,17 @@ Equal text is no longer sufficient to skip an explicit Classic lyrics preparatio
 If its native representation fails verification, the focused writer can reauthor
 USLT/©lyr with the existing version policy and verify again. This repairs cases
 such as v2.4 encoding two becoming supported UTF-8. Compatible no-ops remain
-byte-exact; unrelated tags and encoded audio remain preserved.
+byte-exact; encoded audio remains preserved.
 
-Do not silently truncate text or downgrade an entire ID3 tag. Mutagen version
-conversion can discard unrelated version-specific frames. If the final native
+If focused rewriting still leaves an incompatible ID3v2.4 representation, convert
+the entire tag to ID3v2.3 automatically on the Storage-owned private copy, then
+repeat full-text read-back and native verification. No setting or confirmation is
+required. Mutagen version conversion may discard version-specific frames or
+reduce metadata fidelity on the iPod copy; this is an accepted tradeoff for native
+playback compatibility. Host source files, including NAS sources, remain unchanged.
+Generic Host/export edits retain their existing version-preservation policy.
+
+Do not silently truncate lyrics. If the final native
 representation cannot preserve the full requested text, preparation reports the
 specific incompatibility and blocks publication of that prepared result. Source
 media and the requested text are retained. Explicit clearing remains possible
@@ -59,3 +67,12 @@ libraries, or physical-device test is introduced by this decision.
 Validation covers raw flag preservation, native-layout boundary fixtures,
 real Mutagen writes with encoded-media preservation, and application preparation
 against virtual devices. Native runtime rendering remains unverified.
+
+## Amendment rationale (2026-11-04)
+
+[Issue 307](https://github.com/TheRealSavi/iOpenPod/issues/307) requests conversion
+without external edits to the source library. The earlier prohibition on whole-tag
+downgrades protected unrelated metadata on the iPod copy too strictly. Host source
+preservation is mandatory; lossless metadata conversion on the device copy is not.
+The fallback applies to new transfers and metadata-only updates, including after
+optional Rockbox tagging. It does not re-encode audio or rewrite untouched Tracks.

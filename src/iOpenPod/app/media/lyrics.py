@@ -58,12 +58,13 @@ def embedded_lyrics(parsed: Any) -> str:
 def rewrite_lyrics(
     data: bytes, file_name: str, lyrics: str, *, native_compatibility: bool = False
 ) -> bytes:
-    """Replace only lyrics on a private byte buffer and verify by reparsing.
+    """Prepare lyrics on a private byte buffer and verify by reparsing.
 
-    Existing ID3v2.3/v2.4 versions are retained; new tags use v2.3 UTF-16,
-    following the Original iOpenPod compatibility policy. No tag padding is added.
+    Existing ID3 versions are retained when compatible; new tags use v2.3 UTF-16.
+    Native preparation converts incompatible v2.4 tags on this private copy to
+    v2.3, accepting loss of version-specific metadata. No tag padding is added.
     A compatible unchanged value returns the original bytes, including padding.
-    Native validation may repair an encoding mismatch or reject an unsupported
+    Native validation may repair an encoding mismatch or convert an incompatible
     layout even when a general Host reader returns the requested text.
     """
     buffer = io.BytesIO(data)
@@ -112,8 +113,8 @@ def rewrite_lyrics_stream(
                 verify_native_lyrics(buffer, file_name, lyrics)
             except ValueError:
                 # Equal text can still use an unsupported encoding or native
-                # layout. Reauthor only USLT/©lyr in this private copy, keeping
-                # the tag version and unrelated data, then verify again below.
+                # layout. First try a focused rewrite, then convert incompatible
+                # v2.4 tags below if the native reader still rejects the result.
                 pass
             else:
                 return
@@ -157,7 +158,24 @@ def rewrite_lyrics_stream(
         if not _matches(load(buffer), lyrics):
             raise ValueError("Embedded lyrics failed read-back verification.")
         if native_compatibility:
-            verify_native_lyrics(buffer, file_name, lyrics)
+            try:
+                verify_native_lyrics(buffer, file_name, lyrics)
+            except ValueError:
+                if version != 4 or not isinstance(tags, ID3):
+                    raise
+                # Only Storage-owned staging reaches native preparation. Loss of
+                # v2.4-only metadata is acceptable on the iPod copy; Host files
+                # and encoded audio are untouched. A downgrade is not evidence
+                # by itself: verify the complete lyrics and native layout again.
+                cast("Any", tags).update_to_v23()
+                buffer.seek(0)
+                audio.save(buffer, v2_version=3, padding=_no_padding)
+                buffer.flush()
+                if not _matches(load(buffer), lyrics):
+                    raise ValueError(
+                        "Embedded lyrics failed read-back verification."
+                    ) from None
+                verify_native_lyrics(buffer, file_name, lyrics)
     except (mutagen.MutagenError, OSError) as error:
         raise ValueError(
             f"Could not prepare embedded lyrics for {file_name}: {error}"

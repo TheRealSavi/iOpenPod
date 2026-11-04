@@ -1793,8 +1793,12 @@ re-encodings, changes after the bounded analysis window, and video-only changes.
 If either fingerprint is unavailable, changed Host file facts request replacement.
 Migration reuses existing fingerprint evidence without introducing a new baseline. Tags/artwork-only
 updates retain media locations and payloads; lyrics and optional Rockbox tags share
-one verified file rewrite, whose final size is reflected in iTunesDB. Unchanged
-iTHMB artwork is retained. Separate Host and committed iPod tag fingerprints prevent
+one verified file rewrite, whose final size is reflected in iTunesDB.
+Classic-incompatible ID3v2.4 lyrics layouts automatically convert to ID3v2.3 in
+Storage-owned staging and pass full-text and native-layout verification again.
+Version-specific metadata may be lost on the iPod copy; Host sources and encoded
+audio remain unchanged. No setting or confirmation is required (ADR-0206).
+Unchanged iTHMB artwork is retained. Separate Host and committed iPod tag fingerprints prevent
 repeat Updates after device normalization. An applied Rockbox policy records whether
 embedded tags and the device-specific cover representation need refreshing.
 See ADR-0120. Photos retain

@@ -172,7 +172,9 @@ bytes until cleanup. See [ADR-0207](docs/adr/0207-resume-create-only-transaction
 
 Classic lyrics preparation now checks the final embedded representation against
 the native byte bounds, encoding branches and frame/atom layout before issuing
-publication evidence. Incompatible text is preserved and reported rather than
+publication evidence. Incompatible ID3v2.4 tags automatically convert to v2.3 on
+the private iPod copy; metadata loss there is accepted, while Host files and
+encoded audio remain unchanged. Unrepresentable text is reported rather than
 truncated. The Library projects the lyrics flag's low bit, and Review explains
 podcast/audiobook description precedence. See
 [ADR-0206](docs/adr/0206-validate-native-lyrics-publication.md).

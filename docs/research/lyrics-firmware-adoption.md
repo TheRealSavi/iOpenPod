@@ -31,16 +31,18 @@ proof of all native container-reader routes. Encrypted-media support is unchange
 
 ## Preservation and authoring policy
 
-New ID3 tags retain the existing v2.3 UTF-16 policy. Existing v2.3/v2.4 tags keep
+New ID3 tags retain the existing v2.3 UTF-16 policy. Compatible v2.3/v2.4 tags keep
 their version, with unknown and unrelated frames retained by focused edits.
 When an explicit native preparation finds equal text in an incompatible encoding,
 it may reauthor only the lyrics frame using that version's supported encoding.
-If a frame-size or byte-bound mismatch remains, publication is blocked with a
-specific explanation. Full text is never silently shortened.
+If native verification still fails for a v2.4 tag, preparation automatically
+converts the private iPod copy to v2.3 and verifies it again. Remaining byte-bound
+or full-text mismatches block publication. Full text is never silently shortened.
 
 Mutagen documents that conversion with `update_to_v23()` can remove v2.4-only
-frames. That tradeoff is why native verification does not automatically downgrade
-the whole tag.
+frames. The 2026-11-04 amendment to ADR-0206 accepts that metadata loss on the iPod
+copy to avoid requiring external conversion. Host source files remain unchanged;
+compatible no-ops and generic Host/export edits retain their version.
 [Mutagen ID3 version guidance](https://mutagen.readthedocs.io/en/latest/user/id3.html)
 
 Classic preparation checks the final output after focused lyrics edits and after

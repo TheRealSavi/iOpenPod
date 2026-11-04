@@ -4,13 +4,10 @@ import plistlib
 from pathlib import Path
 
 import pytest
-from tests.iOpenPod.app.services.test_device_coordinator import (
-    _ipod_volume,
-    _LinuxVirtualStoragePlatform,
-)
 
 from iOpenPod.app.models.device import DeviceCandidateIssueCode, DeviceReadiness
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
+from iPodDB.library import WriteTarget, create_empty_library
 from storage import (
     HardwareIdentifiers,
     HardwareProbeObservation,
@@ -18,6 +15,27 @@ from storage import (
     HardwareProperty,
     Storage,
 )
+from storage.testing import VirtualStoragePlatform
+
+
+class _LinuxVirtualStoragePlatform(VirtualStoragePlatform):
+    @property
+    def name(self) -> str:
+        return "linux"
+
+
+def _ipod_volume(root: Path, *, model_number: str) -> Path:
+    device = root / "iPod_Control" / "Device"
+    database = root / "iPod_Control" / "iTunes" / "iTunesDB"
+    device.mkdir(parents=True)
+    database.parent.mkdir(parents=True)
+    (device / "SysInfo").write_text(f"ModelNumStr: {model_number}\n", encoding="utf-8")
+    result = create_empty_library(
+        "HP Mini", WriteTarget(database_version=0x30), supports_podcasts=True
+    )
+    assert result.prepared is not None, result.issues
+    database.write_bytes(result.prepared.itunes)
+    return root
 
 
 @pytest.mark.parametrize("model", ["MP5001", "PW753AA#ABA", "MP5002", "PX762AA"])
