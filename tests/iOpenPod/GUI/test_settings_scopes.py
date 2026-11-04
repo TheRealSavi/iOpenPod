@@ -110,7 +110,7 @@ def test_scope_changes_and_retranslation_never_write_settings(
             for index in range(tabs.count())
             if tabs.isTabVisible(index)
         ] == ["Library", "Transcoding", "Sync", "Backups", "iPod Preferences"]
-        for name in ("draftAllChangesCombo", "backupLocation"):
+        for name in ("draftAllChangesCombo", "navigationStyleCombo", "backupLocation"):
             control = page.findChild(QWidget, name)
             assert control is not None and not control.isVisible()
     finally:

@@ -27,9 +27,11 @@ from iOpenPod.app.core.settings.definitions import (
     APPEARANCE_LIGHT_THEME,
     MANAGE_VOLUME_PRESENTATION,
     MAX_BACKUPS,
+    NAVIGATION_STYLE,
     AppearanceMode,
     DarkTheme,
     LightTheme,
+    NavigationStyle,
 )
 from iOpenPod.app.services.linux_identity import UdevRuleStatus, UdevRuleStatusKind
 from iOpenPod.GUI.pages import settings_page
@@ -443,6 +445,44 @@ def test_about_displays_license_and_community_credits(context: AppContext) -> No
             context.theme_manager.set_mode(mode)
             APPLICATION.processEvents()
             assert context.theme_manager.tokens.accent in credits.text()
+    finally:
+        page.close()
+
+
+def test_navigation_style_is_saved_and_retranslated_without_extra_writes(
+    context: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    tabs = page.findChild(QTabWidget, "settingsTabs")
+    library = page.findChild(QScrollArea, "librarySettingsScroll")
+    combo = page.findChild(AppComboBox, "navigationStyleCombo")
+    assert tabs is not None and library is not None and combo is not None
+    try:
+        tabs.setCurrentWidget(library)
+        assert library.findChild(AppComboBox, "navigationStyleCombo") is combo
+        assert [combo.itemText(index) for index in range(combo.count())] == [
+            "Sidebar",
+            "Compact top bar",
+        ]
+        assert combo.currentData() == NavigationStyle.SIDEBAR.value
+        changes = QSignalSpy(context.settings.settingChanged)
+        combo.setCurrentIndex(combo.findData(NavigationStyle.COMPACT_TOP_BAR.value))
+        assert (
+            context.settings.get(NAVIGATION_STYLE)
+            == NavigationStyle.COMPACT_TOP_BAR.value
+        )
+        assert changes.count() == 1
+
+        def translate(_page: SettingsPage, text: str) -> str:
+            return f"Translated {text}"
+
+        monkeypatch.setattr(SettingsPage, "tr", translate)
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert combo.currentData() == NavigationStyle.COMPACT_TOP_BAR.value
+        assert combo.currentText() == "Translated Compact top bar"
+        assert changes.count() == 1
+        context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
+        assert combo.currentData() == NavigationStyle.SIDEBAR.value
     finally:
         page.close()
 

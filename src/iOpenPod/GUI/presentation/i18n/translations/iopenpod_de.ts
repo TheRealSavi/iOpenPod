@@ -1051,6 +1051,65 @@
     </message>
 </context>
 <context>
+    <name>CompactTopBar</name>
+    <message>
+        <source>Check your Library for more consistent tags.</source>
+        <translation>Prüfen Sie Ihre Mediathek auf einheitliche Metadaten.</translation>
+    </message>
+    <message>
+        <source>Open device summary</source>
+        <translation>Geräteübersicht öffnen</translation>
+    </message>
+    <message>
+        <source>Choose iPod…</source>
+        <translation>iPod auswählen…</translation>
+    </message>
+    <message>
+        <source>Select an Active iPod before Sync.</source>
+        <translation>Wählen Sie vor der Synchronisierung einen aktiven iPod aus.</translation>
+    </message>
+    <message>
+        <source>Audio</source>
+        <translation>Audio</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Video</translation>
+    </message>
+    <message>
+        <source>Playlists</source>
+        <translation>Wiedergabelisten</translation>
+    </message>
+    <message>
+        <source>Maintenance</source>
+        <translation>Wartung</translation>
+    </message>
+    <message>
+        <source>Sync with Host</source>
+        <translation>Mit Computer synchronisieren</translation>
+    </message>
+    <message>
+        <source>Scrobble Now</source>
+        <translation>Jetzt scrobbeln</translation>
+    </message>
+    <message>
+        <source>Review Changes</source>
+        <translation>Änderungen prüfen</translation>
+    </message>
+    <message>
+        <source>Choose Device</source>
+        <translation>Gerät auswählen</translation>
+    </message>
+    <message>
+        <source>Eject</source>
+        <translation>Auswerfen</translation>
+    </message>
+    <message>
+        <source>Eject Active iPod</source>
+        <translation type="vanished">Aktiven iPod auswerfen</translation>
+    </message>
+</context>
+<context>
     <name>ConsolidateArtworkDialog</name>
     <message>
         <source>Choose one artwork sequence to apply to every selected Track. Sequences with matching cover images remain separate.</source>
@@ -6198,6 +6257,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Darstellung und Sprache</translation>
     </message>
     <message>
+        <source>Navigation style</source>
+        <translation>Navigationsstil</translation>
+    </message>
+    <message>
+        <source>Browse using the sidebar or a compact bar across the top of the app.</source>
+        <translation>Navigieren Sie über die Seitenleiste oder eine kompakte Leiste am oberen Rand der App.</translation>
+    </message>
+    <message>
         <source>iPod Library View Mode</source>
         <translation>Ansicht der iPod-Mediathek</translation>
     </message>
@@ -6480,6 +6547,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Unlimited</source>
         <translation>Unbegrenzt</translation>
+    </message>
+    <message>
+        <source>Sidebar</source>
+        <translation>Seitenleiste</translation>
+    </message>
+    <message>
+        <source>Compact top bar</source>
+        <translation>Kompakte obere Leiste</translation>
     </message>
     <message>
         <source>Split Table</source>
@@ -13057,6 +13132,17 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     <message>
         <source>Format unavailable</source>
         <translation>Format nicht verfügbar</translation>
+    </message>
+</context>
+<context>
+    <name>_PlaylistPopup</name>
+    <message>
+        <source>New</source>
+        <translation>Neu</translation>
+    </message>
+    <message>
+        <source>New Playlist</source>
+        <translation>Neue Wiedergabeliste</translation>
     </message>
 </context>
 <context>

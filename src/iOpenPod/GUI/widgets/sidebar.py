@@ -1,6 +1,7 @@
 """Persistent source-list navigation and Active iPod placeholder."""
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QEvent, QLocale, QObject, QPoint, Qt, Signal
 from PySide6.QtGui import QCursor, QHoverEvent, QKeyEvent, QMouseEvent
@@ -18,10 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from device_registry import DeviceProfile, FeatureSupport
 from iOpenPod.app.library_workspace import EditRevision, LibraryWorkspace
 from iOpenPod.app.models.device import ActiveIPod, DeviceDiscovery
-from iOpenPod.GUI.navigation import PageId, page_label
+from iOpenPod.GUI.navigation import PageId, page_label, page_supported
 from iOpenPod.GUI.presentation.device_images import device_pixmap
 from iOpenPod.GUI.presentation.i18n.text import (
     device_count_text,
@@ -38,6 +38,9 @@ from iOpenPod.GUI.widgets.themed_buttons import (
     IconButton,
     NavigationButton,
 )
+
+if TYPE_CHECKING:
+    from device_registry import DeviceProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,14 +68,6 @@ _LIBRARY = (
     _NavigationDefinition(PageId.TV_SHOWS, "monitor"),
     _NavigationDefinition(PageId.MUSIC_VIDEOS, "video"),
     _NavigationDefinition(PageId.VIDEOS, "video"),
-)
-_VIDEO_PAGES = frozenset(
-    {
-        PageId.MOVIES,
-        PageId.TV_SHOWS,
-        PageId.MUSIC_VIDEOS,
-        PageId.VIDEOS,
-    }
 )
 
 
@@ -810,7 +805,7 @@ class Sidebar(QFrame):
         profile = self._active_profile
         for page_id, button in self._buttons.items():
             button.setVisible(
-                _page_supported(page_id, profile)
+                page_supported(page_id, profile)
                 or (page_id is PageId.GENIUS and self._has_genius_data)
             )
 
@@ -819,20 +814,3 @@ def _format_bytes(byte_count: int) -> str:
     return QLocale().formattedDataSize(
         max(0, byte_count), 1, QLocale.DataSizeFormat.DataSizeTraditionalFormat
     )
-
-
-def _page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
-    if page_id is PageId.GAMES:
-        return profile is not None and profile.capabilities.supports_games
-    if page_id is PageId.GENIUS:
-        return profile is not None and (
-            profile.capabilities.genius.playlists is not FeatureSupport.UNSUPPORTED
-            or profile.capabilities.genius.mixes is not FeatureSupport.UNSUPPORTED
-        )
-    if page_id in _VIDEO_PAGES:
-        return profile is not None and profile.capabilities.video.supported
-    if page_id is PageId.PHOTOS:
-        return profile is not None and profile.capabilities.artwork.supports_photos
-    if page_id is PageId.PODCASTS:
-        return profile is not None and profile.capabilities.audio.supports_podcasts
-    return True

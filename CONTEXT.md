@@ -14,6 +14,16 @@ then beyond it.
 
 ## Current stage
 
+The Library setting **Navigation style** chooses Sidebar (the default) or Compact
+top bar immediately. The compact strip centers Audio, Video, Playlists, Photos,
+and Games, with Device Summary and Sync on the left and Maintenance and Settings
+on the right. Audio, Video, Playlists, and Maintenance open on hover; clicking
+their headings has no effect.
+Both styles share routes, device capability rules, and Playlist editing.
+Dragging Tracks over Playlists opens its menu; hovering over Playlist
+Folders expands them before a drop onto a regular Playlist. See
+[ADR-0233](docs/adr/0233-share-navigation-behavior-between-shell-styles.md).
+
 Unrelated Library edits reuse Phase charts through persisted source/chart metadata
 and content provenance, without audio scans or retained-media transaction hashes.
 Phase membership and ordering changes update the companion index incrementally;
@@ -23,7 +33,8 @@ validation pass to establish metadata receipts. See
 
 The sidebar device information opens a Device Summary with a large device portrait,
 observed firmware and serial details, and color-coded capacity estimates from the
-committed Library, plus Games from captured file sizes across Games_RO,
+committed Library. A pencil beside the name opens inline renaming through the
+existing Library save workflow. Storage estimates also include Games files across Games_RO,
 GameData_RW, and GameStats_WO, and Album artwork from the entire Artwork folder.
 Games is pink and Album artwork is cyan. Other retains unclassified used space; inconsistent metadata
 falls back to observed used/free capacity. Restore iPod remains disabled beside

@@ -5,6 +5,8 @@ from typing import cast
 
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication
 
+from device_registry import DeviceProfile, FeatureSupport
+
 
 class PageId(StrEnum):
     """Stable route identifiers; labels remain localizable presentation data."""
@@ -28,6 +30,30 @@ class PageId(StrEnum):
     BACKUPS = "backups"
     NORMALIZE_TAGS = "normalize-tags"
     SETTINGS = "settings"
+
+
+_VIDEO_PAGES = frozenset(
+    {PageId.MOVIES, PageId.TV_SHOWS, PageId.MUSIC_VIDEOS, PageId.VIDEOS}
+)
+
+
+def page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
+    """Share device capability visibility across Library navigation styles."""
+
+    if page_id is PageId.GAMES:
+        return profile is not None and profile.capabilities.supports_games
+    if page_id is PageId.GENIUS:
+        return profile is not None and (
+            profile.capabilities.genius.playlists is not FeatureSupport.UNSUPPORTED
+            or profile.capabilities.genius.mixes is not FeatureSupport.UNSUPPORTED
+        )
+    if page_id in _VIDEO_PAGES:
+        return profile is not None and profile.capabilities.video.supported
+    if page_id is PageId.PHOTOS:
+        return profile is not None and profile.capabilities.artwork.supports_photos
+    if page_id is PageId.PODCASTS:
+        return profile is not None and profile.capabilities.audio.supports_podcasts
+    return True
 
 
 _PAGE_LABEL_SOURCES = cast(

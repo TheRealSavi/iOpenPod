@@ -1,4 +1,4 @@
-"""An Apple-inspired device portrait and read-only Active iPod summary.
+"""An Apple-inspired device portrait and Active iPod summary.
 
 Hallmark: left product portrait and aligned specification list; existing theme;
 side-rail navigation; capacity-strip footer; no decorative motion.
@@ -6,40 +6,52 @@ Pre-emit critique: philosophy 4, hierarchy 4, execution 4, specificity 5,
 restraint 5, variety 4. Desktop pane reflow checked from 320 to 1200 pixels.
 """
 
-from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QResizeEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt
+from PySide6.QtGui import QKeyEvent, QResizeEvent
 from PySide6.QtWidgets import (
     QBoxLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
+from iOpenPod.app.library_workspace import EditRevision, LibraryWorkspace
 from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.services.device_summary import device_storage_breakdown
 from iOpenPod.GUI.presentation.device_images import device_pixmap
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 from iOpenPod.GUI.widgets.storage_breakdown import StorageBreakdown, format_capacity
-from iOpenPod.GUI.widgets.themed_buttons import ActionButton
+from iOpenPod.GUI.widgets.themed_buttons import ActionButton, IconButton, IconButtonKind
 
 
 class DeviceSummaryPage(QWidget):
-    """Compose path-free device state without initiating any device operation."""
+    """Compose device observations and revision-bound Library name editing."""
 
-    def __init__(self, parent: QWidget | None = None, *, theme: ThemeManager) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        theme: ThemeManager,
+        workspace: LibraryWorkspace | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("deviceSummaryPage")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._theme = theme
         self._active: ActiveIPod | None = None
         self._draft_name = ""
+        self._workspace = workspace
+        self._rename_revision: EditRevision | None = None
+        self._busy = False
         self._header = PageHeader(self)
         self._scroll = QScrollArea(self)
         self._scroll.setObjectName("deviceSummaryScroll")
@@ -114,6 +126,46 @@ class DeviceSummaryPage(QWidget):
             self._grid.addWidget(value, index, 1)
             self._fields.append((label, value))
         self._name = self._fields[0][1]
+        self._fields[0][0].setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._grid.removeWidget(self._name)
+        name_panel = QWidget(self._details)
+        name_layout = QVBoxLayout(name_panel)
+        name_layout.setContentsMargins(0, 0, 0, 0)
+        name_layout.setSpacing(LAYOUT.space_2xs)
+        name_row = QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(LAYOUT.space_2xs)
+        self._name_edit = QLineEdit(name_panel)
+        self._name_edit.setObjectName("deviceSummaryNameEdit")
+        self._name_edit.setMinimumWidth(0)
+        self._name_edit.installEventFilter(self)
+        self._name_edit.editingFinished.connect(self._finish_rename)
+        self._rename = IconButton("pencil", "", name_panel, kind=IconButtonKind.QUIET)
+        self._rename.setObjectName("deviceSummaryRename")
+        self._rename.clicked.connect(self._start_rename)
+        self._rename_apply = IconButton("check-circle", "", name_panel)
+        self._rename_apply.setObjectName("deviceSummaryRenameApply")
+        self._rename_apply.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._rename_apply.clicked.connect(self._finish_rename)
+        self._rename_cancel = IconButton("x", "", name_panel)
+        self._rename_cancel.setObjectName("deviceSummaryRenameCancel")
+        self._rename_cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._rename_cancel.clicked.connect(self._cancel_rename)
+        name_row.addWidget(self._name, 1)
+        name_row.addWidget(self._name_edit, 1)
+        name_row.addWidget(self._rename)
+        name_row.addWidget(self._rename_apply)
+        name_row.addWidget(self._rename_cancel)
+        self._name_spacer = QWidget(name_panel)
+        name_row.addWidget(self._name_spacer, 1)
+        self._rename_feedback = self._label("renameIPodFeedback", name_panel)
+        self._rename_feedback.setProperty("error", True)
+        name_layout.addLayout(name_row)
+        name_layout.addWidget(self._rename_feedback)
+        self._grid.addWidget(name_panel, 0, 1)
+        self._cancel_rename()
         self._identity.addWidget(self._details, 1, Qt.AlignmentFlag.AlignVCenter)
         surface_row = QHBoxLayout()
         surface_row.setContentsMargins(
@@ -150,6 +202,8 @@ class DeviceSummaryPage(QWidget):
         layout.addWidget(self._scroll, 1)
         layout.addWidget(self._storage)
         theme.deviceArtworkChanged.connect(self._refresh_portrait)
+        if workspace is not None:
+            workspace.changed.connect(self._rename_state_changed)
         self.retranslate_ui()
 
     def _label(self, name: str, parent: QWidget | None = None) -> QLabel:
@@ -162,9 +216,86 @@ class DeviceSummaryPage(QWidget):
         return label
 
     def set_active_ipod(self, active: ActiveIPod | None) -> None:
+        self._cancel_rename()
         self._active = active
         self._draft_name = ""
         self._refresh()
+
+    def set_busy(self, busy: bool) -> None:
+        self._busy = busy
+        self._rename_state_changed()
+
+    def _can_rename(self) -> bool:
+        workspace = self._workspace
+        return (
+            self._active is not None
+            and workspace is not None
+            and workspace.snapshot is not None
+            and not workspace.locked
+            and not self._busy
+        )
+
+    def _rename_state_changed(self) -> None:
+        workspace = self._workspace
+        if self._rename_revision is not None and (
+            not self._can_rename()
+            or workspace is None
+            or self._rename_revision.generation != workspace.generation
+        ):
+            self._cancel_rename()
+        self._rename.setEnabled(self._can_rename())
+        self._refresh_name()
+
+    def _start_rename(self) -> None:
+        workspace = self._workspace
+        if not self._can_rename() or workspace is None:
+            return
+        self._rename_revision = workspace.edit_revision
+        self._name_edit.setText(self._name.text())
+        self._name.hide()
+        self._rename.hide()
+        self._name_spacer.hide()
+        self._name_edit.show()
+        self._rename_apply.show()
+        self._rename_cancel.show()
+        self._name_edit.selectAll()
+        self._name_edit.setFocus()
+
+    def _cancel_rename(self) -> None:
+        self._rename_revision = None
+        self._name_edit.hide()
+        self._rename_apply.hide()
+        self._rename_cancel.hide()
+        self._rename_feedback.hide()
+        self._name.show()
+        self._rename.show()
+        self._name_spacer.show()
+        self._rename.setEnabled(self._can_rename())
+        self._refresh_name()
+
+    def _finish_rename(self) -> None:
+        workspace, revision = self._workspace, self._rename_revision
+        if workspace is None or revision is None:
+            return
+        try:
+            workspace.rename_device(self._name_edit.text().strip(), revision)
+        except ValueError as error:
+            self._rename_feedback.setText(workflow_text(str(error)))
+            self._rename_feedback.show()
+            self._name_edit.setFocus()
+            return
+        self._cancel_rename()
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            watched is self._name_edit
+            and isinstance(event, QKeyEvent)
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Escape
+        ):
+            self._cancel_rename()
+            return True
+        return super().eventFilter(watched, event)
 
     def set_device_name(self, name: str) -> None:
         """Reflect a name edit; capacity stays tied to the saved device state."""
@@ -172,6 +303,22 @@ class DeviceSummaryPage(QWidget):
         self._refresh_name()
 
     def retranslate_ui(self) -> None:
+        self._name_edit.setAccessibleName(
+            QCoreApplication.translate("DeviceCard", "iPod name")
+        )
+        for button, text in (
+            (self._rename, QCoreApplication.translate("DeviceCard", "Rename iPod")),
+            (
+                self._rename_apply,
+                QCoreApplication.translate("DeviceCard", "Apply iPod name"),
+            ),
+            (
+                self._rename_cancel,
+                QCoreApplication.translate("DeviceCard", "Cancel renaming"),
+            ),
+        ):
+            button.setAccessibleName(text)
+            button.setToolTip(text)
         self._header.set_title(self.tr("Summary"))
         self._restore.setText(self.tr("Restore iPod"))
         self._restore.setToolTip(self.tr("Coming soon"))
@@ -233,10 +380,19 @@ class DeviceSummaryPage(QWidget):
 
     def _refresh_name(self) -> None:
         active = self._active
+        workspace = self._workspace
+        name = (
+            workspace.device_name
+            if workspace is not None and workspace.snapshot is not None
+            else self._draft_name
+        )
         self._name.setText(
-            (self._draft_name or active.display_name)
-            if active
-            else self.tr("No Active iPod")
+            (name or active.display_name) if active else self.tr("No Active iPod")
+        )
+
+        self._name.setMaximumWidth(
+            self._name.fontMetrics().horizontalAdvance(self._name.text())
+            + LAYOUT.space_2xs
         )
 
     def _refresh(self) -> None:
@@ -263,6 +419,7 @@ class DeviceSummaryPage(QWidget):
             value.setText(text)
             value.setAccessibleName(label.text().removesuffix(":"))
         self._refresh_name()
+        self._rename_state_changed()
         self._storage.set_breakdown(
             device_storage_breakdown(
                 active.candidate,

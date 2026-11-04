@@ -474,6 +474,7 @@ class PlaylistTree(QWidget):
     """Render the Workspace and emit editing intents for the application shell."""
 
     selected = Signal(object)
+    activated = Signal(object)
     createRequested = Signal(object)
     editRequested = Signal(object)
     removeRequested = Signal(object)
@@ -485,6 +486,7 @@ class PlaylistTree(QWidget):
         *,
         show_add_button: bool = True,
         show_context_menu: bool = True,
+        show_heading: bool = True,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("playlistSidebar")
@@ -500,7 +502,8 @@ class PlaylistTree(QWidget):
             self.tr("Playlists"), "playlist", workspace, self
         )
         self._heading.setObjectName("playlistSectionToggle")
-        self._heading.setChecked(False)
+        self._heading.setChecked(not show_heading)
+        self._heading.setVisible(show_heading)
         self._add = IconButton(
             "plus",
             self.tr("New Playlist"),
@@ -560,6 +563,8 @@ class PlaylistTree(QWidget):
         )
         self._tree.customContextMenuRequested.connect(self._show_context_menu)
         self._tree.selectionModel().currentChanged.connect(self._current_changed)
+        self._tree.clicked.connect(self._activate_index)
+        self._tree.activated.connect(self._activate_index)
         self._tree.expanded.connect(self._folder_expanded)
         self._tree.collapsed.connect(self._folder_collapsed)
         self._model.modelAboutToBeReset.connect(self._before_reset)
@@ -605,6 +610,17 @@ class PlaylistTree(QWidget):
     @property
     def current_playlist_id(self) -> int | None:
         return self._selected_id
+
+    @property
+    def creation_menu(self) -> QMenu:
+        """Share the existing creation intents with another navigation surface."""
+
+        return self._create_menu
+
+    def _activate_index(self, index: QModelIndex) -> None:
+        playlist_id = self._model.playlist_id(index)
+        if playlist_id is not None:
+            self.activated.emit(playlist_id)
 
     def select_playlist(self, playlist_id: int) -> None:
         index = self._model.index_for_id(playlist_id)

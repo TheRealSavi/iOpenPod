@@ -19,6 +19,7 @@ from iOpenPod.app.core.settings.definitions import (
     LAST_SELECTED_IPOD_VOLUME_ID,
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
     MANAGE_VOLUME_PRESENTATION,
+    NAVIGATION_STYLE,
     PLAYER_POSITION,
     TRACK_TITLE_BAR_STYLE,
     WINDOW_GEOMETRY,
@@ -26,6 +27,7 @@ from iOpenPod.app.core.settings.definitions import (
     IPodLibraryViewMode,
     LibraryDoubleClickShortcut,
     LightTheme,
+    NavigationStyle,
     PlayerPosition,
     SettingDefinition,
     TrackTitleBarStyle,
@@ -162,6 +164,37 @@ def test_ipod_view_mode_defaults_and_rejects_invalid_values() -> None:
     assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.ITUNES_11.value
     with pytest.raises(ValueError, match=IPOD_LIBRARY_VIEW_MODE.key):
         service.set_global(IPOD_LIBRARY_VIEW_MODE, "unknown")
+
+
+def test_navigation_style_defaults_validates_and_remains_a_host_preference() -> None:
+    store = GlobalSettingsStore()
+    service = _service(store)
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
+    store.set(NAVIGATION_STYLE.key, "unknown")
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
+    with pytest.raises(ValueError, match=NAVIGATION_STYLE.key):
+        service.set_global(NAVIGATION_STYLE, "unknown")
+
+    service.set_global(NAVIGATION_STYLE, NavigationStyle.COMPACT_TOP_BAR.value)
+    service.load_device("one", {NAVIGATION_STYLE.key: NavigationStyle.SIDEBAR.value})
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.COMPACT_TOP_BAR.value
+    assert service.source(NAVIGATION_STYLE) is SettingSource.GLOBAL
+    with pytest.raises(ValueError, match="not device-overridable"):
+        service.set_device(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
+    service.reset_global(NAVIGATION_STYLE)
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
+
+
+@pytest.mark.parametrize("style", NavigationStyle)
+def test_navigation_style_survives_restart(
+    tmp_path: Path, style: NavigationStyle
+) -> None:
+    settings_path = tmp_path / "settings-v2.json"
+    first = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    first.set_global(NAVIGATION_STYLE, style.value)
+
+    second = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert second.get(NAVIGATION_STYLE) == style.value
 
 
 @pytest.mark.parametrize("mode", IPodLibraryViewMode)

@@ -1378,6 +1378,50 @@ QFrame#appSidebar {{
     border-right: 1px solid {tokens.border};
 }}
 
+QFrame#compactTopBar {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+}}
+
+QFrame#compactPlaylistPopup,
+QFrame#compactDeviceHoverMenu {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border_strong};
+    border-radius: {LAYOUT.radius_control}px;
+}}
+
+QToolButton[deviceMenuAction="true"] {{
+    color: {tokens.text};
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: {LAYOUT.radius_control}px;
+    min-height: {LAYOUT.control_height_compact}px;
+    padding: 0 {LAYOUT.space_xs}px;
+    text-align: left;
+}}
+
+QToolButton[deviceMenuAction="true"]:hover,
+QToolButton[deviceMenuAction="true"]:focus {{
+    background-color: {tokens.surface_hover};
+}}
+
+QToolButton[deviceMenuAction="true"]:pressed {{
+    background-color: {tokens.surface_pressed};
+}}
+
+QToolButton[deviceMenuAction="true"]:disabled {{
+    color: {tokens.text_disabled};
+}}
+
+QScrollArea#compactPlaylistScroll,
+QScrollArea#compactPlaylistScroll > QWidget > QWidget {{
+    background-color: {tokens.surface};
+    border: none;
+}}
+
 QWidget#sidebarNavigation,
 QScrollArea#sidebarScroll,
 QScrollArea#sidebarScroll > QWidget > QWidget {{
@@ -1726,6 +1770,23 @@ QPushButton[kind="quiet"]:disabled {{
     color: {tokens.text_disabled};
     background-color: transparent;
     border-color: transparent;
+}}
+
+QPushButton[compactNavigation="true"] {{
+    min-height: {LAYOUT.control_height_compact - 4}px;
+    padding: 0 {LAYOUT.space_xs}px;
+    text-align: center;
+}}
+
+QPushButton[compactNavigation="true"]:checked {{
+    color: {tokens.accent};
+    background-color: {tokens.surface_selected};
+    border-color: transparent;
+    font-weight: 600;
+}}
+
+QPushButton[compactNavigation="true"]:focus {{
+    border-color: {tokens.focus};
 }}
 
 QPushButton[kind="danger"] {{

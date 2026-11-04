@@ -15,13 +15,20 @@ capacity behavior; media category estimates and the summary page are new.
 
 ## Decision
 
-Device Summary is a read-only presentation of the Active iPod's Device Profile,
+Device Summary presents the Active iPod's Device Profile,
 committed Library Snapshot, captured content-folder sizes, and Device Candidate
 capacity observation. Non-button
 areas of the sidebar device information open the page; existing device controls
 keep their actions. The page uses the shared theme, typography, and bundled device
 artwork. Its Restore iPod button is always disabled beside “Coming soon” and has no
 device operation attached.
+
+The name field also offers a pencil button for inline renaming through the
+existing Library Workspace workflow. Enter, focus loss, or Apply validates the
+captured edit revision; Escape or Cancel discards the entry. Device changes,
+Library replacement, and unavailable editing cancel pending input. Saving follows
+the existing automatic or manual Library save setting; capacity remains based on
+committed state.
 
 Firmware version and product serial come from already captured Device Evidence,
 with current hardware preferred over metadata and equally authoritative conflicts

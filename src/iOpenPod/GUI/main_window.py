@@ -29,9 +29,11 @@ from iOpenPod.app.backups import BackupProgress
 from iOpenPod.app.chaptered_conversion_controller import ChapteredConversionController
 from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.settings.definitions import (
+    NAVIGATION_STYLE,
     PLAYER_POSITION,
     ROCKBOX_METADATA_SUPPORT,
     WINDOW_GEOMETRY,
+    NavigationStyle,
     PlayerPosition,
 )
 from iOpenPod.app.core.status import StatusAction, StatusProgress
@@ -128,6 +130,7 @@ from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.sync_workspace import SyncStage, SyncWorkspace
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
+from iOpenPod.GUI.widgets.compact_top_bar import CompactTopBar
 from iOpenPod.GUI.widgets.host_media_drop import HostMediaDropTarget
 from iOpenPod.GUI.widgets.playback_pane import PlaybackPane, PlaybackPaneHost
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
@@ -299,13 +302,21 @@ class MainWindow(QMainWindow):
             playlists=context.library_workspace,
             theme=context.theme_manager,
         )
+        self._top_bar = CompactTopBar(
+            shell,
+            playlists=context.library_workspace,
+            theme=context.theme_manager,
+        )
+        self._navigation_surfaces = (self._sidebar, self._top_bar)
+        shell_layout.addWidget(self._top_bar)
         self._normalization.changed.connect(self._normalization_changed)
         self._library_review = LibraryReviewDialog(
             context.library_write_controller, self
         )
         self._library_review.recordRequested.connect(self._review_record_requested)
-        self._sidebar.reviewChangesRequested.connect(self._review_changes)
-        self._sidebar.syncRequested.connect(self._open_sync_workspace)
+        for navigation in self._navigation_surfaces:
+            navigation.reviewChangesRequested.connect(self._review_changes)
+            navigation.syncRequested.connect(self._open_sync_workspace)
         context.library_write_controller.changed.connect(
             self._review_availability_changed
         )
@@ -441,12 +452,16 @@ class MainWindow(QMainWindow):
         self._settings_page.chooseIPodRequested.connect(self._open_device_picker)
         self._updates.changed.connect(self._app_update_status_changed)
         self._app_update_status_changed()
-        self._sidebar.scrobbleRequested.connect(self._scrobble_now)
+        for navigation in self._navigation_surfaces:
+            navigation.scrobbleRequested.connect(self._scrobble_now)
         self._scrobbling.changed.connect(self._scrobbling_changed)
-        self._sidebar.set_scrobble_available(self._scrobbling.can_scrobble)
+        for navigation in self._navigation_surfaces:
+            navigation.set_scrobble_available(self._scrobbling.can_scrobble)
         self._settings_page.set_active_ipod(context.device_controller.active_ipod)
         self._device_summary_page = DeviceSummaryPage(
-            self._pages, theme=context.theme_manager
+            self._pages,
+            theme=context.theme_manager,
+            workspace=context.library_workspace,
         )
         self._device_summary_page.set_active_ipod(context.device_controller.active_ipod)
         self._refresh_device_summary()
@@ -590,6 +605,8 @@ class MainWindow(QMainWindow):
         self._workspaces.currentChanged.connect(self._host_drop.clear)
         self._pages.currentChanged.connect(self._exit_synesthesia_fullscreen)
         self._workspaces.currentChanged.connect(self._exit_synesthesia_fullscreen)
+        self._workspaces.currentChanged.connect(self._apply_navigation_style)
+        self._apply_navigation_style()
         self.setCentralWidget(shell)
         # Window chrome stays outside both stacks for every page and workspace.
         status_bar = QStatusBar(self)
@@ -663,19 +680,22 @@ class MainWindow(QMainWindow):
             if collection_list is not None:
                 self._track_actions.install(collection_list)
         context.library_workspace.changed.connect(self.retranslate_ui)
-        self._sidebar.pageRequested.connect(self._navigate_page)
-        playlist_tree = self._sidebar.playlist_tree
-        if playlist_tree is not None:
-            playlist_tree.selected.connect(self._playlist_selected)
-            playlist_tree.createRequested.connect(self._playlist_page.create_playlist)
-            playlist_tree.editRequested.connect(self._playlist_page.edit_playlist)
-            playlist_tree.removeRequested.connect(self._playlist_page.remove_playlist)
-            self._playlist_page.playlistSelected.connect(
-                self._playlist_selection_changed
-            )
-            self._playlist_page.playlistExportRequested.connect(
-                self._playlist_export_requested
-            )
+        for navigation in self._navigation_surfaces:
+            navigation.pageRequested.connect(self._navigate_page)
+            playlist_tree = navigation.playlist_tree
+            if playlist_tree is not None:
+                playlist_tree.selected.connect(self._playlist_selected)
+                playlist_tree.createRequested.connect(
+                    self._playlist_page.create_playlist
+                )
+                playlist_tree.editRequested.connect(self._playlist_page.edit_playlist)
+                playlist_tree.removeRequested.connect(
+                    self._playlist_page.remove_playlist
+                )
+        self._playlist_page.playlistSelected.connect(self._playlist_selection_changed)
+        self._playlist_page.playlistExportRequested.connect(
+            self._playlist_export_requested
+        )
         self._photo_page.photoExportRequested.connect(self._photo_export_requested)
         self._genius_page.playlistExportRequested.connect(
             self._playlist_export_requested
@@ -683,8 +703,9 @@ class MainWindow(QMainWindow):
         self._photo_page.photoAlbumExportRequested.connect(
             self._photo_album_export_requested
         )
-        self._sidebar.chooseDeviceRequested.connect(self._open_device_picker)
-        self._sidebar.ejectRequested.connect(self._eject_active_ipod)
+        for navigation in self._navigation_surfaces:
+            navigation.chooseDeviceRequested.connect(self._open_device_picker)
+            navigation.ejectRequested.connect(self._eject_active_ipod)
         self._device_picker.refreshRequested.connect(
             context.device_controller.refresh_devices
         )
@@ -703,9 +724,10 @@ class MainWindow(QMainWindow):
             self._device_picker.set_search_error
         )
         context.device_controller.operationFailed.connect(self._device_operation_failed)
-        context.device_controller.deviceWritesAllowedChanged.connect(
-            self._sidebar.set_eject_available
-        )
+        for navigation in self._navigation_surfaces:
+            context.device_controller.deviceWritesAllowedChanged.connect(
+                navigation.set_eject_available
+            )
         context.device_controller.ejectStarted.connect(self._eject_started)
         context.device_controller.ejectCompleted.connect(self._eject_completed)
         context.artwork_controller.artworkFailed.connect(self._artwork_load_failed)
@@ -735,12 +757,14 @@ class MainWindow(QMainWindow):
             self.resize(1360, 820)
 
         self._show_page(PageId.ALBUMS.value)
-        self._sidebar.set_device_discovery(context.device_controller.discovery)
-        self._sidebar.set_active_ipod(context.device_controller.active_ipod)
+        for navigation in self._navigation_surfaces:
+            navigation.set_device_discovery(context.device_controller.discovery)
+            navigation.set_active_ipod(context.device_controller.active_ipod)
         self._monitor_normalization(context.device_controller.active_ipod)
-        self._sidebar.set_eject_available(
-            context.device_controller.device_writes_allowed
-        )
+        for navigation in self._navigation_surfaces:
+            navigation.set_eject_available(
+                context.device_controller.device_writes_allowed
+            )
         self.retranslate_ui()
         if not defer_startup and (
             self._sync_controller.needs_recovery or self._sync_controller.needs_cleanup
@@ -877,10 +901,11 @@ class MainWindow(QMainWindow):
 
     def _review_availability_changed(self) -> None:
         controller = self._context.library_write_controller
-        self._sidebar.set_review_visible(controller.draft_all_changes)
-        self._sidebar.set_review_available(
-            controller.can_prepare or controller.review is not None
-        )
+        for navigation in self._navigation_surfaces:
+            navigation.set_review_visible(controller.draft_all_changes)
+            navigation.set_review_available(
+                controller.can_prepare or controller.review is not None
+            )
         self._refresh_library_write_status()
 
     def _library_write_progress_changed(self, _value: object) -> None:
@@ -1038,6 +1063,7 @@ class MainWindow(QMainWindow):
         chrome = (
             self._player,
             self._sidebar,
+            self._top_bar,
             self._playback_pane_host,
             self.statusBar(),
         )
@@ -1068,6 +1094,7 @@ class MainWindow(QMainWindow):
         self.restoreGeometry(state.geometry)
         for widget in state.visible_chrome:
             widget.show()
+        self._apply_navigation_style()
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
@@ -1504,7 +1531,8 @@ class MainWindow(QMainWindow):
         self._scrobbling.scrobble_now()
 
     def _scrobbling_changed(self) -> None:
-        self._sidebar.set_scrobble_available(self._scrobbling.can_scrobble)
+        for navigation in self._navigation_surfaces:
+            navigation.set_scrobble_available(self._scrobbling.can_scrobble)
 
     def _scrobble_message(self, message: str) -> None:
         running = self._scrobbling.submitting
@@ -1557,10 +1585,12 @@ class MainWindow(QMainWindow):
         self._playlist_page.select_playlist(None)
 
     def _normalizer_closed(self, _result: int) -> None:
-        self._sidebar.set_current_page(self._current_page_id())
+        for navigation in self._navigation_surfaces:
+            navigation.set_current_page(self._current_page_id())
 
     def _normalization_changed(self) -> None:
-        self._sidebar.set_normalization_count(self._normalization.pending_count)
+        for navigation in self._navigation_surfaces:
+            navigation.set_normalization_count(self._normalization.pending_count)
 
     def _monitor_normalization(self, active: ActiveIPod | None) -> None:
         self._normalization.monitor(
@@ -1582,7 +1612,8 @@ class MainWindow(QMainWindow):
         ):
             self._synesthesia_page.deactivate()
         self._pages.setCurrentWidget(self._page_widgets[page_id])
-        self._sidebar.set_current_page(page_id)
+        for navigation in self._navigation_surfaces:
+            navigation.set_current_page(page_id)
 
     def _current_page_id(self) -> PageId:
         current = self._pages.currentWidget()
@@ -1601,29 +1632,47 @@ class MainWindow(QMainWindow):
             page.select_playlist(playlist_id)
 
     def _playlist_selection_changed(self, playlist_id: object) -> None:
-        tree = self._sidebar.playlist_tree
         if isinstance(playlist_id, int):
             self._show_page(PageId.PLAYLISTS.value)
-            if tree is not None:
-                tree.select_playlist(playlist_id)
+            for navigation in self._navigation_surfaces:
+                tree = navigation.playlist_tree
+                if tree is not None:
+                    tree.select_playlist(playlist_id)
         else:
-            if tree is not None:
-                tree.clear_selection()
+            for navigation in self._navigation_surfaces:
+                tree = navigation.playlist_tree
+                if tree is not None:
+                    tree.clear_selection()
             if self._pages.currentWidget() is self._playlist_page:
                 self._show_page(PageId.ALBUMS.value)
 
     def _language_changed(self, _language_tag: str) -> None:
         self.retranslate_ui()
-        self._sidebar.retranslate_ui()
+        for navigation in self._navigation_surfaces:
+            navigation.retranslate_ui()
         for page in self._library_pages:
             page.retranslate_ui()
         self._photo_page.retranslate_ui()
         self._sync_workspace.retranslate_ui()
 
     def _setting_changed(self, key: str, value: object) -> None:
-        if key != PLAYER_POSITION.key or not isinstance(value, str):
-            return
-        self._apply_player_position(PlayerPosition(value))
+        if key == NAVIGATION_STYLE.key:
+            self._apply_navigation_style()
+        elif key == PLAYER_POSITION.key and isinstance(value, str):
+            self._apply_player_position(PlayerPosition(value))
+
+    def _apply_navigation_style(self) -> None:
+        compact = (
+            self._context.settings.get(NAVIGATION_STYLE)
+            == NavigationStyle.COMPACT_TOP_BAR.value
+        )
+        fullscreen = self._synesthesia_window_state is not None
+        self._sidebar.setVisible(not compact and not fullscreen)
+        self._top_bar.setVisible(
+            compact
+            and not fullscreen
+            and self._workspaces.currentWidget() is self._library_browser
+        )
 
     def _apply_player_position(self, position: PlayerPosition) -> None:
         if position is self._player_position:
@@ -2125,7 +2174,8 @@ class MainWindow(QMainWindow):
     def _device_discovery_changed(self, value: object) -> None:
         if not isinstance(value, DeviceDiscovery):
             return
-        self._sidebar.set_device_discovery(value)
+        for navigation in self._navigation_surfaces:
+            navigation.set_device_discovery(value)
         self._device_picker.set_discovery(value)
         self.retranslate_ui()
 
@@ -2146,7 +2196,8 @@ class MainWindow(QMainWindow):
         if not retain_sync:
             self._sync_workspace.clear()
         self._refresh_sync_availability()
-        self._sidebar.set_active_ipod(active_ipod)
+        for navigation in self._navigation_surfaces:
+            navigation.set_active_ipod(active_ipod)
         self._monitor_normalization(active_ipod)
         current = self._current_page_id()
         if not self._sidebar.page_available(current):
@@ -2154,9 +2205,13 @@ class MainWindow(QMainWindow):
         self.retranslate_ui()
 
     def _device_busy_changed(self, busy: bool) -> None:
-        self._sidebar.set_device_busy(
+        self._device_summary_page.set_busy(
             busy and not self._context.device_controller.searching
         )
+        for navigation in self._navigation_surfaces:
+            navigation.set_device_busy(
+                busy and not self._context.device_controller.searching
+            )
         self._device_picker.set_busy(busy)
         self._refresh_sync_availability()
         self.retranslate_ui()

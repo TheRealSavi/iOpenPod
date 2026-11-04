@@ -36,12 +36,14 @@ from iOpenPod.app.core.settings.definitions import (
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
     MANAGE_VOLUME_PRESENTATION,
     MAX_BACKUPS,
+    NAVIGATION_STYLE,
     PLAYER_POSITION,
     AppearanceMode,
     DarkTheme,
     IPodLibraryViewMode,
     LibraryDoubleClickShortcut,
     LightTheme,
+    NavigationStyle,
     PlayerPosition,
     TrackTitleBarStyle,
 )
@@ -177,6 +179,12 @@ class SettingsPage(QWidget):
         )
         library = SettingGroup(self)
         library.setMaximumWidth(960)
+        self._navigation_style_combo = AppComboBox(self)
+        self._navigation_style_combo.setObjectName("navigationStyleCombo")
+        self._navigation_style_row = SettingRow(
+            "", "", self._navigation_style_combo, self
+        )
+        library.add_row(self._navigation_style_row)
         self._ipod_view_mode_combo = AppComboBox(self)
         self._ipod_view_mode_combo.setObjectName("ipodLibraryViewModeCombo")
         self._ipod_view_mode_row = SettingRow("", "", self._ipod_view_mode_combo, self)
@@ -450,6 +458,9 @@ class SettingsPage(QWidget):
             self._track_title_bar_selected
         )
         self._language_combo.currentIndexChanged.connect(self._language_selected)
+        self._navigation_style_combo.currentIndexChanged.connect(
+            self._navigation_style_selected
+        )
         self._draft_all_changes_combo.currentIndexChanged.connect(
             self._draft_all_changes_selected
         )
@@ -554,6 +565,12 @@ class SettingsPage(QWidget):
         self._tabs.setTabText(self._about_tab, self.tr("About"))
         self._appearance_title.setText(self.tr("Appearance and language"))
         self._library_title.setText(self.tr("Library"))
+        self._navigation_style_row.set_copy(
+            self.tr("Navigation style"),
+            self.tr(
+                "Browse using the sidebar or a compact bar across the top of the app."
+            ),
+        )
         self._ipod_view_mode_row.set_copy(
             self.tr("iPod Library View Mode"),
             self.tr(
@@ -686,6 +703,7 @@ class SettingsPage(QWidget):
         self._rebuild_backup_options()
         self._rebuild_draft_all_changes_options()
         self._rebuild_volume_presentation_options()
+        self._rebuild_navigation_style_options()
         self._rebuild_ipod_view_mode_options()
         self._rebuild_double_click_options()
         self._sync_backup_location(self._settings.get(BACKUP_LOCATION))
@@ -723,6 +741,7 @@ class SettingsPage(QWidget):
         )
         del blocker
         self._draft_all_changes_row.setVisible(not device)
+        self._navigation_style_row.setVisible(not device)
         self._volume_presentation_row.setVisible(not device)
         self._backup_location_row.setVisible(not device)
         if self._scrobbling_settings is not None:
@@ -945,6 +964,18 @@ class SettingsPage(QWidget):
         self._sync_draft_all_changes(self._settings.get(DRAFT_ALL_CHANGES))
         del blocker
 
+    def _rebuild_navigation_style_options(self) -> None:
+        blocker = QSignalBlocker(self._navigation_style_combo)
+        self._navigation_style_combo.clear()
+        self._navigation_style_combo.addItem(
+            self.tr("Sidebar"), NavigationStyle.SIDEBAR.value
+        )
+        self._navigation_style_combo.addItem(
+            self.tr("Compact top bar"), NavigationStyle.COMPACT_TOP_BAR.value
+        )
+        self._sync_navigation_style_selection(self._settings.get(NAVIGATION_STYLE))
+        del blocker
+
     def _rebuild_ipod_view_mode_options(self) -> None:
         self._view_binding.configure(
             (
@@ -1063,6 +1094,11 @@ class SettingsPage(QWidget):
         if isinstance(value, str):
             self._settings.set_global(PLAYER_POSITION, PlayerPosition(value).value)
 
+    def _navigation_style_selected(self, index: int) -> None:
+        value = self._navigation_style_combo.itemData(index)
+        if isinstance(value, str):
+            self._settings.set_global(NAVIGATION_STYLE, NavigationStyle(value).value)
+
     def _track_title_bar_selected(self, index: int) -> None:
         value = self._track_title_bar_combo.itemData(index)
         if isinstance(value, str):
@@ -1154,8 +1190,17 @@ class SettingsPage(QWidget):
             self._sync_itunes_artwork(value)
         elif key == PLAYER_POSITION.key and isinstance(value, str):
             self._sync_player_position_selection(value)
+        elif key == NAVIGATION_STYLE.key and isinstance(value, str):
+            self._sync_navigation_style_selection(value)
         elif key == BACKUP_LOCATION.key and isinstance(value, str):
             self._sync_backup_location(value)
+
+    def _sync_navigation_style_selection(self, value: str) -> None:
+        blocker = QSignalBlocker(self._navigation_style_combo)
+        self._navigation_style_combo.setCurrentIndex(
+            max(0, self._navigation_style_combo.findData(value))
+        )
+        del blocker
 
     def _sync_player_position_selection(self, position_value: str) -> None:
         blocker = QSignalBlocker(self._player_position_combo)

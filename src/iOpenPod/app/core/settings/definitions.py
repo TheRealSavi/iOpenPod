@@ -45,6 +45,13 @@ class IPodLibraryViewMode(StrEnum):
     ITUNES_11 = "itunes-11"
 
 
+class NavigationStyle(StrEnum):
+    """Stable navigation layouts for the application shell."""
+
+    SIDEBAR = "sidebar"
+    COMPACT_TOP_BAR = "compact-top-bar"
+
+
 class LibraryDoubleClickShortcut(StrEnum):
     """Stable actions for double-clicking a Library Track selection."""
 
@@ -239,6 +246,13 @@ MANAGE_VOLUME_PRESENTATION = SettingDefinition[bool](
     key="devices/manage-volume-presentation",
     value_type=bool,
     default=True,
+)
+
+NAVIGATION_STYLE = SettingDefinition[str](
+    key="library/navigation-style",
+    value_type=str,
+    default=NavigationStyle.SIDEBAR.value,
+    validator=_one_of(*(style.value for style in NavigationStyle)),
 )
 
 IPOD_LIBRARY_VIEW_MODE = SettingDefinition[str](

@@ -2662,6 +2662,25 @@ GUI/
 
 The GUI should remain a consumer of application state and services rather than the owner of application logic.
 
+The Host-only Library setting **Navigation style** switches immediately between
+`Sidebar` and `CompactTopBar`, retaining the current page and selected Playlist.
+Both consume the same routes, Device Capabilities, action availability, and Library
+Workspace. The compact strip centers Audio, Video, Playlists, Photos, and Games;
+its left side opens Device Summary from the device image and starts Sync with
+Host, while Maintenance and Settings sit on the right. Unsupported media entries
+follow the same visibility policy as the sidebar. Audio, Video, Playlists, and
+Maintenance open on hover, switching between menus as the pointer moves across
+the headings and allowing a short grace period to reach menu items. Clicking a
+heading does not select it, open its menu, or dismiss an open menu. Menu items
+remain clickable, and keyboard access remains available.
+
+The Playlists popup reuses `PlaylistTree`, including nested Playlist Folders,
+creation, editing, reordering, and membership drops. A valid Track drag opens the
+popup after hovering over Playlists, then existing hover expansion reveals nested
+drop targets. Drag acceptance retains the same workspace generation and revision
+checks. Navigation widgets emit application intents; changing the shell style
+does not create a second Library Workspace or grant device access. See ADR-0233.
+
 Library Drafts are an internal application concept. Editors use ordinary editing
 labels. The Draft all changes setting explains its manual-review and immediate-save
 choices; other labels, tooltips, confirmations, and status messages omit draft-only
@@ -2680,7 +2699,7 @@ current analysis. Preparation progress and failures stay quiet. Leaving the page
 cancels both Jobs and releases their analysis state without changing audio playback.
 
 While the page is visible, F or F11 toggles fullscreen. Fullscreen hides the Player,
-Sidebar, Queue/History/Lyrics pane, and status bar so the renderer fills the display.
+Sidebar or Compact top bar, Queue/History/Lyrics pane, and status bar so the renderer fills the display.
 F, F11, or Escape restores the previous window geometry and chrome visibility.
 The existing renderer and playback remain active throughout this presentation
 change; leaving the page or closing the window also restores the normal shell.
@@ -2891,7 +2910,11 @@ Pages should primarily compose reusable widgets and connect them to application 
 captured firmware and product serial, and Volume capacity without device I/O.
 Firmware and serial fields prefer current hardware evidence and withhold equally
 authoritative conflicts or missing observations. The sidebar device information
-opens it while its existing buttons retain their actions. A shared storage widget
+opens it while its existing buttons retain their actions. A pencil beside the name
+opens an inline editor using the revision-bound Library Workspace rename action
+and existing automatic or manual save policy. Enter or Apply commits the edit;
+Escape or Cancel discards input. Device changes and unavailable editing cancel
+pending input. A shared storage widget
 presents typed Application Layer category estimates, keeps unclassified usage in
 Other, and falls back to used/free capacity when metadata is inconsistent. Photo
 estimates count stored representation ranges rather than source sizes. Games uses
