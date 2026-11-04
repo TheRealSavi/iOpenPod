@@ -6438,6 +6438,14 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Coloca el reproductor encima o debajo del área principal de la aplicación.</translation>
     </message>
     <message>
+        <source>Automatically minimize Player</source>
+        <translation>Minimizar el reproductor automáticamente</translation>
+    </message>
+    <message>
+        <source>Minimize the Player when no Track is loaded.</source>
+        <translation>Minimizar el reproductor cuando no haya ninguna pista cargada.</translation>
+    </message>
+    <message>
         <source>Track-list title bar</source>
         <translation>Barra de título de la lista de pistas</translation>
     </message>

@@ -204,6 +204,13 @@ PLAYER_POSITION = SettingDefinition[str](
     validator=_one_of(*(position.value for position in PlayerPosition)),
 )
 
+PLAYER_AUTO_MINIMIZE = SettingDefinition[bool](
+    key="appearance/player-auto-minimize",
+    value_type=bool,
+    default=True,
+)
+
+
 APPLICATION_LANGUAGE = SettingDefinition[str](
     key="appearance/language",
     value_type=str,

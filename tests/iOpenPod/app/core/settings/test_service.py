@@ -20,6 +20,7 @@ from iOpenPod.app.core.settings.definitions import (
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
     MANAGE_VOLUME_PRESENTATION,
     NAVIGATION_STYLE,
+    PLAYER_AUTO_MINIMIZE,
     PLAYER_POSITION,
     TRACK_TITLE_BAR_STYLE,
     WINDOW_GEOMETRY,
@@ -118,6 +119,24 @@ def test_invalid_write_is_rejected() -> None:
         assert APPEARANCE_MODE.key in str(error)
     else:
         raise AssertionError("An invalid theme value was accepted")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_player_auto_minimize_defaults_on_and_persists_as_host_preference(
+    tmp_path: Path, enabled: bool
+) -> None:
+    settings_path = tmp_path / "settings.json"
+    service = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert service.get(PLAYER_AUTO_MINIMIZE) is True
+    service.set_global(PLAYER_AUTO_MINIMIZE, enabled)
+    restored = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert restored.get(PLAYER_AUTO_MINIMIZE) is enabled
+    restored.load_device("one", {PLAYER_AUTO_MINIMIZE.key: not enabled})
+    assert restored.get(PLAYER_AUTO_MINIMIZE) is enabled
+    with pytest.raises(ValueError, match="not device-overridable"):
+        restored.set_device(PLAYER_AUTO_MINIMIZE, not enabled)
+    restored.reset_global(PLAYER_AUTO_MINIMIZE)
+    assert restored.get(PLAYER_AUTO_MINIMIZE) is True
 
 
 def test_invalid_player_position_is_rejected() -> None:

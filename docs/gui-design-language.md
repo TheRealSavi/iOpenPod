@@ -244,9 +244,11 @@ rather than page content. The now-playing surface spans the band's complete heig
 uses the primary surface, and is separated from the edge zones by one-pixel vertical
 rules rather than a rounded floating card.
 With no current Track, the Player contracts completely and returns its space to the
-Library. Transport, metadata, artwork, volume, and Queue controls appear only once a
-current Track makes them relevant. The height transition follows the Host style's
-widget-animation preference and otherwise completes immediately.
+Library by default. Appearance's **Automatically minimize Player** Host preference
+can keep the empty Player expanded instead, showing “Nothing playing” with disabled
+transport controls. The setting applies immediately and persists across restarts;
+paused Tracks keep the Player expanded in either mode. The height transition follows
+the Host style's widget-animation preference and otherwise completes immediately.
 Previous, Play/Pause, and Next form a vertically centered cluster anchored to the
 left edge. Mute and a flexible volume slider sit on the right beside the Queue toggle,
 which remains anchored at the far-right edge. Play/Pause has the strongest glyph

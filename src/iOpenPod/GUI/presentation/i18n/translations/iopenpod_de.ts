@@ -6438,6 +6438,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Den Player über oder unter dem Hauptbereich der Anwendung anzeigen.</translation>
     </message>
     <message>
+        <source>Automatically minimize Player</source>
+        <translation>Player automatisch minimieren</translation>
+    </message>
+    <message>
+        <source>Minimize the Player when no Track is loaded.</source>
+        <translation>Den Player minimieren, wenn kein Titel geladen ist.</translation>
+    </message>
+    <message>
         <source>Track-list title bar</source>
         <translation>Titelleiste der Titelliste</translation>
     </message>

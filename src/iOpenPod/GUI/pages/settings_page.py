@@ -37,6 +37,7 @@ from iOpenPod.app.core.settings.definitions import (
     MANAGE_VOLUME_PRESENTATION,
     MAX_BACKUPS,
     NAVIGATION_STYLE,
+    PLAYER_AUTO_MINIMIZE,
     PLAYER_POSITION,
     AppearanceMode,
     DarkTheme,
@@ -167,6 +168,11 @@ class SettingsPage(QWidget):
             self._player_position_combo,
             self,
         )
+        self._player_auto_minimize_combo = AppComboBox(self)
+        self._player_auto_minimize_combo.setObjectName("playerAutoMinimizeCombo")
+        self._player_auto_minimize_row = SettingRow(
+            "", "", self._player_auto_minimize_combo, self
+        )
         self._language_combo = AppComboBox(self)
         self._language_row = SettingRow("", "", self._language_combo, self)
 
@@ -228,6 +234,7 @@ class SettingsPage(QWidget):
         appearance.add_row(self._itunes_artwork_row)
         appearance.add_row(self._track_title_bar_row)
         appearance.add_row(self._player_position_row)
+        appearance.add_row(self._player_auto_minimize_row)
         appearance.add_row(self._language_row)
 
         self._donation_banner = QFrame(self)
@@ -454,6 +461,9 @@ class SettingsPage(QWidget):
         self._player_position_combo.currentIndexChanged.connect(
             self._player_position_selected
         )
+        self._player_auto_minimize_combo.currentIndexChanged.connect(
+            self._player_auto_minimize_selected
+        )
         self._track_title_bar_combo.currentIndexChanged.connect(
             self._track_title_bar_selected
         )
@@ -633,6 +643,10 @@ class SettingsPage(QWidget):
         self._player_position_row.set_copy(
             self.tr("Player position"),
             self.tr("Place the Player above or below the main application area."),
+        )
+        self._player_auto_minimize_row.set_copy(
+            self.tr("Automatically minimize Player"),
+            self.tr("Minimize the Player when no Track is loaded."),
         )
         self._track_title_bar_row.set_copy(
             self.tr("Track-list title bar"),
@@ -860,6 +874,7 @@ class SettingsPage(QWidget):
                 self._dark_theme_combo,
                 self._colorful_mode_combo,
                 self._itunes_artwork_combo,
+                self._player_auto_minimize_combo,
                 self._track_title_bar_combo,
             )
         )
@@ -909,6 +924,10 @@ class SettingsPage(QWidget):
         self._itunes_artwork_combo.addItem(self.tr("Off"), False)
         self._itunes_artwork_combo.addItem(self.tr("On"), True)
         self._sync_itunes_artwork(self._settings.get(ITUNES_107_ARTWORK))
+        self._player_auto_minimize_combo.clear()
+        self._player_auto_minimize_combo.addItem(self.tr("Off"), False)
+        self._player_auto_minimize_combo.addItem(self.tr("On"), True)
+        self._sync_player_auto_minimize(self._settings.get(PLAYER_AUTO_MINIMIZE))
         self._track_title_bar_combo.clear()
         self._track_title_bar_combo.addItem(
             self.tr("Flat"), TrackTitleBarStyle.FLAT.value
@@ -1008,6 +1027,18 @@ class SettingsPage(QWidget):
         self._volume_presentation_combo.addItem(self.tr("On"), True)
         self._sync_volume_presentation(self._settings.get(MANAGE_VOLUME_PRESENTATION))
         del blocker
+
+    def _sync_player_auto_minimize(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self._player_auto_minimize_combo)
+        self._player_auto_minimize_combo.setCurrentIndex(
+            self._player_auto_minimize_combo.findData(enabled)
+        )
+        del blocker
+
+    def _player_auto_minimize_selected(self, index: int) -> None:
+        value = self._player_auto_minimize_combo.itemData(index)
+        if isinstance(value, bool):
+            self._settings.set_global(PLAYER_AUTO_MINIMIZE, value)
 
     def _sync_itunes_artwork(self, enabled: bool) -> None:
         blocker = QSignalBlocker(self._itunes_artwork_combo)
@@ -1190,6 +1221,8 @@ class SettingsPage(QWidget):
             self._sync_itunes_artwork(value)
         elif key == PLAYER_POSITION.key and isinstance(value, str):
             self._sync_player_position_selection(value)
+        elif key == PLAYER_AUTO_MINIMIZE.key and isinstance(value, bool):
+            self._sync_player_auto_minimize(value)
         elif key == NAVIGATION_STYLE.key and isinstance(value, str):
             self._sync_navigation_style_selection(value)
         elif key == BACKUP_LOCATION.key and isinstance(value, str):

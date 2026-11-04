@@ -30,6 +30,7 @@ from iOpenPod.app.chaptered_conversion_controller import ChapteredConversionCont
 from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.settings.definitions import (
     NAVIGATION_STYLE,
+    PLAYER_AUTO_MINIMIZE,
     PLAYER_POSITION,
     ROCKBOX_METADATA_SUPPORT,
     WINDOW_GEOMETRY,
@@ -281,6 +282,7 @@ class MainWindow(QMainWindow):
             self._artwork_provider,
             shell,
             workspace=context.library_workspace,
+            auto_minimize=context.settings.get(PLAYER_AUTO_MINIMIZE),
         )
         shell_layout.addWidget(self._player)
 
@@ -1675,6 +1677,8 @@ class MainWindow(QMainWindow):
             self._apply_navigation_style()
         elif key == PLAYER_POSITION.key and isinstance(value, str):
             self._apply_player_position(PlayerPosition(value))
+        elif key == PLAYER_AUTO_MINIMIZE.key and isinstance(value, bool):
+            self._player.set_auto_minimize(value)
 
     def _apply_navigation_style(self) -> None:
         compact = (

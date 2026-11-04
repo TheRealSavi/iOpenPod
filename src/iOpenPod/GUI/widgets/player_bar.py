@@ -310,12 +310,14 @@ class PlayerBar(QFrame):
         parent: QWidget | None = None,
         *,
         workspace: LibraryWorkspace | None = None,
+        auto_minimize: bool = True,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("playerBar")
         self.setFixedHeight(LAYOUT.player_idle_height)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._track: Track | None = None
+        self._auto_minimize = auto_minimize
         self._chapters: tuple[TrackChapter, ...] = ()
         self._playing = False
         self._target_height = LAYOUT.player_idle_height
@@ -642,6 +644,13 @@ class PlayerBar(QFrame):
         """Return the Track currently represented by the Player."""
 
         return self._track
+
+    def set_auto_minimize(self, enabled: bool) -> None:
+        """Apply the idle presentation preference without changing playback."""
+        if enabled == self._auto_minimize:
+            return
+        self._auto_minimize = enabled
+        self._set_idle_presentation(self._track is None)
 
     def set_track(self, track: Track | None) -> None:
         """Update the surface for the controller's current Track."""
@@ -1211,9 +1220,12 @@ class PlayerBar(QFrame):
         drag.exec(Qt.DropAction.CopyAction)
 
     def _set_idle_presentation(self, idle: bool) -> None:
-        self._left_zone.setVisible(not idle)
-        self._now_playing.setVisible(not idle)
-        self._right_zone.setVisible(not idle)
+        minimized = idle and self._auto_minimize
+        if minimized:
+            self._queue.setChecked(False)
+        self._left_zone.setVisible(not minimized)
+        self._now_playing.setVisible(not minimized)
+        self._right_zone.setVisible(not minimized)
         self._now_playing.setProperty(
             "playbackState",
             "idle" if idle else "active",
@@ -1221,7 +1233,9 @@ class PlayerBar(QFrame):
         self._now_playing.style().unpolish(self._now_playing)
         self._now_playing.style().polish(self._now_playing)
         self._now_playing.update()
-        self._animate_height(LAYOUT.player_idle_height if idle else self._active_height)
+        self._animate_height(
+            LAYOUT.player_idle_height if minimized else self._active_height
+        )
 
     def _refresh_active_height(self) -> None:
         required_surface_height = (
@@ -1242,7 +1256,7 @@ class PlayerBar(QFrame):
             return
         self._active_surface_height = surface_height
         self._active_height = player_height
-        if self._track is not None:
+        if self._track is not None or not self._auto_minimize:
             animation = getattr(self, "_height_animation", None)
             if animation is not None:
                 animation.stop()
