@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.models.album_list_model import AlbumSummary
-from iOpenPod.app.models.collection_list_model import CollectionSummary
+from iOpenPod.app.models.collection_list_model import CollectionKind, CollectionSummary
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.i18n.text import (
@@ -183,6 +183,8 @@ class CollectionDetailPage(QWidget):
         self._artwork.set_seed(summary.artwork_seed)
         if isinstance(summary, AlbumSummary):
             self._artwork.set_artwork_id(summary.artwork_id)
+        elif summary.kind is CollectionKind.TV_SHOW:
+            self._artwork.set_artwork_id(summary.representative_artwork_id)
         else:
             self._artwork.set_artwork_ids(summary.artwork_ids)
         self._refresh_context()

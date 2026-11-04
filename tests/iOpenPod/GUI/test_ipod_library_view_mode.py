@@ -311,7 +311,7 @@ def test_settings_offer_exact_modes_and_preserve_choice_on_retranslation(
     "page_id",
     (PageId.TV_SHOWS,),
 )
-def test_itunes_11_keeps_split_table_for_other_collection_views(
+def test_itunes_11_tv_shows_uses_inline_details(
     context: AppContext, page_id: PageId
 ) -> None:
     context.settings.set_global(
@@ -322,7 +322,8 @@ def test_itunes_11_keeps_split_table_for_other_collection_views(
         grid = page.findChild(CollectionGridView)
         table = page.findChild(TrackTable)
         splitter = page.findChild(LibrarySplitter)
-        assert grid is not None and table is not None and splitter is not None
-        assert grid.isVisible() and table.isVisible() and splitter.isVisible()
+        assert grid is not None and table is not None
+        assert grid.isVisible() and not table.isVisible()
+        assert splitter is None or not splitter.isVisible()
     finally:
         page.close()

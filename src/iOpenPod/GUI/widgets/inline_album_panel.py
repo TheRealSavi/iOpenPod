@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app.models.album_list_model import AlbumSummary
 from iOpenPod.app.models.track_columns import TrackColumn, track_column_display_value
 from iOpenPod.app.models.track_order import album_track_sort_key
 from iOpenPod.app.models.track_table_model import TrackRole
@@ -57,8 +58,10 @@ from iOpenPod.GUI.widgets.artwork_view import ArtworkView
 from iPodDB.library import Track
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from iOpenPod.app.library_workspace import LibraryWorkspace
-    from iOpenPod.app.models.album_list_model import AlbumSummary
+    from iOpenPod.app.models.collection_list_model import CollectionSummary
     from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
     from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
     from iOpenPod.GUI.presentation.theme.manager import ThemeManager
@@ -79,6 +82,7 @@ class _AlbumTracksModel(QAbstractTableModel):
         self.tracks: tuple[Track, ...] = ()
         self.columns = 1
         self.show_rating = True
+        self.accessible_text: Callable[[Track], str] | None = None
 
     def set_tracks(self, tracks: tuple[Track, ...], columns: int) -> None:
         if tracks == self.tracks and columns == self.columns:
@@ -115,6 +119,8 @@ class _AlbumTracksModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             return track_column_display_value(track, TrackColumn.TITLE)
         if role == Qt.ItemDataRole.AccessibleTextRole:
+            if self.accessible_text is not None:
+                return self.accessible_text(track)
             return ", ".join(
                 track_column_display_value(track, column)
                 for column in (
@@ -283,7 +289,7 @@ class InlineAlbumPanel(QWidget):
         self._proxy = proxy
         self._theme_manager = theme_manager
         self._provider = artwork_provider
-        self._summary: AlbumSummary | None = None
+        self._summary: AlbumSummary | CollectionSummary | None = None
         self._pointer_x = 0
         self._fill = QColor(theme_manager.tokens.surface_alt)
         self.ink = QColor(theme_manager.tokens.text)
@@ -380,17 +386,43 @@ class InlineAlbumPanel(QWidget):
         return max(28, self._tracks.fontMetrics().height() + LAYOUT.space_xs)
 
     def set_context(
-        self, summary: AlbumSummary, tracks: tuple[Track, ...] | None = None
+        self,
+        summary: AlbumSummary | CollectionSummary,
+        tracks: tuple[Track, ...] | None = None,
     ) -> None:
         self._summary = summary
         self._cover.set_seed(summary.artwork_seed)
-        self._cover.set_artwork_id(summary.artwork_id)
+        self._cover.set_artwork_id(self.artwork_id)
         if tracks is None:
             self._refresh_tracks()
-        else:
+        elif self.stacked:
             self._replace_tracks(tracks, 2)
+        else:
+            self._set_context_tracks(tracks)
         self._refresh_colors()
         self._arrange()
+
+    @property
+    def artwork_id(self) -> int:
+        """Artwork driving the cover and colors of the current contents."""
+        if isinstance(self._summary, AlbumSummary):
+            return self._summary.artwork_id
+        if self._summary is not None:
+            return self._summary.representative_artwork_id
+        return 0
+
+    def _context_title(self) -> str:
+        return (
+            self._summary.title if self._summary is not None else ""
+        ) or QCoreApplication.translate("LibraryLabels", "Unknown Album")
+
+    def _context_subtitle(self) -> str:
+        if not isinstance(self._summary, AlbumSummary):
+            return ""
+        artist = self._summary.artist or QCoreApplication.translate(
+            "LibraryLabels", "Unknown Artist"
+        )
+        return f"{artist} ({self._summary.year})" if self._summary.year else artist
 
     def set_pointer_x(self, x: int) -> None:
         if x == self._pointer_x:
@@ -563,14 +595,8 @@ class InlineAlbumPanel(QWidget):
             self._artist.fontMetrics().height(),
         )
         if self._summary is not None:
-            title = self._summary.title or QCoreApplication.translate(
-                "LibraryLabels", "Unknown Album"
-            )
-            artist = self._summary.artist or QCoreApplication.translate(
-                "LibraryLabels", "Unknown Artist"
-            )
-            if self._summary.year:
-                artist = f"{artist} ({self._summary.year})"
+            title = self._context_title()
+            artist = self._context_subtitle()
             for label, text in ((self._title, title), (self._artist, artist)):
                 label.setText(
                     label.fontMetrics().elidedText(
@@ -615,7 +641,7 @@ class InlineAlbumPanel(QWidget):
         self._year.setGeometry(
             content_left + width - year_width, margin, year_width, title_height
         )
-        if self._summary is not None:
+        if isinstance(self._summary, AlbumSummary):
             title = self._summary.title or QCoreApplication.translate(
                 "LibraryLabels", "Unknown Album"
             )
@@ -662,21 +688,26 @@ class InlineAlbumPanel(QWidget):
     def _refresh_tracks(self, *_args: object) -> None:
         if self._summary is None:
             return
+        track_ids = set(self._summary.track_ids)
         tracks = tuple(
-            sorted(
-                (
-                    track
-                    for row in range(self._proxy.rowCount())
-                    if (track := self._proxy.track_at(self._proxy.index(row, 0)))
-                    is not None
-                    and track.album_key == self._summary.key
-                ),
-                key=album_track_sort_key,
+            track
+            for row in range(self._proxy.rowCount())
+            if (track := self._proxy.track_at(self._proxy.index(row, 0))) is not None
+            and (
+                track.album_key == self._summary.key
+                if isinstance(self._summary, AlbumSummary)
+                else track.track_id in track_ids
             )
         )
-        self._replace_tracks(tracks, self._dimensions(self.width())[1])
+        self._set_context_tracks(tracks)
         self._arrange()
         self.preferredHeightChanged.emit()
+
+    def _set_context_tracks(self, tracks: tuple[Track, ...]) -> None:
+        self._replace_tracks(
+            tuple(sorted(tracks, key=album_track_sort_key)),
+            self._dimensions(self.width())[1],
+        )
 
     def _replace_tracks(self, tracks: tuple[Track, ...], columns: int) -> None:
         if tracks == self._model.tracks and columns == self._model.columns:
@@ -711,7 +742,7 @@ class InlineAlbumPanel(QWidget):
             None
             if self._summary is None
             else self._provider.dominant_color(
-                self._summary.artwork_id, _COVER_SIZE, self.devicePixelRatioF()
+                self.artwork_id, _COVER_SIZE, self.devicePixelRatioF()
             )
         )
         self._fill = (
@@ -757,7 +788,7 @@ class InlineAlbumPanel(QWidget):
         self.update()
 
     def _artwork_changed(self, artwork_id: int) -> None:
-        if self._summary is not None and artwork_id == self._summary.artwork_id:
+        if self._summary is not None and artwork_id == self.artwork_id:
             self._refresh_colors()
 
     def _album_action_button(self, name: str) -> QToolButton:

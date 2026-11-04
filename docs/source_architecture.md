@@ -1651,7 +1651,15 @@ The sections reuse `InlineAlbumPanel` Track selection, activation, and drag beha
 with two columns, no rating, a title and year, and artwork on the left. Genres add
 an Album Artist byline and use smaller artwork. Existing Track actions bind to each
 materialized section. Only Tracks matching the selected collection enter the rows
-and header actions. TV Shows retains Split Table. See ADR-0235.
+and header actions. See ADR-0235.
+TV Shows uses single-cover cards and detail artwork from the first Track with
+artwork in the show. Its iTunes 11 `InlineTVShowPanel` specializes the shared Album
+panel with Season tabs, Season-specific cover/colors, and virtualized episode
+rows. Rows place number, release date, and duration beside title and a two-line
+elided description. Season changes preserve the expanded grid row and scope its
+playback/queue actions to the displayed episodes. Other layouts retain all show
+Tracks. Host browsing and Select Media retain their existing layout policy.
+See ADR-0238.
 Music Videos reuses `LibraryPage` and its Album grid, single-cover artwork,
 sorting, search, and inline/detail layouts. Its `AlbumListModel` has an explicit
 Music Video scope, also used by the page's Track filter. Album actions and drags

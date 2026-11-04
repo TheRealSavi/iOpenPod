@@ -19,7 +19,7 @@ from iPodDB.library import Track
 
 
 class CollectionGridView(LibraryDragGridView):
-    """Render collection collages without allocating a widget per card."""
+    """Render collection cards without allocating a widget per card."""
 
     def __init__(
         self,

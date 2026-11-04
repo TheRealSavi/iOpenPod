@@ -302,3 +302,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0235: Browse Artists and Genres as Album sections](0235-browse-artists-and-genres-as-album-sections.md)
 - [ADR-0236: Browse Movies with an independent grid toggle](0236-browse-movies-with-an-independent-grid-toggle.md)
 - [ADR-0237: Share Album browsing with Music Videos](0237-share-album-browsing-with-music-videos.md)
+- [ADR-0238: Browse TV Shows with inline Season details](0238-browse-tv-shows-with-inline-season-details.md)

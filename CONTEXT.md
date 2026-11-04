@@ -566,8 +566,11 @@ use a source list beside a collection heading, playback/queue controls, and stac
 Albums with two columns of Tracks. Covers sit on the left; Genres use smaller
 covers and an Album Artist byline. These rows omit ratings. See ADR-0235.
 Music Videos uses the same single-cover artwork, Album cards, and layout policy
-as Albums, scoped to Music Video Tracks. See ADR-0237. TV Shows retains the split
-table. Movies defaults to artwork/title
+as Albums, scoped to Music Video Tracks. See ADR-0237. TV Shows uses one cover per
+show. In iTunes 11 style its inline panel has Season tabs, Season-specific artwork
+and colors, and episode rows with number, release date, duration, title, and an
+elided description. Other layouts show all episodes together. See ADR-0238.
+Movies defaults to artwork/title
 cards with a grid/list toggle for its existing table, independently of this setting.
 Single clicks select Movies without opening details or playback. See ADR-0236.
 **iTunes 11 style** is the default. Changes apply immediately,

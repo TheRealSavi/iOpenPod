@@ -473,6 +473,31 @@ def test_album_summary_groups_tracks_by_album_artist() -> None:
     assert summary.track_ids == (1, 2)
 
 
+def test_tv_show_cover_uses_first_available_artwork_across_all_episodes() -> None:
+    tracks = TrackTableModel()
+    shows = CollectionListModel(tracks, CollectionKind.TV_SHOW)
+    episodes = tuple(
+        Track(
+            number,
+            f"Episode {number}",
+            "",
+            "",
+            1000,
+            show="Show",
+            media_types=(MediaType.TV_SHOW,),
+            artwork_id=number if number > 4 else 0,
+        )
+        for number in range(1, 8)
+    )
+    tracks.replace_tracks(episodes)
+    summary = shows.collection_at(0)
+    assert summary is not None and summary.representative_artwork_id == 5
+    assert summary.track_ids == tuple(range(1, 8))
+    tracks.replace_tracks(episodes[:4])
+    summary = shows.collection_at(0)
+    assert summary is not None and summary.representative_artwork_id == 0
+
+
 def test_collection_models_build_fixed_four_tile_artwork_collages() -> None:
     tracks = TrackTableModel()
     artists = CollectionListModel(tracks, CollectionKind.ARTIST)

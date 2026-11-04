@@ -1,4 +1,4 @@
-"""Collection browsers for Artists, Genres, TV Shows, and Music Videos."""
+"""Collection browsers for Artists, Genres, and TV Shows."""
 
 from PySide6.QtCore import QCoreApplication, QEvent, QModelIndex, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -41,6 +41,8 @@ from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.collection_album_list import CollectionAlbumList
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
+from iOpenPod.GUI.widgets.inline_album_expansion import InlineAlbumExpansion
+from iOpenPod.GUI.widgets.inline_tv_show_panel import InlineTVShowPanel
 from iOpenPod.GUI.widgets.library_content import LibraryContent
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar, SortOption
 from iOpenPod.GUI.widgets.track_table import TrackTable
@@ -231,6 +233,26 @@ class CollectionPage(QWidget):
             self,
             default_sort_column=TrackColumn.ALBUM,
         )
+        self._inline_panel: InlineTVShowPanel | None = None
+        self._inline_expansion: InlineAlbumExpansion | None = None
+        if (
+            self._kind is CollectionKind.TV_SHOW
+            and not selection_mode
+            and follow_ipod_view_mode
+        ):
+            self._inline_panel = InlineTVShowPanel(
+                self._track_proxy, theme_manager, artwork_provider, self
+            )
+            self._inline_expansion = InlineAlbumExpansion(
+                self._collection_grid, self._inline_panel
+            )
+            self._inline_panel.currentTrackChanged.connect(
+                self.currentTrackChanged.emit
+            )
+            self._inline_panel.trackActivated.connect(self.trackActivated.emit)
+            self._inline_panel.playRequested.connect(self.playRequested.emit)
+            self._inline_panel.playNextRequested.connect(self.playNextRequested.emit)
+            self._inline_panel.queueRequested.connect(self.queueRequested.emit)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -246,14 +268,15 @@ class CollectionPage(QWidget):
             self,
             selection_mode=selection_mode,
             follow_ipod_view_mode=follow_ipod_view_mode,
-            supports_inline_albums=self._supports_list,
+            supports_inline_albums=self._supports_list
+            or self._kind is CollectionKind.TV_SHOW,
             splitter_name=f"{page_id.value}LibrarySplitter",
         )
         layout.addWidget(self._content, 1)
         self._content.backRequested.connect(self._show_browser)
         self._content.viewModeChanged.connect(self._apply_presentation)
         self._collection_grid.clicked.connect(self._open_collection)
-        self._collection_grid.activated.connect(self._open_collection)
+        self._collection_grid.activated.connect(self._activate_collection)
         self._collection_grid.selectionModel().currentChanged.connect(
             self._browser_collection_selected
         )
@@ -301,6 +324,8 @@ class CollectionPage(QWidget):
 
     def _apply_presentation(self) -> None:
         inline = self._content.inline_albums
+        if self._inline_expansion is not None:
+            self._inline_expansion.set_enabled(inline)
         self._toolbar.set_view_switch_visible(not inline)
         if self._album_views is not None:
             self._album_views.setCurrentIndex(1 if inline else 0)
@@ -322,6 +347,8 @@ class CollectionPage(QWidget):
             view.setCurrentIndex(self._collection_proxy.index(0, 0))
 
     def show_all(self) -> None:
+        if self._inline_expansion is not None:
+            self._inline_expansion.reset()
         self._show_browser()
         self._selected_collection = None
         self._selected_album = None
@@ -373,7 +400,9 @@ class CollectionPage(QWidget):
     def _browser_collection_selected(
         self, current: QModelIndex, previous: QModelIndex
     ) -> None:
-        if not self._content.whole_page_table:
+        if not self._content.whole_page_table and (
+            self._inline_expansion is None or not self._content.inline_albums
+        ):
             self._collection_selected(current, previous)
 
     def _browser_album_selected(
@@ -443,12 +472,24 @@ class CollectionPage(QWidget):
             QTimer.singleShot(0, self, self._ensure_collection_selection)
 
     def _refresh_selected_collection(self, *_args: object) -> None:
-        view = self._collection_list
-        if view is not None and self._selected_collection is not None:
-            summary = view.currentIndex().data(CollectionRole.SUMMARY)
+        view = self._collection_list or self._collection_grid
+        if self._selected_collection is not None:
+            index = (
+                self._inline_expansion.expanded_index
+                if self._inline_expansion is not None
+                and self._inline_expansion.expanded_index.isValid()
+                else view.currentIndex()
+            )
+            summary = index.data(CollectionRole.SUMMARY)
             if isinstance(summary, CollectionSummary):
                 self._selected_collection = summary
                 self._refresh_track_context()
+                if (
+                    self._inline_panel is not None
+                    and self._inline_expansion is not None
+                    and self._inline_expansion.expanded_index.isValid()
+                ):
+                    self._inline_panel.set_context(summary)
 
     def _album_selected(
         self,
@@ -468,8 +509,26 @@ class CollectionPage(QWidget):
         self._collection_proxy.set_sort_mode(CollectionSortMode(value))
 
     def _open_collection(self, index: QModelIndex) -> None:
+        self._activate_collection(index, toggle=True)
+
+    def _activate_collection(self, index: QModelIndex, *, toggle: bool = False) -> None:
         summary = index.data(CollectionRole.SUMMARY)
-        if not isinstance(summary, CollectionSummary) or not self._can_open_detail():
+        if not isinstance(summary, CollectionSummary):
+            return
+        if self._content.inline_albums and self._inline_expansion is not None:
+            if QApplication.keyboardModifiers() & (
+                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+            ):
+                return
+            if toggle and self._inline_expansion.expanded_index == index:
+                self._inline_expansion.close()
+                return
+            assert self._inline_panel is not None
+            self._collection_selected(index, QModelIndex())
+            self._inline_panel.set_context(summary)
+            self._inline_expansion.open(index)
+            return
+        if not self._can_open_detail():
             return
         self._collection_selected(index, QModelIndex())
         self._show_detail(summary)

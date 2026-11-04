@@ -40,3 +40,18 @@ def test_collection_summary_uses_singular_labels() -> None:
     )
 
     assert collection_summary_text(summary) == "1 album · 1 track"
+
+
+@pytest.mark.parametrize("count, text", [(1, "1 episode"), (12, "12 episodes")])
+def test_tv_show_summary_names_episodes(count: int, text: str) -> None:
+    summary = CollectionSummary(
+        kind=CollectionKind.TV_SHOW,
+        key="show",
+        title="Show",
+        track_count=count,
+        item_count=count,
+        duration_ms=1,
+        artwork_ids=(0, 0, 0, 0),
+        artwork_seed=1,
+    )
+    assert collection_summary_text(summary) == text

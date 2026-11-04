@@ -6,6 +6,7 @@ from iOpenPod.app.models.collection_list_model import (
 )
 from iOpenPod.GUI.presentation.i18n.text import (
     album_count_text,
+    episode_count_text,
     item_count_text,
     track_count_text,
 )
@@ -21,6 +22,8 @@ def collection_summary_text(summary: CollectionSummary) -> str:
                 track_count_text(summary.track_count),
             )
         )
+    if summary.kind is CollectionKind.TV_SHOW:
+        return episode_count_text(summary.track_count)
     return item_count_text(summary.item_count)
 
 

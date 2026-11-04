@@ -2334,6 +2334,49 @@
     </message>
 </context>
 <context>
+    <name>InlineTVShowPanel</name>
+    <message>
+        <source>Episode %1</source>
+        <translation>Folge %1</translation>
+    </message>
+    <message>
+        <source>Episode</source>
+        <translation>Folge</translation>
+    </message>
+    <message>
+        <source>Season %1</source>
+        <translation>Staffel %1</translation>
+    </message>
+    <message>
+        <source>Unknown season</source>
+        <translation>Unbekannte Staffel</translation>
+    </message>
+    <message>
+        <source>Close show</source>
+        <translation>Serie schließen</translation>
+    </message>
+    <message>
+        <source>Season episodes</source>
+        <translation>Folgen der Staffel</translation>
+    </message>
+    <message>
+        <source>Play season now</source>
+        <translation>Staffel jetzt abspielen</translation>
+    </message>
+    <message>
+        <source>Add season to top of queue</source>
+        <translation>Staffel an den Anfang der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Add season to bottom of queue</source>
+        <translation>Staffel ans Ende der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Seasons</source>
+        <translation>Staffeln</translation>
+    </message>
+</context>
+<context>
     <name>LibraryDragGridView</name>
     <message>
         <source>Drag selected cards to a Playlist, the Queue, or the Player. Hold Shift while dragging empty space to box select.</source>

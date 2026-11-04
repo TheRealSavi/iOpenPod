@@ -16,14 +16,14 @@ from PySide6.QtWidgets import QApplication, QStyleOptionViewItem, QWidget
 
 from iOpenPod.GUI.delegates.inline_album_delegate import InlineAlbumDelegate
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
-from iOpenPod.GUI.widgets.album_grid import AlbumGridView
+from iOpenPod.GUI.widgets.equalized_grid import EqualizedGridView
 from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
 
 
 class InlineAlbumExpansion(QObject):
     """Reserve space below a complete card row and clip the revealing panel."""
 
-    def __init__(self, view: AlbumGridView, panel: InlineAlbumPanel) -> None:
+    def __init__(self, view: EqualizedGridView, panel: InlineAlbumPanel) -> None:
         super().__init__(view)
         self._view = view
         self._viewport = view.viewport()
