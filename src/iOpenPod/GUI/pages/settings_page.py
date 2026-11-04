@@ -60,6 +60,7 @@ from iOpenPod.app.services.linux_identity import (
 )
 from iOpenPod.app.services.media_tools import MediaToolSetup
 from iOpenPod.app.updates.backend import InstallChannel
+from iOpenPod.GUI.dialogs.help_support import HelpSupportDialog
 from iOpenPod.GUI.dialogs.linux_identity_setup import (
     LinuxIdentityUninstallDialog,
 )
@@ -80,7 +81,6 @@ from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
-_ISSUES_URL = "https://github.com/TheRealSavi/iOpenPod/issues"
 _DONATION_URL = "https://ko-fi.com/johngibbons"
 
 
@@ -91,6 +91,7 @@ class SettingsPage(QWidget):
     mediaToolsCheckRequested = Signal()
     phaseAnalysisSetupRequested = Signal()
     appUpdatesRequested = Signal()
+    onboardingRequested = Signal()
     chooseIPodRequested = Signal()
 
     def __init__(
@@ -316,15 +317,19 @@ class SettingsPage(QWidget):
         self._check_updates.clicked.connect(self.appUpdatesRequested.emit)
         self._version_row = SettingRow("", "", self._check_updates, self)
         self._version_row.setObjectName("currentAppVersion")
+        self._retake_onboarding = ActionButton(parent=self)
+        self._retake_onboarding.setObjectName("retakeOnboarding")
+        self._retake_onboarding.clicked.connect(self.onboardingRequested.emit)
+        self._onboarding_row = SettingRow("", "", self._retake_onboarding, self)
         self._update_message = QLabel(self)
         self._update_message.setObjectName("appUpdateMessage")
         self._update_message.setWordWrap(True)
         self._update_message.setTextFormat(Qt.TextFormat.PlainText)
         self._update_message.setMaximumWidth(960)
         self._update_message.hide()
-        self._report_issue = ActionButton(parent=self)
-        self._report_issue.setObjectName("reportIssue")
-        self._report_issue_row = SettingRow("", "", self._report_issue, self)
+        self._help_support = ActionButton(parent=self)
+        self._help_support.setObjectName("helpSupport")
+        self._help_support_row = SettingRow("", "", self._help_support, self)
         self._open_log_folder = ActionButton(parent=self)
         self._open_log_folder.setObjectName("openLogFolder")
         self._open_log_folder_row = SettingRow("", "", self._open_log_folder, self)
@@ -335,9 +340,10 @@ class SettingsPage(QWidget):
         about = SettingGroup(self)
         about.setMaximumWidth(960)
         about.add_row(self._version_row)
+        about.add_row(self._onboarding_row)
         about.add_row(self._open_log_folder_row)
         about.add_row(self._log_file_path_row)
-        about.add_row(self._report_issue_row)
+        about.add_row(self._help_support_row)
 
         self._credits = QLabel(self)
         self._credits.setObjectName("aboutCredits")
@@ -480,7 +486,7 @@ class SettingsPage(QWidget):
         self._choose_backup_location.clicked.connect(self._choose_backup_folder)
         self._check_udev_rule.clicked.connect(self._inspect_udev_rule)
         self._uninstall_udev_rule.clicked.connect(self._show_udev_uninstall)
-        self._report_issue.clicked.connect(self._open_issue_tracker)
+        self._help_support.clicked.connect(self._open_help_support)
         self._open_log_folder.clicked.connect(self._show_log_folder)
         self._donate.clicked.connect(self._open_donation_page)
         self._tabs.currentChanged.connect(self._update_saved_note)
@@ -678,10 +684,17 @@ class SettingsPage(QWidget):
                 "Package-managed copies under /usr or /lib are preserved."
             ),
         )
-        self._report_issue_row.set_copy(
-            QCoreApplication.translate("CommonActions", "Report an Issue"),
-            self.tr("Open the iOpenPod issue tracker on GitHub."),
+        self._help_support_row.set_copy(
+            self.tr("Help and support"),
+            self.tr(
+                "Find guides, community help, issue reporting, and ways to support iOpenPod."
+            ),
         )
+        self._onboarding_row.set_copy(
+            self.tr("Getting started"),
+            self.tr("Revisit the welcome tour and choose your essential settings."),
+        )
+        self._retake_onboarding.setText(self.tr("Retake onboarding"))
         self._open_log_folder_row.set_copy(
             self.tr("Log files"),
             self.tr("Open the folder containing the active iOpenPod log file."),
@@ -705,9 +718,7 @@ class SettingsPage(QWidget):
         self._choose_backup_location.setText(self.tr("Choose…"))
         self._check_udev_rule.setText(self.tr("Check Again"))
         self._uninstall_udev_rule.setText(self.tr("Uninstall Rule"))
-        self._report_issue.setText(
-            QCoreApplication.translate("CommonActions", "Report an Issue")
-        )
+        self._help_support.setText(self.tr("Help and support"))
         self._donate.setText(self.tr("Support on Ko-fi ↗"))
         self._update_saved_note()
         self._ipod_preferences.retranslate_ui()
@@ -1174,8 +1185,8 @@ class SettingsPage(QWidget):
         LinuxIdentityUninstallDialog(self).exec()
         self._inspect_udev_rule()
 
-    def _open_issue_tracker(self) -> None:
-        open_desktop_url(QUrl(_ISSUES_URL))
+    def _open_help_support(self) -> None:
+        HelpSupportDialog(self).open()
 
     def _show_log_folder(self) -> None:
         log_path = active_log_path()

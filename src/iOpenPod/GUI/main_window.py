@@ -96,6 +96,7 @@ from iOpenPod.GUI.dialogs.media_folders import (
     MediaFolderSettingsDialog,
 )
 from iOpenPod.GUI.dialogs.media_tools_setup import MediaToolsSetupDialog
+from iOpenPod.GUI.dialogs.onboarding import OnboardingDialog
 from iOpenPod.GUI.dialogs.phase_runtime_setup import PhaseRuntimeSetupDialog
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
@@ -453,6 +454,7 @@ class MainWindow(QMainWindow):
         self._settings_page.mediaToolsRequested.connect(self._open_media_tools)
         self._settings_page.mediaToolsCheckRequested.connect(self._media_tools.check)
         self._settings_page.appUpdatesRequested.connect(self._updates.check_now)
+        self._settings_page.onboardingRequested.connect(self._open_onboarding)
         self._settings_page.chooseIPodRequested.connect(self._open_device_picker)
         self._updates.changed.connect(self._app_update_status_changed)
         self._app_update_status_changed()
@@ -1245,6 +1247,12 @@ class MainWindow(QMainWindow):
         """Make one startup check after the application window is shown."""
         self._media_tools_prompt_pending = True
         self._media_tools.check()
+
+    def _open_onboarding(self) -> None:
+        """Replay setup without changing completion or restarting startup work."""
+        OnboardingDialog(
+            self._context.settings, self._context.i18n_manager, self
+        ).open()
 
     def _media_tools_checked(self, value: object) -> None:
         if not self._media_tools_prompt_pending:

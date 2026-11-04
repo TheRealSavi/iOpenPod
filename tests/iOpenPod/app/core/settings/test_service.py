@@ -79,6 +79,29 @@ def test_default_global_and_reset_resolution() -> None:
     assert service.source(APPEARANCE_MODE) is SettingSource.DEFAULT
 
 
+def test_failed_global_write_restores_previous_value_without_notifying(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = GlobalSettingsStore()
+    service = _service(store)
+    service.set_global(APPEARANCE_MODE, "dark")
+    notifications: list[str] = []
+
+    def record_notification(key: str, _value: object) -> None:
+        notifications.append(key)
+
+    service.settingChanged.connect(record_notification)
+
+    def fail() -> None:
+        raise OSError("Disk full")
+
+    monkeypatch.setattr(store, "sync", fail)
+    with pytest.raises(OSError, match="Disk full"):
+        service.set_global(APPEARANCE_MODE, "light")
+    assert service.get(APPEARANCE_MODE) == "dark"
+    assert not notifications
+
+
 def test_legacy_recovery_hints_are_removed_without_changing_preferences(
     tmp_path: Path,
 ) -> None:

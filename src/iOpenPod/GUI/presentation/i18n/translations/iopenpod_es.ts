@@ -3977,6 +3977,257 @@
     </message>
 </context>
 <context>
+    <name>OnboardingDialog</name>
+    <message>
+        <source>Welcome to iOpenPod</source>
+        <translation>Bienvenido a iOpenPod</translation>
+    </message>
+    <message>
+        <source>Your iPod. Your Library.</source>
+        <translation type="vanished">Tu iPod. Tu biblioteca.</translation>
+    </message>
+    <message>
+        <source>Welcome to iOpenPod. Connect your iPod and use Choose Device to load its Library. We call this your Active iPod; only one is loaded at a time.</source>
+        <translation type="vanished">Bienvenido a iOpenPod. Conecta tu iPod y usa Elegir dispositivo para cargar su biblioteca. Este será tu iPod activo; solo se carga uno a la vez.</translation>
+    </message>
+    <message>
+        <source>No iPod needed yet. First, make iOpenPod feel like home.</source>
+        <translation type="vanished">Todavía no necesitas un iPod. Primero, configura iOpenPod a tu gusto.</translation>
+    </message>
+    <message>
+        <source>Find your way around</source>
+        <translation type="vanished">Encuentra lo que buscas</translation>
+    </message>
+    <message>
+        <source>Choose your navigation style</source>
+        <translation>Elige tu estilo de navegación</translation>
+    </message>
+    <message>
+        <source>Keep navigation across the top, or give it a place beside your Library.</source>
+        <translation>Coloca la navegación arriba o junto a tu biblioteca.</translation>
+    </message>
+    <message>
+        <source>Compact top bar</source>
+        <translation>Barra superior compacta</translation>
+    </message>
+    <message>
+        <source>More room for your Library. Open the headings to find each view.</source>
+        <translation>Más espacio para tu biblioteca. Abre los menús para acceder a cada vista.</translation>
+    </message>
+    <message>
+        <source>Sidebar</source>
+        <translation>Barra lateral</translation>
+    </message>
+    <message>
+        <source>Keep Library sections and Playlists visible down the left.</source>
+        <translation>Mantén visibles las secciones de la biblioteca y las listas de reproducción a la izquierda.</translation>
+    </message>
+    <message>
+        <source>Opening an Album</source>
+        <translation>Abrir un álbum</translation>
+    </message>
+    <message>
+        <source>Choose how Tracks appear when you open an Album in your Library.</source>
+        <translation>Elige cómo se muestran las pistas al abrir un álbum de tu biblioteca.</translation>
+    </message>
+    <message>
+        <source>Split Table</source>
+        <translation>Tabla dividida</translation>
+    </message>
+    <message>
+        <source>Browse Albums above, with the selected Album&apos;s Tracks below.</source>
+        <translation>Explora los álbumes arriba y las pistas del álbum seleccionado abajo.</translation>
+    </message>
+    <message>
+        <source>Whole Page Table</source>
+        <translation>Tabla de página completa</translation>
+    </message>
+    <message>
+        <source>Open Tracks on their own page. Back takes you to the Albums.</source>
+        <translation>Abre las pistas en su propia página. Atrás te devuelve a los álbumes.</translation>
+    </message>
+    <message>
+        <source>iTunes 11 style</source>
+        <translation>Estilo iTunes 11</translation>
+    </message>
+    <message>
+        <source>Expand an Album&apos;s Tracks right inside the artwork grid.</source>
+        <translation>Despliega las pistas de un álbum dentro de la cuadrícula de carátulas.</translation>
+    </message>
+    <message>
+        <source>iPod image</source>
+        <translation>Imagen del iPod</translation>
+    </message>
+    <message>
+        <source>Use classic angled artwork where available.</source>
+        <translation>Usa las imágenes clásicas en ángulo cuando estén disponibles.</translation>
+    </message>
+    <message>
+        <source>Transcoding settings</source>
+        <translation>Ajustes de conversión</translation>
+    </message>
+    <message>
+        <source>Open Settings &gt; Transcoding before your first Sync. Transcoding converts media into formats your iPod can play. Your original files stay unchanged.</source>
+        <translation>Abre Ajustes &gt; Conversión antes de la primera sincronización. La conversión adapta los archivos a formatos que tu iPod puede reproducir. Los archivos originales no se modifican.</translation>
+    </message>
+    <message>
+        <source>Auto chooses an available audio encoder your iPod supports. Quality trades file size for fidelity: Compact, Balanced, or High Quality. Spoken Word has its own settings.</source>
+        <translation>Auto elige un codificador de audio disponible compatible con tu iPod. La calidad equilibra el tamaño y la fidelidad: Compacto, Equilibrado o Alta calidad. Voz tiene sus propios ajustes.</translation>
+    </message>
+    <message>
+        <source>1. Open Sync with Host</source>
+        <translation>1. Abre Sincronizar con el equipo</translation>
+    </message>
+    <message>
+        <source>Connect your iPod and load it with Choose Device. Then press Sync with Host in the navigation bar. Host means the computer running iOpenPod.</source>
+        <translation>Conecta tu iPod y cárgalo con Elegir dispositivo. Después, pulsa Sincronizar con el equipo en la barra de navegación. Host es el ordenador donde se ejecuta iOpenPod.</translation>
+    </message>
+    <message>
+        <source>This button starts the guided Sync workflow. It does not immediately copy or remove any media.</source>
+        <translation>Este botón inicia el proceso guiado de sincronización. No copia ni elimina archivos de inmediato.</translation>
+    </message>
+    <message>
+        <source>2. Choose your media folders</source>
+        <translation>2. Elige las carpetas de medios</translation>
+    </message>
+    <message>
+        <source>In Choose Media Folders, press Add Folder to pick folders on your computer. Use each folder&apos;s settings button to choose media types and whether to include subfolders.</source>
+        <translation>En Elegir carpetas de medios, pulsa Añadir carpeta para seleccionar carpetas del ordenador. Usa el botón de ajustes de cada carpeta para elegir los tipos de medios y si se incluyen subcarpetas.</translation>
+    </message>
+    <message>
+        <source>Press Sync to scan these folders and compare them with your iPod. This step finds media; you choose what to transfer next.</source>
+        <translation>Pulsa Sincronizar para analizar las carpetas y compararlas con tu iPod. Este paso busca archivos; después elegirás cuáles transferir.</translation>
+    </message>
+    <message>
+        <source>3. Select your media</source>
+        <translation>3. Selecciona los archivos</translation>
+    </message>
+    <message>
+        <source>After scanning, browse the media found on your computer. Check the Tracks, Albums, or other items you want on your iPod. New items start unchecked.</source>
+        <translation>Después del análisis, explora los archivos encontrados en el ordenador. Marca las pistas, los álbumes u otros elementos que quieras en tu iPod. Los elementos nuevos empiezan sin marcar.</translation>
+    </message>
+    <message>
+        <source>Watch the estimated storage as you choose. Press Review Sync when your selection is ready. Nothing has been transferred yet.</source>
+        <translation>Observa el espacio estimado mientras eliges. Pulsa Revisar sincronización cuando la selección esté lista. Todavía no se ha transferido nada.</translation>
+    </message>
+    <message>
+        <source>4. Review, then sync</source>
+        <translation>4. Revisa y sincroniza</translation>
+    </message>
+    <message>
+        <source>Review the proposed additions, updates, and removals. Uncheck changes you do not want, or press Edit Selection to go back. iPod-only removals start unchecked.</source>
+        <translation>Revisa las adiciones, actualizaciones y eliminaciones propuestas. Desmarca los cambios que no quieras o pulsa Editar selección para volver. Las eliminaciones de elementos que solo están en el iPod empiezan sin marcar.</translation>
+    </message>
+    <message>
+        <source>Press Sync Selected to apply the checked changes. Keep your iPod connected until Sync finishes, check the result, then eject it before unplugging.</source>
+        <translation>Pulsa Sincronizar selección para aplicar los cambios marcados. Mantén el iPod conectado hasta que termine, comprueba el resultado y expúlsalo antes de desconectarlo.</translation>
+    </message>
+    <message>
+        <source>A familiar face for your iPod</source>
+        <translation type="vanished">Una imagen familiar para tu iPod</translation>
+    </message>
+    <message>
+        <source>Choose the device images shown in iOpenPod.</source>
+        <translation>Elige las imágenes del dispositivo que se muestran en iOpenPod.</translation>
+    </message>
+    <message>
+        <source>Standard</source>
+        <translation>Estándar</translation>
+    </message>
+    <message>
+        <source>Use the standard device portrait.</source>
+        <translation>Usa la imagen estándar del dispositivo.</translation>
+    </message>
+    <message>
+        <source>iTunes 10.7 style</source>
+        <translation>Estilo iTunes 10.7</translation>
+    </message>
+    <message>
+        <source>Use classic angled artwork where available. This also applies to drive icons when Manage iPod drive appearance is enabled.</source>
+        <translation type="vanished">Usa las imágenes clásicas en ángulo cuando estén disponibles. También se aplican a los iconos de unidad si Gestionar la apariencia de la unidad del iPod está activado.</translation>
+    </message>
+    <message>
+        <source>Decide when edits are saved</source>
+        <translation type="vanished">Decide cuándo guardar los cambios</translation>
+    </message>
+    <message>
+        <source>Draft all changes lets you review Library edits before saving to your iPod.</source>
+        <translation type="vanished">Revisar todos los cambios antes de guardar te permite comprobar las modificaciones de la biblioteca antes de guardarlas en el iPod.</translation>
+    </message>
+    <message>
+        <source>Save immediately</source>
+        <translation type="vanished">Guardar inmediatamente</translation>
+    </message>
+    <message>
+        <source>Library edits are saved as you make them. Sync still has its own Review step.</source>
+        <translation type="vanished">Los cambios en la biblioteca se guardan al hacerlos. La sincronización sigue teniendo su propio paso de revisión.</translation>
+    </message>
+    <message>
+        <source>Review first</source>
+        <translation type="vanished">Revisar primero</translation>
+    </message>
+    <message>
+        <source>Keep Library edits in a draft, then review and accept them before saving.</source>
+        <translation type="vanished">Mantén los cambios de la biblioteca en un borrador y revísalos y acéptalos antes de guardar.</translation>
+    </message>
+    <message>
+        <source>Bring your media along</source>
+        <translation type="vanished">Lleva tus archivos multimedia contigo</translation>
+    </message>
+    <message>
+        <source>Sync compares media folders on your computer (the Host) with your iPod. Choose what to include, then review the changes before applying them.</source>
+        <translation type="vanished">La sincronización compara las carpetas multimedia de tu ordenador (el equipo anfitrión) con tu iPod. Elige qué incluir y revisa los cambios antes de aplicarlos.</translation>
+    </message>
+    <message>
+        <source>You&apos;re ready. All these choices can be changed later in Settings.</source>
+        <translation type="vanished">Todo listo. Puedes cambiar estas opciones más adelante en Ajustes.</translation>
+    </message>
+    <message>
+        <source>You can always change this later in settings</source>
+        <translation>Siempre puedes cambiarlo más adelante en los ajustes</translation>
+    </message>
+    <message>
+        <source>Screenshots use a fictional sample Library.</source>
+        <translation type="vanished">Las capturas muestran una biblioteca de ejemplo ficticia.</translation>
+    </message>
+    <message>
+        <source>Settings save error</source>
+        <translation>Error al guardar los ajustes</translation>
+    </message>
+    <message>
+        <source>Set up later</source>
+        <translation>Configurar más tarde</translation>
+    </message>
+    <message>
+        <source>Back</source>
+        <translation>Atrás</translation>
+    </message>
+    <message>
+        <source>GETTING STARTED · %1 OF %2</source>
+        <translation>PRIMEROS PASOS · %1 DE %2</translation>
+    </message>
+    <message>
+        <source>Finish</source>
+        <translation>Finalizar</translation>
+    </message>
+    <message>
+        <source>Next</source>
+        <translation>Siguiente</translation>
+    </message>
+    <message>
+        <source>Could not save settings. Check available space and permissions, then try Finish again.</source>
+        <translation>No se han podido guardar los ajustes. Comprueba el espacio disponible y los permisos y vuelve a pulsar Finalizar.</translation>
+    </message>
+    <message>
+        <source>Language</source>
+        <translation>Idioma</translation>
+    </message>
+    <message>
+        <source>Could not save the language. Please try again.</source>
+        <translation>No se pudo guardar el idioma. Inténtalo de nuevo.</translation>
+    </message>
+</context>
+<context>
     <name>PhaseRuntimeSetupDialog</name>
     <message>
         <source>Set Up Phase Analysis</source>
@@ -6494,6 +6745,18 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Revisa un comando que elimina únicamente la regla local de iOpenPod en /etc. Se conservan las copias gestionadas por paquetes en /usr o /lib.</translation>
     </message>
     <message>
+        <source>Getting started</source>
+        <translation>Primeros pasos</translation>
+    </message>
+    <message>
+        <source>Revisit the welcome tour and choose your essential settings.</source>
+        <translation>Vuelve al recorrido de bienvenida y elige los ajustes esenciales.</translation>
+    </message>
+    <message>
+        <source>Retake onboarding</source>
+        <translation>Repetir la introducción</translation>
+    </message>
+    <message>
         <source>iOpenPod is and always will be completely free and open source. If you like it and would like to support me, it is so very appreciated.</source>
         <translation>iOpenPod es y siempre será completamente gratuito y de código abierto. Si le gusta y desea apoyarme, se lo agradeceré enormemente.</translation>
     </message>
@@ -6828,6 +7091,14 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Open this folder manually: %1</source>
         <translation>Abra esta carpeta manualmente: %1</translation>
+    </message>
+    <message>
+        <source>Help and support</source>
+        <translation>Ayuda y apoyo</translation>
+    </message>
+    <message>
+        <source>Find guides, community help, issue reporting, and ways to support iOpenPod.</source>
+        <translation>Encuentra guías, ayuda de la comunidad, informes de problemas y formas de apoyar iOpenPod.</translation>
     </message>
 </context>
 <context>
@@ -13425,6 +13696,13 @@ Reiniciar iOpenPod no borra las propiedades ya guardadas en la caché de udev. E
     </message>
 </context>
 <context>
+    <name>_Screenshot</name>
+    <message>
+        <source>Preview unavailable</source>
+        <translation>Vista previa no disponible</translation>
+    </message>
+</context>
+<context>
     <name>_SeekSlider</name>
     <message>
         <source>Untitled Chapter</source>
@@ -13444,6 +13722,57 @@ Reiniciar iOpenPod no borra las propiedades ya guardadas en la caché de udev. E
     <message>
         <source>Select all media</source>
         <translation>Seleccionar todo el contenido multimedia</translation>
+    </message>
+</context>
+<context>
+    <name>HelpSupportPage</name>
+    <message>
+        <source>Help and support</source>
+        <translation>Ayuda y apoyo</translation>
+    </message>
+    <message>
+        <source>Have a question?</source>
+        <translation>¿Tienes alguna pregunta?</translation>
+    </message>
+    <message>
+        <source>Find guides on the website or ask the community on Discord.</source>
+        <translation>Encuentra guías en el sitio web o pregunta a la comunidad en Discord.</translation>
+    </message>
+    <message>
+        <source>Visit the website</source>
+        <translation>Visitar el sitio web</translation>
+    </message>
+    <message>
+        <source>Join Discord</source>
+        <translation>Unirse a Discord</translation>
+    </message>
+    <message>
+        <source>Something not working?</source>
+        <translation>¿Algo no funciona?</translation>
+    </message>
+    <message>
+        <source>Report issues on GitHub. Include what happened and how to reproduce it.</source>
+        <translation>Informa de los problemas en GitHub. Describe qué ocurrió y cómo reproducirlo.</translation>
+    </message>
+    <message>
+        <source>Report an issue</source>
+        <translation>Informar de un problema</translation>
+    </message>
+    <message>
+        <source>Enjoying iOpenPod?</source>
+        <translation>¿Te gusta iOpenPod?</translation>
+    </message>
+    <message>
+        <source>Support development on Ko-fi, or give the project a star on GitHub. Thank you!</source>
+        <translation>Apoya el desarrollo en Ko-fi o dale una estrella al proyecto en GitHub. ¡Gracias!</translation>
+    </message>
+    <message>
+        <source>Support on Ko-fi</source>
+        <translation>Apoyar en Ko-fi</translation>
+    </message>
+    <message>
+        <source>Star on GitHub</source>
+        <translation>Dar una estrella en GitHub</translation>
     </message>
 </context>
 </TS>

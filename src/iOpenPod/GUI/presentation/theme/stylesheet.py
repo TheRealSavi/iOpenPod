@@ -256,6 +256,8 @@ QLabel#photoAlbumManagerError {{
     color: {tokens.danger};
 }}
 
+QDialog#onboardingDialog,
+QDialog#helpSupportDialog,
 QDialog#playlistEditor,
 QDialog#metadataEditor,
 QDialog#artworkCropDialog,
@@ -293,6 +295,26 @@ QLabel#dialogTitle {{
     font-family: "{typography.display}";
     font-size: {typography.title_pt:g}pt;
     font-weight: 700;
+}}
+
+/* Hallmark · component: onboarding · existing desktop palette and typography */
+QLabel#onboardingProgress {{
+    color: {tokens.accent};
+    font-size: {typography.small_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#onboardingDescription, QLabel#onboardingCaption {{
+    color: {tokens.text_secondary};
+}}
+
+QLabel#onboardingError {{
+    color: {tokens.danger};
+}}
+
+QFrame#onboardingHelpDivider {{
+    background-color: {tokens.border};
+    border: none;
 }}
 
 QLabel#geniusMixSectionTitle {{
@@ -815,6 +837,55 @@ QRadioButton::indicator:disabled {{
 
 QRadioButton:disabled {{
     color: {tokens.text_disabled};
+}}
+
+QRadioButton[onboardingChoice="true"] {{
+    font-size: {typography.body_pt:g}pt;
+    font-weight: 700;
+    background-color: {tokens.surface};
+    border: none;
+    border-radius: {LAYOUT.radius_control}px;
+    padding: {LAYOUT.space_xs}px {LAYOUT.space_sm}px;
+    spacing: {LAYOUT.space_sm}px;
+}}
+
+QRadioButton[onboardingChoice="true"]:hover {{
+    background-color: {tokens.surface_hover};
+}}
+
+QRadioButton[onboardingChoice="true"]:checked {{
+    background-color: {tokens.surface_selected};
+}}
+
+QRadioButton[onboardingChoice="true"]:pressed {{
+    background-color: {tokens.surface_pressed};
+}}
+
+QRadioButton[onboardingChoice="true"]:disabled {{
+    background-color: {tokens.surface_alt};
+    color: {tokens.text_disabled};
+}}
+
+QRadioButton[onboardingChoice="true"]::indicator {{
+    width: 14px;
+    height: 14px;
+    border-radius: 8px;
+    border: 1px solid {tokens.border_strong};
+    background-color: {tokens.surface};
+}}
+
+QRadioButton[onboardingChoice="true"]::indicator:checked {{
+    border-color: {tokens.accent};
+    background-color: {tokens.accent};
+}}
+
+QRadioButton[onboardingChoice="true"]::indicator:focus {{
+    border: 2px solid {tokens.focus};
+}}
+
+QRadioButton[onboardingChoice="true"]::indicator:disabled {{
+    border-color: {tokens.border};
+    background-color: {tokens.surface_alt};
 }}
 
 QProgressDialog#libraryExportProgress QProgressBar,

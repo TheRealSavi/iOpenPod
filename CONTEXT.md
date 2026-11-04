@@ -14,6 +14,24 @@ then beyond it.
 
 ## Current stage
 
+First launch opens a nine-page onboarding dialog before device loading
+and startup prompts. Users choose navigation style, iPod Library View Mode, device
+artwork, then learn about transcoding and the four steps of Sync: opening the
+workflow, choosing folders, selecting media, and reviewing/applying changes.
+A final help page links to the website, Discord, GitHub issues, Ko-fi, and the
+GitHub repository for users who want to star the project.
+Finish saves the three chosen Host preferences
+and then `application/onboarding-complete`; the flag defaults to false. Closing
+or choosing Set up later leaves setup due on the next launch. Existing settings
+are preselected. Settings > About offers Retake onboarding; dismissing a retake
+preserves the existing completion flag and preferences. Screenshots show actual widgets with fictional sample media;
+see [the capture notes](src/iOpenPod/assets/onboarding/README.md).
+Settings > About > Help and support opens only the final help page in a standalone
+dialog, without changing preferences or onboarding completion.
+The language button at the top right of every onboarding page lists the system
+default and packaged languages. Language changes save immediately and translate
+the tour in place, preserving the current page and unfinished preference choices.
+
 When no Active iPod is loaded at startup, a welcome page invites the user to
 connect an iPod and click its prominent **Choose Device** button. It opens the
 existing Device Picker. Loading an iPod from this page opens Albums; clearing the Active iPod

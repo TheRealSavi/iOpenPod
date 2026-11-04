@@ -155,6 +155,12 @@ LOGGING_PATH = SettingDefinition[str](
     default=str(default_log_path()),
 )
 
+ONBOARDING_COMPLETE = SettingDefinition[bool](
+    key="application/onboarding-complete",
+    value_type=bool,
+    default=False,
+)
+
 # Preserve the existing v2 key: its System/Light/Dark value is now named Mode in
 # the GUI, while the exact Light and Dark themes have independent keys below.
 APPEARANCE_MODE = SettingDefinition[str](

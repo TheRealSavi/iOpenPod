@@ -11,6 +11,8 @@ from PySide6.QtCore import QCoreApplication, QSocketNotifier, QTimer
 from PySide6.QtWidgets import QApplication
 
 from iOpenPod.app.context import AppContext
+from iOpenPod.app.core.settings.definitions import ONBOARDING_COMPLETE
+from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.playback.system_media import (
     SystemMediaBridge,
     create_system_media_session,
@@ -19,9 +21,11 @@ from iOpenPod.app.updates.platform import (
     close_update_runtime,
     initialize_update_runtime,
 )
+from iOpenPod.GUI.dialogs.onboarding import OnboardingDialog
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.presentation.application_icon import application_icon
 from iOpenPod.GUI.presentation.display import configure_display
+from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.middle_mouse_scrolling import (
     install_middle_mouse_scrolling,
 )
@@ -50,19 +54,13 @@ def start_ui() -> int:
     application.setWindowIcon(application_icon())
     context = AppContext.create(application)
 
-    from iOpenPod.app.updates.bootstrap import awaiting_health, start_health_handshake
+    from iOpenPod.app.updates.bootstrap import start_health_handshake
 
-    health_launch = awaiting_health()
-    window = MainWindow(
-        context, auto_discover=not health_launch, defer_startup=health_launch
-    )
+    window = MainWindow(context, auto_discover=False, defer_startup=True)
     window.show()
 
     def ready() -> None:
-        if health_launch:
-            window.start_device_discovery()
-        QTimer.singleShot(0, window.check_app_updates)
-        QTimer.singleShot(0, window.check_media_tools)
+        _start_interactive_session(window, context.settings, context.i18n_manager)
 
     start_health_handshake(application, window, ready)
     system_media_bridge = SystemMediaBridge(
@@ -92,6 +90,25 @@ def start_ui() -> int:
             shutdown()
         finally:
             restore_interrupt_handler()
+
+
+def _start_interactive_session(
+    window: MainWindow, settings: SettingsService, i18n_manager: I18nManager
+) -> None:
+    """Offer first-run setup after launch health, before other startup work."""
+
+    def resume() -> None:
+        window.start_device_discovery()
+        QTimer.singleShot(0, window.check_app_updates)
+        QTimer.singleShot(0, window.check_media_tools)
+
+    if settings.get(ONBOARDING_COMPLETE):
+        resume()
+        return
+    dialog = OnboardingDialog(settings, i18n_manager, window)
+    # The parent owns the asynchronous dialog until it closes.
+    dialog.finished.connect(resume)
+    dialog.open()
 
 
 def _install_interrupt_handler(application: QApplication) -> Callable[[], None]:

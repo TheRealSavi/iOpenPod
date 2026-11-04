@@ -724,13 +724,17 @@ def test_settings_show_version_and_open_support_links(
         version_row = window.findChild(QWidget, "currentAppVersion")
         assert version_row is not None
         version = version_row.findChild(QLabel, "settingDescription")
-        report_issue = window.findChild(ActionButton, "reportIssue")
+        help_support = window.findChild(ActionButton, "helpSupport")
         donate = window.findChild(ActionButton, "donate")
         assert version is not None
-        assert report_issue is not None
+        assert help_support is not None
         assert donate is not None
         assert version.text() == "2.3.4 · Unknown source"
 
+        help_support.click()
+        report_issue = window.findChild(ActionButton, "onboardingIssues")
+        assert report_issue is not None
+        assert not opened
         report_issue.click()
         donate.click()
         APPLICATION.processEvents()

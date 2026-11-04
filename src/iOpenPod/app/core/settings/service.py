@@ -106,8 +106,18 @@ class SettingsService(QObject):
         value: SettingValue,
     ) -> None:
         self._require_valid(definition, value)
+        had_value = self._global.has(definition.key)
+        previous = self._global.get(definition.key, definition.default)
         self._global.set(definition.key, value)
-        self._global.sync()
+        try:
+            self._global.sync()
+        except Exception:
+            # Failed persistence must not publish success in this session either.
+            if had_value:
+                self._global.set(definition.key, previous)
+            else:
+                self._global.remove(definition.key)
+            raise
         effective = self.get(definition)
         self.settingChanged.emit(definition.key, effective)
 
