@@ -2218,6 +2218,29 @@
     </message>
 </context>
 <context>
+    <name>InlineAlbumPanel</name>
+    <message>
+        <source>Play album now</source>
+        <translation>Album jetzt wiedergeben</translation>
+    </message>
+    <message>
+        <source>Add album to top of queue</source>
+        <translation>Album an den Anfang der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Add album to bottom of queue</source>
+        <translation>Album ans Ende der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Close album</source>
+        <translation>Album schließen</translation>
+    </message>
+    <message>
+        <source>Album tracks</source>
+        <translation>Albumtitel</translation>
+    </message>
+</context>
+<context>
     <name>LibraryDragGridView</name>
     <message>
         <source>Drag selected cards to a Playlist, the Queue, or the Player. Hold Shift while dragging empty space to box select.</source>
@@ -6179,8 +6202,8 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Ansicht der iPod-Mediathek</translation>
     </message>
     <message>
-        <source>Show Tracks below Album and collection grids, or open them on a whole page like the Host Sync Library.</source>
-        <translation>Zeigt Titel unter den Rastern für Alben und Sammlungen an oder öffnet sie auf einer ganzen Seite wie bei der Synchronisierung mit der Mediathek auf dem Computer.</translation>
+        <source>Show Tracks in a split table or on a whole page. iTunes 11 style opens an album-colored Track list inside the Albums grid; other views use a split table.</source>
+        <translation>Zeigt Titel in einer geteilten Tabelle oder auf einer ganzen Seite an. Der iTunes-11-Stil öffnet eine Titelliste in den Albumfarben innerhalb des Albumrasters; andere Ansichten verwenden eine geteilte Tabelle.</translation>
     </message>
     <message>
         <source>Draft all changes</source>
@@ -6465,6 +6488,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Whole Page Table</source>
         <translation>Ganzseitige Tabellenansicht</translation>
+    </message>
+    <message>
+        <source>iTunes 11 style</source>
+        <translation>iTunes-11-Stil</translation>
     </message>
     <message>
         <source>Play next</source>

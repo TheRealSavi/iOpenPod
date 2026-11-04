@@ -25,6 +25,7 @@ from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.collection_detail import CollectionDetailPage
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
+from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
@@ -128,6 +129,22 @@ def _ids(table: TrackTable) -> set[int]:
     }
 
 
+def test_default_album_view_opens_inline_details(context: AppContext) -> None:
+    page = _page(context, PageId.ALBUMS)
+    try:
+        grid = page.findChild(AlbumGridView)
+        panel = page.findChild(InlineAlbumPanel)
+        table = page.findChild(TrackTable)
+        assert grid is not None and panel is not None and table is not None
+        assert grid.isVisible() and not table.isVisible()
+        _click(grid, "Album A")
+        QTest.qWait(250)
+        assert panel.isVisible() and not table.isVisible()
+        assert panel.track_view.model().index(0, 0).data(TrackRole.TRACK_ID) == 1
+    finally:
+        page.close()
+
+
 @pytest.mark.parametrize("saved", (False, True))
 @pytest.mark.parametrize(
     ("page_id", "title", "ids"),
@@ -142,6 +159,9 @@ def _ids(table: TrackTable) -> set[int]:
 def test_saved_and_live_modes_keep_table_search_navigation_and_activation(
     context: AppContext, saved: bool, page_id: PageId, title: str, ids: set[int]
 ) -> None:
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     if saved:
         context.settings.set_global(
             IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
@@ -197,7 +217,9 @@ def test_saved_and_live_modes_keep_table_search_navigation_and_activation(
             detail.backRequested.emit()
             assert grid.isVisible() and browser_search.text() == title
             assert not table.isVisible()
-        context.settings.reset_global(IPOD_LIBRARY_VIEW_MODE)
+        context.settings.set_global(
+            IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+        )
         APPLICATION.processEvents()
         assert grid.isVisible() and table.isVisible() and not detail.isVisible()
         assert _ids(table) == ids
@@ -250,8 +272,10 @@ def test_list_view_album_navigation_retains_source_rail(
     page.close()
 
 
+@pytest.mark.parametrize("mode", IPodLibraryViewMode)
 def test_settings_offer_exact_modes_and_preserve_choice_on_retranslation(
     context: AppContext,
+    mode: IPodLibraryViewMode,
 ) -> None:
     page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
     combo = page.findChild(AppComboBox, "ipodLibraryViewModeCombo")
@@ -262,15 +286,34 @@ def test_settings_offer_exact_modes_and_preserve_choice_on_retranslation(
     assert [combo.itemText(i) for i in range(combo.count())] == [
         "Split Table",
         "Whole Page Table",
+        "iTunes 11 style",
     ]
-    assert combo.currentData() == IPodLibraryViewMode.SPLIT_TABLE.value
-    combo.setCurrentIndex(1)
-    assert (
-        context.settings.get(IPOD_LIBRARY_VIEW_MODE)
-        == IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
-    )
+    assert combo.currentData() == IPodLibraryViewMode.ITUNES_11.value
+    combo.setCurrentIndex(combo.findData(mode.value))
+    assert context.settings.get(IPOD_LIBRARY_VIEW_MODE) == mode.value
     APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
-    assert combo.currentData() == IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
+    assert combo.currentData() == mode.value
     context.settings.reset_global(IPOD_LIBRARY_VIEW_MODE)
-    assert combo.currentData() == IPodLibraryViewMode.SPLIT_TABLE.value
+    assert combo.currentData() == IPodLibraryViewMode.ITUNES_11.value
     page.close()
+
+
+@pytest.mark.parametrize(
+    "page_id",
+    (PageId.ARTISTS, PageId.GENRES, PageId.TV_SHOWS, PageId.MUSIC_VIDEOS),
+)
+def test_itunes_11_keeps_split_table_for_other_collection_views(
+    context: AppContext, page_id: PageId
+) -> None:
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value
+    )
+    page = _page(context, page_id)
+    try:
+        grid = page.findChild(CollectionGridView)
+        table = page.findChild(TrackTable)
+        splitter = page.findChild(LibrarySplitter)
+        assert grid is not None and table is not None and splitter is not None
+        assert grid.isVisible() and table.isVisible() and splitter.isVisible()
+    finally:
+        page.close()

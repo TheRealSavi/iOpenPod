@@ -647,6 +647,11 @@ class MainWindow(QMainWindow):
             self._track_actions.install(
                 table, double_click=table is not self._genius_page.track_table
             )
+        from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
+
+        for panel in self._library_browser.findChildren(InlineAlbumPanel):
+            panel.set_library_workspace(context.library_workspace)
+            self._track_actions.install(panel.track_view)
         for grid in (
             *self._library_browser.findChildren(AlbumGridView),
             *self._library_browser.findChildren(CollectionGridView),
@@ -943,7 +948,7 @@ class MainWindow(QMainWindow):
         for page in self._library_pages:
             if isinstance(page, PodcastPage):
                 page.trackActivated.connect(controller.enqueue)
-            if isinstance(page, GeniusPage):
+            if isinstance(page, (GeniusPage, LibraryPage)):
                 page.playRequested.connect(controller.play_now)
                 page.queueRequested.connect(self._queue_group_tracks)
                 page.playNextRequested.connect(controller.play_next)

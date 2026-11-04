@@ -24,6 +24,7 @@ class LibraryContent(QStackedWidget):
     """Retain the browser and table while changing only their presentation."""
 
     backRequested = Signal()
+    viewModeChanged = Signal()
 
     def __init__(
         self,
@@ -38,6 +39,7 @@ class LibraryContent(QStackedWidget):
         *,
         selection_mode: bool,
         follow_ipod_view_mode: bool,
+        supports_inline_albums: bool = False,
         splitter_name: str = "librarySplitter",
         splitter_setting: SettingDefinition[QByteArray] | None = None,
     ) -> None:
@@ -50,6 +52,8 @@ class LibraryContent(QStackedWidget):
         self._theme_manager = theme_manager
         self._artwork_provider = artwork_provider
         self._selection_mode = selection_mode
+        self._supports_inline_albums = supports_inline_albums
+        self._inline_albums = False
         self._splitter_name = splitter_name
         self._splitter_setting = splitter_setting
         self._splitter_state = (
@@ -74,7 +78,14 @@ class LibraryContent(QStackedWidget):
                 follow_ipod_view_mode
                 and settings.get(IPOD_LIBRARY_VIEW_MODE)
                 == IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
-            )
+            ),
+            inline=(
+                supports_inline_albums
+                and follow_ipod_view_mode
+                and not selection_mode
+                and settings.get(IPOD_LIBRARY_VIEW_MODE)
+                == IPodLibraryViewMode.ITUNES_11.value
+            ),
         )
         if follow_ipod_view_mode and not selection_mode:
             settings.settingChanged.connect(self._setting_changed)
@@ -82,6 +93,10 @@ class LibraryContent(QStackedWidget):
     @property
     def whole_page_table(self) -> bool:
         return self._whole_page_table
+
+    @property
+    def inline_albums(self) -> bool:
+        return self._inline_albums
 
     @property
     def detail_open(self) -> bool:
@@ -94,7 +109,7 @@ class LibraryContent(QStackedWidget):
             self.setCurrentWidget(self._detail)
 
     def show_browser(self) -> None:
-        if self._whole_page_table:
+        if self._whole_page_table or self._inline_albums:
             self.setCurrentWidget(self._browser)
         self._toolbar.show()
 
@@ -113,23 +128,36 @@ class LibraryContent(QStackedWidget):
     def _setting_changed(self, key: str, value: object) -> None:
         if key == IPOD_LIBRARY_VIEW_MODE.key:
             whole_page = value == IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
-            if whole_page != self._whole_page_table:
-                self._set_whole_page_table(whole_page)
+            inline = (
+                self._supports_inline_albums
+                and value == IPodLibraryViewMode.ITUNES_11.value
+            )
+            if (whole_page, inline) != (self._whole_page_table, self._inline_albums):
+                self._set_whole_page_table(whole_page, inline=inline)
+                self.viewModeChanged.emit()
 
-    def _set_whole_page_table(self, enabled: bool) -> None:
-        if self._splitter is not None and not self._whole_page_table:
+    def _set_whole_page_table(self, enabled: bool, *, inline: bool = False) -> None:
+        if (
+            self._splitter is not None
+            and not self._whole_page_table
+            and not self._inline_albums
+        ):
             self._splitter_state = self._splitter.saveState()
             if self._save_timer.isActive():
                 self._save_splitter_state()
         self._save_timer.stop()
         self._whole_page_table = enabled
+        self._inline_albums = inline
         self._proxy.set_query("")
         if self._detail is not None:
             self._detail.clear_query()
         if self._splitter is not None:
             self._splitter.track_header.set_query("")
 
-        if enabled:
+        if inline:
+            self.addWidget(self._browser)
+            self.setCurrentWidget(self._browser)
+        elif enabled:
             if self._detail is None:
                 self._detail = CollectionDetailPage(
                     self._table,
@@ -178,15 +206,19 @@ class LibraryContent(QStackedWidget):
             self.set_track_context(self._title, self._artwork_id)
             self.setCurrentWidget(self._splitter)
         self._browser.show()
-        self._table.show()
+        self._table.setVisible(not inline)
         self._toolbar.show()
 
     def _splitter_moved(self, _position: int, _index: int) -> None:
-        if not self._whole_page_table and self._splitter_setting is not None:
+        if (
+            not self._whole_page_table
+            and not self._inline_albums
+            and self._splitter_setting is not None
+        ):
             self._save_timer.start()
 
     def _save_splitter_state(self) -> None:
-        if self._splitter is None or self._whole_page_table:
+        if self._splitter is None or self._whole_page_table or self._inline_albums:
             return
         self._splitter_state = self._splitter.saveState()
         if self._splitter_setting is not None:

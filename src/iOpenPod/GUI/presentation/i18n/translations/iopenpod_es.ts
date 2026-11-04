@@ -2218,6 +2218,29 @@
     </message>
 </context>
 <context>
+    <name>InlineAlbumPanel</name>
+    <message>
+        <source>Play album now</source>
+        <translation>Reproducir álbum ahora</translation>
+    </message>
+    <message>
+        <source>Add album to top of queue</source>
+        <translation>Añadir álbum al principio de la cola</translation>
+    </message>
+    <message>
+        <source>Add album to bottom of queue</source>
+        <translation>Añadir álbum al final de la cola</translation>
+    </message>
+    <message>
+        <source>Close album</source>
+        <translation>Cerrar álbum</translation>
+    </message>
+    <message>
+        <source>Album tracks</source>
+        <translation>Pistas del álbum</translation>
+    </message>
+</context>
+<context>
     <name>LibraryDragGridView</name>
     <message>
         <source>Drag selected cards to a Playlist, the Queue, or the Player. Hold Shift while dragging empty space to box select.</source>
@@ -6179,8 +6202,8 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Vista de la biblioteca del iPod</translation>
     </message>
     <message>
-        <source>Show Tracks below Album and collection grids, or open them on a whole page like the Host Sync Library.</source>
-        <translation>Muestra las pistas debajo de las cuadrículas de álbumes y colecciones, o ábrelas en una página completa como en la biblioteca del equipo para sincronizar.</translation>
+        <source>Show Tracks in a split table or on a whole page. iTunes 11 style opens an album-colored Track list inside the Albums grid; other views use a split table.</source>
+        <translation>Muestra las pistas en una tabla dividida o en una página completa. El estilo iTunes 11 abre una lista de pistas con los colores del álbum dentro de la cuadrícula de álbumes; las demás vistas usan una tabla dividida.</translation>
     </message>
     <message>
         <source>Draft all changes</source>
@@ -6465,6 +6488,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Whole Page Table</source>
         <translation>Tabla de página completa</translation>
+    </message>
+    <message>
+        <source>iTunes 11 style</source>
+        <translation>Estilo iTunes 11</translation>
     </message>
     <message>
         <source>Play next</source>

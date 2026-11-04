@@ -72,6 +72,8 @@ class LayoutTokens:
     playback_row_artwork_size: int = 44
     playback_pane_animation_ms: int = 180
     selection_group_animation_ms: int = 200
+    grid_scroll_animation_ms: int = 140
+    grid_scroll_line_height: int = 32
     sync_scan_panel_minimum_width: int = 520
     sync_scan_panel_maximum_width: int = 720
     sync_storage_bar_height: int = 10

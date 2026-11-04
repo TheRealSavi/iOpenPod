@@ -1637,13 +1637,16 @@ vertical splitter. Back retains the browser instance and its query, sort, groupi
 view mode, and position. Card checkbox and modified selection gestures remain in the
 browser, and selection regrouping does not change an open detail page. See ADR-0072.
 
-The global iPod Library View Mode setting defaults to Split Table. Whole Page Table
+The iPod Library View Mode setting defaults to iTunes 11 style. Whole Page Table
 uses that same detail page for iPod Albums, Artists, Genres, TV Shows, and Music
 Videos, including Albums opened from Artist and Genre list views. Layout changes
 reuse the existing browser and Track table, preserving their models and iPod
 actions. Sync Selection controls remain exclusive to Select Media, whose layout
-does not follow this setting. The choice is persisted through the global settings
-service and applies immediately.
+does not follow this setting. iTunes 11 style inserts an album-colored Track list
+below the selected Album's grid row and pushes subsequent rows down. It displays
+Track number, title, rating, and duration with artwork on the right; other Library
+views retain Split Table. The choice uses the existing Host settings and individual
+iPod overrides, and applies immediately. See ADR-0126 for setting precedence.
 
 When an Active iPod is available, the pre-Sync workflow then runs an iPod Media Scan.
 The Application Layer loads the versioned, checksummed

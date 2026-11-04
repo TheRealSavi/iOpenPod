@@ -35,6 +35,7 @@ from iOpenPod.app.models.track_table_model import (
 from iOpenPod.app.sync_plan import SyncPlan
 from iOpenPod.GUI.delegates.sync_track_delegate import SyncTrackDelegate
 from iOpenPod.GUI.delegates.track_artwork_delegate import TrackArtworkDelegate
+from iOpenPod.GUI.presentation import track_drag as track_drag_module
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
@@ -42,7 +43,6 @@ from iOpenPod.GUI.presentation.track_drag_preview import (
     render_single_track_drag_preview,
     render_track_count_drag_preview,
 )
-from iOpenPod.GUI.widgets import track_table as track_table_module
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import LibrarySnapshot, Track, TrackMetadata
 
@@ -298,9 +298,9 @@ def test_single_track_drag_uses_a_queue_inspired_metadata_preview(
         )
         return render_single_track_drag_preview(rendered_track, **kwargs)
 
-    monkeypatch.setattr(track_table_module, "QDrag", _RecordingDrag)
+    monkeypatch.setattr(track_drag_module, "QDrag", _RecordingDrag)
     monkeypatch.setattr(
-        track_table_module,
+        track_drag_module,
         "render_single_track_drag_preview",
         record_preview,
     )
@@ -341,7 +341,7 @@ def test_first_track_drag_waits_for_its_asynchronously_loaded_artwork(
     )
     track = Track(1, "Human", "The Killers", "Day & Age", 245_000, artwork_id=64)
     table = _track_table(tracks=(track,), artwork_image=artwork)
-    monkeypatch.setattr(track_table_module, "QDrag", _RecordingDrag)
+    monkeypatch.setattr(track_drag_module, "QDrag", _RecordingDrag)
     _RecordingDrag.instances.clear()
 
     try:
@@ -380,9 +380,9 @@ def test_multi_track_drag_preview_shows_only_the_selection_count(
         labels.append(text)
         return render_track_count_drag_preview(text, **kwargs)
 
-    monkeypatch.setattr(track_table_module, "QDrag", _RecordingDrag)
+    monkeypatch.setattr(track_drag_module, "QDrag", _RecordingDrag)
     monkeypatch.setattr(
-        track_table_module,
+        track_drag_module,
         "render_track_count_drag_preview",
         record_preview,
     )

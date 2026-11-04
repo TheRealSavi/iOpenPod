@@ -154,7 +154,9 @@ class TrackActions(QObject):
             (_MOVE_DOWN_SHORTCUT, "move_down"),
         ):
             shortcut = QShortcut(_key_sequence(sequence), view)
-            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            # Inline Track views live inside an Album grid's viewport. Activating
+            # ancestor shortcuts as well makes the same key sequence ambiguous.
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
             shortcut.setProperty("trackAction", action)
             shortcut.activated.connect(self._shortcut_activated)
 
@@ -208,7 +210,12 @@ class TrackActions(QObject):
             selection_model.setCurrentIndex(
                 index,
                 QItemSelectionModel.SelectionFlag.ClearAndSelect
-                | QItemSelectionModel.SelectionFlag.Rows,
+                | (
+                    QItemSelectionModel.SelectionFlag.Rows
+                    if view.selectionBehavior()
+                    == QAbstractItemView.SelectionBehavior.SelectRows
+                    else QItemSelectionModel.SelectionFlag.NoUpdate
+                ),
             )
         selection = self.selection(view)
         if selection.tracks:
@@ -279,13 +286,18 @@ class TrackActions(QObject):
                 selection.setCurrentIndex(
                     index,
                     QItemSelectionModel.SelectionFlag.ClearAndSelect
-                    | QItemSelectionModel.SelectionFlag.Rows,
+                    | (
+                        QItemSelectionModel.SelectionFlag.Rows
+                        if view.selectionBehavior()
+                        == QAbstractItemView.SelectionBehavior.SelectRows
+                        else QItemSelectionModel.SelectionFlag.NoUpdate
+                    ),
                 )
         indices = sorted(
             selection.selectedRows()
             if isinstance(view, TrackTable)
             else selection.selectedIndexes(),
-            key=lambda i: i.row(),
+            key=lambda i: (i.column(), i.row()),
         )
         tracks: list[Track] = []
         entry_ids: list[str] = []
@@ -323,6 +335,8 @@ class TrackActions(QObject):
                     and 0 <= source.row() < len(visible_entries)
                 ):
                     entry_ids.append(visible_entries[source.row()].entry_id)
+            elif isinstance(track := index.data(TrackRole.TRACK), Track):
+                tracks.append(track)
             else:
                 summary = index.data(AlbumRole.SUMMARY)
                 if isinstance(summary, AlbumSummary):

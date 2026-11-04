@@ -1,9 +1,7 @@
 """Reusable, persistently configurable Track table."""
 
 from PySide6.QtCore import (
-    QCoreApplication,
     QEvent,
-    QEventLoop,
     QModelIndex,
     QPersistentModelIndex,
     QPoint,
@@ -11,7 +9,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QDrag, QKeyEvent, QMouseEvent
+from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
@@ -23,7 +21,6 @@ from PySide6.QtWidgets import (
 from iOpenPod.app.core.settings.definitions import table_header_state
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.library_workspace import LibraryWorkspace
-from iOpenPod.app.models.library_drag import TrackSelectionMimeData
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
 from iOpenPod.app.models.track_columns import (
     TrackColumn,
@@ -35,18 +32,12 @@ from iOpenPod.app.models.track_table_model import TrackRole, TrackTableModel
 from iOpenPod.GUI.delegates.sync_track_delegate import SyncTrackDelegate
 from iOpenPod.GUI.delegates.track_artwork_delegate import TrackArtworkDelegate
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
-from iOpenPod.GUI.presentation.i18n.text import track_count_text
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
-from iOpenPod.GUI.presentation.track_drag_preview import (
-    drag_preview_hot_spot,
-    render_single_track_drag_preview,
-    render_track_count_drag_preview,
-)
+from iOpenPod.GUI.presentation.track_drag import TrackDragController
 
 _COLUMN_WIDTH_SAMPLE_LIMIT = 200
 _MAXIMUM_FITTED_COLUMN_WIDTH = 480
-_DRAG_ARTWORK_WAIT_MS = 150
 
 
 class TrackTable(QTableView):
@@ -78,7 +69,9 @@ class TrackTable(QTableView):
         self._theme_manager = theme_manager
         self._artwork_provider = artwork_provider
         self.playlist_id: int | None = None
-        self._library_workspace: LibraryWorkspace | None = None
+        self._drag_controller = TrackDragController(
+            self, theme_manager, artwork_provider
+        )
         self._settings = settings
         self._context_columns = context_columns
         self._default_sort_column = default_sort_column
@@ -159,17 +152,12 @@ class TrackTable(QTableView):
             source.syncSelectionEnabledChanged.connect(self._set_sync_selection_enabled)
 
     def set_library_workspace(self, workspace: LibraryWorkspace) -> None:
-        self._library_workspace = workspace
-        self.setDragEnabled(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+        self._drag_controller.set_library_workspace(workspace)
         self.setToolTip(
             self.tr("Drag selected Tracks to a Playlist, the Queue, or the Player.")
         )
 
     def startDrag(self, supported_actions: Qt.DropAction) -> None:
-        workspace = self._library_workspace
-        if workspace is None or workspace.locked:
-            return
         tracks = tuple(
             track
             for index in sorted(
@@ -177,80 +165,7 @@ class TrackTable(QTableView):
             )
             if (track := self._track_model.track_at(index)) is not None
         )
-        if not tracks:
-            return
-        ids = tuple(track.track_id for track in tracks)
-        workspace_revision = (workspace.generation, workspace.revision)
-        ratio = self.devicePixelRatioF()
-        if len(tracks) == 1:
-            track = tracks[0]
-            self._await_drag_artwork(track.artwork_id, ratio)
-            if (
-                workspace is not self._library_workspace
-                or workspace.locked
-                or workspace_revision != (workspace.generation, workspace.revision)
-            ):
-                return
-            pixmap = render_single_track_drag_preview(
-                track,
-                title=track.title
-                or QCoreApplication.translate("LibraryLabels", "Untitled Track"),
-                artist=track.artist
-                or QCoreApplication.translate("LibraryLabels", "Unknown Artist"),
-                album=track.album
-                or QCoreApplication.translate("LibraryLabels", "Unknown Album"),
-                base_font=self.font(),
-                tokens=self._theme_manager.tokens,
-                artwork_provider=self._artwork_provider,
-                device_pixel_ratio=ratio,
-            )
-        else:
-            pixmap = render_track_count_drag_preview(
-                track_count_text(len(tracks)),
-                base_font=self.font(),
-                tokens=self._theme_manager.tokens,
-                device_pixel_ratio=ratio,
-            )
-        drag = QDrag(self)
-        drag.setMimeData(TrackSelectionMimeData(workspace, ids))
-        drag.setPixmap(pixmap)
-        drag.setHotSpot(drag_preview_hot_spot(pixmap))
-        drag.exec(Qt.DropAction.CopyAction)
-
-    def _await_drag_artwork(
-        self,
-        artwork_id: int,
-        device_pixel_ratio: float,
-    ) -> None:
-        """Give a newly requested cover a short window before fixing the drag image."""
-
-        if artwork_id <= 0:
-            return
-        loop = QEventLoop(self)
-
-        def artwork_changed(changed_id: int) -> None:
-            if changed_id == artwork_id:
-                loop.quit()
-
-        self._artwork_provider.artworkChanged.connect(artwork_changed)
-        try:
-            if (
-                self._artwork_provider.pixmap(
-                    artwork_id,
-                    LAYOUT.playback_row_artwork_size,
-                    device_pixel_ratio,
-                )
-                is not None
-            ):
-                return
-            timeout = QTimer(loop)
-            timeout.setSingleShot(True)
-            timeout.setInterval(_DRAG_ARTWORK_WAIT_MS)
-            timeout.timeout.connect(loop.quit)
-            timeout.start()
-            loop.exec(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
-        finally:
-            self._artwork_provider.artworkChanged.disconnect(artwork_changed)
+        self._drag_controller.start(tracks)
 
     def save_layout(self) -> None:
         """Persist column order, sizes, visibility, and sort state for this table."""

@@ -543,10 +543,13 @@ and can group grid items as Selected, Mixed, or Deselected. Opening an Album or
 collection card in Select Media replaces the browser with a full detail page,
 including artwork, metadata, bulk selection, and the shared Track table with its
 own search. Back returns to the retained browser; these Sync pages have no split
-Track pane. The global **iPod Library View Mode** setting also offers this shared
+Track pane. The **iPod Library View Mode** setting also offers this shared
 presentation in the iPod browser as **Whole Page Table**, without Sync Selection
-controls. **Split Table** remains its default. Changes apply immediately and are
-saved across restarts. See ADR-0072. Review derives an
+controls. **iTunes 11 style** opens an album-colored Track list with artwork beneath
+the selected row of the Albums grid, pushing later rows down. Other views retain
+the split table. **iTunes 11 style** is the default. Changes apply immediately,
+persist across restarts, and support individual iPod overrides. See ADR-0072 and
+ADR-0126. Review derives an
 immutable selected Sync Plan in collapsible change groups; iPod-only removal
 candidates start unchecked. Review can exclude individual actions or whole groups
 without changing desired Host membership. Sync Selected validates that plan, checks

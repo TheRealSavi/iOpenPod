@@ -157,11 +157,48 @@ def test_exact_theme_cannot_be_saved_in_the_other_appearance_family(
 def test_ipod_view_mode_defaults_and_rejects_invalid_values() -> None:
     store = GlobalSettingsStore()
     service = _service(store)
-    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.SPLIT_TABLE.value
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.ITUNES_11.value
     store.set(IPOD_LIBRARY_VIEW_MODE.key, "unknown")
-    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.SPLIT_TABLE.value
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.ITUNES_11.value
     with pytest.raises(ValueError, match=IPOD_LIBRARY_VIEW_MODE.key):
         service.set_global(IPOD_LIBRARY_VIEW_MODE, "unknown")
+
+
+@pytest.mark.parametrize("mode", IPodLibraryViewMode)
+def test_ipod_view_mode_survives_restart(
+    tmp_path: Path, mode: IPodLibraryViewMode
+) -> None:
+    settings_path = tmp_path / "settings-v2.json"
+    first = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    first.set_global(IPOD_LIBRARY_VIEW_MODE, mode.value)
+
+    second = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert second.get(IPOD_LIBRARY_VIEW_MODE) == mode.value
+
+
+def test_itunes_11_view_mode_obeys_device_inheritance() -> None:
+    service = _service()
+    service.set_global(IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value)
+    service.load_device(
+        "one", {IPOD_LIBRARY_VIEW_MODE.key: IPodLibraryViewMode.SPLIT_TABLE.value}
+    )
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.SPLIT_TABLE.value
+    assert service.source(IPOD_LIBRARY_VIEW_MODE) is SettingSource.DEVICE
+
+    service.reset_device(IPOD_LIBRARY_VIEW_MODE)
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.ITUNES_11.value
+    assert service.source(IPOD_LIBRARY_VIEW_MODE) is SettingSource.GLOBAL
+
+    service.set_device(IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value)
+    service.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
+    )
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.ITUNES_11.value
+    service.unload_device()
+    assert (
+        service.get(IPOD_LIBRARY_VIEW_MODE)
+        == IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
+    )
 
 
 def test_track_title_bar_style_defaults_and_rejects_invalid_values() -> None:

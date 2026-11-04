@@ -12,9 +12,11 @@ from tests.iOpenPod.GUI.application_shell_test_support import (
 )
 
 from iOpenPod.app.core.settings.definitions import (
+    IPOD_LIBRARY_VIEW_MODE,
     TRACK_TITLE_BAR_STYLE,
     AppearanceMode,
     DarkTheme,
+    IPodLibraryViewMode,
     TrackTitleBarStyle,
 )
 from iOpenPod.GUI.main_window import MainWindow
@@ -98,6 +100,9 @@ def test_round_title_bar_switches_live_and_preserves_interaction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = build_context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(tracks(100))
     context.theme_manager.set_mode(mode)
     window = MainWindow(context, auto_discover=False)

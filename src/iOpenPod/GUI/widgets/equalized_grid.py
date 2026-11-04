@@ -6,6 +6,7 @@ from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QSize, QTime
 from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import QListView, QStyle, QStyleOptionViewItem, QWidget
 
+from iOpenPod.GUI.presentation.smooth_wheel_scrolling import SmoothWheelScrolling
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 _EXACT_FIT_GUARD = 1
@@ -31,6 +32,7 @@ class EqualizedGridView(QListView):
         self.setResizeMode(QListView.ResizeMode.Fixed)
         self.setSpacing(0)
         self.setGridSize(self._cell_size(self._card_size.width() + LAYOUT.space_md))
+        self._smooth_wheel_scrolling = SmoothWheelScrolling(self)
 
     @property
     def sectioned_layout(self) -> bool:
@@ -86,6 +88,10 @@ class EqualizedGridView(QListView):
         position = scrollbar.value()
         maximum = scrollbar.maximum()
         super().updateGeometries()
+        if self.verticalScrollMode() is QListView.ScrollMode.ScrollPerPixel:
+            # Qt otherwise derives this from the card height, turning one wheel
+            # notch into several complete rows (or a full viewport).
+            scrollbar.setSingleStep(LAYOUT.grid_scroll_line_height)
         # PySide's stub omits None, which Qt returns before a model is installed.
         model = cast("QAbstractItemModel | None", self.model())
         if (

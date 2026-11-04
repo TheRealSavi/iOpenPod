@@ -42,6 +42,7 @@ class IPodLibraryViewMode(StrEnum):
 
     SPLIT_TABLE = "split-table"
     WHOLE_PAGE_TABLE = "whole-page-table"
+    ITUNES_11 = "itunes-11"
 
 
 class LibraryDoubleClickShortcut(StrEnum):
@@ -243,7 +244,7 @@ MANAGE_VOLUME_PRESENTATION = SettingDefinition[bool](
 IPOD_LIBRARY_VIEW_MODE = SettingDefinition[str](
     key="library/ipod-view-mode",
     value_type=str,
-    default=IPodLibraryViewMode.SPLIT_TABLE.value,
+    default=IPodLibraryViewMode.ITUNES_11.value,
     device_overridable=True,
     validator=_one_of(*(mode.value for mode in IPodLibraryViewMode)),
 )

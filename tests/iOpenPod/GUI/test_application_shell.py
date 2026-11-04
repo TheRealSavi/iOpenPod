@@ -47,11 +47,13 @@ from iOpenPod.app.core.settings.definitions import (
     APPEARANCE_MODE,
     COLORFUL_MODE,
     DRAFT_ALL_CHANGES,
+    IPOD_LIBRARY_VIEW_MODE,
     LIBRARY_SPLITTER_STATE,
     MAX_BACKUPS,
     PLAYER_POSITION,
     AppearanceMode,
     DarkTheme,
+    IPodLibraryViewMode,
     LightTheme,
     PlayerPosition,
 )
@@ -484,6 +486,9 @@ def test_chaptered_conversion_uses_the_status_bar_for_progress_and_results(
 
 def test_shell_contains_persistent_player_sidebar_and_all_routes() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(100))
     window = MainWindow(context, auto_discover=False)
 
@@ -811,6 +816,9 @@ def test_colorful_mode_tints_album_card_fill_selection_and_track_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(
         (
             Track(1, "First", "Artist", "Album One", 180_000, artwork_id=64),
@@ -899,6 +907,9 @@ def test_colorful_mode_tints_album_card_fill_selection_and_track_header(
 
 def test_library_views_use_virtualized_model_view_primitives() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(10_000))
     window = MainWindow(context, auto_discover=False)
 
@@ -944,6 +955,9 @@ def test_library_views_use_virtualized_model_view_primitives() -> None:
 
 def test_library_grids_equalize_cells_without_churning_model_state() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(100))
     window = MainWindow(context, auto_discover=False)
 
@@ -1796,6 +1810,9 @@ def test_view_mode_selector_is_inset_within_the_browser_header() -> None:
 
 def test_browser_and_track_searches_keep_separate_contexts() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(30))
     window = MainWindow(context, auto_discover=False)
 
@@ -1858,6 +1875,9 @@ def test_legacy_splitter_state_cannot_collapse_track_title_bar() -> None:
 
     context = _context()
     context.settings.set_global(LIBRARY_SPLITTER_STATE, legacy_state)
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(30))
     window = MainWindow(context, auto_discover=False)
 

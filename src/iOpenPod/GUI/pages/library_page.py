@@ -19,6 +19,8 @@ from iOpenPod.GUI.delegates.selection_group_delegate import SelectionGroupDelega
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
+from iOpenPod.GUI.widgets.inline_album_expansion import InlineAlbumExpansion
+from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
 from iOpenPod.GUI.widgets.library_content import LibraryContent
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar, SortOption
 from iOpenPod.GUI.widgets.track_table import TrackTable
@@ -30,6 +32,9 @@ class LibraryPage(QWidget):
 
     currentTrackChanged = Signal(object)
     trackActivated = Signal(object)
+    playRequested = Signal(object)
+    playNextRequested = Signal(object)
+    queueRequested = Signal(object)
 
     def __init__(
         self,
@@ -80,6 +85,22 @@ class LibraryPage(QWidget):
             self,
             default_sort_column=TrackColumn.ALBUM,
         )
+        self._inline_panel: InlineAlbumPanel | None = None
+        self._inline_expansion: InlineAlbumExpansion | None = None
+        if not selection_mode and follow_ipod_view_mode:
+            self._inline_panel = InlineAlbumPanel(
+                self._track_proxy, theme_manager, artwork_provider, self
+            )
+            self._inline_expansion = InlineAlbumExpansion(
+                self._grid, self._inline_panel
+            )
+            self._inline_panel.currentTrackChanged.connect(
+                self.currentTrackChanged.emit
+            )
+            self._inline_panel.trackActivated.connect(self.trackActivated.emit)
+            self._inline_panel.playRequested.connect(self.playRequested.emit)
+            self._inline_panel.playNextRequested.connect(self.playNextRequested.emit)
+            self._inline_panel.queueRequested.connect(self.queueRequested.emit)
 
         grid_panel = QFrame(self)
         grid_panel.setObjectName("albumGridPanel")
@@ -103,12 +124,14 @@ class LibraryPage(QWidget):
             self,
             selection_mode=selection_mode,
             follow_ipod_view_mode=follow_ipod_view_mode,
+            supports_inline_albums=True,
             splitter_setting=LIBRARY_SPLITTER_STATE,
         )
         layout.addWidget(self._content, 1)
         self._content.backRequested.connect(self._show_browser)
+        self._content.viewModeChanged.connect(self._view_mode_changed)
         self._grid.clicked.connect(self._open_album)
-        self._grid.activated.connect(self._open_album)
+        self._grid.activated.connect(self._activate_album)
         self._grid.selectionModel().currentChanged.connect(self._browser_album_selected)
 
         self._toolbar.queryChanged.connect(self._set_browser_query)
@@ -121,6 +144,7 @@ class LibraryPage(QWidget):
 
         self._refresh_track_context()
         self._toolbar.set_selection_grouping(selection_mode)
+        self._view_mode_changed()
 
     def show_all_tracks(self) -> None:
         self._show_browser()
@@ -136,6 +160,8 @@ class LibraryPage(QWidget):
         self._toolbar.retranslate_ui()
         self._configure_toolbar()
         self._content.retranslate_ui()
+        if self._inline_panel is not None:
+            self._inline_panel.retranslate_ui()
         self._refresh_track_context()
 
     def changeEvent(self, event: QEvent) -> None:
@@ -146,7 +172,7 @@ class LibraryPage(QWidget):
     def _browser_album_selected(
         self, current: QModelIndex, previous: QModelIndex
     ) -> None:
-        if not self._content.whole_page_table:
+        if not self._content.whole_page_table and not self._content.inline_albums:
             self._album_selected(current, previous)
 
     def _album_selected(
@@ -167,7 +193,10 @@ class LibraryPage(QWidget):
         self._refresh_track_context()
 
     def _open_album(self, index: QModelIndex) -> None:
-        if not self._content.whole_page_table:
+        self._activate_album(index, toggle=True)
+
+    def _activate_album(self, index: QModelIndex, *, toggle: bool = False) -> None:
+        if not self._content.whole_page_table and not self._content.inline_albums:
             return
         if QApplication.keyboardModifiers() & (
             Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
@@ -176,13 +205,29 @@ class LibraryPage(QWidget):
         summary = index.data(AlbumRole.SUMMARY)
         if not isinstance(summary, AlbumSummary):
             return
+        if self._content.inline_albums:
+            assert self._inline_expansion is not None
+            assert self._inline_panel is not None
+            if toggle and self._inline_expansion.expanded_index == index:
+                self._inline_expansion.close()
+                return
+            self._album_selected(index, QModelIndex())
+            self._inline_panel.set_context(summary)
+            self._inline_expansion.open(index)
+            return
         self._album_selected(index, QModelIndex())
         self._content.open_detail(summary)
 
     def _show_browser(self) -> None:
+        if self._inline_expansion is not None:
+            self._inline_expansion.reset()
         self._content.show_browser()
         if self._content.whole_page_table:
             self._grid.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _view_mode_changed(self) -> None:
+        if self._inline_expansion is not None:
+            self._inline_expansion.set_enabled(self._content.inline_albums)
 
     def _set_browser_query(self, query: str) -> None:
         self._album_query = query

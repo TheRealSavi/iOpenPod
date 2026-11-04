@@ -33,9 +33,9 @@ from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.genius_page import GeniusPage
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
+from iOpenPod.GUI.presentation import track_drag as track_drag_module
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
-from iOpenPod.GUI.widgets import track_table as track_table_module
 from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
 from iOpenPod.GUI.widgets.playlist_artwork_banner import PlaylistArtworkBanner
@@ -471,7 +471,7 @@ def test_shell_gives_genius_tracks_the_shared_menu_and_drag(
         finally:
             menu.deleteLater()
 
-        monkeypatch.setattr(track_table_module, "QDrag", RecordingDrag)
+        monkeypatch.setattr(track_drag_module, "QDrag", RecordingDrag)
         table.startDrag(Qt.DropAction.CopyAction)
         assert len(dragged) == 1
         assert dragged[0].track_ids == (track.track_id,)

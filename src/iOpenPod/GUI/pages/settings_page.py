@@ -557,8 +557,9 @@ class SettingsPage(QWidget):
         self._ipod_view_mode_row.set_copy(
             self.tr("iPod Library View Mode"),
             self.tr(
-                "Show Tracks below Album and collection grids, or open them "
-                "on a whole page like the Host Sync Library."
+                "Show Tracks in a split table or on a whole page. iTunes 11 style "
+                "opens an album-colored Track list inside the Albums grid; "
+                "other views use a split table."
             ),
         )
         self._draft_all_changes_row.set_copy(
@@ -952,6 +953,7 @@ class SettingsPage(QWidget):
                     self.tr("Whole Page Table"),
                     IPodLibraryViewMode.WHOLE_PAGE_TABLE.value,
                 ),
+                (self.tr("iTunes 11 style"), IPodLibraryViewMode.ITUNES_11.value),
             )
         )
 
