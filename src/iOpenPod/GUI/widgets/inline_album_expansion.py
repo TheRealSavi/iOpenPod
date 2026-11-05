@@ -89,6 +89,9 @@ class InlineAlbumExpansion(QObject):
             self.reset()
             self._index = QPersistentModelIndex(index)
         self._closing = False
+        # Opening already consumes the panel's latest preferred size. A queued
+        # content resize would otherwise snap an interrupted reveal fully open.
+        self._layout_timer.stop()
         self._target_height = self._panel.preferred_height(
             self._view.viewport().width()
         )
@@ -169,8 +172,15 @@ class InlineAlbumExpansion(QObject):
 
     def _animate_to(self, height: int) -> None:
         self._animation.stop()
-        self._animation.setStartValue(self._height)
-        self._animation.setEndValue(height)
+        # Stopped animations retain their old time. Reconfiguring their endpoints
+        # can emit that time's value and briefly reveal a fully expanded panel.
+        blocked = self._animation.blockSignals(True)
+        try:
+            self._animation.setStartValue(self._height)
+            self._animation.setEndValue(height)
+            self._animation.setCurrentTime(0)
+        finally:
+            self._animation.blockSignals(blocked)
         self._animation.start()
 
     def _advance(self, value: object) -> None:

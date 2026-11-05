@@ -397,6 +397,100 @@ def test_every_opening_frame_keeps_panel_below_the_selected_card(
         page.close()
 
 
+@pytest.mark.parametrize("album_row", (0, 1))
+def test_reopening_album_never_flashes_full_panel_before_reveal(
+    context: AppContext,
+    album_row: int,
+) -> None:
+    from PySide6.QtWidgets import QWidget
+
+    context.track_model.reset_tracks(
+        tuple(
+            Track(number + 1, "Song", "Artist", f"Album {number:03}", 183_000)
+            for number in range(6)
+        )
+    )
+    page = _page(context)
+    # Keep both card rows and the panel visible without a scrollbar resize.
+    page.resize(1100, 1200)
+    APPLICATION.processEvents()
+    try:
+        grid = page.findChild(AlbumGridView)
+        animation = page.findChild(QVariantAnimation, "inlineAlbumAnimation")
+        clip = page.findChild(QWidget, "inlineAlbumReveal")
+        assert grid is not None and animation is not None and clip is not None
+        index = grid.model().index(0, 0)
+
+        def click_card() -> None:
+            QTest.mouseClick(
+                grid.viewport(),
+                Qt.MouseButton.LeftButton,
+                pos=grid.visualRect(index).topLeft() + QPoint(60, 60),
+            )
+
+        click_card()
+        animation.setCurrentTime(animation.duration())
+        APPLICATION.processEvents()
+        assert clip.isVisible()
+        click_card()
+        animation.setCurrentTime(animation.duration())
+        APPLICATION.processEvents()
+        assert not clip.isVisible()
+
+        index = grid.model().index(album_row, 0)
+        click_card()
+        animation.pause()
+        heights = [clip.height() if clip.isVisible() else 0]
+        for ms in range(16, animation.duration() + 16, 16):
+            animation.setCurrentTime(min(ms, animation.duration()))
+            APPLICATION.processEvents()
+            heights.append(clip.height() if clip.isVisible() else 0)
+        assert heights[0] == 0, heights
+        assert heights == sorted(heights), heights
+        assert heights[-1] > 0
+    finally:
+        page.close()
+
+
+def test_reversing_album_reveal_keeps_current_height(context: AppContext) -> None:
+    from PySide6.QtWidgets import QWidget
+
+    page = _page(context)
+    try:
+        grid = page.findChild(AlbumGridView)
+        animation = page.findChild(QVariantAnimation, "inlineAlbumAnimation")
+        clip = page.findChild(QWidget, "inlineAlbumReveal")
+        assert grid is not None and animation is not None and clip is not None
+        index = grid.model().index(0, 0)
+        grid.clicked.emit(index)
+        animation.pause()
+        animation.setCurrentTime(animation.duration() // 2)
+        APPLICATION.processEvents()
+        opening_height = clip.height()
+        assert clip.isVisible() and opening_height > 0
+
+        grid.clicked.emit(index)
+        animation.pause()
+        APPLICATION.processEvents()
+        assert clip.isVisible() and clip.height() == opening_height
+        animation.setCurrentTime(animation.duration() // 2)
+        APPLICATION.processEvents()
+        closing_height = clip.height()
+        assert 0 < closing_height < opening_height
+
+        # Keyboard activation opens the current Album even during collapse.
+        grid.setCurrentIndex(index)
+        QTest.keyClick(grid, Qt.Key.Key_Return)
+        animation.pause()
+        APPLICATION.processEvents()
+        assert clip.isVisible() and clip.height() == closing_height
+        animation.setCurrentTime(animation.duration())
+        APPLICATION.processEvents()
+        assert clip.height() > opening_height
+    finally:
+        page.close()
+
+
 class _GridHoverEvents(QObject):
     def __init__(self, parent: QObject) -> None:
         super().__init__(parent)
