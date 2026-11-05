@@ -1,6 +1,7 @@
 {
   "captured_on": "2026-11-05",
   "source": "Real iOpenPod Qt widgets on Windows with fictional sample Library data and supplied GenericArt artwork. Game covers are bundled application assets.",
+  "appearance": "light",
   "encoding": "Lossless WebP, method 6; complete widget captures at native dimensions",
   "artwork": [
     {
@@ -122,108 +123,108 @@
       "caption": "iOpenPod album library with supplied artwork and the selected album track list",
       "width": 1440,
       "height": 960,
-      "bytes": 600044,
-      "sha256": "3e50fd10a3577bd40ef114466f99c5950f1ff81e7bf750f4f9d4b7dfe5579a92",
-      "capture_sha256": "8178e4416e211a6b06186925d640870db8988e61c911e303df6e9b6c8fa6adcc"
+      "bytes": 598934,
+      "sha256": "2d933d9337f79f98d8c6495f19eff1262131028a28f4ea6c779d12cf6852638f",
+      "capture_sha256": "19ed9f58dbb13784a0e62eb3d13e592fced526fc787da1971e8d52f2784d13ed"
     },
     {
       "file": "media-folders.webp",
       "caption": "Choose Media Folders with per-folder media types and subfolder scanning",
       "width": 900,
       "height": 600,
-      "bytes": 7634,
-      "sha256": "a1185ce253169f0272b01e7c3c7293abea00c2693742ab5e8917e6ff7b1875d9",
-      "capture_sha256": "fca53ca9dba1460b9e2dac88f8ab88864485d83483bfa2b3ff13fd1319bc464a"
+      "bytes": 7702,
+      "sha256": "932a1dd3876382d2275d9a6cd258be23c9f763c03d1c2aa2f086230819a4390b",
+      "capture_sha256": "1813d556b59f8a02c8d5dfc1792afd7099b16a961ede6e42a6f69c6de7b7b12a"
     },
     {
       "file": "sync-media-selection.webp",
       "caption": "Sync media selection with selected, mixed, and deselected sample albums",
       "width": 1440,
       "height": 1150,
-      "bytes": 332518,
-      "sha256": "9daee84ced4d67b918af6d39926b490e5240d7e841f123422ab6dde0b5ecb3bf",
-      "capture_sha256": "8a7e52cc442c485e36c1849b89a1ceae5504af002da02e47fcd33a806755b2ad"
+      "bytes": 333840,
+      "sha256": "38c6c2bac233a592e8d03c6645f521c8f6e35bb8da5051e4204bf508b12b7dd9",
+      "capture_sha256": "d2a0233495ca4c9dca7a4abb7b5e5c3384ca921de60623f218af51695e13d7c1"
     },
     {
       "file": "sync-change-review.webp",
       "caption": "Sync Review with selected sample additions and the Sync Selected action",
       "width": 1440,
       "height": 960,
-      "bytes": 28290,
-      "sha256": "86cdbae659325dd4ae66f301f2b3863dc400870d5f47b9fa703b032a8e16a1c9",
-      "capture_sha256": "87f751182b2c52f4c959df7142492b5f5a84f7557d5bf7329a9f6c875a82048c"
+      "bytes": 28060,
+      "sha256": "4286b9524ab4fdf9315ff3e007ee9cd19e6b756cf584526ed1fe2a3cf24a1033",
+      "capture_sha256": "db660fb862d0ad44f4788b1bcb7ea25b6eb46efafcd04a860540778e81de3b24"
     },
     {
       "file": "audio-transcoding-settings.webp",
       "caption": "Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media",
       "width": 1440,
       "height": 960,
-      "bytes": 27936,
-      "sha256": "0b2981e970f9d80177eb8c10d49a89be70f2cdc20367721036935536ac2bcba5",
-      "capture_sha256": "f2506b8dcdaa8cf6a5e46e780b36ef83d8669f87ea899e5f0086f74c42f5faf5"
+      "bytes": 28202,
+      "sha256": "a1010abe0ad205341e4d26f3f1634ce45c50934ab624c070ecd38e3da365abcf",
+      "capture_sha256": "529ab20fc6881d57d7eb88ecbdfe2a31ca200aced24f92402ddba152433a3de9"
     },
     {
       "file": "track-metadata.webp",
       "caption": "Edit Track with title, artist, album, genre, composer, and track metadata",
       "width": 980,
       "height": 740,
-      "bytes": 14646,
-      "sha256": "949e94fde45b946661d3b5eb463d923056d1112ae517c83101ef4059f054862e",
-      "capture_sha256": "eb3c4da4b71cb611c32c561368cdefe79dc95ef3e590d6f1772cf6776f0cb0ed"
+      "bytes": 14618,
+      "sha256": "326a7ed907457eae24d15cf25576685597d4aa37e5cfe61d2931e8a0995ae01d",
+      "capture_sha256": "41b32abdaa6bc18ade62c0473491bde3191c7583ee56669b7509b1ecced66698"
     },
     {
       "file": "track-artwork.webp",
       "caption": "Edit Track artwork with supplied cover art and controls to choose or clear artwork",
       "width": 980,
       "height": 740,
-      "bytes": 75150,
-      "sha256": "e611e6ddbef730a68d51e43b2a83da208fcc2a2ca893503b982dd651546be092",
-      "capture_sha256": "a3df68018a8a16a46490c6077e9b3c7ee3eaf762522c9a804d0c49f8c3d4e3d0"
+      "bytes": 76634,
+      "sha256": "b50c601037e9f7033d1af2543f06f4487cc844e70fed20cb8b0789fecd7972a5",
+      "capture_sha256": "7cf568c699db7be0284566e772df2ab7a9ceb819eeb1f2bdb8e03de4c27438b6"
     },
     {
       "file": "smart-playlist.webp",
       "caption": "Smart Playlist editor with an Ambient genre rule",
       "width": 900,
       "height": 620,
-      "bytes": 11154,
-      "sha256": "1291955cabe78cc48e5a058258ee93cc8d6db82ad13658841551f6101c82e82a",
-      "capture_sha256": "b4452eb8b2274ddda358af2ae28eb7e8eb6cd7921546d93cb4deef15cb5091ce"
+      "bytes": 11260,
+      "sha256": "16706d2e7e4d5e5bbc5192607e7d3fd656b4566c59b1be0c5a94c80e7f9d3e54",
+      "capture_sha256": "6708f66112b69552fd159752097f80d1fe79cbd344ca8e40149066af652fa75f"
     },
     {
       "file": "photo-albums.webp",
       "caption": "Photo Library with supplied artwork, sample photo albums, and the selected photo inspector",
       "width": 1440,
       "height": 960,
-      "bytes": 618652,
-      "sha256": "dba10c800689a12ccecb9065e3ba0434fcc0d15e8b9c0754245503bbb97e358f",
-      "capture_sha256": "3457ac43cb0fa743ba3c82224059a5807038e78bcd02d32b0b8207f983866dca"
+      "bytes": 619236,
+      "sha256": "804d064a8683ddd28dacaca366583cba4ea1b80a780d6bba93f47083c06654b4",
+      "capture_sha256": "d63169184df5a2b75d19c4201be35342e54142da2047c48f077943d3a064c6a3"
     },
     {
       "file": "phase-playlist.webp",
       "caption": "Phase Playlist with sample tracks, supplied artwork, and the Phase banner",
       "width": 1440,
       "height": 960,
-      "bytes": 224554,
-      "sha256": "1c5289f1c0b41196f13c2a7022fabca42d3567ce08f730d4fdc80b990ce9bcb3",
-      "capture_sha256": "814b72f747366f7d89e9c9ce5cd7b6c63e14f61eb33a05d2b046a76edf2164ae"
+      "bytes": 213848,
+      "sha256": "7d7e8fb8cdaeea24082ee76f390b9437d9876952d9bc5b06a32578b6f123a69c",
+      "capture_sha256": "ce79ec0ba37dbd52fba653fd9af58591d9869375c09f9f49e3fe635805831ade"
     },
     {
       "file": "click-wheel-games.webp",
       "caption": "Games page with a sample installed-game inventory and the Install Games button",
       "width": 1440,
       "height": 960,
-      "bytes": 952994,
-      "sha256": "dac6d3ac5e06943aa2726f0e4ecb109990621025a50625a54e8a2a9574a790a6",
-      "capture_sha256": "ee5a69b1207d9a77440df8644712a7c8d6846efa92d741e1dfb27b0f92b84c43"
+      "bytes": 955032,
+      "sha256": "7064a0089102a08ad4306c83c3eb8b5ef41e2fb7fdd9555f78a5edc87a732531",
+      "capture_sha256": "f51d7d26a943aa65343d1ed9c70b62f6fb2d156ff2942677b30ae13443f386c6"
     },
     {
       "file": "backups.webp",
       "caption": "Backups page with fictional Backup Snapshots for the sample iPod",
       "width": 1440,
       "height": 960,
-      "bytes": 19568,
-      "sha256": "f9fc6de46b3e49e4e4b45643608fd53743b4216055126b8a69b90faadb249df5",
-      "capture_sha256": "381b603aa93eb4b07a3bb1563449f03f7e31b78e32c54550d908024116ce990d"
+      "bytes": 19120,
+      "sha256": "04fcad89f5a2e8c7b4455dcda0d87dba8d863b2b684139758ea449d46530b8c2",
+      "capture_sha256": "6afc4d80d1f374563d2086ee6c9920f37c728ad7db69aeb63104600a2cc814c9"
     }
   ]
 }

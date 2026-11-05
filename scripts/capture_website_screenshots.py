@@ -107,7 +107,7 @@ def main() -> None:
         artwork_controller=ArtworkController(images, APPLICATION),
         photo_controller=PhotoController(images, APPLICATION),
     )
-    context.settings.set_global(APPEARANCE_MODE, "dark")
+    context.settings.set_global(APPEARANCE_MODE, "light")
     context.settings.set_global(COLORFUL_MODE, True)
     context.settings.set_global(DRAFT_ALL_CHANGES, True)
     context.settings.set_global(
@@ -422,6 +422,7 @@ def main() -> None:
                     .date()
                     .isoformat(),
                     "source": "Real iOpenPod Qt widgets on Windows with fictional sample Library data and supplied GenericArt artwork. Game covers are bundled application assets.",
+                    "appearance": "light",
                     "encoding": "Lossless WebP, method 6; complete widget captures at native dimensions",
                     "artwork": artwork_provenance(args.artwork_dir),
                     "screenshots": manifest,

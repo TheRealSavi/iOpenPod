@@ -263,7 +263,7 @@ image and to the corresponding source, support, and license pages.
 
 ## Refresh screenshots
 
-The twelve current images are captures of real iOpenPod widgets with a fictional
+The twelve current images are light-mode captures of real iOpenPod widgets with a fictional
 Library and artwork supplied from the GenericArt folder. The app onboarding and
 Store screenshots use the same artwork mapping. No personal Library, physical
 iPod, network service, or saved application settings are used.
