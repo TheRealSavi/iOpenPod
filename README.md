@@ -12,10 +12,20 @@ iOpenPod
 <p align="center"><strong>Manage your iPod without iTunes.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/TheRealSavi/iOpenPod/releases/latest"><img src="https://img.shields.io/github/v/release/TheRealSavi/iOpenPod?style=flat&amp;color=7656c9&amp;label=release" alt="Latest release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-7656c9?style=flat" alt="GPL-3.0-or-later license"></a>
-  <a href="https://pypi.org/project/iopenpod/"><img src="https://img.shields.io/pypi/dm/iopenpod?style=flat&amp;color=7656c9&amp;label=PyPI%20downloads" alt="Monthly PyPI downloads"></a>
-  <a href="https://github.com/TheRealSavi/iOpenPod/stargazers"><img src="https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=flat&amp;color=7656c9" alt="GitHub stars"></a>
+  <a href="https://github.com/TheRealSavi/iOpenPod/releases/latest"><img src="https://img.shields.io/github/v/release/TheRealSavi/iOpenPod?style=for-the-badge&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=7656c9&amp;label=release" alt="Latest release"></a>
+  <a href="#download-and-install"><img src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-7656c9?style=for-the-badge" alt="Available for Windows, macOS, and Linux"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-7656c9?style=for-the-badge&amp;labelColor=242938" alt="GPL-3.0-or-later license"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/TheRealSavi/iOpenPod/releases"><img src="https://img.shields.io/github/downloads/TheRealSavi/iOpenPod/total?style=for-the-badge&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=2ea44f&amp;label=GitHub%20downloads" alt="Total GitHub release-asset downloads" title="All assets across all GitHub releases"></a>
+  <a href="https://pepy.tech/projects/iopenpod"><img src="https://img.shields.io/pepy/dt/iopenpod?style=for-the-badge&amp;logo=pypi&amp;logoColor=white&amp;labelColor=242938&amp;color=3776ab&amp;label=PyPI%20downloads" alt="Total PyPI downloads via Pepy, including known mirrors" title="All-time PyPI downloads via Pepy, including known mirrors"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/TheRealSavi/iOpenPod/stargazers"><img src="https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=for-the-badge&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=e3b341" alt="GitHub stars"></a>
+  <a href="https://github.com/TheRealSavi/iOpenPod/graphs/contributors"><img src="https://img.shields.io/github/contributors/TheRealSavi/iOpenPod?style=for-the-badge&amp;labelColor=242938&amp;color=7656c9" alt="GitHub contributors"></a>
+  <a href="https://discord.gg/9Yy499Tf5d"><img src="https://img.shields.io/badge/Discord-Join%20us-5865f2?style=for-the-badge&amp;logo=discord&amp;logoColor=white&amp;labelColor=242938" alt="Join the Discord community"></a>
 </p>
 
 <p align="center">
