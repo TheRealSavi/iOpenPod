@@ -1,0 +1,171 @@
+{
+  "source": "Real Qt widgets with fictional Library data and supplied GenericArt artwork.",
+  "artwork": [
+    {
+      "file": "25 blimps back.png",
+      "sha256": "fb258a27f93942b2de619798f2499fc0f5bd6669af8fa1865730ef26d8b2af79"
+    },
+    {
+      "file": "ADMIT IT space.png",
+      "sha256": "667cb5186325b73ed38c2530bba6897cd296c42a644ee92295ab08a839460f66"
+    },
+    {
+      "file": "all i need.png",
+      "sha256": "762d9f5151405e029334bf9a679948ac22081c5859da745fd9096ee9c73b5ee9"
+    },
+    {
+      "file": "baby blue.png",
+      "sha256": "86b15f5233381583b6c96bd98ee6a960b2f74d401eac03bcc9d97e6653147d0f"
+    },
+    {
+      "file": "CD.png",
+      "sha256": "b7b03505c4adfc4f9be989475c5aafcc037ac5d16d86e39d4d938ae2dfdd11a5"
+    },
+    {
+      "file": "coachella wave.png",
+      "sha256": "e5c671cd56b73d911bd9b20e89bfc8d5e4876f03ce7f4b0de1c647cd9493ab6f"
+    },
+    {
+      "file": "color way.png",
+      "sha256": "8ff4f0c83a79bccd8c477735a8730edc4c59cf7addb143b436a93d996355746f"
+    },
+    {
+      "file": "daylight.png",
+      "sha256": "0b725e34fc8668140799e8c7549cd63f5af94cc5a0fd6e9b23c43e50c1afaa5b"
+    },
+    {
+      "file": "ECLIPSE.png",
+      "sha256": "afe44aefde254ec3a88179823029d1b4c649dbaa7c7d31be92e73b8b5dc1327a"
+    },
+    {
+      "file": "GHOSTS VHS glow.png",
+      "sha256": "b02b304497eeb2e160eca4944bef148b2e6b921354136f3532494687a8e337c5"
+    },
+    {
+      "file": "highs and lows.png",
+      "sha256": "58c9d9b99453c9b63147c78baf82f6e9b4f95c72325f28b42a792e89ced91225"
+    },
+    {
+      "file": "KIDS SEE GHOSTS.png",
+      "sha256": "5e483ca87d6ecab13cb8cbb5ec8d5cc971033600b8298fbf58e4da47e9bec20d"
+    },
+    {
+      "file": "love story.png",
+      "sha256": "6af1b4439f8f548f8966bf8b68c58592cbdad08c14116bc61c2418aa1eb0f84d"
+    },
+    {
+      "file": "OCEAN WAVES.png",
+      "sha256": "5d0c6c3996823eca4d2b8df6390e0c88b1a736412c311189fca319b7c3c21441"
+    },
+    {
+      "file": "peaceful.png",
+      "sha256": "7ff2bf5eeb562d3216667a10faa8ed1522126be24310ba1a9012f914d85ad19f"
+    },
+    {
+      "file": "REFLECT.png",
+      "sha256": "cd2e5537311d4d4a1229d14087e080a3c743f9b46a248cc3260f13b3916717d6"
+    },
+    {
+      "file": "risky.png",
+      "sha256": "ae602a2779362798978d15dcb5c22353751f97e114c5437d3ef12648f5e040d8"
+    },
+    {
+      "file": "RUNAWAY ORCHESTRATED ALBM ART.png",
+      "sha256": "53c4599eacec53e95f67a35c125de9a8bde7cab2797ce894ff0e6a1b37890b8b"
+    },
+    {
+      "file": "SO GOOD TO ME.png",
+      "sha256": "92ba79a05d44b78022aa73c8837d572d6b1de205edf46dab75303c7f8ffefd8b"
+    },
+    {
+      "file": "STARS.png",
+      "sha256": "b945a629507ca94df89a40ca4400597150cf55441169746dfb59766d6f1c9247"
+    },
+    {
+      "file": "stay in touch.png",
+      "sha256": "000592218e6a281cb0db52cacf1afb3e3ad40516e33d735d49cf9c06814c3878"
+    },
+    {
+      "file": "sunday mail.png",
+      "sha256": "e6a7384d82d67a297b2358f5aa0bdf7b48218ff5e1f19b3f826aeedf02fc87d0"
+    },
+    {
+      "file": "sunset DE.png",
+      "sha256": "5d18630fef762ea365e7cfebd15e5f0891d4f59f12af0ec8e454caeb5053ffed"
+    },
+    {
+      "file": "TDK.png",
+      "sha256": "6c9755da4cb8e511cb8dc29eadda8f44b85c7c522ad3874104867d24931df6fe"
+    },
+    {
+      "file": "thank god for drugs.png",
+      "sha256": "07dd29a2760a66bd2f75ac05718cddfd1fab4ddc99f612888f2f6d4736bba5e1"
+    },
+    {
+      "file": "Tropical satellite.png",
+      "sha256": "6ffac1657c152ac01ff070aff6100a2ed43f393f1cbc336fc7a158b79705f29e"
+    },
+    {
+      "file": "Untitled-1.png",
+      "sha256": "437b186e4aeef0afb177a621a64ffbdc9ae77a3dc1dded3f3a93a7167012b489"
+    },
+    {
+      "file": "WALK ON WATER.png",
+      "sha256": "2e48f12a18f944ab40cd677747f855a0900eb695808eef3d5b469a0a5ed96a38"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "device-classic.png",
+      "sha256": "e676da112fe07bc7df8f2d6ec2610a109ae3fa4d2c212a5f60ca23740a7c52c9"
+    },
+    {
+      "file": "device-standard.png",
+      "sha256": "aec7c7521fd6c81960ff60e6e90bd13cf1db21a14a601c6055a7041e58fc2a4b"
+    },
+    {
+      "file": "library-inline.png",
+      "sha256": "e82089c953b73780be4866adb6b70f36e59fcdad9996584afd60e9ce9072f7c5"
+    },
+    {
+      "file": "library-split.png",
+      "sha256": "226065efbc3ff585271ba66684da463a9c6b404adf6647ae8b38334eaa17bc45"
+    },
+    {
+      "file": "library-whole.png",
+      "sha256": "9d060e985a734d0e805ce387619d551630ba562ad6ace1f5b11563e0d59bb32f"
+    },
+    {
+      "file": "navigation-compact.png",
+      "sha256": "4bee043fcef2cf3efef9d61915848e354528fe1b889ad612f72416d3e6df249b"
+    },
+    {
+      "file": "navigation-sidebar.png",
+      "sha256": "f1a7e207fa9a485bb51b1b543d9249ed5d58f59ba5f353b4032b9f6bd427487b"
+    },
+    {
+      "file": "sync-folders.png",
+      "sha256": "c4dea8ce3743b3d261ac6280dcaffbb6efc2ecb07577252de3f4192f99b55b86"
+    },
+    {
+      "file": "sync-review.png",
+      "sha256": "59b95e5034d3c25a17aee1b80af7e09add5080e410cefa4b5ddbe70a91b8fa24"
+    },
+    {
+      "file": "sync-selection.png",
+      "sha256": "b21c7373cbaf84438b03b670b12c3d4fbde2c79ce9e3aa31692dd76a6e8adc41"
+    },
+    {
+      "file": "sync-start-compact.png",
+      "sha256": "90b329e3f4e8f79c55febc08bd970149a37da1b804baaca329db617ce04003f0"
+    },
+    {
+      "file": "sync-start-sidebar.png",
+      "sha256": "c36742b956c4c16aa5f8bdb9638fd44e1e21dc729a2b83b1c5e27263bf76c9e3"
+    },
+    {
+      "file": "transcoding.png",
+      "sha256": "743d39570a7df29ee3fc685cfbd7f11fc382296c85cfc94ea252f8bfe9d89ff9"
+    }
+  ]
+}

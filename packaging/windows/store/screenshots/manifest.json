@@ -1,5 +1,119 @@
 {
   "resolution": "1920x1080",
+  "artwork": [
+    {
+      "file": "25 blimps back.png",
+      "sha256": "fb258a27f93942b2de619798f2499fc0f5bd6669af8fa1865730ef26d8b2af79"
+    },
+    {
+      "file": "ADMIT IT space.png",
+      "sha256": "667cb5186325b73ed38c2530bba6897cd296c42a644ee92295ab08a839460f66"
+    },
+    {
+      "file": "all i need.png",
+      "sha256": "762d9f5151405e029334bf9a679948ac22081c5859da745fd9096ee9c73b5ee9"
+    },
+    {
+      "file": "baby blue.png",
+      "sha256": "86b15f5233381583b6c96bd98ee6a960b2f74d401eac03bcc9d97e6653147d0f"
+    },
+    {
+      "file": "CD.png",
+      "sha256": "b7b03505c4adfc4f9be989475c5aafcc037ac5d16d86e39d4d938ae2dfdd11a5"
+    },
+    {
+      "file": "coachella wave.png",
+      "sha256": "e5c671cd56b73d911bd9b20e89bfc8d5e4876f03ce7f4b0de1c647cd9493ab6f"
+    },
+    {
+      "file": "color way.png",
+      "sha256": "8ff4f0c83a79bccd8c477735a8730edc4c59cf7addb143b436a93d996355746f"
+    },
+    {
+      "file": "daylight.png",
+      "sha256": "0b725e34fc8668140799e8c7549cd63f5af94cc5a0fd6e9b23c43e50c1afaa5b"
+    },
+    {
+      "file": "ECLIPSE.png",
+      "sha256": "afe44aefde254ec3a88179823029d1b4c649dbaa7c7d31be92e73b8b5dc1327a"
+    },
+    {
+      "file": "GHOSTS VHS glow.png",
+      "sha256": "b02b304497eeb2e160eca4944bef148b2e6b921354136f3532494687a8e337c5"
+    },
+    {
+      "file": "highs and lows.png",
+      "sha256": "58c9d9b99453c9b63147c78baf82f6e9b4f95c72325f28b42a792e89ced91225"
+    },
+    {
+      "file": "KIDS SEE GHOSTS.png",
+      "sha256": "5e483ca87d6ecab13cb8cbb5ec8d5cc971033600b8298fbf58e4da47e9bec20d"
+    },
+    {
+      "file": "love story.png",
+      "sha256": "6af1b4439f8f548f8966bf8b68c58592cbdad08c14116bc61c2418aa1eb0f84d"
+    },
+    {
+      "file": "OCEAN WAVES.png",
+      "sha256": "5d0c6c3996823eca4d2b8df6390e0c88b1a736412c311189fca319b7c3c21441"
+    },
+    {
+      "file": "peaceful.png",
+      "sha256": "7ff2bf5eeb562d3216667a10faa8ed1522126be24310ba1a9012f914d85ad19f"
+    },
+    {
+      "file": "REFLECT.png",
+      "sha256": "cd2e5537311d4d4a1229d14087e080a3c743f9b46a248cc3260f13b3916717d6"
+    },
+    {
+      "file": "risky.png",
+      "sha256": "ae602a2779362798978d15dcb5c22353751f97e114c5437d3ef12648f5e040d8"
+    },
+    {
+      "file": "RUNAWAY ORCHESTRATED ALBM ART.png",
+      "sha256": "53c4599eacec53e95f67a35c125de9a8bde7cab2797ce894ff0e6a1b37890b8b"
+    },
+    {
+      "file": "SO GOOD TO ME.png",
+      "sha256": "92ba79a05d44b78022aa73c8837d572d6b1de205edf46dab75303c7f8ffefd8b"
+    },
+    {
+      "file": "STARS.png",
+      "sha256": "b945a629507ca94df89a40ca4400597150cf55441169746dfb59766d6f1c9247"
+    },
+    {
+      "file": "stay in touch.png",
+      "sha256": "000592218e6a281cb0db52cacf1afb3e3ad40516e33d735d49cf9c06814c3878"
+    },
+    {
+      "file": "sunday mail.png",
+      "sha256": "e6a7384d82d67a297b2358f5aa0bdf7b48218ff5e1f19b3f826aeedf02fc87d0"
+    },
+    {
+      "file": "sunset DE.png",
+      "sha256": "5d18630fef762ea365e7cfebd15e5f0891d4f59f12af0ec8e454caeb5053ffed"
+    },
+    {
+      "file": "TDK.png",
+      "sha256": "6c9755da4cb8e511cb8dc29eadda8f44b85c7c522ad3874104867d24931df6fe"
+    },
+    {
+      "file": "thank god for drugs.png",
+      "sha256": "07dd29a2760a66bd2f75ac05718cddfd1fab4ddc99f612888f2f6d4736bba5e1"
+    },
+    {
+      "file": "Tropical satellite.png",
+      "sha256": "6ffac1657c152ac01ff070aff6100a2ed43f393f1cbc336fc7a158b79705f29e"
+    },
+    {
+      "file": "Untitled-1.png",
+      "sha256": "437b186e4aeef0afb177a621a64ffbdc9ae77a3dc1dded3f3a93a7167012b489"
+    },
+    {
+      "file": "WALK ON WATER.png",
+      "sha256": "2e48f12a18f944ab40cd677747f855a0900eb695808eef3d5b469a0a5ed96a38"
+    }
+  ],
   "source": "Unmodified iOpenPod application widgets rendered by Qt on Windows with deterministic synthetic data.",
   "screenshots": [
     {
@@ -7,48 +121,64 @@
       "caption": "Browse your iPod music by album, artist, genre, or track. Shown with a fictional sample library.",
       "width": 1920,
       "height": 1080,
-      "bytes": 276311,
-      "sha256": "cc72ab49d7bd66082380ab714e72aa65dd22e7308ac4e2952fa409be3b40bf69"
+      "bytes": 1286440,
+      "sha256": "41e77a124330646d72880363ee63819a5bf1eedd41136254b6689e405772d465"
     },
     {
       "file": "02-album-details.png",
       "caption": "Open an album to browse its tracks, metadata, ratings, and artwork.",
       "width": 1920,
       "height": 1080,
-      "bytes": 131509,
-      "sha256": "bdddf65cae9579eff7f72f1ae74c12b212ed96331021f98c079e5d99bee94ce4"
+      "bytes": 128886,
+      "sha256": "fdbb1b60e09e5eced053f1ad6c67be8adcceb92c7c2ed9411c055e594cab73ed"
     },
     {
       "file": "03-playlists.png",
       "caption": "Browse and organize playlists with track details and a cover-art overview.",
       "width": 1920,
       "height": 1080,
-      "bytes": 233517,
-      "sha256": "ec9122845214100a4ee57bec202ad2ea18eb486f3d5b1113bd5e438cdfac8a62"
+      "bytes": 430018,
+      "sha256": "92e53f1a85860631ee71cd3400890423e8e9c0d5d70177c073063968c391b902"
     },
     {
       "file": "04-photo-library.png",
       "caption": "Browse photo albums and inspect the image representations stored on a supported iPod. Sample illustrations shown.",
       "width": 1920,
       "height": 1080,
-      "bytes": 146962,
-      "sha256": "700443a24ad96e3d0050eb3e6e307264ea9d36c02a9cc71efbc7bb478628d5e3"
+      "bytes": 838090,
+      "sha256": "1c5c0ee05c74e5546533eee524f19739cb35f7b0b3282cf7b273699bedde3c1f"
     },
     {
       "file": "05-sync-review.png",
       "caption": "Review selected changes before syncing media from your computer to your iPod. No changes are applied in this sample.",
       "width": 1920,
       "height": 1080,
-      "bytes": 105328,
-      "sha256": "0ce62e6ad180994116c6794ca927428537095b2dde444ffbd2371fc4248d936d"
+      "bytes": 106289,
+      "sha256": "3bb4771853a414da0287af2c33c02e2b3895e90dacd7e6cceb6d5281e70e2bb3"
+    },
+    {
+      "file": "07-sync-selection.png",
+      "caption": "Select media from a fictional Host library before reviewing the Sync Plan.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 1200324,
+      "sha256": "21fb7f1e97319de7da5dd6e28ce8761c872fa3884d1b65f167db02248322ac6d"
     },
     {
       "file": "06-about-and-credits.png",
       "caption": "Free and open source, with optional donations and acknowledgements for the projects that make iOpenPod possible.",
       "width": 1920,
       "height": 1080,
-      "bytes": 101595,
-      "sha256": "8561196c725af506357550cf5e3695ee69a9fa1f59053f814221a64009541fd3"
+      "bytes": 98389,
+      "sha256": "512c3639798c0f1bf4cdc98e28ae9040033316a49a7632da7304f8d773886757"
+    },
+    {
+      "file": "08-transcoding-settings.png",
+      "caption": "Choose audio and video conversion settings in the real iOpenPod Settings page.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 122227,
+      "sha256": "dde833da5fd187ebaebb3f3ad12a7e4af53dddd7eaa6a5b7a7f9466946baceb1"
     }
   ]
 }

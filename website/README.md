@@ -263,39 +263,35 @@ image and to the corresponding source, support, and license pages.
 
 ## Refresh screenshots
 
-The current set contains twelve user-provided Windows screenshots: ten captured
-on 2026-10-03 and two showing Games and the Phase Playlist captured on 2026-11-02.
-They show a personal iPod and media library, including actual album artwork and
-photos. These are not the synthetic store-kit captures.
+The twelve current images are captures of real iOpenPod widgets with a fictional
+Library and artwork supplied from the GenericArt folder. The app onboarding and
+Store screenshots use the same artwork mapping. No personal Library, physical
+iPod, network service, or saved application settings are used.
 
-Use descriptive asset names and lossless WebP encoding (method 6). Keep each
-complete capture at its original dimensions; do not resize it, draw replacement
-UI, or add fake window frames. Set the matching width and height on each
-`product-shot.html` include so the page reserves the correct image proportions.
+Regenerate on Windows with the locked development environment:
 
-| Original capture | Website asset |
-| --- | --- |
-| `Screenshot 2026-10-03 082040.png` | `screenshots/iop2/album-library.webp` |
-| `Screenshot 2026-10-03 082421.png` | `screenshots/iop2/media-folders.webp` |
-| `Screenshot 2026-10-03 082541.png` | `screenshots/iop2/sync-media-selection.webp` |
-| `Screenshot 2026-10-03 082621.png` | `screenshots/iop2/sync-change-review.webp` |
-| `Screenshot 2026-10-03 082631.png` | `screenshots/iop2/audio-transcoding-settings.webp` |
-| `Screenshot 2026-10-03 082709.png` | `screenshots/iop2/track-metadata.webp` |
-| `Screenshot 2026-10-03 082716.png` | `screenshots/iop2/track-artwork.webp` |
-| `Screenshot 2026-10-03 082750.png` | `screenshots/iop2/backups.webp` |
-| `Screenshot 2026-10-03 082816.png` | `screenshots/iop2/smart-playlist.webp` |
-| `Screenshot 2026-10-03 083318.png` | `screenshots/iop2/photo-albums.webp` |
-| `Screenshot 2026-11-02 102848.png` | `screenshots/iop2/click-wheel-games.webp` |
-| `Screenshot 2026-11-02 102901.png` | `screenshots/iop2/phase-playlist.webp` |
+```powershell
+uv run python -m scripts.capture_website_screenshots --artwork-dir "C:\Users\JohnG\Desktop\GenericArt"
+```
 
-Record the capture date, source, dimensions, encoding, and input/output SHA-256
-hashes in `screenshots/iop2/manifest.json`. Inspect every image after conversion.
-Per-image capture dates and sources override the manifest defaults for later additions.
-Use the same assets in the homepage and root README, and keep their alternative
-text and captions accurate. The social preview uses `album-library.webp`.
-The separate synthetic capture script remains available for store-kit work; it
-does not reproduce this personal-library set. Older Original iOpenPod screenshots
-remain excluded from the published site.
+The folder must contain at least 24 PNG images. Filenames sort case-insensitively:
+the first 24 supply Album artwork and the last 12 supply Photos. The loader
+preserves image proportions and leaves the source files untouched. The originals
+remain external capture inputs; the application only packages the resulting
+onboarding images. Game covers and device portraits remain the application's
+bundled assets.
+
+The script writes complete window or dialog captures as lossless WebP (method 6)
+to `screenshots/iop2/`. It records source artwork filenames and SHA-256 hashes,
+capture date, captions, dimensions, and capture/output hashes in `manifest.json`.
+Temporary PNG captures and Host artwork fixtures stay in ignored
+`.scratch/website-preview/`.
+
+Inspect every image after regeneration. Match each `product-shot.html` width and
+height to the manifest and keep its captions and README alternative text accurate.
+The homepage and README share these assets; the social preview uses
+`album-library.webp`. Older Original iOpenPod screenshots remain excluded from the
+published site.
 
 ## Product and distribution evidence
 

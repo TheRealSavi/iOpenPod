@@ -36,6 +36,10 @@ When no Active iPod is loaded at startup, a welcome page invites the user to
 connect an iPod and click its prominent **Choose Device** button. It opens the
 existing Device Picker. Loading an iPod from this page opens Albums; clearing the Active iPod
 returns to the welcome page. Both navigation styles retain access to Settings.
+Without an Active iPod, both styles show Welcome as the only Library navigation
+entry. Loading an iPod replaces Welcome with the supported Library entries;
+clearing it restores Welcome. The disconnected compact strip shows Choose Device
+in place of Sync with Host.
 
 The Library setting **Navigation style** chooses Compact top bar (the default) or
 Sidebar immediately. The compact strip centers Audio, Video, Playlists, Photos,

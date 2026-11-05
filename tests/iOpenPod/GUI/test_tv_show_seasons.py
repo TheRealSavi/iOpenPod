@@ -100,13 +100,24 @@ def _finish_expansion(page: CollectionPage) -> None:
     APPLICATION.processEvents()
 
 
+def _click_show(grid: CollectionGridView) -> None:
+    # Send fresh modifiers with the click instead of inheriting Qt's last input
+    # state through a directly emitted clicked signal.
+    QTest.mouseClick(
+        grid.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        grid.visualRect(grid.model().index(0, 0)).center(),
+    )
+
+
 def _open(
     page: CollectionPage,
 ) -> tuple[CollectionGridView, InlineTVShowPanel, QTabBar]:
     grid = page.findChild(CollectionGridView)
     panel = page.findChild(InlineTVShowPanel)
     assert grid is not None and panel is not None
-    grid.clicked.emit(grid.model().index(0, 0))
+    _click_show(grid)
     _finish_expansion(page)
     tabs = panel.findChild(QTabBar)
     assert tabs is not None and panel.isVisible()
@@ -120,6 +131,35 @@ def _ids(view: TrackTable | InlineTVShowPanel) -> list[int]:
     return [
         model.index(row, 0).data(TrackRole.TRACK_ID) for row in range(model.rowCount())
     ]
+
+
+@pytest.mark.parametrize(
+    "modifiers",
+    [Qt.KeyboardModifier.ControlModifier, Qt.KeyboardModifier.ShiftModifier],
+)
+def test_plain_click_opens_show_after_modified_selection(
+    context: AppContext, modifiers: Qt.KeyboardModifier
+) -> None:
+    page = _page(context)
+    try:
+        grid = page.findChild(CollectionGridView)
+        panel = page.findChild(InlineTVShowPanel)
+        assert grid is not None and panel is not None
+        index = grid.model().index(0, 0)
+        QTest.mouseClick(
+            grid.viewport(),
+            Qt.MouseButton.LeftButton,
+            modifiers,
+            grid.visualRect(index).center(),
+        )
+        _finish_expansion(page)
+        assert not panel.isVisible()
+
+        _open(page)
+        assert panel.isVisible()
+    finally:
+        page.close()
+        page.deleteLater()
 
 
 def test_season_tabs_keep_expansion_and_switch_episode_artwork_and_colors(
@@ -279,7 +319,7 @@ def test_table_modes_keep_all_show_episodes_and_single_cover(
         table = page.findChild(TrackTable)
         assert grid is not None and table is not None
         grid.setCurrentIndex(grid.model().index(0, 0))
-        grid.clicked.emit(grid.model().index(0, 0))
+        _click_show(grid)
         APPLICATION.processEvents()
         assert table.isVisible() and set(_ids(table)) == {1, 2, 3, 4, 5, 6}
         if mode is IPodLibraryViewMode.WHOLE_PAGE_TABLE:
@@ -296,7 +336,7 @@ def test_table_modes_keep_all_show_episodes_and_single_cover(
         content = page.findChild(LibraryContent)
         assert content is not None
         if mode is IPodLibraryViewMode.WHOLE_PAGE_TABLE:
-            grid.clicked.emit(grid.model().index(0, 0))
+            _click_show(grid)
         assert not panel.isVisible() and set(_ids(table)) == {1, 2, 3, 4, 5, 6}
     finally:
         page.close()

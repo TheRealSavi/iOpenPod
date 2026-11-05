@@ -295,7 +295,7 @@ class OnboardingDialog(QDialog):
         self._navigation = _ChoicePage(
             self.tr("Choose your navigation style"),
             self.tr(
-                "Keep navigation across the top, or give it a place beside your Library."
+                "Have navigation across the top, or expand it onto the left of your Library."
             ),
             NAVIGATION_STYLE,
             (
@@ -377,7 +377,8 @@ class OnboardingDialog(QDialog):
         transcoding = _Page(
             self.tr("Transcoding settings"),
             self.tr(
-                "Open Settings > Transcoding before your first Sync. Transcoding converts "
+                "Open Settings > Transcoding before your first sync to set things up the way "
+                "you like. Transcoding converts "
                 "media into formats your iPod can play. Your original files stay unchanged."
             ),
             self,
@@ -385,9 +386,10 @@ class OnboardingDialog(QDialog):
         transcoding.illustrate(
             "transcoding.png",
             self.tr(
-                "Auto chooses an available audio encoder your iPod supports. Quality trades "
-                "file size for fidelity: Compact, Balanced, or High Quality. Spoken Word "
-                "has its own settings."
+                "Leave on Auto for iOpenPod to automatically choose the best encoder, and use "
+                "Compact, Balanced, and High Quality presets to configure how much space the "
+                "files use on your iPod. Change to a specific encoder to access advanced "
+                "configuration."
             ),
         )
         self._pages.addWidget(transcoding)
@@ -428,7 +430,8 @@ class OnboardingDialog(QDialog):
             self.tr("3. Select your media"),
             self.tr(
                 "After scanning, browse the media found on your computer. Check the Tracks, "
-                "Albums, or other items you want on your iPod. New items start unchecked."
+                "Albums, or other items you want on your iPod. Checked items with the iPod "
+                "symbol are already on your iPod."
             ),
             self,
         )

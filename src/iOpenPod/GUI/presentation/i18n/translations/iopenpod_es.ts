@@ -4015,8 +4015,8 @@
         <translation>Elige tu estilo de navegación</translation>
     </message>
     <message>
-        <source>Keep navigation across the top, or give it a place beside your Library.</source>
-        <translation>Coloca la navegación arriba o junto a tu biblioteca.</translation>
+        <source>Have navigation across the top, or expand it onto the left of your Library.</source>
+        <translation>Coloca la navegación arriba o despliégala a la izquierda de tu biblioteca.</translation>
     </message>
     <message>
         <source>Compact top bar</source>
@@ -4079,12 +4079,12 @@
         <translation>Ajustes de conversión</translation>
     </message>
     <message>
-        <source>Open Settings &gt; Transcoding before your first Sync. Transcoding converts media into formats your iPod can play. Your original files stay unchanged.</source>
-        <translation>Abre Ajustes &gt; Conversión antes de la primera sincronización. La conversión adapta los archivos a formatos que tu iPod puede reproducir. Los archivos originales no se modifican.</translation>
+        <source>Open Settings &gt; Transcoding before your first sync to set things up the way you like. Transcoding converts media into formats your iPod can play. Your original files stay unchanged.</source>
+        <translation>Abre Ajustes &gt; Conversión antes de la primera sincronización para configurarlo todo a tu gusto. La conversión adapta los archivos a formatos que tu iPod puede reproducir. Los archivos originales no se modifican.</translation>
     </message>
     <message>
-        <source>Auto chooses an available audio encoder your iPod supports. Quality trades file size for fidelity: Compact, Balanced, or High Quality. Spoken Word has its own settings.</source>
-        <translation>Auto elige un codificador de audio disponible compatible con tu iPod. La calidad equilibra el tamaño y la fidelidad: Compacto, Equilibrado o Alta calidad. Voz tiene sus propios ajustes.</translation>
+        <source>Leave on Auto for iOpenPod to automatically choose the best encoder, and use Compact, Balanced, and High Quality presets to configure how much space the files use on your iPod. Change to a specific encoder to access advanced configuration.</source>
+        <translation>Deja Auto seleccionado para que iOpenPod elija automáticamente el mejor codificador y usa los preajustes Compacto, Equilibrado y Alta calidad para configurar cuánto espacio ocupan los archivos en tu iPod. Elige un codificador específico para acceder a la configuración avanzada.</translation>
     </message>
     <message>
         <source>1. Open Sync with Host</source>
@@ -4115,8 +4115,8 @@
         <translation>3. Selecciona los archivos</translation>
     </message>
     <message>
-        <source>After scanning, browse the media found on your computer. Check the Tracks, Albums, or other items you want on your iPod. New items start unchecked.</source>
-        <translation>Después del análisis, explora los archivos encontrados en el ordenador. Marca las pistas, los álbumes u otros elementos que quieras en tu iPod. Los elementos nuevos empiezan sin marcar.</translation>
+        <source>After scanning, browse the media found on your computer. Check the Tracks, Albums, or other items you want on your iPod. Checked items with the iPod symbol are already on your iPod.</source>
+        <translation>Después del análisis, explora los archivos encontrados en el ordenador. Marca las pistas, los álbumes u otros elementos que quieras en tu iPod. Los elementos marcados con el símbolo del iPod ya están en tu iPod.</translation>
     </message>
     <message>
         <source>Watch the estimated storage as you choose. Press Review Sync when your selection is ready. Nothing has been transferred yet.</source>

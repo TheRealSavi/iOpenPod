@@ -27,6 +27,9 @@ from tests.iOpenPod.GUI.application_shell_test_support import (
     build_context,
     show_albums,
 )
+from tests.iOpenPod.GUI.test_compact_top_bar import (
+    _active_ipod,  # pyright: ignore[reportPrivateUsage]
+)
 
 from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
 from iOpenPod.app.context import AppContext
@@ -1045,6 +1048,7 @@ def test_playlist_dropdown_keeps_library_navigation_and_only_items_open_pages() 
         sidebar = window.findChild(Sidebar, "appSidebar")
         page = window.findChild(PlaylistPage, "playlistsPage")
         assert sidebar is not None and page is not None
+        sidebar.set_active_ipod(_active_ipod())
         tree = sidebar.playlist_tree
         assert tree is not None
         toggle = sidebar.findChild(QPushButton, "playlistSectionToggle")

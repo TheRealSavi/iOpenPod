@@ -2,7 +2,7 @@
 
 Run with ``uv run python -m scripts.capture_store_screenshots`` on Windows.
 No physical devices, existing settings, network, or private media are accessed.
-The illustrations are generated from geometric primitives, not downloaded art.
+Supply --artwork-dir with the user-provided GenericArt folder for every capture.
 """
 
 from __future__ import annotations
@@ -10,12 +10,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import os
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from PIL import Image, ImageColor, ImageDraw
+from PIL import Image, ImageOps
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtTest import QTest
@@ -32,6 +31,8 @@ from iOpenPod.app.core.settings.definitions import (
     IPodLibraryViewMode,
 )
 from iOpenPod.app.host_media_library import (
+    HostArtworkKind,
+    HostMediaArtworkSource,
     HostMediaCacheStats,
     HostMediaFileKind,
     HostMediaLibrary,
@@ -59,8 +60,10 @@ from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.library_page import LibraryPage
 from iOpenPod.GUI.pages.photo_page import PhotoPage
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
+from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.sync_workspace import SyncWorkspace
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
+from iOpenPod.GUI.widgets.compact_top_bar import CompactTopBar
 from iOpenPod.GUI.widgets.photo_grid import PhotoGridView
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
@@ -121,61 +124,54 @@ TITLES = (
 )
 
 
-def illustration(index: int, *, landscape: bool = False) -> Image.Image:
-    """Produce original, repeatable sample artwork without external source images."""
-    _, _, _, pale, dark = ALBUMS[index % len(ALBUMS)]
-    width, height = (960, 640) if landscape else (640, 640)
-    canvas = Image.new("RGB", (width, height), pale)
-    draw = ImageDraw.Draw(canvas)
-    if landscape:
-        draw.ellipse(
-            (width * 0.66, 54, width * 0.82, 54 + width * 0.16), fill="#fff0ca"
+def sample_images(directory: Path) -> SampleImages:
+    """Decode supplied artwork without modifying the source files."""
+    files = sorted(
+        (path for path in directory.iterdir() if path.suffix.lower() == ".png"),
+        key=lambda path: path.name.casefold(),
+    )
+    if len(files) < len(ALBUMS):
+        raise ValueError(f"Expected at least {len(ALBUMS)} PNG artworks in {directory}")
+    decoded: list[Image.Image] = []
+    for path in files:
+        with Image.open(path) as source:
+            decoded.append(ImageOps.contain(source.convert("RGB"), (720, 720)))
+    return SampleImages(
+        dict(enumerate(decoded[: len(ALBUMS)], 1)),
+        dict(enumerate(decoded[-12:], 1)),
+    )
+
+
+def artwork_provenance(directory: Path) -> list[dict[str, str]]:
+    return [
+        {"file": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        for path in sorted(
+            directory.glob("*.png"), key=lambda path: path.name.casefold()
         )
-        for layer in range(5):
-            points = [(0, height)]
-            points.extend(
-                (x, int(235 + layer * 70 + math.sin(x / 145 + index + layer) * 58))
-                for x in range(0, width + 1, 8)
+    ]
+
+
+def host_artwork(
+    images: SampleImages, directory: Path
+) -> tuple[HostMediaArtworkSource, ...]:
+    """Provide actual fixture files to the Host browser's independent image loader."""
+    directory.mkdir(parents=True, exist_ok=True)
+    sources: list[HostMediaArtworkSource] = []
+    for artwork_id, cover in images.covers.items():
+        path = directory / f"{artwork_id}.png"
+        cover.save(path)
+        facts = path.stat()
+        sources.append(
+            HostMediaArtworkSource(
+                artwork_id,
+                HostArtworkKind.FOLDER,
+                HostPath(path),
+                facts.st_size,
+                facts.st_mtime_ns,
+                hashlib.sha256(path.read_bytes()).hexdigest(),
             )
-            points.append((width, height))
-            color = tuple(
-                max(0, value - layer * 13) for value in ImageColor.getrgb(dark)
-            )
-            draw.polygon(points, fill=color)
-    elif index % 4 == 0:
-        for radius in range(400, 50, -45):
-            draw.ellipse(
-                (320 - radius, 320 - radius, 320 + radius, 320 + radius),
-                outline=dark,
-                width=16,
-            )
-        draw.rectangle((0, 430, 640, 640), fill=dark)
-    elif index % 4 == 1:
-        for step in range(9):
-            x = 25 + step * 78
-            draw.rounded_rectangle(
-                (x, -120 + step * 47, x + 34, 485 + step * 47), radius=17, fill=dark
-            )
-    elif index % 4 == 2:
-        for step in range(5):
-            draw.polygon(
-                [
-                    (0, 200 + step * 100),
-                    (320, 30 + step * 100),
-                    (640, 230 + step * 100),
-                    (640, 640),
-                    (0, 640),
-                ],
-                fill=dark if step % 2 == 0 else pale,
-            )
-    else:
-        for row in range(4):
-            for col in range(4):
-                x, y = 45 + col * 145, 45 + row * 145
-                draw.pieslice(
-                    (x, y, x + 116, y + 116), 0 + row * 90, 270 + row * 90, fill=dark
-                )
-    return canvas
+        )
+    return tuple(sources)
 
 
 @dataclass
@@ -328,6 +324,8 @@ def show_sync(
     active: ActiveIPod,
     *,
     track_count: int = 12,
+    existing_track_count: int = 0,
+    artwork_sources: tuple[HostMediaArtworkSource, ...] = (),
 ) -> None:
     host_tracks = tuple(
         replace(
@@ -352,17 +350,23 @@ def show_sync(
         ),
         (),
         HostMediaCacheStats(),
+        artwork_sources=artwork_sources,
     )
     items = tuple(
         SyncPlanItem(
-            SyncPlanAction.ADD,
+            SyncPlanAction.UNCHANGED
+            if index < existing_track_count
+            else SyncPlanAction.ADD,
             SyncPlanMediaKind.TRACK,
-            SyncPlanBasis.HOST_ONLY,
+            SyncPlanBasis.TRACK_DETAILS_MATCH
+            if index < existing_track_count
+            else SyncPlanBasis.HOST_ONLY,
             track.title,
             f"{track.artist} · {track.album}",
             track.metadata.location,
+            ipod_id=track.track_id if index < existing_track_count else None,
         )
-        for track in host_tracks
+        for index, track in enumerate(host_tracks)
     )
     workspace = child(window, SyncWorkspace)
     workspace.load_comparison(
@@ -384,6 +388,7 @@ def main() -> int:
     parser.add_argument(
         "--output", type=Path, default=ROOT / "packaging/windows/store/screenshots"
     )
+    parser.add_argument("--artwork-dir", type=Path, required=True)
     args = parser.parse_args()
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     os.environ["QT_SCALE_FACTOR"] = "1"
@@ -410,13 +415,8 @@ def main() -> int:
     QFont.insertSubstitution("Sans Serif", "Segoe UI")
     APPLICATION.setFont(QFont("Segoe UI", 10))
     context = build_context()
-    images = SampleImages(
-        {i + 1: illustration(i) for i in range(len(ALBUMS))},
-        {
-            i: illustration(i - 1, landscape=True).resize((720, 480))
-            for i in range(1, 13)
-        },
-    )
+    images = sample_images(args.artwork_dir)
+    artwork_sources = host_artwork(images, ROOT / ".scratch/store-preview/artwork")
     context.artwork_controller.shutdown()
     context.photo_controller.shutdown()
     context = replace(
@@ -440,9 +440,11 @@ def main() -> int:
     )
     context.track_model.reset_tracks(library.tracks)
     child(window, Sidebar).set_active_ipod(active)
+    child(window, CompactTopBar).set_active_ipod(active)
+    navigate(window, PageId.ALBUMS)
     context.status.show(
         "store-screenshot",
-        "Sample library · Fictional media and original illustrations",
+        "Sample library · Fictional media and supplied artwork",
     )
     window.show()
     manifest: list[dict[str, str | int]] = []
@@ -471,7 +473,12 @@ def main() -> int:
             "01-album-library.png",
             "Browse your iPod music by album, artist, genre, or track. Shown with a fictional sample library.",
         )
-        grid = child(child(window, LibraryPage), AlbumGridView)
+        grid = child(
+            child(
+                child(window, QStackedWidget, "pageStack"), LibraryPage, "albumsPage"
+            ),
+            AlbumGridView,
+        )
         index = grid.model().index(0, 0)
         QTest.mouseClick(
             grid.viewport(),
@@ -483,7 +490,11 @@ def main() -> int:
             "Open an album to browse its tracks, metadata, ratings, and artwork.",
         )
         navigate(window, PageId.PLAYLISTS)
-        child(window, PlaylistPage).select_playlist(1)
+        playlist_tree = child(window, Sidebar).playlist_tree
+        assert playlist_tree is not None
+        playlist_tree.select_playlist(1)
+        pages = child(window, QStackedWidget, "pageStack")
+        assert isinstance(pages.currentWidget(), PlaylistPage)
         capture(
             "03-playlists.png",
             "Browse and organize playlists with track details and a cover-art overview.",
@@ -501,13 +512,33 @@ def main() -> int:
             "04-photo-library.png",
             "Browse photo albums and inspect the image representations stored on a supported iPod. Sample illustrations shown.",
         )
-        show_sync(window, library, active)
+        show_sync(window, library, active, artwork_sources=artwork_sources)
         capture(
             "05-sync-review.png",
             "Review selected changes before syncing media from your computer to your iPod. No changes are applied in this sample.",
         )
-        show_sync(window, library, active, track_count=len(library.tracks))
-        child(window, SyncWorkspace).show_selection()
+        show_sync(
+            window,
+            library,
+            active,
+            track_count=len(library.tracks),
+            artwork_sources=artwork_sources,
+        )
+        workspace = child(window, SyncWorkspace)
+        workspace.show_selection()
+        browser = workspace.browser
+        assert browser is not None
+        for _ in range(20):
+            ready = [
+                browser.artwork_provider.pixmap(i, LAYOUT.album_artwork_size, 1.0)
+                is not None
+                for i in images.covers
+            ]
+            if all(ready):
+                break
+            settle(APPLICATION)
+        else:
+            raise RuntimeError("Sample Host artwork did not load")
         capture(
             "07-sync-selection.png",
             "Select media from a fictional Host library before reviewing the Sync Plan.",
@@ -533,6 +564,7 @@ def main() -> int:
             json.dumps(
                 {
                     "resolution": "1920x1080",
+                    "artwork": artwork_provenance(args.artwork_dir),
                     "source": "Unmodified iOpenPod application widgets rendered by Qt on Windows with deterministic synthetic data.",
                     "screenshots": manifest,
                 },

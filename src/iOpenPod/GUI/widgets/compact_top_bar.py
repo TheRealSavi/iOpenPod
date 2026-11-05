@@ -334,8 +334,12 @@ class CompactTopBar(QFrame):
         self._sync = self._button("compactSyncWithHost", self._left)
         self._sync.setCheckable(False)
         self._sync.clicked.connect(self.syncRequested.emit)
+        self._choose_button = self._button("compactChooseDevice", self._left)
+        self._choose_button.setCheckable(False)
+        self._choose_button.clicked.connect(self.chooseDeviceRequested.emit)
         left.addWidget(self._device)
         left.addWidget(self._sync)
+        left.addWidget(self._choose_button)
         left.addStretch(1)
 
         self._center = QWidget(self)
@@ -355,8 +359,9 @@ class CompactTopBar(QFrame):
         center.addWidget(self._audio)
         center.addWidget(self._video)
         center.addWidget(self._playlists)
-        for page_id in (PageId.PHOTOS, PageId.GAMES):
-            button = self._button(f"compact{page_id.value.title()}", self._center)
+        for page_id in (PageId.START, PageId.PHOTOS, PageId.GAMES):
+            name = "Welcome" if page_id is PageId.START else page_id.value.title()
+            button = self._button(f"compact{name}", self._center)
             button.clicked.connect(
                 lambda _checked=False, page_id=page_id: self.pageRequested.emit(
                     page_id.value
@@ -412,7 +417,7 @@ class CompactTopBar(QFrame):
         self.retranslate_ui()
         self.set_active_ipod(None)
         self.set_review_visible(False)
-        self.set_current_page(PageId.ALBUMS)
+        self.set_current_page(PageId.START)
         self._refresh_menu_icons()
 
     @staticmethod
@@ -504,12 +509,16 @@ class CompactTopBar(QFrame):
         self._dropdowns.close()
         self._active_ipod = active_ipod
         self._sync.setEnabled(active_ipod is not None)
+        self._sync.setVisible(active_ipod is not None)
+        self._choose_button.setVisible(active_ipod is None)
         self._actions[PageId.NORMALIZE_TAGS].setEnabled(active_ipod is not None)
         for page_id, action in self._actions.items():
             action.setVisible(self.page_available(page_id))
         for page_id, button in self._direct.items():
             button.setVisible(self.page_available(page_id))
         self._video.setVisible(any(self.page_available(page) for page in _VIDEO_PAGES))
+        self._audio.setVisible(any(self.page_available(page) for page in _AUDIO_PAGES))
+        self._playlists.setVisible(self.page_available(PageId.PLAYLISTS))
         if active_ipod is None:
             self.set_normalization_count(0)
         self._refresh_device_image()
@@ -563,6 +572,7 @@ class CompactTopBar(QFrame):
         active = self._active_ipod
         self._summary.setEnabled(active is not None)
         self._choose.setEnabled(not self._busy)
+        self._choose_button.setEnabled(not self._busy)
         self._eject.setEnabled(active is not None and self._eject_available)
         self._device.setEnabled(active is not None or not self._busy)
         self._device.setToolTip(
@@ -613,6 +623,7 @@ class CompactTopBar(QFrame):
         self._review.setText(self.tr("Review Changes"))
         self._summary.setText(page_label(PageId.DEVICE_SUMMARY))
         self._choose.setText(self.tr("Choose Device"))
+        self._choose_button.setText(self.tr("Choose Device"))
         self._eject.setText(self.tr("Eject"))
         for page_id, action in self._actions.items():
             action.setText(page_label(page_id))

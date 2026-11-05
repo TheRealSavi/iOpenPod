@@ -4,6 +4,9 @@ Run ``uv run python -m scripts.capture_onboarding_screenshots``. Uses the existi
 isolated screenshot fixtures; never opens physical devices or personal settings.
 """
 
+import argparse
+import hashlib
+import json
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -13,11 +16,10 @@ from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QStackedWidget, QTabWidget, QWidget
 from scripts.capture_store_screenshots import (
-    ALBUMS,
-    SampleImages,
+    artwork_provenance,
     child,
-    illustration,
     navigate,
+    sample_images,
     sample_ipod,
     sample_library,
     settle,
@@ -35,6 +37,7 @@ from iOpenPod.app.core.settings.definitions import (
     NavigationStyle,
 )
 from iOpenPod.app.host_media_folders import HostMediaFolder, HostMediaType
+from iOpenPod.app.host_media_library import HostArtworkKind, HostMediaArtworkSource
 from iOpenPod.GUI.dialogs.media_folders import MediaFoldersDialog
 from iOpenPod.GUI.dialogs.onboarding import OnboardingDialog
 from iOpenPod.GUI.main_window import MainWindow
@@ -42,6 +45,7 @@ from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.device_summary import DeviceSummaryPage
 from iOpenPod.GUI.pages.library_page import LibraryPage
 from iOpenPod.GUI.pages.settings_page import SettingsPage
+from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.sync_workspace import SyncWorkspace
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.compact_top_bar import CompactTopBar
@@ -54,6 +58,9 @@ OUTPUT = ROOT / "src/iOpenPod/assets/onboarding"
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--artwork-dir", type=Path, required=True)
+    args = parser.parse_args()
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     os.environ["QT_SCALE_FACTOR"] = "1"
     from tests.iOpenPod.GUI.application_shell_test_support import (
@@ -70,7 +77,7 @@ def main() -> None:
     APPLICATION.setFont(QFont("Segoe UI", 10))
     context = build_context()
     context.artwork_controller.shutdown()
-    images = SampleImages({i + 1: illustration(i) for i in range(len(ALBUMS))}, {})
+    images = sample_images(args.artwork_dir)
     context = replace(
         context, artwork_controller=ArtworkController(images, APPLICATION)
     )
@@ -180,18 +187,91 @@ def main() -> None:
         capture(folders, "sync-folders.png")
         folders.reject()
 
-        window.resize(960, 620)
-        show_sync(window, library, active, track_count=24)
+        # The Host browser owns its own artwork loader, so provide real fixture
+        # image sources instead of relying on the device's SampleImages loader.
+        artwork_directory = ROOT / ".scratch/onboarding-preview/artwork"
+        artwork_directory.mkdir(parents=True, exist_ok=True)
+        artwork_sources: list[HostMediaArtworkSource] = []
+        for artwork_id, cover in images.covers.items():
+            path = artwork_directory / f"{artwork_id}.png"
+            cover.save(path)
+            facts = path.stat()
+            artwork_sources.append(
+                HostMediaArtworkSource(
+                    artwork_id,
+                    HostArtworkKind.FOLDER,
+                    HostPath(path),
+                    facts.st_size,
+                    facts.st_mtime_ns,
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                )
+            )
+        window.resize(960, 900)
+        # Show three Albums in each group, including one already on the iPod.
+        show_sync(
+            window,
+            library,
+            active,
+            track_count=72,
+            existing_track_count=12,
+            artwork_sources=tuple(artwork_sources),
+        )
         workspace = child(window, SyncWorkspace)
+        workspace.selection.set_tracks_checked(
+            tuple(track.track_id for track in library.tracks[36:72]), False
+        )
+        workspace.show_selection()
+        browser = workspace.browser
+        assert browser is not None
+        for _ in range(10):
+            ready = [
+                browser.artwork_provider.pixmap(
+                    artwork_id, LAYOUT.album_artwork_size, 1.0
+                )
+                is not None
+                for artwork_id in range(1, 7)
+            ]
+            if all(ready):
+                break
+            settle(APPLICATION)
+        else:
+            raise RuntimeError("Sample Album artwork did not load")
+        capture(workspace, "sync-selection.png")
+        # Keep the Review illustration focused on the original small proposal.
+        window.resize(960, 620)
+        show_sync(
+            window,
+            library,
+            active,
+            track_count=24,
+            artwork_sources=tuple(artwork_sources),
+        )
         workspace.selection.set_tracks_checked(
             tuple(track.track_id for track in library.tracks[12:24]), False
         )
-        workspace.show_selection()
-        capture(workspace, "sync-selection.png")
         workspace.show_review()
         # This is a simulated ready-to-sync state; no execution action is sent.
         workspace.set_execution_available(True)
         capture(workspace, "sync-review.png")
+
+        (OUTPUT / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "source": "Real Qt widgets with fictional Library data and supplied GenericArt artwork.",
+                    "artwork": artwork_provenance(args.artwork_dir),
+                    "screenshots": [
+                        {
+                            "file": path.name,
+                            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        }
+                        for path in sorted(OUTPUT.glob("*.png"))
+                    ],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
         # Review artifacts stay private; only the reusable illustrations ship.
         previews = ROOT / ".scratch/onboarding-preview"

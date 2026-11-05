@@ -25,6 +25,9 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.test_compact_top_bar import (
+    _active_ipod,  # pyright: ignore[reportPrivateUsage]
+)
 from tests.iOpenPod.lyrics_test_support import (
     WORDS,
     MemorySource,
@@ -32,6 +35,7 @@ from tests.iOpenPod.lyrics_test_support import (
     media,
 )
 
+from iOpenPod.app.core.settings.definitions import NAVIGATION_STYLE, NavigationStyle
 from iOpenPod.app.models.track_table_model import TrackColumn
 from iOpenPod.app.tag_normalization_controller import TagNormalizationController
 from iOpenPod.app.tag_normalizer import TagProfile
@@ -46,7 +50,7 @@ from iOpenPod.GUI.widgets import track_actions
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
-from iOpenPod.GUI.widgets.sidebar import DeviceCard
+from iOpenPod.GUI.widgets.sidebar import DeviceCard, Sidebar
 from iOpenPod.GUI.widgets.track_actions import TrackActions, TrackSelection
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import (
@@ -532,11 +536,15 @@ def test_queue_shortcuts_use_focused_selection_and_preserve_track_order(
 ) -> None:
     monkeypatch.setattr(track_actions, "platform", platform_name)
     context = build_context()
+    context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
     context.library_workspace.load(LibrarySnapshot(_TRACKS))
     context.track_model.replace_tracks(_TRACKS)
     window = MainWindow(context, auto_discover=False)
     playback = context.playback_controller
     try:
+        sidebar = window.findChild(Sidebar)
+        assert sidebar is not None
+        sidebar.set_active_ipod(_active_ipod())
         window.show()
         navigation = next(
             button

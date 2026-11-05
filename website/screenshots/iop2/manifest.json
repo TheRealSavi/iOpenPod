@@ -1,131 +1,229 @@
 {
-  "captured_on": "2026-10-03",
-  "source": "User-provided Windows screenshots from Desktop/ss, showing a personal iPod and media library.",
-  "encoding": "Lossless WebP, method 6; original dimensions and complete captures with no visual edits",
+  "captured_on": "2026-11-05",
+  "source": "Real iOpenPod Qt widgets on Windows with fictional sample Library data and supplied GenericArt artwork. Game covers are bundled application assets.",
+  "encoding": "Lossless WebP, method 6; complete widget captures at native dimensions",
+  "artwork": [
+    {
+      "file": "25 blimps back.png",
+      "sha256": "fb258a27f93942b2de619798f2499fc0f5bd6669af8fa1865730ef26d8b2af79"
+    },
+    {
+      "file": "ADMIT IT space.png",
+      "sha256": "667cb5186325b73ed38c2530bba6897cd296c42a644ee92295ab08a839460f66"
+    },
+    {
+      "file": "all i need.png",
+      "sha256": "762d9f5151405e029334bf9a679948ac22081c5859da745fd9096ee9c73b5ee9"
+    },
+    {
+      "file": "baby blue.png",
+      "sha256": "86b15f5233381583b6c96bd98ee6a960b2f74d401eac03bcc9d97e6653147d0f"
+    },
+    {
+      "file": "CD.png",
+      "sha256": "b7b03505c4adfc4f9be989475c5aafcc037ac5d16d86e39d4d938ae2dfdd11a5"
+    },
+    {
+      "file": "coachella wave.png",
+      "sha256": "e5c671cd56b73d911bd9b20e89bfc8d5e4876f03ce7f4b0de1c647cd9493ab6f"
+    },
+    {
+      "file": "color way.png",
+      "sha256": "8ff4f0c83a79bccd8c477735a8730edc4c59cf7addb143b436a93d996355746f"
+    },
+    {
+      "file": "daylight.png",
+      "sha256": "0b725e34fc8668140799e8c7549cd63f5af94cc5a0fd6e9b23c43e50c1afaa5b"
+    },
+    {
+      "file": "ECLIPSE.png",
+      "sha256": "afe44aefde254ec3a88179823029d1b4c649dbaa7c7d31be92e73b8b5dc1327a"
+    },
+    {
+      "file": "GHOSTS VHS glow.png",
+      "sha256": "b02b304497eeb2e160eca4944bef148b2e6b921354136f3532494687a8e337c5"
+    },
+    {
+      "file": "highs and lows.png",
+      "sha256": "58c9d9b99453c9b63147c78baf82f6e9b4f95c72325f28b42a792e89ced91225"
+    },
+    {
+      "file": "KIDS SEE GHOSTS.png",
+      "sha256": "5e483ca87d6ecab13cb8cbb5ec8d5cc971033600b8298fbf58e4da47e9bec20d"
+    },
+    {
+      "file": "love story.png",
+      "sha256": "6af1b4439f8f548f8966bf8b68c58592cbdad08c14116bc61c2418aa1eb0f84d"
+    },
+    {
+      "file": "OCEAN WAVES.png",
+      "sha256": "5d0c6c3996823eca4d2b8df6390e0c88b1a736412c311189fca319b7c3c21441"
+    },
+    {
+      "file": "peaceful.png",
+      "sha256": "7ff2bf5eeb562d3216667a10faa8ed1522126be24310ba1a9012f914d85ad19f"
+    },
+    {
+      "file": "REFLECT.png",
+      "sha256": "cd2e5537311d4d4a1229d14087e080a3c743f9b46a248cc3260f13b3916717d6"
+    },
+    {
+      "file": "risky.png",
+      "sha256": "ae602a2779362798978d15dcb5c22353751f97e114c5437d3ef12648f5e040d8"
+    },
+    {
+      "file": "RUNAWAY ORCHESTRATED ALBM ART.png",
+      "sha256": "53c4599eacec53e95f67a35c125de9a8bde7cab2797ce894ff0e6a1b37890b8b"
+    },
+    {
+      "file": "SO GOOD TO ME.png",
+      "sha256": "92ba79a05d44b78022aa73c8837d572d6b1de205edf46dab75303c7f8ffefd8b"
+    },
+    {
+      "file": "STARS.png",
+      "sha256": "b945a629507ca94df89a40ca4400597150cf55441169746dfb59766d6f1c9247"
+    },
+    {
+      "file": "stay in touch.png",
+      "sha256": "000592218e6a281cb0db52cacf1afb3e3ad40516e33d735d49cf9c06814c3878"
+    },
+    {
+      "file": "sunday mail.png",
+      "sha256": "e6a7384d82d67a297b2358f5aa0bdf7b48218ff5e1f19b3f826aeedf02fc87d0"
+    },
+    {
+      "file": "sunset DE.png",
+      "sha256": "5d18630fef762ea365e7cfebd15e5f0891d4f59f12af0ec8e454caeb5053ffed"
+    },
+    {
+      "file": "TDK.png",
+      "sha256": "6c9755da4cb8e511cb8dc29eadda8f44b85c7c522ad3874104867d24931df6fe"
+    },
+    {
+      "file": "thank god for drugs.png",
+      "sha256": "07dd29a2760a66bd2f75ac05718cddfd1fab4ddc99f612888f2f6d4736bba5e1"
+    },
+    {
+      "file": "Tropical satellite.png",
+      "sha256": "6ffac1657c152ac01ff070aff6100a2ed43f393f1cbc336fc7a158b79705f29e"
+    },
+    {
+      "file": "Untitled-1.png",
+      "sha256": "437b186e4aeef0afb177a621a64ffbdc9ae77a3dc1dded3f3a93a7167012b489"
+    },
+    {
+      "file": "WALK ON WATER.png",
+      "sha256": "2e48f12a18f944ab40cd677747f855a0900eb695808eef3d5b469a0a5ed96a38"
+    }
+  ],
   "screenshots": [
     {
       "file": "album-library.webp",
-      "caption": "iOpenPod album library with album artwork and the selected album track list",
-      "width": 1486,
-      "height": 993,
-      "bytes": 606932,
-      "sha256": "c4634758b0d5926099de47f1063ed624f886197e1dd9af798e6f18e6ae600fb5",
-      "capture_file": "Screenshot 2026-10-03 082040.png",
-      "capture_sha256": "40ab912154f7c0a8b27bb048af2e6c9ef94a36d733bd2a70c4f73ae12b1c14b7"
+      "caption": "iOpenPod album library with supplied artwork and the selected album track list",
+      "width": 1440,
+      "height": 960,
+      "bytes": 600044,
+      "sha256": "3e50fd10a3577bd40ef114466f99c5950f1ff81e7bf750f4f9d4b7dfe5579a92",
+      "capture_sha256": "8178e4416e211a6b06186925d640870db8988e61c911e303df6e9b6c8fa6adcc"
     },
     {
       "file": "media-folders.webp",
-      "caption": "Choose Media Folders dialog with per-folder media types and subfolder scanning",
-      "width": 1481,
-      "height": 987,
-      "bytes": 320118,
-      "sha256": "386e9a9879c2e40fe5698d08c3c2c331a2c873aec1a3f9b116695a91af5ae0cc",
-      "capture_file": "Screenshot 2026-10-03 082421.png",
-      "capture_sha256": "9e2f97fdc9f9305fee612bb503124af7de6b5f79d1f82e9b492a6f91d2a7ab09"
+      "caption": "Choose Media Folders with per-folder media types and subfolder scanning",
+      "width": 900,
+      "height": 600,
+      "bytes": 7634,
+      "sha256": "a1185ce253169f0272b01e7c3c7293abea00c2693742ab5e8917e6ff7b1875d9",
+      "capture_sha256": "fca53ca9dba1460b9e2dac88f8ab88864485d83483bfa2b3ff13fd1319bc464a"
     },
     {
       "file": "sync-media-selection.webp",
-      "caption": "Sync media selection with albums grouped as selected, mixed, and deselected",
-      "width": 1486,
-      "height": 993,
-      "bytes": 408670,
-      "sha256": "d0898d2981fa1ec88469136dee5eeef552b8aa364904251322b69c52917f531e",
-      "capture_file": "Screenshot 2026-10-03 082541.png",
-      "capture_sha256": "ac6b73188b18a363bf0cef6d1ccc877958d21bf2ba16dd0f5ea6bb39221853fe"
+      "caption": "Sync media selection with selected, mixed, and deselected sample albums",
+      "width": 1440,
+      "height": 1150,
+      "bytes": 332518,
+      "sha256": "9daee84ced4d67b918af6d39926b490e5240d7e841f123422ab6dde0b5ecb3bf",
+      "capture_sha256": "8a7e52cc442c485e36c1849b89a1ceae5504af002da02e47fcd33a806755b2ad"
     },
     {
       "file": "sync-change-review.webp",
-      "caption": "Sync Review with selected additions, unchecked removals, and items needing attention",
-      "width": 1486,
-      "height": 993,
-      "bytes": 28714,
-      "sha256": "0d08020e9eef15dc041d687269c761c92ea3e20cefe9e284e56221245700e116",
-      "capture_file": "Screenshot 2026-10-03 082621.png",
-      "capture_sha256": "70970ccb1c06abace82c0680e8c3370700c4afd1760fbf18bcc6e0580cb06093"
+      "caption": "Sync Review with selected sample additions and the Sync Selected action",
+      "width": 1440,
+      "height": 960,
+      "bytes": 28290,
+      "sha256": "86cdbae659325dd4ae66f301f2b3863dc400870d5f47b9fa703b032a8e16a1c9",
+      "capture_sha256": "87f751182b2c52f4c959df7142492b5f5a84f7557d5bf7329a9f6c875a82048c"
     },
     {
       "file": "audio-transcoding-settings.webp",
       "caption": "Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media",
-      "width": 1486,
-      "height": 993,
-      "bytes": 39458,
-      "sha256": "e7d5ee5fba9c632b23c968778de8db4e3b54d521d871ba2ece6cd29f067d64ff",
-      "capture_file": "Screenshot 2026-10-03 082631.png",
-      "capture_sha256": "ba87e95171ad281ca20dd911f08638c84cf55b40b6f4b4b189944f67724cb988"
+      "width": 1440,
+      "height": 960,
+      "bytes": 27936,
+      "sha256": "0b2981e970f9d80177eb8c10d49a89be70f2cdc20367721036935536ac2bcba5",
+      "capture_sha256": "f2506b8dcdaa8cf6a5e46e780b36ef83d8669f87ea899e5f0086f74c42f5faf5"
     },
     {
       "file": "track-metadata.webp",
-      "caption": "Edit Track dialog with title, artist, album, genre, composer, and track metadata",
-      "width": 1484,
-      "height": 989,
-      "bytes": 175484,
-      "sha256": "bad65f2b390ccfe89b9eafa216508373369469e43de89bb7d77032c081128d6a",
-      "capture_file": "Screenshot 2026-10-03 082709.png",
-      "capture_sha256": "209604c2e7eaf002edf46a98dead3f5679c9a56336e91f43f7cd642416566aaa"
+      "caption": "Edit Track with title, artist, album, genre, composer, and track metadata",
+      "width": 980,
+      "height": 740,
+      "bytes": 14646,
+      "sha256": "949e94fde45b946661d3b5eb463d923056d1112ae517c83101ef4059f054862e",
+      "capture_sha256": "eb3c4da4b71cb611c32c561368cdefe79dc95ef3e590d6f1772cf6776f0cb0ed"
     },
     {
       "file": "track-artwork.webp",
-      "caption": "Edit Track artwork tab with cover art and controls to choose or clear artwork",
-      "width": 1483,
-      "height": 990,
-      "bytes": 274866,
-      "sha256": "35c374901e919f635758ce9d42572533a018f192a66a4ddd47d7f22785568e26",
-      "capture_file": "Screenshot 2026-10-03 082716.png",
-      "capture_sha256": "bcdb610921906ee8208f24b37de7b4b21b55bbffaaf35d331319541d507536e9"
-    },
-    {
-      "file": "backups.webp",
-      "caption": "Backups page with saved Backup Snapshots and restore actions for the selected iPod",
-      "width": 1486,
-      "height": 993,
-      "bytes": 32116,
-      "sha256": "8a2063972f39c09c1e4501e42737dc4b66089b7e33d80ccfbf64d3663f442673",
-      "capture_file": "Screenshot 2026-10-03 082750.png",
-      "capture_sha256": "f36bbedbc22744b0edc479295525d0849a50e60ff1fabc00eb931a78292f787a"
+      "caption": "Edit Track artwork with supplied cover art and controls to choose or clear artwork",
+      "width": 980,
+      "height": 740,
+      "bytes": 75150,
+      "sha256": "e611e6ddbef730a68d51e43b2a83da208fcc2a2ca893503b982dd651546be092",
+      "capture_sha256": "a3df68018a8a16a46490c6077e9b3c7ee3eaf762522c9a804d0c49f8c3d4e3d0"
     },
     {
       "file": "smart-playlist.webp",
-      "caption": "Smart Playlist editor with rules for music released before 2000",
-      "width": 1487,
-      "height": 991,
-      "bytes": 137728,
-      "sha256": "bcbcbfa8145c8201d93442cad7b94ecddd32f1a731a3a7d68bfede315abda5a6",
-      "capture_file": "Screenshot 2026-10-03 082816.png",
-      "capture_sha256": "60a5dae31c37b128a5837791b57e70068047607f228d463015b74ffe88b2bb0f"
+      "caption": "Smart Playlist editor with an Ambient genre rule",
+      "width": 900,
+      "height": 620,
+      "bytes": 11154,
+      "sha256": "1291955cabe78cc48e5a058258ee93cc8d6db82ad13658841551f6101c82e82a",
+      "capture_sha256": "b4452eb8b2274ddda358af2ae28eb7e8eb6cd7921546d93cb4deef15cb5091ce"
     },
     {
       "file": "photo-albums.webp",
-      "caption": "Photo Library with the Manage Albums dialog and selected photo inspector",
-      "width": 1480,
-      "height": 988,
-      "bytes": 312052,
-      "sha256": "c69f818d1a4c0d3cc1c1e6a6d210b6fa1187eb3ae28378b202667a2081e4142b",
-      "capture_file": "Screenshot 2026-10-03 083318.png",
-      "capture_sha256": "5ec10219f13cbfa6284a9315aa66f6e095a9063db389f123ebbdcd506baca63e"
-    },
-    {
-      "file": "click-wheel-games.webp",
-      "caption": "Games page showing installed click wheel games and the Install Games button",
-      "captured_on": "2026-11-02",
-      "source": "User-provided Windows screenshot from Desktop, showing a personal iPod and media library.",
-      "width": 1741,
-      "height": 1048,
-      "bytes": 1157108,
-      "sha256": "3008c94b62338241c3dd94ef51400ba6eb8070758f75b0949fc2e9c694302597",
-      "capture_file": "Screenshot 2026-11-02 102848.png",
-      "capture_sha256": "0cdc88dba6af2ac2550c41715694d970c7263abfb56ad84b4dbd27b121e0a123"
+      "caption": "Photo Library with supplied artwork, sample photo albums, and the selected photo inspector",
+      "width": 1440,
+      "height": 960,
+      "bytes": 618652,
+      "sha256": "dba10c800689a12ccecb9065e3ba0434fcc0d15e8b9c0754245503bbb97e358f",
+      "capture_sha256": "3457ac43cb0fa743ba3c82224059a5807038e78bcd02d32b0b8207f983866dca"
     },
     {
       "file": "phase-playlist.webp",
-      "caption": "Phase Playlist with its game icon, track list, and Phase banner",
-      "captured_on": "2026-11-02",
-      "source": "User-provided Windows screenshot from Desktop, showing a personal iPod and media library.",
-      "width": 1741,
-      "height": 1048,
-      "bytes": 232134,
-      "sha256": "a6b5b83419af999a1b434766fb79b28d4d31496edd411c76920e6a0e1388a15e",
-      "capture_file": "Screenshot 2026-11-02 102901.png",
-      "capture_sha256": "cb9ea1bdc7a3443dc3b9dc5929c0a8ae78e7df6845d24256c4952771f467d3f3"
+      "caption": "Phase Playlist with sample tracks, supplied artwork, and the Phase banner",
+      "width": 1440,
+      "height": 960,
+      "bytes": 224554,
+      "sha256": "1c5289f1c0b41196f13c2a7022fabca42d3567ce08f730d4fdc80b990ce9bcb3",
+      "capture_sha256": "814b72f747366f7d89e9c9ce5cd7b6c63e14f61eb33a05d2b046a76edf2164ae"
+    },
+    {
+      "file": "click-wheel-games.webp",
+      "caption": "Games page with a sample installed-game inventory and the Install Games button",
+      "width": 1440,
+      "height": 960,
+      "bytes": 952994,
+      "sha256": "dac6d3ac5e06943aa2726f0e4ecb109990621025a50625a54e8a2a9574a790a6",
+      "capture_sha256": "ee5a69b1207d9a77440df8644712a7c8d6846efa92d741e1dfb27b0f92b84c43"
+    },
+    {
+      "file": "backups.webp",
+      "caption": "Backups page with fictional Backup Snapshots for the sample iPod",
+      "width": 1440,
+      "height": 960,
+      "bytes": 19568,
+      "sha256": "f9fc6de46b3e49e4e4b45643608fd53743b4216055126b8a69b90faadb249df5",
+      "capture_sha256": "381b603aa93eb4b07a3bb1563449f03f7e31b78e32c54550d908024116ce990d"
     }
   ]
 }

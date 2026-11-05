@@ -36,11 +36,29 @@ class PageId(StrEnum):
 _VIDEO_PAGES = frozenset(
     {PageId.MOVIES, PageId.TV_SHOWS, PageId.MUSIC_VIDEOS, PageId.VIDEOS}
 )
+_LIBRARY_PAGES = _VIDEO_PAGES | frozenset(
+    {
+        PageId.ALBUMS,
+        PageId.ARTISTS,
+        PageId.GENRES,
+        PageId.TRACKS,
+        PageId.PLAYLISTS,
+        PageId.GENIUS,
+        PageId.GAMES,
+        PageId.PHOTOS,
+        PageId.PODCASTS,
+        PageId.AUDIOBOOKS,
+    }
+)
 
 
 def page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
     """Share device capability visibility across Library navigation styles."""
 
+    if page_id is PageId.START:
+        return profile is None
+    if page_id in _LIBRARY_PAGES and profile is None:
+        return False
     if page_id is PageId.GAMES:
         return profile is not None and profile.capabilities.supports_games
     if page_id is PageId.GENIUS:

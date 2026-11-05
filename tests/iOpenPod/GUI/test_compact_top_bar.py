@@ -152,6 +152,7 @@ def test_dropdown_accessibility_retranslates_without_changing_selection(
     language: str, device_label: str
 ) -> None:
     bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
     translator = QTranslator()
     catalog = (
         Path(__file__).resolve().parents[3]
@@ -288,6 +289,7 @@ def test_action_navigation_skips_disabled_and_only_enter_activates(name: str) ->
 def test_playlist_keyboard_highlight_is_not_library_selection() -> None:
     workspace = _workspace()
     bar = CompactTopBar(playlists=workspace)
+    bar.set_active_ipod(_active_ipod())
     selected: list[object] = []
     bar.playlist_tree.selected.connect(selected.append)
     try:
@@ -325,6 +327,7 @@ def test_playlist_keyboard_highlight_is_not_library_selection() -> None:
 
 def test_pointer_click_commits_playlist_and_dismisses() -> None:
     bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
     selected: list[object] = []
     bar.playlist_tree.selected.connect(selected.append)
     try:
@@ -471,6 +474,7 @@ def test_unrelated_widget_receives_keyboard_input(
 
 def test_playlist_new_submenu_keeps_parent_open_and_escape_returns_to_parent() -> None:
     bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
     created: list[object] = []
     bar.playlist_tree.createRequested.connect(created.append)
     try:
@@ -493,6 +497,7 @@ def test_playlist_new_submenu_keeps_parent_open_and_escape_returns_to_parent() -
 
 def test_submenu_click_uses_same_explicit_activation_as_keyboard() -> None:
     bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
     try:
         _show(bar)
         QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Down)
@@ -578,6 +583,7 @@ def test_routes_availability_and_current_page_markers() -> None:
 def test_empty_or_locked_playlists_have_correct_keyboard_targets() -> None:
     workspace = LibraryWorkspace()
     bar = CompactTopBar(playlists=workspace)
+    bar.set_active_ipod(_active_ipod())
     try:
         _show(bar)
         QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Down)
@@ -617,6 +623,7 @@ def test_keyboard_menu_keeps_focus_with_pointer_elsewhere(name: str) -> None:
 
 def test_cancelled_heading_press_does_not_leave_pressed_state() -> None:
     bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
     try:
         _show(bar)
         button = _button(bar, "compactAudio")
@@ -633,6 +640,7 @@ def test_cancelled_heading_press_does_not_leave_pressed_state() -> None:
 
 def test_nested_menu_outside_click_closes_the_whole_dropdown() -> None:
     bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
     try:
         _show(bar)
         QTest.keyClick(_button(bar, "compactPlaylists"), Qt.Key.Key_Return)
@@ -652,6 +660,7 @@ def test_active_action_becoming_unavailable_moves_keyboard_highlight(
     change: str,
 ) -> None:
     bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
     try:
         _show(bar)
         QTest.keyClick(_button(bar, "compactAudio"), Qt.Key.Key_Return)
@@ -674,6 +683,7 @@ def test_long_playlist_menu_scrolls_to_keyboard_highlight_without_selection() ->
         LibrarySnapshot(playlists=tuple(Playlist(i, f"Mix {i:03}") for i in range(100)))
     )
     bar = CompactTopBar(playlists=workspace)
+    bar.set_active_ipod(_active_ipod())
     selected: list[object] = []
     bar.playlist_tree.selected.connect(selected.append)
     try:
@@ -739,6 +749,7 @@ def test_drag_hover_opens_menu_expands_folder_and_drops_into_shared_workspace(
 ) -> None:
     workspace = _workspace()
     bar = CompactTopBar(playlists=workspace)
+    bar.set_active_ipod(_active_ipod())
     monkeypatch.setattr(QApplication, "mouseButtons", lambda: Qt.MouseButton.LeftButton)
     data = TrackSelectionMimeData(workspace, (10,))
     try:
@@ -791,6 +802,7 @@ def test_drag_hover_opens_menu_expands_folder_and_drops_into_shared_workspace(
 def test_invalid_or_abandoned_drag_never_opens_the_popup(invalid: str) -> None:
     workspace = _workspace()
     bar = CompactTopBar(playlists=workspace)
+    bar.set_active_ipod(_active_ipod())
     data = TrackSelectionMimeData(
         _workspace() if invalid == "foreign" else workspace, (10,)
     )
@@ -819,6 +831,7 @@ def test_open_drag_popup_closes_after_cancel_or_library_change(
 ) -> None:
     workspace = _workspace()
     bar = CompactTopBar(playlists=workspace)
+    bar.set_active_ipod(_active_ipod())
     held = True
     monkeypatch.setattr(
         QApplication,
@@ -857,6 +870,7 @@ def test_drag_scrolls_at_popup_edge_to_reach_a_lower_playlist(
         )
     )
     bar = CompactTopBar(playlists=workspace)
+    bar.set_active_ipod(_active_ipod())
     monkeypatch.setattr(QApplication, "mouseButtons", lambda: Qt.MouseButton.LeftButton)
     data = TrackSelectionMimeData(workspace, (10,))
     try:
@@ -919,6 +933,7 @@ def test_small_themed_popup_has_no_unnecessary_scrollbar(mode: AppearanceMode) -
     theme = ThemeManager(APPLICATION, settings)
     theme.set_mode(mode)
     bar = CompactTopBar(playlists=_workspace(), theme=theme)
+    bar.set_active_ipod(_active_ipod())
     try:
         bar.show()
         _hover_playlists(bar)

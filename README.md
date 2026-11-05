@@ -27,7 +27,7 @@ See [iPod compatibility](#ipod-compatibility) before getting started.
 [Discord](https://discord.gg/9Yy499Tf5d) ·
 [Support development](https://ko-fi.com/johngibbons)
 
-![iOpenPod album library with album artwork and the selected album track list](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/album-library.webp)
+![iOpenPod album library with supplied artwork and the selected album track list](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/album-library.webp)
 
 ## Download and install
 
@@ -164,11 +164,11 @@ and save those edits together. Sync always has its own selection and review flow
 
 | Track metadata                                                                                                                                                                                | Track artwork                                                                                                                                                                             |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![Edit Track dialog with title, artist, album, genre, composer, and track metadata](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/track-metadata.webp) | ![Edit Track artwork tab with cover art and controls to choose or clear artwork](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/track-artwork.webp) |
+| ![Edit Track with title, artist, album, genre, composer, and track metadata](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/track-metadata.webp) | ![Edit Track artwork with supplied cover art and controls to choose or clear artwork](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/track-artwork.webp) |
 
 | Smart Playlists                                                                                                                                                              | Backup Snapshots                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![Smart Playlist editor with rules for music released before 2000](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/smart-playlist.webp) | ![Backups page with saved Backup Snapshots and restore actions for the selected iPod](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/backups.webp) |
+| ![Smart Playlist editor with an Ambient genre rule](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/smart-playlist.webp) | ![Backups page with fictional Backup Snapshots for the sample iPod](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/backups.webp) |
 
 ![Audio transcoding settings for encoder, bitrate, lossless conversion, and spoken-word media](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/audio-transcoding-settings.webp)
 
@@ -184,7 +184,7 @@ individual games. No virtual machine is required.
 The first download needs an internet connection; later visits reuse the files
 on your computer. Game compatibility depends on your iPod model and firmware.
 
-![Games page showing installed click wheel games and the Install Games button](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/click-wheel-games.webp)
+![Games page with a sample installed-game inventory and the Install Games button](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/click-wheel-games.webp)
 
 ### Make a Phase Playlist from your music
 
@@ -202,7 +202,7 @@ Media Tools → Set Up Phase Analysis** to download optional instrument analysis
 setup can use several gigabytes. If optional analysis cannot run, iOpenPod uses
 acoustic analysis. Audio decoding uses your configured FFmpeg executable.
 
-![Phase Playlist with its game icon, track list, and Phase banner](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/phase-playlist.webp)
+![Phase Playlist with sample tracks, supplied artwork, and the Phase banner](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/phase-playlist.webp)
 
 ## How to use
 
@@ -222,9 +222,9 @@ without generating a new fingerprint.
 
 | Media folders                                                                                                                                                                              | Sync selection                                                                                                                                                                                 |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![Choose Media Folders dialog with per-folder media types and subfolder scanning](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/media-folders.webp) | ![Sync media selection with albums grouped as selected, mixed, and deselected](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/sync-media-selection.webp) |
+| ![Choose Media Folders with per-folder media types and subfolder scanning](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/media-folders.webp) | ![Sync media selection with selected, mixed, and deselected sample albums](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/sync-media-selection.webp) |
 
-![Sync Review with selected additions, unchecked removals, and items needing attention](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/sync-change-review.webp)
+![Sync Review with selected sample additions and the Sync Selected action](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/sync-change-review.webp)
 
 ## iPod compatibility
 
@@ -250,7 +250,7 @@ must already be able to read and write the iPod’s filesystem.
 * [Troubleshoot an iPod that is not detected](https://iopenpod.com/guides/ipod-not-detected/)
   — check the connection and whether the computer can access the device.
 
-![Photo Library with the Manage Albums dialog and selected photo inspector](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/photo-albums.webp)
+![Photo Library with supplied artwork, sample photo albums, and the selected photo inspector](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/photo-albums.webp)
 
 ## Develop and contribute
 

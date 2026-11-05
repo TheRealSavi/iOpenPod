@@ -1,15 +1,19 @@
 # Onboarding screenshots
 
 These PNGs are captures of the real iOpenPod Qt widgets using a fictional Library
-and the application's bundled device portraits. Album illustrations come from
-the existing deterministic screenshot fixtures. No personal media, settings,
+and the application's bundled device portraits. Album artwork comes from the supplied GenericArt folder, using the same
+filename ordering as the website and Store captures. No personal media, settings,
 network services, or physical iPods are used.
 
 Regenerate on Windows with:
 
 ```shell
-uv run python -m scripts.capture_onboarding_screenshots
+uv run python -m scripts.capture_onboarding_screenshots --artwork-dir "C:\Users\JohnG\Desktop\GenericArt"
 ```
+
+The source images remain external capture inputs and are never modified.
+`manifest.json` records their filenames and SHA-256 hashes alongside the output
+hashes. The folder must contain at least 24 PNG images.
 
 The script uses the offscreen Qt platform and explicitly loads the installed
 Segoe UI fonts. It captures navigation, all three Library layouts, both device
@@ -22,6 +26,8 @@ The compact navigation capture uses a 960-pixel-wide window and its top 240 pixe
 the whole navigation bar, Albums heading, and upper artwork row remain visible.
 The Sync entry captures focus on the pressed button and neighboring Library UI.
 The folders and Sync stages use simulated selections; no scan or transfer runs.
+Select Media shows three selected and three deselected Albums, including an
+already-synced Album with the iPod symbol.
 The Review capture uses the workspace's available-execution state to show the
 real Sync Selected action. Tutorial pages explain these controls without editing
 transcoding or Library-draft settings.

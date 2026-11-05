@@ -99,6 +99,16 @@
         "file": "screenshots/06-about-and-credits.png",
         "caption": "Free and open source, with optional donations and acknowledgements for the projects that make iOpenPod possible.",
         "deviceFamily": "Desktop"
+      },
+      {
+        "file": "screenshots/07-sync-selection.png",
+        "caption": "Select media from a fictional Host library before reviewing the Sync Plan.",
+        "deviceFamily": "Desktop"
+      },
+      {
+        "file": "screenshots/08-transcoding-settings.png",
+        "caption": "Choose audio and video conversion settings in the real iOpenPod Settings page.",
+        "deviceFamily": "Desktop"
       }
     ],
     "appTileIcon": {

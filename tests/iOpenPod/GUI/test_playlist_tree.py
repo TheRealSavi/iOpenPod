@@ -24,6 +24,9 @@ from PySide6.QtWidgets import (
     QToolButton,
     QTreeView,
 )
+from tests.iOpenPod.GUI.test_compact_top_bar import (
+    _active_ipod,  # pyright: ignore[reportPrivateUsage]
+)
 from tests.iOpenPod.playback_test_support import FakePlaybackBackend
 
 from iOpenPod.app.library_workspace import LibraryWorkspace
@@ -406,6 +409,7 @@ def test_long_playlist_lists_scroll_with_library_and_reveal_keyboard_selection()
         LibrarySnapshot(playlists=tuple(Playlist(i, f"Mix {i}") for i in range(100)))
     )
     sidebar = Sidebar(playlists=workspace)
+    sidebar.set_active_ipod(_active_ipod())
     sidebar.resize(256, 800)
     tree = sidebar.findChild(QTreeView, "playlistTree")
     scroll = sidebar.findChild(QScrollArea, "sidebarScroll")

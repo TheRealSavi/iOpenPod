@@ -8,6 +8,9 @@ from tests.iOpenPod.GUI.application_shell_test_support import (
     APPLICATION,
     build_context,
 )
+from tests.iOpenPod.GUI.test_compact_top_bar import (
+    _active_ipod,  # pyright: ignore[reportPrivateUsage]
+)
 
 from iOpenPod.app.core.settings.definitions import (
     NAVIGATION_STYLE,
@@ -39,6 +42,7 @@ def test_compact_playlist_highlighting_never_navigates_until_activation() -> Non
         bar = window.findChild(CompactTopBar)
         pages = window.findChild(QStackedWidget, "pageStack")
         assert bar is not None and pages is not None
+        bar.set_active_ipod(_active_ipod())
         bar.pageRequested.emit(PageId.ARTISTS.value)
         current = pages.currentWidget()
         button = bar.findChild(QPushButton, "compactPlaylists")
