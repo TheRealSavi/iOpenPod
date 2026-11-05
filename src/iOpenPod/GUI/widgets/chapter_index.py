@@ -1,4 +1,4 @@
-"""A compact, anchored chapter index for the audiobook Player action."""
+"""A compact, anchored chapter index for the Player's book action."""
 
 from PySide6.QtCore import (
     QEvent,
@@ -6,12 +6,15 @@ from PySide6.QtCore import (
     QObject,
     QPersistentModelIndex,
     QPoint,
+    QRect,
     QRectF,
     QSize,
     Qt,
     Signal,
 )
 from PySide6.QtGui import (
+    QFont,
+    QFontMetrics,
     QIcon,
     QKeyEvent,
     QPainter,
@@ -49,7 +52,59 @@ from iPodDB.library import TrackChapter
 _ARTWORK_TIME_ROLE = Qt.ItemDataRole.UserRole
 
 
-class _ChapterArtworkDelegate(QStyledItemDelegate):
+class _ChapterTextDelegate(QStyledItemDelegate):
+    """Keep chapter titles bold and their timestamps in the ordinary row font."""
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> None:
+        styled = QStyleOptionViewItem(option)
+        self.initStyleOption(styled, index)
+        self._paint_item(painter, styled)
+
+    def _paint_item(self, painter: QPainter, styled: QStyleOptionViewItem) -> None:
+        style = styled.widget.style() if styled.widget else QApplication.style()
+        rect = style.subElementRect(
+            QStyle.SubElement.SE_ItemViewItemText, styled, styled.widget
+        )
+        # initStyleOption normalizes newlines to Unicode line separators.
+        title, _, timestamp = styled.text.replace("\u2028", "\n").rpartition("\n")
+        styled.text = ""
+        style.drawControl(
+            QStyle.ControlElement.CE_ItemViewItem, styled, painter, styled.widget
+        )
+        title_font = QFont(styled.font)
+        title_font.setBold(True)
+        title_metrics = QFontMetrics(title_font)
+        time_metrics = QFontMetrics(styled.font)
+        top = (
+            rect.top()
+            + (rect.height() - title_metrics.height() - time_metrics.height()) // 2
+        )
+        painter.save()
+        painter.setClipRect(rect)
+        for text, font, metrics in (
+            (title, title_font, title_metrics),
+            (timestamp, styled.font, time_metrics),
+        ):
+            painter.setFont(font)
+            style.drawItemText(
+                painter,
+                QRect(rect.left(), top, rect.width(), metrics.height()),
+                Qt.AlignmentFlag.AlignLeading | Qt.AlignmentFlag.AlignVCenter,
+                QApplication.palette(),
+                bool(styled.state & QStyle.StateFlag.State_Enabled),
+                metrics.elidedText(text, styled.textElideMode, rect.width()),
+                QPalette.ColorRole.Text,
+            )
+            top += metrics.height()
+        painter.restore()
+
+
+class _ChapterArtworkDelegate(_ChapterTextDelegate):
     """Request exact chapter thumbnails only when the view paints visible rows."""
 
     def __init__(self, provider: ArtworkPixmapProvider, view: QListWidget) -> None:
@@ -119,9 +174,7 @@ class _ChapterArtworkDelegate(QStyledItemDelegate):
         styled.icon = QIcon(pixmap)
         styled.decorationSize = QSize(size, size)
         styled.features |= QStyleOptionViewItem.ViewItemFeature.HasDecoration
-        self._view.style().drawControl(
-            QStyle.ControlElement.CE_ItemViewItem, styled, painter, self._view
-        )
+        self._paint_item(painter, styled)
 
 
 class ChapterIndexPopup(AnimatedPopup):
@@ -156,8 +209,9 @@ class ChapterIndexPopup(AnimatedPopup):
             if artwork_provider is not None
             else None
         )
-        if self._artwork_delegate is not None:
-            self._list.setItemDelegate(self._artwork_delegate)
+        self._list.setItemDelegate(
+            self._artwork_delegate or _ChapterTextDelegate(self._list)
+        )
         self._list.setUniformItemSizes(True)
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)

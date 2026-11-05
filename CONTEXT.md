@@ -1101,8 +1101,10 @@ selects the previous chapter, or follows Track History at the start of the Track
 Next moves through chapters before advancing to the next Track. Decoder completion
 always advances Tracks independently of its last reported position. Playback uses
 ordered, unique starts within the Track duration without changing retained metadata.
-For Audiobooks, a book action replaces the visualizer action and opens a compact
-Chapter index beneath the Player. Selecting a chapter seeks to its start without
+Any Track with reachable chapters shows a book action that opens a compact Chapter
+index beneath the Player. Non-Audiobook Tracks retain the visualizer action beside
+it. Audiobooks show only the book action, including when they have no chapters.
+Selecting a chapter seeks to its start without
 changing the playing or paused state. The index highlights the current chapter and
 shows a read-only empty state when the Audiobook has no chapter metadata.
 Visible Chapter rows show their exact artwork image when available. During Host

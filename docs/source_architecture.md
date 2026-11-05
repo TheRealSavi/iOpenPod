@@ -2420,13 +2420,14 @@ current chapter title to the Track title, including during scrubbing. Hovering a
 marker shows its title and full timestamp with milliseconds; marker geometry and
 hit testing share the styled slider's handle endpoints and layout direction.
 
-For Tracks classified as Audiobooks, the Player action above the rating uses the
-existing book glyph and opens a screen-bounded chapter index instead of Synesthesia.
+For any Track with reachable chapters, the Player shows a book action above the
+rating that opens a screen-bounded chapter index. Non-Audiobook Tracks retain the
+Synesthesia action beside it. Audiobooks show only the book action, including when
+they have no chapters.
 The popup lists the same reachable chapters, highlights the current chapter, and
 routes selection through the ordinary Player seek intent. It owns no transport or
 Library mutation. Selection, Escape, an outside click, or a current-Track change
-dismisses it; a chapterless Audiobook shows an empty state. Other media keep the
-Synesthesia action.
+dismisses it; a chapterless Audiobook shows an empty state.
 The chapter index and statuses popup share one clipped panel animation: a 280 ms
 OutBack entrance with 0.8 overshoot and a 190 ms InCubic exit. The chapter index
 reveals downward from the Player, reversing direction when screen space requires

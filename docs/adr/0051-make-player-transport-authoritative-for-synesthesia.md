@@ -36,7 +36,9 @@ decode audio for playback, and it does not create another media player.
 
 The Player exposes one Synesthesia action above the current Track's rating for
 non-Audiobook Tracks. Audiobooks use that position for a chapter index action. The
-Synesthesia action has no sidebar counterpart. Invoking it opens the internal Synesthesia page
+chapter index action also appears beside Synesthesia for any other Track with
+reachable chapters. The Synesthesia action has no sidebar counterpart. Invoking it
+opens the internal Synesthesia page
 and starts a fresh Musical Analysis Job for the current Playback Entry. While the
 page remains active, a successor Playback Entry starts a replacement Job; metadata
 reconciliation within the same entry does not. Leaving the page cancels and

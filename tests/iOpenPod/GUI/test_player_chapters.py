@@ -144,18 +144,23 @@ def test_chapter_index_respects_disabled_widget_animation(
         context.shutdown()
 
 
+@pytest.mark.parametrize(
+    "media_type",
+    (MediaType.AUDIOBOOK, MediaType.AUDIO, MediaType.PODCAST, MediaType.VIDEO),
+)
 @pytest.mark.parametrize("paused", (False, True))
-def test_audiobook_book_action_opens_index_and_click_seeks_without_restarting(
+def test_book_action_opens_index_and_click_seeks_without_restarting(
     paused: bool,
+    media_type: MediaType,
 ) -> None:
     backend = FakePlaybackBackend()
     context = build_context(playback_backend=backend)
     window = MainWindow(context, auto_discover=False)
     controller = context.playback_controller
-    audiobook = replace(_track(), media_types=(MediaType.AUDIOBOOK,))
+    track = replace(_track(), media_types=(media_type,))
     try:
         window.show()
-        controller.play_now((audiobook, _track()))
+        controller.play_now((track, _track()))
         if paused:
             controller.pause()
         APPLICATION.processEvents()
@@ -165,7 +170,9 @@ def test_audiobook_book_action_opens_index_and_click_seeks_without_restarting(
         chapters = window.findChild(QListWidget, "playerChapterList")
         assert button is not None and player is not None
         assert popup is not None and chapters is not None
-        assert window.findChild(IconButton, "playerVisualizer") is None
+        visualizer = window.findChild(IconButton, "playerVisualizer")
+        assert visualizer is not None
+        assert visualizer.isVisible() is (media_type is not MediaType.AUDIOBOOK)
         assert button.accessibleName() == "Show Chapters"
         visualizer_requests: list[bool] = []
         player.visualizerRequested.connect(lambda: visualizer_requests.append(True))
@@ -198,7 +205,7 @@ def test_audiobook_book_action_opens_index_and_click_seeks_without_restarting(
         assert controller.history_model.entries == history
         assert controller.queue_model.entries == queue
         assert controller.playing is not paused
-        assert backend.started == [audiobook]
+        assert backend.started == [track]
         assert not popup.isVisible() and not button.isChecked()
         assert visualizer_requests == []
 
@@ -250,7 +257,8 @@ def test_audiobook_index_keyboard_toggle_track_changes_and_empty_state() -> None
         assert not popup.isVisible()
         visualizer = window.findChild(IconButton, "playerVisualizer")
         assert visualizer is not None
-        assert visualizer is button
+        assert visualizer is not button
+        assert visualizer.isVisible() and button.isVisible()
         assert visualizer.icon().pixmap(18, 18).toImage() != book_icon
         requests: list[bool] = []
         # Exercise the Player intent without opening a real visualizer page.
@@ -273,6 +281,49 @@ def test_audiobook_index_keyboard_toggle_track_changes_and_empty_state() -> None
         button.click()
         controller.clear_session()
         assert not popup.isVisible()
+    finally:
+        window.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize("media_type", tuple(MediaType))
+def test_player_actions_follow_chapter_metadata_and_media_type(
+    media_type: MediaType,
+) -> None:
+    context = build_context()
+    window = MainWindow(context, auto_discover=False)
+    controller = context.playback_controller
+    track = replace(_track(), media_types=(media_type,))
+    try:
+        window.show()
+        controller.play_now((track,))
+        APPLICATION.processEvents()
+        book = window.findChild(IconButton, "playerChapters")
+        visualizer = window.findChild(IconButton, "playerVisualizer")
+        popup = window.findChild(ChapterIndexPopup)
+        player = window.findChild(PlayerBar)
+        assert book is not None and visualizer is not None
+        assert popup is not None and player is not None
+        assert book.isVisible()
+        assert visualizer.isVisible() is (media_type is not MediaType.AUDIOBOOK)
+        requests: list[bool] = []
+        player.visualizerRequested.disconnect()
+        player.visualizerRequested.connect(lambda: requests.append(True))
+        if visualizer.isVisible():
+            visualizer.click()
+            assert requests == [True]
+        book.click()
+        assert popup.is_open
+
+        controller.reconcile_library((replace(track, metadata=TrackMetadata()),))
+        assert not popup.isVisible() and not book.isChecked()
+        assert book.isVisible() is (media_type is MediaType.AUDIOBOOK)
+        assert visualizer.isVisible() is (media_type is not MediaType.AUDIOBOOK)
+        controller.reconcile_library((track,))
+        assert book.isVisible()
+        controller.clear_session()
+        assert not book.isVisible()
+        assert not visualizer.isEnabled()
     finally:
         window.close()
         context.shutdown()
