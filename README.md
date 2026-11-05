@@ -12,17 +12,21 @@ iOpenPod
 <p align="center"><strong>Manage your iPod without iTunes.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/TheRealSavi/iOpenPod/releases/latest"><img src="https://img.shields.io/github/v/release/TheRealSavi/iOpenPod?style=flat&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=7656c9&amp;label=release" alt="Latest release"></a>
-  <a href="#download-and-install"><img src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-7656c9?style=flat" alt="Available for Windows, macOS, and Linux"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-7656c9?style=flat&amp;labelColor=242938" alt="GPL-3.0-or-later license"></a>
-  <a href="https://discord.gg/9Yy499Tf5d"><img src="https://img.shields.io/badge/Discord-Join%20us-5865f2?style=flat&amp;logo=discord&amp;logoColor=white&amp;labelColor=242938" alt="Join the Discord community"></a>
+  <a href="https://github.com/TheRealSavi/iOpenPod/releases/latest"><img src="https://img.shields.io/github/v/release/TheRealSavi/iOpenPod?style=plastic&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=7656c9&amp;label=Release" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-7656c9?style=plastic&amp;labelColor=242938&amp;logo=GPLv3&amp;label=License" alt="GPL-3.0-or-later license"></a>
+  <a href="https://discord.gg/9Yy499Tf5d"><img src="https://img.shields.io/badge/Discord-Join%20us-5865f2?style=plastic&amp;logo=discord&amp;logoColor=white&amp;labelColor=242938" alt="Join the Discord community"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/TheRealSavi/iOpenPod/releases"><img src="https://img.shields.io/github/downloads/TheRealSavi/iOpenPod/total?style=flat&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=2ea44f&amp;label=GitHub%20downloads" alt="Total GitHub release-asset downloads" title="All assets across all GitHub releases"></a>
-  <a href="https://pepy.tech/projects/iopenpod"><img src="https://img.shields.io/pepy/dt/iopenpod?style=flat&amp;logo=pypi&amp;logoColor=white&amp;labelColor=242938&amp;color=3776ab&amp;label=PyPI%20downloads" alt="Total PyPI downloads via Pepy, including known mirrors" title="All-time PyPI downloads via Pepy, including known mirrors"></a>
-  <a href="https://github.com/TheRealSavi/iOpenPod/stargazers"><img src="https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=flat&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=e3b341" alt="GitHub stars"></a>
-  <a href="https://github.com/TheRealSavi/iOpenPod/graphs/contributors"><img src="https://img.shields.io/github/contributors/TheRealSavi/iOpenPod?style=flat&amp;labelColor=242938&amp;color=7656c9" alt="GitHub contributors"></a>
+  <a href="https://github.com/TheRealSavi/iOpenPod/releases"><img src="https://img.shields.io/github/downloads/TheRealSavi/iOpenPod/total?style=plastic&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=2ea44f&amp;label=GitHub%20Downloads" alt="Total GitHub release-asset downloads" title="All assets across all GitHub releases"></a>
+  <a href="https://pepy.tech/projects/iopenpod"><img src="https://img.shields.io/pepy/dt/iopenpod?style=plastic&amp;logo=pypi&amp;logoColor=white&amp;labelColor=242938&amp;color=3776ab&amp;label=PyPI%20Downloads" alt="Total PyPI downloads via Pepy, including known mirrors" title="All-time PyPI downloads via Pepy, including known mirrors"></a>
+  <a href="https://github.com/TheRealSavi/iOpenPod/stargazers"><img src="https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=plastic&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=e3b341&amp;label=Stars" alt="GitHub stars"></a>
+
+</p>
+
+<p align=center>
+<a href="https://ko-fi.com/johngibbons"><img src="https://ko-fi.com/img/githubbutton_sm.svg">
+</a>
 </p>
 
 <p align="center">
@@ -379,10 +383,14 @@ Read [AGENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/main/AGENTS.md), t
 
 ## Support
 
-**Every feature is free.** Donations are optional and help a lot to support continued development.
+**I plan to keep everything free.** Donations are optional and help a lot to support continued development.
+<p>
+<a href="https://ko-fi.com/johngibbons"><img src="https://ko-fi.com/img/githubbutton_sm.svg">
+</a>
 
-[![Support development on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20development-7656c9?style=for-the-badge)](https://ko-fi.com/johngibbons)
-[![Join the Discord community](https://img.shields.io/badge/Discord-Join%20the%20community-5865f2?style=for-the-badge)](https://discord.gg/9Yy499Tf5d)
+Starring the project on GitHub helps a lot too!
+
+  <a href="https://github.com/TheRealSavi/iOpenPod/stargazers"><img src="https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=plastic&amp;logo=github&amp;logoColor=white&amp;labelColor=242938&amp;color=ff6a6a&amp;label=Stars" alt="GitHub stars"></a>
 
 ## Star history
 
@@ -396,11 +404,15 @@ Read [AGENTS.md](https://github.com/TheRealSavi/iOpenPod/blob/main/AGENTS.md), t
 
 ## Related projects
 
-* [libgpod](https://github.com/gtkpod/libgpod) - C library for iPod database access (the reference implementation this project learned from)
+* [libgpod](https://github.com/gtkpod/libgpod) - C library for iPod database access.
 
-* [gtkpod](https://github.com/gtkpod/gtkpod) - GTK+ iPod manager
+* [Rockbox](https://www.rockbox.org/) - Open-source firmware replacement for iPods.
 
-* [Rockbox](https://www.rockbox.org/) - Open-source firmware replacement for iPods
+* [wInd3x](https://github.com/freemyipod/wInd3x) - Tethered clickwheel iPod bootrom/DFU exploit tool.
+
+* [Sphinxmoth](https://github.com/dantidote/sphinxmoth) - A working flash mod for FireWire iPods (1st/2nd gen).
+
+* [PyMobileDevice3](https://github.com/doronz88/pymobiledevice3) - Python 3 implementation for interacting with iOS devices (iPhone, iPad, ...).
 
 ## License and credits
 
