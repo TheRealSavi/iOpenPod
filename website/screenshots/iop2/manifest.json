@@ -6,99 +6,171 @@
   "artwork": [
     {
       "file": "25 blimps back.png",
-      "sha256": "fb258a27f93942b2de619798f2499fc0f5bd6669af8fa1865730ef26d8b2af79"
+      "sha256": "fb258a27f93942b2de619798f2499fc0f5bd6669af8fa1865730ef26d8b2af79",
+      "album": "25 Blimps",
+      "artist": "Airship Club",
+      "genre": "Ambient"
     },
     {
       "file": "ADMIT IT space.png",
-      "sha256": "667cb5186325b73ed38c2530bba6897cd296c42a644ee92295ab08a839460f66"
+      "sha256": "667cb5186325b73ed38c2530bba6897cd296c42a644ee92295ab08a839460f66",
+      "album": "Admit It",
+      "artist": "Violet Orbit",
+      "genre": "Electronic"
     },
     {
       "file": "all i need.png",
-      "sha256": "762d9f5151405e029334bf9a679948ac22081c5859da745fd9096ee9c73b5ee9"
+      "sha256": "762d9f5151405e029334bf9a679948ac22081c5859da745fd9096ee9c73b5ee9",
+      "album": "All I Need",
+      "artist": "Ember Theory",
+      "genre": "Alternative"
     },
     {
       "file": "baby blue.png",
-      "sha256": "86b15f5233381583b6c96bd98ee6a960b2f74d401eac03bcc9d97e6653147d0f"
+      "sha256": "86b15f5233381583b6c96bd98ee6a960b2f74d401eac03bcc9d97e6653147d0f",
+      "album": "Baby Blue",
+      "artist": "June Aviary",
+      "genre": "Indie Pop"
     },
     {
       "file": "CD.png",
-      "sha256": "b7b03505c4adfc4f9be989475c5aafcc037ac5d16d86e39d4d938ae2dfdd11a5"
+      "sha256": "b7b03505c4adfc4f9be989475c5aafcc037ac5d16d86e39d4d938ae2dfdd11a5",
+      "album": "Compact Disc",
+      "artist": "Prism Relay",
+      "genre": "Electronic"
     },
     {
       "file": "coachella wave.png",
-      "sha256": "e5c671cd56b73d911bd9b20e89bfc8d5e4876f03ce7f4b0de1c647cd9493ab6f"
+      "sha256": "e5c671cd56b73d911bd9b20e89bfc8d5e4876f03ce7f4b0de1c647cd9493ab6f",
+      "album": "Desert Wave",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
     },
     {
       "file": "color way.png",
-      "sha256": "8ff4f0c83a79bccd8c477735a8730edc4c59cf7addb143b436a93d996355746f"
+      "sha256": "8ff4f0c83a79bccd8c477735a8730edc4c59cf7addb143b436a93d996355746f",
+      "album": "Colorway",
+      "artist": "Chromatic Bloom",
+      "genre": "Psychedelic Pop"
     },
     {
       "file": "daylight.png",
-      "sha256": "0b725e34fc8668140799e8c7549cd63f5af94cc5a0fd6e9b23c43e50c1afaa5b"
+      "sha256": "0b725e34fc8668140799e8c7549cd63f5af94cc5a0fd6e9b23c43e50c1afaa5b",
+      "album": "Daylight",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
     },
     {
       "file": "ECLIPSE.png",
-      "sha256": "afe44aefde254ec3a88179823029d1b4c649dbaa7c7d31be92e73b8b5dc1327a"
+      "sha256": "afe44aefde254ec3a88179823029d1b4c649dbaa7c7d31be92e73b8b5dc1327a",
+      "album": "Eclipse",
+      "artist": "Violet Orbit",
+      "genre": "Electronic"
     },
     {
       "file": "GHOSTS VHS glow.png",
-      "sha256": "b02b304497eeb2e160eca4944bef148b2e6b921354136f3532494687a8e337c5"
+      "sha256": "b02b304497eeb2e160eca4944bef148b2e6b921354136f3532494687a8e337c5",
+      "album": "Ghosts on VHS",
+      "artist": "Midnight Rental",
+      "genre": "Synthwave"
     },
     {
       "file": "highs and lows.png",
-      "sha256": "58c9d9b99453c9b63147c78baf82f6e9b4f95c72325f28b42a792e89ced91225"
+      "sha256": "58c9d9b99453c9b63147c78baf82f6e9b4f95c72325f28b42a792e89ced91225",
+      "album": "Highs and Lows",
+      "artist": "Ember Theory",
+      "genre": "Alternative"
     },
     {
       "file": "KIDS SEE GHOSTS.png",
-      "sha256": "5e483ca87d6ecab13cb8cbb5ec8d5cc971033600b8298fbf58e4da47e9bec20d"
+      "sha256": "5e483ca87d6ecab13cb8cbb5ec8d5cc971033600b8298fbf58e4da47e9bec20d",
+      "album": "Kids See Ghosts",
+      "artist": "Cloud Parade",
+      "genre": "Psychedelic Pop"
     },
     {
       "file": "love story.png",
-      "sha256": "6af1b4439f8f548f8966bf8b68c58592cbdad08c14116bc61c2418aa1eb0f84d"
+      "sha256": "6af1b4439f8f548f8966bf8b68c58592cbdad08c14116bc61c2418aa1eb0f84d",
+      "album": "Love Story",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
     },
     {
       "file": "OCEAN WAVES.png",
-      "sha256": "5d0c6c3996823eca4d2b8df6390e0c88b1a736412c311189fca319b7c3c21441"
+      "sha256": "5d0c6c3996823eca4d2b8df6390e0c88b1a736412c311189fca319b7c3c21441",
+      "album": "Ocean Waves",
+      "artist": "Tide Atlas",
+      "genre": "Ambient"
     },
     {
       "file": "peaceful.png",
-      "sha256": "7ff2bf5eeb562d3216667a10faa8ed1522126be24310ba1a9012f914d85ad19f"
+      "sha256": "7ff2bf5eeb562d3216667a10faa8ed1522126be24310ba1a9012f914d85ad19f",
+      "album": "Peaceful",
+      "artist": "Meadow Thread",
+      "genre": "Folk"
     },
     {
       "file": "REFLECT.png",
-      "sha256": "cd2e5537311d4d4a1229d14087e080a3c743f9b46a248cc3260f13b3916717d6"
+      "sha256": "cd2e5537311d4d4a1229d14087e080a3c743f9b46a248cc3260f13b3916717d6",
+      "album": "Reflect",
+      "artist": "Glass District",
+      "genre": "Electronic"
     },
     {
       "file": "risky.png",
-      "sha256": "ae602a2779362798978d15dcb5c22353751f97e114c5437d3ef12648f5e040d8"
+      "sha256": "ae602a2779362798978d15dcb5c22353751f97e114c5437d3ef12648f5e040d8",
+      "album": "Risky",
+      "artist": "Velvet Signal",
+      "genre": "Alternative"
     },
     {
       "file": "RUNAWAY ORCHESTRATED ALBM ART.png",
-      "sha256": "53c4599eacec53e95f67a35c125de9a8bde7cab2797ce894ff0e6a1b37890b8b"
+      "sha256": "53c4599eacec53e95f67a35c125de9a8bde7cab2797ce894ff0e6a1b37890b8b",
+      "album": "Runaway Orchestrated",
+      "artist": "The Northlight Orchestra",
+      "genre": "Orchestral"
     },
     {
       "file": "SO GOOD TO ME.png",
-      "sha256": "92ba79a05d44b78022aa73c8837d572d6b1de205edf46dab75303c7f8ffefd8b"
+      "sha256": "92ba79a05d44b78022aa73c8837d572d6b1de205edf46dab75303c7f8ffefd8b",
+      "album": "So Good to Me",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
     },
     {
       "file": "STARS.png",
-      "sha256": "b945a629507ca94df89a40ca4400597150cf55441169746dfb59766d6f1c9247"
+      "sha256": "b945a629507ca94df89a40ca4400597150cf55441169746dfb59766d6f1c9247",
+      "album": "Stars",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
     },
     {
       "file": "stay in touch.png",
-      "sha256": "000592218e6a281cb0db52cacf1afb3e3ad40516e33d735d49cf9c06814c3878"
+      "sha256": "000592218e6a281cb0db52cacf1afb3e3ad40516e33d735d49cf9c06814c3878",
+      "album": "Stay in Touch",
+      "artist": "Meadow Thread",
+      "genre": "Folk"
     },
     {
       "file": "sunday mail.png",
-      "sha256": "e6a7384d82d67a297b2358f5aa0bdf7b48218ff5e1f19b3f826aeedf02fc87d0"
+      "sha256": "e6a7384d82d67a297b2358f5aa0bdf7b48218ff5e1f19b3f826aeedf02fc87d0",
+      "album": "Sunday Mail",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
     },
     {
       "file": "sunset DE.png",
-      "sha256": "5d18630fef762ea365e7cfebd15e5f0891d4f59f12af0ec8e454caeb5053ffed"
+      "sha256": "5d18630fef762ea365e7cfebd15e5f0891d4f59f12af0ec8e454caeb5053ffed",
+      "album": "Sunset: Deluxe Edition",
+      "artist": "Tide Atlas",
+      "genre": "Ambient"
     },
     {
       "file": "TDK.png",
-      "sha256": "6c9755da4cb8e511cb8dc29eadda8f44b85c7c522ad3874104867d24931df6fe"
+      "sha256": "6c9755da4cb8e511cb8dc29eadda8f44b85c7c522ad3874104867d24931df6fe",
+      "album": "Type II",
+      "artist": "Midnight Rental",
+      "genre": "Synthwave"
     },
     {
       "file": "thank god for drugs.png",
@@ -120,12 +192,12 @@
   "screenshots": [
     {
       "file": "album-library.webp",
-      "caption": "iOpenPod album library with supplied artwork and the selected album track list",
+      "caption": "iOpenPod album library with matching sample artwork, the selected album track list, and a track playing in the Player",
       "width": 1440,
       "height": 960,
-      "bytes": 598934,
-      "sha256": "2d933d9337f79f98d8c6495f19eff1262131028a28f4ea6c779d12cf6852638f",
-      "capture_sha256": "19ed9f58dbb13784a0e62eb3d13e592fced526fc787da1971e8d52f2784d13ed"
+      "bytes": 567708,
+      "sha256": "140944ad84618947f5ad60972e5dec0796045fc2a7b2786b9e1492bb9748e234",
+      "capture_sha256": "7eefcbaef568362a987c20222300a5096fc54e5eab18669b8a465d3612cf7dab"
     },
     {
       "file": "media-folders.webp",
@@ -141,18 +213,18 @@
       "caption": "Sync media selection with selected, mixed, and deselected sample albums",
       "width": 1440,
       "height": 1150,
-      "bytes": 333840,
-      "sha256": "38c6c2bac233a592e8d03c6645f521c8f6e35bb8da5051e4204bf508b12b7dd9",
-      "capture_sha256": "d2a0233495ca4c9dca7a4abb7b5e5c3384ca921de60623f218af51695e13d7c1"
+      "bytes": 332320,
+      "sha256": "68dabd063dbfd30cda199b1c606b9c228e40b025977d20d3ebe10ac0f6c237da",
+      "capture_sha256": "be96eec9a1f48f85b73c1329a553be794908026cdf706ab6ff31923218e42eee"
     },
     {
       "file": "sync-change-review.webp",
       "caption": "Sync Review with selected sample additions and the Sync Selected action",
       "width": 1440,
       "height": 960,
-      "bytes": 28060,
-      "sha256": "4286b9524ab4fdf9315ff3e007ee9cd19e6b756cf584526ed1fe2a3cf24a1033",
-      "capture_sha256": "db660fb862d0ad44f4788b1bcb7ea25b6eb46efafcd04a860540778e81de3b24"
+      "bytes": 27752,
+      "sha256": "3b932af4a7a5bee0c55325ad45a697dfa1e62434717bf21e4b992309d5f58719",
+      "capture_sha256": "2b6779b75bcd78eafae8bb45987997a044748c26367cbda7cc2ebc338ac27bb4"
     },
     {
       "file": "audio-transcoding-settings.webp",
@@ -168,18 +240,18 @@
       "caption": "Edit Track with title, artist, album, genre, composer, and track metadata",
       "width": 980,
       "height": 740,
-      "bytes": 14618,
-      "sha256": "326a7ed907457eae24d15cf25576685597d4aa37e5cfe61d2931e8a0995ae01d",
-      "capture_sha256": "41b32abdaa6bc18ade62c0473491bde3191c7583ee56669b7509b1ecced66698"
+      "bytes": 14232,
+      "sha256": "8f641a7154a66884e7301c45622a2f53b746faf8d24a5a8d7ca646419ab051f3",
+      "capture_sha256": "0796df7893dd82d4f4b19466bde38b3ff4ce2fbd46018ca676306f4bcc3dc60a"
     },
     {
       "file": "track-artwork.webp",
       "caption": "Edit Track artwork with supplied cover art and controls to choose or clear artwork",
       "width": 980,
       "height": 740,
-      "bytes": 76634,
-      "sha256": "b50c601037e9f7033d1af2543f06f4487cc844e70fed20cb8b0789fecd7972a5",
-      "capture_sha256": "7cf568c699db7be0284566e772df2ab7a9ceb819eeb1f2bdb8e03de4c27438b6"
+      "bytes": 76070,
+      "sha256": "381721549391089b961775f864b71289e5b1b7192f56935eb453622e6d065707",
+      "capture_sha256": "319ba27abe21c644ae3c5a43b39f811937d0d43f0f82d2fe4b58cfdc086c346d"
     },
     {
       "file": "smart-playlist.webp",
@@ -195,18 +267,18 @@
       "caption": "Photo Library with supplied artwork, sample photo albums, and the selected photo inspector",
       "width": 1440,
       "height": 960,
-      "bytes": 619236,
-      "sha256": "804d064a8683ddd28dacaca366583cba4ea1b80a780d6bba93f47083c06654b4",
-      "capture_sha256": "d63169184df5a2b75d19c4201be35342e54142da2047c48f077943d3a064c6a3"
+      "bytes": 619564,
+      "sha256": "8d98c97c9e3c1f4aceb8850e9445fb23084f3c2258379cf09105e006d8a353a8",
+      "capture_sha256": "963ec6b6df80b9bc5db13f2ecbfd98c35cabac2820fd26f65e54b83dfa263d46"
     },
     {
       "file": "phase-playlist.webp",
       "caption": "Phase Playlist with sample tracks, supplied artwork, and the Phase banner",
       "width": 1440,
       "height": 960,
-      "bytes": 213848,
-      "sha256": "7d7e8fb8cdaeea24082ee76f390b9437d9876952d9bc5b06a32578b6f123a69c",
-      "capture_sha256": "ce79ec0ba37dbd52fba653fd9af58591d9869375c09f9f49e3fe635805831ade"
+      "bytes": 202212,
+      "sha256": "cd748e58ec8aab2c8e40c3c76a292c8c5fed947f53ded4e1caf741d94a7c783b",
+      "capture_sha256": "a01989ccd7993a88295721c8aeef7a760ccd9a99af7b44f6c4234ecc7a1c468d"
     },
     {
       "file": "click-wheel-games.webp",

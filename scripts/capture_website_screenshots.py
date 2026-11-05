@@ -43,6 +43,7 @@ from iOpenPod.app.core.settings.definitions import (
     COLORFUL_MODE,
     DRAFT_ALL_CHANGES,
     IPOD_LIBRARY_VIEW_MODE,
+    PLAYER_AUTO_MINIMIZE,
     IPodLibraryViewMode,
 )
 from iOpenPod.app.games_controller import GamesController
@@ -64,6 +65,7 @@ from iOpenPod.GUI.sync_workspace import SyncWorkspace
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.compact_top_bar import CompactTopBar
 from iOpenPod.GUI.widgets.photo_grid import PhotoGridView
+from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iPodDB.library import (
     Playlist,
@@ -111,7 +113,8 @@ def main() -> None:
     context.settings.set_global(COLORFUL_MODE, True)
     context.settings.set_global(DRAFT_ALL_CHANGES, True)
     context.settings.set_global(
-        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value
+        IPOD_LIBRARY_VIEW_MODE,
+        IPodLibraryViewMode.ITUNES_11.value,
     )
     library = sample_library()
     library = replace(
@@ -176,11 +179,22 @@ def main() -> None:
             Qt.MouseButton.LeftButton,
             pos=grid.visualRect(grid.model().index(0, 0)).center(),
         )
+        # The isolated composition uses FakePlaybackBackend: render an active
+        # Player without accessing audio files, hardware, or network services.
+        context.settings.set_global(PLAYER_AUTO_MINIMIZE, False)
+        context.playback_controller.play_now(library.tracks[:12])
+        context.playback_controller.seek(67_000)
+        settle(APPLICATION)
+        assert context.playback_controller.playing
+        assert child(window, PlayerBar).isVisible()
         capture(
             window,
             "album-library",
-            "iOpenPod album library with supplied artwork and the selected album track list",
+            "iOpenPod album library with matching sample artwork, the selected album track list, and a track playing in the Player",
         )
+
+        context.playback_controller.clear_session()
+        context.settings.set_global(PLAYER_AUTO_MINIMIZE, True)
 
         folders = MediaFoldersDialog(context.settings, window)
         folders.resize(900, 600)

@@ -49,13 +49,15 @@ client area without resizing or retouching the resulting screenshots.
 
 - The displayed **Sample iPod** is a synthetic model projection of the catalog's
   supported MB029 iPod Classic profile. No physical iPod is discovered or used.
-- The 24 album names, three performer names, 288 Track records, three Playlists,
+- The 24 Album names, invented performer names, 288 Track records, three Playlists,
   ratings, durations, storage statistics, and dates are fictional capture data
-  authored in the harness. They are not a user's library or a packaged music offer.
+  authored in the harness. Album names follow the source artwork filenames;
+  invented artists and Track titles fit each cover's theme. These names are not
+  artwork credits, a user's Library, or a packaged music offer.
 - Album artwork and Photo examples come from the user-supplied GenericArt folder.
-  At least 24 PNGs are required. The first 24 case-insensitively sorted filenames
-  supply Albums and the last 12 supply Photos, matching the website and onboarding
-  captures. Source filenames and SHA-256 hashes are recorded in the manifest.
+  The 24 covers named in `scripts/screenshot_catalog.py` are required. The catalog
+  binds each Album to its exact filename. The last 12 case-insensitively sorted
+  PNG filenames supply Photos, matching the website and onboarding captures. Source filenames and SHA-256 hashes are recorded in the manifest.
   Original files remain external inputs and are never modified.
 - The Sync Review shows typed example Add actions from the fictional
   `C:/Sample Music` path. No such media files need to exist, no media helper is run,

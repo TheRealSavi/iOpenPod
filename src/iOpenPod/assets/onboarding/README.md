@@ -2,7 +2,7 @@
 
 These PNGs are captures of the real iOpenPod Qt widgets using a fictional Library
 and the application's bundled device portraits. Album artwork comes from the supplied GenericArt folder, using the same
-filename ordering as the website and Store captures. No personal media, settings,
+explicit filename-to-Album mapping as the website and Store captures. No personal media, settings,
 network services, or physical iPods are used.
 
 Regenerate on Windows with:
@@ -13,7 +13,9 @@ uv run python -m scripts.capture_onboarding_screenshots --artwork-dir "C:\Users\
 
 The source images remain external capture inputs and are never modified.
 `manifest.json` records their filenames and SHA-256 hashes alongside the output
-hashes. The folder must contain at least 24 PNG images.
+hashes. The folder must contain the 24 covers named in
+`scripts/screenshot_catalog.py`. Album names follow the artwork filenames, with
+invented artists and matching Track lists.
 
 The script uses the offscreen Qt platform and explicitly loads the installed
 Segoe UI fonts. It captures navigation, all three Library layouts, both device

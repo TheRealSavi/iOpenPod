@@ -274,12 +274,17 @@ Regenerate on Windows with the locked development environment:
 uv run python -m scripts.capture_website_screenshots --artwork-dir "C:\Users\JohnG\Desktop\GenericArt"
 ```
 
-The folder must contain at least 24 PNG images. Filenames sort case-insensitively:
-the first 24 supply Album artwork and the last 12 supply Photos. The loader
+The Album catalog in `scripts/screenshot_catalog.py` pairs 24 exact source
+filenames with matching Album names, invented artists, genres, and distinct Track
+lists. Names are inspired by the filenames; invented artist names are not artwork
+credits. All 24 named covers must be present; unrelated images cannot shift the
+pairings. The last 12 case-insensitively sorted PNG filenames supply Photos. The loader
 preserves image proportions and leaves the source files untouched. The originals
 remain external capture inputs; the application only packages the resulting
 onboarding images. Game covers and device portraits remain the application's
-bundled assets.
+bundled assets. The hero includes the real Player showing a sample Track at 1:07
+in its playing state, driven by the isolated fake Playback Backend without audio
+file access. Website captures remain in light mode.
 
 The script writes complete window or dialog captures as lossless WebP (method 6)
 to `screenshots/iop2/`. It records source artwork filenames and SHA-256 hashes,

@@ -19,6 +19,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QStackedWidget, QTabWidget, QWidget
+from scripts.screenshot_catalog import ALBUMS
 
 from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
 from iOpenPod.app.artwork_controller import ArtworkController
@@ -82,46 +83,6 @@ from iPodDB.library import (
 from storage import FileFingerprint, HostPath
 
 ROOT = Path(__file__).resolve().parents[1]
-ALBUMS = (
-    ("Amber Horizon", "The Sample Ensemble", "Ambient", "#fbc278", "#78415c"),
-    ("Blue Hour", "The Sample Ensemble", "Electronic", "#64d5de", "#203461"),
-    ("Coastal Lines", "Studio Example", "Instrumental", "#bce1d3", "#266675"),
-    ("Daylight Studies", "Studio Example", "Electronic", "#f3db77", "#dd8362"),
-    ("Echo Garden", "Demo Collective", "Ambient", "#adbd81", "#294d54"),
-    ("Faraway Forms", "Demo Collective", "Instrumental", "#eabdce", "#634991"),
-    ("Golden Islands", "The Sample Ensemble", "Jazz", "#edd9a1", "#ac743b"),
-    ("Harbor Lights", "Studio Example", "Electronic", "#9bcece", "#304e70"),
-    ("Into the Quiet", "Demo Collective", "Ambient", "#f0c5a1", "#675078"),
-    ("Juniper Morning", "The Sample Ensemble", "Instrumental", "#c4d9a4", "#466b57"),
-    ("Kinetic Shapes", "Studio Example", "Electronic", "#efbd92", "#b75d58"),
-    ("Late Summer", "Demo Collective", "Jazz", "#f2cd87", "#5c8b86"),
-    ("Moonlit Geometry", "The Sample Ensemble", "Ambient", "#bdc1e5", "#53568a"),
-    ("Northern Current", "Studio Example", "Electronic", "#9ed7ca", "#2b767f"),
-    ("Open Windows", "Demo Collective", "Instrumental", "#e8ccaf", "#8a6467"),
-    ("Paper Planets", "The Sample Ensemble", "Electronic", "#d5bcdf", "#885e93"),
-    ("Quiet Architecture", "Studio Example", "Ambient", "#b7d1df", "#496883"),
-    ("River Patterns", "Demo Collective", "Instrumental", "#bed6ad", "#5b7b72"),
-    ("Soft Signals", "The Sample Ensemble", "Electronic", "#ebb3ab", "#aa6381"),
-    ("Tidal Sketches", "Studio Example", "Jazz", "#b7dfe3", "#5c87ab"),
-    ("Under the Canopy", "Demo Collective", "Ambient", "#c5d8af", "#577864"),
-    ("Velvet Orbit", "The Sample Ensemble", "Electronic", "#d9b2cd", "#755774"),
-    ("Wildflower Maps", "Studio Example", "Instrumental", "#e5cb9e", "#a77964"),
-    ("Yesterday's Colors", "Demo Collective", "Jazz", "#bfcfe2", "#638b93"),
-)
-TITLES = (
-    "First Light",
-    "A Place to Begin",
-    "Open Water",
-    "Slow Motion",
-    "In the Distance",
-    "Between the Lines",
-    "Small Discoveries",
-    "Parallel Paths",
-    "Still Moving",
-    "The Long Way Home",
-    "After the Rain",
-    "Until Tomorrow",
-)
 
 
 def sample_images(directory: Path) -> SampleImages:
@@ -130,25 +91,41 @@ def sample_images(directory: Path) -> SampleImages:
         (path for path in directory.iterdir() if path.suffix.lower() == ".png"),
         key=lambda path: path.name.casefold(),
     )
-    if len(files) < len(ALBUMS):
-        raise ValueError(f"Expected at least {len(ALBUMS)} PNG artworks in {directory}")
-    decoded: list[Image.Image] = []
-    for path in files:
+    by_name = {path.name.casefold(): path for path in files}
+    missing = [
+        album.filename for album in ALBUMS if album.filename.casefold() not in by_name
+    ]
+    if missing:
+        raise ValueError("Missing screenshot artwork: " + ", ".join(missing))
+
+    def decode(path: Path) -> Image.Image:
         with Image.open(path) as source:
-            decoded.append(ImageOps.contain(source.convert("RGB"), (720, 720)))
+            return ImageOps.contain(source.convert("RGB"), (720, 720))
+
     return SampleImages(
-        dict(enumerate(decoded[: len(ALBUMS)], 1)),
-        dict(enumerate(decoded[-12:], 1)),
+        {
+            index: decode(by_name[album.filename.casefold()])
+            for index, album in enumerate(ALBUMS, 1)
+        },
+        {index: decode(path) for index, path in enumerate(files[-12:], 1)},
     )
 
 
 def artwork_provenance(directory: Path) -> list[dict[str, str]]:
-    return [
-        {"file": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-        for path in sorted(
-            directory.glob("*.png"), key=lambda path: path.name.casefold()
-        )
-    ]
+    albums = {album.filename.casefold(): album for album in ALBUMS}
+    result: list[dict[str, str]] = []
+    for path in sorted(
+        (path for path in directory.iterdir() if path.suffix.lower() == ".png"),
+        key=lambda path: path.name.casefold(),
+    ):
+        entry = {
+            "file": path.name,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        if album := albums.get(path.name.casefold()):
+            entry.update(album=album.title, artist=album.artist, genre=album.genre)
+        result.append(entry)
+    return result
 
 
 def host_artwork(
@@ -211,10 +188,10 @@ def sample_library() -> LibrarySnapshot:
         Track(
             track_id=album_id * 100 + number,
             title=title,
-            artist=artist,
-            album=album,
+            artist=album.artist,
+            album=album.title,
             length_ms=(169 + number * 9 + album_id * 3) * 1000,
-            genre=genre,
+            genre=album.genre,
             year=2026,
             track_number=number,
             size_bytes=5_000_000 + number * 70_000,
@@ -226,11 +203,11 @@ def sample_library() -> LibrarySnapshot:
                 file_format="AAC audio",
                 total_tracks=12,
                 sample_rate_hz=44100,
-                comment="Fictional sample metadata for iOpenPod Store screenshots.",
+                comment="Fictional sample metadata inspired by the supplied artwork filenames.",
             ),
         )
-        for album_id, (album, artist, genre, _, _) in enumerate(ALBUMS, 1)
-        for number, title in enumerate(TITLES, 1)
+        for album_id, album in enumerate(ALBUMS, 1)
+        for number, title in enumerate(album.tracks, 1)
     )
     playlists = tuple(
         Playlist(
@@ -271,7 +248,7 @@ def sample_library() -> LibrarySnapshot:
         playlists,
         "Sample iPod",
         PhotoLibrary(
-            photos, (PhotoAlbum(1, "Landscape Studies", tuple(range(1, 13))),)
+            photos, (PhotoAlbum(1, "Cover Art Collection", tuple(range(1, 13))),)
         ),
     )
 

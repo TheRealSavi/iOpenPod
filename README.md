@@ -27,7 +27,7 @@ See [iPod compatibility](#ipod-compatibility) before getting started.
 [Discord](https://discord.gg/9Yy499Tf5d) ·
 [Support development](https://ko-fi.com/johngibbons)
 
-![iOpenPod album library with supplied artwork and the selected album track list](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/album-library.webp)
+![iOpenPod album library with matching sample artwork, the selected album track list, and a track playing in the Player](https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/website/screenshots/iop2/album-library.webp)
 
 ## Download and install
 
