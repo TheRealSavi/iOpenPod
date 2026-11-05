@@ -16,6 +16,7 @@ from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.widgets.collection_detail import CollectionDetailPage
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
+from iOpenPod.GUI.widgets.page_fade import PageFade
 from iOpenPod.GUI.widgets.track_list_header import LibrarySplitter
 from iOpenPod.GUI.widgets.track_table import TrackTable
 
@@ -44,6 +45,7 @@ class LibraryContent(QStackedWidget):
         splitter_setting: SettingDefinition[QByteArray] | None = None,
     ) -> None:
         super().__init__(parent)
+        self._fade = PageFade(parent)
         self._browser = browser
         self._table = table
         self._proxy = proxy
@@ -104,14 +106,28 @@ class LibraryContent(QStackedWidget):
 
     def open_detail(self, summary: AlbumSummary | CollectionSummary) -> None:
         if self._whole_page_table and self._detail is not None:
-            self._detail.set_context(summary)
-            self._toolbar.hide()
-            self.setCurrentWidget(self._detail)
+            detail = self._detail
+
+            def show_detail() -> None:
+                detail.set_context(summary)
+                self._toolbar.hide()
+                self.setCurrentWidget(detail)
+
+            if self.detail_open:
+                show_detail()
+            else:
+                self._fade.transition(show_detail)
 
     def show_browser(self) -> None:
-        if self._whole_page_table or self._inline_albums:
-            self.setCurrentWidget(self._browser)
-        self._toolbar.show()
+        def show() -> None:
+            if self._whole_page_table or self._inline_albums:
+                self.setCurrentWidget(self._browser)
+            self._toolbar.show()
+
+        if self.detail_open:
+            self._fade.transition(show)
+        else:
+            show()
 
     def set_track_context(self, title: str | None, artwork_id: int) -> None:
         self._title = title
@@ -137,6 +153,7 @@ class LibraryContent(QStackedWidget):
                 self.viewModeChanged.emit()
 
     def _set_whole_page_table(self, enabled: bool, *, inline: bool = False) -> None:
+        self._fade.cancel()
         if (
             self._splitter is not None
             and not self._whole_page_table

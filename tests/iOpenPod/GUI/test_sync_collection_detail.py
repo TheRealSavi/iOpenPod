@@ -4,7 +4,15 @@ from collections.abc import Iterator
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import QEvent, QModelIndex, QObject, QPoint, QRect, Qt
+from PySide6.QtCore import (
+    QEvent,
+    QModelIndex,
+    QObject,
+    QPoint,
+    QRect,
+    Qt,
+    QVariantAnimation,
+)
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import (
@@ -44,6 +52,7 @@ from iOpenPod.GUI.widgets.artwork_view import ArtworkView
 from iOpenPod.GUI.widgets.collection_detail import CollectionDetailPage
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
+from iOpenPod.GUI.widgets.page_fade import PageFade
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.sync_selection_actions import SyncSelectionActions
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
@@ -457,6 +466,35 @@ def test_genre_album_bulk_selection_respects_its_scoped_tracks(
     select_all.click()
     assert selection.track_check_state(1) is Qt.CheckState.Checked
     assert selection.track_check_state(2) is Qt.CheckState.Unchecked
+
+
+@pytest.mark.parametrize("going_back", (False, True))
+def test_fade_starts_with_the_complete_outgoing_page(
+    browser: SyncBrowser, going_back: bool
+) -> None:
+    host, _selection, parent, _theme = browser
+    parent.setObjectName("fadeTestWindow")
+    parent.setStyleSheet("#fadeTestWindow { background: #f8fafc; }")
+    page = host.page_widgets[PageId.ALBUMS]
+    parent.setCurrentWidget(page)
+    grid = page.findChild(AlbumGridView)
+    detail = page.findChild(CollectionDetailPage)
+    fade = page.findChild(PageFade)
+    assert grid is not None and detail is not None and fade is not None
+    animation = fade.findChild(QVariantAnimation)
+    assert animation is not None
+    if going_back:
+        _click_card(grid, "Album A")
+        animation.setCurrentTime(animation.duration())
+    before = parent.grab().toImage()
+    if going_back:
+        detail.backRequested.emit()
+    else:
+        grid.clicked.emit(_card(grid, "Album A"))
+    animation.pause()
+    animation.setCurrentTime(0)
+    first = parent.grab().toImage()
+    assert first == before, "The incoming page must not show through the first frame"
 
 
 def _detail_rect(widget: QWidget, detail: CollectionDetailPage) -> QRect:

@@ -3,9 +3,9 @@
 from collections.abc import Iterator
 
 import pytest
-from PySide6.QtCore import QEvent, QModelIndex, Qt
+from PySide6.QtCore import QEvent, QModelIndex, Qt, QVariantAnimation
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QLabel, QListView
+from PySide6.QtWidgets import QDialog, QLabel, QListView
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.context import AppContext
@@ -27,6 +27,7 @@ from iOpenPod.GUI.widgets.collection_detail import CollectionDetailPage
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
+from iOpenPod.GUI.widgets.page_fade import PageFade
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
 from iOpenPod.GUI.widgets.track_list_header import LibrarySplitter
@@ -65,7 +66,9 @@ def context() -> Iterator[AppContext]:
     context.shutdown()
 
 
-def _page(context: AppContext, page_id: PageId) -> LibraryPage | CollectionPage:
+def _page(
+    context: AppContext, page_id: PageId, *, selection_mode: bool = False
+) -> LibraryPage | CollectionPage:
     provider = ArtworkPixmapProvider(context.artwork_controller)
     page: LibraryPage | CollectionPage
     if page_id in (PageId.ALBUMS, PageId.MUSIC_VIDEOS):
@@ -78,6 +81,7 @@ def _page(context: AppContext, page_id: PageId) -> LibraryPage | CollectionPage:
             context.theme_manager,
             provider,
             page_id=page_id,
+            selection_mode=selection_mode,
         )
     else:
         collections = {
@@ -92,6 +96,7 @@ def _page(context: AppContext, page_id: PageId) -> LibraryPage | CollectionPage:
             context.theme_manager,
             provider,
             page_id=page_id,
+            selection_mode=selection_mode,
             table_id=f"{page_id.value}-view-mode-test",
             albums=context.album_model
             if page_id in (PageId.ARTISTS, PageId.GENRES)
@@ -129,6 +134,112 @@ def _ids(table: TrackTable) -> set[int]:
         table.model().index(row, 0).data(TrackRole.TRACK_ID)
         for row in range(table.model().rowCount())
     }
+
+
+@pytest.mark.parametrize("selection_mode", (False, True))
+@pytest.mark.parametrize(
+    ("page_id", "title"),
+    ((PageId.ALBUMS, "Album A"), (PageId.ARTISTS, "Artist A")),
+)
+def test_mouse_back_clicks_detail_back_from_any_control(
+    context: AppContext, selection_mode: bool, page_id: PageId, title: str
+) -> None:
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
+    )
+    page = _page(context, page_id, selection_mode=selection_mode)
+    try:
+        grid = page.findChild(
+            AlbumGridView if page_id is PageId.ALBUMS else CollectionGridView
+        )
+        detail = page.findChild(CollectionDetailPage)
+        table = page.findChild(TrackTable)
+        assert isinstance(grid, (AlbumGridView, CollectionGridView))
+        assert detail is not None and table is not None
+        back = detail.findChild(ActionButton, "collectionDetailBack")
+        search = detail.findChild(SearchField)
+        assert back is not None and search is not None
+        clicked = QSignalSpy(back.clicked)
+        targets = (table.viewport(), table.horizontalHeader(), search, detail, page)
+        for count, target in enumerate(targets):
+            _click(grid, title)
+            assert detail.isVisible()
+            QTest.mousePress(target, Qt.MouseButton.BackButton)
+            assert detail.isVisible() and clicked.count() == count
+            QTest.mouseRelease(target, Qt.MouseButton.BackButton)
+            assert grid.isVisible() and not detail.isVisible()
+            assert clicked.count() == count + 1
+        QTest.mouseClick(grid.viewport(), Qt.MouseButton.BackButton)
+        assert clicked.count() == len(targets)
+
+        _click(grid, title)
+        QTest.mouseClick(table.viewport(), Qt.MouseButton.ForwardButton)
+        assert detail.isVisible() and clicked.count() == len(targets)
+        dialog = QDialog(page)
+        dialog.show()
+        try:
+            QTest.mouseClick(dialog, Qt.MouseButton.BackButton)
+            assert detail.isVisible() and clicked.count() == len(targets)
+        finally:
+            dialog.close()
+        page.hide()
+        QTest.mouseClick(page, Qt.MouseButton.BackButton)
+        assert clicked.count() == len(targets)
+        page.show()
+        QTest.mouseClick(table.viewport(), Qt.MouseButton.BackButton)
+        assert grid.isVisible() and clicked.count() == len(targets) + 1
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("selection_mode", (False, True))
+def test_whole_page_open_and_back_fade_in_library_and_sync(
+    context: AppContext, selection_mode: bool
+) -> None:
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
+    )
+    provider = ArtworkPixmapProvider(context.artwork_controller)
+    page = LibraryPage(
+        context.track_model,
+        context.album_model,
+        context.settings,
+        context.theme_manager,
+        provider,
+        selection_mode=selection_mode,
+    )
+    provider.setParent(page)
+    page.resize(1000, 760)
+    page.show()
+    APPLICATION.processEvents()
+    try:
+        grid = page.findChild(AlbumGridView)
+        detail = page.findChild(CollectionDetailPage)
+        fade = page.findChild(PageFade)
+        assert grid is not None and detail is not None and fade is not None
+        animation = fade.findChild(QVariantAnimation)
+        assert animation is not None
+        _click(grid, "Album A")
+        assert detail.isVisible() and fade.isVisible()
+        assert fade.geometry() == page.rect()
+        animation.setCurrentTime(animation.duration() // 2)
+        detail.backRequested.emit()
+        assert grid.isVisible() and fade.isVisible()
+        _click(grid, "Album B")
+        assert detail.isVisible() and fade.isVisible()
+        table = detail.findChild(TrackTable)
+        assert table is not None and _ids(table) == {3}
+        animation.setCurrentTime(animation.duration())
+        assert not fade.isVisible() and detail.isVisible()
+        detail.backRequested.emit()
+        assert fade.isVisible()
+        if not selection_mode:
+            context.settings.set_global(
+                IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+            )
+            assert not fade.isVisible() and table.isVisible()
+    finally:
+        page.close()
 
 
 @pytest.mark.parametrize("page_id", (PageId.ALBUMS, PageId.MUSIC_VIDEOS))

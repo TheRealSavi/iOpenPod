@@ -73,6 +73,7 @@ class LayoutTokens:
     playback_row_height: int = 64
     playback_row_artwork_size: int = 44
     playback_pane_animation_ms: int = 180
+    page_fade_animation_ms: int = 180
     selection_group_animation_ms: int = 200
     grid_scroll_animation_ms: int = 140
     grid_scroll_line_height: int = 32

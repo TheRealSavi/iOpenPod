@@ -595,7 +595,10 @@ including artwork, metadata, bulk selection, and the shared Track table with its
 own search. Back returns to the retained browser; these Sync pages have no split
 Track pane. The **iPod Library View Mode** setting also offers this shared
 presentation in the iPod browser as **Whole Page Table**, without Sync Selection
-controls. **iTunes 11 style** opens an album-colored Track list with artwork beneath
+controls. Opening these full-page Track tables and going Back uses a brief
+crossfade in both Library and Sync with Host, retaining immediate navigation.
+The mouse Back button invokes the same Back action while a full-page table is open.
+**iTunes 11 style** opens an album-colored Track list with artwork beneath
 the selected row of the Albums grid, pushing later rows down. Artists and Genres
 use a source list beside a collection heading, playback/queue controls, and stacked
 Albums with two columns of Tracks. Covers sit on the left; Genres use smaller

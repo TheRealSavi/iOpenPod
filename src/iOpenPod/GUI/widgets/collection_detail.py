@@ -1,7 +1,7 @@
 """Full-page Album and collection context around the shared Track table."""
 
-from PySide6.QtCore import QCoreApplication, QEvent, QLocale, Qt, Signal
-from PySide6.QtGui import QResizeEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QLocale, QObject, Qt, Signal
+from PySide6.QtGui import QMouseEvent, QResizeEvent
 from PySide6.QtWidgets import (
     QBoxLayout,
     QHBoxLayout,
@@ -219,7 +219,36 @@ class CollectionDetailPage(QWidget):
     def event(self, event: QEvent) -> bool:
         if event.type() == QEvent.Type.LayoutRequest:
             self._arrange_header()
+        elif event.type() in {QEvent.Type.Show, QEvent.Type.Hide}:
+            application = QCoreApplication.instance()
+            if application is not None:
+                if event.type() == QEvent.Type.Show:
+                    application.installEventFilter(self)
+                else:
+                    application.removeEventFilter(self)
         return super().event(event)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        # Child controls may consume mouse events before they reach the page.
+        # Listen only while visible, and leave other windows/dialogs alone.
+        if (
+            event.type()
+            in {
+                QEvent.Type.MouseButtonPress,
+                QEvent.Type.MouseButtonRelease,
+                QEvent.Type.MouseButtonDblClick,
+            }
+            and isinstance(event, QMouseEvent)
+            and event.button() == Qt.MouseButton.BackButton
+            and self.isVisible()
+            and isinstance(watched, QWidget)
+            and watched.window() is self.window()
+        ):
+            if event.type() == QEvent.Type.MouseButtonRelease:
+                self._back.click()
+            event.accept()
+            return True
+        return super().eventFilter(watched, event)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
