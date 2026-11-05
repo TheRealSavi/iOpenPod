@@ -822,6 +822,14 @@ the Host while the current Track is analyzed. Count and retained-byte limits bou
 staging; oversized inputs and Host capacity failures retain direct device reads.
 The capture supplies the initial source fingerprint. Persisted Phase metadata
 receipts bind content provenance to source/chart paths and filesystem identities.
+Library writes gate Phase preparation on changes to the selected Playlist or its
+member audio inputs; unrelated writes retain the Phase selection precondition
+without evaluating caches or discovering runtimes. Chart compatibility ignores
+CPU/CUDA/MPS placement and matching wheel build suffixes, including legacy
+provenance, while preserving the actual producer record. Request-scoped Skip
+actions stop unfinished work and continue publication with only fully verified
+completed charts and cache hits. Unfinished Tracks stay in the Playlist but are
+omitted from the Phase Library until a later relevant edit. See ADR-0239.
 Matching receipts exclude retained inputs from audio reads, analysis and transaction
 content dependencies. Membership or ordering changes rebuild only the companion
 index; fresh analysis retains full source hashes and transaction preconditions.

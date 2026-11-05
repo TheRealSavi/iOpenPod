@@ -51,8 +51,14 @@ Dragging Tracks over Playlists opens its menu; hovering over Playlist
 Folders expands them before a drop onto a regular Playlist. See
 [ADR-0233](docs/adr/0233-share-navigation-behavior-between-shell-styles.md).
 
-Unrelated Library edits reuse Phase charts through persisted source/chart metadata
-and content provenance, without audio scans or retained-media transaction hashes.
+Unrelated Library writes bypass Phase evaluation entirely. Only changes to the
+Phase Playlist or its member audio inputs enter companion preparation. CPU/CUDA/MPS
+changes alone reuse existing charts, including older provenance. Skip Phase analysis
+is available during automatic saves, Review Changes and Sync; verified completed
+charts are kept and unfinished Tracks remain unavailable in the game until a later
+Phase edit. See [ADR-0239](docs/adr/0239-gate-and-skip-phase-analysis.md).
+Relevant edits reuse charts through persisted source/chart metadata and content
+provenance, without audio scans or retained-media transaction hashes.
 Phase membership and ordering changes update the companion index incrementally;
 new or changed analysis retains full verification. Legacy caches need one content
 validation pass to establish metadata receipts. See
@@ -115,7 +121,7 @@ geometry; uncertain sources are preserved and reported. Video 5/5.5 use other
 cover formats. See [ADR-0218](docs/adr/0218-author-and-repair-native-f1061-geometry.md).
 
 Device selection commits playback history without regenerating Phase charts.
-Ordinary saves and Sync perform pending Phase upgrades; shutdown signals
+Saves and Sync affecting Phase can perform pending Phase upgrades; shutdown signals
 cancellation through selection's history save. The pinned model bypasses Hub
 alias lookup. See [ADR-0216](docs/adr/0216-defer-phase-analysis-during-device-selection.md).
 

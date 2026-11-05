@@ -571,6 +571,49 @@ def test_connection_change_discards_an_in_flight_result(
         controller.shutdown()
 
 
+def test_review_skips_phase_without_cancelling_and_resets_for_new_request(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+) -> None:
+    class PhaseService(DelayedService):
+        def prepare_library(
+            self,
+            request: LibraryPreparationRequest,
+            progress: Callable[[WriteProgress], None],
+            cancelled: threading.Event,
+        ) -> LibraryReview:
+            progress(WriteProgress("resources.phase", "Analyzing Phase"))
+            result = super().prepare_library(request, progress, cancelled)
+            assert not cancelled.is_set()
+            return result
+
+    _, devices, workspace, _ = session
+    service = PhaseService()
+    controller = LibraryWriteController(service, workspace, devices, manual_settings())
+    dialog = LibraryReviewDialog(controller)
+    try:
+        skip = dialog.findChild(QPushButton, "skipPhaseAnalysis")
+        assert skip is not None and skip.isHidden()
+        for _ in range(2):
+            service.release.clear()
+            controller.prepare()
+            wait_for(lambda: controller.can_skip_phase_analysis)
+            assert controller.request is not None
+            assert not controller.request.phase_analysis_skip.is_set()
+            assert not skip.isHidden() and skip.isEnabled()
+            skip.click()
+            assert controller.request.phase_analysis_skip.is_set()
+            assert not skip.isEnabled()
+            assert controller.state is PreparationState.PREPARING
+            service.release.set()
+            wait_for(lambda: controller.state is PreparationState.BLOCKED)
+            assert skip.isHidden()
+    finally:
+        service.release.set()
+        controller.shutdown()
+        dialog.deleteLater()
+        APPLICATION.processEvents()
+
+
 class BrokenService(DelayedService):
     def prepare_library(
         self,

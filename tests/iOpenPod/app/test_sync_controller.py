@@ -114,6 +114,9 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
         assert not controller.start(*_inputs(), active)
         controller.skip_genius_analysis()
         assert service.request.genius_analysis_skip.is_set()
+        assert not service.request.phase_analysis_skip.is_set()
+        controller.skip_phase_analysis()
+        assert service.request.phase_analysis_skip.is_set()
         service.release.set()
         wait_for(lambda: finished.count() == 1)
         assert not workspace.locked and not devices.busy

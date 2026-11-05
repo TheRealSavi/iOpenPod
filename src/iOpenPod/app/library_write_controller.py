@@ -418,6 +418,22 @@ class LibraryWriteController(QObject):
         self._pool.start(job)
 
     @Slot()
+    def skip_phase_analysis(self) -> None:
+        if self.can_skip_phase_analysis and self._request is not None:
+            self._request.phase_analysis_skip.set()
+            self.changed.emit()
+
+    @property
+    def can_skip_phase_analysis(self) -> bool:
+        return (
+            self.state is PreparationState.PREPARING
+            and self.progress is not None
+            and self.progress.phase == "resources.phase"
+            and self._request is not None
+            and not self._request.phase_analysis_skip.is_set()
+        )
+
+    @Slot()
     def cancel(self) -> None:
         if self.state is PreparationState.SAVING:
             self._record(

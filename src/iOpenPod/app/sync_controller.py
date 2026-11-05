@@ -488,6 +488,11 @@ class SyncController(QObject):
         if isinstance(self._job, _SyncWork):
             self._job.request.genius_analysis_skip.set()
 
+    @Slot()
+    def skip_phase_analysis(self) -> None:
+        if isinstance(self._job, _SyncWork):
+            self._job.request.phase_analysis_skip.set()
+
     def recover(self) -> bool:
         result = self.result
         if (

@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QVariantAnimation
 from PySide6.QtGui import QDrag
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QLabel, QTabBar, QToolButton
@@ -93,6 +93,13 @@ def _page(context: AppContext) -> CollectionPage:
     return page
 
 
+def _finish_expansion(page: CollectionPage) -> None:
+    animation = page.findChild(QVariantAnimation, "inlineAlbumAnimation")
+    assert animation is not None
+    animation.setCurrentTime(animation.duration())
+    APPLICATION.processEvents()
+
+
 def _open(
     page: CollectionPage,
 ) -> tuple[CollectionGridView, InlineTVShowPanel, QTabBar]:
@@ -100,7 +107,7 @@ def _open(
     panel = page.findChild(InlineTVShowPanel)
     assert grid is not None and panel is not None
     grid.clicked.emit(grid.model().index(0, 0))
-    QTest.qWait(300)
+    _finish_expansion(page)
     tabs = panel.findChild(QTabBar)
     assert tabs is not None and panel.isVisible()
     return grid, panel, tabs
@@ -180,7 +187,7 @@ def test_season_tabs_keep_expansion_and_switch_episode_artwork_and_colors(
             button.text() == "More" for button in panel.findChildren(QToolButton)
         )
         QTest.keyClick(tabs, Qt.Key.Key_Escape)
-        QTest.qWait(300)
+        _finish_expansion(page)
         assert not panel.isVisible()
     finally:
         page.close()

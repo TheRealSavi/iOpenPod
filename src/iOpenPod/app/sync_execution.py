@@ -201,6 +201,9 @@ class SyncExecutionRequest:
     genius_analysis_skip: Event = field(
         default_factory=Event, compare=False, repr=False, kw_only=True
     )
+    phase_analysis_skip: Event = field(
+        default_factory=Event, compare=False, repr=False, kw_only=True
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -2712,6 +2715,7 @@ def _draft(
             is FeatureSupport.SUPPORTED
         ),
         genius_analysis_skip=request.genius_analysis_skip,
+        phase_analysis_skip=request.phase_analysis_skip,
         rotate_genius_mixes=(
             request.options.analyze_for_genius
             and supports_mix_creation(request.source.profile)

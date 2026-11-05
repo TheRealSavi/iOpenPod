@@ -490,6 +490,17 @@ class HoverDropdownGroup(QObject):
         kind = event.type()
         trigger_popup = next((p for p in self._popups if watched is p.trigger), None)
         popup = self._active
+        if (
+            popup is not None
+            and kind == QEvent.Type.Show
+            and isinstance(watched, QWidget)
+            and watched.windowType() == Qt.WindowType.Popup
+            and watched is not popup
+            and watched not in popup.findChildren(QMenu)
+        ):
+            # Another popup takes over input; only our own submenus share this one.
+            self.close()
+            return super().eventFilter(watched, event)
         if trigger_popup is not None:
             if kind == QEvent.Type.Enter:
                 if popup is None or self._mode is not DropdownOpenMode.DRAG:
@@ -564,6 +575,12 @@ class HoverDropdownGroup(QObject):
                 and nested is not None
                 and nested is not popup
                 and nested in popup.findChildren(QMenu)
+            ):
+                return False
+            if (
+                popup is not None
+                and trigger_popup is None
+                and (not isinstance(watched, QWidget) or watched.window() is not popup)
             ):
                 return False
             key = event.key()

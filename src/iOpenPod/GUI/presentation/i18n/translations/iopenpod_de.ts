@@ -1050,7 +1050,7 @@
     </message>
     <message>
         <source>Report an Issue</source>
-        <translation>Problem melden</translation>
+        <translation type="vanished">Problem melden</translation>
     </message>
     <message>
         <source>Select All</source>
@@ -2476,6 +2476,14 @@
         <translation>Vorbereitung abbrechen</translation>
     </message>
     <message>
+        <source>Skip Phase analysis</source>
+        <translation>Phase-Analyse überspringen</translation>
+    </message>
+    <message>
+        <source>Continue saving with completed charts. Tracks still needing analysis stay in the Playlist but are unavailable in Phase until a later Phase edit.</source>
+        <translation>Mit den fertigen Spielcharts weiterspeichern. Titel, die noch analysiert werden müssen, bleiben in der Wiedergabeliste, sind aber in Phase erst nach einer späteren Bearbeitung der Phase-Wiedergabeliste verfügbar.</translation>
+    </message>
+    <message>
         <source>Discard Changes</source>
         <translation>Änderungen verwerfen</translation>
     </message>
@@ -2866,6 +2874,10 @@
     <message>
         <source>Album conversion cancelled.</source>
         <translation>Albumumwandlung abgebrochen.</translation>
+    </message>
+    <message>
+        <source>Skip Phase analysis</source>
+        <translation>Phase-Analyse überspringen</translation>
     </message>
     <message>
         <source>Save or discard the Library Draft before updating iOpenPod.</source>
@@ -6365,7 +6377,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Open the iOpenPod issue tracker on GitHub.</source>
-        <translation>Die Seite zum Melden von iOpenPod-Problemen auf GitHub öffnen.</translation>
+        <translation type="vanished">Die Seite zum Melden von iOpenPod-Problemen auf GitHub öffnen.</translation>
     </message>
 </context>
 <context>
@@ -7722,6 +7734,10 @@ Playlists: %3</translation>
         <translation>Die verbleibende Genius-Analyse wird übersprungen. Fertige Profile bleiben erhalten.</translation>
     </message>
     <message>
+        <source>Skipping remaining Phase analysis. Completed charts will be kept.</source>
+        <translation>Die verbleibende Phase-Analyse wird übersprungen. Fertige Spielcharts bleiben erhalten.</translation>
+    </message>
+    <message>
         <source>Cancellation requested; waiting for a safe stopping point. Keep the iPod connected.</source>
         <translation>Abbruch angefordert. Es wird auf einen sicheren Haltepunkt gewartet. Lassen Sie den iPod angeschlossen.</translation>
     </message>
@@ -7796,6 +7812,14 @@ Playlists: %3</translation>
     <message>
         <source>Skip for this Sync</source>
         <translation>Für diese Synchronisierung überspringen</translation>
+    </message>
+    <message>
+        <source>Skip Phase analysis</source>
+        <translation>Phase-Analyse überspringen</translation>
+    </message>
+    <message>
+        <source>Continue Sync with completed charts. Tracks still needing analysis stay in the Playlist but are unavailable in Phase until a later Phase edit.</source>
+        <translation>Die Synchronisierung mit den fertigen Spielcharts fortsetzen. Titel, die noch analysiert werden müssen, bleiben in der Wiedergabeliste, sind aber in Phase erst nach einer späteren Bearbeitung der Phase-Wiedergabeliste verfügbar.</translation>
     </message>
     <message>
         <source>Return to Library</source>

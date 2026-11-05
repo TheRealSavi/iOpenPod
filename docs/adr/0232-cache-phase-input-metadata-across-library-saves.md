@@ -4,6 +4,7 @@
 - Date: 2026-11-03
 - Supersedes: ADR-0210 and ADR-0231's full audio checks for unchanged chart reuse
 - Extends: ADR-0227's bounded capture path for inputs needing analysis
+- Unrelated-save evaluation superseded by [ADR-0239](0239-gate-and-skip-phase-analysis.md).
 
 Creating an unrelated Playlist caused a minute-long pass over 96 Phase Tracks.
 Avoiding captures still streamed all audio and retained it as a transaction

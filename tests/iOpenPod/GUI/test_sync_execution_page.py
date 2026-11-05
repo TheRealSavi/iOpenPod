@@ -127,6 +127,41 @@ def test_genius_skip_is_available_only_during_analysis_and_resets_each_sync() ->
         APPLICATION.processEvents()
 
 
+def test_phase_skip_is_scoped_to_analysis_and_resets_each_sync() -> None:
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        skip = page.findChild(QPushButton, "skipPhaseAnalysis")
+        cancel = page.findChild(QPushButton, "cancelSyncExecution")
+        detail = page.findChild(QLabel, "syncExecutionDetail")
+        assert skip is not None and cancel is not None and detail is not None
+        skipped = QSignalSpy(page.skipPhaseRequested)
+        cancelled = QSignalSpy(page.cancelRequested)
+        assert skip.isHidden()
+        page.update_progress(WriteProgress("draft.genius.audio", "Analyzing Genius"))
+        assert skip.isHidden()
+        page.update_progress(WriteProgress("resources.phase", "Analyzing Phase"))
+        assert not skip.isHidden() and skip.isEnabled()
+        skip.click()
+        assert skipped.count() == 1 and cancelled.count() == 0
+        assert not skip.isEnabled() and cancel.isEnabled()
+        assert "Completed charts will be kept" in detail.text()
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert not skip.isEnabled()
+        page.update_progress(WriteProgress("save.storage.stage", "Saving"))
+        assert skip.isHidden()
+        page.begin()
+        page.update_progress(WriteProgress("resources.phase", "Analyzing Phase"))
+        assert skip.isEnabled()
+        cancel.click()
+        assert not skip.isEnabled()
+        page.show_result(SyncExecutionResult(SyncExecutionStatus.SUCCESS))
+        assert skip.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
 def test_success_replaces_cleanup_progress_with_a_finished_result() -> None:
     page = SyncExecutionPage()
     page.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)

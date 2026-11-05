@@ -490,6 +490,7 @@ class CompactTopBar(QFrame):
         action.setIconVisibleInMenu(True)
 
     def set_current_page(self, page_id: PageId) -> None:
+        self._dropdowns.close()
         self._settings.setChecked(page_id is PageId.SETTINGS)
         self._summary.setChecked(page_id is PageId.DEVICE_SUMMARY)
         for candidate, action in self._actions.items():

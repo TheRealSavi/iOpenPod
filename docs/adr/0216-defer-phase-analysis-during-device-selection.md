@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-30
 - Clarifies: ADR-0100, ADR-0215
+- Ordinary-save upgrade policy superseded by [ADR-0239](0239-gate-and-skip-phase-analysis.md).
 
 Selection-time playback-sidecar reconciliation uses the normal Library transaction
 but must not regenerate Phase charts. Model analysis under the selection lock can

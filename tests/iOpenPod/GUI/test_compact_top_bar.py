@@ -16,6 +16,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
+    QListWidget,
     QPushButton,
     QScrollArea,
     QStyle,
@@ -399,7 +400,7 @@ def test_tab_focuses_headings_and_exits_open_menu_to_next_control() -> None:
 @pytest.mark.parametrize("name", _DROPDOWNS)
 @pytest.mark.parametrize(
     "dismiss",
-    ["leave", "escape", "outside", "hide", "disconnect", "deactivate", "move"],
+    ["leave", "escape", "outside", "hide", "disconnect", "deactivate", "move", "page"],
 )
 def test_shared_dropdown_dismissal(name: str, dismiss: str) -> None:
     bar = CompactTopBar(playlists=_workspace())
@@ -423,12 +424,48 @@ def test_shared_dropdown_dismissal(name: str, dismiss: str) -> None:
             bar.set_active_ipod(None)
         elif dismiss == "move":
             bar.move(bar.pos() + QPoint(10, 10))
+        elif dismiss == "page":
+            bar.set_current_page(PageId.SYNESTHESIA)
         else:
             APPLICATION.sendEvent(bar, QEvent(QEvent.Type.ApplicationDeactivate))
         QTest.qWait(220)
         assert not popup.isVisible()
         assert button.property("dropdownOpen") is False
     finally:
+        bar.close()
+
+
+@pytest.mark.parametrize("name", _DROPDOWNS)
+@pytest.mark.parametrize("popup_window", [False, True])
+def test_unrelated_widget_receives_keyboard_input(
+    name: str,
+    popup_window: bool,
+) -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    other = QListWidget(bar)
+    if popup_window:
+        other.setWindowFlags(Qt.WindowType.Popup)
+    other.addItems(["First", "Second"])
+    other.setCurrentRow(0)
+    try:
+        _show(bar)
+        button = _button(bar, name)
+        QTest.keyClick(button, Qt.Key.Key_Down)
+        popup = _dropdown(bar, name)
+        assert popup.isVisible()
+
+        other.show()
+        other.setFocus(Qt.FocusReason.PopupFocusReason)
+        QTest.keyClick(other, Qt.Key.Key_Down)
+
+        assert other.currentRow() == 1
+        if popup_window:
+            assert APPLICATION.activePopupWidget() is other
+            assert not popup.isVisible()
+            assert button.property("dropdownOpen") is False
+    finally:
+        other.close()
         bar.close()
 
 

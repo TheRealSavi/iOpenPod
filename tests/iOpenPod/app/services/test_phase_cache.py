@@ -231,3 +231,36 @@ def test_adding_phase_member_analyzes_only_the_new_track(tmp_path: Path) -> None
         }
         assert media_dependencies == {desired.tracks[3].metadata.location}
         commit(session, result)
+
+
+@pytest.mark.parametrize("managed", [False, True])
+@pytest.mark.parametrize("backend", ["cuda", "mps"])
+@pytest.mark.parametrize("receipts", [False, True])
+def test_backend_change_reuses_published_charts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    managed: bool,
+    backend: str,
+    receipts: bool,
+) -> None:
+    storage, desired = device(tmp_path, 2)
+    producer = "librosa-phase-7:" + ("managed-v1:" if managed else "")
+    producer += "demucs-4.0.1-5c90dfd2-torch-2.14.0+cpu-cpu-shifts0:stereo"
+    monkeypatch.setattr(StubPhaseAnalysis, "identity", property(lambda self: producer))
+    analyzer = StubPhaseAnalysis()
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        commit(
+            session,
+            prepare_phase(session, LibrarySnapshot(), desired, analyzer=analyzer),
+        )
+        if not receipts:
+            (tmp_path / str(VALIDATION_PATH)).unlink()
+        original_provenance = (tmp_path / str(CACHE_PATH)).read_bytes()
+        producer = producer.replace("+cpu-cpu", f"+cu130-{backend}")
+        result = prepare_phase(session, desired, desired, analyzer=analyzer)
+        assert len(analyzer.calls) == 2, "Changing compute backend regenerated charts"
+        assert {write.path for write in result.writes} <= {VALIDATION_PATH}
+        commit(session, result)
+        assert (tmp_path / str(CACHE_PATH)).read_bytes() == original_provenance

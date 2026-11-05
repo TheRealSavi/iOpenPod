@@ -72,6 +72,14 @@ class LibraryReviewDialog(QDialog):
         )
         self._retry = ActionButton(self.tr("Prepare again"), self)
         self._cancel = ActionButton(self.tr("Cancel preparation"), self)
+        self._skip_phase = ActionButton(self.tr("Skip Phase analysis"), self)
+        self._skip_phase.setObjectName("skipPhaseAnalysis")
+        self._skip_phase.setToolTip(
+            self.tr(
+                "Continue saving with completed charts. Tracks still needing analysis "
+                "stay in the Playlist but are unavailable in Phase until a later Phase edit."
+            )
+        )
         self._discard = ActionButton(
             self.tr("Discard Changes"),
             self,
@@ -94,10 +102,12 @@ class LibraryReviewDialog(QDialog):
         buttons.addButton(self._save, QDialogButtonBox.ButtonRole.ActionRole)
         buttons.addButton(self._retry, QDialogButtonBox.ButtonRole.ActionRole)
         buttons.addButton(self._cancel, QDialogButtonBox.ButtonRole.ActionRole)
+        buttons.addButton(self._skip_phase, QDialogButtonBox.ButtonRole.ActionRole)
         buttons.addButton(self._discard, QDialogButtonBox.ButtonRole.DestructiveRole)
         buttons.rejected.connect(self.reject)
         self._retry.clicked.connect(controller.prepare)
         self._cancel.clicked.connect(controller.cancel)
+        self._skip_phase.clicked.connect(controller.skip_phase_analysis)
         self._discard.clicked.connect(controller.discard_changes)
         self._save.clicked.connect(controller.save)
         self._inspect.clicked.connect(self._inspect_write)
@@ -120,6 +130,13 @@ class LibraryReviewDialog(QDialog):
             self._refresh_progress()
 
     def _refresh_progress(self) -> None:
+        progress = self._controller.progress
+        self._skip_phase.setVisible(
+            self._controller.state is PreparationState.PREPARING
+            and progress is not None
+            and progress.phase == "resources.phase"
+        )
+        self._skip_phase.setEnabled(self._controller.can_skip_phase_analysis)
         status = library_write_status(self._controller.state, self._controller.progress)
         self._warning.setVisible(status is not None and bool(status.safety_warning))
         self._progress.setVisible(status is not None)

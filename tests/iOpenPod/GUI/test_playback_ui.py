@@ -938,6 +938,7 @@ def test_player_rating_stars_edit_the_current_track_draft() -> None:
         assert rating.text() == "☆☆☆☆☆"
 
         QTest.mouseMove(rating, rating.rect().center())
+        APPLICATION.processEvents()
         assert rating.text() == "★★★☆☆"
         assert rating.property("ratingHover") is True
         draft_track = context.library_workspace.track(track.track_id)
@@ -1115,7 +1116,9 @@ def test_player_progress_advances_between_backend_updates() -> None:
         progress = window.findChild(QSlider, "playerProgress")
         assert progress is not None
         backend.emit_position(10_000)
-        QTest.qWait(80)
+        timer = window.findChild(QTimer, "playerProgressTimer")
+        assert timer is not None and timer.isActive()
+        assert QSignalSpy(timer.timeout).wait(1000)
         assert progress.value() > 10_000
         assert context.playback_controller.position_ms == 10_000
         assert backend.seeks == []

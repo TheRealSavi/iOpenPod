@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 from contextlib import ExitStack, closing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, cast
@@ -38,6 +39,7 @@ from storage import (
     FileContent,
     FilePrecondition,
     HostPath,
+    SessionInvalidatedError,
     TransactionWrite,
 )
 from storage.host_input import LocalHostFile
@@ -71,6 +73,59 @@ class PhasePublication:
     writes: tuple[TransactionWrite, ...] = ()
 
 
+def phase_playlist_changed(
+    before: LibrarySnapshot,
+    desired: LibrarySnapshot,
+    media_writes: tuple[TransactionWrite, ...] = (),
+) -> bool:
+    """Gate automatic preparation on edits to the selection or its audio inputs."""
+    previous = tuple(p for p in before.playlists if p.is_phase)
+    selected = tuple(p for p in desired.playlists if p.is_phase)
+    # Entry IDs are source-local occurrence identities, not Playlist edits.
+    if tuple((replace(p, entries=()), p.track_ids) for p in previous) != tuple(
+        (replace(p, entries=()), p.track_ids) for p in selected
+    ):
+        return True
+    if not selected:
+        return False
+    members = set(selected[0].track_ids)
+
+    def inputs(
+        snapshot: LibrarySnapshot,
+    ) -> tuple[tuple[int, int, str, int, tuple[MediaType, ...]], ...]:
+        return tuple(
+            sorted(
+                (
+                    t.track_id,
+                    t.ipod.db_track_id if t.ipod else 0,
+                    t.metadata.location,
+                    t.length_ms,
+                    t.media_types,
+                )
+                for t in snapshot.tracks
+                if t.track_id in members
+            )
+        )
+
+    if inputs(before) != inputs(desired):
+        return True
+    paths = {t.metadata.location for t in desired.tracks if t.track_id in members}
+    return any(str(write.path) in paths for write in media_writes)
+
+
+def _chart_identity(identity: str) -> str:
+    """Ignore compute placement in both legacy and current Demucs provenance."""
+    return re.sub(
+        r"(demucs-[^:]+-torch-[^:+]+)(?:\+(?:cpu|cu\d+))?-(?:cpu|cuda|mps)-shifts0",
+        r"\1-shifts0",
+        identity,
+    )
+
+
+class _PhaseAnalysisSkippedError(Exception):
+    """Stop optional work without cancelling the Library publication."""
+
+
 def _eligible_tracks(
     desired: LibrarySnapshot, unique_ids: tuple[int, ...]
 ) -> tuple[tuple[int, Track], ...]:
@@ -101,7 +156,11 @@ def _cached_audio_hash(cached: str | None, identity: str, length_ms: int) -> str
         return None
     # Provider identities contain colons; the final three fields do not.
     fields = cached.rsplit(":", 3)
-    if len(fields) == 4 and fields[0] == identity and fields[2] == str(length_ms):
+    if (
+        len(fields) == 4
+        and _chart_identity(fields[0]) == _chart_identity(identity)
+        and fields[2] == str(length_ms)
+    ):
         return fields[1]
     return None
 
@@ -129,6 +188,7 @@ def prepare_phase(
     media_writes: tuple[TransactionWrite, ...] = (),
     progress: Callable[[int, int, str], None] = lambda _done, _total, _title: None,
     analysis_progress: Callable[[PhaseProgress], None] = lambda _value: None,
+    skip_requested: Callable[[], bool] = lambda: False,
 ) -> PhasePublication:
     """Use final persistent IDs and verified audio; prepare charts without writes.
 
@@ -206,7 +266,6 @@ def prepare_phase(
         updated_validation: dict[str, PhaseCacheEntry] = {}
         incoming = {w.path: w for w in media_writes}
         retained = {t.persistent_id: t for t in existing.tracks}
-        records: list[PhaseTrack] = []
         unique_ids = tuple(dict.fromkeys(playlist.track_ids))
         eligible = _eligible_tracks(desired, unique_ids)
         identity = audio_analyzer.identity if eligible else ""
@@ -250,6 +309,7 @@ def prepare_phase(
             for completed, track in eligible
             if track.ipod is not None and track.ipod.db_track_id not in reused
         )
+        records = dict(reused)
         reporter = PhaseProgressReporter(
             tuple(track.length_ms for _, track in pending), analysis_progress
         )
@@ -259,116 +319,135 @@ def prepare_phase(
 
         def report_checkpoint() -> None:
             checkpoint()
+            if not session.is_active:
+                raise SessionInvalidatedError(
+                    "The Filesystem Session ended during Phase analysis"
+                )
             reporter.emit(
                 current_title, audio_analyzer.activity if analyzing else activity
             )
+            if skip_requested():
+                raise _PhaseAnalysisSkippedError
 
         if pending:
             reporter.emit(current_title, activity)
-        inputs = input_lifetime.enter_context(
-            prefetch_phase_inputs(
-                session,
-                tuple(
-                    DevicePath(track.metadata.location)
-                    for _, track in pending
-                    if DevicePath(track.metadata.location) not in incoming
-                ),
-                checkpoint=report_checkpoint,
-                reuse_hashes=reuse_hashes,
+        try:
+            if pending:
+                report_checkpoint()
+            inputs = input_lifetime.enter_context(
+                prefetch_phase_inputs(
+                    session,
+                    tuple(
+                        DevicePath(track.metadata.location)
+                        for _, track in pending
+                        if DevicePath(track.metadata.location) not in incoming
+                    ),
+                    checkpoint=report_checkpoint,
+                    reuse_hashes=reuse_hashes,
+                )
             )
-        )
-        for completed, track in eligible:
-            assert track.ipod is not None
-            if track.ipod.db_track_id in reused:
-                records.append(reused[track.ipod.db_track_id])
-                continue
-            current_title = track.title
-            activity = PhaseActivity(PhaseStage.CAPTURING)
-            inputs.checkpoint()
-            pid = track.ipod.db_track_id
-            progress(completed, len(unique_ids), track.title)
-            record = retained.get(pid, PhaseTrack(pid, 7, 1))
-            path = DevicePath(f"{_GAME}/{phase_analysis_relative_path(record)}")
-            analysis = read(path, 16 * 1024 * 1024)
-            if analysis is not None:
-                if len(analysis) < 90 or analysis[:4] != b"pha\x02":
-                    raise ValueError(f"Unrecognized Phase analysis file: {path}")
-                if pid in retained and len(analysis) != record.analysis_size:
-                    raise ValueError(
-                        f"Phase analysis size disagrees with its index: {path}"
-                    )
-            cached = cache.get(f"{pid:016X}")
-            reusable_hash = _cached_audio_hash(
-                cached, audio_analyzer.identity, track.length_ms
-            )
-            if analysis is None or cached != (
-                f"{audio_analyzer.identity}:{reusable_hash}:{track.length_ms}:"
-                f"{sha256(analysis).hexdigest()}"
-            ):
-                reusable_hash = None
-            with ExitStack() as capture:
-                audio_path = DevicePath(track.metadata.location)
-                source: HostPath | DevicePath
-                observed: LocalHostFile | None = None
-                supplied = incoming.get(audio_path)
-                if supplied is not None:
-                    if isinstance(supplied.source, bytes):
-                        raise ValueError(
-                            "Phase analysis requires a prepared audio file source."
-                        )
-                    source = supplied.source
-                    observed = LocalHostFile.observe(source)
-
-                    audio_hash = _host_digest(
-                        observed, supplied.content.size, inputs.checkpoint
-                    )
-                    if audio_hash != supplied.content.sha256:
-                        raise ValueError(
-                            "Prepared Phase audio changed before analysis."
-                        )
-                else:
-                    prepared = capture.enter_context(
-                        inputs.capture(audio_path, reuse_sha256=reusable_hash)
-                    )
-                    source = prepared.source
-                    audio_before = prepared.fingerprint
-                    files[audio_path] = FilePrecondition(audio_path, audio_before)
-                    audio_hash = audio_before.sha256
-                key = f"{audio_analyzer.identity}:{audio_hash}:{track.length_ms}"
-                if (
-                    analysis is not None
-                    and cached == f"{key}:{sha256(analysis).hexdigest()}"
-                ):
-                    activity = PhaseActivity(PhaseStage.REUSING)
-                    inputs.checkpoint()
-                    data = analysis
-                else:
-                    analyzing = True
-                    try:
-                        data = audio_analyzer.analyze(
-                            source,
-                            input_suffix=PurePosixPath(track.metadata.location).suffix,
-                            length_ms=track.length_ms,
-                            session=session,
-                            checkpoint=inputs.checkpoint,
-                        )
-                    finally:
-                        analyzing = False
-                    # A failed accelerator or optional provider can change the analyzer.
-                    # Record the identity that produced these bytes, never the candidate.
-                    key = f"{audio_analyzer.identity}:{audio_hash}:{track.length_ms}"
-                    publish(path, data, analysis)
-                activity = PhaseActivity(PhaseStage.VERIFYING)
+            for completed, track in eligible:
+                assert track.ipod is not None
+                if track.ipod.db_track_id in reused:
+                    continue
+                current_title = track.title
+                activity = PhaseActivity(PhaseStage.CAPTURING)
                 inputs.checkpoint()
-                if supplied is not None:
-                    assert observed is not None
-                    if (
-                        _host_digest(observed, supplied.content.size, inputs.checkpoint)
-                        != audio_hash
-                    ):
+                pid = track.ipod.db_track_id
+                progress(completed, len(unique_ids), track.title)
+                record = retained.get(pid, PhaseTrack(pid, 7, 1))
+                path = DevicePath(f"{_GAME}/{phase_analysis_relative_path(record)}")
+                analysis = read(path, 16 * 1024 * 1024)
+                if analysis is not None:
+                    if len(analysis) < 90 or analysis[:4] != b"pha\x02":
+                        raise ValueError(f"Unrecognized Phase analysis file: {path}")
+                    if pid in retained and len(analysis) != record.analysis_size:
                         raise ValueError(
-                            "Prepared Phase audio changed during analysis."
+                            f"Phase analysis size disagrees with its index: {path}"
                         )
+                cached = cache.get(f"{pid:016X}")
+                reusable_hash = _cached_audio_hash(
+                    cached, audio_analyzer.identity, track.length_ms
+                )
+                if (
+                    analysis is None
+                    or cached is None
+                    or cached.rsplit(":", 1)[-1] != sha256(analysis).hexdigest()
+                ):
+                    reusable_hash = None
+                with ExitStack() as capture:
+                    audio_path = DevicePath(track.metadata.location)
+                    source: HostPath | DevicePath
+                    observed: LocalHostFile | None = None
+                    supplied = incoming.get(audio_path)
+                    if supplied is not None:
+                        if isinstance(supplied.source, bytes):
+                            raise ValueError(
+                                "Phase analysis requires a prepared audio file source."
+                            )
+                        source = supplied.source
+                        observed = LocalHostFile.observe(source)
+
+                        audio_hash = _host_digest(
+                            observed, supplied.content.size, inputs.checkpoint
+                        )
+                        if audio_hash != supplied.content.sha256:
+                            raise ValueError(
+                                "Prepared Phase audio changed before analysis."
+                            )
+                    else:
+                        prepared = capture.enter_context(
+                            inputs.capture(audio_path, reuse_sha256=reusable_hash)
+                        )
+                        source = prepared.source
+                        audio_before = prepared.fingerprint
+                        files[audio_path] = FilePrecondition(audio_path, audio_before)
+                        audio_hash = audio_before.sha256
+                    key = f"{audio_analyzer.identity}:{audio_hash}:{track.length_ms}"
+                    if (
+                        analysis is not None
+                        and cached is not None
+                        and reusable_hash == audio_hash
+                    ):
+                        activity = PhaseActivity(PhaseStage.REUSING)
+                        inputs.checkpoint()
+                        data = analysis
+                        key = cached.rsplit(":", 1)[0]
+                    else:
+                        analyzing = True
+                        try:
+                            data = audio_analyzer.analyze(
+                                source,
+                                input_suffix=PurePosixPath(
+                                    track.metadata.location
+                                ).suffix,
+                                length_ms=track.length_ms,
+                                session=session,
+                                checkpoint=inputs.checkpoint,
+                            )
+                        finally:
+                            analyzing = False
+                        # A failed accelerator or optional provider can change the analyzer.
+                        # Record the identity that produced these bytes, never the candidate.
+                        key = (
+                            f"{audio_analyzer.identity}:{audio_hash}:{track.length_ms}"
+                        )
+                    activity = PhaseActivity(PhaseStage.VERIFYING)
+                    inputs.checkpoint()
+                    if supplied is not None:
+                        assert observed is not None
+                        if (
+                            _host_digest(
+                                observed, supplied.content.size, inputs.checkpoint
+                            )
+                            != audio_hash
+                        ):
+                            raise ValueError(
+                                "Prepared Phase audio changed during analysis."
+                            )
+                # Capture exit verifies the source. Only fully verified results may
+                # survive a Skip request observed during the next Track.
+                publish(path, data, analysis)
                 updated_cache[f"{pid:016X}"] = f"{key}:{sha256(data).hexdigest()}"
                 updated_validation[f"{pid:016X}"] = PhaseCacheEntry(
                     updated_cache[f"{pid:016X}"],
@@ -381,13 +460,20 @@ def prepare_phase(
                     if data == analysis
                     else None,
                 )
-                records.append(PhaseTrack(pid, record.shard, len(data)))
-            reporter.complete_track()
+                records[pid] = PhaseTrack(pid, record.shard, len(data))
+                reporter.complete_track()
+        except _PhaseAnalysisSkippedError:
+            input_lifetime.close()
+            checkpoint()
+            if not session.is_active:
+                raise SessionInvalidatedError(
+                    "The Filesystem Session ended during Phase analysis"
+                ) from None
         progress(len(unique_ids), len(unique_ids), "")
         if pending:
             reporter.emit("", PhaseActivity(PhaseStage.FINALIZING))
         # Keep metadata bounded to this playlist; unused chart files remain untouched.
-        retained_ids = {f"{record.persistent_id:016X}" for record in records}
+        retained_ids = {f"{pid:016X}" for pid in records}
         updated_cache = {k: v for k, v in updated_cache.items() if k in retained_ids}
         cache_data = (json.dumps(updated_cache, sort_keys=True) + "\n").encode()
         if len(cache_data) > 8 * 1024 * 1024:
@@ -398,7 +484,16 @@ def prepare_phase(
         )
         publish(
             INDEX_PATH,
-            build_phase_library(PhaseLibrary(playlist.playlist_id, tuple(records))),
+            build_phase_library(
+                PhaseLibrary(
+                    playlist.playlist_id,
+                    tuple(
+                        records[track.ipod.db_track_id]
+                        for _, track in eligible
+                        if track.ipod is not None and track.ipod.db_track_id in records
+                    ),
+                )
+            ),
             original,
         )
         return PhasePublication(tuple(files.values()), tuple(writes))

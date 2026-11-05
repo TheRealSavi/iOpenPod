@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from threading import Event
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
@@ -73,6 +74,9 @@ class LibraryPreparationRequest:
     # Runtime control belongs to this Sync; it never changes persisted settings.
     genius_analysis_skip: threading.Event | None = field(
         default=None, compare=False, repr=False, kw_only=True
+    )
+    phase_analysis_skip: Event = field(
+        default_factory=Event, compare=False, repr=False, kw_only=True
     )
     add_genius_mixes: tuple[str, ...] = field(default=(), kw_only=True)
     remove_genius_collections: tuple[str, ...] = field(default=(), kw_only=True)

@@ -107,6 +107,7 @@ from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
 from iOpenPod.app.services.phase import (
     PhasePublication,
     capture_phase_selection,
+    phase_playlist_changed,
     prepare_phase,
 )
 from iOpenPod.app.smart_playlist_preview import (
@@ -2135,6 +2136,7 @@ class DeviceCoordinator:
                         checkpoint=cancellation_checkpoint,
                         analyzer=self._phase_analysis,
                         media_writes=captured.media_writes,
+                        skip_requested=request.phase_analysis_skip.is_set,
                         analysis_progress=lambda value: progress(
                             WriteProgress(
                                 "resources.phase",
@@ -2148,6 +2150,9 @@ class DeviceCoordinator:
                         ),
                     )
                     if prepare_phase_companions
+                    and phase_playlist_changed(
+                        source.snapshot, result.prepared.snapshot, captured.media_writes
+                    )
                     else PhasePublication(
                         files=(active.phase_precondition,)
                         if active.phase_precondition is not None

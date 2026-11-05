@@ -303,3 +303,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0236: Browse Movies with an independent grid toggle](0236-browse-movies-with-an-independent-grid-toggle.md)
 - [ADR-0237: Share Album browsing with Music Videos](0237-share-album-browsing-with-music-videos.md)
 - [ADR-0238: Browse TV Shows with inline Season details](0238-browse-tv-shows-with-inline-season-details.md)
+- [ADR-0239: Gate and skip Phase analysis](0239-gate-and-skip-phase-analysis.md)
