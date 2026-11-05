@@ -56,7 +56,13 @@ def release_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         ),
     )
     write("packaging/third-party/notices/dependency.txt", "Upstream license")
-    for target, suffix, architecture in release.TARGETS:
+    # Model the workflow's artifact handoff independently of the assembler.
+    for target, suffix, architecture in (
+        ("windows-2022", "Windows-x86_64.zip", None),
+        ("macos-15", "sparkle-update-macOS-arm64.zip", "arm64"),
+        ("macos-15-intel", "sparkle-update-macOS-x86_64.zip", "x86_64"),
+        ("ubuntu-24.04", "Linux-x86_64.tar.gz", None),
+    ):
         prefix = f"build/candidates/candidate-{target}"
         name = f"iOpenPod-2.0.0-{suffix}"
         archive = write(prefix + "/dist/" + name, target)
@@ -217,9 +223,9 @@ def test_invalid_release_identity_fails_before_output(
     "relative",
     [
         "candidate-macos-15-intel/dist/iOpenPod-2.0.0-sparkle-update-macOS-x86_64.zip",
-        "candidate-macos-14/dist/iOpenPod-2.0.0-macOS-arm64.dmg",
+        "candidate-macos-15/dist/iOpenPod-2.0.0-macOS-arm64.dmg",
         "candidate-ubuntu-24.04/build/packaging/licenses/inventory.json",
-        "candidate-macos-14/build/packaging/macos-compatibility.json",
+        "candidate-macos-15/build/packaging/macos-compatibility.json",
         "candidate-windows-2022/dist/iopenpod-2.0.0.tar.gz",
     ],
 )
@@ -243,7 +249,7 @@ def test_checksum_mismatch_prevents_release(
     checksum = (
         release_root
         / "build/candidates"
-        / ("candidate-macos-14" if name.endswith(".dmg") else "candidate-windows-2022")
+        / ("candidate-macos-15" if name.endswith(".dmg") else "candidate-windows-2022")
         / "dist"
         / (name + ".sha256")
     )
@@ -265,7 +271,7 @@ def test_wrong_compatibility_report_prevents_release(
 ) -> None:
     path = (
         release_root
-        / "build/candidates/candidate-macos-14/build/packaging/macos-compatibility.json"
+        / "build/candidates/candidate-macos-15/build/packaging/macos-compatibility.json"
     )
     path.write_text(json.dumps(report))
     with pytest.raises(ValueError, match="compatibility report"):
