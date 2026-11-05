@@ -297,6 +297,34 @@ class HostLibraryBrowser:
         self.workspace.load(library.snapshot)
         self.track_model.reset_tracks(library.snapshot.tracks)
 
+    @property
+    def populated_pages(self) -> frozenset[PageId]:
+        """Report scan content independently of search and Sync Selection."""
+
+        if self.library is None:
+            return frozenset()
+        snapshot = self.library.snapshot
+        kinds = {track.media_kind for track in snapshot.tracks}
+        populated = {
+            PageId.ALBUMS: self.album_model.rowCount() > 0,
+            PageId.ARTISTS: self.artist_model.rowCount() > 0,
+            PageId.GENRES: self.genre_model.rowCount() > 0,
+            PageId.TRACKS: bool(snapshot.tracks),
+            PageId.PLAYLISTS: bool(snapshot.playlists),
+            PageId.PHOTOS: bool(snapshot.photos and snapshot.photos.photos),
+            PageId.PODCASTS: MediaKind.PODCAST in kinds,
+            PageId.AUDIOBOOKS: MediaKind.AUDIOBOOK in kinds,
+            PageId.MOVIES: MediaKind.MOVIE in kinds,
+            PageId.TV_SHOWS: self.tv_show_model.rowCount() > 0,
+            PageId.MUSIC_VIDEOS: self.music_video_model.rowCount() > 0,
+            PageId.VIDEOS: bool(
+                kinds & {MediaKind.MOVIE, MediaKind.TV_SHOW, MediaKind.MUSIC_VIDEO}
+            ),
+        }
+        return frozenset(
+            page_id for page_id, has_content in populated.items() if has_content
+        )
+
     def retranslate(self) -> None:
         for model in (
             self.track_model,

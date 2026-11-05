@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea
-from tests.iOpenPod.app.services.test_library_resources import build_device
+from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea, QStackedWidget
+from tests.iOpenPod.app.services.test_library_resources import Device, build_device
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.host_media_library import HostMediaCacheStats, HostMediaLibrary
@@ -24,6 +24,7 @@ from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.sync_workspace import SyncWorkspace
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
+from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import (
     LibrarySnapshot,
@@ -32,6 +33,7 @@ from iPodDB.library import (
     PhotoLibrary,
     PhotoRepresentation,
     PhotoRepresentationKind,
+    Playlist,
     Track,
     TrackMetadata,
 )
@@ -85,11 +87,19 @@ def _library() -> HostMediaLibrary:
 
 
 @pytest.fixture
-def workspace(tmp_path: Path) -> Iterator[SyncWorkspace]:
+def device(tmp_path: Path) -> Iterator[Device]:
+    device = build_device(tmp_path)
+    try:
+        yield device
+    finally:
+        device.coordinator.close()
+
+
+@pytest.fixture
+def workspace(device: Device) -> Iterator[SyncWorkspace]:
     context = build_context()
     artwork = ArtworkPixmapProvider(context.artwork_controller)
     page = SyncWorkspace(context.settings, context.theme_manager, artwork)
-    device = build_device(tmp_path)
     page.resize(1050, 800)
     try:
         page.load_comparison(
@@ -107,13 +117,124 @@ def workspace(tmp_path: Path) -> Iterator[SyncWorkspace]:
         page.deleteLater()
         APPLICATION.sendPostedEvents(page, QEvent.Type.DeferredDelete)
         context.shutdown()
-        device.coordinator.close()
 
 
 def _button(workspace: SyncWorkspace) -> QPushButton:
     button = workspace.findChild(QPushButton, "toggleAllSyncMedia")
     assert button is not None
     return button
+
+
+def _visible_pages(workspace: SyncWorkspace) -> set[PageId]:
+    pages = {
+        PageId(button.property("syncPageId"))
+        for button in workspace.findChildren(QPushButton)
+        if button.property("syncPageId") and not button.isHidden()
+    }
+    playlists = workspace.findChild(PlaylistTree, "syncPlaylistSidebar")
+    assert playlists is not None
+    if not playlists.isHidden():
+        pages.add(PageId.PLAYLISTS)
+    return pages
+
+
+def _reload_snapshot(
+    workspace: SyncWorkspace, snapshot: LibrarySnapshot, device: Device
+) -> None:
+    workspace.load_comparison(
+        replace(_library(), snapshot=snapshot),
+        SyncPlan(()),
+        device.active,
+        IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False),
+    )
+
+
+@pytest.mark.parametrize(
+    ("media_type", "expected"),
+    [
+        (MediaType.AUDIO, {PageId.ALBUMS, PageId.ARTISTS, PageId.GENRES}),
+        (MediaType.PODCAST, {PageId.PODCASTS}),
+        (MediaType.VIDEO_PODCAST, {PageId.PODCASTS}),
+        (MediaType.AUDIOBOOK, {PageId.AUDIOBOOKS}),
+        (MediaType.VIDEO, {PageId.MOVIES, PageId.VIDEOS}),
+        (MediaType.TV_SHOW, {PageId.TV_SHOWS, PageId.VIDEOS}),
+        (MediaType.MUSIC_VIDEO, {PageId.MUSIC_VIDEOS, PageId.VIDEOS}),
+    ],
+)
+def test_sidebar_only_shows_populated_media_pages(
+    workspace: SyncWorkspace,
+    device: Device,
+    media_type: MediaType,
+    expected: set[PageId],
+) -> None:
+    track = replace(_library().snapshot.tracks[0], media_types=(media_type,))
+    _reload_snapshot(workspace, LibrarySnapshot(tracks=(track,)), device)
+
+    assert _visible_pages(workspace) == expected | {PageId.TRACKS}
+    browser = workspace.browser
+    stack = workspace.findChild(QStackedWidget, "syncLibraryStack")
+    assert browser is not None and stack is not None
+    first = PageId.ALBUMS if media_type is MediaType.AUDIO else PageId.TRACKS
+    assert stack.currentWidget() is browser.page_widgets[first]
+
+
+@pytest.mark.parametrize(
+    ("snapshot", "expected"),
+    [
+        (LibrarySnapshot(photos=_library().snapshot.photos), {PageId.PHOTOS}),
+        (LibrarySnapshot(playlists=(Playlist(1, "Mix"),)), {PageId.PLAYLISTS}),
+        (LibrarySnapshot(), set[PageId]()),
+        (LibrarySnapshot(photos=PhotoLibrary()), set[PageId]()),
+    ],
+)
+def test_sidebar_handles_non_track_and_empty_scans(
+    workspace: SyncWorkspace,
+    device: Device,
+    snapshot: LibrarySnapshot,
+    expected: set[PageId],
+) -> None:
+    _reload_snapshot(workspace, snapshot, device)
+
+    assert _visible_pages(workspace) == expected
+    browser = workspace.browser
+    stack = workspace.findChild(QStackedWidget, "syncLibraryStack")
+    assert browser is not None and stack is not None
+    assert stack.isHidden() is (not expected)
+    if expected:
+        assert stack.currentWidget() is browser.page_widgets[next(iter(expected))]
+
+
+def test_sidebar_rechecks_scan_content_and_device_support(
+    workspace: SyncWorkspace, device: Device
+) -> None:
+    workspace.set_available_pages(frozenset({PageId.PODCASTS, PageId.PHOTOS}))
+    assert _visible_pages(workspace) == {PageId.PHOTOS}
+    podcast = replace(_library().snapshot.tracks[0], media_types=(MediaType.PODCAST,))
+    _reload_snapshot(workspace, LibrarySnapshot(tracks=(podcast,)), device)
+    assert _visible_pages(workspace) == {PageId.PODCASTS}
+    browser = workspace.browser
+    stack = workspace.findChild(QStackedWidget, "syncLibraryStack")
+    assert browser is not None and stack is not None
+    assert stack.currentWidget() is browser.page_widgets[PageId.PODCASTS]
+
+    workspace.selection.set_all_host_media_checked(True)
+    workspace.selection.set_all_host_media_checked(False)
+    toolbar = browser.page_widgets[PageId.PODCASTS].findChild(LibraryToolbar)
+    assert toolbar is not None
+    toolbar.queryChanged.emit("no matching podcast")
+    workspace.retranslate_ui()
+    workspace.set_available_pages(workspace.library_page_ids)
+    assert _visible_pages(workspace) == {PageId.TRACKS, PageId.PODCASTS}
+    assert stack.currentWidget() is browser.page_widgets[PageId.PODCASTS]
+
+    workspace.set_available_pages(frozenset({PageId.PHOTOS}))
+    assert _visible_pages(workspace) == set()
+    assert stack.isHidden()
+    workspace.set_available_pages(workspace.library_page_ids)
+    assert not stack.isHidden()
+    _reload_snapshot(workspace, _library().snapshot, device)
+    assert PageId.PODCASTS not in _visible_pages(workspace)
+    assert stack.currentWidget() is browser.page_widgets[PageId.ALBUMS]
 
 
 def _comparison(*, all_matched: bool = False) -> SyncPlan:

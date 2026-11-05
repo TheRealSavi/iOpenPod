@@ -69,3 +69,13 @@ The application owns an additional mutable selection model, but scanned snapshot
 and comparison plans remain immutable. Playlist reconciliation, Sync execution, and
 publication are still future work. The Sync Workspace must remain honest about that
 boundary and may not enable its final Sync action until execution exists.
+
+## Extension: hide empty Host media pages (2026-11-05)
+
+Select Media navigation shows only pages that both support the Active iPod and
+contain content in the completed Host Media Scan, including the Playlist section.
+Search queries and Sync Selection checkboxes do not change page visibility.
+Replacing the scan or changing supported pages recomputes navigation. If the
+current page is no longer available, the first populated supported page opens;
+when none remain, the Library page area is hidden and the workflow controls remain
+available.
