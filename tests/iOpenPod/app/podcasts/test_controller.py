@@ -10,6 +10,8 @@ from PySide6.QtTest import QTest
 from tests.iOpenPod.app.podcasts.podcast_test_support import active_ipod as _active_ipod
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
+from iOpenPod.app.core.settings.service import SettingsService
+from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
 from iOpenPod.app.podcasts.controller import PodcastController
 from iOpenPod.app.podcasts.feed_client import PodcastFeedError
 from iOpenPod.app.podcasts.models import (
@@ -20,6 +22,7 @@ from iOpenPod.app.podcasts.models import (
     PodcastSyncSettings,
     SubscriptionSource,
 )
+from iOpenPod.app.podcasts.settings import save_default_podcast_sync_settings
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastStateRevision
 
 if TYPE_CHECKING:
@@ -124,12 +127,14 @@ def _controller(
     feed: PodcastSubscription,
     *,
     feeds: _Feeds | None = None,
+    settings: SettingsService | None = None,
 ) -> PodcastController:
     return PodcastController(
         cast("DeviceCoordinator", coordinator),
         cast("DeviceController", devices),
         feeds=feeds or _Feeds(feed),
         directory=_Directory(),
+        settings=settings,
     )
 
 
@@ -139,6 +144,51 @@ def _wait_until(condition: Callable[[], bool]) -> None:
         APPLICATION.processEvents()
         QTest.qWait(10)
     assert condition()
+
+
+def test_new_subscriptions_copy_current_defaults_and_keep_saved_policy() -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    first_defaults = PodcastSyncSettings(episode_slots=0)
+    save_default_podcast_sync_settings(settings, first_defaults)
+    first = PodcastSubscription(
+        "first", "https://example.test/first", "First", SubscriptionSource.USER
+    )
+    second = PodcastSubscription(
+        "second", "https://example.test/second", "Second", SubscriptionSource.USER
+    )
+    feeds = _Feeds(first)
+    coordinator = _Coordinator(
+        LoadedPodcastState(PodcastSnapshot(writable=True), PodcastStateRevision())
+    )
+    devices = _Devices()
+    controller = _controller(
+        coordinator, devices, first, feeds=feeds, settings=settings
+    )
+    try:
+        devices.activeIPodChanged.emit(_active_ipod())
+        _wait_until(lambda: controller.can_edit)
+        controller.subscribe(first.feed_url)
+        _wait_until(lambda: not controller.busy)
+        assert controller.snapshot.subscriptions[0].sync_settings == first_defaults
+
+        next_defaults = PodcastSyncSettings(episode_slots=9, clear_when_listened=False)
+        save_default_podcast_sync_settings(settings, next_defaults)
+        controller.subscribe(first.feed_url)
+        _wait_until(lambda: not controller.busy)
+        controller.refresh(first.subscription_id)
+        _wait_until(lambda: not controller.busy)
+        assert controller.snapshot.subscriptions[0].sync_settings == first_defaults
+
+        feeds.subscription = second
+        controller.subscribe(second.feed_url)
+        _wait_until(lambda: not controller.busy)
+        saved = {
+            item.subscription_id: item.sync_settings
+            for item in coordinator.saved[-1].snapshot.subscriptions
+        }
+        assert saved == {"first": first_defaults, "second": next_defaults}
+    finally:
+        controller.shutdown()
 
 
 @pytest.mark.parametrize(

@@ -955,7 +955,11 @@ Device files use
 fingerprint-checked Storage writes under
 `iPod_Control/iOpenPod/Podcasts`. Podcast Episodes can be added or removed manually,
 and per-show Sync settings select and retain Episodes during ordinary Sync or the
-Sync Podcast and Sync Podcasts actions. These operations refresh feeds, preserve
+Sync Podcast and Sync Podcasts actions. Settings > Sync in the Host scope offers
+**Default Podcast Sync Settings**, opening the same dialog and saving all five
+choices in Host `settings-v2.json`. Newly added subscriptions copy these defaults;
+existing subscriptions retain their own policy when defaults change or feeds refresh.
+These operations refresh feeds, preserve
 Listening History, prepare compatible media on the Host, and publish through the
 shared verified Library and Storage Transaction workflow. Failed feed refreshes
 leave that show's media unchanged. Imported chapters are ordered chronologically;

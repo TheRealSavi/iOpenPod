@@ -69,13 +69,7 @@ def encode_subscriptions(subscriptions: Sequence[PodcastSubscription]) -> bytes:
                 "show_type": item.show_type.value,
                 "language": item.language,
                 "last_refreshed": item.last_refreshed,
-                "sync_settings": {
-                    "episode_slots": item.sync_settings.episode_slots,
-                    "fill_mode": item.sync_settings.fill_mode.value,
-                    "clear_when_listened": item.sync_settings.clear_when_listened,
-                    "clear_older_than": item.sync_settings.clear_older_than.value,
-                    "clear_method": item.sync_settings.clear_method.value,
-                },
+                "sync_settings": encode_sync_settings(item.sync_settings),
             }
             for item in subscriptions
         ],
@@ -112,7 +106,7 @@ def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
                     language=_text(row, "language"),
                     last_refreshed=_integer(row, "last_refreshed"),
                     sync_settings=(
-                        _decode_settings(row.get("sync_settings"))
+                        decode_sync_settings(row.get("sync_settings"))
                         if root.get("version") in (2, _SUBSCRIPTIONS_VERSION)
                         else PodcastSyncSettings()
                     ),
@@ -215,7 +209,19 @@ def decode_history(payload: bytes) -> tuple[ListeningRecord, ...]:
     return tuple(records)
 
 
-def _decode_settings(value: object) -> PodcastSyncSettings:
+def encode_sync_settings(settings: PodcastSyncSettings) -> dict[str, object]:
+    """Represent a retention policy in subscription or Host settings JSON."""
+    return {
+        "episode_slots": settings.episode_slots,
+        "fill_mode": settings.fill_mode.value,
+        "clear_when_listened": settings.clear_when_listened,
+        "clear_older_than": settings.clear_older_than.value,
+        "clear_method": settings.clear_method.value,
+    }
+
+
+def decode_sync_settings(value: object) -> PodcastSyncSettings:
+    """Validate the shared retention policy representation."""
     row = _mapping(value, "sync_settings")
     listened = row.get("clear_when_listened")
     if not isinstance(listened, bool):
@@ -307,6 +313,8 @@ __all__ = [
     "PodcastDocumentError",
     "decode_history",
     "decode_subscriptions",
+    "decode_sync_settings",
     "encode_history",
     "encode_subscriptions",
+    "encode_sync_settings",
 ]

@@ -8487,6 +8487,18 @@ Playlists: %3</translation>
         <translation>Opciones de sincronización</translation>
     </message>
     <message>
+        <source>Edit defaults…</source>
+        <translation>Editar valores predeterminados…</translation>
+    </message>
+    <message>
+        <source>Default Podcast Sync Settings</source>
+        <translation>Ajustes de sincronización predeterminados para podcasts</translation>
+    </message>
+    <message>
+        <source>Choose the Sync settings for newly added podcasts. Existing podcasts keep their own settings.</source>
+        <translation>Elige los ajustes de sincronización para los podcasts que añadas a partir de ahora. Los podcasts existentes conservarán sus propios ajustes.</translation>
+    </message>
+    <message>
         <source>Off</source>
         <translation>Desactivado</translation>
     </message>
@@ -8533,6 +8545,10 @@ Playlists: %3</translation>
     <message>
         <source>Fit the entire Photo inside small grid and list thumbnails, adding padding as needed. Off crops only those thumbnails to fill. All other Photo viewing copies always fit the entire image with padding.</source>
         <translation>Muestra la foto completa en las miniaturas pequeñas de las vistas de cuadrícula y lista, añadiendo márgenes si es necesario. Si se desactiva, recorta solo esas miniaturas para llenarlas. Todas las demás copias para visualizar fotos muestran siempre la imagen completa con márgenes.</translation>
+    </message>
+    <message>
+        <source>Could not save podcast defaults</source>
+        <translation>No se pudieron guardar los ajustes predeterminados para podcasts</translation>
     </message>
     <message>
         <source>Fit the entire Photo inside device thumbnails, leaving borders as needed. Off crops Photos to fill each thumbnail.</source>

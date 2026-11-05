@@ -132,3 +132,20 @@ observed device facts independently of automatic media management.
 
 The existing Subscription document version stores zero without a format change.
 Older readers that only accept 1–50 fail closed on that value.
+
+## Amendment: Host defaults for newly added subscriptions (2026-11-05)
+
+Settings > Sync in the Host scope offers **Default Podcast Sync Settings**. Its
+button opens the existing Podcast Sync Settings dialog. Save publishes all five
+choices together under `sync/default-podcast-settings` in Host `settings-v2.json`
+through SettingsService and Storage's atomic Host file replacement. Cancel leaves
+the saved defaults unchanged. Missing or invalid preferences use the original
+three-slot policy; zero remains a valid default. This preference has no iPod override.
+
+An explicit subscription addition captures the current defaults before starting
+network work, then saves that policy with the new Subscription. Existing matching
+Subscriptions keep their saved choices, including when re-added or refreshed.
+Changing defaults does not rewrite existing Subscriptions. Device-recovered
+Subscriptions and older Subscription documents retain their established behavior.
+Host and Subscription documents share the same retention-policy codec without
+changing the Subscription document version.

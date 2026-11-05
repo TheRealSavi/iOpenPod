@@ -32,12 +32,14 @@ from iOpenPod.app.podcasts.models import (
     PodcastSyncSettings,
     SubscriptionSource,
 )
+from iOpenPod.app.podcasts.settings import read_default_podcast_sync_settings
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastStateRevision
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
+    from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
@@ -121,12 +123,14 @@ class PodcastController(QObject):
         *,
         feeds: PodcastFeedClient | None = None,
         directory: PodcastDirectoryClient | None = None,
+        settings: SettingsService | None = None,
     ) -> None:
         super().__init__(parent)
         self._coordinator = coordinator
         self._devices = devices
         self._feeds = feeds or FeedparserPodcastClient()
         self._directory = directory or ApplePodcastDirectoryClient()
+        self._settings = settings
         self._pool = QThreadPool(self)
         self._pool.setMaxThreadCount(2)
         self._source: ActiveIPod | None = None
@@ -297,12 +301,17 @@ class PodcastController(QObject):
             )
             return
         loaded = self._loaded
+        defaults = (
+            read_default_podcast_sync_settings(self._settings)
+            if self._settings is not None
+            else PodcastSyncSettings()
+        )
 
         def action() -> _StateResult:
             fetched = self._feeds.fetch(normalized)
             snapshot = merge_fetched_subscription(
                 loaded.snapshot,
-                fetched,
+                replace(fetched, sync_settings=defaults),
                 source=SubscriptionSource.USER,
             )
             return _StateResult(

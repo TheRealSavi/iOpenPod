@@ -216,6 +216,7 @@ class AppContext:
             device_coordinator,
             device_controller,
             application,
+            settings=settings,
         )
         podcast_artwork_controller = PodcastArtworkController(
             HttpPodcastArtworkLoader(),
