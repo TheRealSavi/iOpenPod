@@ -1371,6 +1371,10 @@ QTabWidget#settingsTabs::pane {{
     border-top: 1px solid {tokens.border};
 }}
 
+QTabWidget#settingsTabs::tab-bar {{
+    left: {LAYOUT.space_lg}px;
+}}
+
 QTabBar::tab {{
     min-width: 92px;
     min-height: {LAYOUT.control_height_large}px;

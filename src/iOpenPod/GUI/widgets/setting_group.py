@@ -40,13 +40,13 @@ class SettingRow(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("settingRow")
+        self.control = control
         self._title = QLabel(title, self)
         self._title.setObjectName("settingLabel")
         self._title.setBuddy(control)
         self._description = QLabel(description, self)
         self._description.setObjectName("settingDescription")
         self._description.setWordWrap(True)
-        self._description.setMaximumWidth(720)
         self._description.setVisible(bool(description))
 
         copy_layout = QVBoxLayout()
@@ -74,6 +74,14 @@ class SettingRow(QWidget):
         layout.setSpacing(LAYOUT.space_lg)
         layout.addLayout(copy_layout, 1)
         layout.addWidget(control)
+
+    @property
+    def title(self) -> str:
+        return self._title.text()
+
+    @property
+    def description(self) -> str:
+        return self._description.text()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)

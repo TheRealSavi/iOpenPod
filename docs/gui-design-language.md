@@ -520,6 +520,48 @@ Text expansion is expected. Layouts must survive longer translations, right-to-l
 direction, larger Host fonts, and 200% display scaling without clipped labels or
 fixed text widths.
 
+## Settings examples
+
+Settings tabs align with the setting groups and share their responsive width.
+Below 1,720 logical pixels of Settings page width, the column fills the available
+viewport inside the standard page margins. At that width and above, it returns to
+960 logical pixels and reserves the remaining space for an example image.
+
+Hovering an illustrated Setting row shows its example; an open dropdown retains priority until
+it closes. Rows without a meaningful visual example leave the space blank.
+Hovering a new row or dropdown choice for 200 ms changes the example. Moving to
+another target restarts this delay, while the current image remains visible.
+Leaving the rows cancels a pending change. Highlighting changes the example without committing
+that choice. Images fade in and out over 300 ms. Replacements crossfade
+directly over 450 ms without dimming the preview; an interrupted blend continues
+from the currently displayed frame toward the latest image. Fade-in uses OutCubic
+for a prompt reveal and gentle finish; crossfades use InOutCubic. Fade-out uses
+InOutSine to spread the opacity change more evenly and avoid a sudden drop in the
+middle. Changing categories, leaving
+Settings, or returning to the narrow layout clears obsolete examples. The image
+stays inside the visible viewport while the settings scroll.
+
+`SettingsTab` owns this presentation behavior. Language uses the shared language
+switcher SVG for every option, including System default and future languages.
+Other examples are actual iOpenPod screenshots captured at 2× density.
+General examples use Porcelain captures in Light appearance and Slate captures
+in Dark appearance, following the active palette, including Auto mode.
+Mode's Light and Dark options show the currently selected themes. Auto composes
+those two screenshots at runtime, with Light above/left and Dark below/right of a
+diagonal from bottom left to top right. Changes to either theme update the preview.
+Library content uses the supplied GenericArt
+albums and the established filename-to-Album mapping, recorded alongside capture
+hashes in `assets/settings/manifest.json`. Capture code is a development tool;
+runtime only loads or combines packaged images. The preview shows only the image;
+the row's translated title and explanation supply its accessibility description.
+The optional vignette is currently disabled by `SETTINGS_VIGNETTE_ENABLED` in
+`settings_tab.py`. When enabled, image edges fade to transparency over 25% of the shorter image dimension, capped
+at 90 logical pixels, blending into the
+underlying background in every theme. The center stays fully opaque, and each
+image is feathered before crossfading so interrupted blends retain their edges.
+It never runs workflows or reads editable field contents to make an example.
+See the [capture notes](../src/iOpenPod/assets/settings/README.md).
+
 ## Ownership
 
 `GUI/presentation/theme` is one deep Theme Module. Its public concepts are semantic

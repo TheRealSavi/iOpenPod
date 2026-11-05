@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QScrollArea,
     QSizePolicy,
     QTabWidget,
     QVBoxLayout,
@@ -78,6 +77,7 @@ from iOpenPod.GUI.widgets.scrobbling_settings import ScrobblingSettings
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
 from iOpenPod.GUI.widgets.settings_editor import ScopedSettingBinding, SettingsEditor
 from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
+from iOpenPod.GUI.widgets.settings_tab import SettingsTab
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
@@ -175,6 +175,7 @@ class SettingsPage(QWidget):
             "", "", self._player_auto_minimize_combo, self
         )
         self._language_combo = AppComboBox(self)
+        self._language_combo.setObjectName("languageCombo")
         self._language_row = SettingRow("", "", self._language_combo, self)
 
         self._library_title = QLabel(self)
@@ -363,7 +364,8 @@ class SettingsPage(QWidget):
         self._tabs.setObjectName("settingsTabs")
         self._tabs.setDocumentMode(True)
         self._tabs.setUsesScrollButtons(True)
-        self._tabs.tabBar().setExpanding(False)
+        self._tabs.tabBar().setExpanding(True)
+        self._tabs.currentChanged.connect(self._update_tab_width)
         # Keep tab clicks from restoring an off-screen control and jumping the scroll.
         self._tabs.tabBar().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._transcoding_settings = TranscodingSettings(
@@ -546,21 +548,16 @@ class SettingsPage(QWidget):
             self.mediaToolsCheckRequested.emit()
 
     def _add_tab(self, name: str, *widgets: QWidget) -> int:
-        scroll = QScrollArea(self._tabs)
-        scroll.setObjectName(name)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        content = QWidget(scroll)
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(
-            LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg
+        scroll = SettingsTab(
+            name, widgets, self._tabs, theme_manager=self._theme_manager
         )
-        layout.setSpacing(LAYOUT.space_xs)
-        for widget in widgets:
-            layout.addWidget(widget)
-        layout.addStretch(1)
-        scroll.setWidget(content)
+        scroll.columnWidthChanged.connect(self._update_tab_width)
         return self._tabs.addTab(scroll, "")
+
+    def _update_tab_width(self) -> None:
+        current = self._tabs.currentWidget()
+        if isinstance(current, SettingsTab):
+            self._tabs.tabBar().setFixedWidth(current.column_width)
 
     def retranslate_ui(self) -> None:
         self._update_version()
