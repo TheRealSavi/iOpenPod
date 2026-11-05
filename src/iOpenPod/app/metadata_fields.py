@@ -21,6 +21,8 @@ class FieldKind(StrEnum):
     LONG_TEXT = "long_text"
     INTEGER = "integer"
     FLOAT = "float"
+    RATING = "rating"
+    VOLUME_ADJUSTMENT = "volume_adjustment"
     BOOLEAN = "boolean"
     DATE = "date"
     ADVISORY = "advisory"
@@ -154,6 +156,10 @@ def metadata_fields() -> tuple[MetadataField, ...]:
             kind = FieldKind.TEXT
             if path == "media_types":
                 kind = FieldKind.MEDIA_TYPE
+            elif path == "rating":
+                kind = FieldKind.RATING
+            elif path == "metadata.volume_adjustment_percent":
+                kind = FieldKind.VOLUME_ADJUSTMENT
             elif path == "metadata.chapters":
                 kind = FieldKind.CHAPTERS
             elif path == "metadata.content_advisory":

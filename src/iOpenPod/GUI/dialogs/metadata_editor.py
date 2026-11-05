@@ -666,7 +666,14 @@ class MetadataEditorDialog(QDialog):
             wide = row.spec.kind in (FieldKind.LONG_TEXT, FieldKind.CHAPTERS)
             if wide and position % 2:
                 position += 1
-            grid.addWidget(row, position // 2, position % 2, 1, 2 if wide else 1)
+            grid.addWidget(
+                row,
+                position // 2,
+                position % 2,
+                1,
+                2 if wide else 1,
+                Qt.AlignmentFlag.AlignTop,
+            )
             position += 2 if wide else 1
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)

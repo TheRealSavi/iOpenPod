@@ -1,12 +1,14 @@
 """Clickable rating stars that retain exact imported 0-100 values until edited."""
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
 
 class StarRating(QLabel):
     """Use the Player's whole-star selection and click-again-to-clear interaction."""
+
+    ratingEdited = Signal(int)
 
     def __init__(self, rating: int = 0, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -28,6 +30,12 @@ class StarRating(QLabel):
     def rating(self) -> int:
         """Return the exact shared rating, including untouched fractional stars."""
         return self._rating
+
+    def set_rating(self, rating: int) -> None:
+        """Load or reset an exact rating without emitting a user edit."""
+        self._rating = rating
+        self._set_hover(None)
+        self._refresh()
 
     def _refresh(self) -> None:
         stars = (
@@ -63,9 +71,8 @@ class StarRating(QLabel):
         return None
 
     def _select(self, stars: int) -> None:
-        self._rating = 0 if stars == round(self._rating / 20) else stars * 20
-        self._set_hover(None)
-        self._refresh()
+        self.set_rating(0 if stars == round(self._rating / 20) else stars * 20)
+        self.ratingEdited.emit(self._rating)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self._set_hover(self._stars_at(event.position().x()))

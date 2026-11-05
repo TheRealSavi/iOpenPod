@@ -36,7 +36,9 @@ from iOpenPod.app.metadata_fields import (
     parse_field,
 )
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+from iOpenPod.GUI.widgets.star_rating import StarRating
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
+from iOpenPod.GUI.widgets.volume_adjustment import VolumeAdjustment
 from iPodDB.library import ContentAdvisory, MediaType, MetadataValue, TrackChapter
 
 _MEDIA_TYPE_LABELS = {
@@ -266,12 +268,29 @@ class FieldEditor(QFrame):
         self.setObjectName("metadataFieldRow")
         self.setProperty("modified", False)
 
-        field_label = QLabel(
-            QCoreApplication.translate("MetadataFields", spec.label), self
-        )
+        field_label = QLabel(self._label_text(), self)
         self._field_label = field_label
         field_label.setObjectName("metadataFieldLabel")
-        if spec.kind is FieldKind.MEDIA_TYPE:
+        self.editor: QWidget
+        self._rating_mixed_label: QLabel | None = None
+        if spec.kind is FieldKind.RATING:
+            assert isinstance(value, int)
+            rating_editor = StarRating(0 if mixed else value, self)
+            rating_editor.ratingEdited.connect(self._modified)
+            self.editor = rating_editor
+            self._rating_mixed_label = QLabel(self)
+            self._rating_mixed_label.setText(
+                QCoreApplication.translate("EditorLabels", "Mixed values")
+            )
+            self._rating_mixed_label.setVisible(mixed)
+        elif spec.kind is FieldKind.VOLUME_ADJUSTMENT:
+            assert isinstance(value, int | float)
+            volume_editor = VolumeAdjustment(
+                None if mixed else round(value * 255 / 100), self
+            )
+            volume_editor.valueEdited.connect(self._modified)
+            self.editor = volume_editor
+        elif spec.kind is FieldKind.MEDIA_TYPE:
             media_editor = AppComboBox(self)
             current = (
                 value[0]
@@ -312,7 +331,7 @@ class FieldEditor(QFrame):
                 )
             )
             media_editor.currentIndexChanged.connect(self._modified)
-            self.editor: QWidget = media_editor
+            self.editor = media_editor
         elif spec.kind in (FieldKind.BOOLEAN, FieldKind.ADVISORY):
             editor = AppComboBox(self)
             if mixed:
@@ -364,13 +383,18 @@ class FieldEditor(QFrame):
             )
             line.textChanged.connect(self._modified)
             self.editor = line
-        self.editor.setObjectName("field_" + spec.path)
+        if not isinstance(self.editor, StarRating | VolumeAdjustment):
+            self.editor.setObjectName("field_" + spec.path)
+        self.editor.setAccessibleName(field_label.text())
         reset = ActionButton(
             self.tr("Reset"),
             self,
             kind=ActionButtonKind.QUIET,
         )
         reset.setObjectName("metadataFieldReset")
+        reset_policy = reset.sizePolicy()
+        reset_policy.setRetainSizeWhenHidden(True)
+        reset.setSizePolicy(reset_policy)
         reset.setVisible(False)
         reset.clicked.connect(self.reset)
         self.reset_button = reset
@@ -385,12 +409,22 @@ class FieldEditor(QFrame):
         header.addWidget(reset)
         layout.addLayout(header)
         layout.addWidget(self.editor)
+        if self._rating_mixed_label is not None:
+            layout.addWidget(self._rating_mixed_label)
         self._syncing = False
 
+    def _label_text(self) -> str:
+        if self.spec.kind is FieldKind.RATING:
+            return QCoreApplication.translate("TrackActions", "Rating")
+        return QCoreApplication.translate("MetadataFields", self.spec.label)
+
     def retranslate_ui(self) -> None:
-        self._field_label.setText(
-            QCoreApplication.translate("MetadataFields", self.spec.label)
-        )
+        self._field_label.setText(self._label_text())
+        self.editor.setAccessibleName(self._field_label.text())
+        if self._rating_mixed_label is not None:
+            self._rating_mixed_label.setText(
+                QCoreApplication.translate("EditorLabels", "Mixed values")
+            )
         self.reset_button.setText(self.tr("Reset"))
         editor = self.editor
         if isinstance(editor, AppComboBox):
@@ -479,6 +513,8 @@ class FieldEditor(QFrame):
         if self._modified_state == modified:
             return
         self._modified_state = modified
+        if self._rating_mixed_label is not None:
+            self._rating_mixed_label.setVisible(self.mixed and not modified)
         self.reset_button.setVisible(modified)
         self.setProperty("modified", modified)
         style = self.style()
@@ -491,7 +527,15 @@ class FieldEditor(QFrame):
         self._syncing = True
         try:
             editor = self.editor
-            if isinstance(editor, QLineEdit):
+            if isinstance(editor, StarRating):
+                assert isinstance(self.initial, int)
+                editor.set_rating(0 if self.mixed else self.initial)
+            elif isinstance(editor, VolumeAdjustment):
+                assert isinstance(self.initial, int | float)
+                editor.set_value(
+                    None if self.mixed else round(self.initial * 255 / 100)
+                )
+            elif isinstance(editor, QLineEdit):
                 editor.setText(
                     "" if self.mixed else display_value(self.initial, self.spec.kind)
                 )
@@ -523,6 +567,10 @@ class FieldEditor(QFrame):
 
     def value(self) -> MetadataValue:
         editor = self.editor
+        if isinstance(editor, StarRating):
+            return editor.rating
+        if isinstance(editor, VolumeAdjustment):
+            return editor.value / 255 * 100
         if isinstance(editor, QLineEdit):
             return parse_field(self.spec, editor.text())
         if isinstance(editor, QPlainTextEdit):

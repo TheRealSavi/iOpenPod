@@ -27,12 +27,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QDialog,
-    QHBoxLayout,
-    QLabel,
     QMenu,
     QMessageBox,
-    QSlider,
-    QVBoxLayout,
     QWidget,
     QWidgetAction,
 )
@@ -61,6 +57,7 @@ from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.icons import glyph_icon
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.track_table import TrackTable
+from iOpenPod.GUI.widgets.volume_adjustment import VolumeAdjustment
 from iPodDB.library import (
     ContentAdvisory,
     MetadataValue,
@@ -88,7 +85,6 @@ _ENQUEUE_SHORTCUT: ShortcutSpec = "Ctrl+Q"
 _PLAY_NEXT_SHORTCUT: ShortcutSpec = "Ctrl+Shift+Q"
 _MOVE_UP_SHORTCUT: ShortcutSpec = "Ctrl+Up"
 _MOVE_DOWN_SHORTCUT: ShortcutSpec = "Ctrl+Down"
-_VOLUME_ZERO_MAGNET_THRESHOLD = 12
 
 
 @dataclass(frozen=True, slots=True)
@@ -761,72 +757,11 @@ class TrackActions(QObject):
     def _volume_slider_widget(
         self, selection: TrackSelection, unanimous: int | None
     ) -> QWidget:
-        widget = QWidget()
-        widget.setObjectName("volumeAdjustmentWidget")
-        widget.setMinimumWidth(230)
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
-
-        value_label = QLabel(
-            QCoreApplication.translate("EditorLabels", "Mixed values")
-            if unanimous is None
-            else self._volume_adjustment_label(unanimous)
-        )
-        value_label.setObjectName("volumeAdjustmentValueLabel")
-        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(value_label)
-
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setObjectName("volumeAdjustmentSlider")
-        slider.setAccessibleName(self.tr("Volume adjustment"))
-        slider.setRange(-255, 255)
-        slider.setSingleStep(1)
-        slider.setPageStep(16)
-        slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        slider.setTickInterval(64)
-        slider.setTracking(False)
-        slider.setValue(unanimous if unanimous is not None else 0)
-        layout.addWidget(slider)
-
-        scale = QHBoxLayout()
-        scale.setContentsMargins(0, 0, 0, 0)
-        scale.setSpacing(6)
-        for text, alignment, stretch in (
-            ("\N{MINUS SIGN}100%", Qt.AlignmentFlag.AlignLeft, 0),
-            ("0%", Qt.AlignmentFlag.AlignCenter, 1),
-            ("+100%", Qt.AlignmentFlag.AlignRight, 0),
-        ):
-            label = QLabel(text)
-            label.setAlignment(alignment)
-            scale.addWidget(label, stretch)
-        layout.addLayout(scale)
-
+        widget = VolumeAdjustment(unanimous)
         current_revision = [selection.revision]
         last_applied: list[int | None] = [unanimous]
 
-        def show_value(value: int) -> None:
-            value_label.setText(self._volume_adjustment_label(value))
-
-        def magnetize(value: int) -> int:
-            return 0 if abs(value) <= _VOLUME_ZERO_MAGNET_THRESHOLD else value
-
-        def slider_moved(value: int) -> None:
-            value = magnetize(value)
-            if value == 0 and slider.sliderPosition() != 0:
-                slider.blockSignals(True)
-                slider.setSliderPosition(0)
-                slider.blockSignals(False)
-            show_value(value)
-
         def commit(value: int) -> None:
-            value = magnetize(value)
-            if slider.value() != value:
-                slider.blockSignals(True)
-                slider.setValue(value)
-                slider.setSliderPosition(value)
-                slider.blockSignals(False)
-            show_value(value)
             if last_applied[0] == value:
                 return
             self.workspace.apply_track_edits(
@@ -851,26 +786,13 @@ class TrackActions(QObject):
         def value_changed(value: int) -> None:
             self._guard(partial(commit, value))
 
-        @Slot()
-        def slider_released() -> None:
-            self._guard(partial(commit, slider.value()))
-
-        slider.sliderMoved.connect(slider_moved)
-        slider.valueChanged.connect(value_changed)
-        slider.sliderReleased.connect(slider_released)
+        widget.valueEdited.connect(value_changed)
         return widget
 
     def _podcasts_supported(self) -> bool:
         controller = self._device_controller
         active = None if controller is None else controller.active_ipod
         return active is None or active.profile.capabilities.audio.supports_podcasts
-
-    @staticmethod
-    def _volume_adjustment_label(value: int) -> str:
-        if value == 0:
-            return QApplication.translate("TrackActions", "No adjustment (0%)")
-        percent = round(value / 255 * 100)
-        return f"{percent:+d}%"
 
     def enqueue(self, selection: TrackSelection) -> None:
         self._require(selection, editing=False)

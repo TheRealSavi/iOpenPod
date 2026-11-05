@@ -51,8 +51,10 @@ from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.sidebar import DeviceCard, Sidebar
+from iOpenPod.GUI.widgets.star_rating import StarRating
 from iOpenPod.GUI.widgets.track_actions import TrackActions, TrackSelection
 from iOpenPod.GUI.widgets.track_table import TrackTable
+from iOpenPod.GUI.widgets.volume_adjustment import VolumeAdjustment
 from iPodDB.library import (
     ArtworkPixels,
     ContentAdvisory,
@@ -743,15 +745,15 @@ def test_editor_clear_reset_invalid_and_stale_apply_are_explicit() -> None:
         title.editor.setText("temporary")
         title.editor.clear()
         assert title.is_modified()
-        rating = dialog.rows["rating"]
-        assert isinstance(rating.editor, QLineEdit)
-        rating.editor.setText("101")
-        assert rating.is_modified()
+        count = dialog.rows["play_count"]
+        assert isinstance(count.editor, QLineEdit)
+        count.editor.setText("-1")
+        assert count.is_modified()
         dialog.accept()
         assert not workspace.dirty
         error = dialog.findChild(QLabel, "metadataEditError")
-        assert error is not None and "Rating" in error.text()
-        rating.reset()
+        assert error is not None and "play_count" in error.text()
+        count.reset()
         dialog.accept()
         assert workspace.tracks[0].title == workspace.tracks[1].title == ""
         assert workspace.tracks[2] == _TRACKS[2]
@@ -1231,4 +1233,222 @@ def test_normalization_preview_filters_do_not_change_the_applied_batch() -> None
     finally:
         dialog.close()
         controller.shutdown()
+        context.shutdown()
+
+
+@pytest.mark.parametrize("mixed", (False, True))
+def test_metadata_playback_controls_preserve_reset_and_cancel(mixed: bool) -> None:
+    context = build_context()
+    workspace = context.library_workspace
+    tracks = tuple(
+        replace(
+            track,
+            rating=81 + (index if mixed else 0),
+            metadata=replace(
+                track.metadata,
+                volume_adjustment_percent=1.25 + (index if mixed else 0),
+            ),
+        )
+        for index, track in enumerate(_TRACKS[:2])
+    )
+    workspace.load(LibrarySnapshot(tracks))
+    dialog = MetadataEditorDialog(workspace, (1, 2))
+    try:
+        rating = dialog.rows["rating"]
+        volume = dialog.rows["metadata.volume_adjustment_percent"]
+        assert isinstance(rating.editor, StarRating)
+        assert isinstance(volume.editor, VolumeAdjustment)
+        assert not rating.is_modified() and not volume.is_modified()
+        assert rating.editor.rating == (0 if mixed else 81)
+        label = volume.editor.findChild(QLabel, "volumeAdjustmentValueLabel")
+        assert label is not None
+        assert label.text() == ("Mixed values" if mixed else "+1%")
+
+        QTest.keyClick(rating.editor, Qt.Key.Key_5)
+        volume.editor.slider.setValue(255)
+        assert rating.is_modified() and volume.is_modified()
+        assert not workspace.dirty
+        reset = dialog.findChild(QPushButton, "resetMetadataChanges")
+        assert reset is not None and reset.isEnabled()
+        reset.click()
+        assert not rating.is_modified() and not volume.is_modified()
+        assert rating.editor.rating == (0 if mixed else 81)
+        assert label.text() == ("Mixed values" if mixed else "+1%")
+
+        title = dialog.rows["title"].editor
+        assert isinstance(title, QLineEdit)
+        title.setText("Retitled")
+        dialog.accept()
+        assert tuple(track.rating for track in workspace.tracks) == tuple(
+            track.rating for track in tracks
+        )
+        assert tuple(
+            track.metadata.volume_adjustment_percent for track in workspace.tracks
+        ) == tuple(track.metadata.volume_adjustment_percent for track in tracks)
+
+        cancelled = MetadataEditorDialog(workspace, (1, 2))
+        before = workspace.tracks
+        try:
+            stars = cancelled.rows["rating"].editor
+            adjustment = cancelled.rows["metadata.volume_adjustment_percent"].editor
+            assert isinstance(stars, StarRating)
+            assert isinstance(adjustment, VolumeAdjustment)
+            QTest.keyClick(stars, Qt.Key.Key_3)
+            adjustment.slider.setValue(-255)
+            cancelled.reject()
+            assert workspace.tracks == before
+        finally:
+            cancelled.close()
+    finally:
+        dialog.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize("track_ids", ((1,), (1, 2)))
+def test_metadata_stars_and_volume_apply_explicit_selections(
+    track_ids: tuple[int, ...],
+) -> None:
+    context = build_context()
+    workspace = context.library_workspace
+    tracks = tuple(
+        replace(
+            track,
+            rating=81 if index == 0 else 20,
+            metadata=replace(
+                track.metadata, volume_adjustment_percent=25 if index == 0 else -25
+            ),
+        )
+        for index, track in enumerate(_TRACKS)
+    )
+    workspace.load(LibrarySnapshot(tracks))
+    dialog = MetadataEditorDialog(workspace, track_ids)
+    try:
+        rating = dialog.rows["rating"]
+        volume = dialog.rows["metadata.volume_adjustment_percent"]
+        stars, adjustment = rating.editor, volume.editor
+        assert isinstance(stars, StarRating)
+        assert isinstance(adjustment, VolumeAdjustment)
+        nav = dialog.findChild(QListWidget, "metadataSectionNav")
+        assert nav is not None
+        nav.setCurrentRow(2)
+        dialog.show()
+        APPLICATION.processEvents()
+        QTest.mouseMove(stars, stars.rect().center())
+        assert stars.text() == "★★★☆☆"
+        assert not rating.is_modified()
+        QTest.mouseClick(stars, Qt.MouseButton.LeftButton, pos=stars.rect().center())
+        assert stars.rating == 60 and rating.is_modified()
+        QTest.mouseClick(stars, Qt.MouseButton.LeftButton, pos=stars.rect().center())
+        assert stars.rating == 0
+
+        # Releasing a drag commits its position, not the old value (tracking is off).
+        slider = adjustment.slider
+        slider.setSliderDown(True)
+        slider.setSliderPosition(128)
+        assert not volume.is_modified()
+        assert not workspace.dirty
+        slider.setSliderDown(False)
+        assert volume.is_modified() and adjustment.value == 128
+        dialog.accept()
+        for before, after in zip(tracks, workspace.tracks, strict=True):
+            if after.track_id in track_ids:
+                assert after.rating == 0
+                assert after.metadata.volume_adjustment_percent == 128 / 255 * 100
+            else:
+                assert after == before
+    finally:
+        dialog.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize(
+    "paths",
+    (
+        ("rating", "play_count"),
+        ("metadata.volume_adjustment_percent", "metadata.normalization_gain_db"),
+    ),
+)
+def test_metadata_taller_controls_keep_neighboring_fields_aligned(
+    paths: tuple[str, str],
+) -> None:
+    context = build_context()
+    workspace = context.library_workspace
+    workspace.load(
+        LibrarySnapshot(
+            (replace(_TRACKS[0], rating=80), replace(_TRACKS[1], rating=20))
+        )
+    )
+    dialog = MetadataEditorDialog(workspace, (1, 2))
+    try:
+        nav = dialog.findChild(QListWidget, "metadataSectionNav")
+        assert nav is not None
+        nav.setCurrentRow(2)
+        dialog.show()
+        APPLICATION.processEvents()
+        left, right = (dialog.rows[path] for path in paths)
+
+        def assert_aligned() -> None:
+            APPLICATION.processEvents()
+            assert (
+                left.editor.mapTo(dialog, QPoint()).y()
+                == right.editor.mapTo(dialog, QPoint()).y()
+            )
+            left_label = left.findChild(QLabel, "metadataFieldLabel")
+            right_label = right.findChild(QLabel, "metadataFieldLabel")
+            assert left_label is not None and right_label is not None
+            assert (
+                left_label.mapTo(dialog, QPoint()).y()
+                == right_label.mapTo(dialog, QPoint()).y()
+            )
+
+        assert_aligned()
+        if isinstance(left.editor, StarRating):
+            QTest.keyClick(left.editor, Qt.Key.Key_3)
+        else:
+            assert isinstance(left.editor, VolumeAdjustment)
+            left.editor.slider.setValue(128)
+        assert_aligned()
+        left.reset()
+        assert_aligned()
+        assert isinstance(right.editor, QLineEdit)
+        right.editor.setText("1")
+        assert_aligned()
+    finally:
+        dialog.close()
+        context.shutdown()
+
+
+def test_metadata_mixed_volume_can_explicitly_select_center_and_extremes() -> None:
+    context = build_context()
+    workspace = context.library_workspace
+    tracks = tuple(
+        replace(
+            track, metadata=replace(track.metadata, volume_adjustment_percent=value)
+        )
+        for track, value in zip(_TRACKS[:2], (-25, 25), strict=True)
+    )
+    workspace.load(LibrarySnapshot(tracks))
+    dialog = MetadataEditorDialog(workspace, (1, 2))
+    try:
+        row = dialog.rows["metadata.volume_adjustment_percent"]
+        control = row.editor
+        assert isinstance(control, VolumeAdjustment)
+        slider = control.slider
+        slider.setValue(-255)
+        assert row.value() == -100
+        slider.setValue(255)
+        assert row.value() == 100
+        row.reset()
+        assert not row.is_modified() and slider.value() == 0
+        slider.setSliderDown(True)
+        slider.setSliderPosition(8)
+        assert slider.sliderPosition() == 0
+        slider.setSliderDown(False)
+        assert row.is_modified() and row.value() == 0
+        dialog.accept()
+        assert all(
+            track.metadata.volume_adjustment_percent == 0 for track in workspace.tracks
+        )
+    finally:
+        dialog.close()
         context.shutdown()
