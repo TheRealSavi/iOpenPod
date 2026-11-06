@@ -100,7 +100,7 @@ class LibraryDraft:
     # even if every projected value is unchanged. Resources alone are not intent.
     replace_media: tuple[int, ...] = field(default=(), kw_only=True)
     replace_photos: tuple[int, ...] = field(default=(), kw_only=True)
-    # Retained files whose tags will be rewritten. Require verified lyrics/file
+    # Incoming or retained files whose tags will be finalized. Require lyrics/file
     # evidence even when the text itself is unchanged, to derive the final size.
     retag_tracks: tuple[int, ...] = field(default=(), kw_only=True)
     # Explicit firmware-projection refresh; retained binary artifacts stay

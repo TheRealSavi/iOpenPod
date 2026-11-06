@@ -91,3 +91,13 @@ analysis window, different encodings, and video-only edits with identical audio.
 Same-size, same-mtime external edits remain outside the cheap cache gate. External
 changes to iPod artwork bytes while retaining its artwork identity remain outside
 this evidence. These caches do not authorize writes or replace Storage validation.
+
+## Amendment: finalize incoming tags after music analysis (2026-11-06)
+
+Explicit retag intent may also accompany incoming or replaced media. The ordinary
+resource-capture writer already accepts captured incoming files; it now finalizes
+their tags after shared music analysis supplies metadata such as BPM. Incoming
+Tracks still require prepared media evidence, and every retag requires final tag
+and file evidence. Retained files still require their existing location and
+captured precondition. This uses the same verified tag writer and transaction,
+without introducing a BPM-specific file writer.

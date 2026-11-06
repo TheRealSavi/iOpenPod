@@ -1848,6 +1848,18 @@ Track context and validation reasons in the result; failed replacements retain
 their device media and successful Sync Details. Cancellation, disconnected
 Filesystem Sessions, shared Library validation and publication failures still
 follow the existing stop/recovery contract.
+The optional Calculate missing BPM setting consumes tempo from the existing
+Genius audio-analysis pass after media preparation. Both options share decoding,
+profiles, caching, cancellation, and skip control. BPM also works independently
+of native Genius support. The pass covers new and retained music in the final
+Library; only zero BPM is filled. Host BPM takes priority and existing iPod BPM
+survives an absent Host tag. Smart Playlists are evaluated after enrichment.
+The ordinary tag writer finalizes optional Rockbox tags for both incoming and
+retained files before database serialization. Verified tag-only rewrites retain
+their acoustic profiles under the published file identity. The normal Sync helper
+publication records final iPod metadata while preserving raw Host baselines and
+any unrelated unsynced device edits. Refresh Library reads established history
+without running another acoustic scan.
 An isolated Library Draft carries successful media, Photo, artwork, and Playlist
 changes into the existing issued Library Review and ordered Storage Transaction.
 The Library Sync Helper is updated only after verified publication. Device writes
@@ -2995,6 +3007,33 @@ SettingsPage
 ```
 
 Pages should primarily compose reusable widgets and connect them to application models/services.
+
+`NowPlayingPage` is an alternate root presentation of the existing Playback
+Controller. A shell-level stack retains the normal Library or Sync workspace,
+including navigation, selections and Player position, while Now Playing fills the
+window's content area. Native window chrome remains. Closing it restores the shell
+and status bar; neither transition issues a transport command. The shared
+`PageFade` crossfades one outgoing client-area snapshot over 320 ms, including
+the status bar. Navigation and focus commit immediately, and interrupted fades
+continue from the current blend. The page shares
+the pending `PlaybackQueueView` and chapter-aware `SeekSlider` with the regular
+Player presentation. It observes current Track, playing state, position and exact
+Artwork Display Time through existing controller and provider interfaces.
+
+Its backdrop is a zoomed, heavily blurred copy of the current
+artwork, processed at a bounded 96-by-96 resolution only when the displayed image
+or theme changes. Saturation is boosted after blurring so the color fields remain
+vivid. The theme owns a uniform scrim that keeps primary and secondary
+text readable. `NowPlayingBackdrop` deforms this tiny raster with slow spatial
+waves at 30 fps; resizing only stretches the result. Artwork changes crossfade
+over 1.2 seconds from the last displayed frame, including interrupted transitions.
+The bounded timeline retains one target, one transition snapshot and the current
+frame, without decoding or blurring on animation frames. Hidden and minimized
+windows stop its timer; resuming preserves the motion phase. Hosts that disable
+widget animation show a static backdrop. Missing artwork fades to the theme canvas;
+provider invalidation discards the backdrop immediately. Theme changes also apply
+immediately so the scrim always matches the text. All image loading remains with
+the shared Artwork provider.
 
 `DeviceSummaryPage` projects the Active iPod's profile, committed Library Snapshot,
 captured firmware and product serial, and Volume capacity without device I/O.

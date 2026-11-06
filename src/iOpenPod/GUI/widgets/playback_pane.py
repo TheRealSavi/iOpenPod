@@ -296,7 +296,7 @@ class _PlaybackListView(QListView):
         self.viewport().update()
 
 
-class _QueueListView(_PlaybackListView):
+class PlaybackQueueView(_PlaybackListView):
     """Add Queue row actions and direct keyboard reordering."""
 
     def __init__(
@@ -314,7 +314,9 @@ class _QueueListView(_PlaybackListView):
         )
         self._controller = controller
         self.setObjectName("playbackQueueView")
-        self.setAccessibleName(self.tr("Playback Queue"))
+        self.setAccessibleName(
+            QCoreApplication.translate("_QueueListView", "Playback Queue")
+        )
         self.setModel(controller.queue_model)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
@@ -520,7 +522,7 @@ class PlaybackPane(QFrame):
             self._queue_stack,
             drop_model=controller.queue_model,
         )
-        self._queue_view = _QueueListView(
+        self._queue_view = PlaybackQueueView(
             controller,
             theme_manager,
             artwork_provider,
@@ -881,4 +883,4 @@ def _artwork_rect(row_rect: QRect) -> QRectF:
     )
 
 
-__all__ = ["PlaybackPane", "PlaybackPaneHost"]
+__all__ = ["PlaybackPane", "PlaybackPaneHost", "PlaybackQueueView"]

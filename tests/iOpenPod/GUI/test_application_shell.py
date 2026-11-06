@@ -601,7 +601,7 @@ def test_player_position_setting_moves_the_existing_player() -> None:
     try:
         window.show()
         APPLICATION.processEvents()
-        shell = window.centralWidget()
+        shell = window.findChild(QWidget, "appShell")
         player = window.findChild(PlayerBar)
         position_combo = window.findChild(AppComboBox, "playerPositionCombo")
         assert shell is not None
@@ -639,7 +639,7 @@ def test_saved_bottom_player_position_is_applied_during_composition() -> None:
     window = MainWindow(context, auto_discover=False)
 
     try:
-        shell = window.centralWidget()
+        shell = window.findChild(QWidget, "appShell")
         player = window.findChild(PlayerBar)
         assert shell is not None
         shell_layout = shell.layout()

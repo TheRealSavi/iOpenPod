@@ -14,6 +14,13 @@ then beyond it.
 
 ## Current stage
 
+Settings > Sync offers **Calculate missing BPM**, off by default. It shares the
+existing Genius audio-analysis pass and cache, covering new and retained music.
+BPM and Genius are independent options; each file is analyzed once when both are
+on. Existing BPM and Host files are preserved. Normal Smart Playlist evaluation,
+optional Rockbox tagging, Library publication, and Sync history use the resulting
+metadata. See ADR-0076 and ADR-0179.
+
 First launch opens a nine-page onboarding dialog before device loading
 and startup prompts. Users choose navigation style, iPod Library View Mode, device
 artwork, then learn about transcoding and the four steps of Sync: opening the
@@ -1154,6 +1161,18 @@ Queue. **Play now** starts the first selected Track and places the remainder ato
 the Queue. **Edit** opens the metadata editor for the selection. Selections retain
 visible order and Playlist occurrences; explicit queue buttons keep their own
 actions.
+
+Clicking the Player artwork opens Now Playing across the app's content area,
+temporarily hiding navigation, the Player bar, and the status bar. Its two columns
+show larger shadowed artwork with Title, Artist, Album, a scrubber and the existing
+Previous, Play/Pause and Next actions on the left, and the pending Playback Queue
+on the right. Opening and closing crossfade the entire content area over 320 ms.
+The background magnifies and heavily blurs the current artwork, boosts its color
+saturation, and preserves readable theme text. Its color fields flow slowly, with smooth
+crossfades when artwork changes. Motion stops while hidden or minimized and follows
+the Host's widget-animation preference. Timed artwork changes and missing covers follow
+the Player's existing artwork rules. The top-left close button or Escape restores
+the previous layout without interrupting playback or changing the Queue.
 
 The Player's Queue/History/Lyrics slideout displays read-only lyrics for the
 current Track. Known Library text appears immediately. When the Lyrics tab is

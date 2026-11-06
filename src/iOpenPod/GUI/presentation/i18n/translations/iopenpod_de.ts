@@ -4040,6 +4040,73 @@
     </message>
 </context>
 <context>
+    <name>NowPlayingPage</name>
+    <message>
+        <source>Close Now Playing</source>
+        <translation>Aktuelle Wiedergabe schließen</translation>
+    </message>
+    <message>
+        <source>Previous Track</source>
+        <translation>Vorheriger Titel</translation>
+    </message>
+    <message>
+        <source>Play</source>
+        <translation>Wiedergeben</translation>
+    </message>
+    <message>
+        <source>Next Track</source>
+        <translation>Nächster Titel</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <translation>Pause</translation>
+    </message>
+    <message>
+        <source>Nothing playing</source>
+        <translation>Keine Wiedergabe</translation>
+    </message>
+    <message>
+        <source>{track} — {chapter}</source>
+        <translation>{track} — {chapter}</translation>
+    </message>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
+    </message>
+    <message>
+        <source>Close Now Playing (Esc)</source>
+        <translation>Aktuelle Wiedergabe schließen (Esc)</translation>
+    </message>
+    <message>
+        <source>Queue</source>
+        <translation>Warteschlange</translation>
+    </message>
+    <message>
+        <source>Clear Queue</source>
+        <translation>Warteschlange leeren</translation>
+    </message>
+    <message>
+        <source>Queue is empty</source>
+        <translation>Warteschlange ist leer</translation>
+    </message>
+    <message>
+        <source>Playback Queue</source>
+        <translation>Wiedergabewarteschlange</translation>
+    </message>
+    <message>
+        <source>Playback position</source>
+        <translation>Wiedergabeposition</translation>
+    </message>
+    <message>
+        <source>Previous Chapter</source>
+        <translation>Vorheriges Kapitel</translation>
+    </message>
+    <message>
+        <source>Next Chapter</source>
+        <translation>Nächstes Kapitel</translation>
+    </message>
+</context>
+<context>
     <name>OnboardingDialog</name>
     <message>
         <source>Welcome to iOpenPod</source>
@@ -5032,6 +5099,10 @@ Wählen Sie „Herunterladen und installieren“, um Python, Analysebibliotheken
     <message>
         <source>{track} — {chapter}</source>
         <translation>{track} — {chapter}</translation>
+    </message>
+    <message>
+        <source>Open Now Playing</source>
+        <translation>Aktuelle Wiedergabe öffnen</translation>
     </message>
     <message>
         <source>Clear Queue</source>
@@ -7781,8 +7852,8 @@ Playlists: %3</translation>
         <translation>Schritt %1 von %2</translation>
     </message>
     <message>
-        <source>Skipping remaining Genius analysis. Completed profiles will be kept.</source>
-        <translation>Die verbleibende Genius-Analyse wird übersprungen. Fertige Profile bleiben erhalten.</translation>
+        <source>Skipping remaining music analysis. Completed results will be kept.</source>
+        <translation>Die verbleibende Musikanalyse wird übersprungen. Abgeschlossene Ergebnisse bleiben erhalten.</translation>
     </message>
     <message>
         <source>Skipping remaining Phase analysis. Completed charts will be kept.</source>
@@ -8620,6 +8691,14 @@ Playlists: %3</translation>
     <message>
         <source>Submit pending iPod plays to connected services before syncing media. Failed submissions are saved for retry.</source>
         <translation>Senden Sie ausstehende iPod-Wiedergaben vor der Mediensynchronisierung an verbundene Dienste. Fehlgeschlagene Übermittlungen werden für einen erneuten Versuch gespeichert.</translation>
+    </message>
+    <message>
+        <source>Calculate missing BPM</source>
+        <translation>Fehlende BPM berechnen</translation>
+    </message>
+    <message>
+        <source>Fill missing BPM for new music and music already on the iPod during Sync. Existing BPM values and Host files stay unchanged. Works with Analyze for Genius off.</source>
+        <translation>Bei der Synchronisierung fehlende BPM für neue Musik und bereits auf dem iPod vorhandene Musik ergänzen. Vorhandene BPM-Werte und Dateien auf dem Computer bleiben unverändert. Funktioniert auch bei deaktivierter Option „Für Genius analysieren“.</translation>
     </message>
 </context>
 <context>
@@ -12019,8 +12098,8 @@ Playlists: %3</translation>
         <translation>Die Synchronisierung wurde unterbrochen und die vorherige Mediathek konnte nicht wiederhergestellt werden. Schließen Sie denselben iPod erneut an und stellen Sie diesen Vorgang vor weiteren Schreibvorgängen wieder her.</translation>
     </message>
     <message>
-        <source>Tag rewrites require one retained Track at its existing location.</source>
-        <translation>Das Neuschreiben von Tags erfordert einen beibehaltenen Titel an seinem bisherigen Speicherort.</translation>
+        <source>Tag rewrites require one incoming Track or a retained Track at its existing location.</source>
+        <translation>Das Neuschreiben von Tags erfordert einen eingehenden Titel oder einen beibehaltenen Titel an seinem bisherigen Speicherort.</translation>
     </message>
     <message>
         <source>Temporary Host files could not be prepared. Check free space and file access, then retry.</source>
@@ -13499,6 +13578,26 @@ Verifizierte Firmware für Updater-Familie {family}: {firmware}.</translation>
     <message>
         <source>tracks</source>
         <translation>Titel</translation>
+    </message>
+    <message>
+        <source>Preparing music analysis</source>
+        <translation>Musikanalyse wird vorbereitet</translation>
+    </message>
+    <message>
+        <source>Analyzing music</source>
+        <translation>Musik wird analysiert</translation>
+    </message>
+    <message>
+        <source>Analyzing audio</source>
+        <translation>Audio wird analysiert</translation>
+    </message>
+    <message>
+        <source>Verifying music sources</source>
+        <translation>Musikquellen werden überprüft</translation>
+    </message>
+    <message>
+        <source>Some music analysis or cache work was unavailable. BPM remains unchanged where no tempo could be measured.</source>
+        <translation>Ein Teil der Musikanalyse oder Cache-Verarbeitung war nicht verfügbar. BPM bleiben unverändert, wenn kein Tempo ermittelt werden konnte.</translation>
     </message>
 </context>
 <context>

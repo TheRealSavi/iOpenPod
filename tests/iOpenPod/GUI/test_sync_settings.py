@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication, QSpinBox, QWidget
 
 from iOpenPod.app.core.settings.definitions import (
     ANALYZE_FOR_GENIUS,
+    COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
     LOSSY_ENCODER,
     ROCKBOX_METADATA_SUPPORT,
@@ -153,6 +154,10 @@ def test_policy_precedence_is_visible_and_optional_sync_settings_save() -> None:
     settings.set_global(SMART_QUALITY_BY_CONTENT_TYPE, True)
     assert _combo(widget, "spokenWordBitrate").isEnabled()
     sound = _combo(sync, "computeSoundCheck")
+    bpm = _combo(sync, "computeMissingBpm")
+    assert bpm.currentData() is False
+    bpm.setCurrentIndex(bpm.findData(True))
+    assert settings.get(COMPUTE_MISSING_BPM) is True
     sound.setCurrentIndex(sound.findData(True))
     genius = _combo(sync, "analyzeForGenius")
     assert genius.currentData() is True

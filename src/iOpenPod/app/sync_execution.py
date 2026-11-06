@@ -26,7 +26,12 @@ from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.genius_mixes import supports_mix_creation
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaFileKind
-from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTrack
+from iOpenPod.app.library_sync_helper import (
+    SyncDetails,
+    SyncedImage,
+    SyncedTrack,
+    read_sync_history,
+)
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
     PreparationCancelledError,
@@ -111,6 +116,7 @@ from iPodDB.library import (
     AudioEncoding,
     FileDependency,
     IssueSeverity,
+    LibrarySnapshot,
     MediaContent,
     MediaKind,
     MediaType,
@@ -183,6 +189,7 @@ class SyncOptions:
     fit_thumbnails: bool = False
     rockbox_metadata: bool = False
     scrobble: bool = True
+    compute_missing_bpm: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,6 +313,16 @@ class SyncExecutor:
             progress(
                 WriteProgress("sync.validate", "Validating the selected Sync Plan…")
             )
+            if (
+                request.options.compute_missing_bpm
+                and not request.plan.items
+                and not request.reconcile_playlists
+                and not request.ipod.tracks
+            ):
+                with self._coordinator.sync_session(request.source) as session:
+                    request = replace(
+                        request, ipod=read_sync_history(session, request.source.library)
+                    )
             comparison = _validate_plan(request)
             self._validate_sources(request, checkpoint)
             if request.options.scrobble and request.scrobble_accounts:
@@ -659,6 +676,7 @@ class SyncExecutor:
                     if requested_changes or (
                         not draft.regenerate_sqlite
                         and not draft.regenerate_genius
+                        and not draft.compute_missing_bpm
                         and not draft.rebuild_album_indexes
                         and not draft.normalize_podcasts
                         and not any(
@@ -831,6 +849,18 @@ class SyncExecutor:
                 # Cancellation after publication cannot turn a verified commit into
                 # failure. Finish its lightweight provenance update before returning.
                 helper = None
+                retained_updates = _retained_metadata_updates(
+                    request,
+                    saved.active.library,
+                    frozenset(
+                        item.ipod_id
+                        for item in (
+                            *(p.item for p in prepared),
+                            *(u.item for u in metadata_updates),
+                        )
+                        if item.ipod_id is not None
+                    ),
+                )
                 try:
                     progress(
                         WriteProgress(
@@ -852,13 +882,17 @@ class SyncExecutor:
                         or requested_playlists
                         or podcast_changes
                         or association_changes
+                        or retained_updates
                     ):
                         helper = self._coordinator.publish_sync_success(
                             saved.active,
                             request.ipod
-                            if request.reconcile_playlists or request.plan.items
+                            if request.reconcile_playlists
+                            or request.plan.items
+                            or request.ipod.persisted
                             else None,
                             (
+                                *retained_updates,
                                 *(
                                     _pending_cover_provenance(request, item)
                                     if artwork_deferred
@@ -2709,6 +2743,8 @@ def _draft(
         ),
         replace_media=tuple(replaced),
         rockbox_media=tuple(rockbox_media),
+        rockbox_metadata=request.options.rockbox_metadata,
+        compute_missing_bpm=request.options.compute_missing_bpm,
         photos=tuple(item.asset for item in prepared_photos),
         replace_photos=tuple(
             item.asset.photo.photo_id
@@ -3672,6 +3708,52 @@ def _capture_podcast_artwork(
                 )
         with_chapters.append(podcast)
     return with_chapters, tuple(repairs), (*issues, *artwork.issues)
+
+
+def _retained_metadata_updates(
+    request: SyncExecutionRequest,
+    committed: LibrarySnapshot,
+    explicit: frozenset[int],
+) -> tuple[SyncedTrack, ...]:
+    """Record automatic metadata edits using established Host provenance.
+
+    A dirty device baseline stays dirty; unrelated edits must still appear in
+    Review. The Host baseline remains exactly what the preceding scan supplied.
+    """
+    original = {track.track_id: track for track in request.source.library.tracks}
+    final = {track.track_id: track for track in committed.tracks}
+    updates: list[SyncedTrack] = []
+    for record in request.ipod.tracks:
+        prior = original.get(record.track_id)
+        current = final.get(record.track_id)
+        if (
+            record.track_id in explicit
+            or prior is None
+            or current is None
+            or prior.metadata.location != current.metadata.location
+            or track_tag_sha256(prior) == track_tag_sha256(current)
+        ):
+            continue
+        baseline = record.sync
+        clean = (
+            baseline is not None
+            and not baseline.ipod_baseline_pending
+            and baseline.ipod_tag_sha256 == track_tag_sha256(prior)
+        )
+        if baseline is not None and request.options.rockbox_metadata:
+            baseline = replace(
+                baseline, file_tag_policy=rockbox_tag_policy(request.source.profile)
+            )
+        updates.append(
+            SyncedTrack(
+                record.path,
+                record.acoustic_fingerprint,
+                baseline,
+                current.track_id,
+                refresh_metadata_baseline=clean,
+            )
+        )
+    return tuple(updates)
 
 
 __all__ = [

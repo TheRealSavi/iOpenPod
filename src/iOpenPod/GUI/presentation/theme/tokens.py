@@ -67,6 +67,10 @@ class LayoutTokens:
     player_volume_minimum_width: int = 64
     player_volume_width: int = 112
     player_transition_ms: int = 220
+    now_playing_artwork_maximum_size: int = 480
+    now_playing_column_maximum_width: int = 520
+    now_playing_maximum_edge_margin: int = 300
+    now_playing_play_icon_size: int = 32
     chapter_popup_width: int = 320
     chapter_popup_maximum_height: int = 360
     playback_pane_width: int = 360
@@ -74,6 +78,7 @@ class LayoutTokens:
     playback_row_artwork_size: int = 44
     playback_pane_animation_ms: int = 180
     page_fade_animation_ms: int = 180
+    now_playing_page_fade_ms: int = 320
     selection_group_animation_ms: int = 200
     scroll_animation_ms: int = 140
     scroll_line_height: int = 32

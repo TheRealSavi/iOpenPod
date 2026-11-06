@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from iOpenPod.app.core.settings.definitions import (
     ANALYZE_FOR_GENIUS,
+    COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
     LOSSY_ENCODER,
@@ -106,6 +107,7 @@ class SyncSettings(QWidget):
             scope, COMPUTE_SOUND_CHECK, "computeSoundCheck", self
         )
         self._genius = _Choice(scope, ANALYZE_FOR_GENIUS, "analyzeForGenius", self)
+        self._bpm = _Choice(scope, COMPUTE_MISSING_BPM, "computeMissingBpm", self)
         self._normalize = _Choice(
             scope, NORMALIZE_TAGS_AFTER_SYNC, "normalizeTagsAfterSync", self
         )
@@ -120,6 +122,7 @@ class SyncSettings(QWidget):
         self._rows = (
             self._scrobble,
             self._genius,
+            self._bpm,
             self._sound_check,
             self._normalize,
             self._rotate,
@@ -165,6 +168,14 @@ class SyncSettings(QWidget):
                 "Analyze music and refresh native Genius recommendations during Sync "
                 "on supported iPods. Off skips Genius generation and keeps existing "
                 "Genius data where possible."
+            ),
+        )
+        self._bpm.set_copy(
+            self.tr("Calculate missing BPM"),
+            self.tr(
+                "Fill missing BPM for new music and music already on the iPod during Sync. "
+                "Existing BPM values and Host files stay unchanged. "
+                "Works with Analyze for Genius off."
             ),
         )
         self._sound_check.set_copy(

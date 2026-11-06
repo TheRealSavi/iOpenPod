@@ -15,11 +15,14 @@ from iPodDB.library import ArtworkGroupReference, TimedArtworkAsset
 
 if TYPE_CHECKING:
     from iOpenPod.app.library_write import LibraryPreparationRequest
-    from iPodDB.library import ArtworkPixels, IPodLibrary
+    from iPodDB.library import ArtworkPixels, IPodLibrary, LibrarySnapshot
 
 
 def with_rockbox_edits(
-    request: LibraryPreparationRequest, source: IPodLibrary
+    request: LibraryPreparationRequest,
+    source: IPodLibrary,
+    *,
+    prepared_snapshot: LibrarySnapshot | None = None,
 ) -> LibraryPreparationRequest:
     """Capture changed tags and covers without reading or rewriting unchanged media.
 
@@ -32,12 +35,28 @@ def with_rockbox_edits(
     originals = {track.track_id: track for track in request.source.library.tracks}
     explicit = {update.track_id for update in request.rockbox_media}
     incoming = {item.media.track_id for item in request.media}
-    excluded = explicit | incoming | set(request.replace_media)
+    prepared = (
+        {track.track_id: track for track in prepared_snapshot.tracks}
+        if prepared_snapshot is not None
+        else {}
+    )
+    excluded = explicit | (set(request.replace_media) - incoming)
     assets = {asset.artwork_id: asset for asset in request.artwork}
     embedded: dict[int, ArtworkPixels] = {}
     profile = request.source.profile
     updates = list(request.rockbox_media)
     for track in request.snapshot.tracks:
+        if track.track_id in incoming:
+            prior = prepared.get(track.track_id)
+            if (
+                track.track_id not in excluded
+                and prior is not None
+                and track_tag_values(prior) != track_tag_values(track)
+            ):
+                updates.append(
+                    RockboxMediaUpdate(track.track_id, None, preserve_artwork=True)
+                )
+            continue
         original = originals.get(track.track_id)
         if (
             original is None

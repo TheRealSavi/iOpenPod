@@ -144,6 +144,34 @@ def contrasting_ink(fill: str, tokens: ThemeTokens) -> str:
     )
 
 
+def now_playing_scrim_opacity(
+    darkest: RGBColor, lightest: RGBColor, tokens: ThemeTokens
+) -> float:
+    """Mute blurred artwork until both theme text roles remain readable.
+
+    Channel extrema bound every pixel, including subsequent smooth scaling.
+    A single uniform scrim preserves the cover's spatial color relationships.
+    """
+
+    canvas = _rgb(tokens.window)
+    for percent in range(36, 101, 4):
+        opacity = percent / 100
+        low = _blend(canvas, darkest, opacity)
+        high = _blend(canvas, lightest, opacity)
+        if all(
+            _contrast_ratio(low, _rgb(text)) >= _TEXT_CONTRAST + 0.05
+            and _contrast_ratio(high, _rgb(text)) >= _TEXT_CONTRAST + 0.05
+            and not (
+                _relative_luminance(low)
+                <= _relative_luminance(_rgb(text))
+                <= _relative_luminance(high)
+            )
+            for text in (tokens.text, tokens.text_secondary)
+        ):
+            return opacity
+    return 1.0
+
+
 def _readable_header_shade(
     base: RGBColor,
     light: RGBColor,
@@ -217,5 +245,6 @@ __all__ = [
     "colorful_header_colors",
     "contrasting_ink",
     "genius_artwork_colors",
+    "now_playing_scrim_opacity",
     "round_header_colors",
 ]

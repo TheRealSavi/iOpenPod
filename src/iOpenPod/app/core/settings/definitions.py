@@ -357,6 +357,12 @@ SPOKEN_WORD_BITRATE = SettingDefinition[int](
     device_overridable=True,
     validator=lambda value: type(value) is int and value in (32, 48, 64, 80, 96),
 )
+COMPUTE_MISSING_BPM = SettingDefinition[bool](
+    key="sync/compute-missing-bpm",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
+)
 COMPUTE_SOUND_CHECK = SettingDefinition[bool](
     key="sync/compute-sound-check",
     value_type=bool,

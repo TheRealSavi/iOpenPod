@@ -97,3 +97,13 @@ spacing serialization, and both Classic and SQLite Sync publication. Host tests
 establish format correctness and safety; musical quality and the exact native
 spacing behavior still require listening on hardware. The earlier successful
 no-rule playback experiments do not validate these new rules.
+
+## Amendment: share profiles with missing BPM calculation (2026-11-06)
+
+Calculate missing BPM consumes the same body-tempo measurement and persistent
+profile cache during Sync. Either option can request analysis; native Genius
+ranking remains separately gated. Optional tag finalization may change the file
+bytes after analysis. Captured tag-only output evidence carries the profile to
+the new fingerprint, and cache association occurs only after Storage verifies
+publication. Audio replacement or unverified file changes never receive that
+association. See ADR-0076 and ADR-0120.

@@ -94,7 +94,10 @@ def test_save_sync_report_keeps_every_file_and_reason(
         APPLICATION.processEvents()
 
 
-def test_genius_skip_is_available_only_during_analysis_and_resets_each_sync() -> None:
+@pytest.mark.parametrize("phase", ["draft.genius", "draft.genius.audio"])
+def test_genius_skip_is_available_only_during_analysis_and_resets_each_sync(
+    phase: str,
+) -> None:
     page = SyncExecutionPage()
     try:
         page.begin()
@@ -105,14 +108,19 @@ def test_genius_skip_is_available_only_during_analysis_and_resets_each_sync() ->
         skipped = QSignalSpy(page.skipGeniusRequested)
         cancelled = QSignalSpy(page.cancelRequested)
         assert skip.isHidden()
-        page.update_progress(WriteProgress("draft.genius", "Preparing Genius"))
+        page.update_progress(WriteProgress(phase, "Preparing music analysis"))
         assert not skip.isHidden() and skip.isEnabled()
         assert skip.text() == "Skip for this Sync"
-        page.update_progress(WriteProgress("draft.genius.audio", "Analyzing audio"))
+        page.update_progress(
+            WriteProgress(
+                "draft.genius.audio",
+                "Analyzing audio",
+            )
+        )
         skip.click()
         assert skipped.count() == 1 and cancelled.count() == 0
         assert not skip.isEnabled() and cancel.isEnabled()
-        assert "Completed profiles will be kept" in detail.text()
+        assert "Completed results will be kept" in detail.text()
         APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
         assert not skip.isEnabled()
         page.update_progress(WriteProgress("draft.genius.rank", "Ranking candidates"))

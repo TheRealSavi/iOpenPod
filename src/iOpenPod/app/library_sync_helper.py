@@ -206,6 +206,7 @@ class SyncedTrack:
     acoustic_fingerprint: str
     sync: SyncDetails | None = None
     track_id: int | None = None
+    refresh_metadata_baseline: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,6 +321,37 @@ def retain_retagged_sync_details(
     )
 
 
+def read_sync_history(
+    session: FilesystemSession, library: LibrarySnapshot
+) -> IPodMediaLibrary:
+    """Read established, still-valid associations without analyzing audio.
+
+    Library refresh has no Host comparison. It can still carry existing Sync
+    Details through its own metadata updates using the normal publication path.
+    """
+    loaded, issue = _load_helper(session)
+    if issue is not None or not loaded.writable:
+        raise LibrarySyncHelperError("The existing Sync helper is invalid.")
+    retained = {_track_key(record): record for record in loaded.tracks}
+    tracks: list[IPodTrackFingerprint] = []
+    for track in library.tracks:
+        record = retained.get(_track_key_for_track(track))
+        if record is None:
+            continue
+        path = _track_path(track)
+        if _matches(session, record, path, _regular_file(session, path)):
+            tracks.append(replace(record, track_id=track.track_id))
+    return IPodMediaLibrary(
+        tuple(tracks),
+        loaded.images,
+        (),
+        IPodMediaCacheStats(),
+        loaded.revision,
+        loaded.revision is not None,
+        loaded.playlists,
+    )
+
+
 def publish_sync_helper(
     session: FilesystemSession,
     library: LibrarySnapshot,
@@ -431,8 +463,8 @@ def publish_sync_helper(
                         ipod_tag_sha256=track_tag_sha256(track),
                         ipod_baseline_pending=False,
                     )
-                    if new.sync is not None
-                    else None,
+                    if new.sync is not None and new.refresh_metadata_baseline
+                    else new.sync,
                 )
             )
         elif old is not None and _matches(session, old, path, entry):

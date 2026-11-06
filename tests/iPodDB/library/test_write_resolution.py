@@ -19,6 +19,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
 )
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library import (
+    AudioEncoding,
     IPodLibrary,
     MediaType,
     Playlist,
@@ -27,6 +28,7 @@ from iPodDB.library import (
     WritePhase,
     WriteResources,
     _write_preparation,
+    prepared_audio,
 )
 from iPodDB.library._field_policy import unclassified_fields
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
@@ -182,7 +184,7 @@ def test_retained_tag_rewrite_requires_verified_file_even_when_lyrics_match() ->
     assert result.prepared.retained_files == (evidence.file,)
 
 
-@pytest.mark.parametrize("invalid", ["duplicate", "missing", "relocated", "replaced"])
+@pytest.mark.parametrize("invalid", ["duplicate", "missing", "relocated"])
 def test_retained_tag_rewrite_rejects_invalid_targets(invalid: str) -> None:
     source = lyrics_source()
     track, second = source.snapshot.tracks
@@ -531,3 +533,58 @@ def test_independent_folder_constraints_are_collected_before_reconciliation() ->
     result = source.prepare(plan, progress=phases.append)
     assert result.prepared is None
     assert all(p.value != "reconciliation" for p in phases)
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+def test_incoming_tag_finalization_requires_media_and_final_tag_evidence(
+    replacement: bool,
+) -> None:
+    source = lyrics_source()
+    original = source.snapshot.tracks[0]
+    track = replace(
+        original,
+        track_id=original.track_id if replacement else -1,
+        size_bytes=len(b"verified tagged media"),
+        bitrate_kbps=128,
+        ipod=original.ipod if replacement else None,
+        metadata=replace(
+            original.metadata,
+            location="iPod_Control/Music/F00/new.mp3",
+            sample_rate_hz=44100,
+            file_format="MP3",
+        ),
+    )
+    tracks = (
+        (track, *source.snapshot.tracks[1:])
+        if replacement
+        else (*source.snapshot.tracks, track)
+    )
+    plan = source.analyze(
+        source.begin_draft(
+            replace(source.snapshot, tracks=tracks),
+            replace_media=(track.track_id,) if replacement else (),
+            retag_tracks=(track.track_id,),
+        )
+    )
+    assert not plan.blocked, plan.issues
+    assert plan.required_media == (track.track_id,)
+    assert plan.required_lyrics == (track.track_id,)
+    evidence = lyrics_resource(track)
+    media = prepared_audio(track.track_id, evidence.file, AudioEncoding.MP3)
+    assert source.prepare(plan, WriteResources(media=(media,))).prepared is None
+    assert source.prepare(plan, WriteResources(lyrics=(evidence,))).prepared is None
+    result = source.prepare(
+        plan,
+        WriteResources(
+            media=(media,), lyrics=(evidence,), pending_playback_sidecars=False
+        ),
+    )
+    assert result.prepared is not None, result.issues
+    assert (
+        next(
+            t
+            for t in result.prepared.snapshot.tracks
+            if t.metadata.location == track.metadata.location
+        ).size_bytes
+        == evidence.file.size
+    )

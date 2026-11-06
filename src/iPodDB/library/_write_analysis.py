@@ -65,16 +65,18 @@ def analyze(
     for track_id in draft.retag_tracks:
         if (
             track_id in retagged
-            or track_id not in old_tracks
             or track_id not in tracks
-            or track_id in draft.replace_media
-            or old_tracks[track_id].metadata.location
-            != tracks[track_id].metadata.location
+            or (
+                track_id in old_tracks
+                and track_id not in draft.replace_media
+                and old_tracks[track_id].metadata.location
+                != tracks[track_id].metadata.location
+            )
         ):
             issues.append(
                 WriteIssue(
                     "draft.invalid_retag",
-                    "Tag rewrites require one retained Track at its existing location.",
+                    "Tag rewrites require one incoming Track or a retained Track at its existing location.",
                     subject="track",
                     record_id=track_id,
                     field="retag_tracks",

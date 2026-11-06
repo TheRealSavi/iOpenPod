@@ -1335,6 +1335,99 @@ QFrame#nowPlayingSurface[playbackState="idle"] {{
     border-color: transparent;
 }}
 
+/* Hallmark · Now Playing · atmospheric · two-column listening view
+ * theme: iOpenPod · enlarged, blurred actual artwork · native window chrome
+ * pre-emit critique: P5 H5 E4 S5 R5 V4
+ */
+QToolButton#playerArtworkButton {{
+    background: transparent;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: {LAYOUT.radius_control + 2}px;
+}}
+
+QToolButton#playerArtworkButton:hover {{
+    border-color: {tokens.border_strong};
+}}
+
+QToolButton#playerArtworkButton:pressed,
+QToolButton#playerArtworkButton:focus {{
+    border-color: {tokens.focus};
+}}
+
+QListView#nowPlayingQueueView {{
+    background: transparent;
+}}
+
+QListView#nowPlayingQueueView {{
+    color: {tokens.text};
+    border: none;
+    outline: none;
+}}
+
+QListView#nowPlayingQueueView::item {{
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+}}
+
+QListView#nowPlayingQueueView::item:hover {{
+    background: {tokens.surface_hover};
+}}
+
+QListView#nowPlayingQueueView::item:selected {{
+    background: {tokens.surface_selected};
+}}
+
+QListView#nowPlayingQueueView::item:focus {{
+    border: 1px solid {tokens.focus};
+}}
+
+QLabel#nowPlayingTitle {{
+    color: {tokens.text};
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#nowPlayingQueueTitle {{
+    color: {tokens.text};
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 600;
+}}
+
+QLabel#nowPlayingArtist,
+QLabel#nowPlayingAlbum,
+QLabel#nowPlayingElapsed,
+QLabel#nowPlayingDuration,
+QLabel#nowPlayingQueueEmpty {{
+    color: {tokens.text_secondary};
+}}
+
+QLabel#nowPlayingElapsed,
+QLabel#nowPlayingDuration {{
+    font-size: {typography.small_pt:g}pt;
+}}
+
+QSlider#nowPlayingProgress {{
+    min-height: {LAYOUT.control_height_compact}px;
+}}
+
+QSlider#nowPlayingProgress::sub-page:horizontal,
+QSlider#nowPlayingProgress::handle:horizontal {{
+    background: {tokens.text};
+    border-color: {tokens.text};
+}}
+
+QSlider#nowPlayingProgress::groove:horizontal,
+QSlider#nowPlayingProgress::add-page:horizontal {{
+    background: {tokens.border_strong};
+}}
+
+QSlider#nowPlayingProgress::handle:horizontal:focus,
+QSlider#nowPlayingProgress::handle:horizontal:hover {{
+    border-color: {tokens.focus};
+}}
+
 QFrame#playbackPaneHost {{
     color: {tokens.text};
     background-color: {tokens.surface};

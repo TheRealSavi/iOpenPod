@@ -6,7 +6,7 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from threading import Event, Lock
 from types import MappingProxyType
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from iOpenPod.app.media.importing import LibraryMediaSource
-    from iPodDB.library import LibrarySnapshot, Track
+    from iPodDB.library import LibrarySnapshot, PreparedLyrics, Track
     from storage import FileFingerprint, FilesystemSession
 
 
@@ -247,6 +247,24 @@ class GeniusAnalysisResult:
     issues: tuple[GeniusAnalysisIssue, ...] = ()
     dependencies: tuple[GeniusAnalysisDependency, ...] = ()
     prepared_profiles: tuple[GeniusPreparedProfile, ...] = ()
+
+    def with_tagged_media(
+        self, tagged: tuple[PreparedLyrics, ...]
+    ) -> GeniusAnalysisResult:
+        """Carry profiles through captured tag-only rewrites of analyzed audio.
+
+        The ordinary tag writer supplies the final content evidence. Association
+        still waits for Storage to verify those exact bytes during publication.
+        """
+        prepared = {item.path: item for item in self.prepared_profiles}
+        for item in tagged:
+            profile = self.profiles.get(item.track_id)
+            if profile is not None:
+                path = DevicePath(item.file.relative_path)
+                prepared[path] = GeniusPreparedProfile(
+                    path, item.file.size, item.file.sha256, profile
+                )
+        return replace(self, prepared_profiles=tuple(prepared.values()))
 
     def validate_sources(
         self, session: FilesystemSession, *, checkpoint: Callable[[], None]

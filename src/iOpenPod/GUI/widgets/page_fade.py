@@ -12,7 +12,7 @@ from PySide6.QtCore import (
     QVariantAnimation,
 )
 from PySide6.QtGui import QPainter, QPaintEvent, QPixmap
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QStyle, QWidget
 
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
@@ -20,7 +20,9 @@ from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 class PageFade(QWidget):
     """Keep navigation live while fading one viewport-sized outgoing frame."""
 
-    def __init__(self, page: QWidget) -> None:
+    def __init__(
+        self, page: QWidget, *, duration_ms: int = LAYOUT.page_fade_animation_ms
+    ) -> None:
         super().__init__(page)
         self._page = page
         self._snapshot = QPixmap()
@@ -30,7 +32,7 @@ class PageFade(QWidget):
         self.hide()
         self._animation = QVariantAnimation(self)
         self._animation.setObjectName("pageFadeAnimation")
-        self._animation.setDuration(LAYOUT.page_fade_animation_ms)
+        self._animation.setDuration(duration_ms)
         self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self._animation.setStartValue(1.0)
         self._animation.setEndValue(0.0)
@@ -42,7 +44,9 @@ class PageFade(QWidget):
         # Include an unfinished fade in the next snapshot to avoid a flash when
         # the user opens or goes Back again before the animation completes.
         snapshot = QPixmap()
-        if self._page.isVisible():
+        if self._page.isVisible() and self.style().styleHint(
+            QStyle.StyleHint.SH_Widget_Animate, None, self
+        ):
             # A child page's grab has transparent gaps where its ancestors paint
             # the background. Capture the composed window region so new controls
             # cannot appear through those gaps at full strength on the first frame.

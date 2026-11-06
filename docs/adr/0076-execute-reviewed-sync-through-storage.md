@@ -137,6 +137,28 @@ the existing device-specific normalizer to the committed Library. Sound Check us
 existing usable loudness tags where possible and analyzes missing values. Rockbox
 tags are written into private prepared media; Host sources are never changed.
 
+## Amendment: share Genius analysis for missing BPM (2026-11-06)
+
+Calculate missing BPM is an optional Host setting with a per-iPod override,
+defaulting off. At the existing Genius stage, one audio-analysis pass runs when
+either option needs it. Its cached body tempo supplies rounded BPM for music
+whose value is zero, including retained Tracks. BPM-only runs omit already-tagged
+music. Supplied Host BPM takes priority; existing iPod BPM survives an absent Host
+tag. Host files stay unchanged. Native Genius relationships are generated only
+when Analyze for Genius is enabled and the device supports them.
+
+The shared service retains its source checks, duration bounds, cancellation, and
+skip behavior. Silence leaves BPM unset; unavailable analysis permits normal Sync
+to continue. Smart Playlists evaluate the enriched snapshot. Optional Rockbox tags
+use the existing resource-capture tag writer for retained and incoming files;
+final file evidence supplies database sizes and verified cache associations.
+
+The existing successful-Sync publication accepts established provenance for
+retained metadata updates as well as selected Host updates. Host baselines remain
+unchanged, and only a clean prior iPod baseline advances; unrelated device edits
+remain visible in Review. Refresh Library reads valid existing history without
+rescanning audio. No separate BPM decoder, analysis pass, or cache is introduced.
+
 ## Amendment: edit incoming media tags through private streams (2026-10-19)
 
 Incoming Host Tracks and Podcast Episodes use the same file-based tag writer as

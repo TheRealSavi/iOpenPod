@@ -21,6 +21,7 @@ from tests.iOpenPod.GUI.application_shell_test_support import build_context
 from device_registry import DEFAULT_DEVICE_REGISTRY
 from iOpenPod.app.core.settings.definitions import (
     ANALYZE_FOR_GENIUS,
+    COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
 )
 from iOpenPod.app.core.settings.service import SettingsService
@@ -90,6 +91,7 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
     workspace.load(active.library)
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     settings.set_global(COMPUTE_SOUND_CHECK, True)
+    settings.set_global(COMPUTE_MISSING_BPM, True)
     settings.set_global(ANALYZE_FOR_GENIUS, False)
     settings.set_global(SCROBBLE_DURING_SYNC, True)
     settings.set_global(LASTFM_USERNAME, "listener")
@@ -102,12 +104,14 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
         wait_for(service.entered.is_set)
         assert workspace.locked and devices.busy
         settings.set_global(COMPUTE_SOUND_CHECK, False)
+        settings.set_global(COMPUTE_MISSING_BPM, False)
         settings.set_global(ANALYZE_FOR_GENIUS, True)
         settings.set_global(SCROBBLE_DURING_SYNC, False)
         assert (
             service.request is not None and service.request.options.compute_sound_check
         )
         assert not service.request.options.analyze_for_genius
+        assert service.request.options.compute_missing_bpm
         assert service.request.playlist_choices == choices
         assert service.request.options.scrobble
         assert service.request.scrobble_accounts[0].username == "listener"

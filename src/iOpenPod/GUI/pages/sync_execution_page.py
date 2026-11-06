@@ -289,7 +289,10 @@ class SyncExecutionPage(QWidget):
         self._render_progress(progress)
 
     def _render_progress(self, progress: WriteProgress) -> None:
-        analyzing_genius = progress.phase in ("draft.genius", "draft.genius.audio")
+        analyzing_genius = progress.phase in (
+            "draft.genius",
+            "draft.genius.audio",
+        )
         self._skip_genius.setVisible(analyzing_genius and self._recovery_mode is None)
         self._skip_genius.setEnabled(
             not self._genius_skip_requested and not self._cancel_requested
@@ -313,7 +316,7 @@ class SyncExecutionPage(QWidget):
         message = workflow_text(progress.message)
         if analyzing_genius and self._genius_skip_requested:
             message += " " + self.tr(
-                "Skipping remaining Genius analysis. Completed profiles will be kept."
+                "Skipping remaining music analysis. Completed results will be kept."
             )
         if analyzing_phase and self._phase_skip_requested:
             message += " " + self.tr(

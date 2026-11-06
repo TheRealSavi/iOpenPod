@@ -108,6 +108,7 @@ from iOpenPod.GUI.pages.device_summary import DeviceSummaryPage
 from iOpenPod.GUI.pages.games_page import GamesPage
 from iOpenPod.GUI.pages.genius_page import GeniusPage
 from iOpenPod.GUI.pages.library_page import LibraryPage
+from iOpenPod.GUI.pages.now_playing_page import NowPlayingPage
 from iOpenPod.GUI.pages.photo_page import PhotoPage
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
 from iOpenPod.GUI.pages.podcast_page import PodcastPage
@@ -135,6 +136,7 @@ from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.compact_top_bar import CompactTopBar
 from iOpenPod.GUI.widgets.host_media_drop import HostMediaDropTarget
+from iOpenPod.GUI.widgets.page_fade import PageFade
 from iOpenPod.GUI.widgets.playback_pane import PlaybackPane, PlaybackPaneHost
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.sidebar import Sidebar
@@ -620,8 +622,27 @@ class MainWindow(QMainWindow):
         self._workspaces.currentChanged.connect(self._exit_synesthesia_fullscreen)
         self._workspaces.currentChanged.connect(self._apply_navigation_style)
         self._apply_navigation_style()
-        self.setCentralWidget(shell)
-        # Window chrome stays outside both stacks for every page and workspace.
+        self._normal_shell = shell
+        self._shell_pages = QStackedWidget(self)
+        self._shell_pages.setObjectName("shellPages")
+        self._shell_pages.addWidget(shell)
+        self._now_playing_page = NowPlayingPage(
+            context.playback_controller,
+            context.theme_manager,
+            self._artwork_provider,
+            self._shell_pages,
+        )
+        self._shell_pages.addWidget(self._now_playing_page)
+        self._now_playing_page.closeRequested.connect(self._close_now_playing)
+        self._player.nowPlayingRequested.connect(self._open_now_playing)
+        self._now_playing_status_visible = False
+        # Cover the whole client area so the status bar fades with the shell.
+        self._now_playing_fade = PageFade(
+            self, duration_ms=LAYOUT.now_playing_page_fade_ms
+        )
+        self._now_playing_fade.setObjectName("nowPlayingPageFade")
+        self.setCentralWidget(self._shell_pages)
+        # Status is shell-owned; Now Playing temporarily hides it.
         status_bar = QStatusBar(self)
         status_bar.setObjectName("appStatusBar")
         status_bar.setSizeGripEnabled(False)
@@ -1054,6 +1075,32 @@ class MainWindow(QMainWindow):
             self._context.playback_controller.queue_model.rowCount()
         )
 
+    def _open_now_playing(self) -> None:
+        if (
+            self._context.playback_controller.current_track is None
+            or self._shell_pages.currentWidget() is self._now_playing_page
+        ):
+            return
+        self._now_playing_status_visible = not self.statusBar().isHidden()
+
+        def show_page() -> None:
+            self.statusBar().hide()
+            self._shell_pages.setCurrentWidget(self._now_playing_page)
+            self._now_playing_page.focus_close()
+
+        self._now_playing_fade.transition(show_page)
+
+    def _close_now_playing(self) -> None:
+        if self._shell_pages.currentWidget() is not self._now_playing_page:
+            return
+
+        def restore_shell() -> None:
+            self._shell_pages.setCurrentWidget(self._normal_shell)
+            self.statusBar().setVisible(self._now_playing_status_visible)
+            self._player.setFocus(Qt.FocusReason.OtherFocusReason)
+
+        self._now_playing_fade.transition(restore_shell)
+
     def _queue_group_tracks(self, tracks: tuple[Track, ...]) -> None:
         controller = self._context.playback_controller
         controller.insert_tracks(tracks, controller.queue_model.rowCount())
@@ -1115,9 +1162,11 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(0, 0)
         # Recalculate hidden chrome before Qt applies native fullscreen geometry.
         # A pending layout can otherwise retain the open Playback pane's width.
-        layout = self.layout()
-        if layout is not None:
-            layout.activate()
+        for surface in (self._normal_shell, self._shell_pages, self):
+            layout = surface.layout()
+            if layout is not None:
+                layout.activate()
+            surface.updateGeometry()
         self.showFullScreen()
 
     def _exit_synesthesia_fullscreen(self) -> None:

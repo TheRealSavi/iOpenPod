@@ -357,6 +357,13 @@ class _IthmbByteCacheKey:
     length: int
 
 
+def _ignore_game_progress(
+    _progress: game_installation.GameInstallationProgress
+    | game_uninstallation.GameRemovalProgress,
+) -> None:
+    """Allow game workflows to run without a progress observer."""
+
+
 class DeviceCoordinator:
     """Own one Active iPod while hiding all filesystem mechanics from the GUI.
 
@@ -1283,7 +1290,7 @@ class DeviceCoordinator:
         compatibility: games.GameCompatibility | None = None,
         progress: Callable[
             [game_installation.GameInstallationProgress], None
-        ] = lambda _: None,
+        ] = _ignore_game_progress,
     ) -> game_library.GameCatalog:
         """Install selected Host games through one create-only transaction."""
         phase = game_installation.GameInstallationPhase
@@ -1406,7 +1413,7 @@ class DeviceCoordinator:
         *,
         progress: Callable[
             [game_installation.GameInstallationProgress], None
-        ] = lambda _: None,
+        ] = _ignore_game_progress,
     ) -> None:
         """Prepare the complete Host collection before exposing the game picker."""
 
@@ -1434,7 +1441,7 @@ class DeviceCoordinator:
         *,
         progress: Callable[
             [game_uninstallation.GameRemovalProgress], None
-        ] = lambda _: None,
+        ] = _ignore_game_progress,
     ) -> game_library.GameCatalog:
         """Remove one game's executable, data and stats with verified recovery."""
         with self._lock:
@@ -1627,6 +1634,7 @@ class DeviceCoordinator:
             PreparationCancelledError,
             WriteProgress,
         )
+        from iOpenPod.app.sync_bpm import with_missing_bpm
         from iPodDB.library import (
             IssueSeverity,
             LibraryWriteResult,
@@ -1809,19 +1817,13 @@ class DeviceCoordinator:
                 snapshot,
                 next((p.playlist_id for p in snapshot.playlists if p.is_phase), 0),
             )
-            snapshot = refresh_smart_playlists(
-                snapshot,
-                checkpoint=lambda: checkpoint(
-                    "draft.smart_playlists", source_text("Evaluating Smart Playlists")
-                ),
-            )
+            prepared_snapshot = snapshot
             retained_live_smart_ids = frozenset(
                 playlist.playlist_id
                 for playlist in source.snapshot.playlists
                 if can_refresh_smart_playlist(playlist)
             )
             request = replace(request, snapshot=snapshot)
-            request = with_rockbox_edits(request, source)
             genius_update = None
             genius_mix_state = None
             mix_preconditions: tuple[FilePrecondition, ...] = ()
@@ -1881,25 +1883,34 @@ class DeviceCoordinator:
                 raise ValueError(
                     "Native Genius Mix creation is unavailable for this iPod."
                 )
-            if request.regenerate_genius:
-                if capabilities.genius.playlists is not FeatureSupport.SUPPORTED:
+
+            def genius_checkpoint() -> None:
+                # The generator checks every Track and collision probe.
+                # Cancellation must not enqueue a GUI event for each check.
+                if cancelled.is_set():
+                    raise PreparationCancelledError
+
+            if request.regenerate_genius or request.compute_missing_bpm:
+                if (
+                    request.regenerate_genius
+                    and capabilities.genius.playlists is not FeatureSupport.SUPPORTED
+                ):
                     raise ValueError(
                         "Native Genius generation requires a supported iPod."
                     )
                 checkpoint(
-                    "draft.genius", source_text("Preparing Genius for music Tracks")
+                    "draft.genius",
+                    source_text("Preparing music analysis")
+                    if request.compute_missing_bpm
+                    else source_text("Preparing Genius for music Tracks"),
                 )
-
-                def genius_checkpoint() -> None:
-                    # The generator checks every Track and collision probe.
-                    # Cancellation must not enqueue a GUI event for each check.
-                    if cancelled.is_set():
-                        raise PreparationCancelledError
 
                 def genius_progress(value: GeniusAnalysisProgress) -> None:
                     checkpoint(
                         "draft.genius.audio",
-                        source_text("Analyzing music for Genius"),
+                        source_text("Analyzing music")
+                        if request.compute_missing_bpm
+                        else source_text("Analyzing music for Genius"),
                         completed=value.completed,
                         total=value.total,
                         current_item=value.title,
@@ -1910,17 +1921,34 @@ class DeviceCoordinator:
                                 item.title,
                                 MediaPreparationProgress(
                                     MediaPreparationPhase.ANALYZING,
-                                    source_text("Analyzing audio for Genius"),
+                                    source_text("Analyzing audio")
+                                    if request.compute_missing_bpm
+                                    else source_text("Analyzing audio for Genius"),
                                 ),
                             )
                             for item in value.active
                         ),
                     )
 
+                if request.compute_missing_bpm:
+                    snapshot = with_missing_bpm(snapshot, expected.library, {})
+                analysis_snapshot = (
+                    snapshot
+                    if request.regenerate_genius
+                    else replace(
+                        snapshot,
+                        tracks=tuple(t for t in snapshot.tracks if t.metadata.bpm == 0),
+                    )
+                )
+                analysis_ids = {t.track_id for t in analysis_snapshot.tracks}
                 genius_analysis = self._genius_analysis.analyze(
-                    snapshot,
+                    analysis_snapshot,
                     active.session,
-                    media=request.media,
+                    media=tuple(
+                        source
+                        for source in request.media
+                        if source.media.track_id in analysis_ids
+                    ),
                     checkpoint=genius_checkpoint,
                     progress=genius_progress,
                     skip_requested=(
@@ -1929,6 +1957,13 @@ class DeviceCoordinator:
                         else None
                     ),
                 )
+                if request.compute_missing_bpm:
+                    snapshot = with_missing_bpm(
+                        snapshot, expected.library, genius_analysis.profiles
+                    )
+                request = replace(request, snapshot=snapshot)
+            if request.regenerate_genius:
+                assert genius_analysis is not None
                 checkpoint(
                     "draft.genius.rank", source_text("Ranking Genius candidates")
                 )
@@ -1951,6 +1986,17 @@ class DeviceCoordinator:
                             remove_ids=mix_removals,
                         )
                     )
+            snapshot = refresh_smart_playlists(
+                snapshot,
+                checkpoint=lambda: checkpoint(
+                    "draft.smart_playlists", source_text("Evaluating Smart Playlists")
+                ),
+            )
+            request = with_rockbox_edits(
+                replace(request, snapshot=snapshot),
+                source,
+                prepared_snapshot=prepared_snapshot,
+            )
             checkpoint("draft.analysis", "Analyzing changes")
             plan = source.analyze(
                 source.begin_draft(
@@ -2023,6 +2069,8 @@ class DeviceCoordinator:
                     genius_mix_write=mix_write,
                 )
             resources = captured.resources
+            if genius_analysis is not None:
+                genius_analysis = genius_analysis.with_tagged_media(resources.lyrics)
             result = source.prepare(plan, resources, progress=database_progress)
             if result.prepared is not None and result.prepared.sqlite is not None:
                 planned_state = genius_mix_state or expected.genius_mix_state
@@ -2070,7 +2118,10 @@ class DeviceCoordinator:
             genius_issues: tuple[WriteIssue, ...] = ()
             if genius_analysis is not None:
                 checkpoint(
-                    "draft.genius.verify", source_text("Verifying Genius sources")
+                    "draft.genius.verify",
+                    source_text("Verifying music sources")
+                    if request.compute_missing_bpm
+                    else source_text("Verifying Genius sources"),
                 )
                 genius_analysis.validate_sources(
                     active.session,
@@ -2095,8 +2146,13 @@ class DeviceCoordinator:
                     genius_issues = (
                         WriteIssue(
                             "genius.analysis_warning",
-                            "Some Genius audio analysis or cache work was unavailable. "
-                            "Tracks without an audio profile use metadata candidates.",
+                            (
+                                "Some music analysis or cache work was unavailable. "
+                                "BPM remains unchanged where no tempo could be measured."
+                                if request.compute_missing_bpm
+                                else "Some Genius audio analysis or cache work was unavailable. "
+                                "Tracks without an audio profile use metadata candidates."
+                            ),
                             severity=IssueSeverity.WARNING,
                             phase="resources",
                             detail="\n".join(

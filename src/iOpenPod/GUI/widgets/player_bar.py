@@ -1,6 +1,5 @@
 """Persistent runtime Player surface for the application shell."""
 
-from html import escape
 from time import monotonic_ns
 
 from PySide6.QtCore import (
@@ -12,7 +11,6 @@ from PySide6.QtCore import (
     QObject,
     QPoint,
     QPropertyAnimation,
-    QRect,
     QSignalBlocker,
     Qt,
     QTimer,
@@ -25,7 +23,6 @@ from PySide6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
-    QHelpEvent,
     QKeyEvent,
     QMouseEvent,
     QPainter,
@@ -41,8 +38,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QStyle,
-    QStyleOptionSlider,
-    QToolTip,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -61,6 +57,7 @@ from iOpenPod.GUI.presentation.track_drag_preview import (
 )
 from iOpenPod.GUI.widgets.artwork_view import ArtworkView
 from iOpenPod.GUI.widgets.chapter_index import ChapterIndexPopup
+from iOpenPod.GUI.widgets.seek_slider import SeekSlider, format_playback_time
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
 from iPodDB.library import MediaKind, Track, TrackChapter
 
@@ -119,175 +116,6 @@ class _ElidedLabel(QLabel):
         self.setFixedHeight(self.fontMetrics().height() + LAYOUT.space_3xs)
 
 
-class _SeekSlider(QSlider):
-    """Provide direct, continuous pointer control over a playback position."""
-
-    def __init__(self, orientation: Qt.Orientation, parent: QWidget) -> None:
-        super().__init__(orientation, parent)
-        self._chapters: tuple[TrackChapter, ...] = ()
-
-    def set_chapters(self, chapters: tuple[TrackChapter, ...]) -> None:
-        if chapters == self._chapters:
-            return
-        self._chapters = chapters
-        QToolTip.hideText()
-        self.update()
-
-    def _chapter_markers(
-        self, option: QStyleOptionSlider
-    ) -> tuple[tuple[TrackChapter, QRect], ...]:
-        if not self._chapters or option.maximum <= option.minimum:
-            return ()
-        style = self.style()
-        endpoint = QStyleOptionSlider(option)
-        endpoint.sliderPosition = option.minimum
-        first = style.subControlRect(
-            QStyle.ComplexControl.CC_Slider,
-            endpoint,
-            QStyle.SubControl.SC_SliderHandle,
-            self,
-        ).center()
-        endpoint.sliderPosition = option.maximum
-        last = style.subControlRect(
-            QStyle.ComplexControl.CC_Slider,
-            endpoint,
-            QStyle.SubControl.SC_SliderHandle,
-            self,
-        ).center()
-        span = last.x() - first.x()
-        return tuple(
-            (
-                chapter,
-                QRect(
-                    round(
-                        first.x()
-                        + span
-                        * (chapter.start_ms - option.minimum)
-                        / (option.maximum - option.minimum)
-                    ),
-                    first.y() - 4,
-                    1,
-                    9,
-                ),
-            )
-            for chapter in self._chapters
-        )
-
-    def event(self, event: QEvent) -> bool:
-        if event.type() is QEvent.Type.ToolTip and isinstance(event, QHelpEvent):
-            option = QStyleOptionSlider()
-            self.initStyleOption(option)
-            nearby = tuple(
-                (chapter, marker)
-                for chapter, marker in self._chapter_markers(option)
-                if marker.adjusted(-4, -3, 4, 3).contains(event.pos())
-            )
-            if nearby and self.isEnabled():
-                chapter, marker = min(
-                    nearby, key=lambda item: abs(item[1].x() - event.pos().x())
-                )
-                title = chapter.title.strip() or self.tr("Untitled Chapter")
-                timestamp = (
-                    f"{_format_duration(chapter.start_ms)}."
-                    f"{chapter.start_ms % 1000:03d}"
-                )
-                QToolTip.showText(
-                    event.globalPos(),
-                    f"<p>{escape(title)}<br>{timestamp}</p>",
-                    self,
-                    marker.adjusted(-4, -3, 4, 3),
-                )
-            else:
-                QToolTip.hideText()
-                event.ignore()
-            return True
-        return super().event(event)
-
-    def paintEvent(self, event: QPaintEvent) -> None:
-        del event
-        option = QStyleOptionSlider()
-        self.initStyleOption(option)
-        style = self.style()
-        control = QStyle.ComplexControl.CC_Slider
-        handle_control = QStyle.SubControl.SC_SliderHandle
-        handle = style.subControlRect(control, option, handle_control, self)
-
-        # QStyle rounds the handle position to whole logical pixels. At normal
-        # Track lengths that leaves many animation frames visually identical.
-        # Keep the native styling, but translate its handle by the fractional
-        # remainder so antialiasing can show motion between pixel boundaries.
-        endpoint = QStyleOptionSlider(option)
-        endpoint.sliderPosition = option.minimum
-        start = style.subControlRect(control, endpoint, handle_control, self).x()
-        endpoint.sliderPosition = option.maximum
-        end = style.subControlRect(control, endpoint, handle_control, self).x()
-        fraction = (option.sliderPosition - option.minimum) / max(
-            1, option.maximum - option.minimum
-        )
-        offset = start + fraction * (end - start) - handle.x()
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        option.subControls = (
-            QStyle.SubControl.SC_SliderGroove | QStyle.SubControl.SC_SliderTickmarks
-        )
-        style.drawComplexControl(control, option, painter, self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        for _chapter, marker in self._chapter_markers(option):
-            painter.fillRect(marker, self.palette().color(self.foregroundRole()))
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.translate(offset, 0.0)
-        option.subControls = handle_control
-        style.drawComplexControl(control, option, painter, self)
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.button() is not Qt.MouseButton.LeftButton:
-            super().mousePressEvent(event)
-            return
-        self.setSliderDown(True)
-        self._set_value_from_pointer(event.position().x())
-        event.accept()
-
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if not (self.isSliderDown() and event.buttons() & Qt.MouseButton.LeftButton):
-            super().mouseMoveEvent(event)
-            return
-        self._set_value_from_pointer(event.position().x())
-        event.accept()
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if event.button() is not Qt.MouseButton.LeftButton or not self.isSliderDown():
-            super().mouseReleaseEvent(event)
-            return
-        self._set_value_from_pointer(event.position().x())
-        self.setSliderDown(False)
-        event.accept()
-
-    def _set_value_from_pointer(self, pointer_x: float) -> None:
-        option = QStyleOptionSlider()
-        self.initStyleOption(option)
-        handle_length = self.style().pixelMetric(
-            QStyle.PixelMetric.PM_SliderLength,
-            option,
-            self,
-        )
-        span = self.style().pixelMetric(
-            QStyle.PixelMetric.PM_SliderSpaceAvailable,
-            option,
-            self,
-        )
-        handle_center = round(pointer_x) - (handle_length // 2)
-        self.setValue(
-            QStyle.sliderValueFromPosition(
-                self.minimum(),
-                self.maximum(),
-                handle_center,
-                span,
-                option.upsideDown,
-            )
-        )
-
-
 class PlayerBar(QFrame):
     """Present runtime playback state and emit transport intent."""
 
@@ -299,6 +127,7 @@ class PlayerBar(QFrame):
     queueVisibilityRequested = Signal(bool)
     clearQueueRequested = Signal()
     visualizerRequested = Signal()
+    nowPlayingRequested = Signal()
     trackRatingRequested = Signal(int, int)
     trackContextMenuRequested = Signal(object, QPoint)
     tracksDropped = Signal(object)
@@ -407,11 +236,23 @@ class PlayerBar(QFrame):
         )
         now_layout.setSpacing(LAYOUT.space_sm)
 
+        self._artwork_button = QToolButton(self._now_playing)
+        self._artwork_button.setObjectName("playerArtworkButton")
+        self._artwork_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocusProxy(self._artwork_button)
+        self._artwork_button.setFixedSize(
+            LAYOUT.player_artwork_size + 4, LAYOUT.player_artwork_size + 4
+        )
+        artwork_layout = QHBoxLayout(self._artwork_button)
+        artwork_layout.setContentsMargins(2, 2, 2, 2)
         self._artwork = ArtworkView(
             theme_manager,
             artwork_provider,
-            self._now_playing,
+            self._artwork_button,
         )
+        self._artwork.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        artwork_layout.addWidget(self._artwork)
+        self._artwork_button.clicked.connect(self.nowPlayingRequested.emit)
         self._artwork.setObjectName("playerArtwork")
         self._artwork.setFixedSize(
             LAYOUT.player_artwork_size,
@@ -424,7 +265,7 @@ class PlayerBar(QFrame):
         self._detail.setObjectName("playerTrackDetail")
         self._title.installEventFilter(self)
         self._detail.installEventFilter(self)
-        self._position = _SeekSlider(Qt.Orientation.Horizontal, self._now_playing)
+        self._position = SeekSlider(Qt.Orientation.Horizontal, self._now_playing)
         self._position.setObjectName("playerProgress")
         self._position.setRange(0, 0)
         self._position_anchor_ms = 0
@@ -456,7 +297,7 @@ class PlayerBar(QFrame):
         timeline.addWidget(self._duration)
         text.addWidget(self._timeline)
 
-        now_layout.addWidget(self._artwork)
+        now_layout.addWidget(self._artwork_button)
         now_layout.addLayout(text, 1)
 
         self._visualizer = IconButton(
@@ -687,6 +528,10 @@ class PlayerBar(QFrame):
         self._position.set_chapters(self._chapters)
         self._refresh_transport_copy()
         enabled = track is not None
+        self._artwork_button.setEnabled(enabled)
+        self._artwork_button.setCursor(
+            Qt.CursorShape.PointingHandCursor if enabled else Qt.CursorShape.ArrowCursor
+        )
         self._previous.setEnabled(enabled)
         self._play.setEnabled(enabled)
         self._next.setEnabled(enabled)
@@ -718,7 +563,7 @@ class PlayerBar(QFrame):
         self._refresh_rating_editability()
         self._position.setRange(0, max(0, track.length_ms))
         self._refresh_title()
-        self._duration.setText(_format_duration(track.length_ms))
+        self._duration.setText(format_playback_time(track.length_ms))
         self._artwork.set_seed(stable_artwork_seed(track.album_key))
         self._refresh_artwork(0 if changed_track else self._position.value())
 
@@ -784,7 +629,7 @@ class PlayerBar(QFrame):
 
     def _render_position(self, bounded: int) -> None:
         self._position.setValue(bounded)
-        self._elapsed.setText(_format_duration(bounded))
+        self._elapsed.setText(format_playback_time(bounded))
         self._refresh_title()
         self._refresh_artwork(bounded)
         if self._chapter_popup.isVisible():
@@ -902,7 +747,10 @@ class PlayerBar(QFrame):
         self._refresh_mute_copy()
 
     def set_queue_visible(self, visible: bool) -> None:
-        self._queue.setChecked(visible)
+        # A hidden parent shell is presentation feedback, not a close intent.
+        with QSignalBlocker(self._queue):
+            self._queue.setChecked(visible)
+        self._refresh_queue_copy()
 
     def set_queue_count(self, count: int) -> None:
         self._clear_queue.setEnabled(count > 0)
@@ -938,6 +786,8 @@ class PlayerBar(QFrame):
 
         self._refresh_transport_copy()
         self._refresh_mute_copy()
+        self._artwork_button.setAccessibleName(self.tr("Open Now Playing"))
+        self._artwork_button.setToolTip(self.tr("Open Now Playing"))
         self._refresh_queue_copy()
         self._clear_queue.setText(self.tr("Clear Queue"))
         self._refresh_track_actions()
@@ -1138,7 +988,7 @@ class PlayerBar(QFrame):
 
     def _scrub_position_changed(self, position_ms: int) -> None:
         if self._position.isSliderDown():
-            self._elapsed.setText(_format_duration(position_ms))
+            self._elapsed.setText(format_playback_time(position_ms))
             self._refresh_title()
             self._refresh_artwork(position_ms)
 
@@ -1308,11 +1158,3 @@ class PlayerBar(QFrame):
 
     def _height_animation_finished(self) -> None:
         self._set_animated_height(self._target_height)
-
-
-def _format_duration(length_ms: int) -> str:
-    minutes, seconds = divmod(max(0, length_ms) // 1000, 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes}:{seconds:02d}"

@@ -28,7 +28,8 @@ constants. The Player is the narrow exception: its stylesheet renderer may deriv
 subtle lighter and darker variants from the active semantic theme to distinguish
 playback chrome. Optional Colorful Mode reuses the Original project's image-to-color
 behavior through one typed presentation helper, but limits dynamic color to
-collection-card fills and the active Track-list context bar.
+collection-card fills and the active Track-list context bar. Now Playing has its
+own explicitly artwork-led presentation, independent of Colorful Mode.
 
 ## Visual Intent
 
@@ -42,6 +43,18 @@ may add low-contrast vertical gradients to its band, now-playing surface,
 slider tracks, and round handles. The optional Round Track-list title bar also uses
 opaque shading to make its native splitter handle feel rounded and grabbable.
 Those effects remain theme-derived; they must not introduce an independent palette.
+Now Playing fills the app's content area with a magnified, highly blurred copy of
+the currently displayed artwork. It preserves the image's spatial color fields
+with slow, fluid deformation and a 1.2-second crossfade on artwork changes.
+Motion preserves the cover's color fields rather than constructing a gradient.
+Hidden or minimized windows suspend it; the Host's disabled widget-animation
+preference keeps the backdrop static and page changes immediate. Opening and
+closing crossfade the entire content area over 320 ms. Saturation is strongly
+boosted after blurring; a theme-owned uniform scrim keeps primary and secondary
+text at 4.5:1 contrast. Unavailable artwork falls back
+to `window`. The larger foreground cover uses a soft neutral shadow. This treatment
+is limited to Now Playing; controls, typography, focus and Queue selection retain
+the normal semantic theme. The native window frame remains visible.
 Use the active theme's accent for focus, links, and primary actions rather than as a
 large saturated background treatment. Colorful Mode is an explicit user preference:
 it adds quiet

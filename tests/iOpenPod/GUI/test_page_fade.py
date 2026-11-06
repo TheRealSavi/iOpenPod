@@ -5,7 +5,13 @@ from collections.abc import Iterator
 import pytest
 from PySide6.QtCore import QAbstractAnimation, QEvent, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QPainter, QPaintEvent
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import (
+    QProxyStyle,
+    QStyle,
+    QStyleHintReturn,
+    QStyleOption,
+    QWidget,
+)
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
 from iOpenPod.GUI.widgets.page_fade import PageFade
@@ -97,3 +103,27 @@ def test_hidden_navigation_does_not_start_a_fade(page: _ColorPage) -> None:
     page.show()
     assert not fade.isVisible()
     assert page.color == QColor("blue")
+
+
+class _NoAnimationStyle(QProxyStyle):
+    def styleHint(
+        self,
+        hint: QStyle.StyleHint,
+        option: QStyleOption | None = None,
+        widget: QWidget | None = None,
+        returnData: QStyleHintReturn | None = None,  # noqa: N803 - Qt keyword name
+    ) -> int:
+        if hint == QStyle.StyleHint.SH_Widget_Animate:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
+
+
+def test_disabled_host_animation_changes_page_immediately(page: _ColorPage) -> None:
+    fade = PageFade(page)
+    style = _NoAnimationStyle("Fusion")
+    style.setParent(fade)
+    fade.setStyle(style)
+    fade.transition(lambda: _color(page, "blue"))
+    assert not fade.isVisible()
+    assert _animation(fade).state() == QAbstractAnimation.State.Stopped
+    assert page.grab().toImage().pixelColor(20, 20) == QColor("blue")

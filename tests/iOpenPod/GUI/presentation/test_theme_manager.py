@@ -64,9 +64,7 @@ from iOpenPod.GUI.presentation.theme.tokens import (
     tokens_for,
 )
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
-from iOpenPod.GUI.widgets.player_bar import (
-    _SeekSlider,  # pyright: ignore[reportPrivateUsage]
-)
+from iOpenPod.GUI.widgets.seek_slider import SeekSlider
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
@@ -353,7 +351,7 @@ def test_player_depth_is_derived_from_every_semantic_theme(
 
 
 @pytest.mark.parametrize("tokens", ALL_TOKENS)
-@pytest.mark.parametrize("slider_type", (QSlider, _SeekSlider))
+@pytest.mark.parametrize("slider_type", (QSlider, SeekSlider))
 def test_player_scrubber_track_stays_neutral_with_either_paint_path(
     tokens: ThemeTokens, slider_type: type[QSlider]
 ) -> None:
