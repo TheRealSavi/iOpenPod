@@ -15,10 +15,10 @@
       "problemMatcher": []
     },
     {
-      "label": "Typing: Prepare Qt",
+      "label": "Typing: Prepare",
       "type": "shell",
       "command": "uv",
-      "args": ["run", "--locked", "python", "scripts/prepare_qt_typing.py"],
+      "args": ["run", "--locked", "python", "-m", "scripts.prepare_typing"],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -27,7 +27,7 @@
     {
       "label": "Environment: Sync",
       "dependsOrder": "sequence",
-      "dependsOn": ["Environment: Sync dependencies", "Typing: Prepare Qt"],
+      "dependsOn": ["Environment: Sync dependencies", "Typing: Prepare"],
       "problemMatcher": []
     },
     {
@@ -137,7 +137,7 @@
     },
     {
       "label": "Typecheck: Mypy",
-      "dependsOn": ["Typing: Prepare Qt"],
+      "dependsOn": ["Typing: Prepare"],
       "type": "shell",
       "command": "uv",
       "args": [

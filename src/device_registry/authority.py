@@ -6,9 +6,10 @@ import hashlib
 import json
 import plistlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 from xml.parsers.expat import ExpatError
+
+from whenever import Instant, seconds
 
 from device_registry.identifiers import (
     has_apple_serial_format,
@@ -155,7 +156,14 @@ def reconcile_device_metadata(
     Older versions retain their metadata bytes but cannot supply trusted provenance.
     """
 
-    timestamp = observed_at or datetime.now(UTC).isoformat()
+    # Authority evidence keeps its existing UTC wire representation; supplied
+    # observation text remains provenance, not a clock that we reinterpret.
+    timestamp = observed_at
+    if not timestamp:
+        utc = (
+            Instant.now().round("microsecond", mode="floor").to_fixed_offset(seconds(0))
+        )
+        timestamp = utc.format_iso(unit="microsecond" if utc.nanosecond else "second")
     old_authority = _load_authority(existing_authority)
     hashes_match = _has_current_version(old_authority) and _authority_hashes_match(
         old_authority,

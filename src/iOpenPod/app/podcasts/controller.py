@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from time import time
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
+from whenever import Instant
 
 from iOpenPod.app.display_text import source_text
 from iOpenPod.app.podcasts.catalog import (
@@ -341,7 +341,7 @@ class PodcastController(QObject):
             else loaded.snapshot.subscriptions
         )
         if only_if_stale:
-            cutoff = int(time()) - _NAVIGATION_REFRESH_INTERVAL_SECONDS
+            cutoff = Instant.now().timestamp() - _NAVIGATION_REFRESH_INTERVAL_SECONDS
             selected = tuple(
                 item
                 for item in selected

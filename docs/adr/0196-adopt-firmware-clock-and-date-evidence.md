@@ -2,9 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-10-26
+- Amended by: [ADR-0240](0240-treat-calendar-dates-as-best-effort-metadata.md), superseding the date-rejection paragraph with best-effort interpretation and explicit native-date writes
 - Amends: ADR-0100/0195 binary Play Counts date merging
 - Extends: ADR-0097 qualified Preferences views and ADR-0098 interpretation limits
 - Retains: ADR-0150's Finder date sentinel and ADR-0022/0142 Smart preservation
+- Profile scope extended by: [ADR-0242](0242-qualify-the-latest-classic-calendar-targets.md), covering the four latest Classic Calendar Targets
 
 ## Context
 

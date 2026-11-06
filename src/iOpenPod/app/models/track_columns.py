@@ -2,11 +2,11 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from enum import IntEnum, auto
 from typing import cast
 
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication
+from whenever import SYSTEM_TZ, Instant
 
 from iPodDB.library import ContentAdvisory, MediaKind, MediaType, Track
 
@@ -913,10 +913,11 @@ def _format_sound_check(value: float | None) -> str:
 
 
 def _format_date(value: int) -> str:
-    if value <= 0:
+    # Zero alone is the semantic unset sentinel; pre-1970 dates remain valid.
+    if value == 0:
         return _MISSING
     try:
-        return datetime.fromtimestamp(value).strftime("%Y-%m-%d")
+        return Instant.from_timestamp(value).to_tz(SYSTEM_TZ).date().format_iso()
     except (OSError, OverflowError, ValueError):
         return _MISSING
 

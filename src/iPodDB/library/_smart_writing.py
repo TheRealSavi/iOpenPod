@@ -163,7 +163,7 @@ def encode_rule(
             {v: k for k, v in RELATIVE_ACTIONS.items()}[rule.operator],
             MhodSmartNumericRuleData(
                 DATE_IDENTIFIER,
-                -rule.value,
+                -min(MAX_SMART_NUMERIC_VALUE, max(1, rule.value)),
                 1,
                 DATE_IDENTIFIER,
                 0,
@@ -203,8 +203,7 @@ def encode_rule(
             raise ValueError("A valid device timezone and date range are required.")
         value = unix_to_mac(value, timezone_offset, missing_zero=False)
         upper = unix_to_mac(upper, timezone_offset, missing_zero=False)
-        if not 0 < value <= upper <= 0xFFFFFFFF:
-            raise ValueError("The date cannot be represented in the device timezone.")
+        value, upper = sorted((value, upper))
     if not isinstance(upper, int) or not 0 <= value <= upper <= MAX_SMART_NUMERIC_VALUE:
         raise ValueError(
             "Smart Playlist numeric bounds must be ordered nonnegative signed 64-bit values."

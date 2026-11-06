@@ -7,8 +7,9 @@ import re
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
-from time import time
 from typing import TYPE_CHECKING
+
+from whenever import Instant
 
 from iOpenPod.app.artwork_policy import rockbox_artwork
 from iOpenPod.app.export_tagging import ExportMediaTagger
@@ -897,7 +898,7 @@ def capture(
         pending_playback_sidecars=False if plan.requires_sidecar_inventory else None,
         create_file_buffer=staging.new_buffer,
         reserved_artwork_paths=tuple(reserved_artwork),
-        playlist_timestamp=int(time()),
+        playlist_timestamp=Instant.now().timestamp(),
         sqlite_sources=tuple(sqlite_sources),
         genius_source=genius_source,
         video_metadata=video_metadata,

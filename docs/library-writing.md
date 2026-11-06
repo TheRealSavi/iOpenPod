@@ -196,7 +196,9 @@ stages; an individual large stage is still synchronous.
 capability. New Tracks use that profile's MHIT layout; callers without a profile
 retain the generic 624-byte creation default. An edited Track whose native fields
 need more space may expand to the profile's header size; absent capabilities leave
-unrepresentable edits blocked. Requirements include later artwork and browse
+unrepresentable non-date edits blocked. Date-only layout limits retain the prior
+date and report a warning under [ADR-0240](adr/0240-treat-calendar-dates-as-best-effort-metadata.md).
+Requirements include later artwork and browse
 updates, including affected Tracks whose own metadata did not change. Composer
 text remains available without its optional native ID on older layouts. Required
 references in existing album/artist datasets must fit or preparation fails.

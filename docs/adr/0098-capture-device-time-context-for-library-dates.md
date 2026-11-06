@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-30
+- Amended by: [ADR-0240](0240-treat-calendar-dates-as-best-effort-metadata.md), replacing date rejection and Preferences save preconditions with best-effort interpretation
 - Extends: ADR-0019, ADR-0022, ADR-0057, ADR-0097
 - Clarified by: [ADR-0196](0196-adopt-firmware-clock-and-date-evidence.md) for firmware clock provenance and Host policy
 

@@ -7,10 +7,11 @@ import sys
 from collections.abc import Callable
 from types import FrameType
 
-from PySide6.QtCore import QCoreApplication, QSocketNotifier, QTimer
+from PySide6.QtCore import QCoreApplication, QSocketNotifier, Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
 from iOpenPod.app.context import AppContext
+from iOpenPod.app.core.dates import refresh_host_timezone
 from iOpenPod.app.core.settings.definitions import ONBOARDING_COMPLETE
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.playback.system_media import (
@@ -44,6 +45,7 @@ def start_ui() -> int:
     _set_windows_app_user_model_id()
     configure_display()
     application = QApplication(sys.argv)
+    _install_host_timezone_refresh(application)
     install_middle_mouse_scrolling(application)
     QCoreApplication.setApplicationName("iOpenPod")
     QCoreApplication.setOrganizationName("iOpenPod")
@@ -90,6 +92,17 @@ def start_ui() -> int:
             shutdown()
         finally:
             restore_interrupt_handler()
+
+
+def _install_host_timezone_refresh(application: QApplication) -> None:
+    """Refresh Host calendar rules at startup and return from system settings."""
+    refresh_host_timezone()
+    application.applicationStateChanged.connect(_refresh_host_timezone_on_activation)
+
+
+def _refresh_host_timezone_on_activation(state: Qt.ApplicationState) -> None:
+    if state == Qt.ApplicationState.ApplicationActive:
+        refresh_host_timezone()
 
 
 def _start_interactive_session(

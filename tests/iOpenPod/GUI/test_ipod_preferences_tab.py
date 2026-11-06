@@ -114,6 +114,10 @@ def test_qualified_alternate_audio_is_selectable_read_only_text(
     data[0xB85] = raw
     path = root / "iPod_Control/Device/Preferences"
     path.write_bytes(data)
+    dst_path = root / "iPod_Control/Device/dst"
+    # An incomplete optional table remains visible without adding an edit control.
+    dst_bytes = struct.pack("<HBBB3sHHHH", 0x21, 1, 0, 0, b"raw", 3, 2, 11, 1)
+    dst_path.write_bytes(dst_bytes)
     platform = VirtualStoragePlatform()
     platform.add_volume(root)
     storage = Storage(platform)
@@ -128,6 +132,14 @@ def test_qualified_alternate_audio_is_selectable_read_only_text(
                 session, active.profile, firmware_versions=("2.0.1",)
             )
         view.set_active_ipod(replace(active, preferences=preferences))
+        dst_count = view.findChild(QLabel, "ipodPreference_dst_rule_count")
+        assert dst_count is not None and dst_count.text() == "1 / 205"
+        assert (
+            dst_count.textInteractionFlags()
+            & Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        dst_detail = view.findChild(QLabel, "ipodPreferenceStatus_dst")
+        assert dst_detail is not None and "historical timezones" in dst_detail.text()
         value = view.findChild(QLabel, "ipodPreference_device_alternate_audio")
         assert value is not None and value.text() == display
         assert value.accessibleName() == "Alternate Audio"
@@ -145,6 +157,7 @@ def test_qualified_alternate_audio_is_selectable_read_only_text(
         view.set_active_ipod(None)
         assert view.findChild(QLabel, "ipodPreference_device_alternate_audio") is None
         assert path.read_bytes() == data
+        assert dst_path.read_bytes() == dst_bytes
     finally:
         coordinator.close()
         view.close()

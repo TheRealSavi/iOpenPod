@@ -1,8 +1,6 @@
 """Date semantics across native records, retained bytes, and SQLite output."""
 
 from dataclasses import replace
-from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
 
 import pytest
 from tests.iPodDB.library.test_photos import (
@@ -10,6 +8,7 @@ from tests.iPodDB.library.test_photos import (
 )
 from tests.iPodDB.library.test_writing import library
 from tests.iPodDB.SQLiteDB.sqlite_test_support import sqlite_rows
+from whenever import Instant, PlainDateTime, TimeDelta, seconds
 
 from iPodDB.device_time import (
     MAC_EPOCH_UNIX_OFFSET as EPOCH,
@@ -17,6 +16,7 @@ from iPodDB.device_time import (
 from iPodDB.device_time import (
     DeviceTimeContext,
     DeviceTimeSource,
+    interpret_mac,
     mac_to_unix,
     project_mac,
     unix_to_mac,
@@ -24,7 +24,7 @@ from iPodDB.device_time import (
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
-from iPodDB.library import IPodLibrary
+from iPodDB.library import IPodLibrary, Playlist, PlaylistKind
 from iPodDB.library._smart_projection import project_smart
 from iPodDB.library._smart_writing import smart_chunks
 from iPodDB.library.playlists import (
@@ -34,6 +34,7 @@ from iPodDB.library.playlists import (
     SmartRule,
     SmartRuleGroup,
 )
+from iPodDB.library.smart_rules import validate_smart_playlist
 from iPodDB.library.writing import WriteChecksum, WriteTarget
 from iPodDB.PhotosDB.parser.parse_PhotosDB import parse_PhotosDB
 from iPodDB.PhotosDB.shared.chunk_defs.mhii import MhiiHeader
@@ -41,7 +42,7 @@ from iPodDB.PhotosDB.writer.write_PhotosDB import write_PhotosDB
 from iPodDB.SQLiteDB.database import build_sqlite_databases
 
 ZONE = DeviceTimeContext(
-    ZoneInfo("America/New_York"), DeviceTimeSource.PREFERENCES_CITY, "America/New_York"
+    "America/New_York", DeviceTimeSource.PREFERENCES_CITY, "America/New_York"
 )
 WINTER = 1_704_085_200  # 2024-01-01 05:00 UTC, midnight local.
 SUMMER = 1_719_806_400  # 2024-07-01 04:00 UTC, midnight local.
@@ -87,9 +88,8 @@ def test_zero_and_native_range_boundaries(offset: int) -> None:
     assert unix_to_mac(0, offset) == mac_to_unix(0, offset) == 0
     for native in (1, 0xFFFFFFFF):
         assert unix_to_mac(mac_to_unix(native, offset), offset) == native
-    for invalid in (-EPOCH - offset, 0xFFFFFFFF - EPOCH - offset + 1):
-        with pytest.raises(ValueError):
-            unix_to_mac(invalid, offset)
+    assert unix_to_mac(-EPOCH - offset, offset) == 1
+    assert unix_to_mac(0xFFFFFFFF - EPOCH - offset + 1, offset) == 0xFFFFFFFF
 
 
 def test_city_rules_use_the_event_date_and_utc_fields_do_not_use_the_city() -> None:
@@ -105,32 +105,35 @@ def test_city_rules_use_the_event_date_and_utc_fields_do_not_use_the_city() -> N
     assert source.device_time.database_offset_seconds == 19800
 
 
-@pytest.mark.parametrize("wall", ["2024-03-10T02:30:00", "2024-11-03T01:30:00"])
-def test_gap_and_fold_are_unavailable_instead_of_guessed(wall: str) -> None:
-    raw = int(datetime.fromisoformat(wall).replace(tzinfo=UTC).timestamp()) + EPOCH
-    with pytest.raises(ValueError, match="ambiguous or nonexistent"):
-        mac_to_unix(raw, ZONE)
-    assert project_mac(raw, ZONE) == 0
+@pytest.mark.parametrize(
+    "wall,expected",
+    [("2024-03-10T02:30:00", 1710055800), ("2024-11-03T01:30:00", 1730611800)],
+)
+def test_gap_and_fold_have_deterministic_approximations(
+    wall: str, expected: int
+) -> None:
+    raw = PlainDateTime(wall).assume_utc().timestamp() + EPOCH
+    assert mac_to_unix(raw, ZONE) == expected
+    assert project_mac(raw, ZONE) == expected
+    assert interpret_mac(raw, ZONE).detail
 
 
 @pytest.mark.parametrize("instant", [1730611800, 1730615400])
-def test_either_instant_in_a_repeated_hour_is_rejected_for_new_local_dates(
+def test_either_instant_in_a_repeated_hour_can_be_written(
     instant: int,
 ) -> None:
-    with pytest.raises(ValueError, match="ambiguous"):
-        unix_to_mac(instant, ZONE)
+    assert unix_to_mac(instant, ZONE) == 3813442200
     assert unix_to_mac(instant, ZONE, utc=True) == instant + EPOCH
 
 
-def test_unknown_zone_uses_only_explicit_header_fallback() -> None:
+def test_unknown_zone_prefers_header_then_explicit_utc_approximation() -> None:
     context = DeviceTimeContext(detail="Unknown city").for_database(-18000)
     assert context.source is DeviceTimeSource.DATABASE_HEADER
     assert mac_to_unix(WINTER + EPOCH - 18000, context) == WINTER
     unknown = context.for_database(86400)
     assert unknown.source is DeviceTimeSource.UNRESOLVED
-    assert project_mac(WINTER + EPOCH, unknown) == 0
-    with pytest.raises(ValueError, match="unresolved"):
-        unix_to_mac(WINTER, unknown)
+    assert project_mac(WINTER + EPOCH, unknown) == WINTER
+    assert unix_to_mac(WINTER, unknown) == WINTER + EPOCH
     assert unix_to_mac(WINTER, unknown, utc=True) == WINTER + EPOCH
 
 
@@ -213,7 +216,7 @@ def test_sqlite_uses_utc_2001_epoch_without_header_or_city_shift() -> None:
 def test_photo_date_conversion_and_ambiguous_byte_preservation() -> None:
     doc = parse_PhotosDB(_photos_bytes())
     item = doc.find_chunks(MhiiHeader)[0]
-    ambiguous = int(datetime(2024, 11, 3, 1, 30, tzinfo=UTC).timestamp()) + EPOCH
+    ambiguous = PlainDateTime(2024, 11, 3, 1, 30).assume_utc().timestamp() + EPOCH
     doc = doc.replace_chunk(
         item,
         replace(
@@ -229,8 +232,8 @@ def test_photo_date_conversion_and_ambiguous_byte_preservation() -> None:
     photos = source.snapshot.photos
     assert photos is not None
     photo = photos.photos[0]
-    assert (photo.original_date, photo.taken_date) == (WINTER, 0)
-    assert any(i.code == "source.unavailable_dates" for i in source.time_warnings)
+    assert (photo.original_date, photo.taken_date) == (WINTER, 1730611800)
+    assert any(i.code == "source.approximate_dates" for i in source.time_warnings)
     desired = replace(
         source.snapshot,
         photos=replace(
@@ -247,11 +250,11 @@ def test_photo_date_conversion_and_ambiguous_byte_preservation() -> None:
     assert native.exif_taken_date == ambiguous
 
 
-def test_unresolved_dates_preserve_native_bytes_but_block_sqlite_regeneration() -> None:
+def test_unresolved_dates_preserve_native_bytes_and_allow_sqlite_regeneration() -> None:
     document = parse_iTunesDB(_source().serialize().itunes)
     document = replace(document, header=replace(document.header, timezone_offset=86400))
     source = IPodLibrary.parse(write_iTunesDB(document))
-    assert source.snapshot.tracks[0].metadata.last_played == 0
+    assert source.snapshot.tracks[0].metadata.last_played == 1704067200
     desired = replace(source.snapshot, device_name="Renamed")
     draft = source.begin_draft(desired)
     result = source.prepare(source.analyze(draft))
@@ -263,20 +266,176 @@ def test_unresolved_dates_preserve_native_bytes_but_block_sqlite_regeneration() 
         == document.find_chunks(MhitHeader)[0].chunk.header.last_played
     )
     plan = source.analyze(draft, WriteTarget(sqlite_database=True))
-    assert any(i.code == "source.sqlite_unavailable_dates" for i in plan.issues)
-    assert source.prepare(plan).prepared is None
+    assert not plan.blocked
+    prepared = source.prepare(plan)
+    assert prepared.prepared is not None, prepared.issues
+    assert prepared.prepared.sqlite is not None
+    assert sqlite_rows(
+        prepared.prepared.sqlite.dynamic,
+        "SELECT date_played FROM item_stats ORDER BY item_pid",
+    ) == ((1704067200 - 978307200,), (1719792000 - 978307200,))
 
 
-def test_ambiguous_new_track_date_is_rejected_by_analysis() -> None:
+@pytest.mark.parametrize("instant", [1730611800, 1730615400])
+def test_ambiguous_new_track_date_is_normalized_before_verification(
+    instant: int,
+) -> None:
     source = _source()
     track = source.snapshot.tracks[0]
     desired = replace(
         source.snapshot,
         tracks=(
-            replace(track, metadata=replace(track.metadata, last_played=1730611800)),
+            replace(track, metadata=replace(track.metadata, last_played=instant)),
             source.snapshot.tracks[1],
         ),
     )
     result = source.prepare(source.analyze(source.begin_draft(desired)))
-    assert result.prepared is None
-    assert any("ambiguous" in i.message for i in result.issues)
+    assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.tracks[0].metadata.last_played == 1730611800
+    assert any(i.code == "date.approximated" for i in result.issues)
+
+
+@pytest.mark.parametrize(
+    "offset,expected", [(-18000, 1730615400), (-14400, 1730611800)]
+)
+def test_fold_prefers_a_matching_captured_header_offset(
+    offset: int, expected: int
+) -> None:
+    assert (
+        mac_to_unix(3813442200, replace(ZONE, database_offset_seconds=offset))
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "zone,wall,header,expected",
+    [
+        # Lord Howe changes by half an hour, not an assumed sixty minutes.
+        ("Australia/Lord_Howe", "2024-04-07T01:45:00", 39600, "2024-04-06T14:45:00Z"),
+        ("Australia/Lord_Howe", "2024-04-07T01:45:00", 37800, "2024-04-06T15:15:00Z"),
+        ("Australia/Lord_Howe", "2024-10-06T02:15:00", 0, "2024-10-05T15:45:00Z"),
+        # Samoa skipped an entire civil day. Pre-transition offset still wins.
+        ("Pacific/Apia", "2011-12-30T12:00:00", 50400, "2011-12-30T22:00:00Z"),
+    ],
+)
+def test_unusual_transitions_follow_the_same_nonblocking_policy(
+    zone: str, wall: str, header: int, expected: str
+) -> None:
+    context = DeviceTimeContext(
+        zone, DeviceTimeSource.PREFERENCES_CITY, database_offset_seconds=header
+    )
+    raw = PlainDateTime(wall).assume_utc().timestamp() + EPOCH
+    interpreted = interpret_mac(raw, context)
+    assert interpreted.value == Instant(expected).timestamp()
+    assert interpreted.detail
+
+
+@pytest.mark.parametrize("offset", [-86399, -1172, 1172, 86399])
+def test_captured_whole_second_offsets_remain_exact(offset: int) -> None:
+    context = DeviceTimeContext(seconds(offset), DeviceTimeSource.PREFERENCES_OFFSET)
+    assert unix_to_mac(-1, context) == EPOCH - 1 + offset
+    assert mac_to_unix(EPOCH - 1 + offset, context) == -1
+
+
+@pytest.mark.parametrize(
+    "zone",
+    ["Not/A_Zone", "../invalid", seconds(86400), TimeDelta(nanoseconds=1)],
+)
+def test_unusable_captured_zone_is_optional_evidence(zone: str | TimeDelta) -> None:
+    context = DeviceTimeContext(zone, database_offset_seconds=-18000)
+    interpreted = interpret_mac(3786912000, context)
+    assert interpreted.value == WINTER
+    assert interpreted.detail
+    assert unix_to_mac(WINTER, context) == 3786912000
+
+
+@pytest.mark.parametrize("value,native", [(-(10**30), 1), (10**30, 0xFFFFFFFF)])
+def test_out_of_range_track_dates_are_bounded_before_writing_and_verification(
+    value: int, native: int
+) -> None:
+    source = _source()
+    track = source.snapshot.tracks[0]
+    metadata = replace(
+        track.metadata,
+        last_modified=value,
+        last_played=value,
+        last_skipped=value,
+        date_added=value,
+        release_date=value,
+    )
+    desired = replace(
+        source.snapshot,
+        tracks=(replace(track, metadata=metadata), *source.snapshot.tracks[1:]),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    header = (
+        parse_iTunesDB(result.prepared.itunes).find_chunks(MhitHeader)[0].chunk.header
+    )
+    assert (
+        header.last_modified
+        == header.last_played
+        == header.last_skipped
+        == header.date_added
+        == header.date_released
+        == native
+    )
+    assert (
+        IPodLibrary.parse(
+            result.prepared.itunes, device_time=source.device_time
+        ).snapshot
+        == result.prepared.snapshot
+    )
+
+
+@pytest.mark.parametrize("value,native", [(-(10**30), 1), (10**30, 0xFFFFFFFF)])
+def test_out_of_range_photo_dates_are_bounded(value: int, native: int) -> None:
+    source = _source().with_photos(_photos_bytes())
+    photos = source.snapshot.photos
+    assert photos is not None
+    desired = replace(
+        source.snapshot,
+        photos=replace(
+            photos,
+            photos=tuple(
+                replace(photo, original_date=value, taken_date=value)
+                for photo in photos.photos
+            ),
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    assert result.prepared.photos is not None
+    header = (
+        parse_PhotosDB(result.prepared.photos).find_chunks(MhiiHeader)[0].chunk.header
+    )
+    assert header.original_date == header.exif_taken_date == native
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        SmartRule(SmartField.DATE_ADDED, SmartOperator.IS, 10**30),
+        SmartRule(SmartField.DATE_ADDED, SmartOperator.BETWEEN, -(10**30), 10**30),
+        SmartRule(
+            SmartField.LAST_PLAYED, SmartOperator.BETWEEN, 1793511900, 1793513700
+        ),
+        SmartRule(SmartField.LAST_PLAYED, SmartOperator.IN_LAST, -1),
+    ],
+)
+def test_smart_date_extremes_and_fold_ranges_reach_preparation(rule: SmartRule) -> None:
+    source = _source()
+    smart = SmartPlaylist(rules=SmartRuleGroup(rules=(rule,)))
+    validate_smart_playlist(smart)  # Editor/preview validation precedes preparation.
+    desired = replace(
+        source.snapshot,
+        playlists=(
+            *source.snapshot.playlists,
+            Playlist(-1, "Dates", kind=PlaylistKind.SMART, smart=smart),
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    prepared = result.prepared
+    reread = IPodLibrary.parse(prepared.itunes, device_time=source.device_time)
+    assert reread.snapshot.playlists[-1].smart == prepared.snapshot.playlists[-1].smart

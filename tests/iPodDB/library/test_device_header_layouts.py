@@ -158,13 +158,14 @@ def test_creation_without_device_capability_keeps_generic_default() -> None:
     )
 
 
-def test_creation_rejects_history_outside_selected_layout() -> None:
+def test_creation_omits_dates_outside_selected_layout() -> None:
     source = short_header_library()
     original = source.serialize()
     result = add_audio(source, 0x0B, last_skipped=1_700_000_000)
-    assert result.prepared is None
+    assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.tracks[-1].metadata.last_skipped == 0
     assert any(
-        i.code == "binary.short_header" and i.field == "last_skipped"
+        i.code == "date.approximated" and i.field == "metadata.last_skipped"
         for i in result.issues
     )
     assert source.serialize() == original

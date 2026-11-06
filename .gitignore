@@ -191,6 +191,9 @@ CLAUDE.md
 # Private local planning and work items
 .scratch/
 
+# Generated development annotations; the preparation scripts remain tracked.
+/typings/whenever/
+
 # Game payloads are downloaded and extracted into the Host cache.
 /src/iOpenPod/assets/games/archives/
 /src/iOpenPod/assets/games/**/*.zip

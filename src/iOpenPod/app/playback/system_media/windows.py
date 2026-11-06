@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
 from importlib import import_module
 from typing import TYPE_CHECKING, Protocol, cast
+
+from whenever import TimeDelta
 
 if TYPE_CHECKING:
     from collections.abc import Callable, MutableSequence
@@ -548,7 +549,9 @@ def _required_member(module: ModuleType, name: str, member: str) -> object:
 
 
 def _make_time_span(milliseconds: int) -> object:
-    return timedelta(milliseconds=milliseconds)
+    # WinRT's TimeSpan projection requires a stdlib timedelta. Keep this solely
+    # as an elapsed-duration ABI adapter; calendar arithmetic uses Whenever.
+    return TimeDelta(milliseconds=milliseconds).to_stdlib()
 
 
 __all__ = ["WindowsSystemMediaSession"]

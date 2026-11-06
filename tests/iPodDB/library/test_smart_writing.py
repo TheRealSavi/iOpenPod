@@ -197,8 +197,6 @@ def test_absolute_dates_use_device_timezone_and_relative_periods_do_not(
         SmartRule(SmartField.PLAY_COUNT, SmartOperator.IS, 1 << 64),
         SmartRule(SmartField.PLAY_COUNT, SmartOperator.IS, 1 << 63),
         SmartRule(SmartField.PLAY_COUNT, SmartOperator.BETWEEN, 0, 1 << 63),
-        SmartRule(SmartField.DATE_ADDED, SmartOperator.IN_LAST, 0),
-        SmartRule(SmartField.DATE_ADDED, SmartOperator.IN_LAST, 1 << 63),
         SmartRule(SmartField.CHECKED, SmartOperator.IS_TRUE, 1),
         SmartRule(SmartField.TITLE, SmartOperator.IS, "broken\ud800"),
         SmartRule(SmartField.YEAR, SmartOperator.IS, 2000, 2001),
@@ -308,8 +306,16 @@ def test_absolute_date_cannot_encode_as_the_native_missing_date_marker() -> None
             )
         )
     )
-    with pytest.raises(ValueError, match="date"):
-        smart_chunks(smart, (), -18000)
+    expected = SmartPlaylist(
+        rules=SmartRuleGroup(
+            rules=(
+                SmartRule(
+                    SmartField.DATE_ADDED, SmartOperator.IS, -2_082_844_800 + 18001
+                ),
+            )
+        )
+    )
+    assert project_smart(smart_chunks(smart, (), -18000), -18000) == expected
 
 
 def test_native_missing_date_condition_is_preserved_as_read_only() -> None:

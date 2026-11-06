@@ -362,6 +362,8 @@ def plan_mixes(
             removals.append(entry.container_id)
         for entry in automatic[excess:]:
             assert entry.added_at is not None
+            # Host policy measures elapsed 24-hour days, not local calendar
+            # anniversaries; a clock setback does not expire a future entry.
             if now - entry.added_at <= policy.expiry_days * 86400:
                 continue
             choices = [

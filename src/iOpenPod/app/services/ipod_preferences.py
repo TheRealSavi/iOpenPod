@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from device_registry import DeviceProfile
 from iOpenPod.app.display_text import exception_text, source_text
@@ -11,19 +11,25 @@ from iOpenPod.app.models.ipod_preferences import (
     IPodPreferenceSection,
     PreferenceFileStatus,
 )
+from iOpenPod.app.services.classic_calendar import resolve_classic_calendar
 from iOpenPod.app.services.device_time import resolve_device_time
 from iPodDB.device_time import DeviceTimeContext
 from iPodDB.preferences import (
     CityPreferences,
     CityTimezone,
-    Classic201ClockPreferences,
     Classic201Preferences,
+    ClassicClockPreferences,
+    ClassicPreferences,
+    DSTTableDocument,
+    DSTTableProfile,
     FixedOffsetTimezone,
     ITunesPreferencesProfile,
     Nano3Preferences,
     PreferencesDocument,
+    PreferencesLayout,
     PreferencesProfile,
     VolumeLimitPreferences,
+    parse_dst_table,
     parse_itunes_preferences,
     parse_preferences,
 )
@@ -38,6 +44,7 @@ class CapturedIPodPreferences:
     device_time: DeviceTimeContext
     # None means the observation could not be verified, not that the file is absent.
     time_precondition: FilePrecondition | None
+    daylight_saving_rules: DSTTableDocument | None = None
 
 
 def read_ipod_preferences(
@@ -45,9 +52,13 @@ def read_ipod_preferences(
     profile: DeviceProfile,
     *,
     firmware_versions: tuple[str, ...] = (),
+    updater_family_ids: tuple[int, ...] = (),
 ) -> tuple[IPodPreferenceSection, ...]:
     return capture_ipod_preferences(
-        session, profile, firmware_versions=firmware_versions
+        session,
+        profile,
+        firmware_versions=firmware_versions,
+        updater_family_ids=updater_family_ids,
     ).sections
 
 
@@ -56,6 +67,7 @@ def capture_ipod_preferences(
     profile: DeviceProfile,
     *,
     firmware_versions: tuple[str, ...] = (),
+    updater_family_ids: tuple[int, ...] = (),
 ) -> CapturedIPodPreferences:
     """Capture display and conversion evidence from the same verified bytes."""
     device, data, precondition = _read_section(
@@ -63,7 +75,7 @@ def capture_ipod_preferences(
         "device",
         source_text("Device settings"),
         DevicePath("iPod_Control/Device/Preferences"),
-        lambda data: _device_rows(data, profile, firmware_versions),
+        lambda data: _device_rows(data, profile, firmware_versions, updater_family_ids),
     )
     itunes, _, _ = _read_section(
         session,
@@ -75,10 +87,71 @@ def capture_ipod_preferences(
     document = None
     if data is not None:
         with suppress(ValueError):
-            document = _device_document(data, profile, firmware_versions)
-    return CapturedIPodPreferences(
-        (device, itunes), resolve_device_time(document), precondition
+            document = _device_document(
+                data, profile, firmware_versions, updater_family_ids
+            )
+    settings = document.settings if document is not None else None
+    city_id = settings.city_id if isinstance(settings, ClassicPreferences) else None
+    target = resolve_classic_calendar(profile, firmware_versions, updater_family_ids)
+    dst_section, dst = _capture_dst(
+        session,
+        target.dst_profile if target is not None else DSTTableProfile.UNKNOWN,
+        city_id,
     )
+    sections: tuple[IPodPreferenceSection, ...] = (device, itunes)
+    if dst_section.status is not PreferenceFileStatus.MISSING:
+        sections += (dst_section,)
+    return CapturedIPodPreferences(
+        sections, resolve_device_time(document), precondition, dst
+    )
+
+
+def _capture_dst(
+    session: FilesystemSession, profile: DSTTableProfile, city_id: int | None
+) -> tuple[IPodPreferenceSection, DSTTableDocument | None]:
+    document: DSTTableDocument | None = None
+
+    def project(data: bytes) -> tuple[IPodPreference, ...]:
+        nonlocal document
+        document = parse_dst_table(data, profile=profile)
+        if document.expected_rows is None:
+            return ()
+        rows: tuple[IPodPreference, ...] = (
+            _row(
+                "rule_count",
+                "Complete saved rules",
+                source_text(
+                    "{count} / {total}",
+                    count=str(len(document.rules)),
+                    total=str(document.expected_rows),
+                ),
+            ),
+        )
+        if city_id is not None:
+            matches = document.rules_for_city(city_id)
+            rows += (
+                _row("city_rule_count", "Rules for the saved city", str(len(matches))),
+            )
+        return rows
+
+    section, _, _ = _read_section(
+        session,
+        "dst",
+        source_text("Saved daylight saving rules"),
+        DevicePath("iPod_Control/Device/dst"),
+        project,
+    )
+    if document is not None and document.expected_rows is not None:
+        section = replace(
+            section,
+            status=PreferenceFileStatus.AVAILABLE
+            if document.complete
+            else PreferenceFileStatus.UNKNOWN,
+            detail=source_text(
+                "These saved annual rules do not establish historical timezones. Library dates use the available city rules or a fixed-offset estimate."
+            ),
+        )
+    return section, document
 
 
 def _read_section(
@@ -168,24 +241,24 @@ def _toggle(value: int) -> str:
 
 
 def _device_document(
-    data: bytes, profile: DeviceProfile, firmware_versions: tuple[str, ...]
+    data: bytes,
+    profile: DeviceProfile,
+    firmware_versions: tuple[str, ...],
+    updater_family_ids: tuple[int, ...],
 ) -> PreferencesDocument:
+    target = resolve_classic_calendar(profile, firmware_versions, updater_family_ids)
+    if target is not None:
+        try:
+            return parse_preferences(data, profile=target.preferences_profile)
+        except ValueError:
+            # A qualified target with unrecognized bytes must not fall back to a
+            # narrower city field and alias an unknown u32 ID to a known u16 ID.
+            return parse_preferences(data, layout=PreferencesLayout.UNKNOWN)
     document = parse_preferences(data)
     if document.settings is None:
         return document
     # Only assert extensions with both model evidence and a recognized extent.
-    if (profile.family, profile.generation, profile.advertised_capacity) == (
-        "iPod Classic",
-        "6.5th Gen",
-        "120GB",
-    ) and set(firmware_versions) == {"2.0.1"}:
-        # The caller passes RetailOS releases, separately from transport revisions.
-        # Rejecting conflicting releases is conservative: this seam has no ranks.
-        with suppress(ValueError):
-            document = parse_preferences(
-                data, profile=PreferencesProfile.CLASSIC_120GB_2_0_1
-            )
-    elif (profile.family, profile.generation) == ("iPod Nano", "3rd Gen") and len(
+    if (profile.family, profile.generation) == ("iPod Nano", "3rd Gen") and len(
         data
     ) == 2952:
         document = parse_preferences(data, profile=PreferencesProfile.NANO_3)
@@ -207,17 +280,18 @@ def _device_document(
 
 
 def _device_rows(
-    data: bytes, profile: DeviceProfile, firmware_versions: tuple[str, ...]
+    data: bytes,
+    profile: DeviceProfile,
+    firmware_versions: tuple[str, ...],
+    updater_family_ids: tuple[int, ...],
 ) -> tuple[IPodPreference, ...]:
-    document = _device_document(data, profile, firmware_versions)
+    document = _device_document(data, profile, firmware_versions, updater_family_ids)
     settings = document.settings
     if settings is None:
         return ()
     zone = document.timezone
     timezone: str = source_text("Unknown")
-    if zone is None and not isinstance(
-        settings, (CityPreferences, Classic201Preferences)
-    ):
+    if zone is None and not isinstance(settings, (CityPreferences, ClassicPreferences)):
         timezone = _unknown(settings.timezone_code)
     if isinstance(zone, CityTimezone):
         timezone = zone.timezone_name or source_text(
@@ -244,8 +318,8 @@ def _device_rows(
             if 0 <= extension.volume_limit <= 64
             else _unknown(extension.volume_limit)
         )
-    classic = isinstance(extension, Classic201ClockPreferences)
-    if isinstance(extension, Classic201ClockPreferences):
+    classic = isinstance(extension, ClassicClockPreferences)
+    if isinstance(extension, ClassicClockPreferences):
         if extension.retained_dst_state == 0:
             daylight_saving = source_text("Off (raw 0)")
         elif extension.retained_dst_state in (1, 60):
@@ -276,7 +350,7 @@ def _device_rows(
                 "alternate_audio", "Alternate Audio", _toggle(settings.alternate_audio)
             ),
         )
-    if isinstance(extension, Classic201ClockPreferences):
+    if isinstance(extension, ClassicClockPreferences):
         rows += (
             _row(
                 "clock_bias_days",

@@ -16,7 +16,6 @@ import weakref
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import replace
-from datetime import UTC, datetime
 from os import PathLike
 from pathlib import Path
 from threading import Event
@@ -31,6 +30,7 @@ from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
 from tests.iOpenPod.app.test_media_lyrics import WORDS
 from tests.iOpenPod.app.test_music_import import FIXTURES
+from whenever import Instant
 
 from iOpenPod.app import sync_execution
 from iOpenPod.app.display_text import SourceText
@@ -606,7 +606,7 @@ class _Executor(SyncExecutor):
                 DevicePath(location),
                 source.acoustic_fingerprint or "1,2,3",
                 SyncDetails(
-                    datetime.now(UTC).isoformat(),
+                    Instant.now().to_fixed_offset().format_iso(unit="microsecond"),
                     str(source.path),
                     source.size_bytes,
                     source.modified_ns,

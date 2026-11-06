@@ -99,6 +99,25 @@ def test_legacy_semantic_podcast_flag_also_requires_both_flags() -> None:
     assert updated.media_types == (MediaType.PODCAST,)
 
 
+@pytest.mark.parametrize("release_date,year", [(-1, 1969), (0, 0), (10**30, 0)])
+def test_podcast_year_is_optional_best_effort_metadata(
+    release_date: int, year: int
+) -> None:
+    track = Track(
+        1,
+        "Episode",
+        "",
+        "",
+        1_000,
+        media_types=(MediaType.PODCAST,),
+        metadata=TrackMetadata(release_date=release_date),
+    )
+    updated = enforce_track_playback_policy(track)
+    assert updated.year == year
+    assert updated.metadata.release_date == release_date
+    assert updated.metadata.podcast
+
+
 @pytest.mark.parametrize("kind", (MediaType.AUDIO, MediaType.MEMO))
 @pytest.mark.parametrize("enabled", (False, True))
 def test_other_media_keep_their_existing_playback_preferences(

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import time
 from collections import Counter
 from dataclasses import replace
 from typing import TYPE_CHECKING
+
+from whenever import Instant
 
 from iOpenPod.app.podcasts.identity import (
     episode_identity,
@@ -332,9 +333,7 @@ def mark_episodes_listened(
         (record.subscription_id, record.episode_id): record
         for record in snapshot.history
     }
-    timestamp = int(time.time()) if changed_at is None else changed_at
-    if timestamp < 0:
-        raise ValueError("A listening-history time must not be negative")
+    timestamp = Instant.now().timestamp() if changed_at is None else changed_at
     for episode_id in selected:
         episode = episodes[episode_id]
         old = records.get((subscription_id, episode_id))
@@ -376,9 +375,7 @@ def mark_episode_selection_listened(
     if not selected_by_subscription:
         raise ValueError("No Podcast Episodes were selected")
 
-    timestamp = int(time.time()) if changed_at is None else changed_at
-    if timestamp < 0:
-        raise ValueError("A listening-history time must not be negative")
+    timestamp = Instant.now().timestamp() if changed_at is None else changed_at
     updated = snapshot
     for subscription_id in sorted(selected_by_subscription):
         updated = mark_episodes_listened(

@@ -91,6 +91,7 @@ from iOpenPod.app.services import (
     photo_shard_resources,
     volume_presentation,
 )
+from iOpenPod.app.services.classic_calendar import strongest_values
 from iOpenPod.app.services.device_storage import (
     ALBUM_ARTWORK_STORAGE_ROOTS,
     GAME_STORAGE_ROOTS,
@@ -308,7 +309,6 @@ class _ActiveConnection:
     record: _CandidateRecord
     active_ipod: ActiveIPod
     library_source: IPodLibrary
-    time_precondition: FilePrecondition | None = None
     sidecar_preconditions: tuple[FilePrecondition, ...] = ()
     phase_precondition: FilePrecondition | None = None
 
@@ -1800,11 +1800,8 @@ class DeviceCoordinator:
                 cover_formats=application_cover_formats(expected.profile),
                 chapter_formats=application_chapter_formats(expected.profile),
             )
-            if active.time_precondition is None:
-                raise DeviceChangedError(
-                    "The iPod timezone settings could not be verified. Reload before saving."
-                )
-            library_resources.recheck(active.session, (active.time_precondition,))
+            # Calendar evidence is a best-effort interpretation captured at load.
+            # Changing or unreadable Preferences must not block a Library save.
             library_resources.recheck(active.session, active.sidecar_preconditions)
             if active.phase_precondition is not None:
                 library_resources.recheck(active.session, (active.phase_precondition,))
@@ -2008,7 +2005,6 @@ class DeviceCoordinator:
                 source_artwork_file_paths=source.artwork_file_paths,
                 additional_preconditions=(
                     *sqlite_postprocess_preconditions,
-                    active.time_precondition,
                     *mix_preconditions,
                     *(
                         (active.phase_precondition,)
@@ -3071,9 +3067,11 @@ class DeviceCoordinator:
                     preferences = capture_ipod_preferences(
                         session,
                         profile,
-                        firmware_versions=tuple(
-                            item.value
-                            for item in current.device_evidence.firmware_versions
+                        firmware_versions=strongest_values(
+                            current.device_evidence.firmware_versions
+                        ),
+                        updater_family_ids=strongest_values(
+                            current.device_evidence.updater_family_ids
                         ),
                     )
                     library = self._library_loader(snapshot.data).with_device_time(
@@ -3226,7 +3224,6 @@ class DeviceCoordinator:
                     record=current,
                     active_ipod=active_ipod,
                     library_source=library,
-                    time_precondition=preferences.time_precondition,
                     sidecar_preconditions=sidecar_preconditions,
                     phase_precondition=phase_precondition,
                 )
@@ -3279,7 +3276,9 @@ class DeviceCoordinator:
             )
 
         source = active.library_source
-        if source.sidecar_issues:
+        if any(
+            issue.severity is IssueSeverity.ERROR for issue in source.sidecar_issues
+        ):
             raise load_error(source.sidecar_issues)
         if not source.consumed_sidecars:
             return

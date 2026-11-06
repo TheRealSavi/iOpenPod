@@ -44,7 +44,13 @@ class PhotoRepresentation:
 
 @dataclass(frozen=True, slots=True)
 class Photo:
-    """One Photo and its available full-resolution or thumbnail representations."""
+    """One Photo with best-effort signed Unix dates and retained representations.
+
+    Zero is the semantic missing-date marker. Native image-date words remain in
+    the source document; local-Mac interpretation is Host policy with less direct
+    firmware evidence than Track playback dates. See the auxiliary datetime file
+    inventory; taken_date is not a direct view of the original image's EXIF bytes.
+    """
 
     photo_id: int
     rating: int = 0

@@ -71,6 +71,28 @@ def test_listening_history_has_its_own_versioned_document() -> None:
     assert json.loads(encoded)["version"] == 2
 
 
+@pytest.mark.parametrize("timestamp", [-2_082_844_799, -1, 10**30])
+def test_signed_and_large_dates_survive_history_documents(timestamp: int) -> None:
+    records = (
+        ListeningRecord(
+            "show", "episode", last_played=timestamp, published_at=timestamp
+        ),
+    )
+    assert decode_history(encode_history(records)) == records
+
+
+@pytest.mark.parametrize("value", [None, True, "unknown"])
+def test_invalid_history_dates_do_not_discard_listening_counts(value: object) -> None:
+    raw = json.loads(
+        encode_history((ListeningRecord("show", "episode", observed_play_count=3),))
+    )
+    raw["records"][0]["last_played"] = value
+    raw["records"][0]["published_at"] = value
+    record = decode_history(json.dumps(raw).encode())[0]
+    assert record.observed_play_count == 3
+    assert record.last_played == record.published_at == 0
+
+
 def test_legacy_history_loads_without_invented_publication_or_clear_state() -> None:
     payload = b'{"schema":"iopenpod.podcast-listening-history","version":1,"records":[{"subscription_id":"show","episode_id":"episode","listened_override":false,"observed_play_count":2,"last_played":17}]}'
 
@@ -93,10 +115,6 @@ def test_legacy_history_loads_without_invented_publication_or_clear_state() -> N
 @pytest.mark.parametrize(
     ("field", "value"),
     (
-        ("published_at", -1),
-        ("published_at", True),
-        ("published_at", 1.5),
-        ("published_at", "123"),
         ("episode_number", -1),
         ("episode_number", True),
         ("episode_number", 1.5),
@@ -116,15 +134,24 @@ def test_invalid_version_two_history_fields_fail_closed(
         decode_history(json.dumps(document).encode())
 
 
-@pytest.mark.parametrize(
-    "field", ("published_at", "episode_number", "automatically_cleared")
-)
+@pytest.mark.parametrize("field", ("episode_number", "automatically_cleared"))
 def test_version_two_history_requires_clearance_and_ordering_fields(field: str) -> None:
     document = json.loads(encode_history((ListeningRecord("show", "episode"),)))
     del document["records"][0][field]
 
     with pytest.raises(PodcastDocumentError):
         decode_history(json.dumps(document).encode())
+
+
+def test_missing_history_dates_do_not_discard_listening_counts() -> None:
+    document = json.loads(
+        encode_history((ListeningRecord("show", "episode", observed_play_count=3),))
+    )
+    del document["records"][0]["last_played"]
+    del document["records"][0]["published_at"]
+    record = decode_history(json.dumps(document).encode())[0]
+    assert record.observed_play_count == 3
+    assert record.last_played == record.published_at == 0
 
 
 def test_version_two_history_does_not_silently_discard_unknown_fields() -> None:

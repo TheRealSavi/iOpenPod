@@ -1,14 +1,16 @@
 # iPod preferences readers and writers
 
-`iPodDB.preferences` models two distinct binary artifacts:
+`iPodDB.preferences` models three distinct binary artifacts:
 
 | Artifact | Reader / writer | Document |
 | --- | --- | --- |
 | `iPod_Control/Device/Preferences` | `parse_preferences` / `write_preferences` | `PreferencesDocument` |
 | `iPod_Control/iTunes/iTunesPrefs` | `parse_itunes_preferences` / `write_itunes_preferences` | `ITunesPreferencesDocument` |
+| `iPod_Control/Device/dst` | `parse_dst_table` / captured bytes only | `DSTTableDocument` |
 
-Both accept bytes, expose immutable typed settings, and serialize edits over the
-retained source. Storage owns file access and publication. There is no dependency
+All accept bytes and expose immutable observations. The two preferences writers
+serialize edits over retained source; DST rules have no edit writer.
+Storage owns file access and publication. There is no dependency
 on Device Registry, automatic sync-policy change, or clock adjustment here.
 
 ## Firmware Preferences
@@ -35,7 +37,10 @@ caller, based on its device/firmware evidence:
 | `STANDARD` (default) | None | None | Any known base layout |
 | `NANO_3` | `Nano3Preferences.daylight_saving_minutes` | 0 or 60 | 2,952 bytes |
 | `VOLUME_LIMIT_1_1_1` | `VolumeLimitPreferences.volume_limit` | 0 through 64, device units | Known base layout containing the field |
-| `CLASSIC_120GB_2_0_1` | `Classic201Preferences` and `Classic201ClockPreferences` | Language and Alternate Audio (0/1); city/clock fields read-only | 2,956 bytes, version word `0x3d` |
+| `CLASSIC_6_1_1_2` | `ClassicPreferences` and `ClassicClockPreferences` | Language; city/clock fields read-only | 2,952 bytes, version word `0x3c` |
+| `CLASSIC_120GB_2_0_1` | `Classic201Preferences` and `ClassicClockPreferences` | Language and Alternate Audio (0/1); city/clock fields read-only | 2,956 bytes, version word `0x3d` |
+| `CLASSIC_UPDATER_35_2_0_4` | `ClassicPreferences` and `ClassicClockPreferences` | Language; city/clock fields read-only | 2,956 bytes, version word `0x3e` |
+| `CLASSIC_UPDATER_38_2_0_5` | `ClassicPreferences` and `ClassicClockPreferences` | Language; city/clock fields read-only | 2,960 bytes, version word `0x3f` |
 
 The volume profile asserts the documented Video/nano firmware 1.1.1 behavior;
 file size alone does not make that assertion. Zero is not assigned an invented
@@ -43,13 +48,21 @@ file size alone does not make that assertion. Zero is not assigned an invented
 DST switch is exposed separately; it is not automatically added to a city's
 historical UTC offset.
 
-The Classic profile replaces the generic two-byte city view with a full u32 at
+Each qualified latest Classic profile replaces the generic two-byte city view with a full u32 at
 payload `0xb70`. A value such as `0x00010029` remains unknown rather than aliasing
 city `0x29`. Its separate clock structure exposes `format_version`, raw
 `retained_dst_state` at `0xb6c`, signed `clock_bias_days` at `0xb78`, and the raw
 u32 `clock_bias_seconds` word at `0xb7c`. Saved DST has mixed 0/1 and 0/60 callers;
 neither it nor the bias is added to IANA date conversion. City/clock edits are
 rejected, while language changes preserve those bytes exactly.
+
+Queued Host clock handling can refresh the saved correction, choose a matching
+city, normalize Saved DST State to 0/1, and mark Preferences dirty. The separate
+zone-change path can save raw DST minutes, normally 0/60. The file can lag live
+processing and later persistence; its city need not reflect a manual choice.
+When no city matches, firmware can select zero. Qualified Classic city zero
+therefore includes an explanatory diagnostic and remains geographically
+unresolved. See [the notification trace](research/classic-clock-notification-effects-2026-11-05.md).
 
 `Classic201Preferences.alternate_audio` retains the raw u8 at payload `0xb85`:
 zero is Off and one is On. Unknown values `2..255` round-trip unchanged, including
@@ -59,12 +72,16 @@ Host Media Stream Selection, an audio stream index, or a language identifier.
 The setting's connection to the movie reader's requested audio language remains
 unresolved. See the [Alternate Audio evidence](research/ipod-preferences.md#qualified-classic-alternate-audio).
 
-The Application Layer automatically asserts this profile only for the exact
-Classic 6.5th Gen 120GB Device Profile with unconflicted RetailOS 2.0.1 evidence,
-matching extent and format version. Transport revisions do not qualify. Generic
-city files and other releases retain their prior profile. The Settings view shows
-these captured clock observations and Alternate Audio as On, Off, or an unknown
-raw code. It offers no firmware preference editing. See the
+The Application Layer qualifies the four latest Classic Calendar Targets using
+the strongest available RetailOS and updater-family evidence, consistent with
+the selected Device Profile. Families 35/38 require an explicit updater family;
+the known Classic 6/6.5 models also allow model-plus-exact-release qualification
+when updater identity is absent. Equal-authority conflicts do not qualify, and
+transport revisions do not qualify. Unexpected framing on a qualified target
+remains opaque rather than falling back to a two-byte city interpretation.
+The Settings view shows captured clock observations on all four targets and
+Alternate Audio on the qualified 2.0.1 profile. It offers no firmware preference
+editing. See [ADR-0242](adr/0242-qualify-the-latest-classic-calendar-targets.md) and the
 [firmware evidence](research/classic201-clock-semantics-2026-10-26.md).
 
 `document.timezone` returns:
@@ -76,15 +93,17 @@ raw code. It offers no firmware preference editing. See the
   Unknown cities, including zero, retain `timezone_name=None`.
 - `None`: an opaque layout or invalid older code.
 
-Qualified Classic city `0x26` also returns no geographical zone: the inherited
-London mapping contradicts that firmware's base offset and its intended city
-identity is unresolved. Other profiles retain their existing interpretation.
+Qualified Classic city `0x26` also returns no geographical zone on all four latest
+releases: the inherited London mapping contradicts each firmware's base offset
+and its intended city identity is unresolved. Unqualified profiles retain their
+existing interpretation.
 Four corroborated city mappings are corrected in the shared table; see
 [the city identity evidence](research/classic201-additional-contracts-2026-10-26.md#city-identity-corrections).
 
 The reader never consults the Host timezone or substitutes UTC for an unknown
-reading. The Application Layer now resolves city rules into a Device Time Context for
-Library date conversion and captures Preferences as a save dependency. See
+reading. The Application Layer resolves city rules into a Device Time Context for
+best-effort Library date conversion. Preferences are captured evidence, not a
+Library save dependency (ADR-0240). See
 [the time contract](ipod-time.md).
 
 ```python
@@ -103,6 +122,58 @@ if isinstance(document.settings, CityPreferences):
 extent. `layout=PreferencesLayout.UNKNOWN` explicitly suppresses interpretation
 for an unverified model, even if its extent matches. Layout names are format
 families, not inferred Device Profiles.
+
+## Saved Firmware DST Rules
+
+`parse_dst_table(data, profile=...)` captures optional annual rules without
+rejecting incomplete or unusual date metadata. The caller must qualify a profile:
+
+| Profile | Prefix bytes | Complete rows | Nominal week selectors |
+| --- | ---: | ---: | --- |
+| `UNKNOWN` (default) | Opaque whole file | None decoded | None interpreted |
+| `CLASSIC_120GB_2_0_1` | 0 | 205 × 16 bytes | 1, 2, 3, last=4 |
+| `CLASSIC_UPDATER_35_2_0_4` | 2, meaning unknown | 205 × 16 bytes | 1, 2, 3, 4, last=5 |
+| `CLASSIC_UPDATER_38_2_0_5` | 2, meaning unknown | 205 × 16 bytes | 1, 2, 3, 4, last=5 |
+
+`DSTRule` retains the unsigned city ID, raw enabled byte, two weekdays, two
+month/week pairs and three unused bytes. Every nonzero enabled byte means enabled;
+Sunday is weekday zero. `start` and `end` expose `DSTTransition` observations.
+Their `week_occurrence(profile)` returns a nominal `DSTWeek`, while
+`supported(profile)` describes the recognized selector domain. Neither calculates
+an instant or claims that firmware arithmetic equals the nominal calendar rule.
+
+`DSTTableDocument.rules` preserves order. `rules_for_city(id)` returns every
+matching row without narrowing the supplied ID. Duplicate rows cannot be reduced
+to one effective rule: firmware enabled and active predicates scan differently.
+City zero is not a terminator. `issues` records incomplete files, trailing data,
+duplicate cities and unusual enabled transitions; these are not workflow errors.
+`complete` means all 205 rows were captured, not that every rule is understood.
+
+The document retains `source_bytes`, `prefix_bytes` and `unparsed_bytes`.
+Short files expose only complete rows; partial rows are never padded or replaced
+with compiled defaults. `serialize()` reproduces the original bytes. Unknown
+profiles retain the entire file opaquely even when its length resembles a known
+format. The source is never modified and there is no table edit writer.
+
+The later loaders copy the prefix into two retained bytes and request a fixed
+3,280 bytes of rows separately. No numeric interpretation or byte order is
+established for the prefix. Bounded execution of the original 2.0.4/2.0.5 loader
+and enabled lookup under Unicorn, with mocked file services, gives the same row
+extent and lookup results for six distinct prefixes. A subsequent missing-file
+load can retain the previous prefix while selecting compiled rows. Therefore the
+prefix is neither a validated version/count nor evidence that saved rules are
+currently active. See the [prefix follow-up](research/classic-dst-prefix-consumers-2026-11-05.md)
+for the execution boundaries and untraced consumers.
+
+Automatic application qualification covers families 33/35/38 at their respective
+latest releases, independently of Preferences readability. Family 24 / 1.1.2
+retains a present `dst` file opaquely: its inspected clock routes use retained/manual
+DST and do not establish the later annual-file consumer.
+Equal Nano tables do not establish their consumers' complete contract.
+These annual selectors do not reconstruct historical timezone changes or prove
+the currently active firmware buffer. They do not change Library date conversion.
+See [ADR-0241](adr/0241-inspect-firmware-dst-rules-as-optional-evidence.md) and
+[the pinned firmware evidence](research/firmware-dst-data-and-city-identity-2026-11-06.md).
 
 ## Binary iTunesPrefs
 
@@ -188,7 +259,8 @@ device acceptance. See the [format evidence](research/ipod-preferences.md).
 ### Read-only Settings tab
 
 Settings → iPod Preferences displays the Active iPod's Device settings and iTunes
-settings. Selection reads both files through its existing read-only Filesystem
+settings, plus saved daylight saving rules when a `dst` file is present.
+Selection reads these files through its existing read-only Filesystem
 Session on the device worker, with a 1 MiB per-file limit and fingerprint checks.
 The Application Layer publishes immutable display summaries; GUI widgets receive
 no source bytes, filesystem handles, or writer operations. Values are selectable
@@ -203,14 +275,26 @@ Device Profile and available firmware evidence, never file length alone.
 
 ### Codec checks
 
-`tests/iPodDB/test_preferences.py` and `test_itunes_preferences.py` use authored
+`tests/iPodDB/test_preferences.py`, `test_itunes_preferences.py` and
+`test_dst_preferences.py` use authored
 fixtures with nonzero unknown bytes. They cover the native fields, enum edits,
 timezone encodings, profiles, truncation, unknown values, library-link preservation,
 and exact output outside the edited ranges.
 Qualified Classic checks cover every retained Alternate Audio byte, explicit 0/1
 edits, invalid new values, and continued city/clock protection. Application and GUI
 checks cover profile qualification and selectable, read-only Alternate Audio text.
+Latest-target fixtures cover all four extent/version pairs, full city IDs, raw
+saved clock words, authority precedence, unresolved cities and exact byte
+preservation. Virtual devices commit fold/gap playback history and save Libraries
+on all four targets despite missing, unusual or later-changing clock evidence.
 
 Read-only checks also exercise both codecs against the three supplied device
 contexts. Captures are not committed or required by tests; candidate edits are
 verified entirely in memory and the original files remain unchanged.
+
+The DST reader was additionally compared with all 615 built-in rows extracted
+from the three SHA-256-pinned Classic images in the format research. Every field,
+unused byte and enabled count matched the independent extraction receipt: 108
+enabled rows in 2.0.1 and 106 in each later image. That check uses synthetic file
+framing around retained built-in rows; it is not a captured custom DST file or
+physical acceptance test. Firmware binaries are not shipped or required by tests.

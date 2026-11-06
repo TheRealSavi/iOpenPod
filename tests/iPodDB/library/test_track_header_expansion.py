@@ -55,7 +55,7 @@ def test_playback_expands_only_edited_track_to_supported_extent(
 
 
 @pytest.mark.parametrize("version", [None, 0x12])
-def test_absent_or_insufficient_capability_keeps_all_evidence(
+def test_absent_or_insufficient_date_capability_keeps_playback_counts(
     version: int | None,
 ) -> None:
     source = short_header_library()
@@ -64,8 +64,10 @@ def test_absent_or_insufficient_capability_keeps_all_evidence(
         loaded.analyze(loaded.begin_draft(), WriteTarget(database_version=version)),
         WriteResources(pending_playback_sidecars=False),
     )
-    assert result.prepared is None
-    assert loaded.snapshot.tracks[0].metadata.skip_count == 2
+    assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.tracks[0].metadata.skip_count == 2
+    assert result.prepared.snapshot.tracks[0].metadata.last_skipped == 0
+    assert any(i.code == "date.approximated" for i in result.issues)
     assert loaded.serialize() == source.serialize()
 
 

@@ -7,13 +7,14 @@ import logging
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
 from enum import StrEnum
 from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock
 from typing import TYPE_CHECKING
 from uuid import uuid4
+
+from whenever import Instant
 
 from device_registry import ArtworkUsage, FeatureSupport
 from iOpenPod.app.artwork_policy import (
@@ -1461,7 +1462,9 @@ class SyncExecutor:
                 prior = scanned.sync
                 sync = (
                     SyncDetails(
-                        last_synced_at=datetime.now(UTC).isoformat(),
+                        last_synced_at=Instant.now()
+                        .to_fixed_offset()
+                        .format_iso(unit="microsecond"),
                         host_path_hint=str(source.path),
                         host_size_bytes=source.size_bytes,
                         host_modified_ns=source.modified_ns,
@@ -1480,7 +1483,9 @@ class SyncExecutor:
                     if prior is None or item.basis is SyncPlanBasis.USER_MATCH
                     else replace(
                         prior,
-                        last_synced_at=datetime.now(UTC).isoformat(),
+                        last_synced_at=Instant.now()
+                        .to_fixed_offset()
+                        .format_iso(unit="microsecond"),
                         host_path_hint=str(source.path),
                         host_size_bytes=source.size_bytes,
                         host_modified_ns=source.modified_ns,
@@ -1914,7 +1919,7 @@ class SyncExecutor:
                 DevicePath(song.track.metadata.location),
                 source.acoustic_fingerprint or "",
                 SyncDetails(
-                    datetime.now(UTC).isoformat(),
+                    Instant.now().to_fixed_offset().format_iso(unit="microsecond"),
                     str(source.path),
                     source.size_bytes,
                     source.modified_ns,
@@ -2086,7 +2091,9 @@ class SyncExecutor:
                             DevicePath(path),
                             hashlib.sha256(data).hexdigest(),
                             SyncDetails(
-                                datetime.now(UTC).isoformat(),
+                                Instant.now()
+                                .to_fixed_offset()
+                                .format_iso(unit="microsecond"),
                                 str(source.path),
                                 source.size_bytes,
                                 source.modified_ns,
@@ -2363,7 +2370,7 @@ def _song(
                 and output.normalization_gain_db is not None
                 else host.metadata.normalization_gain_db
             ),
-            date_added=int(datetime.now(UTC).timestamp()),
+            date_added=Instant.now().timestamp(),
             artwork_count=0,
             has_lyrics=False,
         ),

@@ -7,10 +7,10 @@ Firmware offsets corroborate identity; they are not historical timezone rules.
 Names describe zones, never the Host timezone or an offset evaluated at import.
 """
 
-# The baseline calls 0x26 Manchester/London, but Classic 2.0.1 assigns -300
-# minutes. Its geographical identity is unresolved; other profiles retain the
-# legacy mapping until independently investigated.
-CLASSIC201_UNRESOLVED_CITY_IDS = frozenset({0x26})
+# The baseline calls 0x26 Manchester/London, but all four qualified latest
+# Classic images assign -300 minutes. Its geographical identity is unresolved;
+# unqualified profiles retain the legacy mapping until independently investigated.
+CLASSIC_UNRESOLVED_CITY_IDS = frozenset({0x26})
 
 TIME_ZONE_ALIASES = {
     "PST8PDT": "America/Los_Angeles",

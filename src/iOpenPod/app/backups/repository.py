@@ -18,9 +18,10 @@ import uuid
 from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 from dataclasses import replace
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
+
+from whenever import Instant, seconds
 
 from iOpenPod.app.backups.archive import (
     BACKUP_REPOSITORY_DIRECTORY,
@@ -111,6 +112,12 @@ _LOCKS: dict[str, threading.RLock] = {}
 
 type ProgressCallback = Callable[[BackupProgress], None]
 type CancellationCheck = Callable[[], bool]
+
+
+def _utc_timestamp(value: Instant) -> str:
+    """Keep archive timestamps in their existing microsecond, numeric-UTC form."""
+    utc = value.round("microsecond", mode="floor").to_fixed_offset(seconds(0))
+    return utc.format_iso(unit="microsecond" if utc.nanosecond else "second")
 
 
 class BackupError(RuntimeError):
@@ -1190,7 +1197,7 @@ class BackupRepository:
                         "Restore recovery material identity does not match"
                     )
 
-            now = datetime.now(UTC).isoformat()
+            now = _utc_timestamp(Instant.now())
             record = RestoreRecoveryRecord(
                 id=uuid.uuid4().hex,
                 target_archive_key=target_key,
@@ -1248,7 +1255,7 @@ class BackupRepository:
             updated = update_recovery_phase(
                 record,
                 phase,
-                updated_at=datetime.now(UTC).isoformat(),
+                updated_at=_utc_timestamp(Instant.now()),
             )
             AtomicHostFile(self._recovery_path(recovery_id)).replace_bytes(
                 _encode_bounded_recovery(updated)
@@ -1273,7 +1280,7 @@ class BackupRepository:
                 terminal = replace(
                     record,
                     outcome=outcome,
-                    updated_at=datetime.now(UTC).isoformat(),
+                    updated_at=_utc_timestamp(Instant.now()),
                 )
                 AtomicHostFile(path).replace_bytes(_encode_bounded_recovery(terminal))
                 self._read_recovery(recovery_id)
@@ -1819,9 +1826,10 @@ class BackupRepository:
                 sequence = max(
                     sequence, self._read_manifest(key, path.stem).sequence + 1
                 )
-        now = datetime.now(UTC)
-        timestamp = now.isoformat()
-        base = now.strftime("%Y%m%dT%H%M%S.%fZ")
+        now = Instant.now()
+        timestamp = _utc_timestamp(now)
+        # Archive identifiers retain their existing six-digit UTC filename form.
+        base = now.format_iso(unit="microsecond", basic=True)
         snapshot_id = f"{base}-{sequence:08d}"
         while self._manifest_path(key, snapshot_id).exists():
             sequence += 1

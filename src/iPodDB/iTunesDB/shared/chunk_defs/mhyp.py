@@ -1,4 +1,8 @@
-"""MHYP (Playlist) Chunk definition."""
+"""MHYP (Playlist) Chunk definition.
+
+Timestamp names are not complete creation/modification contracts. Evidence and
+Host policy: docs/research/classic-datetime-file-map-2026-11-06.md.
+"""
 
 from dataclasses import dataclass
 
@@ -19,6 +23,8 @@ class MhypHeader(ChunkHeader):
     flag_2: int = cf(0x16, "u8")
     # Classic copies bit 0 to native list +0x150 bit 2; its role is unresolved.
     flag_3: int = cf(0x17, "u8")
+    # Classic 2.0.1 copies this raw word into its native Playlist. Host projection
+    # treats it as local Mac time; exact all-four consumer semantics are unclosed.
     timestamp: int = cf(0x18, "u32")
     playlist_id: int = cf(0x1C, "u64")
     unk_mhyp_0x24: int = cf(0x24, "u32")
@@ -39,6 +45,8 @@ class MhypHeader(ChunkHeader):
     mhsd_5_type: int = cf(0x50, "u16")
     phase_game_flag: int = cf(0x52, "u16")
     unk_mhyp_0x54: bytes = cf(0x54, "raw", size=4)
+    # Second retained timestamp. Host Podcast writing uses it as modification
+    # time; that authoring convention is not proof of every firmware consumer.
     timestamp_2: int = cf(0x58, "u32")
 
 

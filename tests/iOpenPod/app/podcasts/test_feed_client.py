@@ -30,6 +30,28 @@ from iPodDB.library import ContentAdvisory
 
 
 @pytest.mark.parametrize(
+    "publication,expected",
+    [("Wed, 31 Dec 1969 23:59:59 GMT", -1), ("not a date", 0), ("", 0)],
+)
+def test_feed_dates_preserve_signed_seconds_and_tolerate_unknown_metadata(
+    monkeypatch: pytest.MonkeyPatch, publication: str, expected: int
+) -> None:
+    payload = f"""<rss version="2.0"><channel><title>Show</title><item>
+    <guid>episode</guid><title>Episode</title><pubDate>{publication}</pubDate>
+    <enclosure url="https://cdn.example.test/episode.mp3" type="audio/mpeg" />
+    </item></channel></rss>""".encode()
+
+    def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
+        return payload, url
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+    episode = (
+        FeedparserPodcastClient().fetch("https://publisher.example/feed").episodes[0]
+    )
+    assert episode.published_at == expected
+
+
+@pytest.mark.parametrize(
     "feed_value,episode_value,expected",
     (
         ("true", "", ContentAdvisory.EXPLICIT),

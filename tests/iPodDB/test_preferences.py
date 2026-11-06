@@ -8,8 +8,8 @@ import pytest
 from iPodDB.preferences import (
     CityPreferences,
     CityTimezone,
-    Classic201ClockPreferences,
     Classic201Preferences,
+    ClassicClockPreferences,
     FixedOffsetTimezone,
     FourthGenerationPreferences,
     Nano3Preferences,
@@ -444,9 +444,7 @@ def test_classic201_profile_reads_full_city_and_retains_saved_clock_words(
     source = _classic201_source(city_id, dst)
     document = parse_preferences(source, profile=PreferencesProfile.CLASSIC_120GB_2_0_1)
     assert document.settings == Classic201Preferences(city_id, 0)
-    assert document.extended_settings == Classic201ClockPreferences(
-        0x3D, dst, -1, 81000
-    )
+    assert document.extended_settings == ClassicClockPreferences(0x3D, dst, -1, 81000)
     assert document.timezone == CityTimezone(
         city_id, "America/New_York" if city_id == 0x29 else None
     )
@@ -492,7 +490,7 @@ def test_classic201_clock_observations_cannot_be_edited(field: str, value: int) 
         _classic201_source(), profile=PreferencesProfile.CLASSIC_120GB_2_0_1
     )
     clock = document.extended_settings
-    assert isinstance(clock, Classic201ClockPreferences)
+    assert isinstance(clock, ClassicClockPreferences)
     with pytest.raises(iPodDBWriteError) as error:
         write_preferences(
             replace(document, extended_settings=replace(clock, **{field: value}))
@@ -504,7 +502,7 @@ def test_classic201_city_is_observation_only_and_raw_seconds_are_unsigned() -> N
     data = bytearray(_classic201_source())
     struct.pack_into("<I", data, 0xB7C, 0xFFFFFFFF)
     document = parse_preferences(data, profile=PreferencesProfile.CLASSIC_120GB_2_0_1)
-    assert isinstance(document.extended_settings, Classic201ClockPreferences)
+    assert isinstance(document.extended_settings, ClassicClockPreferences)
     assert document.extended_settings.clock_bias_seconds == 0xFFFFFFFF
     assert write_preferences(document) == data
     with pytest.raises(iPodDBWriteError) as error:
@@ -578,7 +576,7 @@ def test_classic201_alternate_audio_cannot_bypass_clock_protection() -> None:
     )
     assert isinstance(document.settings, Classic201Preferences)
     clock = document.extended_settings
-    assert isinstance(clock, Classic201ClockPreferences)
+    assert isinstance(clock, ClassicClockPreferences)
     alternate_edit = replace(
         document, settings=replace(document.settings, alternate_audio=1)
     )

@@ -18,6 +18,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.library._browse_index import resolve_indexes
+from iPodDB.library._date_resolution import resolve_dates
 from iPodDB.library._folder_validation import folder_issues
 from iPodDB.library._hierarchy import folder_hierarchy
 from iPodDB.library._identities import IdentityAllocator, allocate
@@ -134,6 +135,12 @@ def resolve(
     source_revision: str,
     device_time: DeviceTimeContext,
 ) -> ResolvedWrite:
+    requested_draft = draft
+    requested = draft.snapshot
+    normalized, date_issues = resolve_dates(
+        original, requested, device_time, document, target.database_version
+    )
+    draft = replace(draft, snapshot=normalized)
     captured_document = document
     document = synchronize_counterparts(document)
     mirror_repair = document is not captured_document or not counterparts_match(
@@ -158,6 +165,7 @@ def resolve(
             for kind, row in rows
         ),
     )
+    plan = replace(plan, draft=requested_draft, issues=(*plan.issues, *date_issues))
     if mirror_repair:
         plan = replace(
             plan,
@@ -281,15 +289,14 @@ def resolve(
     elif refresh_issues:
         plan = replace(plan, issues=(*plan.issues, *refresh_issues))
     issues = [*plan.issues, *source_warnings(document, original)]
-    requested = draft.snapshot
-    desired = requested
+    desired = normalized
     generated = frozenset[int]()
     # Invalid parent graphs and malformed draft values must not enter derivation.
     if not plan.blocked:
         desired, generated = normalize_podcast_order(
             document,
             original,
-            requested,
+            normalized,
             issues,
             repair_ids=repair_ids,
             normalize=draft.normalize_podcasts,

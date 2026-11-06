@@ -6,7 +6,8 @@ remain truthful, and iPodDB keeps its lossless unchanged-document contract.
 
 from contextlib import suppress
 from dataclasses import replace
-from datetime import UTC, datetime
+
+from whenever import Instant
 
 from iOpenPod.app.podcasts.identity import track_podcast_identity
 from iPodDB.library import LibrarySnapshot, MediaType, Track
@@ -43,7 +44,9 @@ def enforce_track_playback_policy(track: Track) -> Track:
         year = track.year
         if not year and metadata.release_date:
             with suppress(OverflowError, OSError, ValueError):
-                year = datetime.fromtimestamp(metadata.release_date, UTC).year
+                year = (
+                    Instant.from_timestamp(metadata.release_date).to_fixed_offset().year
+                )
         types = track.media_types
         if not any(
             kind in types
@@ -61,8 +64,7 @@ def enforce_track_playback_policy(track: Track) -> Track:
             metadata=replace(
                 metadata,
                 podcast_guid=track_podcast_identity(track).guid,
-                last_modified=metadata.last_modified
-                or int(datetime.now(UTC).timestamp()),
+                last_modified=metadata.last_modified or Instant.now().timestamp(),
                 subtitle=metadata.subtitle or metadata.description[:255],
             ),
         )

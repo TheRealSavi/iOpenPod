@@ -1,26 +1,34 @@
-"""Device-local Mac dates and UTC Unix instants, without filesystem or clock I/O.
+"""Device-local Mac dates and UTC Unix instants, without device or clock I/O.
 
-The caller supplies a captured geographical zone or fixed offset. Ambiguous and
-nonexistent local times are never silently assigned an instant. Retained binary
-values remain in their source documents even when projection is unavailable.
+The caller supplies a captured IANA key or effective fixed offset. Whenever's
+historical rules interpret that key; neither the Host zone nor clock is consulted.
+Native words remain separate from this best-effort interpretation.
+
+Firmware fact: the latest Classics retain calendar-shaped words and cannot encode
+a repeated hour's occurrence. IANA history, offset tie-breaking and gap estimates
+are Host policy, not recovered device history. See docs/ipod-time.md,
+docs/research/classic-datetime-file-map-2026-11-06.md and ADR-0240.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from enum import StrEnum
+
+from whenever import Instant, PlainDateTime, TimeDelta, seconds
 
 MAC_EPOCH_UNIX_OFFSET = 2_082_844_800
 MAC_EPOCH_MAX = 0xFFFF_FFFF
 CORE_DATA_EPOCH_UNIX_OFFSET = 978_307_200
 MIN_LOCAL_UNIX_TIME = 1 - MAC_EPOCH_UNIX_OFFSET - 86399
 MAX_LOCAL_UNIX_TIME = MAC_EPOCH_MAX - MAC_EPOCH_UNIX_OFFSET + 86399
-_UNIX = datetime(1970, 1, 1)
+_MAC_CALENDAR_EPOCH = PlainDateTime(1904, 1, 1)
+
+type CapturedTimezone = str | TimeDelta
 
 
 class MacTimestampOutOfRangeError(ValueError):
-    """An instant cannot be represented by a nonzero u32 Mac timestamp."""
+    """Legacy import compatibility; date conversion now bounds values instead."""
 
 
 class DeviceTimeSource(StrEnum):
@@ -35,31 +43,39 @@ def valid_offset(value: object) -> bool:
 
 
 def possible_unix_date(value: object) -> bool:
-    """Source-neutral envelope; exact range/fold validation needs device rules."""
-    return type(value) is int and MIN_LOCAL_UNIX_TIME <= value <= MAX_LOCAL_UNIX_TIME
+    """Integer dates can always be bounded to the native date range."""
+    return type(value) is int
 
 
 @dataclass(frozen=True, slots=True)
 class DeviceTimeContext:
-    """One Library's clock evidence, distinct from its native database header."""
+    """A captured IANA key or whole-second fixed offset, with its provenance.
 
-    zone: tzinfo | None = None
+    An IANA key identifies Host interpretation rules, not the firmware's annual
+    DST table. The independent database offset is evidence for a fold tie-break;
+    neither it nor saved DST/correction is added to a geographical zone's offset.
+    Invalid offsets fall back during conversion rather than blocking a Library.
+    """
+
+    zone: CapturedTimezone | None = None
     source: DeviceTimeSource = DeviceTimeSource.UNRESOLVED
     timezone_name: str | None = None
     database_offset_seconds: int = 0
     detail: str = ""
 
     def for_database(self, offset: int) -> DeviceTimeContext:
-        if self.source in (
-            DeviceTimeSource.PREFERENCES_OFFSET,
-            DeviceTimeSource.PREFERENCES_CITY,
+        if (
+            self.source
+            in (
+                DeviceTimeSource.PREFERENCES_OFFSET,
+                DeviceTimeSource.PREFERENCES_CITY,
+            )
+            and self.zone is not None
         ):
-            if self.zone is None:
-                raise ValueError("Resolved Preferences require a device timezone.")
             return replace(self, database_offset_seconds=offset)
         return replace(
             self,
-            zone=timezone(timedelta(seconds=offset)) if valid_offset(offset) else None,
+            zone=seconds(offset) if valid_offset(offset) else None,
             source=DeviceTimeSource.DATABASE_HEADER
             if valid_offset(offset)
             else DeviceTimeSource.UNRESOLVED,
@@ -70,72 +86,121 @@ class DeviceTimeContext:
 type TimeConversion = DeviceTimeContext | int | None
 
 
-def _zone(context: TimeConversion) -> tzinfo:
+def _fixed_offset(context: TimeConversion) -> TimeDelta:
+    """Choose captured evidence only; unknown or invalid evidence estimates UTC."""
+    offset = (
+        context.database_offset_seconds
+        if isinstance(context, DeviceTimeContext)
+        else context
+    )
+    return (
+        seconds(offset)
+        if type(offset) is int and valid_offset(offset)
+        else TimeDelta.ZERO
+    )
+
+
+def _zone(context: TimeConversion) -> CapturedTimezone:
     if isinstance(context, DeviceTimeContext):
-        if context.zone is not None:
+        if isinstance(context.zone, str):
             return context.zone
-    elif valid_offset(context):
-        assert isinstance(context, int)
-        return timezone(timedelta(seconds=context))
-    raise ValueError("The device timezone is unresolved; this date is unavailable.")
+        if isinstance(context.zone, TimeDelta):
+            nanos = context.zone.total("nanoseconds")
+            if nanos % 1_000_000_000 == 0 and valid_offset(nanos // 1_000_000_000):
+                return context.zone
+    return _fixed_offset(context)
+
+
+@dataclass(frozen=True, slots=True)
+class DateInterpretation:
+    """A usable Unix date and an optional explanation of its approximation."""
+
+    value: int
+    detail: str = ""
+
+
+def interpret_mac(
+    value: int, context: TimeConversion, *, utc: bool = False
+) -> DateInterpretation:
+    """Prefer city rules; resolve folds/gaps consistently without rejecting data."""
+    if type(value) is not int:
+        return DateInterpretation(0, "An invalid date is displayed as missing.")
+    if value == 0:
+        return DateInterpretation(0)
+    bounded = min(MAC_EPOCH_MAX, max(1, value))
+    detail = "The date was bounded to the iPod date range." if bounded != value else ""
+    if utc:
+        return DateInterpretation(bounded - MAC_EPOCH_UNIX_OFFSET, detail)
+    zone = _zone(context)
+    # This arithmetic decodes a civil coordinate, not elapsed real-world time.
+    local = _MAC_CALENDAR_EPOCH.add(seconds=bounded, naive_arithmetic_ok=True)
+    if isinstance(zone, str):
+        try:
+            earlier = local.assume_tz(zone, disambiguation="earlier")
+            later = local.assume_tz(zone, disambiguation="later")
+        except ValueError:
+            # An unavailable/malformed IANA key is optional date evidence too.
+            result = local.assume_fixed_offset(_fixed_offset(context)).timestamp()
+            detail = "The timezone rules are unavailable; dates use the retained fixed offset or UTC when that offset is invalid."
+        else:
+            if earlier == later:
+                result = earlier.timestamp()
+            elif earlier.to_plain() == local:
+                # Both occurrences exist. The header breaks a tie, not history.
+                offset = (
+                    seconds(context.database_offset_seconds)
+                    if isinstance(context, DeviceTimeContext)
+                    and valid_offset(context.database_offset_seconds)
+                    else None
+                )
+                result = (later if later.offset == offset else earlier).timestamp()
+                detail = "A repeated local hour was interpreted using the retained offset when it matches, otherwise its earlier occurrence."
+            else:
+                # 'later' advances through a gap using the pre-transition offset.
+                result = later.timestamp()
+                detail = "A skipped local hour was interpreted using the pre-transition offset."
+    else:
+        result = local.assume_fixed_offset(zone).timestamp()
+    if isinstance(context, DeviceTimeContext) and (
+        context.zone is None or context.zone != zone
+    ):
+        detail = "The timezone is unknown; dates use the retained fixed offset or UTC when that offset is invalid."
+    elif context is None or (isinstance(context, int) and not valid_offset(context)):
+        detail = "The timezone is unknown; dates are interpreted as UTC."
+    return DateInterpretation(result, detail)
 
 
 def mac_to_unix(value: int, context: TimeConversion, *, utc: bool = False) -> int:
-    """Decode a unique local instant, preserving zero as a missing date."""
-    if type(value) is not int or not 0 <= value <= MAC_EPOCH_MAX:
-        raise MacTimestampOutOfRangeError("Invalid unsigned iPod date.")
-    if value == 0:
-        return 0
-    if utc:
-        return value - MAC_EPOCH_UNIX_OFFSET
-    zone = _zone(context)
-    local = _UNIX + timedelta(seconds=value - MAC_EPOCH_UNIX_OFFSET)
-    candidates: set[int] = set()
-    for fold in (0, 1):
-        instant = local.replace(tzinfo=zone, fold=fold).astimezone(UTC)
-        if instant.astimezone(zone).replace(tzinfo=None) == local:
-            candidates.add(int((instant.replace(tzinfo=None) - _UNIX).total_seconds()))
-    if len(candidates) != 1:
-        raise ValueError(
-            "The device date is ambiguous or nonexistent at a DST transition."
-        )
-    return candidates.pop()
+    """Decode a best-effort instant, preserving zero as a missing date."""
+    return interpret_mac(value, context, utc=utc).value
 
 
 def project_mac(value: int, context: TimeConversion, *, utc: bool = False) -> int:
-    """Unresolved native dates remain unavailable and retain their source bytes."""
-    try:
-        return mac_to_unix(value, context, utc=utc)
-    except ValueError:
-        return 0
+    """Project a best-effort date without changing retained native bytes."""
+    return mac_to_unix(value, context, utc=utc)
 
 
 def unix_to_mac(
     value: int, context: TimeConversion, *, utc: bool = False, missing_zero: bool = True
 ) -> int:
-    """Encode Unix seconds; reject overflow and loss of DST-fold identity."""
+    """Encode Unix seconds, bounding unrepresentable dates without wrapping."""
     if type(value) is not int:
-        raise ValueError("Dates must be integer Unix seconds.")
+        return 0 if missing_zero else 1
     if value == 0 and missing_zero:
         return 0
-    try:
-        instant = (_UNIX + timedelta(seconds=value)).replace(tzinfo=UTC)
-        local = instant if utc else instant.astimezone(_zone(context))
-        encoded = (
-            int((local.replace(tzinfo=None) - _UNIX).total_seconds())
-            + MAC_EPOCH_UNIX_OFFSET
-        )
-    except (OverflowError, OSError) as error:
-        raise MacTimestampOutOfRangeError(
-            "This date is outside the unsigned iPod date range."
-        ) from error
-    if not 0 < encoded <= MAC_EPOCH_MAX:
-        raise MacTimestampOutOfRangeError(
-            "This date is outside the unsigned iPod date range."
-        )
-    if mac_to_unix(encoded, context, utc=utc) != value:
-        raise ValueError("This date cannot be represented uniquely on the iPod.")
-    return encoded
+    bounded = min(MAX_LOCAL_UNIX_TIME, max(MIN_LOCAL_UNIX_TIME, value))
+    instant = Instant.from_timestamp(bounded)
+    zone = TimeDelta.ZERO if utc else _zone(context)
+    if isinstance(zone, str):
+        try:
+            local = instant.to_tz(zone).to_plain()
+        except ValueError:
+            local = instant.to_fixed_offset(_fixed_offset(context)).to_plain()
+    else:
+        local = instant.to_fixed_offset(zone).to_plain()
+    # Reinterpret components solely to encode the native calendar coordinate.
+    encoded = local.assume_utc().timestamp() + MAC_EPOCH_UNIX_OFFSET
+    return min(MAC_EPOCH_MAX, max(1, encoded))
 
 
 def unix_to_core_data(value: int) -> int:

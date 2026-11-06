@@ -7,6 +7,7 @@ root = Path(SPECPATH).parent
 a = Analysis(
     [str(root / "src/iopenpod_update_helper.py")],
     pathex=[str(root / "src")],
+    hookspath=[str(root / "packaging/hooks")],
     datas=[(str(root / "build/packaging/updates/installation.json"), "updates")],
     binaries=[],
     hiddenimports=collect_submodules("Crypto", filter=lambda name: not name.startswith("Crypto.SelfTest")) + (["msvcrt"] if sys.platform == "win32" else ["fcntl"]),

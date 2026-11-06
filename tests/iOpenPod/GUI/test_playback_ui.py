@@ -937,8 +937,20 @@ def test_player_rating_stars_edit_the_current_track_draft() -> None:
         assert rating.isEnabled()
         assert rating.text() == "☆☆☆☆☆"
 
-        QTest.mouseMove(rating, rating.rect().center())
-        APPLICATION.processEvents()
+        # QTest.mouseMove can omit an event when a prior test left the global
+        # cursor at this position. Send the hover directly, as with Leave below.
+        center = rating.rect().center()
+        APPLICATION.sendEvent(
+            rating,
+            QMouseEvent(
+                QEvent.Type.MouseMove,
+                QPointF(center),
+                QPointF(rating.mapToGlobal(center)),
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
         assert rating.text() == "★★★☆☆"
         assert rating.property("ratingHover") is True
         draft_track = context.library_workspace.track(track.track_id)

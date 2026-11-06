@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtTest import QTest
 from tests.iOpenPod.app.podcasts.podcast_test_support import active_ipod as _active_ipod
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
+from whenever import Instant, TimePatch, patch_current_time
 
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
@@ -26,12 +27,20 @@ from iOpenPod.app.podcasts.settings import save_default_podcast_sync_settings
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastStateRevision
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.podcasts.sync import PodcastSyncRequest
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
+
+
+@pytest.fixture
+def podcast_clock() -> Iterator[TimePatch]:
+    with patch_current_time(
+        Instant.from_timestamp(1_800_000_000), keep_ticking=False
+    ) as clock:
+        yield clock
 
 
 class _Devices(QObject):
@@ -203,13 +212,13 @@ def test_new_subscriptions_copy_current_defaults_and_keep_saved_policy() -> None
     ),
 )
 def test_refresh_respects_saved_timestamp_and_manual_override(
-    monkeypatch: pytest.MonkeyPatch,
+    podcast_clock: TimePatch,
     age_seconds: int | None,
     only_if_stale: bool,
     expected: bool,
 ) -> None:
     now = 1_800_000_000
-    monkeypatch.setattr("iOpenPod.app.podcasts.controller.time", lambda: now)
+    podcast_clock.move_to(Instant.from_timestamp(now))
     saved = PodcastSubscription(
         "feed-1",
         "https://example.test/feed",
@@ -241,10 +250,10 @@ def test_refresh_respects_saved_timestamp_and_manual_override(
 
 
 def test_successful_manual_refresh_restarts_the_navigation_interval(
-    monkeypatch: pytest.MonkeyPatch,
+    podcast_clock: TimePatch,
 ) -> None:
     clock = [1_800_000_000]
-    monkeypatch.setattr("iOpenPod.app.podcasts.controller.time", lambda: clock[0])
+    podcast_clock.move_to(Instant.from_timestamp(clock[0]))
     saved = PodcastSubscription(
         "feed-1", "https://example.test/feed", "Show", SubscriptionSource.USER
     )
@@ -262,6 +271,7 @@ def test_successful_manual_refresh_restarts_the_navigation_interval(
         controller.refresh(saved.subscription_id, only_if_stale=True)
         _wait_until(lambda: controller.can_edit)
         clock[0] += 899
+        podcast_clock.move_to(Instant.from_timestamp(clock[0]))
         controller.refresh(saved.subscription_id, only_if_stale=True)
         assert feeds.requests == [saved.feed_url]
 
@@ -269,10 +279,12 @@ def test_successful_manual_refresh_restarts_the_navigation_interval(
         controller.refresh(saved.subscription_id)
         _wait_until(lambda: controller.can_edit)
         clock[0] += 1
+        podcast_clock.move_to(Instant.from_timestamp(clock[0]))
         controller.refresh(saved.subscription_id, only_if_stale=True)
         assert feeds.requests == [saved.feed_url] * 2
 
         clock[0] += 899
+        podcast_clock.move_to(Instant.from_timestamp(clock[0]))
         feeds.subscription = replace(saved, last_refreshed=clock[0])
         controller.refresh(saved.subscription_id, only_if_stale=True)
         _wait_until(lambda: controller.can_edit)
@@ -282,10 +294,10 @@ def test_successful_manual_refresh_restarts_the_navigation_interval(
 
 
 def test_all_podcasts_refreshes_only_stale_feeds(
-    monkeypatch: pytest.MonkeyPatch,
+    podcast_clock: TimePatch,
 ) -> None:
     now = 1_800_000_000
-    monkeypatch.setattr("iOpenPod.app.podcasts.controller.time", lambda: now)
+    podcast_clock.move_to(Instant.from_timestamp(now))
     stale = PodcastSubscription(
         "stale",
         "https://example.test/stale",
@@ -327,10 +339,10 @@ def test_all_podcasts_refreshes_only_stale_feeds(
 
 
 def test_failed_refresh_does_not_postpone_the_next_navigation_attempt(
-    monkeypatch: pytest.MonkeyPatch,
+    podcast_clock: TimePatch,
 ) -> None:
     now = 1_800_000_000
-    monkeypatch.setattr("iOpenPod.app.podcasts.controller.time", lambda: now)
+    podcast_clock.move_to(Instant.from_timestamp(now))
     saved = PodcastSubscription(
         "feed-1",
         "https://example.test/feed",

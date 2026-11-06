@@ -547,6 +547,23 @@ def test_photo_album_creation_action_tracks_workspace_availability(
     assert create.toolTip() == "Choose an iPod with a readable Photo Database."
 
 
+@pytest.mark.parametrize(
+    "timestamp,label",
+    [(-1, "1969-12-31 23:59:59 UTC"), (0, "Unknown"), (10**30, "Unknown")],
+)
+def test_photo_dates_display_signed_values_and_tolerate_unknowns(
+    browser: _Browser, timestamp: int, label: str
+) -> None:
+    inspector = browser.page.findChild(PhotoInspector, "photoInspector")
+    assert inspector is not None
+    photo = replace(_PHOTOS.photos[0], original_date=timestamp, taken_date=timestamp)
+    inspector.set_photo(photo, _PHOTOS)
+    metadata = inspector.findChild(QTreeWidget, "photoMetadata")
+    assert metadata is not None
+    section = _metadata_section(metadata, "Photo")
+    assert section["Original date"] == section["Taken date"] == label
+
+
 def test_grid_selection_populates_inspector_metadata_and_format_picker(
     browser: _Browser,
 ) -> None:

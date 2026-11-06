@@ -2,14 +2,14 @@
 
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, datetime
 
 import pytest
-from PySide6.QtCore import Qt, QVariantAnimation
+from PySide6.QtCore import QDate, QLocale, Qt, QVariantAnimation
 from PySide6.QtGui import QDrag
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QLabel, QTabBar, QToolButton
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from whenever import Instant
 
 from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.settings.definitions import (
@@ -30,7 +30,10 @@ from iOpenPod.GUI.widgets.collection_detail import CollectionDetailPage
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.compact_top_bar import CompactTopBar
 from iOpenPod.GUI.widgets.inline_album_expansion import InlineAlbumExpansion
-from iOpenPod.GUI.widgets.inline_tv_show_panel import InlineTVShowPanel
+from iOpenPod.GUI.widgets.inline_tv_show_panel import (
+    InlineTVShowPanel,
+    _release_date,  # pyright: ignore[reportPrivateUsage]
+)
 from iOpenPod.GUI.widgets.library_content import LibraryContent
 from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iOpenPod.GUI.widgets.track_table import TrackTable
@@ -51,10 +54,21 @@ def _episode(track_id: int, season: int, episode: int, artwork: int = 0) -> Trac
         media_types=(MediaType.TV_SHOW,),
         year=2000 + season,
         metadata=TrackMetadata(
-            release_date=int(datetime(2000 + season, 1, 10, tzinfo=UTC).timestamp()),
+            release_date=Instant.from_utc(2000 + season, 1, 10).timestamp(),
             description="A long description with emoji 🎬 and ordinary words. " * 30,
         ),
     )
+
+
+@pytest.mark.parametrize("timestamp", [-1, 0, 10**30])
+def test_tv_release_date_uses_utc_fields_and_unknown_fallback(timestamp: int) -> None:
+    track = replace(_episode(1, 1, 1), metadata=TrackMetadata(release_date=timestamp))
+    expected = (
+        QLocale().toString(QDate(1969, 12, 31), "ddd, d MMM yyyy")
+        if timestamp == -1
+        else "—"
+    )
+    assert _release_date(track) == expected
 
 
 @pytest.fixture

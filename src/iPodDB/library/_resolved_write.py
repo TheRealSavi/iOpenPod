@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from iPodDB.library._browse_index import BrowseIndex
+from iPodDB.library._sidecar_projection import PlaybackDateUpdate
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.library.writing import LibraryWritePlan
 
@@ -35,3 +36,4 @@ class ResolvedWrite:
     artwork_tracks: tuple[int, ...] = ()
     deleted_tracks: frozenset[int] = frozenset()
     refreshed_smart_playlists: frozenset[int] = frozenset()
+    playback_dates: tuple[PlaybackDateUpdate, ...] = ()

@@ -46,6 +46,7 @@ def test_corrected_city_resolves_literal_calendar_word_without_rewriting_databas
     context = resolve_device_time(parse_preferences(data, profile=profile))
     assert context.source is DeviceTimeSource.PREFERENCES_CITY
     assert context.timezone_name == name
+    assert context.zone == name
     # 2024-01-01 00:00:00 as a calendar-shaped Mac word. Expected UTC
     # instants are literals, independent of the conversion implementation.
     assert mac_to_unix(3786912000, context) == instant
@@ -84,8 +85,7 @@ def test_qualified_classic_unresolved_city_explains_existing_header_fallback(
     if offset == 86400:
         assert source.device_time.source is DeviceTimeSource.UNRESOLVED
         code = "source.timezone_unresolved"
-        with pytest.raises(ValueError, match="unresolved"):
-            mac_to_unix(3786912000, source.device_time)
+        assert mac_to_unix(3786912000, source.device_time) == 1704067200
     else:
         assert source.device_time.source is DeviceTimeSource.DATABASE_HEADER
         assert mac_to_unix(3786912000, source.device_time) == 1704067200 - offset
@@ -215,7 +215,7 @@ def test_selected_preferences_control_saved_dates_and_adopted_source(
 
 @pytest.mark.parametrize("initially_present", [True, False])
 @pytest.mark.parametrize("change_after_review", [True, False])
-def test_timezone_changes_or_appearance_invalidate_preparation_and_save(
+def test_timezone_changes_or_appearance_do_not_block_preparation_or_save(
     tmp_path: Path, initially_present: bool, change_after_review: bool
 ) -> None:
     device = build_device(tmp_path)
@@ -233,14 +233,14 @@ def test_timezone_changes_or_appearance_invalidate_preparation_and_save(
         if not change_after_review:
             path.write_bytes(_prefs(0x69))
         review = device.prepare(desired)
+        assert review.result.prepared is not None, review.result.issues
         if change_after_review:
-            assert review.result.prepared is not None, review.result.issues
             path.write_bytes(_prefs(0x69))
-            saved = device.save(review)
-            assert saved.active is None
-        else:
-            assert review.result.prepared is None
-        assert database.read_bytes() == original
+        saved = device.save(review)
+        assert saved.active is not None, saved.issues
+        assert saved.active.library.device_name == "Changed name"
+        assert database.read_bytes() != original
+        assert path.read_bytes() == _prefs(0x69)
     finally:
         device.coordinator.close()
 
@@ -264,7 +264,7 @@ def test_unknown_city_reports_fixed_header_fallback(tmp_path: Path) -> None:
         device.coordinator.close()
 
 
-def test_unverified_preferences_leave_library_readable_but_block_save(
+def test_unverified_preferences_allow_loading_and_saving(
     tmp_path: Path,
 ) -> None:
     device = build_device(tmp_path)
@@ -279,7 +279,8 @@ def test_unverified_preferences_leave_library_readable_but_block_save(
             replace(active.library, device_name="Changed"), active, 1, 1
         )
         result = device.coordinator.prepare_library(request, lambda _: None, Event())
-        assert result.result.prepared is None
+        assert result.result.prepared is not None, result.result.issues
+        assert device.save(result).active is not None
         assert active.library.tracks
     finally:
         device.coordinator.close()

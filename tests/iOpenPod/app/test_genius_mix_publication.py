@@ -9,6 +9,7 @@ from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_sync_genius import (
     _refresh_request,  # pyright: ignore[reportPrivateUsage]
 )
+from whenever import Instant, patch_current_time
 
 from iOpenPod.app import genius_mixes
 from iOpenPod.app.genius_mixes import GENIUS_MIX_POLICY, MixPolicy
@@ -186,7 +187,6 @@ def test_sync_uses_saved_settings_rotates_and_reloads_ownership(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(genius_mixes, "MIN_MIX_TRACKS", 1)
-    monkeypatch.setattr(mix_service, "time", lambda: 1_800_000_000)
     device = build_device(tmp_path, model="MD479", compressed_database=True)
     try:
         active = device.active
@@ -209,15 +209,20 @@ def test_sync_uses_saved_settings_rotates_and_reloads_ownership(
             active, active.settings, {GENIUS_MIX_POLICY.key: MixPolicy(1, 1).encode()}
         )
         executor = SyncExecutor(device.coordinator)
-        first = executor.execute(_refresh_request(active), lambda _: None, Event())
+        with patch_current_time(
+            Instant.from_timestamp(1_800_000_000), keep_ticking=False
+        ):
+            first = executor.execute(_refresh_request(active), lambda _: None, Event())
         assert first.status is SyncExecutionStatus.SUCCESS, first.issues
         assert first.active is not None
         initial = first.active.genius_mix_state.entries[0]
         assert initial.added_at == 1_800_000_000
-        monkeypatch.setattr(mix_service, "time", lambda: 1_800_086_401)
-        second = executor.execute(
-            _refresh_request(first.active), lambda _: None, Event()
-        )
+        with patch_current_time(
+            Instant.from_timestamp(1_800_086_401), keep_ticking=False
+        ):
+            second = executor.execute(
+                _refresh_request(first.active), lambda _: None, Event()
+            )
         assert second.status is SyncExecutionStatus.SUCCESS, second.issues
         assert second.active is not None
         rotated = second.active.genius_mix_state.entries[0]

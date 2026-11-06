@@ -1107,6 +1107,7 @@ def _prepare(
                 normalize_podcasts=plan.draft.normalize_podcasts,
                 genius_update=plan.draft.genius_update,
                 replaced_tracks=plan.draft.replace_media,
+                playback_dates=resolved.playback_dates,
             )
         )
         issues.extend(

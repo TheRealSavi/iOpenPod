@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
 from decimal import Decimal, DecimalException
 from typing import TYPE_CHECKING
 
@@ -22,7 +21,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from whenever import Instant, TimeDelta
 
+from iOpenPod.app.core.dates import parse_iso_instant
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
@@ -476,7 +477,10 @@ def _rule_value_text(
         and isinstance(value, int)
         and operator not in (SmartOperator.IN_LAST, SmartOperator.NOT_IN_LAST)
     ):
-        return datetime.fromtimestamp(value, UTC).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            return Instant.from_timestamp(value).format("YYYY-MM-DD HH:mm:ss")
+        except (OverflowError, ValueError):
+            return str(value)
     return str(value)
 
 
@@ -749,12 +753,14 @@ class _RuleRow(QWidget):
                     SmartOperator.NOT_IN_LAST,
                 ):
                     try:
-                        date = datetime.fromisoformat(str(text))
-                        if date.microsecond:
+                        # Editor text is UTC unless it carries an explicit offset.
+                        # Native Smart bounds remain whole-second integers; the
+                        # firmware's local-calendar comparison is resolved later
+                        # by iPodDB's best-effort date policy (ADR-0240).
+                        date = parse_iso_instant(str(text), naive_zone=TimeDelta.ZERO)
+                        if date.timestamp(unit="nanosecond") % 1_000_000_000:
                             raise ValueError("Date conditions use whole seconds")
-                        if date.tzinfo is None:
-                            date = date.replace(tzinfo=UTC)
-                        return int(date.timestamp())
+                        return date.timestamp()
                     except (ValueError, OverflowError, OSError):
                         raise ValueError(
                             self.tr("Enter a UTC date: YYYY-MM-DD HH:MM:SS.")

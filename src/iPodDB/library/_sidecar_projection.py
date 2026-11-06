@@ -1,16 +1,19 @@
 """Project captured firmware evidence without changing retained database bytes."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from iPodDB.device_time import (
     CORE_DATA_EPOCH_UNIX_OFFSET,
     MAC_EPOCH_UNIX_OFFSET,
     DeviceTimeContext,
+    interpret_mac,
     mac_to_unix,
 )
-from iPodDB.library.models import LibrarySnapshot, Track
 from iPodDB.library.playlists import Playlist, PlaylistEntry, PlaylistSortOrder
-from iPodDB.library.writing import WriteIssue
+from iPodDB.library.writing import IssueSeverity, WriteIssue
 from iPodDB.sidecars import (
     PlaybackDateKind,
     PlaybackDocument,
@@ -21,20 +24,33 @@ from iPodDB.sidecars import (
     parse_playback,
 )
 
+if TYPE_CHECKING:
+    from iPodDB.library.models import LibrarySnapshot, Track
+
 
 @dataclass(frozen=True, slots=True)
 class SidecarProjection:
     snapshot: LibrarySnapshot
     consumed: tuple[PlaybackSidecar, ...] = ()
     issues: tuple[WriteIssue, ...] = ()
+    dates: tuple[PlaybackDateUpdate, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedPlaybackDates:
-    """Native date words for one row of the retained Track dataset."""
+class PlaybackDateUpdate:
+    """Captured binary dates, independent of approximate semantic instants."""
 
-    last_played: int
-    last_skipped: int
+    track_id: int
+    last_played: int | None
+    last_skipped: int | None
+
+
+def _is_finder_sentinel(value: int | None, context: DeviceTimeContext) -> bool:
+    return value == (
+        MAC_EPOCH_UNIX_OFFSET
+        + CORE_DATA_EPOCH_UNIX_OFFSET
+        + context.database_offset_seconds
+    )
 
 
 def _merge(
@@ -43,29 +59,16 @@ def _merge(
     context: DeviceTimeContext,
     *,
     play_counts: bool = False,
-    retained_dates: RetainedPlaybackDates | None = None,
 ) -> Track:
-    if play_counts and retained_dates is None:
-        raise ValueError("Playback needs retained native date evidence.")
-
-    def date(value: int | None, previous: int, raw_previous: int, field: str) -> int:
+    def date(value: int | None, previous: int) -> int:
         if value is None or (not play_counts and value == 0):
             return previous
         # Finder's Play Counts captures encode an absent Core Data date as the
         # reference epoch shifted by the database's captured offset. Compare raw
         # values before geographical-zone conversion: January's DST offset can
         # differ and would turn this sentinel into a spurious 01:00 timestamp.
-        if play_counts and value == (
-            MAC_EPOCH_UNIX_OFFSET
-            + CORE_DATA_EPOCH_UNIX_OFFSET
-            + context.database_offset_seconds
-        ):
+        if play_counts and _is_finder_sentinel(value, context):
             return previous
-        if play_counts and value == 0 and previous == 0 and raw_previous != 0:
-            raise ValueError(
-                f"Track {track.track_id} {field} cannot be cleared because its retained "
-                "native date is unavailable in the Library. The original date was preserved."
-            )
         decoded = (
             mac_to_unix(value, context)
             if entry.date_kind is PlaybackDateKind.LOCAL_MAC
@@ -74,11 +77,6 @@ def _merge(
         # Binary rows record the last event, even after a clock setback; present
         # zero clears that date. Stats/plist retain the Host newest-date policy.
         if play_counts:
-            if value != 0 and decoded == 0:
-                raise ValueError(
-                    f"Track {track.track_id} {field} maps to Unix zero, which the "
-                    "Library uses for a missing date. The event date was preserved."
-                )
             return decoded
         return max(decoded, previous) if previous else decoded
 
@@ -99,14 +97,10 @@ def _merge(
             last_played=date(
                 entry.last_played,
                 meta.last_played,
-                retained_dates.last_played if retained_dates else 0,
-                "last-played date",
             ),
             last_skipped=date(
                 entry.last_skipped,
                 meta.last_skipped,
-                retained_dates.last_skipped if retained_dates else 0,
-                "last-skipped date",
             ),
             # Binary Play Counts always supplies a bookmark. Zero is a reset,
             # unlike the historical missing/zero policy for Stats and plist.
@@ -128,7 +122,6 @@ def _tracks(
     tracks: tuple[Track, ...],
     document: PlaybackDocument,
     context: DeviceTimeContext,
-    retained_dates: tuple[RetainedPlaybackDates, ...],
 ) -> tuple[Track, ...]:
     if document.format == "PlayCounts.plist":
         identities = [t.ipod.db_track_id if t.ipod else 0 for t in tracks]
@@ -145,17 +138,12 @@ def _tracks(
         )
     if len(document.entries) > len(tracks):
         raise ValueError("Playback sidecar has more rows than the Track table.")
-    if document.format == "Play Counts" and len(retained_dates) != len(tracks):
-        raise ValueError("Playback date evidence does not match the Track table.")
     return tuple(
         _merge(
             track,
             document.entries[index],
             context,
             play_counts=document.format == "Play Counts",
-            retained_dates=retained_dates[index]
-            if document.format == "Play Counts"
-            else None,
         )
         if index < len(document.entries)
         else track
@@ -167,11 +155,11 @@ def project_sidecars(
     original: LibrarySnapshot,
     sidecars: tuple[PlaybackSidecar, ...],
     context: DeviceTimeContext,
-    retained_dates: tuple[RetainedPlaybackDates, ...],
 ) -> SidecarProjection:
     by_name = {s.name.casefold(): s for s in sidecars}
     issues: list[WriteIssue] = []
     consumed: list[PlaybackSidecar] = []
+    dates: tuple[PlaybackDateUpdate, ...] = ()
     tracks = original.tracks
     playlists = list(original.playlists)
 
@@ -201,13 +189,49 @@ def project_sidecars(
     elif counts:
         sidecar = counts[0]
         try:
+            document = parse_playback(sidecar.name, sidecar.data)
             tracks = _tracks(
                 tracks,
-                parse_playback(sidecar.name, sidecar.data),
+                document,
                 context,
-                retained_dates,
             )
             consumed.append(sidecar)
+            if document.format == "Play Counts":
+                dates = tuple(
+                    PlaybackDateUpdate(
+                        track.track_id,
+                        None
+                        if _is_finder_sentinel(entry.last_played, context)
+                        else entry.last_played,
+                        None
+                        if _is_finder_sentinel(entry.last_skipped, context)
+                        else entry.last_skipped,
+                    )
+                    for track, entry in zip(tracks, document.entries, strict=False)
+                )
+            approximations = {
+                interpretation.detail
+                for entry in document.entries
+                if entry.date_kind is PlaybackDateKind.LOCAL_MAC
+                for value in (entry.last_played, entry.last_skipped)
+                if value is not None
+                and not (
+                    document.format == "Play Counts"
+                    and _is_finder_sentinel(value, context)
+                )
+                if (interpretation := interpret_mac(value, context)).detail
+            }
+            if approximations:
+                issues.append(
+                    WriteIssue(
+                        "source.approximate_playback_dates",
+                        "Some playback dates use best-effort timezone interpretation; the original playback file is archived when saved.",
+                        IssueSeverity.WARNING,
+                        phase="source",
+                        artifact=sidecar.name,
+                        detail=" ".join(sorted(approximations)),
+                    )
+                )
         except ValueError as exc:
             error(sidecar.name, str(exc))
 
@@ -227,12 +251,12 @@ def project_sidecars(
                 consumed.append(sidecar)
                 continue
             try:
-                document = parse_otg_playlist(sidecar.data)
-                if any(p >= len(tracks) for p in document.positions):
+                otg_document = parse_otg_playlist(sidecar.data)
+                if any(p >= len(tracks) for p in otg_document.positions):
                     raise ValueError(
                         "On-The-Go Playlist references an unavailable Track position."
                     )
-                if document.positions:
+                if otg_document.positions:
                     playlists.append(
                         Playlist(
                             identity,
@@ -241,7 +265,7 @@ def project_sidecars(
                                 # OTG has no stored MHOD Playlist position yet.
                                 # Derive it during preparation after draft edits.
                                 PlaylistEntry(f"sidecar:{name}:{i}", tracks[p].track_id)
-                                for i, p in enumerate(document.positions)
+                                for i, p in enumerate(otg_document.positions)
                             ),
                             sort_order=PlaylistSortOrder.MANUAL,
                         )
@@ -254,4 +278,5 @@ def project_sidecars(
         replace(original, tracks=tracks, playlists=tuple(playlists)),
         tuple(consumed),
         tuple(issues),
+        dates,
     )

@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from hashlib import sha256
-from time import time
 from typing import TYPE_CHECKING, cast
+
+from whenever import Instant
 
 from iOpenPod.app.core.settings.device import SETTINGS_PATH, load_device_settings
 from iOpenPod.app.genius_mixes import (
@@ -200,7 +201,7 @@ def prepare_mix_changes(
         remove_ids=remove_ids,
         policy=policy,
         profiles=profiles,
-        now=int(time()),
+        now=Instant.now().timestamp(),
     )
     write = None
     if plan.state != state:

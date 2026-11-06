@@ -318,7 +318,6 @@ def test_queue_failure_prevents_any_network_and_preserves_corrupt_file(
         ("title", []),
         ("album", 123),
         ("album_artist", {}),
-        ("timestamp", str(NOW)),
         ("duration", True),
         ("track_number", 1.5),
     ],

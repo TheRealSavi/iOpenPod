@@ -36,6 +36,10 @@ class MhbdHeader(ChunkHeader):
     unk_mhbd_0x50: int = cf(0x50, "u32", default=1)
     unk_mhbd_0x54: int = cf(0x54, "u32", default=15)
     hash58: bytes = cf(0x58, "raw", size=20)
+    # Signed seconds east of UTC, not a timestamp or historical zone identifier.
+    # Zero is a valid UTC offset. The Host uses valid captured values for fallback
+    # and fold tie-breaking; city rules take precedence. Preserve even invalid or
+    # conflicting source words. See the Classic datetime file map and device_time.
     timezone_offset: int = cf(0x6C, "i32")
     hash_type_indicator: int = cf(0x70, "u16")
     hash72: bytes = cf(0x72, "raw", size=46)

@@ -5,6 +5,7 @@ import json
 import plistlib
 
 import pytest
+from whenever import Instant, patch_current_time
 
 from device_registry import (
     DEFAULT_DEVICE_REGISTRY,
@@ -56,6 +57,19 @@ def test_reconciliation_does_not_copy_retailos_into_firewire_version() -> None:
     assert (
         parse_sysinfo_extended(plan.sysinfo_extended).firmware_versions[0].value
         == "2.0.1"
+    )
+
+
+def test_authority_observation_keeps_numeric_utc_microsecond_wire_format() -> None:
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
+    assert profile is not None
+    clock = Instant.from_utc(2026, 11, 6, 1, 2, 3, nanosecond=123456789)
+    with patch_current_time(clock, keep_ticking=False):
+        plan = reconcile_device_metadata(profile=profile, evidence=DeviceEvidence())
+    authority = json.loads(plan.authority)
+    assert (
+        authority["fields"]["ModelNumStr"]["updated"]
+        == "2026-11-06T01:02:03.123456+00:00"
     )
 
 

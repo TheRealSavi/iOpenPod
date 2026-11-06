@@ -56,7 +56,7 @@ Set up the environment:
 
 ```shell
 uv sync --locked
-uv run python scripts/prepare_qt_typing.py
+uv run python -m scripts.prepare_typing
 ```
 
 Run the checks:

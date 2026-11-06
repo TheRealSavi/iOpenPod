@@ -19,10 +19,27 @@ Brief Summary:
   it does not query host devices itself.
 - **iPodDB** knows how to parse, model, and write iPod-specific database formats,
   including iTunesDB, ArtworkDB, and PhotosDB, and the flat firmware Preferences
-  and binary iTunesPrefs artifacts. Its preferences codecs consume bytes and return typed
+  and binary iTunesPrefs artifacts, plus read-only Firmware DST Rules. Its preferences codecs consume bytes and return typed
   settings plus retained Unknown Data; model identity and file publication remain
   outside this boundary. The Application Layer supplies a captured Device Time
-  Context; iPodDB owns field-specific epoch conversion using those supplied rules.
+  Context; iPodDB owns field-specific epoch conversion using Whenever with the
+  supplied IANA key or effective fixed offset. Native words and semantic Unix
+  seconds retain integer contracts; the context does not snapshot a tzdb version.
+  Calendar metadata is best effort: iPodDB preserves native evidence, resolves
+  approximate dates before verification, and never blocks a Library workflow solely
+  for a date. Preferences evidence is not a Library publication precondition.
+  See [ADR-0240](adr/0240-treat-calendar-dates-as-best-effort-metadata.md).
+  Host calendar parsing/display and persistence also use Whenever, while elapsed
+  clocks and required plistlib/WinRT adapters retain their separate roles. See
+  [ADR-0243](adr/0243-use-whenever-for-calendar-interpretation.md) and the
+  [datetime engineering guide](datetime-engineering.md).
+  Explicit firmware profiles own DST framing and nominal selectors; application
+  identity qualification stays separate. Optional saved rules never alter historical
+  date policy or become save dependencies. See
+  [ADR-0241](adr/0241-inspect-firmware-dst-rules-as-optional-evidence.md).
+  Latest Classic Calendar Targets use independent updater-family/retail-release
+  qualification, strongest evidence authority and exact Preferences framing;
+  see [ADR-0242](adr/0242-qualify-the-latest-classic-calendar-targets.md).
   See [the Preferences contract](ipod-preferences.md) and [time contract](ipod-time.md).
 - **iOpenPod** is the application. Its Application Layer coordinates Device Registry,
   iPodDB, Storage, application state, and the GUI.

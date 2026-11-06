@@ -26,6 +26,7 @@ jobs:
           version: "0.12.7"
           enable-cache: true
       - run: uv sync --locked --managed-python
+      - run: uv run --no-sync python -m scripts.prepare_typing
       - run: uv lock --check
       - run: uv run --no-sync ruff format --check .
       - run: uv run --no-sync ruff check .

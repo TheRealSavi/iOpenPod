@@ -304,3 +304,7 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0237: Share Album browsing with Music Videos](0237-share-album-browsing-with-music-videos.md)
 - [ADR-0238: Browse TV Shows with inline Season details](0238-browse-tv-shows-with-inline-season-details.md)
 - [ADR-0239: Gate and skip Phase analysis](0239-gate-and-skip-phase-analysis.md)
+- [ADR-0240: Treat calendar dates as best-effort metadata](0240-treat-calendar-dates-as-best-effort-metadata.md)
+- [ADR-0241: Inspect Firmware DST Rules as optional evidence](0241-inspect-firmware-dst-rules-as-optional-evidence.md)
+- [ADR-0242: Qualify the latest Classic Calendar Targets](0242-qualify-the-latest-classic-calendar-targets.md)
+- [ADR-0243: Use Whenever for calendar interpretation](0243-use-whenever-for-calendar-interpretation.md)

@@ -7,6 +7,8 @@ from dataclasses import replace
 from datetime import datetime
 from types import MappingProxyType
 
+from whenever import Instant
+
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD_DEFINITION
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
@@ -513,6 +515,11 @@ def _thaw_plist_value(value: PlistValue) -> WritablePlistValue:
         return [_thaw_plist_value(item) for item in value]
     if isinstance(value, Mapping):
         return {key: _thaw_plist_value(item) for key, item in value.items()}
+    if isinstance(value, Instant):
+        # Python 3.12 plistlib expects naive UTC datetime. Keep that convention
+        # exclusively at this serialization boundary, never in the typed model.
+        # freeze_plist_value already resolved authored sub-microsecond precision.
+        return value.to_stdlib().replace(tzinfo=None)
     return value
 
 

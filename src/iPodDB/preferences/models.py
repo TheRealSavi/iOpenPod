@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from iPodDB.preferences.definitions import (
     CityPreferences,
-    Classic201Preferences,
+    ClassicPreferences,
     ExtendedPreferencesSettings,
     FourthGenerationPreferences,
     PreferencesLayout,
@@ -14,7 +14,7 @@ from iPodDB.preferences.definitions import (
 )
 from iPodDB.preferences.timezones import (
     CITY_TIMEZONE_NAMES,
-    CLASSIC201_UNRESOLVED_CITY_IDS,
+    CLASSIC_UNRESOLVED_CITY_IDS,
     TIME_ZONE_ALIASES,
 )
 
@@ -58,15 +58,18 @@ def read_timezone(settings: PreferencesSettings | None) -> PreferencesTimezone |
     if isinstance(settings, VideoPreferences):
         offset = settings.timezone_code * 60 - 8 * 3600
         return FixedOffsetTimezone(offset) if -43200 <= offset <= 43200 else None
-    if isinstance(settings, (CityPreferences, Classic201Preferences)):
+    if isinstance(settings, (CityPreferences, ClassicPreferences)):
         name = CITY_TIMEZONE_NAMES.get(settings.city_id)
         detail = ""
         if (
-            isinstance(settings, Classic201Preferences)
-            and settings.city_id in CLASSIC201_UNRESOLVED_CITY_IDS
+            isinstance(settings, ClassicPreferences)
+            and settings.city_id in CLASSIC_UNRESOLVED_CITY_IDS
         ):
             name = None
-            detail = "Classic 2.0.1 city 0x26 has no verified geographical timezone. Its firmware offset conflicts with the legacy London mapping; a database-header fallback cannot recover historical city rules."
+            detail = "Classic city 0x26 has no verified geographical timezone. Its firmware offset conflicts with the legacy London mapping; a database-header fallback cannot recover historical city rules."
+        elif isinstance(settings, ClassicPreferences) and settings.city_id == 0:
+            name = None
+            detail = "Classic city 0 has no verified geographical timezone. Firmware clock synchronization can select this value when no city matches the live clock settings."
         return CityTimezone(
             settings.city_id,
             TIME_ZONE_ALIASES.get(name, name) if name is not None else None,

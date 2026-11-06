@@ -3,7 +3,6 @@
 import base64
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event
 from time import monotonic, sleep
@@ -11,6 +10,7 @@ from time import monotonic, sleep
 import pytest
 from Crypto.Signature import eddsa
 from scripts.update_feed import signed_envelope
+from whenever import Instant, hours, seconds
 
 from iOpenPod.app.updates.backend import UpdateOutcome, UpdateProgress, UpdateResult
 from iOpenPod.app.updates.github import GitHubBackend
@@ -34,9 +34,9 @@ def windows_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def release(
-    version: str = "2.0.2", sequence: int = 42, *, expires: datetime | None = None
+    version: str = "2.0.2", sequence: int = 42, *, expires: Instant | None = None
 ) -> bytes:
-    now = datetime.now(UTC)
+    now = Instant.now()
     return signed_envelope(
         {
             "schema": 1,
@@ -46,8 +46,8 @@ def release(
             "version": version,
             "tag": f"v{version}",
             "sequence": sequence,
-            "issued": now.isoformat(),
-            "expires": (expires or now + timedelta(days=30)).isoformat(),
+            "issued": now.format_iso(),
+            "expires": (expires or now + hours(30 * 24)).format_iso(),
             "assets": [
                 {
                     "target": "windows-x86_64",
@@ -176,7 +176,7 @@ def test_expired_or_untrusted_release_never_stages_or_claims_current(
     tmp_path: Path,
 ) -> None:
     for data in (
-        release(expires=datetime.now(UTC) - timedelta(seconds=1)),
+        release(expires=Instant.now() - seconds(1)),
         b'{"payload":"bad","signatures":[]}',
     ):
         installer = Installer()

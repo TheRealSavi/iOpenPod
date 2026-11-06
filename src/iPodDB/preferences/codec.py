@@ -2,8 +2,9 @@
 
 from iPodDB.preferences._source import capture_source
 from iPodDB.preferences.definitions import (
-    Classic201ClockPreferences,
     Classic201Preferences,
+    ClassicClockPreferences,
+    ClassicPreferences,
     PreferencesLayout,
     PreferencesProfile,
     definition_for_size,
@@ -60,11 +61,11 @@ def parse_preferences(
         parse_binary_struct(source, 0, extension) if extension is not None else None
     )
     if (
-        isinstance(extended, Classic201ClockPreferences)
-        and extended.format_version != 0x3D
+        isinstance(extended, ClassicClockPreferences)
+        and extended.format_version != definition.format_version
     ):
         raise iPodDBParseError(
-            "Classic 2.0.1 Preferences requires format version 0x3d."
+            f"Preferences profile {profile.value} requires format version {definition.format_version:#x}."
         )
     return PreferencesDocument(
         source,
@@ -133,9 +134,9 @@ def write_preferences(document: PreferencesDocument) -> bytes:
         for field in binary_fields(original)
         if field.attribute_name in ("timezone_code", "city_id")
     )
-    if isinstance(document.settings, Classic201Preferences) and timezone_changed:
+    if isinstance(document.settings, ClassicPreferences) and timezone_changed:
         raise iPodDBWriteError(
-            "Classic 2.0.1 clock settings are observation-only.",
+            "Classic clock settings are observation-only.",
             code="preferences.read_only_clock",
             field="city_id",
         )
@@ -182,10 +183,10 @@ def write_preferences(document: PreferencesDocument) -> bytes:
                 code="preferences.profile_mismatch",
             )
         original_extension = parse_binary_struct(document.source_bytes, 0, extension)
-        if isinstance(document.extended_settings, Classic201ClockPreferences):
+        if isinstance(document.extended_settings, ClassicClockPreferences):
             if (
-                not isinstance(original_extension, Classic201ClockPreferences)
-                or original_extension.format_version != 0x3D
+                not isinstance(original_extension, ClassicClockPreferences)
+                or original_extension.format_version != definition.format_version
                 or document.extended_settings != original_extension
                 or any(
                     type(getattr(document.extended_settings, field.attribute_name))
@@ -194,7 +195,7 @@ def write_preferences(document: PreferencesDocument) -> bytes:
                 )
             ):
                 raise iPodDBWriteError(
-                    "Classic 2.0.1 clock settings are observation-only.",
+                    "Classic clock settings are observation-only.",
                     code="preferences.read_only_clock",
                 )
             return bytes(output)

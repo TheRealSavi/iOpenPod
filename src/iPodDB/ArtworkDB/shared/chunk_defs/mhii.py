@@ -1,4 +1,7 @@
-"""MHII (ArtworkDB image item) Chunk definition."""
+"""MHII image header shared by ArtworkDB and PhotosDB.
+
+Date evidence: docs/research/auxiliary-datetime-file-inventory-2026-11-06.md.
+"""
 
 from dataclasses import dataclass
 
@@ -23,7 +26,12 @@ class MhiiHeader(ChunkHeader):
     # ordered image enumeration. Ties use image ID, then native pointer address.
     # See docs/research/mhii-image-field-followup.md.
     image_order_key: int = cf(0x24, "u32")
+    # Photo projection treats these as local-Mac calendar words (zero missing).
+    # Classic 2.0.1 copies original_date, but the full epoch/use/EXIF relationship
+    # is not proved across all latest Classics. Preserve source words unchanged;
+    # ordinary album artwork need not populate or consume either field as a date.
     original_date: int = cf(0x28, "u32")
+    # Taken/digitized-date label is Host semantics, not direct source EXIF bytes.
     exif_taken_date: int = cf(0x2C, "u32")
     source_image_size: int = cf(0x30, "u32")
 

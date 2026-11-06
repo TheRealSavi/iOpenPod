@@ -9,11 +9,11 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack, closing
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
 from enum import StrEnum
 from threading import Event
-from time import time_ns
 from typing import TYPE_CHECKING, Protocol, cast
+
+from whenever import Instant
 
 from iOpenPod.app.display_text import source_text
 from iOpenPod.app.host_media_fingerprint import (
@@ -261,7 +261,9 @@ def retain_retagged_sync_details(
         return transaction
     # FAT represents modification times in two-second increments. Storage verifies
     # this timestamp along with content, including after interrupted-write recovery.
-    modified_ns = time_ns() // 2_000_000_000 * 2_000_000_000
+    modified_ns = (
+        Instant.now().timestamp(unit="nanosecond") // 2_000_000_000 * 2_000_000_000
+    )
     refreshed: set[DevicePath] = set()
     tracks: list[IPodTrackFingerprint] = []
     for record in loaded.tracks:
@@ -296,7 +298,7 @@ def retain_retagged_sync_details(
         tuple(tracks),
         loaded.images,
         library_sha256,
-        updated_at=datetime.now(UTC).isoformat(),
+        updated_at=Instant.now().to_fixed_offset().format_iso(unit="microsecond"),
         playlists=loaded.playlists,
     )
     return replace(
@@ -1286,7 +1288,7 @@ def _save_helper(
         tracks,
         images,
         library_sha256,
-        updated_at=datetime.now(UTC).isoformat(),
+        updated_at=Instant.now().to_fixed_offset().format_iso(unit="microsecond"),
         playlists=playlists,
     )
     result = session.atomic_write(

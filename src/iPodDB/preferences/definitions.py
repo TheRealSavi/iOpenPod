@@ -24,7 +24,10 @@ class PreferencesProfile(StrEnum):
     STANDARD = "standard"
     NANO_3 = "nano_3"
     VOLUME_LIMIT_1_1_1 = "volume_limit_1_1_1"
+    CLASSIC_6_1_1_2 = "classic_6_1_1_2"
     CLASSIC_120GB_2_0_1 = "classic_120gb_2_0_1"
+    CLASSIC_UPDATER_35_2_0_4 = "classic_updater_35_2_0_4"
+    CLASSIC_UPDATER_38_2_0_5 = "classic_updater_38_2_0_5"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,24 +55,36 @@ class CityPreferences(BinaryStruct):
 
 
 @dataclass(frozen=True, slots=True)
-class Classic201Preferences(BinaryStruct):
+class ClassicPreferences(BinaryStruct):
+    """Qualified saved city and language; the full city word is retained.
+
+    Firmware can reconcile the city after Host clock import, so this is not
+    proof of a user's geographical selection or a historical event location.
+    """
+
+    city_id: int = cf(0xB70, "u32")
+    language_code: int = cf(2808, "u8")
+
+
+@dataclass(frozen=True, slots=True)
+class Classic201Preferences(ClassicPreferences):
     """Qualified Classic fields; city is read-only and Alternate Audio stays raw.
 
     Alternate Audio uses 0 for Off and 1 for On, not a stream or language ID.
     Unknown byte values remain unchanged unless explicitly replaced with 0/1.
     """
 
-    city_id: int = cf(0xB70, "u32")
-    language_code: int = cf(2808, "u8")
     alternate_audio: int = cf(0xB85, "u8")
 
 
 @dataclass(frozen=True, slots=True)
-class Classic201ClockPreferences(BinaryStruct):
+class ClassicClockPreferences(BinaryStruct):
     """Read-only saved clock state, distinct from a current or historical offset.
 
-    DST callers store both 0/1 and 0/60. The seconds word is retained raw;
-    neither it nor the day displacement establishes the hardware clock's origin.
+    DST callers store both 0/1 and 0/60. Saved Clock Correction is captured
+    Preferences data; queued Host clock processing can refresh it later.
+    Its seconds word is retained raw; neither it nor the day displacement
+    establishes the Raw Hardware Clock's origin.
     """
 
     format_version: int = cf(0, "u32")
@@ -93,7 +108,7 @@ class VolumeLimitPreferences(BinaryStruct):
 
 
 type ExtendedPreferencesSettings = (
-    Nano3Preferences | VolumeLimitPreferences | Classic201ClockPreferences
+    Nano3Preferences | VolumeLimitPreferences | ClassicClockPreferences
 )
 
 
@@ -106,8 +121,9 @@ def extension_for_profile(
         return Nano3Preferences
     if profile is PreferencesProfile.VOLUME_LIMIT_1_1_1 and size >= 2897:
         return VolumeLimitPreferences
-    if profile is PreferencesProfile.CLASSIC_120GB_2_0_1 and size == 2956:
-        return Classic201ClockPreferences
+    classic = CLASSIC_PREFERENCES_DEFINITIONS.get(profile)
+    if classic is not None and size in classic.sizes:
+        return ClassicClockPreferences
     raise ValueError(f"Preferences profile {profile.value} does not fit {size} bytes.")
 
 
@@ -115,7 +131,7 @@ type PreferencesSettings = (
     FourthGenerationPreferences
     | VideoPreferences
     | CityPreferences
-    | Classic201Preferences
+    | ClassicPreferences
 )
 
 
@@ -124,6 +140,23 @@ class PreferencesDefinition:
     layout: PreferencesLayout
     sizes: tuple[int, ...]
     settings_type: type[PreferencesSettings]
+    format_version: int | None = None
+
+
+CLASSIC_PREFERENCES_DEFINITIONS = {
+    PreferencesProfile.CLASSIC_6_1_1_2: PreferencesDefinition(
+        PreferencesLayout.CITY, (2952,), ClassicPreferences, 0x3C
+    ),
+    PreferencesProfile.CLASSIC_120GB_2_0_1: PreferencesDefinition(
+        PreferencesLayout.CITY, (2956,), Classic201Preferences, 0x3D
+    ),
+    PreferencesProfile.CLASSIC_UPDATER_35_2_0_4: PreferencesDefinition(
+        PreferencesLayout.CITY, (2956,), ClassicPreferences, 0x3E
+    ),
+    PreferencesProfile.CLASSIC_UPDATER_38_2_0_5: PreferencesDefinition(
+        PreferencesLayout.CITY, (2960,), ClassicPreferences, 0x3F
+    ),
+}
 
 
 PREFERENCES_DEFINITIONS = (
@@ -138,12 +171,7 @@ PREFERENCES_DEFINITIONS = (
 def definition_for_size(
     size: int, profile: PreferencesProfile = PreferencesProfile.STANDARD
 ) -> PreferencesDefinition | None:
-    if profile is PreferencesProfile.CLASSIC_120GB_2_0_1:
-        return (
-            PreferencesDefinition(
-                PreferencesLayout.CITY, (2956,), Classic201Preferences
-            )
-            if size == 2956
-            else None
-        )
+    classic = CLASSIC_PREFERENCES_DEFINITIONS.get(profile)
+    if classic is not None:
+        return classic if size in classic.sizes else None
     return next((item for item in PREFERENCES_DEFINITIONS if size in item.sizes), None)

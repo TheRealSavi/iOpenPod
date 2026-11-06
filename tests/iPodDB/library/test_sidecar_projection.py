@@ -3,12 +3,11 @@
 import plistlib
 import struct
 from dataclasses import replace
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import pytest
 from tests.iPodDB.library.test_writing import library
 from tests.iPodDB.sidecars.test_sidecar_readers import counts, otg, stats
+from whenever import PlainDateTime
 
 from iPodDB.device_time import DeviceTimeContext, DeviceTimeSource, mac_to_unix
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
@@ -25,7 +24,7 @@ def test_play_counts_reference_epoch_does_not_create_playback_dates(
     # Finder's Nano 5 capture: a summer device offset encodes the missing Core
     # Data date; interpreting it with January DST rules would create 01:00 UTC.
     context = DeviceTimeContext(
-        ZoneInfo("America/New_York"),
+        "America/New_York",
         DeviceTimeSource.PREFERENCES_CITY,
         database_offset_seconds=offset,
     )
@@ -251,25 +250,21 @@ def test_binary_finder_sentinels_preserve_history_while_counts_increase() -> Non
 @pytest.mark.parametrize(
     "collision", ["incoming_epoch", "retained_fold", "retained_gap", "retained_epoch"]
 )
-def test_binary_unrepresentable_date_in_later_row_preserves_all_pending_evidence(
+def test_binary_epoch_collisions_and_clear_dates_preserve_native_intent(
     field: str, collision: str
 ) -> None:
     source = _library_with_playback_history()
     previous = 0
     if collision in ("retained_fold", "retained_gap"):
         source = source.with_device_time(
-            DeviceTimeContext(
-                ZoneInfo("America/New_York"), DeviceTimeSource.PREFERENCES_CITY
-            )
+            DeviceTimeContext("America/New_York", DeviceTimeSource.PREFERENCES_CITY)
         )
         label = (
             "2026-11-01T01:30:00"
             if collision == "retained_fold"
             else "2026-03-08T02:30:00"
         )
-        previous = int(
-            (datetime.fromisoformat(label) - datetime(1904, 1, 1)).total_seconds()
-        )
+        previous = PlainDateTime(label).assume_utc().timestamp() + 2_082_844_800
     elif collision == "retained_epoch":
         previous = 2_082_844_800
     source = _with_native_dates(
@@ -278,14 +273,12 @@ def test_binary_unrepresentable_date_in_later_row_preserves_all_pending_evidence
         previous if field == "played" else 0,
         previous if field == "skipped" else 0,
     )
-    assert source.snapshot.tracks[1].metadata.last_played == 0
-    assert source.snapshot.tracks[1].metadata.last_skipped == 0
     incoming = 2_082_844_800 if collision == "incoming_epoch" else 0
     sidecar = PlaybackSidecar(
         "Play Counts",
         counts(
             (
-                (2, 3_800_001_800, 5000, 80, 0x100, 3, 3_800_001_800),
+                (2, 3_800_001_800, 500, 80, 0x100, 3, 3_800_001_800),
                 (
                     1,
                     incoming if field == "played" else 0,
@@ -299,20 +292,22 @@ def test_binary_unrepresentable_date_in_later_row_preserves_all_pending_evidence
         ),
     )
     loaded = source.with_sidecars((sidecar,))
-    assert loaded.snapshot == source.snapshot
-    assert not loaded.consumed_sidecars
-    assert len(loaded.sidecar_issues) == 1
-    issue = loaded.sidecar_issues[0]
-    assert issue.code == "source.playback_sidecar"
-    assert f"Track 2 last-{field} date" in issue.message
     assert (
-        "Unix zero" if collision == "incoming_epoch" else "cannot be cleared"
-    ) in issue.message
+        loaded.snapshot.tracks[0].play_count == source.snapshot.tracks[0].play_count + 2
+    )
+    assert (
+        loaded.snapshot.tracks[1].play_count == source.snapshot.tracks[1].play_count + 1
+    )
+    assert loaded.consumed_sidecars == (sidecar,)
     result = loaded.prepare(
         loaded.analyze(loaded.begin_draft()),
         WriteResources(pending_playback_sidecars=False),
     )
-    assert result.prepared is None
+    assert result.prepared is not None, result.issues
+    header = (
+        parse_iTunesDB(result.prepared.itunes).find_chunks(MhitHeader)[1].chunk.header
+    )
+    assert getattr(header, "last_" + field) == incoming
     assert loaded.serialize() == source.serialize()
 
 
@@ -344,12 +339,10 @@ def test_binary_dates_can_replace_unavailable_history_or_preserve_it_explicitly(
     incoming: str,
 ) -> None:
     source = _library_with_playback_history().with_device_time(
-        DeviceTimeContext(
-            ZoneInfo("America/New_York"), DeviceTimeSource.PREFERENCES_CITY
-        )
+        DeviceTimeContext("America/New_York", DeviceTimeSource.PREFERENCES_CITY)
     )
-    ambiguous = int(
-        (datetime(2026, 11, 1, 1, 30) - datetime(1904, 1, 1)).total_seconds()
+    ambiguous = (
+        PlainDateTime(2026, 11, 1, 1, 30).assume_utc().timestamp() + 2_082_844_800
     )
     source = _with_native_dates(
         source, 0, 0 if incoming == "absent_skip" else ambiguous, ambiguous
@@ -628,6 +621,42 @@ def test_plist_matches_persistent_ids_instead_of_track_order() -> None:
     assert [t.play_count for t in loaded.snapshot.tracks] == [0, 4]
 
 
+@pytest.mark.parametrize("date", ["unknown", True, -1, 0x1FFFFFFFF])
+def test_plist_date_defects_do_not_discard_valid_playback_counts(date: object) -> None:
+    raw = plistlib.dumps(
+        {"tracks": [{"persistentID": 101, "playCount": 4, "playMacOSDate": date}]}
+    )
+    sidecar = PlaybackSidecar("PlayCounts.plist", raw)
+    source = library().with_sidecars((sidecar,))
+    assert source.snapshot.tracks[0].play_count == 4
+    assert source.consumed_sidecars == (sidecar,)
+    result = source.prepare(
+        source.analyze(source.begin_draft()),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    assert IPodLibrary.parse(result.prepared.itunes).snapshot.tracks[0].play_count == 4
+
+
+def test_user_date_edit_overrides_a_captured_binary_playback_date() -> None:
+    sidecar = PlaybackSidecar("Play Counts", counts(((1, 3813442200, 0),), width=12))
+    source = library().with_sidecars((sidecar,))
+    track = source.snapshot.tracks[0]
+    desired = replace(
+        source.snapshot,
+        tracks=(
+            replace(track, metadata=replace(track.metadata, last_played=1_700_000_000)),
+            *source.snapshot.tracks[1:],
+        ),
+    )
+    result = source.prepare(
+        source.analyze(source.begin_draft(desired)),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.tracks[0].metadata.last_played == 1_700_000_000
+
+
 @pytest.mark.parametrize("word", [3, 4])
 def test_stats_projects_supported_fields_without_inventing_skip_count(
     word: int,
@@ -675,22 +704,18 @@ def test_invalid_evidence_is_not_partially_applied_and_blocks_save(
 
 @pytest.mark.parametrize("wall", ["2026-11-01T01:30:00", "2026-03-08T02:30:00"])
 @pytest.mark.parametrize("field", ["played", "skipped"])
-def test_later_gap_or_fold_row_rejects_all_pending_history_without_guessing(
+def test_later_gap_or_fold_row_preserves_dates_and_commits_all_history(
     wall: str, field: str
 ) -> None:
-    ambiguous = int(
-        (datetime.fromisoformat(wall) - datetime(1904, 1, 1)).total_seconds()
-    )
-    valid = int((datetime(2026, 10, 26, 12) - datetime(1904, 1, 1)).total_seconds())
-    context = DeviceTimeContext(
-        ZoneInfo("America/New_York"), DeviceTimeSource.PREFERENCES_CITY
-    )
+    ambiguous = PlainDateTime(wall).assume_utc().timestamp() + 2_082_844_800
+    valid = PlainDateTime(2026, 10, 26, 12).assume_utc().timestamp() + 2_082_844_800
+    context = DeviceTimeContext("America/New_York", DeviceTimeSource.PREFERENCES_CITY)
     source = _library_with_playback_history().with_device_time(context)
     sidecar = PlaybackSidecar(
         "Play Counts",
         counts(
             (
-                (2, valid, 5000, 80, 0x100, 3, valid),
+                (2, valid, 500, 80, 0x100, 3, valid),
                 (
                     1,
                     ambiguous if field == "played" else valid,
@@ -705,17 +730,25 @@ def test_later_gap_or_fold_row_rejects_all_pending_history_without_guessing(
     )
     loaded = source.with_sidecars((sidecar,))
     assert len(loaded.sidecar_issues) == 1
-    assert loaded.sidecar_issues[0].code == "source.playback_sidecar"
-    assert "ambiguous or nonexistent" in loaded.sidecar_issues[0].message
-    assert not loaded.consumed_sidecars
-    assert loaded.snapshot == source.snapshot
+    assert loaded.sidecar_issues[0].code == "source.approximate_playback_dates"
+    assert loaded.consumed_sidecars == (sidecar,)
+    assert (
+        loaded.snapshot.tracks[0].play_count == source.snapshot.tracks[0].play_count + 2
+    )
+    assert (
+        loaded.snapshot.tracks[1].play_count == source.snapshot.tracks[1].play_count + 1
+    )
     assert loaded.serialize() == source.serialize()
-    assert loaded.with_sidecars((sidecar,)).snapshot == source.snapshot
+    assert loaded.with_sidecars((sidecar,)).snapshot == loaded.snapshot
     result = loaded.prepare(
         loaded.analyze(loaded.begin_draft()),
         WriteResources(pending_playback_sidecars=False),
     )
-    assert result.prepared is None
+    assert result.prepared is not None, result.issues
+    header = (
+        parse_iTunesDB(result.prepared.itunes).find_chunks(MhitHeader)[1].chunk.header
+    )
+    assert getattr(header, "last_" + field) == ambiguous
 
 
 def test_existing_totals_are_added_once_and_later_user_edits_win() -> None:
@@ -786,10 +819,27 @@ def test_skip_evidence_beyond_a_short_track_header_is_never_discarded() -> None:
         loaded.analyze(loaded.begin_draft()),
         WriteResources(pending_playback_sidecars=False),
     )
-    # Without selected-device capabilities, keep the evidence pending.
-    assert result.prepared is None
+    # Date layout limits must not discard representable playback counters.
+    assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.tracks[0].metadata.skip_count == 2
+    assert result.prepared.snapshot.tracks[0].metadata.last_skipped == 0
     assert loaded.serialize() == source.serialize()
     assert loaded.consumed_sidecars
+
+
+def test_unsupported_date_alone_does_not_block_playback_in_a_short_header() -> None:
+    source = short_header_library()
+    loaded = source.with_sidecars(
+        (PlaybackSidecar("Play Counts", counts(((2, 0, 0, 0, 1, 0, 3_800_000_100),))),)
+    )
+    result = loaded.prepare(
+        loaded.analyze(loaded.begin_draft()),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.tracks[0].play_count == 2
+    assert result.prepared.snapshot.tracks[0].metadata.last_skipped == 0
+    assert any(i.code == "date.approximated" for i in result.issues)
 
 
 @pytest.mark.parametrize("play_count,played", [(4, True), (0, False)])

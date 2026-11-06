@@ -163,6 +163,25 @@ def test_capture_distinguishes_a_created_snapshot_from_an_unchanged_device() -> 
     assert unchanged.snapshot_id == snapshot.id
 
 
+@pytest.mark.parametrize(
+    ("timestamp", "expected"),
+    [
+        ("2026-11-01T05:30:00Z", "Nov 01, 2026 · 01:30 AM"),
+        ("2026-11-01T06:30:00+00:00", "Nov 01, 2026 · 01:30 AM"),
+        ("2026-03-08T02:30:00", "Mar 08, 2026 · 02:30 AM"),
+        ("2026-02-28", "Feb 28, 2026 · 12:00 AM"),
+        ("1960-01-02T12:34:00", "Jan 02, 1960 · 12:34 PM"),
+        ("not a timestamp", "not a timestamp"),
+        ("10000-01-01T00:00:00Z", "10000-01-01T00:00:00Z"),
+    ],
+)
+def test_snapshot_display_preserves_legacy_wall_dates_and_handles_folds(
+    timestamp: str, expected: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("iOpenPod.app.backups.models.SYSTEM_TZ", "America/New_York")
+    assert SnapshotInfo("s1", timestamp, "d1", "RoadPod").display_date == expected
+
+
 def test_capture_outcome_is_an_exhaustive_terminal_union() -> None:
     snapshot = SnapshotInfo("s1", "today", "d1", "RoadPod")
     failure = BackupFailure(BackupFailureCode.SOURCE_CHANGED, "Failed.", "Retry.")

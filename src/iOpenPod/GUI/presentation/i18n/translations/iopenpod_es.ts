@@ -2248,6 +2248,57 @@
     </message>
 </context>
 <context>
+    <name>HelpSupportPage</name>
+    <message>
+        <source>Help and support</source>
+        <translation>Ayuda y apoyo</translation>
+    </message>
+    <message>
+        <source>Have a question?</source>
+        <translation>¿Tienes alguna pregunta?</translation>
+    </message>
+    <message>
+        <source>Find guides on the website or ask the community on Discord.</source>
+        <translation>Encuentra guías en el sitio web o pregunta a la comunidad en Discord.</translation>
+    </message>
+    <message>
+        <source>Visit the website</source>
+        <translation>Visitar el sitio web</translation>
+    </message>
+    <message>
+        <source>Join Discord</source>
+        <translation>Unirse a Discord</translation>
+    </message>
+    <message>
+        <source>Something not working?</source>
+        <translation>¿Algo no funciona?</translation>
+    </message>
+    <message>
+        <source>Report issues on GitHub. Include what happened and how to reproduce it.</source>
+        <translation>Informa de los problemas en GitHub. Describe qué ocurrió y cómo reproducirlo.</translation>
+    </message>
+    <message>
+        <source>Report an issue</source>
+        <translation>Informar de un problema</translation>
+    </message>
+    <message>
+        <source>Enjoying iOpenPod?</source>
+        <translation>¿Te gusta iOpenPod?</translation>
+    </message>
+    <message>
+        <source>Support development on Ko-fi, or give the project a star on GitHub. Thank you!</source>
+        <translation>Apoya el desarrollo en Ko-fi o dale una estrella al proyecto en GitHub. ¡Gracias!</translation>
+    </message>
+    <message>
+        <source>Support on Ko-fi</source>
+        <translation>Apoyar en Ko-fi</translation>
+    </message>
+    <message>
+        <source>Star on GitHub</source>
+        <translation>Dar una estrella en GitHub</translation>
+    </message>
+</context>
+<context>
     <name>HostMediaDropTarget</name>
     <message>
         <source>Drop to Sync with Host</source>
@@ -10496,6 +10547,10 @@ Playlists: %3</translation>
         <translation>Comparando los medios del iPod con su índice auxiliar de sincronización…</translation>
     </message>
     <message>
+        <source>Complete saved rules</source>
+        <translation>Reglas guardadas completas</translation>
+    </message>
+    <message>
         <source>Conflicting firmware releases were reported; game authorization cannot choose a release.</source>
         <translation>Se han comunicado versiones de firmware contradictorias; no se puede elegir una versión para autorizar los juegos.</translation>
     </message>
@@ -10610,6 +10665,10 @@ Playlists: %3</translation>
     <message>
         <source>Database version must be a positive unsigned 32-bit value.</source>
         <translation>La versión de la base de datos debe ser un valor sin signo de 32 bits mayor que cero.</translation>
+    </message>
+    <message>
+        <source>Date ranges require two whole-number timestamps.</source>
+        <translation>Los intervalos de fechas requieren dos marcas de tiempo con valores enteros.</translation>
     </message>
     <message>
         <source>Daylight saving switch</source>
@@ -11652,6 +11711,10 @@ Playlists: %3</translation>
         <translation>La portada de Rockbox de {name} no se incrustó. El archivo multimedia y la portada de iOpenPod pueden sincronizarse; corrige el archivo y vuelve a intentarlo.</translation>
     </message>
     <message>
+        <source>Rules for the saved city</source>
+        <translation>Reglas de la ciudad guardada</translation>
+    </message>
+    <message>
         <source>SQLite Podcast Episodes must store ascending publication dates per show.</source>
         <translation>Los episodios de pódcast en SQLite deben almacenarse por programa en orden ascendente de fecha de publicación.</translation>
     </message>
@@ -11661,7 +11724,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.</source>
-        <translation>La regeneración de SQLite requiere fechas de pistas resueltas. Vuelve a cargar con una zona horaria conocida antes de guardar esta biblioteca.</translation>
+        <translation type="vanished">La regeneración de SQLite requiere fechas de pistas resueltas. Vuelve a cargar con una zona horaria conocida antes de guardar esta biblioteca.</translation>
     </message>
     <message>
         <source>Same name</source>
@@ -11674,6 +11737,10 @@ Playlists: %3</translation>
     <message>
         <source>Saved clock correction (raw seconds word)</source>
         <translation>Corrección del reloj guardada (valor de segundos sin procesar)</translation>
+    </message>
+    <message>
+        <source>Saved daylight saving rules</source>
+        <translation>Reglas guardadas del horario de verano</translation>
     </message>
     <message>
         <source>Saved daylight saving state</source>
@@ -11832,16 +11899,24 @@ Playlists: %3</translation>
         <translation>Snap</translation>
     </message>
     <message>
+        <source>Some Photo dates use best-effort interpretation; unrelated edits preserve their native bytes.</source>
+        <translation>Algunas fechas de fotos se interpretan de forma aproximada; los cambios en otros datos conservan sus bytes originales.</translation>
+    </message>
+    <message>
+        <source>Some Track dates use best-effort interpretation; unrelated edits preserve their native bytes.</source>
+        <translation>Algunas fechas de pistas se interpretan de forma aproximada; los cambios en otros datos conservan sus bytes originales.</translation>
+    </message>
+    <message>
         <source>Some folder contents were unavailable; scanning continued: {error}</source>
         <translation>Parte del contenido de la carpeta no estaba disponible; el análisis continuó: {error}</translation>
     </message>
     <message>
         <source>Some retained Photo dates cannot be represented uniquely with the known timezone and missing-date marker. They are unavailable in the Library; unrelated edits preserve their native bytes.</source>
-        <translation>Algunas fechas de fotos conservadas no se pueden representar de forma unívoca con la zona horaria conocida y el marcador de fecha ausente. No están disponibles en la biblioteca; las modificaciones de otros campos conservan sus bytes originales.</translation>
+        <translation type="vanished">Algunas fechas de fotos conservadas no se pueden representar de forma unívoca con la zona horaria conocida y el marcador de fecha ausente. No están disponibles en la biblioteca; las modificaciones de otros campos conservan sus bytes originales.</translation>
     </message>
     <message>
         <source>Some retained Track dates cannot be represented uniquely with the known timezone and missing-date marker. They are unavailable in the Library; unrelated edits preserve their native bytes.</source>
-        <translation>Algunas fechas de pistas conservadas no se pueden representar de forma unívoca con la zona horaria conocida y el marcador de fecha ausente. No están disponibles en la biblioteca; las modificaciones de otros campos conservan sus bytes originales.</translation>
+        <translation type="vanished">Algunas fechas de pistas conservadas no se pueden representar de forma unívoca con la zona horaria conocida y el marcador de fecha ausente. No están disponibles en la biblioteca; las modificaciones de otros campos conservan sus bytes originales.</translation>
     </message>
     <message>
         <source>Some source entries could not be read or were declined. Resolve them and rescan.</source>
@@ -12188,6 +12263,10 @@ Playlists: %3</translation>
         <translation>Leyendo y comprobando audio</translation>
     </message>
     <message>
+        <source>Some playback dates use best-effort timezone interpretation; the original playback file is archived when saved.</source>
+        <translation>La zona horaria de algunas fechas de reproducción se interpreta de forma aproximada; el archivo de reproducción original se archiva al guardar.</translation>
+    </message>
+    <message>
         <source>The existing helper is invalid: {error}</source>
         <translation>El índice auxiliar existente no es válido: {error}</translation>
     </message>
@@ -12233,7 +12312,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The iPod timezone is unknown. Local dates are unavailable; unchanged date bytes will be retained.</source>
-        <translation>La zona horaria del iPod es desconocida. Las fechas locales no están disponibles; los bytes de fecha que no se hayan modificado se conservarán.</translation>
+        <translation type="vanished">La zona horaria del iPod es desconocida. Las fechas locales no están disponibles; los bytes de fecha que no se hayan modificado se conservarán.</translation>
     </message>
     <message>
         <source>The limit must be a positive whole number up to 4,294,967,295.</source>
@@ -12798,8 +12877,16 @@ El análisis acústico sigue disponible.</translation>
         <translation>Falta el marcador del creador de la lista de reproducción de Phase.</translation>
     </message>
     <message>
+        <source>The date will use the closest supported iPod representation.</source>
+        <translation>La fecha usará la representación compatible con el iPod más cercana.</translation>
+    </message>
+    <message>
         <source>The iPod family or firmware changed after confirmation. Try again.</source>
         <translation>La familia o el firmware del iPod ha cambiado después de la confirmación. Inténtalo de nuevo.</translation>
+    </message>
+    <message>
+        <source>The iPod timezone is unknown. Dates are interpreted as UTC; unchanged native date bytes are retained.</source>
+        <translation>Se desconoce la zona horaria del iPod. Las fechas se interpretan como UTC; las fechas sin modificar conservan sus bytes originales.</translation>
     </message>
     <message>
         <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>
@@ -12816,6 +12903,10 @@ El análisis acústico sigue disponible.</translation>
     <message>
         <source>The referenced artwork item is absent. A reverse-owner image is not substituted; the raw artwork reference is preserved.</source>
         <translation>Falta la entrada de portada referenciada. No se sustituye por una imagen con referencia inversa a la pista; se conserva la referencia de portada sin procesar.</translation>
+    </message>
+    <message>
+        <source>The relative date period was bounded to the supported range.</source>
+        <translation>El periodo de fecha relativo se ha limitado al intervalo admitido.</translation>
     </message>
     <message>
         <source>The replacement Genius seed differs from the reviewed Playlist.</source>
@@ -12840,6 +12931,18 @@ El análisis acústico sigue disponible.</translation>
     <message>
         <source>The updater family or firmware release was not reported.</source>
         <translation>No se ha comunicado la familia de actualización o la versión de firmware.</translation>
+    </message>
+    <message>
+        <source>These saved annual rules do not establish historical timezones. Library dates use the available city rules or a fixed-offset estimate.</source>
+        <translation>Estas reglas anuales guardadas no permiten determinar las zonas horarias históricas. Las fechas de la biblioteca usan las reglas disponibles de la ciudad o una estimación con un desfase fijo.</translation>
+    </message>
+    <message>
+        <source>This iPod layout cannot store the date; its previous value is retained.</source>
+        <translation>Este formato de iPod no puede almacenar la fecha; se conserva su valor anterior.</translation>
+    </message>
+    <message>
+        <source>This iPod layout cannot store the playback date; the original sidecar will be archived.</source>
+        <translation>Este formato de iPod no puede almacenar la fecha de reproducción; se archivará el archivo auxiliar original.</translation>
     </message>
     <message>
         <source>This updater family is not supported for game authorization. Supported families: {families}.</source>
@@ -13148,6 +13251,10 @@ El análisis acústico sigue disponible.</translation>
     <message>
         <source>this media filename has no verified lyrics decoder path.</source>
         <translation>no hay una ruta de decodificación de letras verificada para este nombre de archivo multimedia.</translation>
+    </message>
+    <message>
+        <source>{count} / {total}</source>
+        <translation>{count} / {total}</translation>
     </message>
     <message>
         <source>{count} reviewed Playlist change(s) could not be applied. Resolve the reported source or Track problem, then rescan and review the remaining Playlist changes.</source>
@@ -13762,57 +13869,6 @@ Reiniciar iOpenPod no borra las propiedades ya guardadas en la caché de udev. E
     <message>
         <source>Select all media</source>
         <translation>Seleccionar todo el contenido multimedia</translation>
-    </message>
-</context>
-<context>
-    <name>HelpSupportPage</name>
-    <message>
-        <source>Help and support</source>
-        <translation>Ayuda y apoyo</translation>
-    </message>
-    <message>
-        <source>Have a question?</source>
-        <translation>¿Tienes alguna pregunta?</translation>
-    </message>
-    <message>
-        <source>Find guides on the website or ask the community on Discord.</source>
-        <translation>Encuentra guías en el sitio web o pregunta a la comunidad en Discord.</translation>
-    </message>
-    <message>
-        <source>Visit the website</source>
-        <translation>Visitar el sitio web</translation>
-    </message>
-    <message>
-        <source>Join Discord</source>
-        <translation>Unirse a Discord</translation>
-    </message>
-    <message>
-        <source>Something not working?</source>
-        <translation>¿Algo no funciona?</translation>
-    </message>
-    <message>
-        <source>Report issues on GitHub. Include what happened and how to reproduce it.</source>
-        <translation>Informa de los problemas en GitHub. Describe qué ocurrió y cómo reproducirlo.</translation>
-    </message>
-    <message>
-        <source>Report an issue</source>
-        <translation>Informar de un problema</translation>
-    </message>
-    <message>
-        <source>Enjoying iOpenPod?</source>
-        <translation>¿Te gusta iOpenPod?</translation>
-    </message>
-    <message>
-        <source>Support development on Ko-fi, or give the project a star on GitHub. Thank you!</source>
-        <translation>Apoya el desarrollo en Ko-fi o dale una estrella al proyecto en GitHub. ¡Gracias!</translation>
-    </message>
-    <message>
-        <source>Support on Ko-fi</source>
-        <translation>Apoyar en Ko-fi</translation>
-    </message>
-    <message>
-        <source>Star on GitHub</source>
-        <translation>Dar una estrella en GitHub</translation>
     </message>
 </context>
 </TS>

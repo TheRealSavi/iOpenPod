@@ -304,15 +304,16 @@ Clone the repository, open its directory, and use the locked UV environment:
 git clone https://github.com/TheRealSavi/iOpenPod.git
 cd iOpenPod
 uv sync --locked
-uv run python scripts/prepare_qt_typing.py
+uv run python -m scripts.prepare_typing
 uv run -m iOpenPod
 ```
 
 <details>
-<summary>Qt typing and platform notes</summary>
+<summary>Development typing and platform notes</summary>
 
 The typing preparation command gives Pylance and Mypy the same corrected Qt 6.9.3
-annotations on macOS without replacing the runtime. Run it after syncing or
+annotations on macOS and Whenever 0.11.0 timezone annotations on all platforms.
+It changes development stubs only. Run it after syncing or
 recreating the environment; VS Code's **Environment: Sync** and **Typecheck: Mypy**
 tasks include it. Newer Qt versions use their bundled stubs. See
 [development typing](typings/README.md) for details and remaining platform diagnostics.

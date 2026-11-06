@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import suppress
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import (
@@ -35,6 +34,7 @@ from PySide6.QtWidgets import (
     QStyleOptionViewItem,
     QWidget,
 )
+from whenever import Instant
 
 from iOpenPod.app.models.artwork_seed import stable_artwork_seed
 from iOpenPod.app.models.podcast_list_models import PodcastListRole
@@ -769,7 +769,8 @@ def episode_meta_text(
         parts.append(type_label)
     if episode.published_at:
         with suppress(OSError, OverflowError, ValueError):
-            published = datetime.fromtimestamp(episode.published_at, UTC)
+            published = Instant.from_timestamp(episode.published_at).to_fixed_offset()
+            # QDate adapts already-resolved UTC fields for Qt's locale formatter.
             parts.append(
                 QLocale().toString(
                     QDate(published.year, published.month, published.day),

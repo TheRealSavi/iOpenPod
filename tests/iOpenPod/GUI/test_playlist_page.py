@@ -43,7 +43,10 @@ from iOpenPod.app.models.device import (
 )
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
 from iOpenPod.app.models.track_columns import TrackColumn
-from iOpenPod.GUI.dialogs.playlist_editor import PlaylistEditorDialog
+from iOpenPod.GUI.dialogs.playlist_editor import (
+    PlaylistEditorDialog,
+    _rule_value_text,  # pyright: ignore[reportPrivateUsage]
+)
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId
@@ -79,6 +82,17 @@ _TRACKS = (
     Track(2, "Alpha", "Another artist", "An album", 180_000),
     Track(3, "Beta", "Third artist", "An album", 90_000),
 )
+
+
+@pytest.mark.parametrize(
+    "timestamp,text", [(-2082844799, "1904-01-01 00:00:01"), (10**30, str(10**30))]
+)
+def test_smart_date_display_accepts_early_and_unrepresentable_dates(
+    timestamp: int, text: str
+) -> None:
+    assert _rule_value_text(SmartField.LAST_PLAYED, timestamp) == text
+
+
 _ORIGINAL = Playlist(10, "Road trip", entries=playlist_entries((3, 1, 1, 2)))
 _EDITABLE_KINDS = (PlaylistKind.PLAYLIST, PlaylistKind.SMART, PlaylistKind.FOLDER)
 
@@ -1240,6 +1254,48 @@ def test_relative_date_editor_keeps_exact_seconds_and_accepts_friendly_units() -
         assert dialog.smart and dialog.smart.rules.rules == (
             SmartRule(SmartField.DATE_ADDED, SmartOperator.IN_LAST, 216000),
         )
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("1969-12-31 23:59:59", -1),
+        ("1970-01-01T01:59:59+02:00", -1),
+        ("1969-12-31", -86400),
+        ("1969-12-31T23:59:59.1Z", None),
+        ("1969-12-31T23:59:59.000000001Z", None),
+        ("unknown", None),
+    ],
+)
+def test_smart_date_editor_preserves_offsets_and_whole_second_contract(
+    text: str, expected: int | None
+) -> None:
+    smart = SmartPlaylist(
+        rules=SmartRuleGroup(
+            rules=(SmartRule(SmartField.DATE_ADDED, SmartOperator.IS, 1_700_000_000),)
+        )
+    )
+    dialog = PlaylistEditorDialog(
+        PlaylistKind.SMART, Playlist(10, "Dates", PlaylistKind.SMART, smart=smart)
+    )
+    try:
+        line = next(
+            line
+            for line in dialog.findChildren(QLineEdit)
+            if line.accessibleName() == "Rule value"
+        )
+        line.setText(text)
+        dialog.accept()
+        if expected is None:
+            assert dialog.result() != QDialog.DialogCode.Accepted
+            assert dialog.smart is smart
+        else:
+            assert dialog.result() == QDialog.DialogCode.Accepted
+            assert dialog.smart and dialog.smart.rules.rules == (
+                SmartRule(SmartField.DATE_ADDED, SmartOperator.IS, expected),
+            )
     finally:
         dialog.deleteLater()
 

@@ -8,10 +8,10 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from Crypto.Signature import eddsa
+from whenever import Instant, OffsetDateTime, TimeDelta, hours, minutes, seconds
 
 REPOSITORY = "TheRealSavi/iOpenPod"
 FEED_URL = (
@@ -20,7 +20,8 @@ FEED_URL = (
 RELEASES_URL = f"https://github.com/{REPOSITORY}/releases"
 MAX_METADATA = 256 * 1024
 MAX_ARCHIVE = 2 * 1024**3
-MAX_LIFETIME = timedelta(days=90)
+# Authenticated validity is elapsed UTC time, not 90 local calendar days.
+MAX_LIFETIME = hours(90 * 24)
 SIGNING_CONTEXT = b"iOpenPod application release metadata v1\x00"
 TARGET_LAYOUTS = {
     "windows-x86_64": "windows-onefile-v1",
@@ -88,11 +89,13 @@ def integer_field(value: dict[str, object], key: str, maximum: int) -> int:
     return result
 
 
-def _timestamp(value: dict[str, object], key: str) -> datetime:
-    result = datetime.fromisoformat(text_field(value, key))
-    if result.tzinfo is None or result.utcoffset() != timedelta(0):
+def _timestamp(value: dict[str, object], key: str) -> Instant:
+    # Keep the supplied offset until validation: parsing directly as an Instant
+    # would normalize a non-UTC timestamp and hide this security violation.
+    result = OffsetDateTime.parse_iso(text_field(value, key))
+    if result.offset != seconds(0):
         raise ValueError("Update timestamps must be UTC")
-    return result
+    return result.to_instant()
 
 
 def decode_key(value: str) -> bytes:
@@ -134,8 +137,8 @@ class ReleaseAsset:
 class Release:
     version: str
     sequence: int
-    issued: datetime
-    expires: datetime
+    issued: Instant
+    expires: Instant
     digest: str
     assets: tuple[ReleaseAsset, ...]
 
@@ -169,7 +172,7 @@ def verify_release(
     data: bytes,
     public_keys: tuple[str, ...],
     *,
-    now: datetime | None = None,
+    now: Instant | None = None,
     floor: ReleaseFloor = _INITIAL_FLOOR,
 ) -> Release:
     """Authenticate exact payload bytes before interpreting installation metadata."""
@@ -218,10 +221,10 @@ def verify_release(
         raise ValueError("Release tag or repository does not match its version")
     sequence = integer_field(value, "sequence", 2**53 - 1)
     issued, expires = _timestamp(value, "issued"), _timestamp(value, "expires")
-    clock = now or datetime.now(UTC)
-    if issued > clock + timedelta(minutes=5) or expires <= clock:
+    clock = now or Instant.now()
+    if issued > clock + minutes(5) or expires <= clock:
         raise ValueError("Update metadata is expired or not yet valid")
-    if not timedelta(0) < expires - issued <= MAX_LIFETIME:
+    if not TimeDelta.ZERO < expires - issued <= MAX_LIFETIME:
         raise ValueError("Update metadata has an invalid validity interval")
     digest = hashlib.sha256(payload).hexdigest()
     if sequence < floor.sequence or version_tuple(version) < version_tuple(

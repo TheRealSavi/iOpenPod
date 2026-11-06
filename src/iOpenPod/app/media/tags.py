@@ -9,13 +9,14 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import replace
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from mutagen.apev2 import APETextValue
 from mutagen.id3 import ID3, ID3TimeStamp
 from mutagen.mp4 import AtomDataType, MP4FreeForm
+from whenever import TimeDelta
 
+from iOpenPod.app.core.dates import parse_iso_instant
 from iOpenPod.app.media.content_type import classify_content_type
 from iOpenPod.app.media.models import MediaTag
 from iPodDB.library import ContentAdvisory, MediaType, Track
@@ -291,12 +292,12 @@ def _release_date(text: str) -> int | None:
             text += "-01-01"
         elif re.fullmatch(r"\d{4}-\d{2}", text, re.ASCII):
             text += "-01"
-        date = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        if date.tzinfo is None:
-            date = date.replace(tzinfo=UTC)
-        seconds = int((date - datetime(1970, 1, 1, tzinfo=UTC)).total_seconds())
+        # Host tags with no offset use UTC as a stable projection. iPod fields
+        # retain whole seconds: floor fractional input, including before 1970.
+        # Native zero/1904 and u32 limits remain the iPodDB boundary (ADR-0240).
+        seconds = parse_iso_instant(text, naive_zone=TimeDelta.ZERO).timestamp()
         return seconds if -2_082_844_800 < seconds <= 2_212_122_495 else None
-    except ValueError:
+    except (OverflowError, ValueError):
         return None
 
 

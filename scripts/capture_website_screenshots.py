@@ -7,10 +7,8 @@ import hashlib
 import json
 import os
 from dataclasses import replace
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
-from zoneinfo import ZoneInfo
 
 from PIL import Image
 from PySide6.QtCore import QEvent, Qt
@@ -29,6 +27,7 @@ from scripts.capture_store_screenshots import (
     settle,
     show_sync,
 )
+from whenever import ZonedDateTime
 
 from iOpenPod.app.artwork_controller import ArtworkController
 from iOpenPod.app.backups.models import (
@@ -432,9 +431,9 @@ def main() -> None:
         (output / "manifest.json").write_text(
             json.dumps(
                 {
-                    "captured_on": datetime.now(ZoneInfo("America/New_York"))
+                    "captured_on": ZonedDateTime.now("America/New_York")
                     .date()
-                    .isoformat(),
+                    .format_iso(),
                     "source": "Real iOpenPod Qt widgets on Windows with fictional sample Library data and supplied GenericArt artwork. Game covers are bundled application assets.",
                     "appearance": "light",
                     "encoding": "Lossless WebP, method 6; complete widget captures at native dimensions",

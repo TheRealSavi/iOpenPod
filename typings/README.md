@@ -6,13 +6,37 @@ while Windows and Linux use newer Qt versions with better bundled type informati
 After `uv sync --locked`, run:
 
 ```shell
-uv run python scripts/prepare_qt_typing.py
+uv run python -m scripts.prepare_typing
 ```
 
 VS Code's **Environment: Sync** and **Typecheck: Mypy** tasks also run this command.
 If the editor retains old diagnostics, run **Developer: Reload Window**.
 
-The command copies installed `.pyi` files into the ignored `PySide6/` directory and
+## Whenever timezone annotations
+
+`scripts/prepare_whenever_typing.py` corrects the installed **0.11.0** stub in the
+ignored `whenever/` directory. That release declares `SYSTEM_TZ` using lowercase
+`typing_extensions.sentinel`. The runtime dependency supports it, but Pyright
+1.1.414 and Pylance 2026.4.1 bundle typing-extension declarations that expose the
+older `Sentinel` spelling. This makes the constant and every signature containing
+it partially unknown, even calls with an ordinary IANA string. Enabling Pyright's
+experimental features did not resolve the reproduced diagnostics.
+
+The generated stub models the constant with a private, final, type-checking-only
+nominal type. It preserves the rest of the installed API, overloads, deprecations
+and upstream notices. Strict checking still rejects unrelated timezone values.
+Neither site-packages nor runtime imports change; the generated package is not
+part of the application or its frozen build.
+
+The correction checks the exact upstream version and declaration shapes. A
+different version removes recognized generated output and uses its bundled
+annotations; unexpected source changes or unowned output stop preparation. On
+upgrade, rerun both strict Pyright and Mypy before retiring or revising this
+compatibility fix. See [ADR-0243](../docs/adr/0243-use-whenever-for-calendar-interpretation.md).
+
+## Qt annotations
+
+`scripts/prepare_qt_typing.py` copies installed `.pyi` files into the ignored `PySide6/` directory and
 merges the reviewed fragments under `patches/`. Both checkers resolve those same
 files through `pyproject.toml`. Nothing is installed, downloaded, or changed in
 site-packages. Only annotations are affected; the application still runs Qt 6.9.3.

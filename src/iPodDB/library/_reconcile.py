@@ -89,6 +89,7 @@ def reconcile(
     )
     generated_podcasts = resolved.generated_podcasts
     original_tracks = {t.track_id: t for t in original.tracks}
+    playback_dates = {item.track_id: item for item in resolved.playback_dates}
     desired_tracks = {t.track_id: t for t in desired.tracks}
     all_playlist_chunks = document.find_chunks(MhypHeader)
     occurrence_allocator = IdentityAllocator(
@@ -144,6 +145,7 @@ def reconcile(
             and track.track_id not in lyrics
             and track.track_id not in header_requirements
             and track.artwork_id not in timed_artwork
+            and track.track_id not in playback_dates
         ):
             track_output.append(track_chunk)
             continue
@@ -162,6 +164,7 @@ def reconcile(
                     database_version=resolved.plan.target.database_version,
                     required_fields=header_requirements.get(track.track_id),
                     timed_artwork=timed_artwork.get(track.artwork_id),
+                    playback_dates=playback_dates.get(track.track_id),
                 )
             )
         except (ValueError, OverflowError) as error:

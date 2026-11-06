@@ -36,6 +36,15 @@ bundle includes its worker and shared `phase_sources.py`, `phase_parts.py` and
 real inference before activation. Acoustic analysis remains available on optional
 failure. See [ADR-0225](adr/0225-install-optional-phase-analysis-with-safe-fallbacks.md).
 
+Both executable specifications load `packaging/hooks/hook-whenever.py`. Whenever
+0.11 exposes its public API through lazy imports, so the hook includes its
+submodules, native extension/Python fallback, distribution metadata and `tzdata`
+resources. Windows Host-zone lookup also needs its `tzlocal` runtime dependency.
+An isolated Windows onefile smoke check exercised both providers, bundled IANA
+data with the OS timezone search path disabled, New York DST and Host-zone lookup.
+This does not replace the complete per-platform application/update-helper builds.
+See [the datetime guide](datetime-engineering.md#host-formats-precision-and-packaging).
+
 Every native release smoke test generates a Phase chart from authored audio and
 serializes it to the game's format, using the included acoustic analyzer. The
 worker's Python entry point and shared source modules are explicitly copied into

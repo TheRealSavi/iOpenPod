@@ -3,7 +3,8 @@
 from collections.abc import Callable
 from dataclasses import replace
 from random import Random
-from time import time
+
+from whenever import Instant
 
 from iPodDB.library import (
     LibrarySnapshot,
@@ -104,7 +105,7 @@ def refresh_smart_playlists(
     so evaluation never depends on Playlist order or cascades through cycles.
     Only Playlists with live updating enabled are refreshed automatically.
     """
-    instant = int(time()) if now is None else now
+    instant = Instant.now().timestamp() if now is None else now
     playlists: list[Playlist] = []
     for playlist in snapshot.playlists:
         checkpoint()
@@ -154,7 +155,7 @@ def preview_smart_playlist(
         raise ValueError(
             f"Smart Playlist rule references missing Playlist {min(missing)}."
         )
-    instant = int(time()) if now is None else now
+    instant = Instant.now().timestamp() if now is None else now
     selected = [
         track
         for track in tracks

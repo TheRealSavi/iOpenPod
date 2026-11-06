@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import calendar
 import hashlib
 import html
 import io
@@ -18,6 +17,7 @@ from xml.etree import ElementTree
 
 import feedparser  # type: ignore[import-untyped]
 from PIL import Image, ImageOps, UnidentifiedImageError
+from whenever import Instant
 
 from iOpenPod.app.podcasts.feed_extensions import (
     EpisodeExtensions,
@@ -175,7 +175,7 @@ class FeedparserPodcastClient:
             website_url=_website_url(feed, final_url),
             show_type=_show_type(_text(feed.get("itunes_type"))),
             language=_text(feed.get("language")),
-            last_refreshed=int(time.time()),
+            last_refreshed=Instant.now().timestamp(),
             episodes=tuple(
                 sorted(
                     episodes,
@@ -391,10 +391,15 @@ def _episode(
         return None
 
     published_at = 0
-    published = entry.get("published_parsed") or entry.get("updated_parsed")
+    published = entry.get("published_parsed") or (
+        entry.get("updated_parsed") if "updated_parsed" in entry else None
+    )
     if isinstance(published, time.struct_time):
         try:
-            published_at = max(0, calendar.timegm(published))
+            # feedparser supplies UTC civil fields. Keep its external struct_time
+            # at this adapter boundary; zero means unknown, not every pre-1970
+            # release. Malformed feed dates remain optional metadata (ADR-0240).
+            published_at = Instant.from_utc(*published[:6]).timestamp()
         except (OverflowError, ValueError):
             published_at = 0
     title = _text(entry.get("title")) or "Untitled Episode"

@@ -2,9 +2,11 @@
 
 import math
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 
+from whenever import SYSTEM_TZ, Instant
+
+from iOpenPod.app.core.dates import HostDateZone, parse_iso_instant
 from iPodDB.library import (
     ContentAdvisory,
     MediaType,
@@ -185,7 +187,10 @@ def display_value(value: MetadataFieldValue, kind: FieldKind) -> str:
     if kind is FieldKind.DATE and isinstance(value, int) and value:
         try:
             return (
-                datetime.fromtimestamp(value).astimezone().isoformat(timespec="seconds")
+                Instant.from_timestamp(value)
+                .to_tz(SYSTEM_TZ)
+                .to_fixed_offset()
+                .format_iso(unit="second")
             )
         except (ValueError, OSError, OverflowError):
             return str(value)
@@ -215,5 +220,7 @@ def parse_field(field: MetadataField, text: str) -> MetadataValue:
         try:
             return int(text)
         except ValueError:
-            return int(datetime.fromisoformat(text).timestamp())
+            # Unqualified editor input uses the Host zone. Native iPod words
+            # instead use the captured DeviceTimeContext inside iPodDB.
+            return parse_iso_instant(text, naive_zone=HostDateZone.SYSTEM).timestamp()
     raise ValueError("Choose a value using this field's control.")

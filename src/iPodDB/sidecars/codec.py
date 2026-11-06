@@ -95,6 +95,12 @@ def _rating(value: int) -> int | None:
 
 @log_unknown_data("Play Counts")
 def parse_play_counts(data: bytes) -> PlaybackDocument:
+    """Decode positional rows without interpreting or repairing date words.
+
+    All four latest Classics have qualified playback-date read/write paths.
+    A present zero and an absent older-layout skip word remain distinguishable;
+    the Library layer owns the exact Finder sentinel and timezone interpretation.
+    """
     table = parse_positional_sidecar(data)
     if data[:4] not in (b"mhdp", b"pdhm"):
         raise ValueError("Play Counts requires an mhdp header.")
@@ -200,6 +206,12 @@ def parse_itunes_stats(data: bytes) -> PlaybackDocument:
 
 
 def parse_play_counts_plist(data: bytes) -> PlaybackDocument:
+    """Read integer Mac-date keys, not plist UTC date objects.
+
+    Supporting this variant is not proof that all four latest Classics emit it.
+    Bad optional dates become bounded/missing values; identities, counters and
+    framing still validate independently, and the original document is retained.
+    """
     _bounded(data)
     if b"<!ENTITY" in data:
         raise ValueError("Entity declarations are not supported in PlayCounts.plist.")
@@ -236,17 +248,22 @@ def parse_play_counts_plist(data: bytes) -> PlaybackDocument:
             raise ValueError("Missing or duplicate PlayCounts.plist persistentID.")
         seen.add(identity)
         rating = integer("userRating")
+
+        def date(key: str, item: dict[object, object] = item) -> int:
+            value = item.get(key, 0)
+            # Date quality never invalidates otherwise usable playback evidence.
+            # The lossless document and archived plist retain the original value.
+            return min(_U32, max(0, value)) if type(value) is int else 0
+
         entries.append(
             PlaybackEntry(
                 persistent_id=identity,
                 play_count=integer("playCount"),
-                last_played=integer("playMacOSDate"),
+                last_played=date("playMacOSDate"),
                 bookmark_time_ms=integer("bookmarkTimeInMS"),
                 rating=_rating(rating) if rating else None,
                 skip_count=integer("skipCount"),
-                last_skipped=integer("skipMacOSDate")
-                if "skipMacOSDate" in item
-                else None,
+                last_skipped=date("skipMacOSDate") if "skipMacOSDate" in item else None,
             )
         )
     return PlaybackDocument(bytes(data), tuple(entries), "PlayCounts.plist")

@@ -17,13 +17,15 @@ from iPodDB.device_time import DeviceTimeContext
 from iPodDB.iTunesDB.cdb import decompress_iTunesCDB, is_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
-from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.library._artwork_geometry import geometry_requirements
 from iPodDB.library._genius_reconciliation import reconcile_genius_playlists
 from iPodDB.library._photo_projection import project_photos
 from iPodDB.library._playlist_projection import project_playlists
 from iPodDB.library._projection import link_artwork, project_tracks
-from iPodDB.library._sidecar_projection import RetainedPlaybackDates, project_sidecars
+from iPodDB.library._sidecar_projection import (
+    PlaybackDateUpdate,
+    project_sidecars,
+)
 from iPodDB.library._write_logging import log_plan
 from iPodDB.library.artwork import ArtworkRead, CoverFormat, select_artwork
 from iPodDB.library.models import LibrarySnapshot
@@ -88,6 +90,7 @@ class IPodLibrary:
         "_phase_playlist_id",
         "_photos_document",
         "_photos_repairs",
+        "_playback_dates",
         "_sidecar_issues",
         "_sidecars",
         "_snapshot",
@@ -124,6 +127,7 @@ class IPodLibrary:
         self._sidecars: tuple[PlaybackSidecar, ...] = ()
         self._consumed_sidecars: tuple[PlaybackSidecar, ...] = ()
         self._sidecar_issues: tuple[WriteIssue, ...] = ()
+        self._playback_dates: tuple[PlaybackDateUpdate, ...] = ()
         self._artwork_document: DatabaseDocument[MhfdHeader] | None = None
         self._source_artwork: bytes | None = None
         self._artwork_repairs: tuple[ArtworkDBCountRepair, ...] = ()
@@ -166,32 +170,13 @@ class IPodLibrary:
         self._database_snapshot = resolve_phase_playlist(
             self._database_snapshot, self._phase_playlist_id
         )
-        # Use the same first Track dataset and row order as semantic projection;
-        # an unavailable native date and a genuine zero share semantic zero.
-        dataset = next(
-            (
-                item
-                for item in self._document.find_chunks(MhsdHeader)
-                if item.chunk.header.dataset_type == 1
-            ),
-            None,
-        )
-        retained_dates = (
-            tuple(
-                RetainedPlaybackDates(
-                    item.chunk.header.last_played, item.chunk.header.last_skipped
-                )
-                for item in dataset.find_chunks(MhitHeader)
-            )
-            if dataset is not None
-            else ()
-        )
         projection = project_sidecars(
-            self._database_snapshot, self._sidecars, self._device_time, retained_dates
+            self._database_snapshot, self._sidecars, self._device_time
         )
         self._snapshot = projection.snapshot
         self._consumed_sidecars = projection.consumed
         self._sidecar_issues = projection.issues
+        self._playback_dates = projection.dates
 
     def with_phase_playlist(self, playlist_id: int | None) -> IPodLibrary:
         """Apply the captured game index ID, falling back to the exact name Phase."""
@@ -394,6 +379,84 @@ class IPodLibrary:
             self._device_time,
         )
         additional_issues = self.time_warnings
+        if self._playback_dates:
+            from iPodDB.library._track_header_expansion import optional_field_available
+
+            projected = {t.track_id: t for t in self.snapshot.tracks}
+            requested_tracks = {t.track_id: t for t in draft.snapshot.tracks}
+            desired_tracks = {t.track_id: t for t in resolved.desired.tracks}
+            retained = {
+                s.chunk.header.track_id: s.chunk
+                for s in self._document.find_chunks(MhitHeader)
+            }
+            updates: list[PlaybackDateUpdate] = []
+            date_issues: list[WriteIssue] = []
+            changes = list(resolved.plan.changes)
+            change_indexes = {
+                change.record_id: index
+                for index, change in enumerate(changes)
+                if change.subject == "track" and change.action == "update"
+            }
+            for dates in self._playback_dates:
+                track = desired_tracks.get(dates.track_id)
+                if track is None:
+                    continue
+                values: dict[str, int | None] = {}
+                for field in ("last_played", "last_skipped"):
+                    raw = getattr(dates, field)
+                    if (
+                        raw is None
+                        or raw == getattr(retained[dates.track_id].header, field)
+                        or getattr(requested_tracks[dates.track_id].metadata, field)
+                        != getattr(projected[dates.track_id].metadata, field)
+                    ):
+                        values[field] = None
+                        continue
+                    if not optional_field_available(
+                        retained[dates.track_id], field, target.database_version
+                    ):
+                        date_issues.append(
+                            WriteIssue(
+                                "date.approximated",
+                                "This iPod layout cannot store the playback date; the original sidecar will be archived.",
+                                IssueSeverity.WARNING,
+                                "resolution",
+                                "track",
+                                dates.track_id,
+                                "metadata." + field,
+                            )
+                        )
+                        values[field] = None
+                        continue
+                    values[field] = raw
+                if any(value is not None for value in values.values()):
+                    updates.append(PlaybackDateUpdate(dates.track_id, **values))
+                    fields = tuple(
+                        "metadata." + field
+                        for field, value in values.items()
+                        if value is not None
+                    )
+                    if (index := change_indexes.get(dates.track_id)) is not None:
+                        change = changes[index]
+                        changes[index] = replace(
+                            change,
+                            fields=tuple(dict.fromkeys((*change.fields, *fields))),
+                        )
+                    else:
+                        change_indexes[dates.track_id] = len(changes)
+                        changes.append(
+                            LibraryChange(
+                                "track", dates.track_id, "update", track.title, fields
+                            )
+                        )
+            additional_issues += tuple(date_issues)
+            if updates:
+                resolved = replace(
+                    resolved,
+                    playback_dates=tuple(updates),
+                    affected_datasets=resolved.affected_datasets | {1},
+                    plan=replace(resolved.plan, changes=tuple(changes)),
+                )
         if draft.genius_update is not None:
             from iPodDB.SQLiteDB.genius_projection import validate_genius_update
 
@@ -543,18 +606,6 @@ class IPodLibrary:
                 for playlist in self.snapshot.playlists
                 if playlist.playlist_id not in persisted
                 and playlist.playlist_id not in desired
-            )
-        if resolved.plan.changes_sqlite and any(
-            issue.code == "source.unavailable_dates" and issue.artifact == "iTunesDB"
-            for issue in additional_issues
-        ):
-            additional_issues = (
-                *additional_issues,
-                WriteIssue(
-                    "source.sqlite_unavailable_dates",
-                    "SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.",
-                    phase="source",
-                ),
             )
         return replace(
             resolved,

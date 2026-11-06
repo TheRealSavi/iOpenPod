@@ -45,7 +45,7 @@ datas += collect_data_files(
 binaries = collect_dynamic_libs(
     "wasmtime", search_patterns=["*.dll", "*.dylib", "*.so"],
 )
-# zoneinfo loads tzdata's geographical resource packages dynamically on Windows.
+# Whenever loads tzdata's geographical resource packages dynamically on Windows.
 hiddenimports = collect_submodules("librosa") + collect_submodules("tzdata") + collect_submodules("keyring.backends") + [
     "iOpenPod.app.synesthesia.dsp",
     "iOpenPod.app.synesthesia.enrichment",

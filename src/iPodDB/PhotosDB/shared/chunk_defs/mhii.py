@@ -1,4 +1,8 @@
-"""MHII (Photo Database image item) Chunk definition."""
+"""Photo image definition using the shared ArtworkDB MHII header.
+
+The shared header owns the retained date fields and their evidence limitations;
+do not duplicate their offsets or infer stronger semantics from this file's name.
+"""
 
 from iPodDB.ArtworkDB.shared.chunk_defs.mhii import MhiiHeader
 from iPodDB.PhotosDB.shared.chunk_defs.mhaf import DEFINITION as MHAF_DEFINITION

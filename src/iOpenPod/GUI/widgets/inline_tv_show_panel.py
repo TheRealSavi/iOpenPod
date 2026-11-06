@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
@@ -26,6 +25,7 @@ from PySide6.QtGui import (
     QTextOption,
 )
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTabBar
+from whenever import Instant
 
 from iOpenPod.app.models.track_columns import TrackColumn, track_column_display_value
 from iOpenPod.app.models.track_table_model import TrackRole
@@ -56,12 +56,13 @@ def _episode_label(track: Track) -> str:
 
 
 def _release_date(track: Track) -> str:
-    if track.metadata.release_date <= 0:
+    if track.metadata.release_date == 0:
         return "—"
     try:
-        date = datetime.fromtimestamp(track.metadata.release_date, UTC)
+        date = Instant.from_timestamp(track.metadata.release_date).to_fixed_offset()
     except (OSError, OverflowError, ValueError):
         return "—"
+    # QDate is only the Qt locale-formatting adapter; release dates display UTC.
     return QLocale().toString(QDate(date.year, date.month, date.day), "ddd, d MMM yyyy")
 
 

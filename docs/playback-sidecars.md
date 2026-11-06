@@ -26,7 +26,7 @@ and raw document types are available from `iPodDB.sidecars` itself.
 | --- | --- |
 | `Play Counts` | `mhdp` or reversed `pdhm`, a header of at least 96 bytes, and positional rows of at least 12 bytes. Plays, local Mac last-played date, bookmark milliseconds, optional rating, played marker, and optional skip count/date are exposed. Rows may cover a prefix of the Track table. |
 | `iTunesStats` | Fully bounded 24-bit records with a 6-byte header or 32-bit records with an 8-byte header. Every record supplies its own length. Plays and bookmarks are projected; newer dates follow the reference reader's Unix-second interpretation. The separate `skipped` value remains diagnostic, not a skip count. |
-| `PlayCounts.plist` | XML or binary plist with a `tracks` array. Records match `persistentID` to the Track's persistent database ID, preserving signed or unsigned 64-bit representations. Known counts, bookmark, rating, and local Mac dates are projected. Missing/duplicate IDs and incorrect value types are rejected. Unknown keys remain in the original document. |
+| `PlayCounts.plist` | XML or binary plist with a `tracks` array. Records match `persistentID` to the Track's persistent database ID, preserving signed or unsigned 64-bit representations. Known counts, bookmark, rating, and local Mac dates are projected. Missing/duplicate IDs and incorrect non-date value types are rejected. Integer dates are bounded; malformed dates become absent. Unknown keys remain in the original document. |
 | `OTGPlaylistInfo`, `_1`, `_2`, etc. | `mhpo` or reversed `ophm`, a header of at least 20 bytes, and positional rows of at least 4 bytes. Order, duplicates, and row extensions survive. Numbered files are interpreted only when the base file exists. The base alone may be a zero-byte semaphore. |
 
 Binary Play Counts rating zero clears a rating; `0xFFFFFFFF` or an absent field
@@ -59,18 +59,18 @@ conversion, avoiding a historical DST shift. Other real dates survive even with
 zero completed plays. This does not reinterpret plist dates or ordinary Track
 dates. See the [capture evidence](research/finder-playcounts-compatibility-2026-10-18.md)
 and ADR-0150. Local Mac dates require the captured Device Time Context, never the
-Host timezone. Ambiguous dates block consumption of the complete playback input;
-valid earlier rows do not contribute partial updates. Nonzero incoming binary
-dates that decode to semantic Unix zero also block consumption. So does an explicit
-zero clear over a nonzero retained native date already projected as unavailable:
-semantic equality cannot express that native clear. Both limitations keep the
-original sidecar pending rather than consume an unapplied date change. See
-[ADR-0196](adr/0196-adopt-firmware-clock-and-date-evidence.md).
+Host timezone. Ambiguous dates receive deterministic estimates and never block
+consumption. Exact binary played/skipped words travel separately through
+resolution, writing and verification, including nonzero words projecting to Unix
+zero and explicit zero clears. Dates unavailable in the target layout retain the
+prior value without discarding valid counters. The consumed sidecar is archived
+verbatim. See [ADR-0240](adr/0240-treat-calendar-dates-as-best-effort-metadata.md).
 
 Projection retains skip history even when the source MHIT ends before its fields.
 Saving can expand an affected Track using the selected Device Profile's database
 capability, while preserving the retained prefix and Unknown Data. Missing or
-insufficient capabilities block consumption instead of dropping evidence. See
+insufficient capabilities still block unrepresentable counters; date-only layout
+limits retain the prior date and archive the incoming evidence. See
 [ADR-0144](adr/0144-expand-track-headers-with-device-capabilities.md).
 
 OTG Playlists receive distinct temporary Library IDs and deterministic occurrence

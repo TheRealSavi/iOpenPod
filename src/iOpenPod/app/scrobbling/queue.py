@@ -21,6 +21,11 @@ MAX_PENDING = 50_000
 MIN_TIMESTAMP = 1_033_430_400
 
 
+def _date(value: object) -> int:
+    """Keep signed playback evidence; a malformed calendar value is missing."""
+    return value if type(value) is int else 0
+
+
 @dataclass(frozen=True, slots=True)
 class PendingListen:
     identity: str
@@ -78,11 +83,10 @@ class ScrobbleQueue:
                 if not identity or not device or not account:
                     raise ValueError
                 fields = item["listen"]
-                if not is_object(fields) or set(fields) != {
+                if not is_object(fields) or set(fields) - {"timestamp"} != {
                     "artist",
                     "title",
                     "album",
-                    "timestamp",
                     "duration",
                     "album_artist",
                     "track_number",
@@ -92,23 +96,21 @@ class ScrobbleQueue:
                     artist=text(fields["artist"]),
                     title=text(fields["title"]),
                     album=text(fields["album"]),
-                    timestamp=integer(fields["timestamp"]),
+                    timestamp=_date(fields.get("timestamp")),
                     duration=integer(fields["duration"]),
                     album_artist=text(fields["album_artist"]),
                     track_number=integer(fields["track_number"]),
                 )
                 if (
-                    listen.timestamp < MIN_TIMESTAMP
-                    or listen.duration < 30
+                    listen.duration < 30
                     or not listen.artist.strip()
                     or not listen.title.strip()
                 ):
                     raise ValueError
                 adjusted = item.get("submission_timestamp") if version == 2 else None
-                submission_timestamp = None if adjusted is None else integer(adjusted)
+                submission_timestamp = None if adjusted is None else _date(adjusted)
                 if submission_timestamp is not None and (
                     not account.startswith(f"{Service.LASTFM.value}:")
-                    or submission_timestamp < listen.timestamp
                 ):
                     raise ValueError
                 entries.append(
@@ -123,11 +125,9 @@ class ScrobbleQueue:
                 raw_reserved = data["lastfm_reserved_through"]
                 if not is_object(raw_reserved):
                     raise ValueError
-                reserved = {key: integer(value) for key, value in raw_reserved.items()}
+                reserved = {key: _date(value) for key, value in raw_reserved.items()}
                 if any(
-                    not key.startswith(f"{Service.LASTFM.value}:")
-                    or value < MIN_TIMESTAMP
-                    for key, value in reserved.items()
+                    not key.startswith(f"{Service.LASTFM.value}:") for key in reserved
                 ):
                     raise ValueError
             return QueueState(cursors, entries, reserved)

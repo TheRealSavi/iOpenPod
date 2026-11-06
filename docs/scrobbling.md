@@ -50,6 +50,12 @@ Track and reason are grouped across batches with a listen count and estimated
 playback date range in UTC. Accepted listens are excluded from this list. Service
 messages are bounded plain text with credentials redacted.
 
+Date defects alone do not block Library Sync. Saved queue dates preserve integer
+evidence, including signed values; malformed optional dates become missing. Queue
+identities and capture cursors remain validated. Unusable submission dates stay
+pending, and an unrepresentable Host calendar defers Last.fm adjustment until a
+later attempt. See [ADR-0240](adr/0240-treat-calendar-dates-as-best-effort-metadata.md).
+
 Last.fm submission dates older than its 14-day backdating window are automatically
 moved to **today**, using the Host's local calendar. Each receives a distinct second
 no later than the current time; oldest plays receive earlier seconds. The queue

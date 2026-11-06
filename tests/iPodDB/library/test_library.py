@@ -1,9 +1,9 @@
 """Tests through the public, Qt-independent Library translation interface."""
 
 from dataclasses import replace
-from datetime import UTC, datetime
 
 import pytest
+from whenever import Instant, TimeDelta
 
 from iPodDB.ArtworkDB.builder.build_ArtworkDB import (
     new_artwork_chunk,
@@ -59,8 +59,8 @@ from iPodDB.shared.chunk import EmptyChunkHeader, ParsedChunk
 
 
 def test_ipod_library_translates_optional_metadata_without_exposing_chunks() -> None:
-    timestamp = int(datetime(2024, 5, 6, 12, tzinfo=UTC).timestamp())
-    mac_timestamp = unix_to_mac(timestamp, UTC)
+    timestamp = Instant.from_utc(2024, 5, 6, 12).timestamp()
+    mac_timestamp = unix_to_mac(timestamp, TimeDelta.ZERO)
     metadata = (
         new_string_mhod(MhodType.TITLE, "Title"),
         new_string_mhod(

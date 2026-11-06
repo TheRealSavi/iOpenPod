@@ -171,14 +171,13 @@ def test_date_extremes_roundtrip_without_clamping(value: int) -> None:
     )
 
 
-def test_invalid_dates_encodings_ranges_and_readonly_fields_are_reported() -> None:
+def test_invalid_encodings_ranges_and_readonly_fields_are_reported() -> None:
     source = library()
     t = source.snapshot.tracks[0]
     cases = (
         replace(t, title="bad\ud800"),
         replace(t, year=2**32),
         replace(t, ipod=None),
-        replace(t, metadata=replace(t.metadata, last_modified=2**40)),
     )
     for edited in cases:
         result = source.prepare(

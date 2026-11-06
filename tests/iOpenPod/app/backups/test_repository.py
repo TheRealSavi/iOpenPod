@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from whenever import Instant, patch_current_time
 
 import iOpenPod.app.backups.repository as repository_module
 from iOpenPod.app.backups import (
@@ -160,6 +161,20 @@ def test_create_snapshot_writes_v4_exact_paths_and_shared_objects(
             "iTunesDB",
         )
         assert Path(os.fspath(verified.files[0].source)).read_bytes() == b"database"
+
+
+def test_snapshot_preserves_utc_microsecond_identity_and_timestamp(
+    tmp_path: Path,
+) -> None:
+    device, session = _session(tmp_path)
+    (device / "sample.txt").write_text("sample")
+    repository = BackupRepository(tmp_path / "backups")
+    clock = Instant.from_utc(2026, 11, 6, 1, 2, 3, nanosecond=123456789)
+    with patch_current_time(clock, keep_ticking=False):
+        snapshot = _create(repository, session)
+    assert snapshot is not None
+    assert snapshot.id == "20261106T010203.123456Z-00000001"
+    assert snapshot.timestamp == "2026-11-06T01:02:03.123456+00:00"
 
 
 def test_capture_streams_device_content_once_and_reports_byte_finalization(

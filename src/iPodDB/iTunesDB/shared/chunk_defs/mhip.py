@@ -1,4 +1,7 @@
-"""MHIP (Playlist Item) Chunk definition."""
+"""MHIP (Playlist Item) Chunk definition.
+
+Date qualification: docs/research/classic-datetime-file-map-2026-11-06.md.
+"""
 
 from dataclasses import dataclass
 
@@ -20,6 +23,9 @@ class MhipHeader(ChunkHeader):
     unk_mhip_0x12: int = cf(0x12, "u16")
     group_id: int = cf(0x14, "u32")
     track_id: int = cf(0x18, "u32")
+    # Classic 2.0.1 ordinary rows can fill an empty native Track added-date slot
+    # from this word; zero falls back to a sampled calendar value. That is not
+    # all-four proof of a standalone "date added to this Playlist" meaning.
     timestamp: int = cf(0x1C, "u32")
     group_id_ref: int = cf(0x20, "u32")
     group_persistent_id: int = cf(0x24, "u64")

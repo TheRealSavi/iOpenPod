@@ -246,13 +246,41 @@ fallback. See [ADR-0198](docs/adr/0198-adopt-native-rule-operands-and-import-mar
 for evidence and cross-model limits.
 
 Binary Play Counts now replaces present playback dates even after clock setbacks,
-while retaining the Finder sentinel and failing closed on unrepresentable dates.
+while retaining the Finder sentinel and exact native words through approximate
+date interpretation. Calendar metadata never blocks Library workflows; see
+[ADR-0240](docs/adr/0240-treat-calendar-dates-as-best-effort-metadata.md).
 Unsupported Smart date ranges preserve both native endpoints and saved membership.
 A qualified Classic 120GB 2.0.1 Preferences view reads full city IDs and exposes
 saved DST and clock-bias observations without using them as extra timestamp
 adjustments. Historical IANA interpretation remains explicit Host policy; raw
 hardware-clock UTC/local provenance remains unproved. See
 [ADR-0196](docs/adr/0196-adopt-firmware-clock-and-date-evidence.md).
+
+Firmware DST Rules now have a lossless read-only document with separate Classic
+2.0.1/2.0.4/2.0.5 framing and week semantics. Optional saved rules are inspected
+through Storage; incomplete or unknown files never gate Library workflows.
+Latest Classic Calendar Targets now cover updater 24 / 1.1.2, 33 / 2.0.1,
+35 / 2.0.4 and 38 / 2.0.5. All expose full city IDs and saved clock observations;
+the latter three also qualify saved annual DST files. Strongest-authority updater
+and release evidence distinguishes the later 160GB branches without inventing a
+retail model split. Family 24's optional DST file remains opaque.
+Saved DST State and the automatic predicate cache are separate observations, and
+annual rules do not reconstruct historical UTC times. See
+[ADR-0241](docs/adr/0241-inspect-firmware-dst-rules-as-optional-evidence.md).
+See [ADR-0242](docs/adr/0242-qualify-the-latest-classic-calendar-targets.md) and
+[the per-target research questions](docs/classic-calendar-support.md).
+The concrete deferred clock callback now resolves to a protected-media timing
+cache updater on all four targets; its body does not rebase ordinary Track dates.
+Fresh Smart evaluations initialize their own day context. Later DST prefix bytes
+remain opaque after bounded native loader/lookup execution and a reference audit;
+retained prefix bytes do not establish the active rules. These findings reinforce
+native-date preservation and non-blocking optional evidence, rather than adding
+calendar prerequisites to Library workflows.
+Queued Host clock handling is now traced through concrete application handlers
+on all four targets: it mirrors live correction, reconciles the saved city and
+marks Preferences dirty. City selection can be automatic and can fall back to
+unresolved ID zero. Saved files can lag this processing and later persistence;
+iOpenPod explains the uncertainty without rebasing native dates or blocking saves.
 
 iPodDB now uses the firmware-backed total skip counter, preserves the independent
 secondary counter, and retains Playlist repeat data during text edits. Binary
@@ -436,13 +464,20 @@ binary iTunesPrefs. They expose documented device and iTunes settings while
 retaining Unknown Data. Model-specific fields require explicit caller assertions;
 layout recognition remains separate from Device Identity. Companion plist modeling
 and physical preferences editing remain separate work.
-Library dates now use a captured Device Time Context: historical city rules or an
+Library dates now use a captured Device Time Context: an IANA key for historical city rules or an
 explicit fixed-offset fallback, UTC-only release/purchase fields, and local Mac
-conversion for Photo dates. Preferences are checked again before publication;
-ambiguous dates remain unavailable and losslessly retained. See ADR-0098 and
-[the time contract](docs/ipod-time.md).
+conversion for Photo dates. Unknown zones fall back to UTC when no valid fixed
+offset exists; ambiguous dates receive deterministic estimates. Preferences are
+read-only evidence, not a save precondition. Native dates remain losslessly
+retained, and new dates are bounded before verification. See ADR-0240 and
+[the time contract](docs/ipod-time.md). Calendar interpretation, Host clocks and
+date display use Whenever; native words and semantic Unix seconds retain their
+integer contracts. [ADR-0243](docs/adr/0243-use-whenever-for-calendar-interpretation.md)
+and the [engineering guide](docs/datetime-engineering.md) document the type,
+precision, packaging and firmware-evidence boundaries. Monotonic elapsed timers
+and required plistlib/WinRT adapters remain distinct.
 Settings includes a read-only iPod Preferences tab under the iPod scope. Device selection captures
-both binary preference files through Storage and publishes display summaries with
+binary preferences and optional saved DST rules through Storage and publishes display summaries with
 the Active iPod; switching or disconnecting clears the previous device's values.
 See [the Preferences contract](docs/ipod-preferences.md) and ADR-0097.
 

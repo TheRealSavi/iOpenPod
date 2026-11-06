@@ -195,7 +195,7 @@ def test_classic201_capture_uses_full_city_and_displays_saved_clock_state(
     if city == 0x29:
         assert captured.device_time.source is DeviceTimeSource.PREFERENCES_CITY
         assert captured.device_time.timezone_name == "America/New_York"
-        assert "manual switch" in captured.device_time.detail
+        assert "can change the saved city" in captured.device_time.detail
     else:
         assert rows["timezone"].value == "Unknown (city 65577)"
         assert captured.device_time.source is DeviceTimeSource.UNRESOLVED
@@ -239,5 +239,10 @@ def test_classic_clock_profile_requires_model_release_extent_and_format(
     rows = {row.key: row for row in captured.sections[0].rows}
     assert "clock_bias_days" not in rows
     assert "alternate_audio" not in rows
-    assert rows["timezone"].title == "Timezone"
-    assert rows["timezone"].value == "America/New_York"
+    if model == "MB565" and versions == ("2.0.1",):
+        assert captured.sections[0].status is PreferenceFileStatus.UNKNOWN
+        assert not rows
+        assert captured.device_time.source is DeviceTimeSource.UNRESOLVED
+    else:
+        assert rows["timezone"].title == "Timezone"
+        assert rows["timezone"].value == "America/New_York"
