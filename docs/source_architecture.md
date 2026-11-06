@@ -3074,6 +3074,14 @@ Reusable widgets should draw from the global theme/palette rather than hard-codi
 
 Contains application-wide presentation infrastructure.
 
+`scrolling.install_scrolling` owns the shared wheel and middle-button input policy
+for existing and newly shown Qt scroll areas. The Album grid's bounded easing is
+shared across pages and dialogs. Item views render pixel motion; tables target one
+visible row per wheel notch, while trackpad input remains immediate. Widgets do not
+install separate wheel animation handlers. Other item views cap wheel lines at
+32 pixels so tall Podcast and Playback Queue rows do not inflate wheel travel. See
+[ADR-0244](adr/0244-share-smooth-wheel-and-middle-button-scrolling.md).
+
 ```text
 presentation/
 ├── artwork_provider.py

@@ -961,7 +961,7 @@ def test_library_views_use_virtualized_model_view_primitives() -> None:
             table.horizontalHeader().sectionResizeMode(1)
             is QHeaderView.ResizeMode.Interactive
         )
-        assert table.verticalScrollMode() is table.ScrollMode.ScrollPerItem
+        assert table.verticalScrollMode() is table.ScrollMode.ScrollPerPixel
         assert table.selectionBehavior() is table.SelectionBehavior.SelectRows
         index_widget: QWidget | None = table.indexWidget(table_model.index(0, 0))
         assert index_widget is None

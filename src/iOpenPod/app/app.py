@@ -27,9 +27,7 @@ from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.presentation.application_icon import application_icon
 from iOpenPod.GUI.presentation.display import configure_display
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
-from iOpenPod.GUI.presentation.middle_mouse_scrolling import (
-    install_middle_mouse_scrolling,
-)
+from iOpenPod.GUI.presentation.scrolling import install_scrolling
 from storage.host_staging import cleanup_stale_staging
 
 logger = logging.getLogger(__name__)
@@ -46,7 +44,7 @@ def start_ui() -> int:
     configure_display()
     application = QApplication(sys.argv)
     _install_host_timezone_refresh(application)
-    install_middle_mouse_scrolling(application)
+    install_scrolling(application)
     QCoreApplication.setApplicationName("iOpenPod")
     QCoreApplication.setOrganizationName("iOpenPod")
     from iOpenPod.app.core.version import get_version

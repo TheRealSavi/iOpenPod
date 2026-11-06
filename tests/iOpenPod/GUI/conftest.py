@@ -8,6 +8,8 @@ from PySide6.QtGui import QCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
+from iOpenPod.GUI.presentation.scrolling import install_scrolling
+
 
 def _reset_input(application: QApplication) -> None:
     if mouse_grabber := QWidget.mouseGrabber():
@@ -42,6 +44,7 @@ def _release_top_level_widgets() -> Iterator[None]:
 
     application = QApplication.instance()
     if isinstance(application, QApplication):
+        install_scrolling(application)
         _reset_input(application)
     yield
     application = QApplication.instance()

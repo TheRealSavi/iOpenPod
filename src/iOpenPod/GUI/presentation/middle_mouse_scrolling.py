@@ -156,19 +156,6 @@ class MiddleMouseScrollFilter(QObject):
         self._velocity = QPointF()
 
 
-def install_middle_mouse_scrolling(
-    application: QApplication,
-) -> MiddleMouseScrollFilter:
-    """Install the process-wide filter once and return it."""
-
-    existing = application.findChild(MiddleMouseScrollFilter, _OBJECT_NAME)
-    if existing is not None:
-        return existing
-    scroll_filter = MiddleMouseScrollFilter(application)
-    application.installEventFilter(scroll_filter)
-    return scroll_filter
-
-
 def _can_scroll(scrollbar: QScrollBar) -> bool:
     return scrollbar.isEnabled() and scrollbar.minimum() < scrollbar.maximum()
 
@@ -205,4 +192,4 @@ def _scroll_delta(
     return pixel_delta * max(1, scrollbar.pageStep()) / max(1, viewport_extent)
 
 
-__all__ = ["MiddleMouseScrollFilter", "install_middle_mouse_scrolling"]
+__all__ = ["MiddleMouseScrollFilter"]

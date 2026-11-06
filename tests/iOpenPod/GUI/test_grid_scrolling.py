@@ -84,7 +84,7 @@ def _wheel(
 
 
 def _animation(view: EqualizedGridView) -> QVariantAnimation:
-    animation = view.findChild(QVariantAnimation, "gridWheelScrollAnimation")
+    animation = view.findChild(QVariantAnimation, "wheelScrollAnimation")
     assert animation is not None
     return animation
 

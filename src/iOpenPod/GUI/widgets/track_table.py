@@ -95,7 +95,7 @@ class TrackTable(QTableView):
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerItem)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.setWordWrap(False)
         self.setShowGrid(False)
