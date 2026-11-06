@@ -5117,6 +5117,10 @@ Wählen Sie „Herunterladen und installieren“, um Python, Analysebibliotheken
         <translation>Wiedergabeposition</translation>
     </message>
     <message>
+        <source>Open video player</source>
+        <translation>Videoplayer öffnen</translation>
+    </message>
+    <message>
         <source>Previous Chapter</source>
         <translation>Vorheriges Kapitel</translation>
     </message>
@@ -10111,6 +10115,77 @@ Playlists: %3</translation>
     <message>
         <source>Update check or installation unavailable: %1. Retry in 30 seconds.</source>
         <translation>Updateprüfung oder Installation nicht verfügbar: %1. Versuche es in 30 Sekunden erneut.</translation>
+    </message>
+</context>
+<context>
+    <name>VideoPlayerPage</name>
+    <message>
+        <source>Close video player</source>
+        <translation>Videoplayer schließen</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <translation>Pause</translation>
+    </message>
+    <message>
+        <source>Play</source>
+        <translation>Wiedergeben</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Aus</translation>
+    </message>
+    <message>
+        <source>Subtitle {number}</source>
+        <translation>Untertitel {number}</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>Untertitel</translation>
+    </message>
+    <message>
+        <source>No embedded subtitles</source>
+        <translation>Keine eingebetteten Untertitel</translation>
+    </message>
+    <message>
+        <source>Video output is unavailable.</source>
+        <translation>Die Videoausgabe ist nicht verfügbar.</translation>
+    </message>
+    <message>
+        <source>Untitled Track</source>
+        <translation>Unbenannter Titel</translation>
+    </message>
+    <message>
+        <source>Nothing playing</source>
+        <translation>Keine Wiedergabe</translation>
+    </message>
+    <message>
+        <source>Playback position</source>
+        <translation>Wiedergabeposition</translation>
+    </message>
+    <message>
+        <source>Volume</source>
+        <translation>Lautstärke</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Video</translation>
+    </message>
+    <message>
+        <source>Previous Chapter</source>
+        <translation>Vorheriges Kapitel</translation>
+    </message>
+    <message>
+        <source>Previous Track</source>
+        <translation>Vorheriger Titel</translation>
+    </message>
+    <message>
+        <source>Next Chapter</source>
+        <translation>Nächstes Kapitel</translation>
+    </message>
+    <message>
+        <source>Next Track</source>
+        <translation>Nächster Titel</translation>
     </message>
 </context>
 <context>

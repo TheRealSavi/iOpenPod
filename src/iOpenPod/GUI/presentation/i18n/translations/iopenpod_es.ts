@@ -5117,6 +5117,10 @@ Elige Descargar e instalar para descargar Python, las bibliotecas de análisis y
         <translation>Posición de reproducción</translation>
     </message>
     <message>
+        <source>Open video player</source>
+        <translation>Abrir reproductor de vídeo</translation>
+    </message>
+    <message>
         <source>Previous Chapter</source>
         <translation>Capítulo anterior</translation>
     </message>
@@ -10111,6 +10115,77 @@ Playlists: %3</translation>
     <message>
         <source>Update check or installation unavailable: %1. Retry in 30 seconds.</source>
         <translation>La búsqueda de actualizaciones o la instalación no está disponible: %1. Vuelve a intentarlo en 30 segundos.</translation>
+    </message>
+</context>
+<context>
+    <name>VideoPlayerPage</name>
+    <message>
+        <source>Close video player</source>
+        <translation>Cerrar reproductor de vídeo</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <translation>Pausar</translation>
+    </message>
+    <message>
+        <source>Play</source>
+        <translation>Reproducir</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Desactivado</translation>
+    </message>
+    <message>
+        <source>Subtitle {number}</source>
+        <translation>Subtítulo {number}</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>Subtítulos</translation>
+    </message>
+    <message>
+        <source>No embedded subtitles</source>
+        <translation>No hay subtítulos integrados</translation>
+    </message>
+    <message>
+        <source>Video output is unavailable.</source>
+        <translation>La salida de vídeo no está disponible.</translation>
+    </message>
+    <message>
+        <source>Untitled Track</source>
+        <translation>Pista sin título</translation>
+    </message>
+    <message>
+        <source>Nothing playing</source>
+        <translation>No se está reproduciendo nada</translation>
+    </message>
+    <message>
+        <source>Playback position</source>
+        <translation>Posición de reproducción</translation>
+    </message>
+    <message>
+        <source>Volume</source>
+        <translation>Volumen</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Vídeo</translation>
+    </message>
+    <message>
+        <source>Previous Chapter</source>
+        <translation>Capítulo anterior</translation>
+    </message>
+    <message>
+        <source>Previous Track</source>
+        <translation>Pista anterior</translation>
+    </message>
+    <message>
+        <source>Next Chapter</source>
+        <translation>Capítulo siguiente</translation>
+    </message>
+    <message>
+        <source>Next Track</source>
+        <translation>Pista siguiente</translation>
     </message>
 </context>
 <context>

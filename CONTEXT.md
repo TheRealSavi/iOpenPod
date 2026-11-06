@@ -519,7 +519,11 @@ publish writes before removals, and support explicit restoration after reconnect
 Storage now also performs user-directed native safe removal through Windows Plug and
 Play, macOS Disk Arbitration's `diskutil` client, and Linux UDisks2. It never forces
 an unmount, preserves native refusal details, and models an unmounted-but-not-ejected
-partial result by expiring the Connection Generation. Incoming-media planning/import
+partial result by expiring the Connection Generation. Linux sibling checks use
+standard Drive introspection to support UDisks releases before 2.11 while still
+refusing shared power-off hardware and incomplete inventories; see
+[the safe-removal research](docs/research/safe-native-eject.md).
+Incoming-media planning/import
 and event-driven connection monitoring remain prerequisites for general Sync and
 destructive maintenance workflows. See ADR-0029 and ADR-0060.
 
@@ -1162,7 +1166,7 @@ the Queue. **Edit** opens the metadata editor for the selection. Selections reta
 visible order and Playlist occurrences; explicit queue buttons keep their own
 actions.
 
-Clicking the Player artwork opens Now Playing across the app's content area,
+Clicking the Player artwork for an audio Track opens Now Playing across the app's content area,
 temporarily hiding navigation, the Player bar, and the status bar. Its two columns
 show larger shadowed artwork with Title, Artist, Album, a scrubber and the existing
 Previous, Play/Pause and Next actions on the left, and the pending Playback Queue
@@ -1173,6 +1177,21 @@ crossfades when artwork changes. Motion stops while hidden or minimized and foll
 the Host's widget-animation preference. Timed artwork changes and missing covers follow
 the Player's existing artwork rules. The top-left close button or Escape restores
 the previous layout without interrupting playback or changing the Queue.
+
+For Movies, TV Shows, Music Videos and Video Podcast Episodes, clicking Player
+artwork opens a basic video player instead. Video retains its aspect ratio and
+shares the current Track's play/pause, seeking, volume and Previous/Next controls.
+Space toggles playback; Close or Escape restores the previous layout while playback
+continues. An open viewer follows transitions between audio and video Tracks, and
+clearing playback restores the shell. Errors appear inside the video player and
+Play retries through the existing transport. No additional package is required;
+see [ADR-0245](docs/adr/0245-present-video-through-the-existing-playback-backend.md).
+
+The video's Subtitles selector offers Off and the embedded subtitle streams,
+including `tx3g` timed text, using title/language labels when available. Choices
+last for the current Playback Entry and survive closing the viewer; a new video
+starts with subtitles off. A choice made while paused takes effect on resume.
+Viewing subtitles changes neither Sync choices nor the media on the iPod.
 
 The Player's Queue/History/Lyrics slideout displays read-only lyrics for the
 current Track. Known Library text appears immediately. When the Lyrics tab is

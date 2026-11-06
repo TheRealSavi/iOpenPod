@@ -718,6 +718,10 @@ so it does not assume a desktop-specific mount directory. UDisks2 lifecycle even
 remain the preferred next integration for event-driven discovery. User-directed
 eject already resolves the selected block object through UDisks2, unmounts every
 mounted filesystem on its Drive without force, and requires confirmed Drive power-off.
+Sibling checks enumerate the documented UDisks Drive subtree through standard
+D-Bus introspection, including on releases before `Manager.GetDrives` was added in
+UDisks 2.11. Incomplete inventories fail before unmount; see
+[the safe-removal research](research/safe-native-eject.md).
 
 Host-path separation compares live backing relationships independently of persisted
 Device Identity. Linux follows partition parents, all device-mapper/MD RAID backing
@@ -2406,7 +2410,7 @@ concerns and do not enter the analysis backend. See ADR-0078.
 
 #### `app/playback`
 
-Contains the replaceable audio-output boundary. `PlaybackBackend` accepts transport
+Contains the replaceable media-output boundary. `PlaybackBackend` accepts transport
 commands and reports playing state, position, completion, and structured failure
 events. Every start and reported event carries a monotonic runtime Playback Attempt
 identity; `PlaybackController` discards events that do not belong to its active
@@ -2416,6 +2420,23 @@ The backend does not own Playback Queue, Playback History, or Player presentatio
 `QtPlaybackBackend` is the production adapter and privately owns `QMediaPlayer`,
 `QAudioOutput`, the `QIODevice` bridge required by Qt Multimedia, and the QObject
 relay that translates Qt signals into attempt-tagged backend events.
+
+The composition root also exposes the optional `PlaybackVideoOutput` presentation
+interface. A GUI-owned `QVideoWidget` attaches to the same backend only while its
+page is shown; hiding it detaches the output without changing transport or source.
+This narrow Qt presentation attachment stays outside `PlaybackBackend` and
+`PlaybackController`. The window selects video or audio Now Playing using the
+shared semantic `is_video_track` classification and follows mixed queues while a
+viewer is open. The video page uses ordinary controller intents and shows playback
+failures locally while the status bar is hidden. See ADR-0245.
+
+That presentation interface also exposes immutable embedded subtitle choices,
+the active stream index, change notifications and a selection intent. Qt's track
+metadata and decoder remain private to the adapter. `VideoPlayerPage` observes
+these choices through a blocked-signal combo refresh and sends explicit selections
+back to the adapter. Qt renders subtitle cues; sink changes transfer current text
+alongside the frame, and source disposal clears both. Selection belongs only to the
+current Playback Entry and is independent of Sync's Media Stream Selection.
 
 The backend starts a Track from a seekable Playback Source supplied by the
 Application Layer; it never receives an Active iPod, Filesystem Session, Mount
@@ -3019,6 +3040,13 @@ continue from the current blend. The page shares
 the pending `PlaybackQueueView` and chapter-aware `SeekSlider` with the regular
 Player presentation. It observes current Track, playing state, position and exact
 Artwork Display Time through existing controller and provider interfaces.
+
+For a semantic video Track, the same shell stack selects `VideoPlayerPage` instead.
+It presents aspect-preserving native video with controller-owned transport, volume,
+Chapter navigation and error retry. Close and Escape restore the shell without
+interrupting playback. An open viewer follows audio/video transitions, and clearing
+the current Track closes it. Video transitions bypass the snapshot fade; see
+ADR-0245 for the optional presentation attachment and lifecycle.
 
 Its backdrop is a zoomed, heavily blurred copy of the current
 artwork, processed at a bounded 96-by-96 resolution only when the displayed image

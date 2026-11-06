@@ -116,6 +116,7 @@ from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.pages.start_page import StartPage
 from iOpenPod.GUI.pages.synesthesia_page import SynesthesiaPage
 from iOpenPod.GUI.pages.track_page import TrackPage
+from iOpenPod.GUI.pages.video_player_page import VideoPlayerPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
 from iOpenPod.GUI.presentation.i18n.text import (
@@ -143,7 +144,7 @@ from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.status_controls import StatusBarControls
 from iOpenPod.GUI.widgets.status_list import StatusListButton
 from iOpenPod.GUI.widgets.track_actions import TrackActions
-from iPodDB.library import MediaKind, Photo, Track, TrackFieldEdit
+from iPodDB.library import MediaKind, Photo, Track, TrackFieldEdit, is_video_track
 from storage import HostPath
 
 logger = logging.getLogger(__name__)
@@ -634,6 +635,16 @@ class MainWindow(QMainWindow):
         )
         self._shell_pages.addWidget(self._now_playing_page)
         self._now_playing_page.closeRequested.connect(self._close_now_playing)
+        self._video_player_page = VideoPlayerPage(
+            context.playback_controller,
+            context.playback_video_output,
+            self._shell_pages,
+        )
+        self._shell_pages.addWidget(self._video_player_page)
+        self._video_player_page.closeRequested.connect(self._close_now_playing)
+        context.playback_controller.currentTrackChanged.connect(
+            self._refresh_now_playing_page
+        )
         self._player.nowPlayingRequested.connect(self._open_now_playing)
         self._now_playing_status_visible = False
         # Cover the whole client area so the status bar fades with the shell.
@@ -1078,20 +1089,45 @@ class MainWindow(QMainWindow):
     def _open_now_playing(self) -> None:
         if (
             self._context.playback_controller.current_track is None
-            or self._shell_pages.currentWidget() is self._now_playing_page
+            or self._shell_pages.currentWidget() is not self._normal_shell
         ):
             return
         self._now_playing_status_visible = not self.statusBar().isHidden()
+        page = self._current_playback_page()
 
         def show_page() -> None:
             self.statusBar().hide()
-            self._shell_pages.setCurrentWidget(self._now_playing_page)
-            self._now_playing_page.focus_close()
+            self._shell_pages.setCurrentWidget(page)
+            page.focus_close()
 
-        self._now_playing_fade.transition(show_page)
+        if page is self._video_player_page:
+            self._now_playing_fade.cancel()
+            show_page()
+        else:
+            self._now_playing_fade.transition(show_page)
+
+    def _current_playback_page(self) -> NowPlayingPage | VideoPlayerPage:
+        track = self._context.playback_controller.current_track
+        if track is not None and is_video_track(track):
+            return self._video_player_page
+        return self._now_playing_page
+
+    def _refresh_now_playing_page(self, track: Track | None) -> None:
+        if self._shell_pages.currentWidget() is self._normal_shell:
+            return
+        if track is None:
+            self._close_now_playing()
+            return
+        page = self._current_playback_page()
+        if self._shell_pages.currentWidget() is not page:
+            # Native video surfaces do not participate in QWidget snapshot fades.
+            self._now_playing_fade.cancel()
+            self._shell_pages.setCurrentWidget(page)
+            page.focus_close()
 
     def _close_now_playing(self) -> None:
-        if self._shell_pages.currentWidget() is not self._now_playing_page:
+        page = self._shell_pages.currentWidget()
+        if page is self._normal_shell:
             return
 
         def restore_shell() -> None:
@@ -1099,7 +1135,11 @@ class MainWindow(QMainWindow):
             self.statusBar().setVisible(self._now_playing_status_visible)
             self._player.setFocus(Qt.FocusReason.OtherFocusReason)
 
-        self._now_playing_fade.transition(restore_shell)
+        if page is self._video_player_page:
+            self._now_playing_fade.cancel()
+            restore_shell()
+        else:
+            self._now_playing_fade.transition(restore_shell)
 
     def _queue_group_tracks(self, tracks: tuple[Track, ...]) -> None:
         controller = self._context.playback_controller

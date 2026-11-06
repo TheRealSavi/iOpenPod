@@ -93,6 +93,29 @@ its upstream port. Because PowerOff can affect other drives that share a physica
 device, iOpenPod refuses the request when the `SiblingId` relationship identifies
 another Drive and directs the user to the desktop safe-removal control.
 
+Compatibility correction for [issue #313](https://github.com/TheRealSavi/iOpenPod/issues/313),
+verified on 2026-11-06: `Manager.GetDrives` was introduced in UDisks 2.11. Older
+services return `UnknownMethod`, which previously caused iOpenPod to refuse eject
+for every Drive with a nonempty `SiblingId`. The attached log records that exact
+refusal across multiple application versions; it does not record the installed
+UDisks version.
+
+Storage now calls the standard `Introspectable.Introspect` method on the documented
+`/org/freedesktop/UDisks2/drives` subtree and reads each other Drive's `SiblingId`.
+This includes Drives without a mounted filesystem or block object. Empty sibling
+tokens do not group unrelated Drives. Invalid inventories, a missing selected
+Drive, invalid sibling properties, and D-Bus read failures stop before unmount.
+The accepted safe-removal policy in ADR-0060 is unchanged.
+
+Introspection supplies XML text through the existing Qt transport. It avoids
+PySide 6.11's read-only map-entry overload limitation when decoding the nested
+`ObjectManager.GetManagedObjects` reply, without adding a second D-Bus binding.
+Regression tests exercise the real eject policy with a pre-2.11 service contract,
+including shared hardware, unrelated Drives, multiple Volumes, malformed replies,
+and authorization failures. A private D-Bus daemon on the Windows development Host
+also verified real Qt transport and child enumeration. Physical LMDE/iPod acceptance
+remains outstanding.
+
 The application calls the UDisks2 system D-Bus API directly through Qt. The
 `udisksctl` manual explicitly says its command-line interface is not intended for
 scripts or other programs.
@@ -100,6 +123,8 @@ scripts or other programs.
 Primary references:
 
 - [UDisks2 Manager.ResolveDevice](https://storaged.org/doc/udisks2-api/latest/gdbus-org.freedesktop.UDisks2.Manager.html)
+- [UDisks2 Drive object paths](https://storaged.org/doc/udisks2-api/latest/ref-dbus-drives.html)
+- [GDBus standard introspection support](https://docs.gtk.org/gio/method.DBusConnection.register_object.html)
 - [UDisks2 Filesystem.Unmount](https://storaged.org/doc/udisks2-api/latest/gdbus-org.freedesktop.UDisks2.Filesystem.html)
 - [UDisks2 Drive.PowerOff](https://storaged.org/udisks/docs/gdbus-org.freedesktop.UDisks2.Drive.html)
 - [udisksctl manual](https://storaged.org/udisks/docs/udisksctl.1.html)

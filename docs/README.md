@@ -29,6 +29,11 @@ sessions.
   transactional consumption, and recovery of playback history and OTG Playlists.
 - [`ipod-preferences.md`](ipod-preferences.md) — typed, lossless firmware Preferences
   and iTunesPrefs readers/writers, supported layouts, and model limitations.
+- [Native iPod EQ](research/ipod-eq-firmware.md) — firmware preset IDs, Preferences,
+  Track encoding and precedence, custom-preset limits, and native execution evidence.
+- [EQ viewing and configuration](research/ipod-eq-implementation-readiness.md) —
+  concrete application seams, saved versus runtime state, Track editing,
+  Sync ownership, CDB/SQLite differences, and publication acceptance criteria.
 - [`sync-workflow-audit-2026-09-26.md`](sync-workflow-audit-2026-09-26.md) — scan and Sync findings, fixes, and remaining limits.
 - [`sync-artwork-audit-2026-10-08.md`](sync-artwork-audit-2026-10-08.md) — artwork loss reproductions, automatic repairs, publication safety, and source research.
 - [Photo shard research](research/photo-sharding-2026-10-08.md) — shared per-format

@@ -181,6 +181,32 @@ def main() -> None:
                 "ipod",
             ],
         )
+        subtitles.write_text(
+            "1\n00:00:00,500 --> 00:00:03,500\nTest subtitle\n", encoding="utf-8"
+        )
+        encode(
+            "playback-subtitles.mp4",
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:s=320x240:r=25:d=4",
+                "-i",
+                str(subtitles),
+                "-map",
+                "0:v",
+                "-map",
+                "1:s",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:s",
+                "mov_text",
+                "-metadata:s:s:0",
+                "language=eng",
+            ],
+        )
     version = subprocess.run(
         [executable, "-version"],
         capture_output=True,

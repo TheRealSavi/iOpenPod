@@ -35,6 +35,7 @@ from iOpenPod.app.models.track_table_model import TrackTableModel
 from iOpenPod.app.phase_analysis import PhaseAnalysisService
 from iOpenPod.app.photo_controller import PhotoController
 from iOpenPod.app.playback.qt_backend import QtPlaybackBackend
+from iOpenPod.app.playback.video_output import PlaybackVideoOutput
 from iOpenPod.app.playback_controller import PlaybackController
 from iOpenPod.app.podcasts.artwork_controller import PodcastArtworkController
 from iOpenPod.app.podcasts.controller import PodcastController
@@ -86,6 +87,7 @@ class AppContext:
     stream_preferences: MediaStreamPreferences = field(
         default_factory=MediaStreamPreferences
     )
+    playback_video_output: PlaybackVideoOutput | None = None
     games_controller: GamesController = field(init=False)
 
     def __post_init__(self) -> None:
@@ -265,6 +267,7 @@ class AppContext:
             host_media_controller=host_media_controller,
             ipod_media_controller=ipod_media_controller,
             playback_controller=playback_controller,
+            playback_video_output=playback_backend,
             lyrics_controller=lyrics_controller,
             synesthesia_controller=synesthesia_controller,
             podcast_controller=podcast_controller,

@@ -309,3 +309,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0242: Qualify the latest Classic Calendar Targets](0242-qualify-the-latest-classic-calendar-targets.md)
 - [ADR-0243: Use Whenever for calendar interpretation](0243-use-whenever-for-calendar-interpretation.md)
 - [ADR-0244: Share smooth wheel and middle-button scrolling](0244-share-smooth-wheel-and-middle-button-scrolling.md)
+- [ADR-0245: Present video through the existing Playback Backend](0245-present-video-through-the-existing-playback-backend.md)

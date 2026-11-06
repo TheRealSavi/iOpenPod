@@ -59,7 +59,7 @@ from iOpenPod.GUI.widgets.artwork_view import ArtworkView
 from iOpenPod.GUI.widgets.chapter_index import ChapterIndexPopup
 from iOpenPod.GUI.widgets.seek_slider import SeekSlider, format_playback_time
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
-from iPodDB.library import MediaKind, Track, TrackChapter
+from iPodDB.library import MediaKind, Track, TrackChapter, is_video_track
 
 _MUTE_FADE_DURATION_MS = 180
 _POSITION_FRAME_MS = 16
@@ -519,6 +519,7 @@ class PlayerBar(QFrame):
             or (self._track.track_id != track.track_id)
         )
         self._track = track
+        self._refresh_artwork_action()
         self._artwork_display_times = playback_artwork_times(
             self._artwork_provider.display_times(track.artwork_id)
             if track is not None
@@ -786,8 +787,7 @@ class PlayerBar(QFrame):
 
         self._refresh_transport_copy()
         self._refresh_mute_copy()
-        self._artwork_button.setAccessibleName(self.tr("Open Now Playing"))
-        self._artwork_button.setToolTip(self.tr("Open Now Playing"))
+        self._refresh_artwork_action()
         self._refresh_queue_copy()
         self._clear_queue.setText(self.tr("Clear Queue"))
         self._refresh_track_actions()
@@ -800,6 +800,15 @@ class PlayerBar(QFrame):
             self._detail.set_full_text(self.tr("Drop a Track or Playlist to play it"))
         else:
             self._refresh_title()
+
+    def _refresh_artwork_action(self) -> None:
+        name = (
+            self.tr("Open video player")
+            if self._track is not None and is_video_track(self._track)
+            else self.tr("Open Now Playing")
+        )
+        self._artwork_button.setAccessibleName(name)
+        self._artwork_button.setToolTip(name)
 
     def _refresh_transport_copy(self) -> None:
         controls = (
