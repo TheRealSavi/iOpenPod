@@ -14045,4 +14045,103 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
         <translation>Alle Medien auswählen</translation>
     </message>
 </context>
+<context>
+    <name>Equalizer</name>
+    <message>
+        <source>Use iPod setting</source>
+        <translation>iPod-Einstellung verwenden</translation>
+    </message>
+    <message>
+        <source>Acoustic</source>
+        <translation>Akustik</translation>
+    </message>
+    <message>
+        <source>Bass Booster</source>
+        <translation>Bässe verstärken</translation>
+    </message>
+    <message>
+        <source>Bass Reducer</source>
+        <translation>Bässe absenken</translation>
+    </message>
+    <message>
+        <source>Classical</source>
+        <translation>Klassik</translation>
+    </message>
+    <message>
+        <source>Dance</source>
+        <translation>Dance</translation>
+    </message>
+    <message>
+        <source>Deep</source>
+        <translation>Tief</translation>
+    </message>
+    <message>
+        <source>Electronic</source>
+        <translation>Elektronisch</translation>
+    </message>
+    <message>
+        <source>Flat</source>
+        <translation>Neutral</translation>
+    </message>
+    <message>
+        <source>Hip Hop</source>
+        <translation>Hip Hop</translation>
+    </message>
+    <message>
+        <source>Jazz</source>
+        <translation>Jazz</translation>
+    </message>
+    <message>
+        <source>Latin</source>
+        <translation>Lateinamerikanisch</translation>
+    </message>
+    <message>
+        <source>Loudness</source>
+        <translation>Loudness</translation>
+    </message>
+    <message>
+        <source>Lounge</source>
+        <translation>Lounge</translation>
+    </message>
+    <message>
+        <source>Piano</source>
+        <translation>Klavier</translation>
+    </message>
+    <message>
+        <source>Pop</source>
+        <translation>Pop</translation>
+    </message>
+    <message>
+        <source>R &amp; B</source>
+        <translation>R &amp; B</translation>
+    </message>
+    <message>
+        <source>Rock</source>
+        <translation>Rock</translation>
+    </message>
+    <message>
+        <source>Small Speakers</source>
+        <translation>Kleine Lautsprecher</translation>
+    </message>
+    <message>
+        <source>Spoken Word</source>
+        <translation>Sprache</translation>
+    </message>
+    <message>
+        <source>Treble Booster</source>
+        <translation>Höhen verstärken</translation>
+    </message>
+    <message>
+        <source>Treble Reducer</source>
+        <translation>Höhen absenken</translation>
+    </message>
+    <message>
+        <source>Vocal Booster</source>
+        <translation>Gesang verstärken</translation>
+    </message>
+    <message>
+        <source>Unknown preset (preserved)</source>
+        <translation>Unbekannte Voreinstellung (beibehalten)</translation>
+    </message>
+</context>
 </TS>

@@ -1631,6 +1631,15 @@ catalogs are not rewritten. Embedded artwork availability is separate from absen
 failed observations cannot request cover removal. See ADR-0099, ADR-0123, ADR-0133, and
 [Host tag coverage](host-media-tags.md).
 
+Per-Track EQ is owned by explicit Library edits. The pure `iPodDB.library` interface
+maps typed built-in IDs to canonical MHOD7 text, while the Library model retains
+raw text for lossless preservation. The Track editor and table share translated
+labels; unknown and mixed values remain untouched unless explicitly replaced.
+Host metadata comparison/merge and media replacement preserve the retained EQ.
+The existing v1 Sync digest format remains compatible, and EQ-only edits do not
+schedule embedded media-tag writes. See
+[ADR-0246](adr/0246-edit-track-eq-with-canonical-presets-and-preserve-it-during-sync.md).
+
 The Host Library Source projects scanned Tracks, Photos, and Playlists into the same
 immutable `iPodDB.library.LibrarySnapshot` records used by the iPod source. Absolute
 Host access paths remain in source-specific `HostMediaSource` records or descriptive

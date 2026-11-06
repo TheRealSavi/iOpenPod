@@ -1903,6 +1903,80 @@ def test_payload_update_retains_artwork_when_review_does_not_change_it(
         device.coordinator.close()
 
 
+@pytest.mark.parametrize("equalizer", ["#!#116#!#", "Unrecognized custom EQ"])
+@pytest.mark.parametrize("replace_audio", [False, True])
+def test_sync_preserves_eq_through_metadata_and_media_replacement(
+    tmp_path: Path, equalizer: str, replace_audio: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        baseline = device.active.library
+        original = baseline.tracks[0]
+        edited = replace(
+            original, metadata=replace(original.metadata, equalizer=equalizer)
+        )
+        saved = device.save(
+            device.prepare(replace(baseline, tracks=(edited, *baseline.tracks[1:])))
+        )
+        assert saved.active is not None, saved.issues
+        host = _host(tmp_path, "New Host title")
+        request = _request(device, host, update=True)
+        if not replace_audio:
+            ipod = replace(
+                request.ipod,
+                tracks=(
+                    replace(
+                        request.ipod.tracks[0],
+                        acoustic_fingerprint=host.sources[0].acoustic_fingerprint or "",
+                    ),
+                    *request.ipod.tracks[1:],
+                ),
+            )
+            comparison = prepare_sync_plan(host, ipod, request.source.library)
+            request = replace(
+                request,
+                ipod=ipod,
+                plan=replace(
+                    comparison,
+                    items=tuple(
+                        item
+                        for item in comparison.items
+                        if item.action is not SyncPlanAction.REMOVE
+                    ),
+                ),
+            )
+        item = next(
+            item for item in request.plan.items if item.action is SyncPlanAction.UPDATE
+        )
+        assert item.metadata_changed
+        assert item.audio_payload_changed is replace_audio
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None and result.helper is not None
+        track = next(
+            t for t in result.active.library.tracks if t.track_id == original.track_id
+        )
+        assert track.title == "New Host title"
+        assert track.metadata.equalizer == equalizer
+        assert (
+            equalizer.encode("utf-16le")
+            in (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
+        )
+        next_plan = prepare_sync_plan(host, result.helper, result.active.library)
+        assert (
+            next(
+                item
+                for item in next_plan.items
+                if item.host_path == str(host.sources[0].path)
+            ).action
+            is SyncPlanAction.UNCHANGED
+        )
+    finally:
+        device.coordinator.close()
+
+
 @pytest.mark.parametrize("problem", ["unreadable", "invalid", "observation"])
 def test_failed_host_cover_scan_cannot_remove_existing_album_art(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, problem: str

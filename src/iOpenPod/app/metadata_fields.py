@@ -25,6 +25,7 @@ class FieldKind(StrEnum):
     FLOAT = "float"
     RATING = "rating"
     VOLUME_ADJUSTMENT = "volume_adjustment"
+    EQUALIZER = "equalizer"
     BOOLEAN = "boolean"
     DATE = "date"
     ADVISORY = "advisory"
@@ -162,6 +163,8 @@ def metadata_fields() -> tuple[MetadataField, ...]:
                 kind = FieldKind.RATING
             elif path == "metadata.volume_adjustment_percent":
                 kind = FieldKind.VOLUME_ADJUSTMENT
+            elif path == "metadata.equalizer":
+                kind = FieldKind.EQUALIZER
             elif path == "metadata.chapters":
                 kind = FieldKind.CHAPTERS
             elif path == "metadata.content_advisory":

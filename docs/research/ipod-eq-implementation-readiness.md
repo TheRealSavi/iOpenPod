@@ -5,6 +5,18 @@ firmware execution and current-source probes, not an accepted ADR or an applicat
 behavior change. See [firmware findings](ipod-eq-firmware.md) for the preset catalog,
 image hashes, disassembly, deobfuscation, and original native receipts.
 
+Implementation follow-up: [ADR-0246](../adr/0246-edit-track-eq-with-canonical-presets-and-preserve-it-during-sync.md)
+now implements the translated Track picker, canonical marker authoring,
+raw-value preservation, text-only table display and Sync ownership correction.
+The proposal below remains the research baseline; global Preferences authoring
+and effective-playback prediction are still outside the implemented scope.
+
+The follow-up [Mini 2 / Video / Classic comparison](ipod-eq-evolution-and-device-support.md)
+qualifies older name-based Preferences and different Flat behavior. The
+Classic/Nano selection rules below must not be generalized to those older
+targets; their menu-Off versus Track behavior also remains a documented
+native/manual discrepancy.
+
 ## Where to implement it
 
 iOpenPod already has the publication path for per-Track EQ text. It lacks a
@@ -42,9 +54,9 @@ native selector. [Native selection evidence](ipod-eq-firmware.md#exact-selection
 
 | Control / displayed fact | Meaning |
 | --- | --- |
-| Global **Off** | No default effect; Track assignments can still apply. |
+| Global **Off**, qualified Classic/Nano selector | No default effect; Track assignments can still apply. Older Mini/Video behavior needs the separate comparison above. |
 | Global **Flat** | Neutral preset that suppresses Track overrides in the qualified selector. The executed Classic/Nano 3 loaders distinguish it from DSP bypass; Nano 5 DSP processing remains unqualified. |
-| Global named preset | Default for Tracks with no override. |
+| Global named preset | Default for Tracks with no override, subject to the target's enable and selection rules. |
 | Track **Use iPod setting** | No Track override; it does not force EQ off. |
 | Track **Flat** | A real Track preset; distinct from inheritance. |
 | **Keep saved value** / unchanged | Preserve the original raw representation. This is editor intent, not an on-device preset. |

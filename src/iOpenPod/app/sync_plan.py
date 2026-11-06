@@ -935,7 +935,11 @@ def _paired_item(
                     ipod.track
                 )
             elif sync.ipod_tag_sha256 is not None:
-                metadata_changed = track_tag_sha256(ipod.track) != sync.ipod_tag_sha256
+                metadata_changed = track_tag_sha256(
+                    ipod.track
+                ) != sync.ipod_tag_sha256 and track_tag_values(
+                    host.track
+                ) != track_tag_values(ipod.track)
             elif sync.ipod_baseline_pending:
                 # A migrated helper has Sync provenance but no post-commit iPod
                 # tag baseline. Compare the two current semantic projections

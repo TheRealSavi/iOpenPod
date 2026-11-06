@@ -35,11 +35,20 @@ from iOpenPod.app.metadata_fields import (
     display_value,
     parse_field,
 )
+from iOpenPod.app.models.equalizer import equalizer_label
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.star_rating import StarRating
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iOpenPod.GUI.widgets.volume_adjustment import VolumeAdjustment
-from iPodDB.library import ContentAdvisory, MediaType, MetadataValue, TrackChapter
+from iPodDB.library import (
+    ContentAdvisory,
+    EqualizerPreset,
+    MediaType,
+    MetadataValue,
+    TrackChapter,
+    decode_track_equalizer,
+    encode_track_equalizer,
+)
 
 _MEDIA_TYPE_LABELS = {
     MediaType.AUDIO: str(QT_TRANSLATE_NOOP("FieldEditor", "Music")),
@@ -290,6 +299,25 @@ class FieldEditor(QFrame):
             )
             volume_editor.valueEdited.connect(self._modified)
             self.editor = volume_editor
+        elif spec.kind is FieldKind.EQUALIZER:
+            assert isinstance(value, str)
+            eq_editor = AppComboBox(self)
+            current_preset = decode_track_equalizer(value)
+            if mixed:
+                eq_editor.addItem(
+                    QCoreApplication.translate("EditorLabels", "Mixed values"), None
+                )
+            elif current_preset is None:
+                eq_editor.addItem(equalizer_label(None), None)
+            for preset in EqualizerPreset:
+                eq_editor.addItem(equalizer_label(preset), preset.value)
+            eq_editor.setCurrentIndex(
+                0
+                if mixed or current_preset is None
+                else eq_editor.findData(current_preset.value)
+            )
+            eq_editor.currentIndexChanged.connect(self._modified)
+            self.editor = eq_editor
         elif spec.kind is FieldKind.MEDIA_TYPE:
             media_editor = AppComboBox(self)
             current = (
@@ -440,6 +468,8 @@ class FieldEditor(QFrame):
                         label = QCoreApplication.translate(
                             "EditorLabels", "Mixed values"
                         )
+                    elif self.spec.kind is FieldKind.EQUALIZER:
+                        label = equalizer_label(None)
                     else:
                         retained = (
                             " + ".join(
@@ -451,6 +481,8 @@ class FieldEditor(QFrame):
                             else str(self.initial)
                         )
                         label = self.tr("Current (%1)").replace("%1", retained)
+                elif self.spec.kind is FieldKind.EQUALIZER:
+                    label = equalizer_label(EqualizerPreset(value))
                 elif self.spec.kind is FieldKind.BOOLEAN:
                     label = self.tr("Yes") if value else self.tr("No")
                 elif self.spec.kind is FieldKind.ADVISORY:
@@ -487,7 +519,10 @@ class FieldEditor(QFrame):
         if self._syncing:
             return
         if (
-            (self.mixed or self.spec.kind is FieldKind.MEDIA_TYPE)
+            (
+                self.mixed
+                or self.spec.kind in (FieldKind.MEDIA_TYPE, FieldKind.EQUALIZER)
+            )
             and isinstance(self.editor, AppComboBox)
             and self.editor.currentData() is None
         ):
@@ -549,6 +584,10 @@ class FieldEditor(QFrame):
                         if isinstance(self.initial, tuple) and len(self.initial) == 1
                         else None
                     )
+                elif self.spec.kind is FieldKind.EQUALIZER:
+                    assert isinstance(self.initial, str)
+                    preset = decode_track_equalizer(self.initial)
+                    initial = None if preset is None else preset.value
                 index = editor.findData(initial)
                 editor.setCurrentIndex(0 if self.mixed or index < 0 else index)
             elif isinstance(editor, ChapterEditor):
@@ -579,6 +618,8 @@ class FieldEditor(QFrame):
             return editor.value()
         if isinstance(editor, AppComboBox):
             value: object = editor.currentData()
+            if self.spec.kind is FieldKind.EQUALIZER and type(value) is int:
+                return encode_track_equalizer(EqualizerPreset(value))
             if self.spec.kind is FieldKind.ADVISORY and isinstance(value, str):
                 return ContentAdvisory(value)
             if self.spec.kind is FieldKind.MEDIA_TYPE and isinstance(value, str):

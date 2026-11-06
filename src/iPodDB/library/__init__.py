@@ -4,6 +4,11 @@ Other sources construct the same immutable records directly. None need Chunk
 definitions, database documents, Qt, Storage, or an iPod diagnostic record.
 """
 
+from iPodDB.library._equalizer import (
+    EqualizerPreset,
+    decode_track_equalizer,
+    encode_track_equalizer,
+)
 from iPodDB.library.artwork import (
     ArtworkPixels,
     ArtworkRead,
@@ -152,6 +157,7 @@ __all__ = [
     "ContentBuffer",
     "CoverFormat",
     "CoverPixelFormat",
+    "EqualizerPreset",
     "FileContentData",
     "FileDependency",
     "Hash72Material",
@@ -236,9 +242,11 @@ __all__ = [
     "content_chunks",
     "content_sha256",
     "create_empty_library",
+    "decode_track_equalizer",
     "edit_track_metadata",
     "editable_track_fields",
     "encode_photo_thumbnail",
+    "encode_track_equalizer",
     "incoming_track_issues",
     "is_playback_sidecar",
     "is_video_track",

@@ -303,14 +303,17 @@ The survey excludes the map's uncertain trailing eight bytes.
 | Nano 3 / 26 | Native callback, selection and coefficient loads | Outer import binding, complete Preferences lifecycle |
 | Nano 4 / 31 | Byte-identical compiled tables | Native consumers, Track parser, Preferences and precedence |
 | Nano 5 / 34 | Native cached-row text getter, provider construction and selector; UI/property traces | Serialized EQ Preferences offset, DSP coefficient route, SQLite hydration and device reload event |
-| Video / 13, 1.3 | Static `resm` callback turns marked numeric text into localized EQ display labels | Playback-ID importer, device/Track precedence, saved EQ offset and custom-file reader |
-| Earlier full-size, Mini, nano 1/2/6/7, other builds | No new native EQ qualification in this pass | Independent firmware evidence rather than inheritance from a similar model |
+| Video / 13/20/25, 1.3 | Follow-up executes MHOD7 `resm` normalization, registry lookup, menu/Track selection, audio command submission and Preferences; normal coefficient banks match Classics | Complete playback lifecycle, Off/manual discrepancy, physical adoption and custom-file reader |
+| Mini 2 / 7, 1.4.1 | Follow-up executes registry, callback, menu/Track selection, Preferences and lower normal-bank loading | Complete playback lifecycle, Off/manual discrepancy, physical hardware-bank selection and custom-file reader |
+| Earlier full-size, Mini 1, nano 1/2/6/7, other builds | No new native EQ qualification in this pass | Independent firmware evidence rather than inheritance from a similar model |
 
-The Video finding is deliberately narrow: at `000fb7b8`, selector `resm`
-performs a **display-name conversion**, not the Classic `rsid` numeric-import
-callback. Its image hash and exports are in the [Nano/Video note][nano-video].
-Keeping these selectors separate avoids promoting a plausible function name or
-shared marker string into an unproved playback contract.
+The initial Video finding was limited to `000fb7b8`'s `resm` name conversion,
+documented in the [Nano/Video note][nano-video]. The subsequent
+[older-device comparison](ipod-eq-evolution-and-device-support.md) binds this
+callback to the actual MHOD7 importer and name-based playback registry on all
+three Video images, with an independent Mini 2 investigation. This remains
+different from Classic's `rsid` numeric importer. In particular, older global
+Flat does not suppress a valid Track override in the tested path.
 
 ## iOpenPod compatibility finding
 

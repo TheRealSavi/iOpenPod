@@ -14,6 +14,13 @@ then beyond it.
 
 ## Current stage
 
+The Track metadata editor offers 22 translated EQ presets and **Use iPod setting**.
+Unknown assignments remain preserved until explicitly replaced, and mixed
+selections remain unchanged until edited. The Track table uses the same labels.
+Sync preserves per-Track EQ through Host metadata updates and media replacement;
+EQ-only edits do not request embedded media-tag work. Global device EQ settings
+remain separate. See [ADR-0246](docs/adr/0246-edit-track-eq-with-canonical-presets-and-preserve-it-during-sync.md).
+
 Settings > Sync offers **Calculate missing BPM**, off by default. It shares the
 existing Genius audio-analysis pass and cache, covering new and retained music.
 BPM and Genius are independent options; each file is analyzed once when both are

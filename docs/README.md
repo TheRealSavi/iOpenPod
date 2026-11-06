@@ -34,6 +34,12 @@ sessions.
 - [EQ viewing and configuration](research/ipod-eq-implementation-readiness.md) —
   concrete application seams, saved versus runtime state, Track editing,
   Sync ownership, CDB/SQLite differences, and publication acceptance criteria.
+- [EQ evolution and device support](research/ipod-eq-evolution-and-device-support.md) —
+  Mini 2 and Video 5/5.5 versus four Classics: shared filters, different saved
+  representations and Flat rules, and exact support boundaries for iOpenPod.
+- [iPod mini 2 firmware workspace](../../ipod-firmware-lab/notes/mini2-firmware-workspace.md) —
+  verified RetailOS 1.4.1 extraction, Ghidra project, searchable decompilation,
+  and startup-map evidence in the sibling firmware lab.
 - [`sync-workflow-audit-2026-09-26.md`](sync-workflow-audit-2026-09-26.md) — scan and Sync findings, fixes, and remaining limits.
 - [`sync-artwork-audit-2026-10-08.md`](sync-artwork-audit-2026-10-08.md) — artwork loss reproductions, automatic repairs, publication safety, and source research.
 - [Photo shard research](research/photo-sharding-2026-10-08.md) — shared per-format

@@ -2537,6 +2537,7 @@ def _draft(
                     skip_count=old.metadata.skip_count,
                     last_skipped=old.metadata.last_skipped,
                     bookmark_time_ms=old.metadata.bookmark_time_ms,
+                    equalizer=old.metadata.equalizer,
                     artwork_count=old.metadata.artwork_count,
                     has_lyrics=old.metadata.has_lyrics,
                     normalization_gain_db=(

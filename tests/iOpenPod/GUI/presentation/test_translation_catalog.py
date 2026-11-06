@@ -90,6 +90,10 @@ def test_extraction_includes_dynamic_sources_in_runtime_contexts(catalog: Path) 
             "Editable Chapter metadata is retained.",
         ),
         ("EditorLabels", "Technical details"),
+        ("Equalizer", "Use iPod setting"),
+        ("Equalizer", "Acoustic"),
+        ("Equalizer", "Vocal Booster"),
+        ("Equalizer", "Unknown preset (preserved)"),
         ("PodcastPresentation", "Unknown publisher"),
     }
     assert not expected - messages.keys()

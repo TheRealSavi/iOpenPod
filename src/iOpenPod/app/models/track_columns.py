@@ -8,6 +8,7 @@ from typing import cast
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication
 from whenever import SYSTEM_TZ, Instant
 
+from iOpenPod.app.models.equalizer import track_equalizer_label
 from iPodDB.library import ContentAdvisory, MediaKind, MediaType, Track
 
 type TrackSortValue = str | int | float | None
@@ -769,7 +770,9 @@ def _build_column_definitions() -> tuple[TrackColumnDefinition, ...]:
             _format_positive_integer,
             right_aligned=True,
         ),
-        _column("Equalizer", lambda track: track.metadata.equalizer),
+        _column(
+            "Equalizer", lambda track: track_equalizer_label(track.metadata.equalizer)
+        ),
         _column("Location", lambda track: track.metadata.location),
         _column("Lyrics", lambda track: track.metadata.lyrics),
         _column("Keywords", lambda track: track.metadata.track_keywords),
