@@ -311,3 +311,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0244: Share smooth wheel and middle-button scrolling](0244-share-smooth-wheel-and-middle-button-scrolling.md)
 - [ADR-0245: Present video through the existing Playback Backend](0245-present-video-through-the-existing-playback-backend.md)
 - [ADR-0246: Edit Track EQ with canonical presets and preserve it during Sync](0246-edit-track-eq-with-canonical-presets-and-preserve-it-during-sync.md)
+- [ADR-0247: Bundle media tools in the Flatpak](0247-bundle-media-tools-in-flatpak.md)

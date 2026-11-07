@@ -51,9 +51,10 @@ added, no signature/hash check is bypassed, and no full system upgrade is reques
 Install [WinGet/App Installer](https://learn.microsoft.com/windows/package-manager/winget/)
 or [Homebrew](https://brew.sh/) first if missing, then use **Check Again**.
 Linux automatic setup needs `pkexec` and a desktop polkit authentication agent.
-On other distributions or confined Flatpak, Snap, and macOS App Sandbox builds,
-use the package-specific setup instructions; installing tools on the Host alone
-does not make them accessible inside a sandbox. An existing executable that fails
+The Flatpak includes its own FFmpeg, FFprobe, and fpcalc, so it needs no setup.
+On other distributions or confined Snap and macOS App Sandbox builds, use the
+package-specific setup instructions; installing tools on the Host alone does not
+make them accessible inside a sandbox. An existing executable that fails
 its version check needs repair through its original installation channel.
 
 Homebrew support differs from iOpenPod's macOS 12.3 baseline. Current formulae may

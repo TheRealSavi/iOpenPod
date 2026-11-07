@@ -1,0 +1,88 @@
+{
+  "id": "io.github.therealsavi.iOpenPod",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "26.08",
+  "sdk": "org.freedesktop.Sdk",
+  "command": "iOpenPod",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=fallback-x11",
+    "--socket=wayland",
+    "--socket=pulseaudio",
+    "--device=dri",
+    "--share=network",
+    "--filesystem=home",
+    "--filesystem=/media",
+    "--filesystem=/run/media",
+    "--filesystem=/mnt",
+    "--filesystem=/run/udev:ro",
+    "--system-talk-name=org.freedesktop.UDisks2",
+    "--own-name=org.mpris.MediaPlayer2.iOpenPod"
+  ],
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/share/ffmpeg",
+    "/share/man",
+    "*.a"
+  ],
+  "modules": [
+    {
+      "name": "x264",
+      "config-opts": ["--enable-shared", "--enable-pic", "--disable-cli"],
+      "sources": [
+        {
+          "type": "git",
+          "url": "https://code.videolan.org/videolan/x264.git",
+          "commit": "b35605ace3ddf7c1a5d67a2eb553f034aef41d55"
+        }
+      ]
+    },
+    {
+      "name": "ffmpeg",
+      "config-opts": [
+        "--enable-gpl",
+        "--enable-libx264",
+        "--enable-libmp3lame",
+        "--enable-shared",
+        "--disable-static",
+        "--disable-ffplay",
+        "--disable-doc",
+        "--disable-debug"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz",
+          "sha256": "de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f"
+        }
+      ]
+    },
+    {
+      "name": "chromaprint",
+      "buildsystem": "cmake-ninja",
+      "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_PREFIX_PATH=/app",
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DBUILD_TOOLS=ON",
+        "-DBUILD_TESTS=OFF",
+        "-DFFT_LIB=avtx"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/acoustid/chromaprint/releases/download/v1.6.2/chromaprint-1.6.2.tar.gz",
+          "sha256": "d54ada62c16b2db396d3251ec54fc7a58909c163131a1cfcf7fa6407dbc14360"
+        }
+      ]
+    },
+    {
+      "name": "iopenpod",
+      "buildsystem": "simple",
+      "build-options": {"no-debuginfo": true, "strip": false},
+      "build-commands": ["cp -a bin lib share /app/"],
+      "sources": [{"type": "dir", "path": "../../build/linux-root"}]
+    }
+  ]
+}
