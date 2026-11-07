@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from PIL import Image, ImageOps, UnidentifiedImageError
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 
+from iOpenPod.app.media.image_pixels import rgb_image
 from iPodDB.library import ArtworkPixels
 from storage import HostPath, StorageError, capture_host_file
 from storage.host_input import LocalHostFile
@@ -52,7 +53,7 @@ def import_artwork(
                 oriented = ImageOps.exif_transpose(opened)
                 _validate_dimensions(*oriented.size)
                 checkpoint()
-                rgb = oriented.convert("RGB")
+                rgb = rgb_image(oriented)
                 pixels = ArtworkPixels(rgb.width, rgb.height, rgb.tobytes())
                 checkpoint()
                 return pixels

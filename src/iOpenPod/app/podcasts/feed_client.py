@@ -19,6 +19,7 @@ import feedparser  # type: ignore[import-untyped]
 from PIL import Image, ImageOps, UnidentifiedImageError
 from whenever import Instant
 
+from iOpenPod.app.media.image_pixels import rgb_image
 from iOpenPod.app.podcasts.feed_extensions import (
     EpisodeExtensions,
     description_links,
@@ -277,7 +278,7 @@ class HttpPodcastArtworkLoader:
                 if width <= 0 or height <= 0 or width * height > _ARTWORK_PIXEL_LIMIT:
                     raise PodcastFeedError("The Podcast artwork dimensions are unsafe")
                 oriented = ImageOps.exif_transpose(opened)
-                pixels = oriented.convert("RGB")
+                pixels = rgb_image(oriented)
                 if request.preserve_aspect:
                     pixels.thumbnail((target_px, target_px), Image.Resampling.LANCZOS)
                 else:

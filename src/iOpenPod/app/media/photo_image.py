@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps
 
+from iOpenPod.app.media.image_pixels import rgb_image
+
 if TYPE_CHECKING:
     from typing import BinaryIO
 
@@ -35,4 +37,4 @@ def photo_viewing_image(source: BinaryIO, target_size: tuple[int, int]) -> Image
         )
         opened.thumbnail(bounds, Image.Resampling.LANCZOS, reducing_gap=3.0)
         with ImageOps.exif_transpose(opened) as oriented:
-            return oriented.convert("RGB")
+            return rgb_image(oriented)

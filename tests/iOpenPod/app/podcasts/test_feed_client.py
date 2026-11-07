@@ -219,11 +219,19 @@ def test_feedparser_client_normalizes_typed_podcast_metadata(
     assert episode.enclosure_url == "https://cdn.example.test/one.mp3"
 
 
+@pytest.mark.parametrize("palette", (False, True))
+@pytest.mark.filterwarnings("error:Palette images with Transparency:UserWarning")
 def test_artwork_loader_returns_bounded_square_rgb_pixels(
     monkeypatch: pytest.MonkeyPatch,
+    palette: bool,
 ) -> None:
     payload = BytesIO()
-    Image.new("RGBA", (240, 120), (22, 88, 144, 180)).save(payload, format="PNG")
+    source = Image.new("RGBA", (240, 120), (22, 88, 144, 180))
+    if palette:
+        source = Image.new("P", source.size)
+        source.putpalette([22, 88, 144])
+        source.info["transparency"] = bytes([180])
+    source.save(payload, format="PNG")
 
     def request_bytes(
         url: str,
@@ -247,6 +255,7 @@ def test_artwork_loader_returns_bounded_square_rgb_pixels(
     assert image.width == 96
     assert image.height == 96
     assert len(image.rgb888) == 96 * 96 * 3
+    assert image.rgb888[:3] == bytes([22, 88, 144])
 
 
 def test_chapter_images_keep_their_full_aspect_ratio(

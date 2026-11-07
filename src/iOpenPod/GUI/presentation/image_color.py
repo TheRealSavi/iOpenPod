@@ -7,6 +7,8 @@ from typing import cast
 
 from PIL import Image
 
+from iOpenPod.app.media.image_pixels import rgb_image
+
 type RGBColor = tuple[int, int, int]
 
 _ANALYSIS_SIZE = (80, 80)
@@ -24,7 +26,7 @@ def dominant_image_color(image: Image.Image) -> RGBColor:
 
     small = image.copy()
     small.thumbnail(_ANALYSIS_SIZE)
-    analyzed = _without_uniform_border(small.convert("RGB"))
+    analyzed = _without_uniform_border(rgb_image(small))
 
     width, height = analyzed.size
     left_strip = analyzed.crop((0, 0, max(2, width // 5), height))

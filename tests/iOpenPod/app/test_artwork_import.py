@@ -13,7 +13,24 @@ from iOpenPod.app.artwork_import import (
     ArtworkImportError,
     import_artwork,
 )
+from iOpenPod.app.media.photo_image import photo_viewing_image
 from storage import HostPath
+
+
+@pytest.mark.filterwarnings("error:Palette images with Transparency:UserWarning")
+def test_palette_transparency_decodes_for_artwork_and_photos(tmp_path: Path) -> None:
+    path = tmp_path / "palette.png"
+    source = Image.new("P", (3, 1))
+    source.putpalette([255, 0, 0, 0, 255, 0, 0, 0, 255])
+    source.putdata([0, 1, 2])
+    source.save(path, transparency=bytes([0, 128, 255]))
+    expected = bytes([255, 0, 0, 0, 255, 0, 0, 0, 255])
+
+    pixels = import_artwork(HostPath(path), checkpoint=lambda: None)
+    assert pixels.rgb888 == expected
+    with path.open("rb") as stream, photo_viewing_image(stream, (3, 1)) as photo:
+        assert photo.mode == "RGB"
+        assert photo.tobytes() == expected
 
 
 def test_import_applies_exif_orientation_and_returns_owned_rgb(tmp_path: Path) -> None:

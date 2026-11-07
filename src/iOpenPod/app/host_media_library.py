@@ -39,6 +39,7 @@ from iOpenPod.app.host_playlists import (
 from iOpenPod.app.media.container_artwork import container_artwork
 from iOpenPod.app.media.content_type import classify_content_type
 from iOpenPod.app.media.fingerprint_codec import decode_fingerprint, encode_fingerprint
+from iOpenPod.app.media.image_pixels import rgb_image
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.models import MediaTag
 from iOpenPod.app.media.photo_image import photo_source_size, photo_viewing_image
@@ -437,7 +438,7 @@ class HostMediaArtworkLoader:
                 (request.target_px, request.target_px),
                 Image.Resampling.LANCZOS,
             )
-            pixels = oriented.convert("RGB")
+            pixels = rgb_image(oriented)
             width, height = pixels.size
             rgb888 = pixels.tobytes()
         return ArtworkImage(

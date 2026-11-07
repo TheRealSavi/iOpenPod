@@ -12,6 +12,7 @@ from PIL import Image, ImageOps
 from whenever import Instant
 
 from iOpenPod.app.media.chapters import imported_chapters
+from iOpenPod.app.media.image_pixels import rgb_image
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
 from iOpenPod.app.media.models import StreamKind
 from iOpenPod.app.media.music_paths import MusicPathAllocator
@@ -239,5 +240,5 @@ def _cover(parsed: Any) -> ArtworkPixels | None:
     with Image.open(io.BytesIO(data)) as image:
         if max(image.size) > 8192 or image.width * image.height > 32 * 1024 * 1024:
             raise ValueError("Embedded cover dimensions exceed the artwork limit.")
-        rgb = ImageOps.exif_transpose(image).convert("RGB")
+        rgb = rgb_image(ImageOps.exif_transpose(image))
         return ArtworkPixels(rgb.width, rgb.height, rgb.tobytes())

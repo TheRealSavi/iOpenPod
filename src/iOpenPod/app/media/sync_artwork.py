@@ -14,6 +14,7 @@ from iOpenPod.app.host_media_library import (
     HostArtworkKind,
     embedded_artwork_from_file,
 )
+from iOpenPod.app.media.image_pixels import rgb_image
 from iPodDB.library import ArtworkPixels, TimedArtworkFrame
 from storage.host_input import LocalHostFile
 
@@ -143,7 +144,7 @@ def _decode_cover(
             raise ValueError(
                 "The artwork dimensions exceed safe limits. Resize the cover image and rescan."
             )
-        image = ImageOps.exif_transpose(opened).convert("RGB")
+        image = rgb_image(ImageOps.exif_transpose(opened))
         image.thumbnail((target_px, target_px), Image.Resampling.LANCZOS)
         checkpoint()
         return ArtworkPixels(image.width, image.height, image.tobytes())
